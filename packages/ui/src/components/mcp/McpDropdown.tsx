@@ -1,5 +1,5 @@
 import React from 'react';
-import type { McpStatus } from '@opencode-ai/sdk/v2';
+import type { McpStatus } from '@/lib/opencode/v2-types';
 
 import {
   DropdownMenu,

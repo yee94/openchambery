@@ -19,13 +19,13 @@
     "build:watch": "vite build --watch",
     "type-check": "tsc --noEmit",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js",
-    "test": "node ../../scripts/ensure-node-better-sqlite3.mjs && vitest run --no-file-parallelism --exclude server/lib/relay/relay-server.e2e.test.ts && bun test --isolate server/lib/relay/relay-server.e2e.test.ts",
+    "test": "node ../../scripts/ensure-node-better-sqlite3.mjs && vitest run --no-file-parallelism --exclude server/lib/relay/relay-server.e2e.test.ts --exclude server/lib/opencode/opencode2-sidecar.e2e.test.js && bun test --isolate server/lib/relay/relay-server.e2e.test.ts && bun test --isolate server/lib/opencode/opencode2-sidecar.e2e.test.js",
     "start": "node bin/cli.js serve"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
     "@octokit/rest": "^22.0.1",
-    "@opencode-ai/sdk": "1.18.4",
+    "@opencode-ai/client": "0.0.0-next-17444",
     "@simplewebauthn/server": "13.3.1",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.10.0",

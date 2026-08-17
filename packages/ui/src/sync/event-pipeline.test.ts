@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { Event, OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import type { OpenCodeClient } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
 import { createEventPipeline } from "./event-pipeline"
 
 const failAfter = (ms: number) => new Promise<never>((_, reject) => {
@@ -33,26 +35,24 @@ function deltaEvent(delta: string): Event {
   } as Event
 }
 
-function createSdk(events: Event[], streamFinished: () => void): OpencodeClient {
+function createSdk(events: Event[], streamFinished: () => void): OpenCodeClient {
   return {
-    global: {
-      event: async ({ signal }: { signal: AbortSignal }) => ({
-        stream: (async function* () {
-          for (const payload of events) {
-            yield { directory: "/repo", payload }
+    event: {
+      subscribe: async ({ signal }: { signal: AbortSignal }) => (async function* () {
+        for (const payload of events) {
+          yield { directory: "/repo", payload }
+        }
+        streamFinished()
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) {
+            resolve()
+            return
           }
-          streamFinished()
-          await new Promise<void>((resolve) => {
-            if (signal.aborted) {
-              resolve()
-              return
-            }
-            signal.addEventListener("abort", () => resolve(), { once: true })
-          })
-        })(),
-      }),
+          signal.addEventListener("abort", () => resolve(), { once: true })
+        })
+      })(),
     },
-  } as unknown as OpencodeClient
+  } as unknown as OpenCodeClient
 }
 
 describe("createEventPipeline", () => {

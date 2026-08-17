@@ -43,8 +43,8 @@ describe('createEventPipeline — permanent server errors', () => {
 
     let sdkCallIndex = 0;
     const sdk = {
-      global: {
-        event: async () => {
+      event: {
+        subscribe: async () => {
           const idx = sdkCallIndex++;
           if (idx <= 1) {
             // First two attempts: permanent 404. Under the old code these
@@ -57,8 +57,7 @@ describe('createEventPipeline — permanent server errors', () => {
             error.status = 404;
             throw error;
           }
-          return {
-            stream: (async function* () {
+          return (async function* () {
               yield {
                 payload: {
                   type: 'session.status',
@@ -66,8 +65,7 @@ describe('createEventPipeline — permanent server errors', () => {
                 },
               };
               await new Promise(() => {});
-            })(),
-          };
+            })();
         },
       },
     };
@@ -136,16 +134,15 @@ describe('createEventPipeline — permanent server errors', () => {
 
     let sdkCallIndex = 0;
     const sdk = {
-      global: {
-        event: async () => {
+      event: {
+        subscribe: async () => {
           const idx = sdkCallIndex++;
           if (idx === 0) {
             const error = new Error('Rate limited');
             error.status = 429;
             throw error;
           }
-          return {
-            stream: (async function* () {
+          return (async function* () {
               yield {
                 payload: {
                   type: 'session.status',
@@ -153,8 +150,7 @@ describe('createEventPipeline — permanent server errors', () => {
                 },
               };
               await new Promise(() => {});
-            })(),
-          };
+            })();
         },
       },
     };

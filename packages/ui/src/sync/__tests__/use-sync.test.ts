@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message } from '@/lib/opencode/v2-types'
 
 import { getReactiveSessionMessageRequestLimit, hasSessionMessageBoundary } from "../use-sync"
 
@@ -46,18 +46,21 @@ describe("getReactiveSessionMessageRequestLimit", () => {
  * `../use-sync.test.ts` (boundary meta, load plan) and
  * `../session-turn-page-api.test.ts` (request and response shape).
  */
-describe("Host turn-page transport source contract (production transcript repository)", () => {
+describe("v2 projection transport source contract (production transcript repository)", () => {
   const productionSource = readFileSync(join(here, "../transcript-repository-production.ts"), "utf8")
 
-  test("paging goes through the Host turn-page purpose helper", () => {
+  test("open/prepend paging goes through the official session projection API", () => {
     expect(
-      productionSource.includes('from "./session-turn-page-api"')
-      || productionSource.includes("from './session-turn-page-api'"),
+      productionSource.includes('from "./session-projection-api"')
+      || productionSource.includes("from './session-projection-api'"),
     ).toBe(true)
-    expect(productionSource.includes("fetchHostSessionTurnPageForPurpose(")).toBe(true)
+    expect(productionSource.includes("fetchSessionProjectionPage(")).toBe(true)
+    expect(productionSource.includes("fetchSessionContext(")).toBe(true)
+    expect(productionSource.includes("fetchHostSessionTurnPageForPurpose(")).toBe(false)
+    expect(productionSource.includes("fetchSessionTurnPage(")).toBe(false)
   })
 
-  test("turn-page complete uses strict page.complete (no || !cursor mask)", () => {
+  test("projection complete uses strict page.complete (no || !cursor mask)", () => {
     expect(productionSource.includes("page.complete || !cursor")).toBe(false)
     expect(productionSource.includes("page.complete ||!cursor")).toBe(false)
     expect(/complete:\s*page\.complete\b/.test(productionSource)).toBe(true)

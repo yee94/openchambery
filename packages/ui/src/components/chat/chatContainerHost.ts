@@ -4,7 +4,7 @@ import { hasUserDisplayableParts } from '@/components/chat/message/normalizeUser
 import type { AssistantHistoryEntry } from '@/queries/assistantQueries';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
 import type { SessionHistoryBoundary } from '@/sync/types';
-import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@/lib/opencode/v2-types';
 
 type SessionMessageRecord = { info: Message; parts: Part[] };
 

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { PermissionRequest } from '@/types/permission'
+import type { QuestionRequest } from '@/types/question'
+
 import {
   canDisposeDirectory,
   hasPendingBlockingRequests,

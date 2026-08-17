@@ -11,7 +11,7 @@
  * - Never logs message bodies, parts, or auth material
  */
 
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
 
 import { runtimeFetch } from "../lib/runtime-fetch"
 import {

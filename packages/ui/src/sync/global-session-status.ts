@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Event } from '@opencode-ai/sdk/v2/client';
+import type { Event } from '@/sync/types'
+
 import { normalizeProjectPath } from '@/lib/projectResolution';
 
 // Live busy/retry status for sessions in directories WITHOUT a synced child
@@ -70,10 +71,20 @@ export const applyGlobalSessionStatusEvent = (
       return;
     }
     case 'session.idle':
-    case 'session.error': {
+    case 'session.error':
+    case 'session.execution.succeeded':
+    case 'session.execution.failed':
+    case 'session.execution.interrupted': {
       const props = payload.properties as { sessionID?: string } | undefined;
       if (typeof props?.sessionID === 'string' && props.sessionID) {
         setStatus(props.sessionID, normalizeDirectory(directory), 'idle');
+      }
+      return;
+    }
+    case 'session.execution.started': {
+      const props = payload.properties as { sessionID?: string } | undefined;
+      if (typeof props?.sessionID === 'string' && props.sessionID) {
+        setStatus(props.sessionID, normalizeDirectory(directory), 'busy');
       }
       return;
     }

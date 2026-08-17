@@ -1,5 +1,5 @@
 import { useQuery, type QueryClient } from '@tanstack/react-query';
-import type { Agent, Provider } from '@opencode-ai/sdk/v2';
+import type { Agent, Provider } from '@/lib/opencode/v2-types';
 import { opencodeClient } from '@/lib/opencode/client';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -20,7 +20,7 @@ export type AgentWithExtras = Agent & {
   group?: string;
 };
 
-export type ProviderWithModelList = Omit<Provider, 'models'> & { models: Array<Provider['models'][string]> };
+export type ProviderWithModelList = Omit<Provider, 'models'> & { models: Array<NonNullable<Provider['models']>[string]> };
 
 const normalizeDirectory = (directory: string | null | undefined): string | null => directory?.trim() || null;
 

@@ -1,39 +1,28 @@
-import type { OpencodeClient, PermissionRequest, Project, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { OpenCodeClient, SessionStatus } from '@/lib/opencode/v2-types'
+import { mergeConfigDocuments } from "@/lib/opencode/v2-types"
+import type { Project } from '@/sync/types'
+import type { PermissionRequest } from '@/types/permission'
+import type { QuestionRequest } from '@/types/question'
+
 import { retry } from "./retry"
 import type { GlobalState, State } from "./types"
 import { runtimeFetch } from "../lib/runtime-fetch"
 import { emitSyncConfigChanged } from "./sync-refs"
+import {
+  activeMembershipToStatus,
+  locationToPath,
+  mapV2PermissionRequest,
+  mapV2Project,
+  mapV2QuestionRequest,
+  projectWorktree,
+  v2CapabilityUnavailable,
+} from "./v2-runtime"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
-/**
- * SDK returns `{ data, error, response }` without throwing on non-2xx.
- * The silent `x.data!` / `x.data ?? []` pattern lets HTTP 5xx warmup
- * errors become empty state. Wrap into a real Error so retry() fires.
- */
-function unwrap<T>(
-  result: { data?: T; error?: unknown; response?: { status?: number } },
-  name: string,
-): T {
-  if (result.error) {
-    const rawError = result.error
-    const status = result.response?.status
-    const message = typeof rawError === "object" && rawError !== null && "message" in rawError
-      ? String((rawError as { message?: unknown }).message)
-      : String(rawError)
-    const err = new Error(`${name} failed${status ? ` (${status})` : ""}: ${message}`)
-    if (status !== undefined) {
-      ;(err as Error & { status?: number }).status = status
-    }
-    throw err
-  }
-  if (result.data === undefined) {
-    // No error + no data: ambiguous, treat as transient so retry fires.
-    const err = new Error(`${name} returned no data`)
-    ;(err as Error & { status?: number }).status = 503
-    throw err
-  }
-  return result.data
+function locationOf(directory?: string) {
+  if (typeof directory !== "string" || directory.trim().length === 0) return undefined
+  return { location: { directory } }
 }
 
 const requestSignature = (items: Array<{ id: string }> | undefined): string => {
@@ -73,7 +62,7 @@ export function mergeSessionStatusSnapshot(
 
 function projectID(directory: string, projects: Project[]) {
   return projects.find(
-    (project) => project.worktree === directory || project.sandboxes?.includes(directory),
+    (project) => projectWorktree(project) === directory || project.sandboxes?.includes(directory),
   )?.id
 }
 
@@ -82,18 +71,18 @@ function projectID(directory: string, projects: Project[]) {
 // ---------------------------------------------------------------------------
 
 export async function bootstrapGlobal(
-  sdk: OpencodeClient,
+  sdk: OpenCodeClient,
   set: (patch: Partial<GlobalState>) => void,
 ) {
   const results = await Promise.allSettled([
-    retry(() => sdk.path.get().then((x) => set({ path: unwrap(x, "path.get") }))),
-    retry(() => sdk.global.config.get().then((x) => set({ config: unwrap(x, "global.config.get") }))),
+    retry(() => sdk.location.get().then((location) => set({ path: locationToPath(location) }))),
+    retry(() => sdk.config.get().then((entries) => set({ config: mergeConfigDocuments(entries) }))),
     retry(() =>
-      sdk.project.list().then((x) => {
-        const data = unwrap(x, "project.list")
+      sdk.project.list().then((data) => {
         const projects = data
-          .filter((p): p is Project => !!p?.id)
-          .filter((p) => !!p.worktree && !p.worktree.includes("opencode-test"))
+          .filter((p): p is NonNullable<typeof p> => !!p?.id)
+          .map(mapV2Project)
+          .filter((p) => !!projectWorktree(p) && !projectWorktree(p).includes("opencode-test"))
           .sort((a, b) => cmp(a.id, b.id))
         set({ projects })
       }),
@@ -136,7 +125,7 @@ export async function bootstrapGlobal(
 
 export async function bootstrapDirectory(input: {
   directory: string
-  sdk: OpencodeClient
+  sdk: OpenCodeClient
   getState: () => State
   set: (patch: Partial<State>) => void
   global: {
@@ -165,25 +154,29 @@ export async function bootstrapDirectory(input: {
   const phase1Results = await Promise.allSettled([
     seededProject
       ? Promise.resolve()
-      : retry(() => sdk.project.current().then((x) => set({ project: unwrap(x, "project.current").id }))),
-    retry(() => sdk.config.get().then((x) => {
-      const config = unwrap(x, "config.get")
+      : retry(() => sdk.project.current(locationOf(directory)).then((current) => set({ project: current.id }))),
+    retry(() => sdk.config.get(locationOf(directory)).then((entries) => {
+      const config = mergeConfigDocuments(entries)
       set({ config })
       emitSyncConfigChanged(directory, config)
     })),
     retry(() =>
-      sdk.path.get().then((x) => {
-        const data = unwrap(x, "path.get")
+      sdk.location.get(locationOf(directory)).then((location) => {
+        const data = locationToPath(location)
         set({ path: data })
-        const next = projectID(data?.directory ?? directory, g.projects)
+        const next = projectID(data.directory || directory, g.projects)
         if (next) set({ project: next })
       }),
     ),
     retry(async () => {
       const requestedAt = Date.now()
       const before = getState().session_status
-      const x = await sdk.session.status(directory ? { directory } : undefined)
-      const snapshot = unwrap(x, "session.status")
+      const membership = await sdk.session.active()
+      const knownIDs = new Set([
+        ...Object.keys(before),
+        ...getState().session.map((session) => session.id),
+      ])
+      const snapshot = activeMembershipToStatus(membership, knownIDs)
       const current = getState().session_status
       const observedAt = { ...getState().session_status_observed_at }
       for (const sessionID of Object.keys(snapshot)) {
@@ -227,31 +220,35 @@ export async function bootstrapDirectory(input: {
   // These enrich the UI but aren't required for basic functionality.
   // ---------------------------------------------------------------------------
   void Promise.allSettled([
-    retry(() => sdk.mcp.status().then((x) => set({ mcp: unwrap(x, "mcp.status") }))),
-    retry(() => sdk.lsp.status().then((x) => set({ lsp: unwrap(x, "lsp.status") }))),
-    retry(() =>
-      sdk.vcs.get().then((x) => {
-        const current = getState()
-        if (x.error) {
-          throw new Error(`vcs.get failed: ${String(x.error)}`)
-        }
-        set({ vcs: x.data ?? current.vcs })
-      }),
-    ),
+    retry(async () => {
+      const listed = await sdk.mcp.list(locationOf(directory))
+      const mcp: State["mcp"] = {}
+      for (const server of listed.data) {
+        if (!server?.name) continue
+        mcp[server.name] = server.status
+      }
+      set({ mcp })
+    }),
+    retry(async () => {
+      throw v2CapabilityUnavailable("lsp.status")
+    }),
+    retry(async () => {
+      const result = await sdk.vcs.get(locationOf(directory))
+      if (!result?.data) {
+        throw new Error("vcs.get returned no data")
+      }
+      set({ vcs: result.data })
+    }),
     retry(async () => {
       const before = getState()
       const beforeSignatures = new Map(
         Object.entries(before.question ?? {}).map(([sessionID, questions]) => [sessionID, requestSignature(questions)]),
       )
-      const x = await sdk.question.list(directory ? { directory } : undefined)
-      if (x.error) {
-        const status = (x as { response?: { status?: number } }).response?.status
-        const err = new Error(`question.list failed${status ? ` (${status})` : ""}: ${String(x.error)}`)
-        if (status !== undefined) (err as Error & { status?: number }).status = status
-        throw err
-      }
+      const listed = await sdk.question.request.list(locationOf(directory))
       const grouped = groupBySession(
-        (x.data ?? []).filter((q): q is QuestionRequest => !!q?.id && !!q.sessionID),
+        listed.data
+          .filter((q): q is NonNullable<typeof q> => !!q?.id && !!q?.sessionID)
+          .map(mapV2QuestionRequest),
       )
       const current = getState()
       const merged = { ...current.question }
@@ -274,15 +271,11 @@ export async function bootstrapDirectory(input: {
       const beforeSignatures = new Map(
         Object.entries(before.permission ?? {}).map(([sessionID, permissions]) => [sessionID, requestSignature(permissions)]),
       )
-      const x = await sdk.permission.list(directory ? { directory } : undefined)
-      if (x.error) {
-        const status = (x as { response?: { status?: number } }).response?.status
-        const err = new Error(`permission.list failed${status ? ` (${status})` : ""}: ${String(x.error)}`)
-        if (status !== undefined) (err as Error & { status?: number }).status = status
-        throw err
-      }
+      const listed = await sdk.permission.request.list(locationOf(directory))
       const grouped = groupBySession(
-        (x.data ?? []).filter((perm): perm is PermissionRequest => !!perm?.id && !!perm?.sessionID),
+        listed.data
+          .filter((perm): perm is NonNullable<typeof perm> => !!perm?.id && !!perm?.sessionID)
+          .map(mapV2PermissionRequest),
       )
       const current = getState()
       const merged = { ...current.permission }

@@ -1,4 +1,5 @@
-import type { OpencodeClient, Session } from "@opencode-ai/sdk/v2";
+import type { OpenCodeClient, Session, SessionInfo } from '@/lib/opencode/v2-types';
+import { projectSession } from "@/lib/opencode/v2-types";
 import { retry } from "@/sync/retry";
 import { stripSessionListDetails } from "@/sync/sanitize";
 
@@ -48,7 +49,7 @@ export const isVisibleGlobalSession = (
         metadata?: Session['metadata'] | Record<string, unknown> | null;
     },
 ): boolean => {
-    if (HIDDEN_SESSION_TITLES.has(session.title)) return false;
+    if (session.title && HIDDEN_SESSION_TITLES.has(session.title)) return false;
     // Subagent/child sessions never belong in the sidebar root catalog. They
     // load only when the user expands a parent tree node; promoting orphans
     // (parent archived, system-owned, or simply missing from this list) is how
@@ -58,71 +59,25 @@ export const isVisibleGlobalSession = (
     return true;
 };
 
-const toNumber = (value: string | null): number | null => {
-    if (!value) {
-        return null;
-    }
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
+const sessionUpdatedAt = (session: { time?: { updated?: number } }): number => {
+    const updated = session.time?.updated;
+    return typeof updated === "number" && Number.isFinite(updated) ? updated : 0;
 };
 
-const readResponseHeader = (response: unknown, header: string): string | null => {
-    if (!response || typeof response !== "object") {
-        return null;
-    }
-    const container = response as { headers?: unknown };
-    const headers = container.headers;
-    if (!headers || typeof headers !== "object") {
-        return null;
-    }
+const isArchivedSession = (session: { time?: { archived?: number } }): boolean =>
+    typeof session.time?.archived === "number";
 
-    const maybeGet = headers as { get?: (name: string) => string | null };
-    if (typeof maybeGet.get === "function") {
-        return maybeGet.get(header);
-    }
-
-    const maybeRecord = headers as Record<string, unknown>;
-    const direct = maybeRecord[header] ?? maybeRecord[header.toLowerCase()];
-    return typeof direct === "string" ? direct : null;
-};
-
-const formatSdkError = (error: unknown): string => {
-    if (error instanceof Error) return error.message;
-    if (typeof error === "string") return error;
-    if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
-        return (error as { message: string }).message;
-    }
-    try {
-        return JSON.stringify(error);
-    } catch {
-        return String(error);
-    }
-};
-
-const unwrapSessionList = (
-    result: { data?: Session[]; error?: unknown; response?: { status?: number } },
-    operation: string,
-): GlobalSessionRecord[] => {
-    if (result.error) {
-        const status = result.response?.status;
-        const error = new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`);
-        if (status !== undefined) {
-            (error as Error & { status?: number }).status = status;
-        }
-        throw error;
-    }
-
-    if (!Array.isArray(result.data)) {
-        const error = new Error(`${operation} returned no data`);
-        (error as Error & { status?: number }).status = 503;
-        throw error;
-    }
-
-    return result.data as GlobalSessionRecord[];
+/** Project a v2 list row and keep a directory fallback for fixture/legacy rows. */
+const projectListedSession = (info: SessionInfo & { directory?: string }): GlobalSessionRecord => {
+    const projected = projectSession(info);
+    return stripSessionListDetails({
+        ...projected,
+        directory: projected.directory || info.directory,
+    }) as GlobalSessionRecord;
 };
 
 export async function listGlobalSessionPages(
-    apiClient: OpencodeClient,
+    apiClient: OpenCodeClient,
     options: {
         directory?: string;
         archived: boolean;
@@ -143,7 +98,8 @@ export async function listGlobalSessionPages(
 ): Promise<GlobalSessionRecord[]> {
     const all: GlobalSessionRecord[] = [];
     const seenIds = new Set<string>();
-    let cursor: number | undefined = options.cursor;
+    const beforeUpdated = options.cursor;
+    let v2Cursor: string | undefined;
 
     while (true) {
         const remaining = options.maxItems === undefined
@@ -151,32 +107,42 @@ export async function listGlobalSessionPages(
             : Math.max(0, options.maxItems - all.length);
         if (remaining === 0) break;
         const requestLimit = Math.min(options.pageSize, remaining);
-        const { response, payload: page } = await retry(async () => {
+        const page = await retry(async () => {
             const timeoutSignal = options.timeoutMs === undefined
                 ? undefined
                 : AbortSignal.timeout(options.timeoutMs);
             const requestSignal = options.signal && timeoutSignal
                 ? AbortSignal.any([options.signal, timeoutSignal])
                 : options.signal ?? timeoutSignal;
-            const result = await apiClient.experimental.session.list({
+            const result = await apiClient.session.list({
                 ...(options.directory ? { directory: options.directory } : {}),
-                archived: options.archived,
-                ...(options.roots !== undefined ? { roots: options.roots } : {}),
-                ...(options.start !== undefined ? { start: options.start } : {}),
+                ...(options.roots === true ? { parentID: null } : {}),
                 limit: requestLimit,
-                ...(cursor !== undefined ? { cursor } : {}),
+                ...(v2Cursor ? { cursor: v2Cursor } : {}),
             }, requestSignal ? { signal: requestSignal } : undefined);
-            return {
-                response: result.response,
-                // Unwrap inside retry so resolved SDK `{ error }` responses
-                // participate in the transient 5xx retry policy.
-                payload: unwrapSessionList(result, "experimental.session.list")
-                    .map((session) => stripSessionListDetails(session) as GlobalSessionRecord),
-            };
+            if (!result || !Array.isArray(result.data)) {
+                const error = new Error("session.list returned no data");
+                (error as Error & { status?: number }).status = 503;
+                throw error;
+            }
+            return result;
         }, { attempts: options.retryAttempts ?? 3, delay: 500 });
-        if (page.length === 0) break;
 
-        const payload = page.filter(isVisibleGlobalSession);
+        const raw = page.data.map((session) => projectListedSession(session));
+        if (raw.length === 0) break;
+
+        const payload = raw.filter((session) => {
+            if (options.archived ? !isArchivedSession(session) : isArchivedSession(session)) {
+                return false;
+            }
+            if (options.start !== undefined && sessionUpdatedAt(session) < options.start) {
+                return false;
+            }
+            if (beforeUpdated !== undefined && sessionUpdatedAt(session) >= beforeUpdated) {
+                return false;
+            }
+            return isVisibleGlobalSession(session);
+        });
 
         let appended = 0;
         for (const session of payload) {
@@ -190,20 +156,14 @@ export async function listGlobalSessionPages(
         }
         if (options.maxItems !== undefined && all.length >= options.maxItems) break;
 
-        // Stop on partial page — nothing more to fetch.
-        if (page.length < requestLimit) break;
+        // Filtered-empty pages are not exhausted — keep walking the raw cursor.
+        if (raw.length < requestLimit) break;
 
-        // Prefer server header; fall back to last session's `time.updated`
-        // (cursor semantics on server = "updated strictly before this timestamp").
-        const headerCursor = toNumber(readResponseHeader(response, "x-next-cursor"));
-        const lastUpdated = page[page.length - 1]?.time?.updated;
-        const nextCursor = headerCursor
-            ?? (typeof lastUpdated === "number" && Number.isFinite(lastUpdated) ? lastUpdated : undefined);
-
-        if (nextCursor === undefined) break;
-        // Loop guard: cursor must move backwards in time.
-        if (cursor !== undefined && nextCursor >= cursor) break;
-        cursor = nextCursor;
+        const nextCursor = typeof page.cursor?.next === "string" && page.cursor.next.length > 0
+            ? page.cursor.next
+            : undefined;
+        if (!nextCursor || nextCursor === v2Cursor) break;
+        v2Cursor = nextCursor;
     }
 
     return all;

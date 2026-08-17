@@ -35,13 +35,11 @@ globalThis.window = {
 
 function createReplaySdk(events, hold) {
   return {
-    global: {
-      event: async () => ({
-        stream: (async function* () {
+    event: {
+      subscribe: async () => ((async function* () {
           for (const e of events) yield e;
           await hold;
-        })(),
-      }),
+        })()),
     },
   };
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopLocalOriginActive } from '@/lib/desktop';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
@@ -233,10 +233,15 @@ const collectLiveData = (): LiveData => {
     const state = store.getState();
     // Normalize the key so it matches the session directory regardless of
     // trailing slashes / separators.
-    if (state.vcs?.branch) branchByDirectory.set(normalizeProjectPath(directory) ?? directory, state.vcs.branch);
+    const branch = typeof state.vcs?.branch === 'string'
+      ? state.vcs.branch
+      : typeof state.vcs?.branch?.current === 'string'
+        ? state.vcs.branch.current
+        : '';
+    if (branch) branchByDirectory.set(normalizeProjectPath(directory) ?? directory, branch);
 
     for (const session of state.session) {
-      if (!session?.id) continue;
+      if (!session?.id || !session.title) continue;
       titleById.set(session.id, session.title);
     }
 
@@ -449,9 +454,23 @@ export const useTraySync = (): void => {
         isDisposed: () => disposed,
         // null = fetch failed → keep that directory's current entries;
         // {} = authoritative "everything here is idle".
-        fetchStatus: (directory) => opencodeClient
-          .getSessionStatusForDirectory(directory)
-          .catch(() => null),
+        fetchStatus: async () => {
+          try {
+            // v2 session.active is process-global; a failed call stays null so
+            // we do not pretend every session is idle.
+            const membership = await opencodeClient.getSdkClient().session.active();
+            if (!membership || typeof membership !== 'object' || Array.isArray(membership)) {
+              return null;
+            }
+            const snapshot: Record<string, { type: string }> = {};
+            for (const [sessionID, entry] of Object.entries(membership)) {
+              if (entry?.type === 'running') snapshot[sessionID] = { type: 'busy' };
+            }
+            return snapshot;
+          } catch {
+            return null;
+          }
+        },
         applySnapshot: (directory, raw, sessionIds) => {
           applyGlobalSessionStatusSnapshot(directory, raw, [...sessionIds]);
         },

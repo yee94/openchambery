@@ -1,5 +1,5 @@
 import { useQuery, type QueryClient } from '@tanstack/react-query';
-import type { McpStatus } from '@opencode-ai/sdk/v2';
+import type { McpStatus } from '@/lib/opencode/v2-types';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
@@ -34,6 +34,10 @@ const getMcpApiClient = (directory: string | null) => directory
   ? opencodeClient.getScopedApiClient(directory)
   : opencodeClient.getApiClient();
 
+const locationOf = (directory: string | null) => (
+  directory ? { location: { directory } } : undefined
+);
+
 export const mcpConfigsQueryOptions = (
   directory: string | null = resolveMcpConfigQueryDirectory(),
   transport = getRuntimeTransportIdentity(),
@@ -65,8 +69,17 @@ export const mcpStatusQueryOptions = (
   return {
     queryKey: mcpStatusQueryKey(normalizedDirectory, transport),
     queryFn: async (): Promise<McpStatusMap> => {
-      const result = await getMcpApiClient(normalizedDirectory).mcp.status({}, { throwOnError: true });
-      return result.data as McpStatusMap;
+      // v2 has mcp.list (with per-server status), not 1.x mcp.status / {data,error}.
+      const listed = await getMcpApiClient(normalizedDirectory).mcp.list(locationOf(normalizedDirectory));
+      if (!Array.isArray(listed.data)) {
+        throw new Error('v2 mcp.list returned no data');
+      }
+      const status: McpStatusMap = {};
+      for (const server of listed.data) {
+        if (!server?.name) continue;
+        status[server.name] = server.status;
+      }
+      return status;
     },
     staleTime: 2_000,
     retry: 1,

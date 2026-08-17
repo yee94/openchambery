@@ -5,7 +5,8 @@
  * session-actions) use them to read child-store domain data without hooks.
  */
 
-import type { Config, OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import type { Config, OpenCodeClient } from '@/lib/opencode/v2-types'
+
 import type { ChildStoreManager } from "./child-store"
 import {
   getSessionMaterializationStatusFromProjection,
@@ -22,7 +23,7 @@ let cachedSessionSlices = new Map<string, State["session"]>()
 let cachedSessionsById = new Map<string, State["session"][number]>()
 
 export function setSyncRefs(
-  _sdk: OpencodeClient,
+  _sdk: OpenCodeClient,
   childStores: ChildStoreManager,
   directory: string,
   registerSessionDirectory?: (sessionID: string, directory: string) => void,
@@ -189,7 +190,7 @@ export function resolveMaterializedSessionDirectory(
 }
 
 /** Read messages for a session via TranscriptRepository when bound. */
-export function getSyncMessages(sessionId: string, directory?: string): import("@opencode-ai/sdk/v2/client").Message[] {
+export function getSyncMessages(sessionId: string, directory?: string): import('@/lib/opencode/v2-types').Message[] {
   if (!sessionId) return []
   try {
     // Lazy import avoids circular init with transcript-repository-runtime.
@@ -204,7 +205,7 @@ export function getSyncMessages(sessionId: string, directory?: string): import("
       const data = bound.getTranscript(transcriptScope(dir, sessionId))
       return data.messageOrder
         .map((id) => data.messagesByID[id])
-        .filter((message): message is import("@opencode-ai/sdk/v2/client").Message => Boolean(message))
+        .filter((message): message is import('@/lib/opencode/v2-types').Message => Boolean(message))
     }
     if (_childStores) {
       const store = _childStores.getChild(dir)
@@ -213,7 +214,7 @@ export function getSyncMessages(sessionId: string, directory?: string): import("
         const data = repository.getTranscript(transcriptScope(dir, sessionId))
         return data.messageOrder
           .map((id) => data.messagesByID[id])
-          .filter((message): message is import("@opencode-ai/sdk/v2/client").Message => Boolean(message))
+          .filter((message): message is import('@/lib/opencode/v2-types').Message => Boolean(message))
       }
     }
   } catch {
@@ -266,7 +267,7 @@ export function getSyncSessionMaterializationStatus(
 }
 
 /** Read parts for a message via TranscriptRepository when bound. */
-export function getSyncParts(messageId: string, directory?: string): import("@opencode-ai/sdk/v2/client").Part[] {
+export function getSyncParts(messageId: string, directory?: string): import('@/lib/opencode/v2-types').Part[] {
   if (!messageId) return []
   try {
     const {

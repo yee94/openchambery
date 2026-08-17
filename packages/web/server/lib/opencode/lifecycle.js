@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './managed-process-registry.js';
+import { OPENCODE_V1_MIGRATION_PATH, fetchV1MigrationGate } from './v1-migration-gate.js';
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -14,7 +15,8 @@ const HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES = parsePositiveInt(
 );
 const HEALTH_CHECK_INTERVAL_OVERRIDE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_INTERVAL_MS, 0);
 const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_CACHE_MS, 750);
-const OPENCODE_HEALTH_PATH = '/global/health';
+const OPENCODE_HEALTH_PATH = '/api/health';
+const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
 
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
@@ -239,7 +241,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const createManagedOpenCodeServerProcess = async ({ hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0 }) => {
-    let binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
+    let binary = (process.env.OPENCODE_BINARY || 'opencode2').trim() || 'opencode2';
     let args = ['serve', '--hostname', hostname, '--port', String(port)];
     let launchWrapperType = null;
 
@@ -306,8 +308,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           stdout += chunk.toString();
           const lines = stdout.split('\n');
           for (const line of lines) {
-            if (!line.startsWith('opencode server listening')) continue;
-            const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
+            const trimmed = line.trim();
+            // v2 prints `server listening on http://...` without the `opencode `
+            // prefix; 1.x still prints `opencode server listening on ...`.
+            if (!trimmed.startsWith('opencode server listening') && !trimmed.startsWith('server listening')) continue;
+            const match = trimmed.match(/on\s+(https?:\/\/[^\s]+)/);
             if (!match) {
               finish(reject, new Error(`Failed to parse server url from output: ${line}`));
               return;
@@ -403,23 +408,63 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     });
   };
 
+  // Official v2 only publishes GET /api/experimental/migration/v1. Backfill
+  // runs inside opencode2; we poll status and never POST.
+  const probeV1MigrationGate = async (signal) => fetchV1MigrationGate({
+    url: buildOpenCodeUrl(OPENCODE_V1_MIGRATION_PATH, ''),
+    headers: getOpenCodeAuthHeaders(),
+    signal,
+  });
+
+  // Health ok is not enough to pull session messages. required/running/error
+  // keep isOpenCodeReady false so the proxy ready gate still blocks transcript.
+  const applyV1MigrationGate = (gate) => {
+    state.v1Migration = gate;
+    if (gate.admitTranscript) {
+      state.isOpenCodeReady = true;
+      state.openCodeNotReadySince = 0;
+      return true;
+    }
+    state.isOpenCodeReady = false;
+    if (!state.openCodeNotReadySince) {
+      state.openCodeNotReadySince = Date.now();
+    }
+    if (gate.phase === 'error' && gate.error) {
+      state.lastOpenCodeError = gate.error;
+    }
+    return false;
+  };
+
+  // v2 health lives at /api/health; /global/health remains a probe fallback
+  // for older sidecars. Both require Basic auth from getOpenCodeAuthHeaders().
+  const fetchOpenCodeHealthOk = async (urlForPath, signal) => {
+    const headers = { Accept: 'application/json', ...getOpenCodeAuthHeaders() };
+    for (const healthPath of [OPENCODE_HEALTH_PATH, OPENCODE_HEALTH_FALLBACK_PATH]) {
+      try {
+        const response = await fetch(urlForPath(healthPath), {
+          method: 'GET',
+          headers,
+          signal,
+        });
+        if (!response.ok) continue;
+        const body = await response.json().catch(() => null);
+        if (body?.healthy === true) return true;
+      } catch {
+      }
+    }
+    return false;
+  };
+
   const isOpenCodeProcessHealthy = async () => {
     if (!state.openCodeProcess || !state.openCodePort) {
       return false;
     }
 
     try {
-      const response = await fetch(buildOpenCodeUrl(OPENCODE_HEALTH_PATH, ''), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-      });
-      if (!response.ok) return false;
-      const body = await response.json().catch(() => null);
-      return body?.healthy === true;
+      return await fetchOpenCodeHealthOk(
+        (healthPath) => buildOpenCodeUrl(healthPath, ''),
+        AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS)
+      );
     } catch {
       return false;
     }
@@ -434,18 +479,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3000);
       const base = origin ?? `http://127.0.0.1:${port}`;
-      const response = await fetch(`${base}${OPENCODE_HEALTH_PATH}`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: controller.signal,
-      });
+      const healthy = await fetchOpenCodeHealthOk(
+        (healthPath) => `${base}${healthPath}`,
+        controller.signal
+      );
       clearTimeout(timeout);
-      if (!response.ok) return false;
-      const body = await response.json().catch(() => null);
-      return body?.healthy === true;
+      return healthy;
     } catch {
       return false;
     }
@@ -523,9 +562,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         setOpenCodePort(port);
         setDetectedOpenCodeApiPrefix(prefix);
 
-        state.isOpenCodeReady = true;
-        state.lastOpenCodeError = null;
-        state.openCodeNotReadySince = 0;
+        const gate = await probeV1MigrationGate(AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS));
+        if (applyV1MigrationGate(gate)) {
+          state.lastOpenCodeError = null;
+        }
 
         return serverInstance;
       }
@@ -593,12 +633,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         if (healthy) {
           console.log(`External OpenCode server on port ${probePort} is healthy`);
           setOpenCodePort(probePort);
-          state.isOpenCodeReady = true;
-          state.lastOpenCodeError = null;
-          state.openCodeNotReadySince = 0;
+          const gate = await probeV1MigrationGate(AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS));
+          if (applyV1MigrationGate(gate)) {
+            state.lastOpenCodeError = null;
+          }
           syncToHmrState();
         } else {
           state.lastOpenCodeError = `External OpenCode server on port ${probePort} is not responding`;
+          state.v1Migration = null;
           console.error(state.lastOpenCodeError);
           throw new Error(state.lastOpenCodeError);
         }
@@ -684,30 +726,28 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       try {
         const controller = new AbortController();
         timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
-        const response = await fetch(buildOpenCodeUrl(OPENCODE_HEALTH_PATH, ''), {
-          method: 'GET',
-          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-          signal: controller.signal,
-        });
+        const healthy = await fetchOpenCodeHealthOk(
+          (healthPath) => buildOpenCodeUrl(healthPath, ''),
+          controller.signal
+        );
         clearTimeout(timeout);
         timeout = null;
 
-        if (!response.ok) {
-          lastError = new Error(`OpenCode health endpoint responded with status ${response.status}`);
-          await new Promise((resolve) => setTimeout(resolve, intervalMs));
-          continue;
-        }
-
-        const body = await response.json().catch(() => null);
-        if (body?.healthy !== true) {
+        if (!healthy) {
           lastError = new Error('OpenCode health endpoint returned unhealthy response');
           await new Promise((resolve) => setTimeout(resolve, intervalMs));
           continue;
         }
 
-        state.isOpenCodeReady = true;
-        state.lastOpenCodeError = null;
-        return;
+        const gate = await probeV1MigrationGate(controller.signal);
+        if (applyV1MigrationGate(gate)) {
+          state.lastOpenCodeError = null;
+          return;
+        }
+
+        lastError = new Error(gate.error || `V1 migration is ${gate.phase}`);
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        continue;
       } catch (error) {
         lastError = error;
       } finally {
@@ -1017,6 +1057,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         await restartOpenCode();
       } else {
         resetHealthFailureState();
+        try {
+          const gate = await probeV1MigrationGate(AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS));
+          applyV1MigrationGate(gate);
+        } catch {
+        }
       }
     })().finally(() => {
       healthCheckCyclePromise = null;

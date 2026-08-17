@@ -1,4 +1,4 @@
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types'
 
 const CHILDREN_CACHE_TTL_MS = 15_000;
 const CHILDREN_CACHE_MAX = 100;

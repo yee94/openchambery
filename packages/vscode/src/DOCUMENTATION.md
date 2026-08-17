@@ -105,10 +105,18 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Limits providers, models, defaults, and variants; validates identifiers and scalar bounds; and emits null-prototype dictionaries for dynamic catalog maps.
   - Requires a non-empty bridge directory and treats SDK errors as catalog failures before projection.
 
+- `opencode-sidecar.ts`
+  - Shared OpenCode 2 sidecar contract used by the extension host (same parse/health rules as web).
+  - Auto-discovery looks for `opencode2` (PATH, `~/.bun/bin/opencode2`, `~/.opencode/bin/opencode2`, Homebrew). PATH 1.x `opencode` is not a hit.
+  - A resolved basename of `opencode` / `opencode.exe` / `opencode.cmd` fails closed with `OPENCODE_BINARY_INVALID` and names `opencode2`.
+  - Listening accepts `server listening on http://…` and the legacy `opencode server listening on …` line.
+  - Health probes `GET /api/health` first (`{ healthy: true }`), then `/global/health`, with Basic auth (username `opencode`). The password is never written to logs.
+
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
+  - `api:opencode/version` reads version from the sidecar health probe (`/api/health`, then `/global/health`) with the manager's Basic auth headers.
 
 ## Extension guideline
 

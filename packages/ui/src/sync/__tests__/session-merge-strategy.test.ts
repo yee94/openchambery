@@ -29,7 +29,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
     stale: false,
     expected: {
       id: "initial",
-      onStale: "drop",
+      onStale: "backfill",
       messages: "insert-only",
       parts: "replace",
       preserveStreaming: "assistant",
@@ -39,10 +39,10 @@ const RESOLUTION_TABLE: ReadonlyArray<{
     purpose: "initial",
     stale: true,
     expected: {
-      id: "initial",
-      onStale: "drop",
+      id: "recovery-backfill",
+      onStale: "backfill",
       messages: "insert-only",
-      parts: "replace",
+      parts: "skip-existing",
       preserveStreaming: "assistant",
     },
   },
@@ -73,7 +73,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
     stale: false,
     expected: {
       id: "materialize",
-      onStale: "drop",
+      onStale: "backfill",
       messages: "insert-only",
       parts: "replace",
       preserveStreaming: "assistant",
@@ -83,10 +83,10 @@ const RESOLUTION_TABLE: ReadonlyArray<{
     purpose: "materialize",
     stale: true,
     expected: {
-      id: "materialize",
-      onStale: "drop",
+      id: "recovery-backfill",
+      onStale: "backfill",
       messages: "insert-only",
-      parts: "replace",
+      parts: "skip-existing",
       preserveStreaming: "assistant",
     },
   },
@@ -190,10 +190,10 @@ describe("shouldDropStalePage", () => {
     })
   }
 
-  test("drops initial/prepend/materialize; keeps recovery and reconcile-page", () => {
-    expect(shouldDropStalePage("initial")).toBe(true)
+  test("drops prepend; initial/materialize/recovery/reconcile-page backfill", () => {
+    expect(shouldDropStalePage("initial")).toBe(false)
     expect(shouldDropStalePage("prepend")).toBe(true)
-    expect(shouldDropStalePage("materialize")).toBe(true)
+    expect(shouldDropStalePage("materialize")).toBe(false)
     expect(shouldDropStalePage("recovery")).toBe(false)
     expect(shouldDropStalePage("reconcile-page")).toBe(false)
   })

@@ -5,11 +5,11 @@ let activeProjectPath = '/workspace/project';
 const fetchCalls: Array<{ input: string; init?: RequestInit }> = [];
 const statusDirectories: Array<string | null> = [];
 let fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = async () => new Response('[]');
-let statusImpl: () => Promise<{ data?: Record<string, unknown> }> = async () => ({ data: {} });
+let statusImpl: () => Promise<{ data?: Array<{ name: string; status: { status: string } }> }> = async () => ({ data: [] });
 
 const apiFor = (directory: string | null) => ({
   mcp: {
-    status: async () => {
+    list: async () => {
       statusDirectories.push(directory);
       return statusImpl();
     },
@@ -70,7 +70,7 @@ describe('mcpQueries', () => {
     fetchCalls.length = 0;
     statusDirectories.length = 0;
     fetchImpl = async () => jsonResponse([]);
-    statusImpl = async () => ({ data: {} });
+    statusImpl = async () => ({ data: [] });
   });
 
   test('normalizes directory and scopes config request by transport', async () => {
@@ -88,7 +88,7 @@ describe('mcpQueries', () => {
   });
 
   test('status uses the scoped official SDK client', async () => {
-    statusImpl = async () => ({ data: { server: { status: 'connected' } } });
+    statusImpl = async () => ({ data: [{ name: 'server', status: { status: 'connected' } }] });
     const options = mcpStatusQueryOptions('/workspace/a/', 'runtime-b');
 
     const status = await options.queryFn();
@@ -123,18 +123,25 @@ describe('mcpQueries', () => {
   });
 
   test('matching status refreshes dedupe by runtime and directory', async () => {
-    let resolveStatus: ((value: { data: Record<string, unknown> }) => void) | undefined;
+    let resolveStatus: ((value: { data: Array<{ name: string; status: { status: string } }> }) => void) | undefined;
     statusImpl = async () => new Promise((resolve) => { resolveStatus = resolve; });
     const first = refreshMcpStatusQuery(queryClient, activeProjectPath, runtimeKey);
     const second = refreshMcpStatusQuery(queryClient, activeProjectPath, runtimeKey);
-    resolveStatus?.({ data: {} });
+    resolveStatus?.({ data: [] });
     await Promise.all([first, second]);
 
     expect(statusDirectories).toHaveLength(1);
   });
 
+  test('status fails closed when v2 mcp.list returns no data array', async () => {
+    statusImpl = async () => ({});
+    const options = mcpStatusQueryOptions('/workspace/a/', runtimeKey);
+
+    await expect(options.queryFn()).rejects.toThrow('v2 mcp.list returned no data');
+  });
+
   test('failed status refresh preserves the prior complete snapshot', async () => {
-    statusImpl = async () => ({ data: { server: { status: 'connected' } } });
+    statusImpl = async () => ({ data: [{ name: 'server', status: { status: 'connected' } }] });
     await refreshMcpStatusQuery(queryClient, activeProjectPath, runtimeKey);
     statusImpl = async () => { throw new Error('status unavailable'); };
 

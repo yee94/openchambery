@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { AddPluginDialog } from './AddPluginDialog';
 import { RegistryBadge } from './RegistryBadge';
+import { isV1IncompatiblePlugin } from '@/lib/plugin-v1-compatibility';
 import { toast } from '@/components/ui';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
@@ -207,6 +208,14 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
         title={
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="min-w-0 flex-1 truncate">{entry.spec}</span>
+            {isV1IncompatiblePlugin(entry) ? (
+              <span
+                className="typography-micro shrink-0 rounded-full border border-[var(--status-warning)] px-1.5 py-0.5 text-[var(--status-warning)]"
+                title={t('settings.plugins.compatibility.v1Incompatible.tooltip')}
+              >
+                {t('settings.plugins.compatibility.v1Incompatible')}
+              </span>
+            ) : null}
             <RegistryBadge info={info} />
           </span>
         }
@@ -231,7 +240,19 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
   const renderFile = (file: PluginFile) => (
     <SettingsSidebarItem
       key={file.id}
-      title={file.fileName}
+      title={
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate">{file.fileName}</span>
+          {isV1IncompatiblePlugin(file) ? (
+            <span
+              className="typography-micro shrink-0 rounded-full border border-[var(--status-warning)] px-1.5 py-0.5 text-[var(--status-warning)]"
+              title={t('settings.plugins.compatibility.v1Incompatible.tooltip')}
+            >
+              {t('settings.plugins.compatibility.v1Incompatible')}
+            </span>
+          ) : null}
+        </span>
+      }
       metadata={t('settings.plugins.sidebar.kind.file')}
       selected={selectedId === file.id}
       onSelect={() => handleSelect(file.id)}

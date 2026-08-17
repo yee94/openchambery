@@ -5,7 +5,7 @@
  * import the legacy page-loader / prefetch stack.
  */
 
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
 
 export type SessionMessageRecord<
   TInfo extends { id: string; parentID?: string | null } = { id: string; parentID?: string | null },

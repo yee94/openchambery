@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import {
   getSessionMaterializationStatus,
   getSessionMaterializationStatusFromProjection,

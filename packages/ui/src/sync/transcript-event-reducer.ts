@@ -4,11 +4,14 @@
  * Mutates a transcript-only draft (message/part maps). Production DirectoryStore
  * no longer carries these fields; Query/store adapters and tests own the draft.
  */
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
 import { Binary } from "./binary"
 import { conversationIndexOf } from "./conversation-order"
 import { syncDebug } from "./debug"
 import type { DirectoryEventResult, SessionMaterializationReason } from "./event-reducer"
+import { applySessionCompactionLiveEvent } from "./session-compaction-api"
 
 export type TranscriptEventDraft = {
   message: Record<string, Message[]>
@@ -303,8 +306,253 @@ export function applyTranscriptDirectoryEvent(
       return true
     }
     default:
-      return false
+      return applyV2LiveOverlay(draft, event)
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+function projectionPartID(messageID: string, type: string, ordinal: number): string {
+  return `${messageID}:${type}:${ordinal}`
+}
+
+function ensureAssistantMessage(
+  draft: TranscriptEventDraft,
+  sessionID: string,
+  messageID: string,
+): boolean {
+  const messages = draft.message[sessionID]
+  if (messages && conversationIndexOf(messages, messageID) >= 0) return false
+  const info = {
+    id: messageID,
+    sessionID,
+    role: "assistant",
+    time: { created: 0 },
+  } as Message
+  draft.message[sessionID] = messages ? [...messages, info] : [info]
+  return true
+}
+
+function toolOutput(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined
+  return content
+    .flatMap((item) => {
+      const record = asRecord(item)
+      return record && record.type === "text" && typeof record.text === "string" ? [record.text] : []
+    })
+    .join("\n")
+}
+
+function findTypedPart(
+  parts: Part[],
+  type: "text" | "reasoning",
+  messageID: string,
+  ordinal: number,
+): number {
+  const id = projectionPartID(messageID, type, ordinal)
+  const byID = parts.findIndex((part) => part.id === id)
+  if (byID >= 0) return byID
+  const typed = parts
+    .map((part, index) => ({ part, index }))
+    .filter((entry) => entry.part.type === type)
+  return typed[ordinal]?.index ?? -1
+}
+
+function upsertTextLikePart(
+  draft: TranscriptEventDraft,
+  sessionID: string,
+  messageID: string,
+  type: "text" | "reasoning",
+  ordinal: number,
+  nextText: string | ((current: string) => string),
+): boolean {
+  ensureAssistantMessage(draft, sessionID, messageID)
+  const parts = draft.part[messageID] ? [...draft.part[messageID]!] : []
+  let index = findTypedPart(parts, type, messageID, ordinal)
+  if (index < 0) {
+    const part = {
+      id: projectionPartID(messageID, type, ordinal),
+      sessionID,
+      messageID,
+      type,
+      text: "",
+    } as Part
+    parts.push(part)
+    index = parts.length - 1
+  }
+  const current = parts[index] as Part & { text?: string }
+  const text = typeof nextText === "function" ? nextText(current.text ?? "") : nextText
+  parts[index] = { ...current, text } as Part
+  draft.part[messageID] = parts
+  return true
+}
+
+function findToolIndex(parts: Part[], toolID: string): number {
+  return parts.findIndex((part) => (
+    part.id === toolID
+    || (part as { callID?: string }).callID === toolID
+    || (part.type === "tool" && part.id === toolID)
+  ))
+}
+
+function upsertToolPart(
+  draft: TranscriptEventDraft,
+  sessionID: string,
+  messageID: string,
+  toolID: string,
+  name: string | undefined,
+  update: (part: Part) => Part,
+): boolean {
+  ensureAssistantMessage(draft, sessionID, messageID)
+  const parts = draft.part[messageID] ? [...draft.part[messageID]!] : []
+  let index = findToolIndex(parts, toolID)
+  if (index < 0) {
+    parts.push({
+      id: toolID,
+      sessionID,
+      messageID,
+      type: "tool",
+      tool: name ?? "tool",
+      callID: toolID,
+      state: { status: "pending", input: "", output: undefined, metadata: {} },
+    } as Part)
+    index = parts.length - 1
+  }
+  parts[index] = update(parts[index]!)
+  draft.part[messageID] = parts
+  return true
+}
+
+/**
+ * Overlay official v2 live events onto the existing Message+Part draft.
+ * Deltas are incremental; they are not treated as replayable history.
+ */
+function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): DirectoryEventResult {
+  const type = String(event.type)
+  if (type.startsWith("session.compaction.")) {
+    return applySessionCompactionLiveEvent(draft, event)
+  }
+  const props = asRecord(event.properties)
+  if (!props) return false
+  const sessionID = asString(props.sessionID)
+  const messageID = asString(props.assistantMessageID)
+  if (!sessionID || !messageID) return false
+  const ordinal = typeof props.ordinal === "number" ? props.ordinal : 0
+
+  if (type === "session.text.started") {
+    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, "")
+  }
+  if (type === "session.text.delta") {
+    const delta = typeof props.delta === "string" ? props.delta : ""
+    if (!delta) return false
+    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, (current) => current + delta)
+  }
+  if (type === "session.text.ended") {
+    const text = typeof props.text === "string" ? props.text : ""
+    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, text)
+  }
+  if (type === "session.reasoning.started") {
+    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, "")
+  }
+  if (type === "session.reasoning.delta") {
+    const delta = typeof props.delta === "string" ? props.delta : ""
+    if (!delta) return false
+    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, (current) => current + delta)
+  }
+  if (type === "session.reasoning.ended") {
+    const text = typeof props.text === "string" ? props.text : ""
+    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, text)
+  }
+
+  const toolID = asString(props.id)
+  if (!toolID) return false
+  const name = asString(props.name)
+
+  if (type === "session.tool.input.started") {
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => part)
+  }
+  if (type === "session.tool.input.delta") {
+    const delta = typeof props.delta === "string" ? props.delta : ""
+    if (!delta) return false
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
+      const state = asRecord((part as { state?: unknown }).state) ?? {}
+      if (asString(state.status) && state.status !== "pending" && state.status !== "streaming") {
+        return part
+      }
+      const input = typeof state.input === "string" ? state.input + delta : delta
+      return { ...part, state: { ...state, status: "pending", input } } as Part
+    })
+  }
+  if (type === "session.tool.input.ended") {
+    const text = typeof props.text === "string" ? props.text : ""
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
+      const state = asRecord((part as { state?: unknown }).state) ?? {}
+      return { ...part, state: { ...state, input: text } } as Part
+    })
+  }
+  if (type === "session.tool.called") {
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
+      const state = asRecord((part as { state?: unknown }).state) ?? {}
+      return {
+        ...part,
+        state: {
+          ...state,
+          status: "pending",
+          input: props.input ?? state.input ?? {},
+          metadata: asRecord(state.metadata) ?? {},
+        },
+      } as Part
+    })
+  }
+  if (type === "session.tool.progress") {
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
+      const state = asRecord((part as { state?: unknown }).state) ?? {}
+      return {
+        ...part,
+        state: { ...state, metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {} },
+      } as Part
+    })
+  }
+  if (type === "session.tool.success") {
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
+      const state = asRecord((part as { state?: unknown }).state) ?? {}
+      return {
+        ...part,
+        state: {
+          ...state,
+          status: "completed",
+          input: state.input ?? props.input ?? {},
+          output: toolOutput(props.content),
+          metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {},
+        },
+      } as Part
+    })
+  }
+  if (type === "session.tool.failed") {
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
+      const state = asRecord((part as { state?: unknown }).state) ?? {}
+      const error = asRecord(props.error)
+      return {
+        ...part,
+        state: {
+          ...state,
+          status: "error",
+          input: state.input ?? {},
+          output: toolOutput(props.content),
+          error: error ? asString(error.message) ?? asString(props.error) : asString(props.error),
+          metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {},
+        },
+      } as Part
+    })
+  }
+  return false
 }
 
 export type { SessionMaterializationReason }

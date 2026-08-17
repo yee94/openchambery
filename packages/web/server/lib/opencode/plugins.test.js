@@ -138,6 +138,18 @@ describe('opencode plugins data layer', () => {
     ]);
   });
 
+  test('lists V1 plugins as incompatible instead of a silent load failure', () => {
+    writeJson(userConfigPath, { plugin: ['oh-my-opencode'] });
+    const entries = plugins.listPluginEntries(projectDir);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        spec: 'oh-my-opencode',
+        compatibility: 'v1-incompatible',
+        compatible: false,
+      }),
+    ]);
+  });
+
   test('encodes and decodes ids', () => {
     const id = plugins.encodePluginId('config', 'user:oh-my-openagent@4.3.0');
     expect(plugins.decodePluginId(id)).toEqual({ prefix: 'config', value: 'user:oh-my-openagent@4.3.0' });

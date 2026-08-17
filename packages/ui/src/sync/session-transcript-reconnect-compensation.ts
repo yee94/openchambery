@@ -66,6 +66,7 @@ import { SessionMessageRuntimeStaleError } from "./session-message-query"
 export type QueryTranscriptCompensationRepository = TranscriptRepository & {
   ensureInitial: (scope: TranscriptScope) => Promise<TranscriptData>
   destructiveReset: (scope: TranscriptScope) => Promise<TranscriptData>
+  refreshFromAuthority?: (scope: TranscriptScope) => Promise<TranscriptData>
   getCacheBudget?: () => TranscriptQueryCacheBudget
 }
 
@@ -600,6 +601,7 @@ export function createTranscriptReconnectCompensationController(
    * Anchorless / unknown-gap path: refresh via ensureInitial without purging.
    * Subagent transcripts often lack authored-user anchors (subtask/synthetic);
    * destructiveReset would blank the Context Panel on focus/reconnect recovery.
+   * Ticket 05: the refresh itself is force GET (`refreshFromAuthority`).
    */
   const runEnsureTail = async (
     scope: TranscriptScope,
@@ -629,7 +631,11 @@ export function createTranscriptReconnectCompensationController(
     )
 
     try {
-      await repository.ensureInitial(scope)
+      // Ticket 05: disconnect / unknown-gap alignment is force GET, not ensureInitial.
+      if (typeof repository.refreshFromAuthority !== "function") {
+        throw new Error("reconnect alignment requires refreshFromAuthority")
+      }
+      await repository.refreshFromAuthority(scope)
       assertRuntimeCurrent(
         { transport: cacheScope.transport, generation: cacheScope.generation },
         input,
@@ -1004,7 +1010,11 @@ export function createTranscriptReconnectCompensationController(
 
     try {
       assertRuntimeCurrent(identity, input)
-      const data = await repository.ensureInitial(transcriptScope)
+      // Ticket 05: observe-after-disconnect is force GET, not a hot-cache ensure.
+      if (typeof repository.refreshFromAuthority !== "function") {
+        throw new Error("reconnect alignment requires refreshFromAuthority")
+      }
+      const data = await repository.refreshFromAuthority(transcriptScope)
       clearTranscriptRecoveryCheckpoint(client, cacheScope)
       return data
     } catch (error) {

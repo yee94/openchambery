@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Message, Session } from '@opencode-ai/sdk/v2'
+import type { Message, Session } from '@/lib/opencode/v2-types'
 
 import {
   stripMessageDiffSnapshots,

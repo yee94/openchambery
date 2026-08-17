@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { Session } from '@opencode-ai/sdk/v2/client';
+import type { Session } from '@/lib/opencode/v2-types';
 import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
@@ -18,6 +18,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { syncGlobalSessionsForDirectories } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { normalizePath } from '@/lib/pathNormalization';
 import type { WorktreeMetadata } from '@/types/worktree';
@@ -69,6 +70,7 @@ export function MobileProjectsHomeContainer({
 }: MobileProjectsHomeContainerProps) {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
+  const sharingAvailable = isSessionSharingAvailable();
   const model = useMobileProjectsHomeModel();
 
   const setProjectExpanded = useMobileSessionTreeStore((state) => state.setProjectExpanded);
@@ -431,17 +433,17 @@ export function MobileProjectsHomeContainer({
           setRenamingSession(session);
         },
         onTogglePin: () => togglePinnedSession(session.id),
-        onShare: session.share?.url
-          ? undefined
-          : () => {
+        onShare: sharingAvailable && !session.share?.url
+          ? () => {
               void handleShareFromMenu(session);
-            },
-        onCopyLink: session.share?.url
+            }
+          : undefined,
+        onCopyLink: sharingAvailable && session.share?.url
           ? () => {
               void handleCopyShareUrl(session.share!.url!);
             }
           : undefined,
-        onUnshare: session.share?.url
+        onUnshare: sharingAvailable && session.share?.url
           ? () => {
               void handleUnshareFromMenu(session.id);
             }
@@ -490,6 +492,7 @@ export function MobileProjectsHomeContainer({
     handleShareFromMenu,
     handleUnshareFromMenu,
     resolveWorktreeMetadata,
+    sharingAvailable,
     startSessionDraftForDirectory,
     t,
     togglePinnedSession,

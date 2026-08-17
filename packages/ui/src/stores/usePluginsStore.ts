@@ -20,6 +20,8 @@ export interface PluginEntry {
   scope: PluginScope;
   kind: 'config';
   parsedKind: PluginParsedKind;
+  compatibility?: 'v1-incompatible' | string;
+  compatible?: boolean;
 }
 
 export interface PluginFile {
@@ -27,6 +29,8 @@ export interface PluginFile {
   fileName: string;
   scope: PluginScope;
   kind: 'file';
+  compatibility?: 'v1-incompatible' | string;
+  compatible?: boolean;
 }
 
 export interface PluginDraft {

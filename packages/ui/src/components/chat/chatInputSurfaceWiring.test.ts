@@ -144,6 +144,17 @@ describe('primary delivery request helpers', () => {
     });
   });
 
+  test('primarySendOptionsFromDeliveryRequest omits unsupported delivery values', () => {
+    expect(primarySendOptionsFromDeliveryRequest({
+      sessionID: 'ses_a',
+      directory: '/project/a',
+      options: { delivery: 'unsupported' },
+    })).toEqual({
+      sessionId: 'ses_a',
+      directoryHint: '/project/a',
+    });
+  });
+
   test('primarySendOptionsFromDeliveryRequest passes the optimistic ticket through', () => {
     const ticket = { messageID: 'msg_ticket' } as NonNullable<ChatInputDeliveryRequest['options']>['ticket'];
     expect(primarySendOptionsFromDeliveryRequest({

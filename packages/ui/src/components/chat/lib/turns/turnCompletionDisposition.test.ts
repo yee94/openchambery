@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@/lib/opencode/v2-types';
 
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnRecords } from './projectTurnRecords';

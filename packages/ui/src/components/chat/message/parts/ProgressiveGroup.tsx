@@ -2,7 +2,7 @@ import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { cn } from '@/lib/utils';
 import type { TurnActivityPresentationKind, TurnActivityRecord as TurnActivityPart, TurnCompletionDisposition } from '../../lib/turns/types';
-import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
+import type { ToolPart as ToolPartType } from '@/lib/opencode/v2-types';
 import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import type { ToolPopupContent } from '../types';

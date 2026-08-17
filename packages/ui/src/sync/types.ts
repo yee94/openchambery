@@ -1,22 +1,78 @@
 import type {
   Agent,
-  Command,
   Config,
-  LspStatus,
   McpStatus,
   Message,
   Part,
-  Path,
-  PermissionRequest,
-  Project,
-  ProviderAuthResponse,
-  ProviderListResponse,
-  QuestionRequest,
   Session,
   SessionStatus,
   Todo,
-  VcsInfo,
-} from "@opencode-ai/sdk/v2/client"
+} from "@/lib/opencode/v2-types"
+import type { PermissionRequest } from "@/types/permission"
+import type { QuestionRequest } from "@/types/question"
+
+export type { Agent, Config, McpStatus, Message, Part, Session, SessionStatus, Todo }
+
+/**
+ * Legacy reducer / pipeline event shape produced by opencode-event-normalizer.
+ * v2 subscribe payloads are normalized into this contract before reducers run.
+ */
+export type Event = {
+  type: string
+  id?: string
+  properties?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+/** v2 `command.list` row. Extra fields stay intact for existing command UIs. */
+export type Command = {
+  name?: string
+  description?: string
+  [key: string]: unknown
+}
+
+/**
+ * Directory path document. v2 `location.get` only supplies directory/worktree;
+ * state/config/home stay empty unless a later event fills them.
+ */
+export type Path = {
+  state: string
+  config: string
+  worktree: string
+  directory: string
+  home: string
+}
+
+/** LSP status is not on the v2 client. Kept so existing State.lsp readers type-check. */
+export type LspStatus = {
+  id?: string
+  status?: string
+  [key: string]: unknown
+}
+
+/** v2 project row plus the worktree alias bootstrap already matches on. */
+export type Project = {
+  id: string
+  worktree?: string
+  canonical?: string
+  sandboxes?: string[]
+  name?: string
+  icon?: { override?: string; color?: string }
+  commands?: { start?: string }
+}
+
+export type VcsInfo = {
+  branch?: { current?: string; [key: string]: unknown }
+  [key: string]: unknown
+}
+
+export type ProviderListResponse = {
+  all: unknown[]
+  connected: unknown[]
+  default: Record<string, string>
+}
+
+export type ProviderAuthResponse = Record<string, unknown>
 
 export type FileDiff = {
   file?: string

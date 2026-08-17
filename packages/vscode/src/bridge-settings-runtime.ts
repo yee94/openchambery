@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 import { BUILT_IN_SKILL_LOCATION, type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
 import { projectProviderCatalog, type ProviderCatalog } from './provider-catalog-runtime';
 import { formatSettingsResponse } from './settings-visible-runtime';
@@ -176,22 +176,29 @@ export const fetchOpenCodeCommandsFromApi = async (
 ): Promise<OpenCodeCommand[]> => {
   const apiUrl = ctx?.manager?.getApiUrl();
   if (!apiUrl) return [];
-  const client = createOpencodeClient({
+  const client = OpenCode.make({
     baseUrl: apiUrl.replace(/\/+$/, ''),
     headers: ctx?.manager?.getOpenCodeAuthHeaders() ?? {},
-    directory: workingDirectory,
+    fetch: globalThis.fetch,
   });
-  const response = await client.command.list(workingDirectory ? { directory: workingDirectory } : undefined);
-  if (!Array.isArray(response.data)) return [];
-  return response.data.flatMap((command) => {
+  const response = await client.command.list(
+    workingDirectory ? { location: { directory: workingDirectory } } : undefined,
+  );
+  if (!Array.isArray(response?.data)) return [];
+  return response.data.flatMap((command: { name?: string; description?: string; agent?: string; model?: string | { id?: string; providerID?: string } }) => {
     const name = typeof command?.name === 'string' ? command.name.trim() : '';
     if (!name) return [];
+    const modelRef = command?.model;
+    const model = typeof modelRef === 'string'
+      ? modelRef
+      : modelRef && typeof modelRef === 'object' && typeof modelRef.providerID === 'string' && typeof modelRef.id === 'string'
+        ? `${modelRef.providerID}/${modelRef.id}`
+        : undefined;
     return [{
       name,
       ...(typeof command.description === 'string' ? { description: command.description } : {}),
       ...(typeof command.agent === 'string' ? { agent: command.agent } : {}),
-      ...(typeof command.model === 'string' ? { model: command.model } : {}),
-      ...(typeof command.source === 'string' ? { source: command.source } : {}),
+      ...(model ? { model } : {}),
     }];
   });
 };
@@ -202,19 +209,61 @@ export const fetchProviderCatalogFromApi = async (
 ): Promise<ProviderCatalog> => {
   const apiUrl = ctx?.manager?.getApiUrl();
   if (!apiUrl) throw new Error('OpenCode API is unavailable');
-  const client = createOpencodeClient({
+  const client = OpenCode.make({
     baseUrl: apiUrl.replace(/\/+$/, ''),
     headers: ctx?.manager?.getOpenCodeAuthHeaders() ?? {},
-    directory: workingDirectory,
+    fetch: globalThis.fetch,
   });
-  const response = await client.config.providers(
-    workingDirectory ? { directory: workingDirectory } : undefined,
-    { signal: AbortSignal.timeout(8_000) },
-  );
-  if (response.error || response.data === undefined) {
+  const location = workingDirectory ? { location: { directory: workingDirectory } } : undefined;
+  const signal = AbortSignal.timeout(8_000);
+  let providers;
+  let models;
+  let defaultModel;
+  try {
+    [providers, models, defaultModel] = await Promise.all([
+      client.provider.list(location, { signal }),
+      client.model.list(location, { signal }),
+      client.model.default(location, { signal }).catch(() => null),
+    ]);
+  } catch {
     throw new Error('OpenCode provider catalog request failed');
   }
-  return projectProviderCatalog(response.data);
+  if (!providers || !Array.isArray(providers.data) || !models || !Array.isArray(models.data)) {
+    throw new Error('OpenCode provider catalog request failed');
+  }
+
+  const modelsByProvider = new Map<string, Record<string, { id: string; name: string }>>();
+  for (const model of models.data) {
+    const providerID = typeof model?.providerID === 'string' ? model.providerID : '';
+    const modelID = typeof model?.id === 'string' ? model.id : typeof model?.modelID === 'string' ? model.modelID : '';
+    const name = typeof model?.name === 'string' ? model.name : modelID;
+    if (!providerID || !modelID) continue;
+    const bucket = modelsByProvider.get(providerID) ?? Object.create(null) as Record<string, { id: string; name: string }>;
+    bucket[modelID] = { id: modelID, name };
+    modelsByProvider.set(providerID, bucket);
+  }
+
+  const catalogProviders = providers.data.flatMap((provider: { id?: string; name?: string }) => {
+    const id = typeof provider?.id === 'string' ? provider.id : '';
+    const name = typeof provider?.name === 'string' ? provider.name : '';
+    if (!id || !name) return [];
+    return [{
+      id,
+      name,
+      models: modelsByProvider.get(id) ?? {},
+    }];
+  });
+
+  const defaults: Record<string, string> = {};
+  const defaultInfo = defaultModel && typeof defaultModel === 'object' ? defaultModel.data : null;
+  if (defaultInfo && typeof defaultInfo.providerID === 'string' && typeof defaultInfo.id === 'string') {
+    defaults[defaultInfo.providerID] = defaultInfo.id;
+  }
+
+  return projectProviderCatalog({
+    providers: catalogProviders,
+    default: defaults,
+  });
 };
 
 const readSharedSettingsFromDisk = (): Record<string, unknown> => {

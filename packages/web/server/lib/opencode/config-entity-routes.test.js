@@ -5,10 +5,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-vi.mock('@opencode-ai/sdk/v2', () => ({ createOpencodeClient: vi.fn() }));
+vi.mock('@opencode-ai/client', () => ({ OpenCode: { make: vi.fn() } }));
 
-const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
+const { OpenCode } = await import('@opencode-ai/client');
 const { registerConfigEntityRoutes } = await import('./config-entity-routes.js');
+const createOpencodeClient = OpenCode.make;
 
 const createDependencies = (getCommandSources, configDirectory, getAgentSources = vi.fn()) => ({
   resolveProjectDirectory: async () => ({ directory: '/repo' }),
@@ -92,9 +93,9 @@ describe('config entity command metadata route', () => {
 
     expect(createOpencodeClient).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: 'http://opencode-upstream:4096',
-      directory: '/repo',
       headers: { Authorization: 'Basic example' },
     }));
+    expect(createOpencodeClient.mock.calls[0][0].directory).toBeUndefined();
     expect(response.body.commands).toEqual([
       expect.objectContaining({ name: 'markdown', reference: markdownPath, description: `${'😀'.repeat(160)}…`, scope: 'project', isBuiltIn: false }),
       expect.objectContaining({ name: 'json', reference: 'json', description: 'JSON command', scope: 'project', isBuiltIn: false }),
@@ -141,14 +142,35 @@ describe('config entity command metadata route', () => {
       { name: 'long-path', reference: 'long-path' },
     ]);
   });
+
+  it('returns 502 when the command catalog is not an array instead of an empty success', async () => {
+    const app = express();
+    app.use(express.json());
+    createOpencodeClient.mockReturnValue({
+      command: { list: vi.fn(async () => ({ data: { commands: [] } })) },
+    });
+    registerConfigEntityRoutes(app, createDependencies(vi.fn()));
+
+    const response = await request(app)
+      .post('/api/config/commands/metadata?directory=%2Frepo')
+      .send({ catalog: true })
+      .expect(502);
+    expect(response.body).toEqual({ error: 'Command catalog is unavailable' });
+  });
 });
 
 describe('provider catalog route', () => {
   it('uses the resolved directory, OpenCode auth, SDK providers call, and explicit catalog route', async () => {
     const app = express();
     const resolveProjectDirectory = vi.fn(async () => ({ directory: '/project/from-header' }));
-    const providers = vi.fn(async () => ({ data: { providers: [], default: {} } }));
-    createOpencodeClient.mockReturnValue({ config: { providers } });
+    const location = { directory: '/project/from-header' };
+    const providers = vi.fn(async () => ({ data: [] }));
+    const models = vi.fn(async () => ({ data: [] }));
+    const modelDefault = vi.fn(async () => ({ data: null }));
+    createOpencodeClient.mockReturnValue({
+      provider: { list: providers },
+      model: { list: models, default: modelDefault },
+    });
     registerConfigEntityRoutes(app, {
       ...createDependencies(vi.fn()),
       resolveProjectDirectory,
@@ -163,22 +185,30 @@ describe('provider catalog route', () => {
     expect(resolveProjectDirectory).toHaveBeenCalledWith(expect.objectContaining({ query: { directory: '/repo' } }));
     expect(createOpencodeClient).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: 'http://opencode-upstream:4096',
-      directory: '/project/from-header',
       headers: { Authorization: 'Basic example' },
       fetch: expect.any(Function),
     }));
-    expect(providers).toHaveBeenCalledWith({ directory: '/project/from-header' });
+    expect(createOpencodeClient.mock.calls[0][0].directory).toBeUndefined();
+    expect(providers).toHaveBeenCalledWith({ location });
+    expect(models).toHaveBeenCalledWith({ location });
+    expect(modelDefault).toHaveBeenCalledWith({ location });
     expect(response.body).toEqual({ schemaVersion: 1, providers: [], default: {}, partial: false });
   });
 
   it('returns 502 for SDK failure and malformed catalog responses', async () => {
     const app = express();
-    createOpencodeClient.mockReturnValue({ config: { providers: vi.fn(async () => ({ data: { providers: {} } })) } });
+    createOpencodeClient.mockReturnValue({
+      provider: { list: vi.fn(async () => ({ data: {} })) },
+      model: { list: vi.fn(async () => ({ data: [] })), default: vi.fn(async () => ({ data: null })) },
+    });
     registerConfigEntityRoutes(app, createDependencies(vi.fn()));
     await request(app).get('/api/config/catalog/providers').expect(502);
 
     const failingApp = express();
-    createOpencodeClient.mockReturnValue({ config: { providers: vi.fn(async () => { throw new Error('upstream unavailable'); }) } });
+    createOpencodeClient.mockReturnValue({
+      provider: { list: vi.fn(async () => { throw new Error('upstream unavailable'); }) },
+      model: { list: vi.fn(async () => ({ data: [] })), default: vi.fn(async () => ({ data: null })) },
+    });
     registerConfigEntityRoutes(failingApp, createDependencies(vi.fn()));
     await request(failingApp).get('/api/config/catalog/providers').expect(502);
   });
@@ -186,7 +216,8 @@ describe('provider catalog route', () => {
   it('returns 502 for SDK error envelopes that include data', async () => {
     const app = express();
     createOpencodeClient.mockReturnValue({
-      config: { providers: vi.fn(async () => ({ error: { message: 'upstream sentinel' }, data: { providers: [], default: {} } })) },
+      provider: { list: vi.fn(async () => { throw new Error('upstream sentinel'); }) },
+      model: { list: vi.fn(async () => ({ data: [] })), default: vi.fn(async () => ({ data: null })) },
     });
     registerConfigEntityRoutes(app, createDependencies(vi.fn()));
 

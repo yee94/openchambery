@@ -1,4 +1,4 @@
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 
 const isCodeSelectionFilename = (filename: string, mime?: string): boolean => (
     mime === 'text/plain' && /:\d+(?:-\d+)?$/.test(filename)

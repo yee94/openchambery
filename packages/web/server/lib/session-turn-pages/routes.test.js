@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { registerSessionTurnPageRoutes } from './routes.js';
+
+vi.mock('../opencode/v2-client.js', () => ({ makeOpenCodeV2Client: vi.fn() }));
 
 const registry = () => {
   const routes = new Map();
@@ -335,5 +338,86 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(capturedSignal?.aborted).toBe(true);
     resolveLoad?.();
     await pending;
+  });
+
+  it('default fetch uses message.list SessionMessageInfo[] + cursor and projects {info, parts}', async () => {
+    const list = vi.fn(async () => ({
+      data: [
+        { id: 'msg_a1', type: 'assistant', time: { created: 2, completed: 3 }, content: [{ type: 'text', text: 'ok' }] },
+        { id: 'msg_u1', type: 'user', time: { created: 1 }, text: 'hi' },
+      ],
+      cursor: { previous: null, next: null },
+    }));
+    makeOpenCodeV2Client.mockReturnValue({
+      message: { list },
+      session: { messages: undefined, status: undefined, abort: undefined },
+    });
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'secret' }),
+    });
+    const res = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query: { turns: '1' },
+      headers: {},
+    }, res);
+
+    expect(list).toHaveBeenCalledWith({
+      sessionID: 'ses_1',
+      limit: 100,
+      order: 'desc',
+    }, expect.objectContaining({ signal: expect.any(Object) }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.complete).toBe(true);
+    expect(res.body.records).toEqual([
+      expect.objectContaining({
+        info: expect.objectContaining({ id: 'msg_u1', role: 'user' }),
+        parts: [expect.objectContaining({ type: 'text', text: 'hi' })],
+      }),
+      expect.objectContaining({
+        info: expect.objectContaining({ id: 'msg_a1', role: 'assistant' }),
+        parts: [expect.objectContaining({ type: 'text', text: 'ok' })],
+      }),
+    ]);
+  });
+
+  it('default fetch throws on message.list failure and maps to upstream', async () => {
+    makeOpenCodeV2Client.mockReturnValue({
+      message: { list: vi.fn(async () => { throw Object.assign(new Error('upstream'), { status: 500 }); }) },
+    });
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const res = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query: { turns: '1' },
+      headers: {},
+    }, res);
+    expect(res.statusCode).toBeGreaterThanOrEqual(502);
+    expect(res.body).toMatchObject({ error: expect.stringMatching(/upstream/i) });
+  });
+
+  it('default fetch rejects HeyAPI data/error shapes without a SessionMessageInfo array', async () => {
+    makeOpenCodeV2Client.mockReturnValue({
+      message: { list: vi.fn(async () => ({ error: { status: 500 }, data: undefined })) },
+    });
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const res = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query: { turns: '1' },
+      headers: {},
+    }, res);
+    expect(res.statusCode).toBeGreaterThanOrEqual(502);
+    expect(res.body.records).toBeUndefined();
   });
 });

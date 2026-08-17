@@ -647,7 +647,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   const READINESS_HOLD_POLL_MS = 75;
   const READINESS_HOLD_MAX_MS = 6000;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const isStillWaiting = (runtimeState) => {
+  const isProcessWarmingUp = (runtimeState) => {
     const waitElapsed = runtimeState.openCodeNotReadySince === 0 ? 0 : Date.now() - runtimeState.openCodeNotReadySince;
     return (
       (!runtimeState.isOpenCodeReady && (runtimeState.openCodeNotReadySince === 0 || waitElapsed < OPEN_CODE_READY_GRACE_MS)) ||
@@ -655,6 +655,18 @@ export const registerOpenCodeProxy = (app, deps) => {
       !runtimeState.openCodePort
     );
   };
+
+  // Process warmup keeps the existing grace window. V1 migration is separate:
+  // admitTranscript=false holds with no grace until the gate admits or the
+  // client cancels. After grace, a still-running migration must not next()
+  // an empty session list through as an authoritative success.
+  const isMigrationBlockingTranscript = (runtimeState) => (
+    runtimeState?.v1Migration != null && runtimeState.v1Migration.admitTranscript !== true
+  );
+
+  const shouldHoldProxiedRequest = (runtimeState) => (
+    isProcessWarmingUp(runtimeState) || isMigrationBlockingTranscript(runtimeState)
+  );
 
   app.use('/api', async (req, res, next) => {
     if (
@@ -670,18 +682,22 @@ export const registerOpenCodeProxy = (app, deps) => {
       return next();
     }
 
-    if (!isStillWaiting(getRuntime())) {
+    if (!shouldHoldProxiedRequest(getRuntime())) {
       return next();
     }
 
-    const deadline = Date.now() + Math.min(OPEN_CODE_READY_GRACE_MS, READINESS_HOLD_MAX_MS);
-    while (Date.now() < deadline) {
+    const processDeadline = Date.now() + Math.min(OPEN_CODE_READY_GRACE_MS, READINESS_HOLD_MAX_MS);
+    while (true) {
       // Client gave up (closed/aborted) — stop holding.
       if (res.writableEnded || req.aborted) return;
-      await sleep(READINESS_HOLD_POLL_MS);
-      if (!isStillWaiting(getRuntime())) {
+      const runtimeState = getRuntime();
+      if (!shouldHoldProxiedRequest(runtimeState)) {
         return next();
       }
+      if (!isMigrationBlockingTranscript(runtimeState) && Date.now() >= processDeadline) {
+        break;
+      }
+      await sleep(READINESS_HOLD_POLL_MS);
     }
 
     if (!res.headersSent) {

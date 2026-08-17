@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Agent } from '@opencode-ai/sdk/v2';
+import type { Agent } from '@/lib/opencode/v2-types';
 import { cn } from '@/lib/utils';
 import { getAgentDisplayName } from './mobileControlsUtils';
 import { AgentCycleLabel } from '@/components/chat/AgentCycleLabel';

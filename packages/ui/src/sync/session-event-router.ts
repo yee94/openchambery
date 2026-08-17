@@ -1,4 +1,6 @@
-import type { Event, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { shouldSkipStaleSessionEvent } from "./session-event-freshness"

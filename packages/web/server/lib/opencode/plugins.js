@@ -7,6 +7,7 @@ import {
   writeConfig,
 } from './shared.js';
 import { isPathSpec } from './plugin-spec.js';
+import { withV1PluginIncompatibility } from './plugin-compatibility.js';
 
 const PLUGIN_FILE_NAME_PATTERN = /^[a-z0-9][a-z0-9-_.]*\.(js|ts|mjs|cjs)$/;
 
@@ -248,7 +249,7 @@ function listPluginEntries(workingDirectory) {
     }
     return source.config.plugin.map((raw) => {
       const parsed = parsePluginRaw(raw);
-      return {
+      return withV1PluginIncompatibility({
         id: encodePluginId('config', `${source.scope}:${parsed.spec}`),
         spec: parsed.spec,
         ...(parsed.options !== undefined ? { options: parsed.options } : {}),
@@ -256,7 +257,7 @@ function listPluginEntries(workingDirectory) {
         kind: 'config',
         parsedKind: parsedKindForSpec(parsed.spec),
         sourcePath: source.filePath,
-      };
+      });
     });
   });
 }
@@ -333,7 +334,7 @@ function listPluginDirFiles(workingDirectory) {
     }
     return fs.readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && PLUGIN_FILE_NAME_PATTERN.test(entry.name) && !entry.name.includes('..'))
-      .map((entry) => ({
+      .map((entry) => withV1PluginIncompatibility({
         id: encodePluginId('file', `${scope}:${entry.name}`),
         fileName: entry.name,
         scope,

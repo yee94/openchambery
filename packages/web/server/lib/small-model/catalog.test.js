@@ -66,6 +66,53 @@ describe('createModelCatalogLoader', () => {
     expect(Object.keys(catalogA).length).toBeGreaterThan(0);
   });
 
+  it('composes official v2 provider.list + model.list into the small-model catalog', async () => {
+    const loader = createModelCatalogLoader({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096/',
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic test' }),
+      fetchImpl: async (url) => {
+        const href = String(url);
+        const data = href.includes('/api/model')
+          ? [{
+              id: 'gemini-2.5-flash',
+              modelID: 'gemini-2.5-flash',
+              providerID: 'google',
+              family: 'gemini-flash',
+              name: 'Gemini 2.5 Flash',
+              capabilities: {},
+              variants: [],
+              time: { released: Date.parse('2025-06-01T00:00:00Z') },
+              cost: [],
+              status: 'active',
+              enabled: true,
+              limit: { context: 1_000_000, output: 8192 },
+              api: { url: 'https://generativelanguage.googleapis.com' },
+            }]
+          : [{ id: 'google', name: 'Google', package: '@ai-sdk/google' }];
+        return new Response(JSON.stringify({
+          location: { directory: '/proj', project: { id: 'p', directory: '/proj', canonical: '/proj' } },
+          data,
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    const catalog = await loader.getModelCatalog('/proj');
+    expect(catalog).not.toBe(MINIMAL_FALLBACK_CATALOG);
+    expect(catalog.google).toEqual({
+      id: 'google',
+      name: 'Google',
+      models: {
+        'gemini-2.5-flash': {
+          id: 'gemini-2.5-flash',
+          family: 'gemini-flash',
+          release_date: '2025-06-01',
+          limit: { context: 1_000_000, output: 8192 },
+          api: { url: 'https://generativelanguage.googleapis.com' },
+        },
+      },
+    });
+  });
+
   it('normalizes directory keys so trailing slashes share a bucket', () => {
     const loader = createModelCatalogLoader({
       buildOpenCodeUrl: () => 'http://127.0.0.1:9/',

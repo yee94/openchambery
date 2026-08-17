@@ -1,15 +1,26 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useRef, useCallback, useMemo } from "react"
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
-import type { Session } from "@opencode-ai/sdk/v2"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
+import type { Session } from '@/lib/opencode/v2-types'
+
 import type { StoreApi } from "zustand"
 import { useStore } from "zustand"
-import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import type { OpenCodeClient } from '@/lib/opencode/v2-types'
+
 import { createEventPipeline } from "./event-pipeline"
 import { bindStreamReconnect, noteStreamActivity } from "./stream-liveness"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
-import { reduceGlobalEvent, applyGlobalProject, applyDirectoryEvent, type SessionMaterializationReason } from "./event-reducer"
+import {
+  reduceGlobalEvent,
+  applyGlobalProject,
+  applyDirectoryEvent,
+  permissionRequestFromEventProperties,
+  questionRequestFromEventProperties,
+  type SessionMaterializationReason,
+} from "./event-reducer"
 import { useGlobalSyncStore } from "./global-sync-store"
 import { ChildStoreManager, type DirectoryStore } from "./child-store"
 import {
@@ -21,6 +32,7 @@ import {
   findLiveSessionStatus,
 } from "./live-aggregate"
 import { bootstrapGlobal, bootstrapDirectory } from "./bootstrap"
+import { projectSession } from "./v2-runtime"
 import { retry } from "./retry"
 import { updateStreamingState } from "./streaming"
 import { setActionRefs } from "./session-actions"
@@ -92,7 +104,8 @@ import {
 } from "./global-session-status"
 import { applyWorktreeBootstrapStatusEvent } from "@/lib/worktrees/worktreeBootstrap"
 import type { State } from "./types"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus } from '@/lib/opencode/v2-types'
+
 import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
@@ -102,6 +115,7 @@ import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { openSessionFromToast } from "./session-opener"
 import { getPermissionToastKey, showPermissionNeededToast } from "./permission-toast"
+import { applySessionFormLiveEvent } from "./session-form-store"
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
 
 import { normalizeProjectPath } from "@/lib/projectResolution"
@@ -147,7 +161,7 @@ import type { NormalizedOpenCodeEvent } from "./opencode-event-normalizer"
 
 type SyncSystem = {
   childStores: ChildStoreManager
-  sdk: OpencodeClient
+  sdk: OpenCodeClient
   directory: string
 }
 
@@ -159,34 +173,6 @@ type SyncGlobal = typeof globalThis & {
 const syncGlobal = globalThis as SyncGlobal
 const SyncContext = syncGlobal[SYNC_CONTEXT_GLOBAL_KEY] ?? createContext<SyncSystem | null>(null)
 syncGlobal[SYNC_CONTEXT_GLOBAL_KEY] = SyncContext
-
-type SdkResult<T> = {
-  data?: T
-  error?: unknown
-  response?: {
-    status?: number
-    headers?: { get?: (name: string) => string | null }
-  }
-}
-
-function formatSdkError(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === "string") return error
-  if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
-    return (error as { message: string }).message
-  }
-  try {
-    return JSON.stringify(error)
-  } catch {
-    return String(error)
-  }
-}
-
-function assertSdkSuccess<T>(result: SdkResult<T>, operation: string): T | undefined {
-  if (!result.error) return result.data
-  const status = result.response?.status
-  throw new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`)
-}
 
 function useSyncSystem() {
   const ctx = useContext(SyncContext)
@@ -812,10 +798,21 @@ export const getSessionIdFromPayload = (event: Event): string | null => {
     || event.type === "question.asked"
     || event.type === "question.replied"
     || event.type === "question.rejected"
+    || event.type === "form.replied"
+    || event.type === "form.cancelled"
     || event.type === "session.deleted"
   ) {
     const sessionID = props.sessionID
     return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : null
+  }
+
+  if (event.type === "form.created") {
+    const form = props.form
+    if (form && typeof form === "object") {
+      const sessionID = (form as { sessionID?: unknown }).sessionID
+      return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : null
+    }
+    return null
   }
 
   if (event.type === "message.part.updated") {
@@ -846,7 +843,8 @@ export const getSessionIdFromPayload = (event: Event): string | null => {
     return typeof id === "string" && id.length > 0 ? id : null
   }
 
-  return null
+  const sessionID = props.sessionID
+  return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : null
 }
 
 const getMessageIdFromPayload = (event: Event): string | null => {
@@ -880,7 +878,8 @@ const getMessageIdFromPayload = (event: Event): string | null => {
     return typeof partMessageID === "string" && partMessageID.length > 0 ? partMessageID : null
   }
 
-  return null
+  const messageID = props.messageID ?? props.assistantMessageID
+  return typeof messageID === "string" && messageID.length > 0 ? messageID : null
 }
 
 const setIndexedSessionDirectory = (routingIndex: EventRoutingIndex, sessionID: string, directory: string) => {
@@ -1579,18 +1578,18 @@ export async function resyncDirectoryAfterReconnect(
     await Promise.all(materializationSessionIds.map(async (sessionId) => {
       const identityRevision = getLiveRevision(sessionId)
       syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
-      const sessionResponse = await retry(async () => {
-        const response = await scopedClient.session.get({ sessionID: sessionId })
-        assertSdkSuccess(response, "session.get")
-        return response
+      const session = await retry(async () => {
+        return await scopedClient.session.get({ sessionID: sessionId })
       }).catch(() => null)
-      const session = sessionResponse?.data
 
       // Session identity is independent of the message page. A missing session or
       // live events arriving during `session.get` only skip the identity write:
       // a session that keeps streaming would otherwise never recover its body.
       if (session && isLiveRevisionCurrent(identityRevision, getLiveRevision(sessionId))) {
-        const nextSession = stripSessionDiffSnapshots(session)
+        // Real v2 session.get returns SessionInfo; directory lives on
+        // location.directory. projectSession() is the same write-path
+        // projection use-sync already applies before child-store commits.
+        const nextSession = stripSessionDiffSnapshots(projectSession(session))
         store.setState((state: DirectoryStore) => {
           const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
           let sessions = state.session
@@ -1813,7 +1812,8 @@ export function handleEvent(
   void isSnapshotRevisionEvent
 
   if (payload.type === "permission.asked") {
-    const permission = payload.properties as PermissionRequest
+    const permission = permissionRequestFromEventProperties(payload.properties)
+    if (!permission) return
     const permissionStore = usePermissionStore.getState()
     if (permissionStore.isSessionAutoAccepting(permission.sessionID)) {
       updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
@@ -1848,7 +1848,8 @@ export function handleEvent(
   }
 
   if (payload.type === "question.asked") {
-    const question = payload.properties as QuestionRequest
+    const question = questionRequestFromEventProperties(payload.properties)
+    if (!question) return
     const sessionID = question.sessionID
     const session = store.getState().session.find((candidate) => candidate.id === sessionID)
       ?? useGlobalSessionsStore.getState().activeSessions.find((candidate) => candidate.id === sessionID)
@@ -2134,7 +2135,7 @@ export function shouldBootstrapDirectory(
 }
 
 export function SyncProvider(props: {
-  sdk: OpencodeClient
+  sdk: OpenCodeClient
   directory: string
   /** Keeps the current directory store live while deferring its full bootstrap. */
   bootstrapDirectory?: boolean

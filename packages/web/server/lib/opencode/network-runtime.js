@@ -41,26 +41,27 @@ export const createOpenCodeNetworkRuntime = (deps) => {
 
   const waitForReady = async (url, timeoutMs = 10000) => {
     const start = Date.now();
+    const baseUrl = url.replace(/\/+$/, '');
     while (Date.now() - start < timeoutMs) {
       let timeout = null;
       try {
         const controller = new AbortController();
         timeout = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(`${url.replace(/\/+$/, '')}/global/health`, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            ...getOpenCodeAuthHeaders(),
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        timeout = null;
-
-        if (response.ok) {
-          const body = await response.json().catch(() => null);
-          if (body?.healthy === true) {
-            return true;
+        const headers = {
+          Accept: 'application/json',
+          ...getOpenCodeAuthHeaders(),
+        };
+        for (const healthPath of ['/api/health', '/global/health']) {
+          const response = await fetch(`${baseUrl}${healthPath}`, {
+            method: 'GET',
+            headers,
+            signal: controller.signal,
+          });
+          if (response.ok) {
+            const body = await response.json().catch(() => null);
+            if (body?.healthy === true) {
+              return true;
+            }
           }
         }
       } catch {

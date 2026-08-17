@@ -6,9 +6,123 @@ import { DEFAULT_PORT } from './cli-args.js';
 import { EXIT_CODE, TunnelCliError } from './cli-errors.js';
 import { getDataDir } from './cli-paths.js';
 import { hasUiPasswordConfigured } from './cli-network.js';
-import { searchPathFor } from './cli-executables.js';
+import { resolveExplicitBinary, searchPathFor } from './cli-executables.js';
+import { isOpenCode1xVersion } from '../../server/lib/opencode/opencode2-pin.js';
 
 const STARTUP_SERVICE_ID = 'dev.openchamber.web';
+
+// PATH still ships 1.x `opencode` beside `opencode2`. A basename without the
+// trailing 2 is never a valid managed CLI — fail closed instead of spawning it.
+function isLegacyOpenCodeCliBasename(candidate) {
+  if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+    return false;
+  }
+  const name = path.basename(candidate.trim()).toLowerCase();
+  return name === 'opencode' || name === 'opencode.exe' || name === 'opencode.cmd';
+}
+
+function createLegacyOpenCodeBinaryError(candidate) {
+  const error = new Error(
+    `Basename opencode is reserved for 1.x (${candidate}); opencode2 is missing. Rename or symlink to opencode2.`
+  );
+  error.code = 'OPENCODE_BINARY_INVALID';
+  return error;
+}
+
+function createOpenCode1xVersionError(candidate, version) {
+  const error = new Error(
+    `OpenCode 1.x is not supported (${candidate} reports ${version}); opencode2 is missing.`
+  );
+  error.code = 'OPENCODE_BINARY_INVALID';
+  return error;
+}
+
+function extractOpenCodeVersion(output) {
+  if (typeof output !== 'string' || output.trim().length === 0) {
+    return '';
+  }
+  const match = output.match(/v?\d+\.\d+[\w.+-]*/i);
+  return match ? match[0] : '';
+}
+
+function readOpenCodeBinaryVersion(binaryPath) {
+  const result = spawnSync(binaryPath, ['--version'], {
+    encoding: 'utf8',
+    timeout: 8000,
+    windowsHide: true,
+  });
+  return `${result.stdout || ''}\n${result.stderr || ''}`.trim();
+}
+
+// OPENCODE_BINARY and settings.opencodeBinary share the v2 basename/version gate.
+function assertOpenCode2Binary(candidate) {
+  const trimmed = typeof candidate === 'string' ? candidate.trim() : '';
+  if (!trimmed) {
+    return null;
+  }
+  if (isLegacyOpenCodeCliBasename(trimmed)) {
+    throw createLegacyOpenCodeBinaryError(trimmed);
+  }
+  const resolved = resolveExplicitBinary(trimmed) || trimmed;
+  const version = extractOpenCodeVersion(readOpenCodeBinaryVersion(resolved));
+  if (isOpenCode1xVersion(version)) {
+    throw createOpenCode1xVersionError(resolved, version);
+  }
+  return resolveExplicitBinary(trimmed);
+}
+
+function readConfiguredOpenCodeBinary() {
+  try {
+    const raw = fs.readFileSync(path.join(getDataDir(), 'settings.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.opencodeBinary !== 'string') {
+      return '';
+    }
+    const trimmed = parsed.opencodeBinary.trim();
+    if (!trimmed) {
+      return '';
+    }
+    try {
+      if (fs.statSync(trimmed).isDirectory()) {
+        return path.join(trimmed, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+      }
+    } catch {
+    }
+    return trimmed;
+  } catch {
+    return '';
+  }
+}
+
+function resolveOpenCode2BinaryForStartup() {
+  const explicit = typeof process.env.OPENCODE_BINARY === 'string' ? process.env.OPENCODE_BINARY.trim() : '';
+  if (explicit) {
+    if (isLegacyOpenCodeCliBasename(explicit)) {
+      throw createLegacyOpenCodeBinaryError(explicit);
+    }
+    const resolved = assertOpenCode2Binary(explicit);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const configured = readConfiguredOpenCodeBinary();
+  if (configured) {
+    if (isLegacyOpenCodeCliBasename(configured)) {
+      throw createLegacyOpenCodeBinaryError(configured);
+    }
+    const resolved = assertOpenCode2Binary(configured);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const resolvedFromPath = searchPathFor('opencode2');
+  if (!resolvedFromPath) {
+    return null;
+  }
+  return assertOpenCode2Binary(resolvedFromPath) || resolvedFromPath;
+}
 
 function getStartupServicePaths() {
   if (process.platform === 'darwin') {
@@ -82,9 +196,11 @@ function collectStartupEnv(options = {}) {
   );
 
   if (options.envSnapshot !== false) {
-    const opencodeBinary = process.env.OPENCODE_BINARY || searchPathFor('opencode');
+    const opencodeBinary = resolveOpenCode2BinaryForStartup();
     if (typeof opencodeBinary === 'string' && opencodeBinary.trim().length > 0) {
       env.OPENCODE_BINARY = opencodeBinary.trim();
+    } else {
+      delete env.OPENCODE_BINARY;
     }
   }
   const uiPassword = hasUiPasswordConfigured(options.uiPassword) ? options.uiPassword : undefined;
@@ -367,4 +483,10 @@ export {
   getStartupStatus,
   enableStartupService,
   disableStartupService,
+  collectStartupEnv,
+  isLegacyOpenCodeCliBasename,
+  createLegacyOpenCodeBinaryError,
+  assertOpenCode2Binary,
+  readConfiguredOpenCodeBinary,
+  resolveOpenCode2BinaryForStartup,
 };

@@ -1,4 +1,4 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 

@@ -8,6 +8,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { RegistryBanner } from './RegistryBanner';
+import { isV1IncompatiblePlugin } from '@/lib/plugin-v1-compatibility';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import {
   usePluginsStore,
@@ -212,6 +213,17 @@ export const PluginsPage: React.FC = () => {
           </div>
         </div>
 
+        {isV1IncompatiblePlugin(selectedEntry) ? (
+          <div className="rounded-md border border-[var(--status-warning)] bg-card p-3">
+            <p className="typography-label text-[var(--status-warning)]">
+              {t('settings.plugins.registry.banner.v1Incompatible.title')}
+            </p>
+            <p className="typography-micro text-muted-foreground mt-0.5">
+              {t('settings.plugins.registry.banner.v1Incompatible.description')}
+            </p>
+          </div>
+        ) : null}
+
         <RegistryBanner entryId={selectedEntry.id} spec={selectedEntry.spec} />
 
         <div data-settings-item="plugins.spec">
@@ -336,6 +348,17 @@ export const PluginsPage: React.FC = () => {
             </span>
           </div>
         </div>
+
+        {isV1IncompatiblePlugin(selectedFile) ? (
+          <div className="rounded-md border border-[var(--status-warning)] bg-card p-3">
+            <p className="typography-label text-[var(--status-warning)]">
+              {t('settings.plugins.registry.banner.v1Incompatible.title')}
+            </p>
+            <p className="typography-micro text-muted-foreground mt-0.5">
+              {t('settings.plugins.registry.banner.v1Incompatible.description')}
+            </p>
+          </div>
+        ) : null}
 
         <div data-settings-item="plugins.content">
           <SettingsGroup label={t('settings.plugins.page.field.content')} cardClassName="p-3">

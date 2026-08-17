@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message } from '@/lib/opencode/v2-types'
+
 import { QueryClient } from "@tanstack/react-query"
 
 import { isTranscriptAuthorityRefreshInFlight } from "./transcript-authority-refresh-flight"

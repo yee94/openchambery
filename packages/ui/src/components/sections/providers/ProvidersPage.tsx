@@ -176,6 +176,78 @@ const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
   });
 };
 
+type IntegrationMethodLike = {
+  id?: string;
+  type?: string;
+  label?: string;
+  name?: string;
+};
+
+type IntegrationLike = {
+  id?: string;
+  name?: string;
+  methods?: IntegrationMethodLike[];
+  connections?: Array<{ type?: string; id?: string }>;
+};
+
+type ProviderLike = {
+  id?: string;
+  integrationID?: string;
+  name?: string;
+};
+
+export const resolveIntegrationId = (
+  providerId: string,
+  providers: ProviderLike[],
+  integrations: IntegrationLike[],
+): string => {
+  const provider = providers.find((entry) => entry.id === providerId);
+  if (typeof provider?.integrationID === 'string' && provider.integrationID) {
+    return provider.integrationID;
+  }
+  if (integrations.some((entry) => entry.id === providerId)) {
+    return providerId;
+  }
+  return providerId;
+};
+
+export const buildAuthMethodsFromIntegrations = (
+  providers: ProviderLike[],
+  integrations: IntegrationLike[],
+): { methodsByProvider: Record<string, AuthMethod[]>; integrationIdByProvider: Record<string, string> } => {
+  const methodsByProvider: Record<string, AuthMethod[]> = {};
+  const integrationIdByProvider: Record<string, string> = {};
+  const integrationById = new Map(
+    integrations
+      .filter((entry): entry is IntegrationLike & { id: string } => typeof entry.id === 'string' && entry.id.length > 0)
+      .map((entry) => [entry.id, entry]),
+  );
+
+  const assign = (providerId: string, integration: IntegrationLike) => {
+    integrationIdByProvider[providerId] = integration.id ?? providerId;
+    methodsByProvider[providerId] = (integration.methods ?? []).map((method) => ({
+      type: method.type,
+      id: method.id,
+      name: method.label ?? method.name,
+      label: method.label ?? method.name,
+    }));
+  };
+
+  for (const provider of providers) {
+    if (typeof provider.id !== 'string' || !provider.id) continue;
+    const integrationId = resolveIntegrationId(provider.id, providers, integrations);
+    const integration = integrationById.get(integrationId);
+    if (integration) assign(provider.id, integration);
+  }
+  for (const integration of integrations) {
+    if (typeof integration.id !== 'string' || !integration.id) continue;
+    if (methodsByProvider[integration.id]) continue;
+    assign(integration.id, integration);
+  }
+
+  return { methodsByProvider, integrationIdByProvider };
+};
+
 export const ProvidersPage: React.FC = () => {
   const { t } = useI18n();
   const providers = useConfigStore((state) => state.providers);
@@ -192,7 +264,8 @@ export const ProvidersPage: React.FC = () => {
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
   const [modelQuery, setModelQuery] = React.useState('');
-  const [pendingOAuth, setPendingOAuth] = React.useState<{ providerId: string; methodIndex: number; mode: 'auto' | 'code' } | null>(null);
+  const [pendingOAuth, setPendingOAuth] = React.useState<{ providerId: string; methodIndex: number; methodID: string; attemptID: string; mode: 'auto' | 'code' } | null>(null);
+  const [integrationIdByProvider, setIntegrationIdByProvider] = React.useState<Record<string, string>>({});
   const [oauthCodes, setOauthCodes] = React.useState<Record<string, string>>({});
   const [oauthDetails, setOauthDetails] = React.useState<Record<string, { url?: string; instructions?: string; userCode?: string; mode: 'auto' | 'code' }>>({});
   const [availableProviders, setAvailableProviders] = React.useState<ProviderOption[]>([]);
@@ -217,12 +290,18 @@ export const ProvidersPage: React.FC = () => {
     const loadAuthMethods = async () => {
       setAuthLoading(true);
       try {
-        const result = await opencodeClient.getSdkClient().provider.auth();
-        if (result.error) {
-          throw new Error(`provider.auth failed: ${String(result.error)}`);
-        }
+        const client = opencodeClient.getSdkClient();
+        const [providersResult, integrationsResult] = await Promise.all([
+          client.provider.list(),
+          client.integration.list(),
+        ]);
         if (!isMounted) return;
-        setAuthMethodsByProvider(parseAuthPayload(result.data));
+        const mapped = buildAuthMethodsFromIntegrations(
+          Array.isArray(providersResult.data) ? providersResult.data : [],
+          Array.isArray(integrationsResult.data) ? integrationsResult.data : [],
+        );
+        setAuthMethodsByProvider(parseAuthPayload(mapped.methodsByProvider));
+        setIntegrationIdByProvider(mapped.integrationIdByProvider);
       } catch (error) {
         if (!isMounted) return;
         console.error('Failed to load provider auth methods:', error);
@@ -253,9 +332,6 @@ export const ProvidersPage: React.FC = () => {
       setAvailableError(null);
       try {
         const result = await opencodeClient.getSdkClient().provider.list();
-        if (result.error) {
-          throw new Error(`provider.list failed: ${String(result.error)}`);
-        }
         if (!isMounted) return;
         setAvailableProviders(parseProvidersPayload(result.data));
       } catch (error) {
@@ -368,13 +444,11 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const result = await opencodeClient.getSdkClient().auth.set({
-        providerID: providerId,
-        auth: { type: 'api', key: apiKey },
+      const integrationID = integrationIdByProvider[providerId] || providerId;
+      await opencodeClient.getSdkClient().integration.connect.key({
+        integrationID,
+        key: apiKey,
       });
-      if (result.error) {
-        throw new Error(t('settings.providers.page.toast.apiKeySaveFailed'));
-      }
 
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
@@ -394,34 +468,23 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const result = await opencodeClient.getSdkClient().provider.oauth.authorize({
-        providerID: providerId,
-        method: methodIndex,
-      });
-      if (result.error) {
+      const method = authMethodsByProvider[providerId]?.[methodIndex];
+      const methodID = typeof method?.id === 'string' ? method.id : '';
+      if (!methodID) {
         throw new Error(t('settings.providers.page.toast.oauthStartFailed'));
       }
+      const integrationID = integrationIdByProvider[providerId] || providerId;
+      const result = await opencodeClient.getSdkClient().integration.oauth.connect({
+        integrationID,
+        methodID,
+      });
+      const dataRecord: Record<string, unknown> = isRecord(result.data) ? result.data : {};
+      const urlCandidate = typeof dataRecord.url === 'string' ? dataRecord.url : undefined;
+      const instructions = typeof dataRecord.instructions === 'string' ? dataRecord.instructions : undefined;
+      const attemptID = typeof dataRecord.attemptID === 'string' ? dataRecord.attemptID : '';
+      const mode = dataRecord.mode === 'auto' ? 'auto' : 'code';
 
-      const payloadRecord: Record<string, unknown> = isRecord(result.data) ? result.data : {};
-      const nestedData = payloadRecord.data;
-      const dataRecord: Record<string, unknown> = isRecord(nestedData) ? nestedData : payloadRecord;
-      const urlCandidate =
-        (typeof dataRecord.url === 'string' && dataRecord.url) ||
-        (typeof dataRecord.verification_uri_complete === 'string' && dataRecord.verification_uri_complete) ||
-        (typeof dataRecord.verification_uri === 'string' && dataRecord.verification_uri) ||
-        undefined;
-      const instructions =
-        (typeof dataRecord.instructions === 'string' && dataRecord.instructions) ||
-        (typeof dataRecord.message === 'string' && dataRecord.message) ||
-        undefined;
-      const userCode =
-        (typeof dataRecord.user_code === 'string' && dataRecord.user_code) ||
-        (typeof dataRecord.code === 'string' && dataRecord.code) ||
-        (typeof dataRecord.userCode === 'string' && dataRecord.userCode) ||
-        undefined;
-      const mode = dataRecord.method === 'auto' ? 'auto' : 'code';
-
-      if (!urlCandidate && !instructions && !userCode) {
+      if (!attemptID || (!urlCandidate && !instructions)) {
         throw new Error(t('settings.providers.page.toast.oauthDetailsMissing'));
       }
 
@@ -431,7 +494,6 @@ export const ProvidersPage: React.FC = () => {
         [detailsKey]: {
           url: urlCandidate,
           instructions,
-          userCode,
           mode,
         },
       }));
@@ -439,11 +501,11 @@ export const ProvidersPage: React.FC = () => {
       if (urlCandidate) {
         void openExternalUrl(urlCandidate);
       }
-      setPendingOAuth({ providerId, methodIndex, mode });
+      setPendingOAuth({ providerId, methodIndex, methodID, attemptID, mode });
       toast.message(t('settings.providers.page.toast.completeOAuthInBrowser'));
       if (mode === 'auto') {
         autoCompleting = true;
-        void handleOAuthComplete(providerId, methodIndex);
+        void handleOAuthComplete(providerId, methodIndex, undefined, attemptID);
       }
     } catch (error) {
       console.error('Failed to start OAuth flow:', error);
@@ -455,7 +517,7 @@ export const ProvidersPage: React.FC = () => {
     }
   };
 
-  const handleOAuthComplete = async (providerId: string, methodIndex: number, codeOverride?: string) => {
+  const handleOAuthComplete = async (providerId: string, methodIndex: number, codeOverride?: string, attemptIDOverride?: string) => {
     const codeKey = `${providerId}:${methodIndex}`;
     const code = codeOverride ?? oauthCodes[codeKey]?.trim();
 
@@ -463,19 +525,19 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const requestBody: { method: number; code?: string } = { method: methodIndex };
-      if (code) {
-        requestBody.code = code;
-      }
-
-      const result = await opencodeClient.getSdkClient().provider.oauth.callback({
-        providerID: providerId,
-        method: requestBody.method,
-        code: requestBody.code,
-      });
-      if (result.error) {
+      const attemptID = attemptIDOverride
+        || (pendingOAuth?.providerId === providerId && pendingOAuth.methodIndex === methodIndex
+          ? pendingOAuth.attemptID
+          : '');
+      if (!attemptID) {
         throw new Error(t('settings.providers.page.toast.oauthCompleteFailed'));
       }
+      const integrationID = integrationIdByProvider[providerId] || providerId;
+      await opencodeClient.getSdkClient().integration.oauth.complete({
+        integrationID,
+        attemptID,
+        ...(code ? { code } : {}),
+      });
 
       toast.success(t('settings.providers.page.toast.oauthCompleted'));
       setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
@@ -515,15 +577,19 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const response = await runtimeFetch(`/api/provider/${encodeURIComponent(providerId)}/auth?scope=all`, {
-        method: 'DELETE',
-        headers: { Accept: 'application/json' },
-      });
-
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.providerDisconnectFailed'));
+      const client = opencodeClient.getSdkClient();
+      const integrationID = integrationIdByProvider[providerId] || providerId;
+      const integration = await client.integration.get({ integrationID });
+      const connections = Array.isArray(integration.data?.connections) ? integration.data.connections : [];
+      const credentialIds = connections.flatMap((connection) => (
+        connection.type === 'credential' && typeof connection.id === 'string' && connection.id
+          ? [connection.id]
+          : []
+      ));
+      if (credentialIds.length === 0) {
+        throw new Error(t('settings.providers.page.toast.providerDisconnectFailed'));
       }
+      await Promise.all(credentialIds.map((credentialID) => client.credential.remove({ credentialID })));
 
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
       await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
@@ -1066,6 +1132,7 @@ export const ProvidersPage: React.FC = () => {
                 value={modelQuery}
                 onChange={(event) => setModelQuery(event.target.value)}
                 placeholder={t('settings.providers.page.models.filterPlaceholder')}
+
                 className="h-7 pl-8 w-full"
               />
             </div>

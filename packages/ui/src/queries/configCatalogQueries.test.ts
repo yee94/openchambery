@@ -8,10 +8,14 @@ let providerSignal: AbortSignal | undefined;
 let providerDirectory: string | null = null;
 let providerPayload: unknown;
 let providerFetchImpl: (() => Promise<Response>) | undefined;
-let legacyProviderCalls = 0;
-let legacyProviderDirectory: string | undefined;
-let legacyProviderSignal: AbortSignal | undefined;
-let legacyProviderResult: unknown;
+let v2ProviderCalls = 0;
+let v2ModelCalls = 0;
+let v2ConfigCalls = 0;
+let v2ProviderDirectory: string | undefined;
+let v2ProviderSignal: AbortSignal | undefined;
+let v2ProviderResult: unknown;
+let v2ModelResult: unknown;
+let v2ConfigResult: unknown;
 let resolveAgents: (() => void) | undefined;
 
 mock.module('@/lib/runtime-switch', () => ({
@@ -23,12 +27,24 @@ mock.module('@/lib/runtime-switch', () => ({
 mock.module('@/lib/opencode/client', () => ({
   opencodeClient: {
     getSdkClient: () => ({
+      provider: {
+        list: async (parameters?: { location?: { directory?: string } }, options?: { signal?: AbortSignal }) => {
+          v2ProviderCalls += 1;
+          v2ProviderDirectory = parameters?.location?.directory;
+          v2ProviderSignal = options?.signal;
+          return v2ProviderResult;
+        },
+      },
+      model: {
+        list: async () => {
+          v2ModelCalls += 1;
+          return v2ModelResult;
+        },
+      },
       config: {
-        providers: async (parameters?: { directory?: string }, options?: { signal?: AbortSignal }) => {
-          legacyProviderCalls += 1;
-          legacyProviderDirectory = parameters?.directory;
-          legacyProviderSignal = options?.signal;
-          return legacyProviderResult;
+        get: async () => {
+          v2ConfigCalls += 1;
+          return v2ConfigResult;
         },
       },
     }),
@@ -72,10 +88,14 @@ describe('configCatalogQueries', () => {
     providerDirectory = null;
     providerPayload = { schemaVersion: 1, providers: [{ id: 'safe', name: 'Safe', models: { model: { id: 'model', name: 'Model', api: 'secret', variants: { fast: { token: 'secret' } } } } }], default: {}, partial: false };
     providerFetchImpl = undefined;
-    legacyProviderCalls = 0;
-    legacyProviderDirectory = undefined;
-    legacyProviderSignal = undefined;
-    legacyProviderResult = { data: { providers: [{ id: 'legacy', name: 'Legacy', models: { model: { id: 'model', name: 'Model' } } }], default: { legacy: 'model' } } };
+    v2ProviderCalls = 0;
+    v2ModelCalls = 0;
+    v2ConfigCalls = 0;
+    v2ProviderDirectory = undefined;
+    v2ProviderSignal = undefined;
+    v2ProviderResult = { data: [{ id: 'legacy', name: 'Legacy' }] };
+    v2ModelResult = { data: [{ id: 'model', modelID: 'model', providerID: 'legacy', name: 'Model' }] };
+    v2ConfigResult = [{ type: 'document', info: { model: { providerID: 'legacy', model: 'model' } } }];
     resolveAgents = undefined;
   });
 
@@ -179,39 +199,32 @@ describe('configCatalogQueries', () => {
     await expect(ensureProviderCatalogQuery('/workspace/project', runtimeKey)).rejects.toThrow('Invalid provider catalog response');
   });
 
-  test('安全宿主路由返回 404 和 501 时通过旧 SDK 兼容 catalog，并透传目录与 AbortSignal', async () => {
+  test('安全宿主路由返回 404 和 501 时通过 v2 provider.list / model.list / config.get 组装 catalog，并透传目录与 AbortSignal', async () => {
     for (const status of [404, 501]) {
       providerFetchImpl = async () => new Response('unsupported', { status });
-      legacyProviderResult = {
-        data: {
-          providers: [{ id: 'legacy', name: 'Legacy', apiKey: 'legacy-secret', models: { model: { id: 'model', name: 'Model', token: 'legacy-secret' } } }],
-          default: { legacy: 'model' },
-        },
-      };
 
       const result = await ensureProviderCatalogQuery(' /workspace/project/ ', runtimeKey);
 
       expect(providerCalls).toBe(1);
-      expect(legacyProviderCalls).toBe(1);
-      expect(legacyProviderDirectory).toBe('/workspace/project');
-      expect(legacyProviderSignal).toBeInstanceOf(AbortSignal);
+      expect(v2ProviderCalls).toBe(1);
+      expect(v2ModelCalls).toBe(1);
+      expect(v2ConfigCalls).toBe(1);
+      expect(v2ProviderDirectory).toBe('/workspace/project');
+      expect(v2ProviderSignal).toBeInstanceOf(AbortSignal);
       expect(result).toEqual({ schemaVersion: 1, providers: [{ id: 'legacy', name: 'Legacy', models: { model: { id: 'model', name: 'Model' } } }], default: { legacy: 'model' }, partial: false });
-      expect(JSON.stringify(result)).not.toContain('legacy-secret');
-      expect(JSON.stringify(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey))).not.toContain('legacy-secret');
       queryClient.clear();
       providerCalls = 0;
-      legacyProviderCalls = 0;
+      v2ProviderCalls = 0;
+      v2ModelCalls = 0;
+      v2ConfigCalls = 0;
     }
   });
 
-  test('旧 SDK 响应含 error 时失败关闭，即使同时含有 data', async () => {
+  test('v2 catalog 缺少 provider.list data 时失败关闭', async () => {
     providerFetchImpl = async () => new Response('missing', { status: 404 });
-    legacyProviderResult = {
-      error: { message: 'legacy failed', token: 'legacy-secret' },
-      data: { providers: [{ id: 'leak', name: 'Leak', models: {} }], default: {} },
-    };
+    v2ProviderResult = { location: {} };
 
-    await expect(ensureProviderCatalogQuery('/workspace/project', runtimeKey)).rejects.toThrow('Legacy provider catalog request failed');
+    await expect(ensureProviderCatalogQuery('/workspace/project', runtimeKey)).rejects.toThrow('v2 provider catalog request failed');
     expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toBe(undefined);
   });
 
@@ -285,15 +298,17 @@ describe('configCatalogQueries', () => {
     providerCalls = 0;
     await expect(ensureProviderCatalogQuery('/workspace/retry', runtimeKey)).rejects.toThrow('Provider catalog request failed');
     expect(providerCalls).toBe(3);
-    expect(legacyProviderCalls).toBe(0);
+    expect(v2ProviderCalls).toBe(0);
   });
 
-  test('旧 SDK 成功 catalog 在无限 freshness 下重复 ensure 不发起新请求', async () => {
+  test('v2 catalog 在无限 freshness 下重复 ensure 不发起新请求', async () => {
     providerFetchImpl = async () => new Response('missing', { status: 404 });
     await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
     await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
 
     expect(providerCalls).toBe(1);
-    expect(legacyProviderCalls).toBe(1);
+    expect(v2ProviderCalls).toBe(1);
+    expect(v2ModelCalls).toBe(1);
+    expect(v2ConfigCalls).toBe(1);
   });
 });

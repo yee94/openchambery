@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
-import type { Session } from "@opencode-ai/sdk/v2"
+import type { SessionStatus } from '@/lib/opencode/v2-types'
+
+import type { Session } from '@/lib/opencode/v2-types'
+
 import {
   getReconnectCandidateSessionIds,
   getReconnectMaterializationSessionIds,

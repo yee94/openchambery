@@ -1,16 +1,17 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
+import {
+  PINNED_OPENCODE2_VERSION,
+  artifactForOpenCode2,
+} from './opencode2-bundle-contract.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
-const workspaceRoot = path.resolve(electronRoot, '../..');
 const outputDir = path.join(electronRoot, 'resources', 'opencode-cli');
 const cacheRoot = path.join(electronRoot, '.cache', 'opencode-cli');
-const rootPackagePath = path.join(workspaceRoot, 'package.json');
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -27,34 +28,13 @@ const run = (command, args, options = {}) => {
   return result;
 };
 
-const readPinnedSdkVersion = () => {
-  const pkg = JSON.parse(fs.readFileSync(rootPackagePath, 'utf8'));
-  const version = pkg.dependencies?.['@opencode-ai/sdk'];
-  if (typeof version !== 'string' || !version.trim()) {
-    throw new Error('Missing @opencode-ai/sdk dependency in root package.json');
-  }
-  const trimmed = version.trim();
+const readPinnedOpenCode2Version = () => {
+  const version = process.env.OPENCHAMBER_OPENCODE2_VERSION || process.env.OPENCHAMBER_OPENCODE_CLI_VERSION || PINNED_OPENCODE2_VERSION;
+  const trimmed = typeof version === 'string' ? version.trim() : '';
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(trimmed)) {
-    throw new Error(`@opencode-ai/sdk must be pinned to an exact version for desktop CLI bundling, got: ${trimmed}`);
+    throw new Error(`opencode2 must be pinned to an exact version for desktop CLI bundling, got: ${trimmed || '(missing)'}`);
   }
   return trimmed;
-};
-
-const artifactForPlatform = (platform, targetArchitecture) => {
-  const arch = targetArchitecture.opencode;
-  if (platform === 'darwin') {
-    if (arch === 'arm64') return { name: 'opencode-darwin-arm64.zip', binary: 'opencode' };
-    if (arch === 'x64') return { name: 'opencode-darwin-x64-baseline.zip', binary: 'opencode' };
-  }
-  if (platform === 'win32') {
-    if (arch === 'arm64') return { name: 'opencode-windows-arm64.zip', binary: 'opencode.exe' };
-    if (arch === 'x64') return { name: 'opencode-windows-x64-baseline.zip', binary: 'opencode.exe' };
-  }
-  if (platform === 'linux') {
-    if (arch === 'arm64') return { name: 'opencode-linux-arm64.tar.gz', binary: 'opencode' };
-    if (arch === 'x64') return { name: 'opencode-linux-x64-baseline.tar.gz', binary: 'opencode' };
-  }
-  throw new Error(`No OpenCode CLI artifact mapping for ${platform}/${arch}`);
 };
 
 const outputBinaryPath = (binaryName) => path.join(outputDir, binaryName);
@@ -111,7 +91,7 @@ const extractArchive = (archivePath, destination) => {
     run('tar', ['-xzf', archivePath, '-C', destination]);
     return;
   }
-  throw new Error(`Unsupported OpenCode CLI archive: ${archivePath}`);
+  throw new Error(`Unsupported opencode2 CLI archive: ${archivePath}`);
 };
 
 const findBinary = (root, binaryName) => {
@@ -130,17 +110,13 @@ const findBinary = (root, binaryName) => {
 };
 
 const main = async () => {
-  const version = process.env.OPENCHAMBER_OPENCODE_CLI_VERSION || readPinnedSdkVersion();
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-    throw new Error(`Invalid OpenCode CLI version: ${version}`);
-  }
-
+  const version = readPinnedOpenCode2Version();
   const targetArchitecture = resolveTargetArchitecture();
-  const artifact = artifactForPlatform(process.platform, targetArchitecture);
+  const artifact = artifactForOpenCode2(process.platform, targetArchitecture);
   const outputBinary = outputBinaryPath(artifact.binary);
   const existingVersion = readBinaryVersion(outputBinary);
   if (existingVersion === version) {
-    console.log(`[electron] bundled OpenCode CLI already prepared: ${outputBinary} (${version})`);
+    console.log(`[electron] bundled opencode2 already prepared: ${outputBinary} (${version})`);
     return;
   }
 
@@ -148,10 +124,10 @@ const main = async () => {
   const archivePath = path.join(cacheDir, artifact.name);
   const url = `https://github.com/anomalyco/opencode/releases/download/v${version}/${artifact.name}`;
   if (!fs.existsSync(archivePath)) {
-    console.log(`[electron] downloading OpenCode CLI ${version}: ${artifact.name}`);
+    console.log(`[electron] downloading opencode2 ${version}: ${artifact.name}`);
     await download(url, archivePath);
   } else {
-    console.log(`[electron] using cached OpenCode CLI archive: ${archivePath}`);
+    console.log(`[electron] using cached opencode2 archive: ${archivePath}`);
   }
 
   const extractDir = path.join(cacheDir, 'extract');
@@ -171,10 +147,10 @@ const main = async () => {
 
   const preparedVersion = readBinaryVersion(outputBinary);
   if (preparedVersion !== version) {
-    throw new Error(`Prepared OpenCode CLI version mismatch: expected ${version}, got ${preparedVersion || 'unknown'}`);
+    throw new Error(`Prepared opencode2 version mismatch: expected ${version}, got ${preparedVersion || 'unknown'}`);
   }
 
-  console.log(`[electron] prepared OpenCode CLI ${version}: ${outputBinary}`);
+  console.log(`[electron] prepared opencode2 ${version}: ${outputBinary}`);
 };
 
 main().catch((error) => {

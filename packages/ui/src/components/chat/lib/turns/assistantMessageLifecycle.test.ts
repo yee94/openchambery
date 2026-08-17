@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 
 import {
     canRevealSortedFinalBody,

@@ -1,4 +1,4 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 
 // Directory-scoped OpenCode provider catalog for small-model resolution.
 // Never contacts models.dev — source of truth is client.config.providers().
@@ -45,6 +45,51 @@ const normalizeDirectoryKey = (directory) => {
 };
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// Compose official v2 provider.list + model.list into the SDK catalog shape
+// consumed by toSmallModelCatalog. Missing arrays are failure, not empty success.
+const composeV2ProviderCatalogSource = (providers, models) => {
+  if (!Array.isArray(providers) || !Array.isArray(models)) return null;
+
+  const modelsByProvider = new Map();
+  for (const model of models) {
+    if (!isRecord(model)) continue;
+    const providerID = typeof model.providerID === 'string' ? model.providerID : '';
+    const modelID = typeof model.modelID === 'string' && model.modelID
+      ? model.modelID
+      : (typeof model.id === 'string' ? model.id : '');
+    if (!providerID || !modelID) continue;
+    if (!modelsByProvider.has(providerID)) modelsByProvider.set(providerID, Object.create(null));
+    const entry = { id: modelID };
+    if (typeof model.family === 'string' && model.family) entry.family = model.family;
+    if (isRecord(model.limit)) {
+      const limit = Object.create(null);
+      if (Number.isFinite(model.limit.context)) limit.context = model.limit.context;
+      if (Number.isFinite(model.limit.output)) limit.output = model.limit.output;
+      if (Object.keys(limit).length > 0) entry.limit = limit;
+    }
+    if (isRecord(model.api) && typeof model.api.url === 'string' && model.api.url.trim()) {
+      entry.api = { url: model.api.url.trim() };
+    }
+    if (typeof model.time?.released === 'number' && Number.isFinite(model.time.released)) {
+      entry.release_date = new Date(model.time.released).toISOString().slice(0, 10);
+    } else if (typeof model.release_date === 'string' && model.release_date) {
+      entry.release_date = model.release_date;
+    }
+    modelsByProvider.get(providerID)[modelID] = entry;
+  }
+
+  const catalogProviders = [];
+  for (const provider of providers) {
+    if (!isRecord(provider) || typeof provider.id !== 'string' || !provider.id) continue;
+    catalogProviders.push({
+      id: provider.id,
+      name: typeof provider.name === 'string' && provider.name ? provider.name : provider.id,
+      models: modelsByProvider.get(provider.id) || Object.create(null),
+    });
+  }
+  return { providers: catalogProviders };
+};
 
 /**
  * Convert the official SDK provider list into the internal small-model catalog
@@ -118,17 +163,22 @@ export function createModelCatalogLoader({
 
   const fetchOpenCodeCatalog = async (directory) => {
     const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
-    const client = createOpencodeClient({
+    const client = OpenCode.make({
       baseUrl,
-      ...(directory ? { directory } : {}),
       headers: getOpenCodeAuthHeaders(),
       fetch: (request) => fetchImpl(request, { signal: AbortSignal.timeout(timeoutMs) }),
     });
-    const response = await client.config.providers(directory ? { directory } : {});
-    if (response?.error || response?.data === undefined) {
+    const location = directory ? { directory } : undefined;
+    const request = location ? { location } : undefined;
+    const [providersResult, modelsResult] = await Promise.all([
+      client.provider.list(request),
+      client.model.list(request),
+    ]);
+    const source = composeV2ProviderCatalogSource(providersResult?.data, modelsResult?.data);
+    if (!source) {
       throw new Error('OpenCode provider catalog is unavailable');
     }
-    const catalog = toSmallModelCatalog(response.data);
+    const catalog = toSmallModelCatalog(source);
     if (!catalog) {
       throw new Error('OpenCode provider catalog returned an unexpected payload');
     }

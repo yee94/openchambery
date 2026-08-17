@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Session } from '@opencode-ai/sdk/v2/client';
+import type { Session } from '@/lib/opencode/v2-types';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -35,23 +35,30 @@ const getSessionProjectDirectory = (sessionId: string, directory: string | null)
   return metadata?.projectDirectory ?? directory;
 };
 
+const assistantTextFromV2Message = (record: {
+  type?: string;
+  content?: Array<{ type?: string; text?: string }>;
+}): string => {
+  if (record.type !== 'assistant') return '';
+  return flattenAssistantTextParts((record.content ?? []) as Parameters<typeof flattenAssistantTextParts>[0]).trim();
+};
+
 const getLastAssistantText = async (source: FusionSource): Promise<string> => {
   const directory = source.directory ?? undefined;
   const messages = getSyncMessages(source.session.id, directory);
 
   if (messages.length === 0 && source.directory) {
-    const result = await opencodeClient.withDirectory(source.directory, () =>
-      opencodeClient.getSdkClient().session.messages({
+    // v2 message.list returns SessionMessagesResponse directly; do not unwrap HeyAPI {data,error}.
+    const listed = await opencodeClient.withDirectory(source.directory, () =>
+      opencodeClient.getSdkClient().message.list({
         sessionID: source.session.id,
-        directory: source.directory ?? undefined,
         limit: 50,
       })
     );
-    const records = result.data ?? [];
+    const records = Array.isArray(listed.data) ? listed.data : [];
     for (let index = records.length - 1; index >= 0; index -= 1) {
-      const record = records[index] as { info?: { role?: string }; parts?: unknown[] };
-      if (record.info?.role !== 'assistant') continue;
-      return flattenAssistantTextParts((record.parts ?? []) as Parameters<typeof flattenAssistantTextParts>[0]).trim();
+      const text = assistantTextFromV2Message(records[index] as { type?: string; content?: Array<{ type?: string; text?: string }> });
+      if (text) return text;
     }
     return '';
   }

@@ -1,4 +1,4 @@
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 
 import type { SessionFoldersMap, SessionOrderActivityMap, SessionOrderMap } from '@/stores/useSessionFoldersStore';
 import { resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';

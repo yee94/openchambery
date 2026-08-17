@@ -1,4 +1,4 @@
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 
 /**
  * Assistant-message lifecycle predicates, mirroring the OpenCode runLoop exit

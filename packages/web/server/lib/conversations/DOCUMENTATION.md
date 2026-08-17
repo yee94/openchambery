@@ -1,14 +1,14 @@
 # Conversations Module
 
 ## Purpose
-Server-owned conversation orchestration for OpenChamber. Provides an idempotent create-session-and-first-prompt workflow using `session.create` + `session.promptAsync` through `@opencode-ai/sdk/v2` directory-scoped client, exposed as `POST /api/openchamber/conversations`.
+Server-owned conversation orchestration for OpenChamber. Provides an idempotent create-session-and-first-prompt workflow using `session.create` + `session.prompt` (`delivery=steer`) through `@opencode-ai/sdk/v2` directory-scoped client, exposed as `POST /api/openchamber/conversations`. Host does not cache message body.
 
 ## Scope
 - This module is OpenChamber feature logic, intentionally separate from OpenCode proxy/runtime internals.
 - Registered in `feature-routes-runtime.js` before the generic OpenCode proxy.
 - JSON request bodies are parsed by the explicit OpenChamber route allowlist in `core-routes.js`; conversation payloads allow up to 50 MB so data-URL attachments reach validation and the OpenCode SDK.
 - Only accepts `input.type === 'prompt'`; shell/slash commands use the existing SDK sequence.
-- `promptAsync` returns 204 immediately (does not wait for model completion).
+- `prompt` + `delivery=steer` returns an inbox item immediately (does not wait for model completion).
 
 ## Operation Idempotency
 
@@ -51,7 +51,7 @@ The service calls `waitForOpenCodeReady(6000, 75)` (6s, matching proxy gate `REA
   - Dependencies: `buildOpenCodeUrl`, `getOpenCodeAuthHeaders`, `markUserMessageSent`, `waitForOpenCodeReady`, `logger`
   - Internal bounded timeouts: 30s create, 45s prompt, 6s readiness (all with `AbortSignal.timeout`)
   - `session.create` only receives title/parentID/metadata/directory
-  - `session.promptAsync` receives model/agent/variant/parts — does NOT pass `delivery`
+  - `session.prompt` receives model/agent/variant/parts and `delivery: "steer"` — Host does not persist parts/text
   - Calls `safeMark(markUserMessageSent)` (swallows errors) ONLY on: success, or ambiguous prompt outcomes
   - All client-facing errors are sanitized
   - Returns discriminated result (see Result Union below)
@@ -149,7 +149,7 @@ All prompt-phase results include `session` and `messageID` for client surface.
 All SDK calls use internal bounded `AbortSignal.timeout`:
 - Readiness wait: 6s
 - `session.create`: 30s
-- `session.promptAsync`: 45s
+- `session.prompt`: 45s
 
 ## Error safety
 - Client-facing errors are stable generic strings

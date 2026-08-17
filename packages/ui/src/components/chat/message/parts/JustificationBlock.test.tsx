@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 
 import { MarkdownHydrationProvider } from '../../markdown/MarkdownHydrationProvider';
 import JustificationBlock from './JustificationBlock';

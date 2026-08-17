@@ -11,7 +11,8 @@
  */
 
 import React, { useCallback, useRef } from "react"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import type { StoreApi } from "zustand"
 
 import type { DirectoryStore } from "./child-store"

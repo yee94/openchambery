@@ -14,7 +14,7 @@
 //    detail-only revert/diff blobs
 // ---------------------------------------------------------------------------
 
-import type { Session, Message } from "@opencode-ai/sdk/v2/client"
+import type { Session, Message } from '@/lib/opencode/v2-types'
 
 type DiffEntry = {
   file?: string

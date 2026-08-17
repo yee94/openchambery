@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEvent, useResizeObserver } from '@reactuses/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 
 // Archived buckets routinely grow into the hundreds/thousands; virtualize
 // when we cross this row count so the DOM stays bounded.

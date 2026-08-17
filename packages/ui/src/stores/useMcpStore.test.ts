@@ -24,6 +24,7 @@ mock.module('@/queries/mcpQueries', () => ({
 }));
 
 const { useMcpStore } = await import('./useMcpStore');
+const { v2CapabilityUnavailable } = await import('@/sync/v2-runtime');
 
 describe('useMcpStore clearDiagnostic', () => {
   beforeEach(() => {
@@ -58,5 +59,14 @@ describe('useMcpStore clearDiagnostic', () => {
         target: { status: 'failed', error: 'other transport' },
       },
     });
+  });
+});
+
+describe('useMcpStore auth', () => {
+  test('MCP auth methods fail closed as unavailable on v2', async () => {
+    const expected = v2CapabilityUnavailable('mcp.auth');
+    await expect(useMcpStore.getState().startAuth('server')).rejects.toThrow(expected.message);
+    await expect(useMcpStore.getState().completeAuth('server', 'code')).rejects.toThrow(expected.message);
+    await expect(useMcpStore.getState().clearAuth('server')).rejects.toThrow(expected.message);
   });
 });

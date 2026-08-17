@@ -3,7 +3,14 @@
  * Replaces the action methods from the old useSessionStore.
  */
 
-import type { OpencodeClient, Session, Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  OpenCodeClient,
+  Session,
+  Message,
+  Part,
+  SessionStatus,
+} from '@/lib/opencode/v2-types'
+
 import { Binary } from "./binary"
 import { useSessionUIStore, type ForkTransitionStage, type MessageEditSnapshot } from "./session-ui-store"
 import { useInputStore } from "./input-store"
@@ -47,6 +54,12 @@ import {
   getSendConfirmationRefetchLimit,
 } from "./session-message-policy"
 import { resolveSessionMergeStrategy, SEND_GAP_FILL_SESSION_MERGE_STRATEGY } from "./session-merge-strategy"
+import { postSessionPermissionReply } from "./session-permission-api"
+import { fetchSessionProjectionPage } from "./session-projection-api"
+import { confirmOptimisticAgainstPromoted, fetchSessionInbox, postSessionInterrupt } from "./session-prompt-api"
+import { postSessionRevertClear, postSessionRevertCommit, postSessionRevertStage, sessionRevertBusyError } from "./session-revert-api"
+import { isSessionSharingAvailable } from "./session-sharing-availability"
+import { v2CapabilityUnavailable } from "./v2-runtime"
 
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
@@ -93,9 +106,10 @@ export function trackForkCopySessionCreated(directory: string, session?: { id?: 
   activeForkCopy.targetSessionID = sessionID
 }
 
-function getForkedSessionTitle(title: string): string {
-  const match = title.match(/^(.+) \(fork #(\d+)\)$/)
-  if (!match) return `${title} (fork #1)`
+function getForkedSessionTitle(title?: string): string {
+  const base = title?.trim() || "session"
+  const match = base.match(/^(.+) \(fork #(\d+)\)$/)
+  if (!match) return `${base} (fork #1)`
   return `${match[1]} (fork #${Number.parseInt(match[2], 10) + 1})`
 }
 
@@ -186,7 +200,7 @@ export function shouldSuppressForkCopyEvent(directory: string, sessionID?: strin
 }
 
 // Reference set by SyncProvider — allows actions to access SDK and stores
-let _sdk: OpencodeClient | null = null
+let _sdk: OpenCodeClient | null = null
 let _childStores: ChildStoreManager | null = null
 let _getDirectory: () => string = () => ""
 const PENDING_MESSAGE_FETCHES = new Map<string, { sessionID: string; directory: string }>()
@@ -200,50 +214,65 @@ let _optimisticConfirm: ((input: OptimisticConfirmInput) => void) | null = null
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-type SdkResult<T> = {
-  data?: T
-  error?: unknown
-  response?: { status?: number }
+/** Read a projection page and keep only records with a message id. */
+async function fetchSessionProjectionRecords(input: {
+  sessionID: string
+  directory?: string | null
+  limit: number
+  signal?: AbortSignal
+}): Promise<Array<{ info: Message; parts?: Part[] }>> {
+  const page = await fetchSessionProjectionPage({
+    sessionID: input.sessionID,
+    directory: input.directory ?? "",
+    limit: input.limit,
+    ...(input.signal ? { signal: input.signal } : {}),
+  })
+  return page.records.filter((record) => !!record?.info?.id) as Array<{ info: Message; parts?: Part[] }>
 }
 
-function formatSdkError(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === "string") return error
-  if (error && typeof error === "object") {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === "string" && message.length > 0) return message
-
-    const data = (error as { data?: unknown }).data
-    if (data && typeof data === "object") {
-      const dataMessage = (data as { message?: unknown }).message
-      if (typeof dataMessage === "string" && dataMessage.length > 0) return dataMessage
+/** Confirm an idle/queue prompt against inbox + projection after send. */
+export async function settleSessionPromptAfterSend(input: {
+  sessionId: string
+  directory?: string | null
+  optimisticID: string
+  inboxID?: string
+  text?: string
+  delivery?: "steer" | "queue"
+}): Promise<void> {
+  void input.text
+  void input.delivery
+  if (input.inboxID) {
+    const inbox = await fetchSessionInbox({
+      sessionID: input.sessionId,
+      directory: input.directory,
+    })
+    if (!inbox.some((item) => item.id === input.inboxID)) {
+      throw new Error("session prompt inbox item was not found after send")
     }
   }
-  try {
-    return JSON.stringify(error)
-  } catch {
-    return String(error)
-  }
-}
-
-function assertSdkSuccess<T>(result: SdkResult<T>, operation: string): T | undefined {
-  if (!result.error) return result.data
-  const status = result.response?.status
-  const error = new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`) as Error & { status?: number }
-  if (status !== undefined) error.status = status
-  throw error
-}
-
-function assertSdkData<T>(result: SdkResult<T>, operation: string): T {
-  const data = assertSdkSuccess(result, operation)
-  if (data === undefined || data === null) {
-    throw new Error(`${operation} failed: empty response`)
-  }
-  return data
+  const records = await fetchSessionProjectionRecords({
+    sessionID: input.sessionId,
+    directory: input.directory,
+    limit: getSendConfirmationRefetchLimit(),
+  })
+  await confirmOptimisticAgainstPromoted({
+    optimisticID: input.optimisticID,
+    promotedIDs: records.map((record) => record.info.id),
+    removeOptimistic: (id) => {
+      _optimisticRemove?.({
+        sessionID: input.sessionId,
+        directory: input.directory,
+        messageID: id,
+      })
+    },
+    refreshFromAuthority: async () => {
+      await refetchSessionMessages(input.sessionId, input.directory ?? undefined)
+    },
+  })
 }
 
 export function setActionRefs(
-  sdk: OpencodeClient,
+  sdk: OpenCodeClient,
   childStores: ChildStoreManager,
   getDirectory: () => string,
 ) {
@@ -647,7 +676,7 @@ function findSessionDirectoryInChildStores(sessionId: string): string | null {
   return null
 }
 
-function getSessionReplyClient(sessionId?: string): OpencodeClient {
+function getSessionReplyClient(sessionId?: string): OpenCodeClient {
   const directory = sessionId
     ? useSessionUIStore.getState().getDirectoryForSession(sessionId)
     : null
@@ -783,11 +812,26 @@ function removeQuestionRequestFromChildStores(sessionId: string, requestId: stri
   return removed
 }
 
+function clearSessionPermissionsFromChildStores(sessionId: string): boolean {
+  const stores = _childStores
+  if (!stores || !sessionId) return false
+  let removed = false
+  for (const [, store] of stores.children) {
+    const current = store.getState().permission
+    if (!current || !current[sessionId]) continue
+    const next = { ...current }
+    delete next[sessionId]
+    store.setState({ permission: next })
+    removed = true
+  }
+  return removed
+}
+
 function getRequestReplyClient(
   type: "permission" | "question",
   sessionId: string,
   requestId: string,
-): OpencodeClient {
+): OpenCodeClient {
   const requestDirectory = resolveDirectoryForBlockingRequest(type, sessionId, requestId)
   if (requestDirectory) {
     return opencodeClient.getScopedSdkClient(requestDirectory)
@@ -1234,22 +1278,26 @@ export async function requestSessionSmartTitle(sessionId: string): Promise<void>
   mirrorSessionIntoLiveStores(session, sessionDirectory)
 }
 
-export async function shareSession(sessionId: string): Promise<Session | null> {
-  const sessionDirectory = getSessionDirectory(sessionId)
-  const result = await sdk().session.share({ sessionID: sessionId, directory: sessionDirectory })
-  const session = stripSessionDiffSnapshots(assertSdkData(result, "session.share"))
-  useGlobalSessionsStore.getState().upsertSession(session)
-  updateLiveSession(session, sessionDirectory)
-  return session
+export async function commitStagedRevertBeforeSend(sessionId: string, directoryOverride?: string | null): Promise<void> {
+  const { store, directory } = dirStoreForSession(sessionId, directoryOverride ?? undefined)
+  const session = store.getState().session.find((item) => item.id === sessionId)
+  if (!session?.revert) return
+  await postSessionRevertCommit({ sessionID: sessionId, directory })
+  const next = [...store.getState().session]
+  const idx = next.findIndex((item) => item.id === sessionId)
+  if (idx >= 0) {
+    next[idx] = { ...next[idx], revert: undefined } as Session
+    store.setState({ session: next })
+  }
 }
 
-export async function unshareSession(sessionId: string): Promise<Session | null> {
-  const sessionDirectory = getSessionDirectory(sessionId)
-  const result = await sdk().session.unshare({ sessionID: sessionId, directory: sessionDirectory })
-  const session = stripSessionDiffSnapshots(assertSdkData(result, "session.unshare"))
-  useGlobalSessionsStore.getState().upsertSession(session)
-  updateLiveSession(session, sessionDirectory)
-  return session
+export async function shareSession(_sessionId: string): Promise<Session | null> {
+  if (!isSessionSharingAvailable()) return null
+  throw v2CapabilityUnavailable("session.share")
+}
+
+export async function unshareSession(_sessionId: string): Promise<Session | null> {
+  throw v2CapabilityUnavailable("session.unshare")
 }
 
 // ---------------------------------------------------------------------------
@@ -1703,15 +1751,13 @@ export async function fetchRecentSendConfirmationRecords(
         if (!isConfirmationCurrent(options?.isCurrent)) return null
       }
       try {
-        const result = await sdk().session.messages({
+        const records = await fetchSessionProjectionRecords({
           sessionID: sessionId,
-          directory: directory ?? undefined,
+          directory,
           limit: getSendConfirmationRefetchLimit(),
           ...(controller ? { signal: controller.signal } : {}),
-        } as Parameters<ReturnType<typeof sdk>["session"]["messages"]>[0] & { signal?: AbortSignal })
+        })
         if (!isConfirmationCurrent(options?.isCurrent)) return null
-        const records = (assertSdkSuccess(result, "session.messages") ?? [])
-          .filter((record: { info?: { id?: string } }) => !!record?.info?.id) as Array<{ info: Message; parts?: Part[] }>
         if (records.some((record) => record.info.id === messageID)) {
           return records
         }
@@ -1932,10 +1978,7 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
   } : null
   const blockToken = scope ? useSessionUIStore.getState().beginQueueAbortBlock(scope) : null
   try {
-    const result = await sdk().session.abort({ sessionID: sessionId, directory })
-    if (assertSdkData(result, "session.abort") !== true) {
-      throw new Error("Session abort failed")
-    }
+    await postSessionInterrupt({ sessionID: sessionId, directory })
     // A successful abort response is authoritative for this turn. Commit idle
     // locally as well as waiting for SSE so a newly materialized session cannot
     // remain stuck behind an optimistic busy state when its idle event raced
@@ -1970,14 +2013,12 @@ export async function respondToPermission(
   const directory = resolveDirectoryForBlockingRequest("permission", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  const result = await getRequestReplyClient("permission", sessionId, requestId).permission.reply({
+  await postSessionPermissionReply({
+    sessionID: sessionId,
     requestID: requestId,
     reply: response,
-    ...(directory ? { directory } : {}),
+    directory,
   })
-  if (assertSdkData(result, "permission.reply") !== true) {
-    throw new Error("Permission reply failed")
-  }
 }
 
 export async function dismissPermission(
@@ -1988,14 +2029,12 @@ export async function dismissPermission(
   const directory = resolveDirectoryForBlockingRequest("permission", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  const result = await getRequestReplyClient("permission", sessionId, requestId).permission.reply({
+  await postSessionPermissionReply({
+    sessionID: sessionId,
     requestID: requestId,
     reply: "reject",
-    ...(directory ? { directory } : {}),
+    directory,
   })
-  if (assertSdkData(result, "permission.reply") !== true) {
-    throw new Error("Permission dismissal failed")
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2017,14 +2056,11 @@ export async function respondToQuestion(
       : Array.isArray(answers[0])
         ? answers as string[][]
         : [answers as string[]]
-    const result = await getRequestReplyClient("question", sessionId, requestId).question.reply({
+    await getRequestReplyClient("question", sessionId, requestId).question.reply({
+      sessionID: sessionId,
       requestID: requestId,
       answers: normalizedAnswers,
-      ...(directory ? { directory } : {}),
     })
-    if (assertSdkData(result, "question.reply") !== true) {
-      throw new Error("Question reply failed")
-    }
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {
       removeQuestionRequestFromChildStores(sessionId, requestId)
@@ -2042,13 +2078,10 @@ export async function rejectQuestion(
     || getSessionDirectory(sessionId)
     || dir()
   try {
-    const result = await getRequestReplyClient("question", sessionId, requestId).question.reject({
+    await getRequestReplyClient("question", sessionId, requestId).question.reject({
+      sessionID: sessionId,
       requestID: requestId,
-      ...(directory ? { directory } : {}),
     })
-    if (assertSdkData(result, "question.reject") !== true) {
-      throw new Error("Question rejection failed")
-    }
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {
       removeQuestionRequestFromChildStores(sessionId, requestId)
@@ -2178,7 +2211,7 @@ export async function revertToMessage(
     const status = state.session_status[sessionId]
     if (status && status.type !== "idle") {
       try {
-        await sdk().session.abort({ sessionID: sessionId, directory })
+        await postSessionInterrupt({ sessionID: sessionId, directory })
       } catch {
         // ignore abort errors
       }
@@ -2300,7 +2333,11 @@ export async function revertToMessage(
 
     // Call SDK and merge authoritative result into store
     try {
-      const revertedSession = await opencodeClient.revertSession(sessionId, messageId, undefined, directory)
+      const revert = await postSessionRevertStage({
+        sessionID: sessionId,
+        messageID: messageId,
+        directory,
+      })
       if (!isCurrent()) {
         // Stale runtime must not leave its optimistic marker or adopt the remote session.
         const stale = store.getState()
@@ -2323,7 +2360,7 @@ export async function revertToMessage(
       const updated = [...current.session]
       const idx = updated.findIndex((s) => s.id === sessionId)
       if (idx >= 0) {
-        updated[idx] = revertedSession
+        updated[idx] = { ...updated[idx], revert } as Session
         store.setState({ session: updated })
       }
       if (directory) {
@@ -2535,7 +2572,7 @@ export async function abortBusySessionForMessageEdit(
   const status = store.getState().session_status[sessionId]
   if (!status || status.type === "idle") return
   try {
-    await sdk().session.abort({ sessionID: sessionId, directory })
+    await postSessionInterrupt({ sessionID: sessionId, directory })
   } catch {
     // ignore abort errors — waitForSessionIdle still observes the live status
   }
@@ -2613,26 +2650,22 @@ export async function commitMessageEdit(
 /** Server membership snapshot — does not rewrite the live transcript. */
 async function fetchSessionMessageSnapshot(sessionId: string, directoryOverride?: string): Promise<Message[]> {
   const { directory } = dirStoreForSession(sessionId, directoryOverride)
-  const result = await sdk().session.messages({
+  const records = await fetchSessionProjectionRecords({
     sessionID: sessionId,
     directory,
     limit: getMessageRefetchLimit(),
   })
-  const records = (assertSdkSuccess(result, "session.messages") ?? [])
-    .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
-  return records.map((record: { info: Message }) => stripMessageDiffSnapshots(record.info))
+  return records.map((record) => stripMessageDiffSnapshots(record.info))
 }
 
 /** Resolves to the authoritative snapshot this refetch materialized. */
 export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<Message[]> {
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
-  const result = await sdk().session.messages({
+  const records = await fetchSessionProjectionRecords({
     sessionID: sessionId,
     directory,
     limit: getMessageRefetchLimit(),
   })
-  const records = (assertSdkSuccess(result, "session.messages") ?? [])
-    .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
   if (records.length === 0) return []
 
   const snapshots = records.map((record: { info: Message; parts?: Part[] }) => ({
@@ -2686,7 +2719,7 @@ export async function unrevertSession(sessionId: string, directoryOverride?: str
     const status = state.session_status[sessionId]
     if (status && status.type !== "idle") {
       try {
-        await sdk().session.abort({ sessionID: sessionId, directory })
+        await postSessionInterrupt({ sessionID: sessionId, directory })
       } catch {
         // ignore
       }
@@ -2695,16 +2728,16 @@ export async function unrevertSession(sessionId: string, directoryOverride?: str
       }
     }
 
-    const result = await sdk().session.unrevert({ sessionID: sessionId, directory })
+    await postSessionRevertClear({ sessionID: sessionId, directory })
     if (!isCurrent()) {
       throw new Error("Session history mutation aborted because the runtime changed")
     }
-    const unrevertedSession = assertSdkData(result, "session.unrevert")
     const current = store.getState()
     const sessions = [...current.session]
     const idx = sessions.findIndex((s) => s.id === sessionId)
     if (idx >= 0) {
-      sessions[idx] = unrevertedSession
+      const existing = sessions[idx]
+      sessions[idx] = { ...existing, revert: undefined } as typeof existing
       store.setState({ session: sessions })
     }
     for (let attempt = 0; attempt < UNREVERT_REFETCH_ATTEMPTS; attempt += 1) {
@@ -2731,8 +2764,9 @@ export async function unrevertSession(sessionId: string, directoryOverride?: str
         destructiveReset?: (scope: import("./transcript-repository").TranscriptScope) => Promise<unknown>
       }
       const scope = transcriptScope(resolvedDirectory, sessionId)
-      if (typeof repository.destructiveReset === "function") {
-        await repository.destructiveReset(scope)
+      const destructiveReset = repository.destructiveReset
+      if (typeof destructiveReset === "function") {
+        await destructiveReset(scope)
       } else {
         await refetchSessionMessages(sessionId, directoryOverride)
       }
@@ -2879,8 +2913,9 @@ export async function forkSession(sessionId: string, operationId: number, messag
         destructiveReset?: (scope: import("./transcript-repository").TranscriptScope) => Promise<unknown>
       })
       | null
-    if (boundRepo && typeof boundRepo.destructiveReset === "function") {
-      await boundRepo.destructiveReset(forkTargetScope)
+    const destructiveReset = boundRepo?.destructiveReset
+    if (boundRepo && typeof destructiveReset === "function") {
+      await destructiveReset(forkTargetScope)
     } else {
       applyTranscriptCommand(forkTargetScope, { type: "reset" })
     }

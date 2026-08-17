@@ -1,4 +1,4 @@
-import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus } from '@/lib/opencode/v2-types';
 
 type TaskLoadingState = {
     isTaskTool: boolean;

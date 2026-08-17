@@ -112,6 +112,7 @@ import { sessionEvents } from '@/lib/sessionEvents';
 import { fetchResponseStyleInstruction } from '@/lib/responseStyle';
 import { wrapSystemReminder } from '@/lib/systemReminder';
 import { EMPTY_REVERTED_MESSAGE_DOCK_STATE, buildRevertedMessageDockState, type RevertedMessageDockState } from './revertedMessageDockState';
+import { revertFilePaths } from '@/sync/session-revert-api';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { createUuid } from '@/lib/uuid';
@@ -145,7 +146,7 @@ import { SessionGoalRow } from '@/components/chat/SessionGoalRow';
 import { SessionGoalButton, SessionGoalObjectiveCounter } from '@/components/chat/SessionGoalButton';
 import { useSessionGoal } from '@/hooks/useSessionGoal';
 import { useSessionGoalArmStore } from '@/stores/useSessionGoalArmStore';
-import type { Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '@/lib/opencode/v2-types';
 import { consumesImmediateCommandText, getGoalCommandObjective, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
 import { promoteTypedSlashChipSlots, stripLeadingSlashCommandSlot } from './typedSlashChipPromotion';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
@@ -164,6 +165,9 @@ import {
     type ComposerSendPhase,
 } from '@/sync/composer-send-manager';
 import { drainEstablishingFollowUps } from '@/sync/composer-send-drain';
+import { updateInboxOverlayDelivery, useSessionInboxOverlayStore } from '@/sync/session-inbox-overlay';
+import { cancelUnpromotedInboxItem, queueSessionInbox, steerSessionInbox } from '@/sync/session-prompt-api';
+import { canPromoteInboxItem, useSessionCompactionBarrierStore } from '@/sync/session-compaction-api';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
 import { admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
@@ -209,7 +213,7 @@ const COMPOSER_TEXT_LAYOUT_CLASS = 'box-border w-full whitespace-pre-wrap break-
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutputDialog'));
 const EMPTY_QUEUE: QueueItem[] = [];
 const EMPTY_INLINE_DRAFTS: InlineCommentDraft[] = [];
-const EMPTY_AGENTS: import('@opencode-ai/sdk/v2').Agent[] = [];
+const EMPTY_AGENTS: import('@/lib/opencode/v2-types').Agent[] = [];
 const EMPTY_PROVIDERS: Array<{ id: string; name?: string; models: Array<Record<string, unknown> & { id: string; name?: string }> }> = [];
 const FILE_MENTION_TOKEN = /^@[^\s]+$/;
 const shouldEnableComposerSlashDirectoryQueries = ({
@@ -434,6 +438,12 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
         return next;
     }, [sessionId, sessionList, transcriptData]);
     const revertMessageID = revertedState.revertMessageID;
+    const revertFiles = React.useMemo(() => {
+        const session = sessionList.find((item) => item.id === sessionId) as
+            | { revert?: { files?: Array<{ file?: string; path?: string }> } }
+            | undefined;
+        return revertFilePaths(session?.revert);
+    }, [sessionId, sessionList]);
     const userMessages = React.useMemo(
         () => revertedState.records.map((record) => record.message),
         [revertedState],
@@ -497,6 +507,11 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
                     <span className="typography-ui-label font-medium text-foreground flex-shrink-0">
                         {t('chat.revertPopover.title')} messages {items.length}
                     </span>
+                    {revertFiles.length > 0 && (
+                        <span className="min-w-0 truncate typography-ui-label text-muted-foreground">
+                            {t('chat.revertPopover.files')}: {revertFiles.join(', ')}
+                        </span>
+                    )}
                     <Icon
                         name="arrow-down-s"
                         className={cn("ml-auto text-muted-foreground transition-transform", isMobile ? 'size-3.5' : 'size-4', !collapsed && "rotate-180")}
@@ -2251,7 +2266,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     type SubmitOptions = {
         queuedOnly?: boolean;
         queuedMessageId?: string;
-        delivery?: 'steer';
+        delivery?: 'steer' | 'queue';
         /** Submit this text instead of the composer input. Used by preset
             starter chips: on mobile the collapsed pill has no mounted textarea,
             so the DOM-first input snapshot would read empty content. */
@@ -2303,6 +2318,31 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, [stagedEditMessageId, surface.kind]);
     const establishingPendingItems = useComposerSendStore(
         React.useMemo(() => selectEstablishingPendingItems(establishingDraftID), [establishingDraftID]),
+    );
+    const inboxOverlayChips = useSessionInboxOverlayStore(
+        React.useCallback((state) => {
+            if (!currentSessionId) return [];
+            return state.list(currentSessionId).map((item) => ({
+                kind: 'session-inbox' as const,
+                requestID: item.requestID,
+                queueItemID: item.id,
+                operationID: item.id,
+                messageID: item.id,
+                content: item.payload.text,
+                createdAt: item.timeCreated,
+                delivery: item.delivery,
+                attachmentCount: Array.isArray(item.payload.files) ? item.payload.files.length : 0,
+            }));
+        }, [currentSessionId]),
+    );
+    const composerPendingItems = React.useMemo(
+        () => [...establishingPendingItems, ...inboxOverlayChips],
+        [establishingPendingItems, inboxOverlayChips],
+    );
+    const compactionBarrier = useSessionCompactionBarrierStore(
+        React.useCallback((state) => (
+            currentSessionId ? state.runningBySession[currentSessionId] === true : false
+        ), [currentSessionId]),
     );
     // New-session establishing: later sends become client pending-admission chips
     // (same "Queuing…" UI) and drain into the real session queue after materialize.
@@ -2805,7 +2845,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (isSubmissionInFlight()) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
-        const delivery = options?.delivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
+        const delivery = options?.delivery === 'queue'
+            ? 'queue'
+            : options?.delivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
         const inputSnapshot = options?.presetText != null
             ? {
                 message: options.presetText,
@@ -3886,7 +3928,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const queueUsable = canQueue
             && queueModeAllowsMutations(serverQueue.mode)
             && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
-        if (followUpBehavior === 'queue' && queueUsable) {
+        if (followUpBehavior === 'queue' && canQueue && surface.kind === 'primary') {
+            void handleSubmitRef.current({ delivery: 'queue' });
+        } else if (followUpBehavior === 'queue' && queueUsable) {
             queueMessageFromEvent();
         } else if ((followUpBehavior === 'steer' && canQueue) || (followUpBehavior === 'queue' && canQueue && !queueUsable)) {
             // Queue-unavailable busy sessions steer into the captured running turn.
@@ -3894,7 +3938,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, queueMessageFromEvent, serverQueue.mode, surface.deliveryTarget?.kind, enqueueEstablishingFollowUpFromComposer]);
+    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, queueMessageFromEvent, serverQueue.mode, surface.deliveryTarget?.kind, surface.kind, enqueueEstablishingFollowUpFromComposer]);
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
@@ -4313,6 +4357,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (followUpBehavior === 'queue') {
                 if (isCtrlEnter || !canQueue) {
                     handleSubmit();
+                } else if (surface.kind === 'primary') {
+                    handleSubmit({ delivery: 'queue' });
                 } else if (queueUsable) {
                     queueMessageFromEvent();
                 } else {
@@ -6786,10 +6832,46 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 key: draftKey,
                 expectedRevision: () => surfaceResources.getDraft(draftKey)?.revision ?? 'absent',
             } : null}
-            clientPendingItems={establishingPendingItems}
+            clientPendingItems={composerPendingItems}
+            compactionBarrier={compactionBarrier}
+            onSteerClientPending={(inboxID) => {
+                if (!currentSessionId) return;
+                if (!canPromoteInboxItem({ sessionID: currentSessionId })) return;
+                const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
+                void steerSessionInbox({ sessionID: currentSessionId, inboxID, directory })
+                    .then((item) => {
+                        updateInboxOverlayDelivery(currentSessionId, inboxID, item.delivery);
+                    })
+                    .catch(() => {
+                        toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                    });
+            }}
+            onQueueClientPending={(inboxID) => {
+                if (!currentSessionId) return;
+                const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
+                void queueSessionInbox({ sessionID: currentSessionId, inboxID, directory })
+                    .then((item) => {
+                        updateInboxOverlayDelivery(currentSessionId, inboxID, item.delivery);
+                    })
+                    .catch(() => {
+                        toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                    });
+            }}
             onRemoveClientPending={(requestID) => {
                 const removed = useComposerSendStore.getState().removeEstablishingFollowUp(requestID);
-                if (!removed) return;
+                if (!removed) {
+                    if (currentSessionId) {
+                        const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
+                        void cancelUnpromotedInboxItem({
+                            sessionID: currentSessionId,
+                            inboxID: requestID,
+                            directory,
+                        }).catch(() => {
+                            toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                        });
+                    }
+                    return;
+                }
                 // Best-effort restore of discarded establishing follow-up text.
                 if (removed.content) {
                     replacePlainDocument(removed.content);

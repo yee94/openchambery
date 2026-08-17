@@ -6,6 +6,7 @@ declare module "bun:test" {
   export function test(name: string, fn: () => void | Promise<void>): void;
   export function expect(value: unknown): {
     toEqual(expected: unknown): void;
+    toMatchObject(expected: unknown): void;
     toBe(expected: unknown): void;
     toBeTruthy(): void;
     toBeFalsy(): void;
@@ -40,4 +41,11 @@ declare module "bun:test" {
     function module(moduleName: string, factory: () => Record<string, unknown>): void;
     function restore(): void;
   }
+  export namespace expect {
+    function objectContaining(expected: unknown): unknown
+  }
+}
+
+declare const Bun: {
+  file(input: string | URL): { text(): Promise<string> }
 }

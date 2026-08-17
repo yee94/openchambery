@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import { Binary } from "./binary"
 import { retry } from "./retry"
 import type { State } from "./types"
@@ -9,7 +10,6 @@ import { dropSessionCaches, getProtectedSessionCacheIds } from "./session-cache"
 import {
   applyTranscriptCommand,
   fetchTranscriptPreviousPage,
-  ensureTranscriptInitial,
   getTranscriptRepository,
   purgeTranscriptSession,
   refreshTranscriptFromAuthority,
@@ -34,6 +34,7 @@ import {
 } from "./session-message-policy"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
 import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projection"
+import { projectSession } from "./v2-runtime"
 
 const MAX_SEEN_DIRS = 30
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -82,35 +83,6 @@ export type SessionHistoryLoadPlan =
   | { kind: "exhausted" }
   | { kind: "recover-cursor" }
   | { kind: "prepend"; before: string }
-
-type SdkResult<T> = {
-  data?: T
-  error?: unknown
-  response?: {
-    status?: number
-    headers?: { get?: (name: string) => string | null }
-  }
-}
-
-function formatSdkError(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (typeof error === "string") return error
-  if (error && typeof error === "object") {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === "string" && message.length > 0) return message
-  }
-  try {
-    return JSON.stringify(error)
-  } catch {
-    return String(error)
-  }
-}
-
-function assertSdkSuccess<T>(result: SdkResult<T>, operation: string): void {
-  if (!result.error) return
-  const status = result.response?.status
-  throw new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`)
-}
 
 /**
  * Plan explicit history pagination from the latest merged meta.
@@ -347,6 +319,7 @@ export function useSync() {
   )
 
   // Ticket 09: loadMessages is ensure-tail / fetch-previous via Query only.
+  // Ticket 04: the tail path is force GET + reconcileFetched, not ensureInitial.
   const loadMessages = useCallback(
     async (sessionID: string, options?: { before?: string; purpose?: "initial" | "prepend"; isStale?: () => boolean; directory?: string }) => {
       const targetDirectory = options?.directory ?? directory
@@ -360,7 +333,7 @@ export function useSync() {
         if (options?.purpose === "prepend" || options?.before) {
           await fetchTranscriptPreviousPage(targetDirectory, sessionID)
         } else {
-          await ensureTranscriptInitial(targetDirectory, sessionID)
+          await refreshTranscriptFromAuthority(targetDirectory, sessionID)
         }
       } catch {
         return
@@ -438,12 +411,10 @@ export function useSync() {
               ? (async () => {
                   try {
                     const result = await retry(async () => {
-                      const response = await scopedClient.session.get({ sessionID, directory: targetDirectory })
-                      assertSdkSuccess(response, "session.get")
-                      return response
+                      return scopedClient.session.get({ sessionID })
                     })
-                    if (result.data && !isStale()) {
-                      const nextSession = stripSessionDiffSnapshots(result.data)
+                    if (result && !isStale()) {
+                      const nextSession = stripSessionDiffSnapshots(projectSession(result))
                       if (!isStale()) {
                         commitSessionIdentity(targetStore, sessionID, nextSession)
                       }
@@ -475,9 +446,11 @@ export function useSync() {
         directory: targetDirectory,
         sessionID,
         request: async () => {
-          const response = await scopedClient.session.children({ sessionID, directory: targetDirectory })
-          assertSdkSuccess(response, "session.children")
-          return (response.data ?? []) as import('@opencode-ai/sdk/v2').Session[]
+          const response = await scopedClient.session.list({
+            directory: targetDirectory,
+            parentID: sessionID,
+          })
+          return (response.data ?? []).map(projectSession)
         },
       })
       targetStore.setState((state) => {

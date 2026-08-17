@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 import * as gitService from './gitService';
 import type { BridgeContext, BridgeResponse } from './bridge';
 
@@ -29,13 +29,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => {
   setTimeout(resolve, ms);
 });
 
-type BridgeSdkResult<T> = {
-  data?: T;
-  error?: unknown;
-  response?: { status?: number };
-};
-
-const formatBridgeSdkError = (error: unknown): string => {
+const formatBridgeClientError = (error: unknown): string => {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
   if (error && typeof error === 'object' && 'message' in error && typeof (error as { message: unknown }).message === 'string') {
@@ -48,27 +42,23 @@ const formatBridgeSdkError = (error: unknown): string => {
   }
 };
 
-const unwrapBridgeSdkData = <T,>(result: BridgeSdkResult<T>, operation: string): T => {
-  if (result.error) {
-    const status = result.response?.status;
-    throw new Error(`${operation} failed${status ? ` (${status})` : ''}: ${formatBridgeSdkError(result.error)}`);
-  }
-  if (result.data === undefined || result.data === null) {
-    throw new Error(`${operation} failed: empty response`);
-  }
-  return result.data;
+const extractBridgeClientStatus = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object') return undefined;
+  const cause = (error as { cause?: { status?: unknown } }).cause;
+  if (cause && typeof cause.status === 'number' && Number.isFinite(cause.status)) return cause.status;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number' && Number.isFinite(status) ? status : undefined;
 };
 
-const assertBridgeSdkSuccess = (result: BridgeSdkResult<unknown>, operation: string): void => {
-  if (result.error) {
-    const status = result.response?.status;
-    throw new Error(`${operation} failed${status ? ` (${status})` : ''}: ${formatBridgeSdkError(result.error)}`);
-  }
+const rethrowBridgeClientError = (error: unknown, operation: string): never => {
+  const status = extractBridgeClientStatus(error);
+  throw new Error(`${operation} failed${status ? ` (${status})` : ''}: ${formatBridgeClientError(error)}`);
 };
 
-const createBridgeGitClient = (apiUrl: string, authHeaders?: Record<string, string>) => createOpencodeClient({
+const createBridgeGitClient = (apiUrl: string, authHeaders?: Record<string, string>) => OpenCode.make({
   baseUrl: apiUrl.replace(/\/+$/, ''),
   headers: authHeaders || {},
+  fetch: globalThis.fetch,
 });
 
 const readStringField = (value: unknown, key: string): string => {
@@ -88,24 +78,27 @@ const fetchBridgeGitModelCatalog = async (
   }
 
   const client = createBridgeGitClient(apiUrl, authHeaders);
-  const payload = unwrapBridgeSdkData(
-    await client.v2.model.list(undefined, { signal: AbortSignal.timeout(8_000) }),
-    'model.list'
-  );
+  let payload: unknown;
+  try {
+    payload = await client.model.list(undefined, { signal: AbortSignal.timeout(8_000) });
+  } catch (error) {
+    rethrowBridgeClientError(error, 'model.list');
+  }
+  const models = payload && typeof payload === 'object' && Array.isArray((payload as { data?: unknown }).data)
+    ? (payload as { data: unknown[] }).data
+    : [];
   const refs = new Set<string>();
-  if (Array.isArray(payload)) {
-    for (const item of payload) {
-      if (!item || typeof item !== 'object') {
-        continue;
-      }
-      const record = item as Record<string, unknown>;
-      const providerID = typeof record.providerID === 'string' ? record.providerID.trim() : '';
-      const modelID = typeof record.id === 'string'
-        ? record.id.trim()
-        : (typeof record.modelID === 'string' ? record.modelID.trim() : '');
-      if (providerID && modelID) {
-        refs.add(`${providerID}/${modelID}`);
-      }
+  for (const item of models) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const providerID = typeof record.providerID === 'string' ? record.providerID.trim() : '';
+    const modelID = typeof record.id === 'string'
+      ? record.id.trim()
+      : (typeof record.modelID === 'string' ? record.modelID.trim() : '');
+    if (providerID && modelID) {
+      refs.add(`${providerID}/${modelID}`);
     }
   }
 
@@ -154,12 +147,12 @@ const resolveBridgeGitGenerationModel = async (
   };
 };
 
-const extractTextFromMessageParts = (parts: unknown): string => {
-  if (!Array.isArray(parts)) {
+const extractTextFromAssistantContent = (content: unknown): string => {
+  if (!Array.isArray(content)) {
     return '';
   }
 
-  const textParts = parts
+  const textParts = content
     .filter((part) => {
       if (!part || typeof part !== 'object') return false;
       const record = part as Record<string, unknown>;
@@ -193,13 +186,19 @@ const generateBridgeTextWithSessionFlow = async ({
   let sessionId: string | null = null;
 
   try {
-    const session = unwrapBridgeSdkData(
-      await client.session.create({
-        ...(directory ? { directory } : {}),
+    let session: unknown;
+    try {
+      session = await client.session.create({
         title: 'Git Generation',
-      }, { signal: AbortSignal.timeout(remainingMs()) }),
-      'session.create'
-    );
+        ...(directory ? { location: { directory } } : {}),
+        model: {
+          id: modelID,
+          providerID,
+        },
+      }, { signal: AbortSignal.timeout(remainingMs()) });
+    } catch (error) {
+      rethrowBridgeClientError(error, 'session.create');
+    }
     const sessionObj = session && typeof session === 'object' ? session as Record<string, unknown> : null;
     const createdSessionId = sessionObj && typeof sessionObj.id === 'string' ? sessionObj.id : '';
     if (!createdSessionId) {
@@ -207,34 +206,33 @@ const generateBridgeTextWithSessionFlow = async ({
     }
     sessionId = createdSessionId;
 
-    assertBridgeSdkSuccess(
-      await client.session.promptAsync({
+    try {
+      await client.session.prompt({
         sessionID: sessionId,
-        ...(directory ? { directory } : {}),
-        model: {
-          providerID,
-          modelID,
-        },
-        parts: [{ type: 'text', text: prompt }],
-      }, { signal: AbortSignal.timeout(remainingMs()) }),
-      'session.promptAsync'
-    );
+        text: prompt,
+        delivery: 'steer',
+      }, { signal: AbortSignal.timeout(remainingMs()) });
+    } catch (error) {
+      rethrowBridgeClientError(error, 'session.prompt');
+    }
 
     while (Date.now() < deadlineAt) {
       await sleep(BRIDGE_GIT_GENERATION_POLL_INTERVAL_MS);
 
-      const messagesResponse = await client.session.messages({
-        sessionID: sessionId,
-        ...(directory ? { directory } : {}),
-        limit: 10,
-      }, { signal: AbortSignal.timeout(remainingMs()) });
-
-      if (messagesResponse.error) {
+      let messagesResponse: unknown;
+      try {
+        messagesResponse = await client.message.list({
+          sessionID: sessionId,
+          limit: 10,
+        }, { signal: AbortSignal.timeout(remainingMs()) });
+      } catch {
         continue;
       }
 
-      const messages = messagesResponse.data;
-      if (!Array.isArray(messages)) {
+      const messages = messagesResponse && typeof messagesResponse === 'object' && Array.isArray((messagesResponse as { data?: unknown }).data)
+        ? (messagesResponse as { data: unknown[] }).data
+        : null;
+      if (!messages) {
         continue;
       }
 
@@ -243,12 +241,11 @@ const generateBridgeTextWithSessionFlow = async ({
         if (!message || typeof message !== 'object') {
           continue;
         }
-        const info = message.info as Record<string, unknown> | undefined;
-        if (info?.role !== 'assistant' || info?.finish !== 'stop') {
+        if (message.type !== 'assistant' || message.finish !== 'stop') {
           continue;
         }
 
-        const text = extractTextFromMessageParts(message.parts);
+        const text = extractTextFromAssistantContent(message.content);
         if (text) {
           return text;
         }
@@ -259,7 +256,7 @@ const generateBridgeTextWithSessionFlow = async ({
   } finally {
     if (sessionId) {
       try {
-        await client.session.delete({ sessionID: sessionId }, { signal: AbortSignal.timeout(5_000) });
+        await client.session.remove({ sessionID: sessionId }, { signal: AbortSignal.timeout(5_000) });
       } catch {
         // ignore cleanup failures
       }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
 
 import {
   isTranscriptSseEventType,
@@ -427,7 +428,7 @@ describe("store TranscriptRepository — http-page commands", () => {
     expect(data.partsByMessageID.msg_2?.[0]?.id).toBe("part_2")
   })
 
-  test("stale initial page is dropped and preserves prior transcript", () => {
+  test("stale initial page backfills missing ids and keeps the live row", () => {
     const { repo } = createRepo()
     const m1 = userMessage("msg_1")
 
@@ -446,8 +447,8 @@ describe("store TranscriptRepository — http-page commands", () => {
       liveRevision: 3,
     })
 
-    expect(result.applied).toBe(false)
-    expect(repo.getTranscript(SCOPE).messageOrder).toEqual(["msg_1"])
+    expect(result.applied).toBe(true)
+    expect(repo.getTranscript(SCOPE).messageOrder).toEqual(["msg_1", "msg_2"])
   })
 
   test("page contract error (incomplete without cursor) is not applied", () => {

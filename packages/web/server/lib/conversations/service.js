@@ -1,13 +1,63 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 
 // --- error classification ---
 
 const isTransportError = (error) => {
   if (!error) return true;
+  if (error.reason === 'Transport') return true;
   if (error.name === 'TypeError' || error.name === 'FetchError' || error.name === 'AbortError') return true;
+  if (error.cause?.name === 'TypeError' || error.cause?.name === 'FetchError' || error.cause?.name === 'AbortError') return true;
   const code = error.cause?.code || error.code;
   if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EPIPE') return true;
   return false;
+};
+
+// v2 client throws raw data or ClientError; recover HTTP status when present.
+const getHttpStatus = (error) => {
+  const candidates = [error?.cause?.status, error?.status, error?.response?.status];
+  for (const value of candidates) {
+    if (Number.isFinite(value)) return value;
+  }
+  return undefined;
+};
+
+const classifyPromptFailure = (error) => {
+  if (isTransportError(error)) {
+    return { ambiguous: true, status: undefined };
+  }
+  const status = getHttpStatus(error);
+  if (Number.isFinite(status)) {
+    return { ambiguous: isRetryableHttpStatus(status), status };
+  }
+  // Declared v2 HTTP errors (400/401/404/409) throw JSON without a status field.
+  return { ambiguous: false, status: 400 };
+};
+
+// Map sanitized parts onto the official v2 prompt body (text/files/agents).
+const toV2PromptInput = (sanitizedInput, sessionID) => {
+  const text = sanitizedInput.parts
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n');
+  const files = sanitizedInput.parts
+    .filter((part) => part.type === 'file')
+    .map((part) => ({
+      uri: part.url,
+      ...(part.filename ? { name: part.filename } : {}),
+    }));
+  const agents = sanitizedInput.parts
+    .filter((part) => part.type === 'agent')
+    .map((part) => ({ name: part.name }));
+
+  return {
+    sessionID,
+    id: sanitizedInput.messageID,
+    text,
+    ...(files.length > 0 ? { files } : {}),
+    ...(agents.length > 0 ? { agents } : {}),
+    ...(sanitizedInput.metadata ? { metadata: sanitizedInput.metadata } : {}),
+    delivery: 'steer',
+  };
 };
 
 const isRetryableHttpStatus = (status) => {
@@ -84,7 +134,7 @@ export const createConversationsService = (deps) => {
 
     const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
     const authHeaders = getOpenCodeAuthHeaders();
-    return createOpencodeClient({ baseUrl, headers: authHeaders });
+    return OpenCode.make({ baseUrl, headers: authHeaders });
   };
 
   const createAndPrompt = async ({ sanitizedInput } = {}) => {
@@ -99,19 +149,34 @@ export const createConversationsService = (deps) => {
     const client = clientOrError;
 
     // Phase 1: create session (30s timeout)
-    let sessionResult;
-    let upstreamStatus;
+    let session;
     const createT = timeoutSignal(CREATE_TIMEOUT_MS);
     try {
-      sessionResult = await client.session.create({
-        directory: sanitizedInput.directory,
+      session = await client.session.create({
+        location: { directory: sanitizedInput.directory },
         ...(sanitizedInput.title ? { title: sanitizedInput.title } : {}),
-        ...(sanitizedInput.parentID ? { parentID: sanitizedInput.parentID } : {}),
-        ...(sanitizedInput.metadata ? { metadata: sanitizedInput.metadata } : {}),
+        ...(sanitizedInput.agent ? { agent: sanitizedInput.agent } : {}),
+        ...(sanitizedInput.model ? {
+          model: {
+            id: sanitizedInput.model.modelID,
+            providerID: sanitizedInput.model.providerID,
+            ...(sanitizedInput.variant ? { variant: sanitizedInput.variant } : {}),
+          },
+        } : {}),
       }, {
         signal: createT.signal,
       });
     } catch (error) {
+      const status = getHttpStatus(error);
+      if (Number.isFinite(status) && !isTransportError(error)) {
+        logger.warn(`[conversations] session.create client error (${status})`);
+        return {
+          ok: false,
+          phase: 'create',
+          error: safeErrorMessage('create'),
+          status,
+        };
+      }
       logger.warn('[conversations] session.create transport error');
       return {
         ok: false,
@@ -122,19 +187,7 @@ export const createConversationsService = (deps) => {
       createT.clear();
     }
 
-    upstreamStatus = sessionResult?.response?.status;
-
-    if (sessionResult.error) {
-      logger.warn(`[conversations] session.create SDK error (${upstreamStatus || 'no status'})`);
-      return {
-        ok: false,
-        phase: 'create',
-        error: safeErrorMessage('create'),
-        ...(Number.isFinite(upstreamStatus) ? { status: upstreamStatus } : {}),
-      };
-    }
-
-    const sessionID = sessionResult?.data?.id;
+    const sessionID = session?.id;
     if (!sessionID) {
       logger.warn('[conversations] session.create returned no session ID');
       return {
@@ -144,29 +197,17 @@ export const createConversationsService = (deps) => {
       };
     }
 
-    const session = sessionResult?.data;
-
-    // Phase 2: promptAsync (45s timeout, 204, does not wait for model completion)
+    // Phase 2: v2 prompt + delivery=steer (45s timeout). Host only orchestrates
+    // create + first prompt; it does not cache message body as conversation content.
     let promptResult;
     const promptT = timeoutSignal(PROMPT_TIMEOUT_MS);
     try {
-      promptResult = await client.session.promptAsync({
-        sessionID,
-        directory: sanitizedInput.directory,
-        messageID: sanitizedInput.messageID,
-        model: {
-          providerID: sanitizedInput.model.providerID,
-          modelID: sanitizedInput.model.modelID,
-        },
-        ...(sanitizedInput.agent ? { agent: sanitizedInput.agent } : {}),
-        ...(sanitizedInput.variant ? { variant: sanitizedInput.variant } : {}),
-        parts: sanitizedInput.parts,
-      }, {
+      promptResult = await client.session.prompt(toV2PromptInput(sanitizedInput, sessionID), {
         signal: promptT.signal,
       });
     } catch (error) {
-      const ambiguous = isTransportError(error);
-      logger.warn(`[conversations] promptAsync throw (ambiguous=${ambiguous})`);
+      const { ambiguous, status } = classifyPromptFailure(error);
+      logger.warn(`[conversations] prompt throw (ambiguous=${ambiguous})`);
       if (ambiguous) {
         safeMark(markUserMessageSent, sessionID, logger);
       }
@@ -177,37 +218,25 @@ export const createConversationsService = (deps) => {
         messageID: sanitizedInput.messageID,
         ambiguous,
         error: safeErrorMessage('prompt'),
+        ...(Number.isFinite(status) ? { status } : {}),
       };
     } finally {
       promptT.clear();
     }
 
     // SDK result shape { data, error, response }
-    if (promptResult.error) {
-      const httpStatus = promptResult.response?.status;
-      const ambiguous = isAmbiguousPromptError(promptResult.error, promptResult.response);
-      logger.warn(`[conversations] promptAsync SDK error (${httpStatus || 'no status'}, ambiguous=${ambiguous})`);
-      if (ambiguous) {
-        safeMark(markUserMessageSent, sessionID, logger);
-      }
-      return {
-        ok: false,
-        phase: 'prompt',
-        session,
-        messageID: sanitizedInput.messageID,
-        ambiguous,
-        error: safeErrorMessage('prompt'),
-        ...(Number.isFinite(httpStatus) ? { status: httpStatus } : {}),
-      };
-    }
-
-    // promptAsync 204 success
+    // prompt success — return inbox item when present; never persist parts/text.
     safeMark(markUserMessageSent, sessionID, logger);
+
+    const inbox = promptResult && typeof promptResult === 'object'
+      ? promptResult
+      : undefined;
 
     return {
       ok: true,
       session,
       messageID: sanitizedInput.messageID,
+      ...(inbox && (inbox.id || inbox.type) ? { inbox } : {}),
     };
   };
 

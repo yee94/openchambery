@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import {
   reduceSessionMessagePage,
   type SessionMessageReducerState,
@@ -206,7 +207,7 @@ describe("reduceSessionMessagePage — history boundary", () => {
       "ses_1",
       page([{ info: userMessage("msg_2"), parts: [] }], { complete: true }),
       {
-        purpose: "initial",
+        purpose: "prepend",
         skipPartTypes: SKIP_PARTS,
         capturedRevision: 3,
         liveRevision: 5,
@@ -699,7 +700,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     expect((result.part.msg_2?.[0] as { text?: string }).text).toBe("sent prompt")
   })
 
-  test("skips stale initial pages", () => {
+  test("stale initial pages backfill missing ids instead of dropping", () => {
     const existing = message("msg_live")
     const existingPart = part("prt_live", "msg_live", "text", "from sse")
     const state: SessionMessageReducerState = {
@@ -719,10 +720,9 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
       },
     )
 
-    expect(result.applied).toBe(false)
-    expect(result.changed).toBe(false)
-    expect(result.message).toBe(state.message)
-    expect(result.part).toBe(state.part)
+    expect(result.applied).toBe(true)
+    expect(result.message.ses_1?.map((item) => item.id)).toEqual(["msg_live", "msg_stale"])
+    expect(result.part.msg_live?.[0]).toBe(existingPart)
   })
 
   test("applies when live revision matches captured revision", () => {

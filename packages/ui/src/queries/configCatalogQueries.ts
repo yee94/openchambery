@@ -1,4 +1,4 @@
-import type { Agent } from '@opencode-ai/sdk/v2';
+import type { Agent } from '@/lib/opencode/v2-types';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { opencodeClient } from '@/lib/opencode/client';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
@@ -11,6 +11,60 @@ export const normalizeConfigCatalogDirectory = (directory: string | null | undef
   const normalized = directory.trim().replace(/\\/g, '/');
   if (!normalized) return null;
   return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+};
+
+const locationOf = (directory: string | null) => (
+  directory ? { location: { directory } } : undefined
+);
+
+// Host catalog is the preferred sanitized snapshot. When that route is absent,
+// assemble the same schema from v2 config.get / provider.list / model.list.
+const loadProviderCatalogFromV2 = async (directory: string | null, signal: AbortSignal) => {
+  const client = opencodeClient.getSdkClient();
+  const location = locationOf(directory);
+  const requestOptions = { signal };
+  const [providersResult, modelsResult, configEntries] = await Promise.all([
+    client.provider.list(location, requestOptions),
+    client.model.list(location, requestOptions),
+    client.config.get(location, requestOptions),
+  ]);
+  if (!Array.isArray(providersResult.data) || !Array.isArray(modelsResult.data) || !Array.isArray(configEntries)) {
+    throw new Error('v2 provider catalog request failed');
+  }
+
+  const modelsByProvider = new Map<string, Record<string, { id: string; name: string }>>();
+  for (const model of modelsResult.data) {
+    const providerID = typeof model?.providerID === 'string' ? model.providerID : '';
+    const modelID = typeof model?.modelID === 'string' && model.modelID
+      ? model.modelID
+      : typeof model?.id === 'string' ? model.id : '';
+    const name = typeof model?.name === 'string' ? model.name : modelID;
+    if (!providerID || !modelID || !name) continue;
+    const bucket = modelsByProvider.get(providerID) ?? {};
+    bucket[modelID] = { id: modelID, name };
+    modelsByProvider.set(providerID, bucket);
+  }
+
+  const defaults: Record<string, string> = {};
+  for (const entry of configEntries) {
+    const model = entry?.type === 'document' ? entry.info?.model : undefined;
+    if (model && typeof model === 'object' && !Array.isArray(model)) {
+      const providerID = typeof model.providerID === 'string' ? model.providerID : '';
+      const modelID = typeof model.model === 'string' ? model.model : '';
+      if (providerID && modelID) defaults[providerID] = modelID;
+    }
+  }
+
+  return {
+    schemaVersion: 1 as const,
+    providers: providersResult.data.map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      models: modelsByProvider.get(provider.id) ?? {},
+    })),
+    default: defaults,
+    partial: false,
+  };
 };
 
 export const providerCatalogQueryOptions = (
@@ -36,22 +90,7 @@ export const providerCatalogQueryOptions = (
         if (response.status !== 404 && response.status !== 501) {
           throw new Error(`Provider catalog request failed (${response.status})`);
         }
-        const legacyResponse = await opencodeClient.getSdkClient().config.providers(
-          normalizedDirectory ? { directory: normalizedDirectory } : undefined,
-          { signal },
-        );
-        if (legacyResponse.error !== undefined) {
-          throw new Error('Legacy provider catalog request failed');
-        }
-        if (legacyResponse.data === undefined || legacyResponse.data === null) {
-          throw new Error('Legacy provider catalog request failed');
-        }
-        catalog = parseProviderCatalog({
-          schemaVersion: 1,
-          providers: legacyResponse.data.providers,
-          default: legacyResponse.data.default,
-          partial: false,
-        });
+        catalog = parseProviderCatalog(await loadProviderCatalogFromV2(normalizedDirectory, signal));
       }
       const previous = queryClient.getQueryData<ProviderCatalog>(queryKeys.configCatalog.providers(normalizedDirectory, transport));
       if (catalog.partial && previous && !previous.partial) {

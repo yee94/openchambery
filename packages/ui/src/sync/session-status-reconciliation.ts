@@ -1,4 +1,5 @@
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus } from '@/lib/opencode/v2-types'
+
 import type { QueryClient } from "@tanstack/react-query"
 import type { StoreApi } from "zustand"
 

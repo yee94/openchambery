@@ -17,6 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEvent } from '@reactuses/core';
 import { useMutation, useMutationState } from '@tanstack/react-query';
 import { getPendingAdmissionsForScope, getQueueForScope, legacyQueueScope, queueScopeKey, useMessageQueueStore, type QueueDeliveryTarget, type QueueItem, type QueuePendingAdmissionItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
+import { isSessionInboxChip, type SessionComposerPendingItem, type SessionInboxChip } from '@/sync/session-inbox-overlay';
 import type { DraftKey } from '@/sync/input-draft-types';
 import { useMessageQueueServerScope } from '@/sync/use-message-queue-server';
 import { MessageQueueServerError, type MessageQueueItem } from '@/lib/message-queue-server';
@@ -63,20 +64,25 @@ const isServerQueueOperationIdentity = (value: unknown): value is ServerQueueOpe
         && (operation.queueItemIDs === undefined || (Array.isArray(operation.queueItemIDs) && operation.queueItemIDs.every((item) => typeof item === 'string')));
 };
 
+type ChipMessage = QueuedMessage | MessageQueueServerDisplayItem | SessionInboxChip;
+
 interface QueuedMessageChipProps {
-    message: QueuedMessage | MessageQueueServerDisplayItem;
+    message: ChipMessage;
     server: boolean;
     frozen: boolean;
     hasDispatchLock: boolean;
     pendingOperationKinds: ReadonlySet<ServerQueueOperationKind>;
     isMobile: boolean;
-    onEdit: (message: QueuedMessage | MessageQueueServerDisplayItem) => void;
-    onSend: (message: QueuedMessage | MessageQueueServerDisplayItem) => void;
-    onRemove: (message: QueuedMessage | MessageQueueServerDisplayItem) => void;
+    onEdit: (message: ChipMessage) => void;
+    onSend: (message: ChipMessage) => void;
+    onQueue?: (message: ChipMessage) => void;
+    onRemove: (message: ChipMessage) => void;
+    compactionBarrier?: boolean;
 }
 
-const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, isMobile, onEdit, onSend, onRemove }: QueuedMessageChipProps) => {
+const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, isMobile, onEdit, onSend, onQueue, onRemove, compactionBarrier = false }: QueuedMessageChipProps) => {
     const { t } = useI18n();
+    const inboxChip = isSessionInboxChip(message);
     const pendingAdmission = isMessageQueuePendingAdmissionItem(message);
     const queueItemID = message.queueItemID || (message as QueuedMessage).id;
     const editPending = server && pendingOperationKinds.has('edit');
@@ -89,14 +95,18 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     // stale. Sending and dragging an already-started attempt stay unavailable
     // because they would imply a second POST or a movable active slot.
     const clientMutationBlocked = frozen || pendingAdmission;
-    const canEdit = canEditQueuedMessage(message, { frozen });
-    const canRemove = canRemoveQueuedMessage(message, { frozen });
-    const legacyMessage = server ? undefined : message as QueuedMessage;
-    const isDragDisabled = legacyMessage?.owner?.state === 'unbound-legacy' || clientMutationBlocked || activeAttempt;
-    const canSend = !clientMutationBlocked && (server ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock) : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
+    const canEdit = inboxChip ? false : canEditQueuedMessage(message as QueuedMessage | MessageQueueServerDisplayItem, { frozen });
+    const canRemove = inboxChip ? !frozen : canRemoveQueuedMessage(message as QueuedMessage | MessageQueueServerDisplayItem, { frozen });
+    const legacyMessage = server || inboxChip ? undefined : message as QueuedMessage;
+    const isDragDisabled = inboxChip || legacyMessage?.owner?.state === 'unbound-legacy' || clientMutationBlocked || activeAttempt;
+    const waitingForCompaction = inboxChip && compactionBarrier;
+    const canSend = inboxChip
+        ? !frozen && message.delivery === 'queue' && !waitingForCompaction
+        : !clientMutationBlocked && (server ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock) : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
+    const canQueueInbox = inboxChip && !frozen && message.delivery === 'steer' && !waitingForCompaction;
     const recovery = legacyMessage?.failure?.recovery;
     const visibleContent = resolveQueuedMessagePreviewText(message);
-    const visibleAttachments = pendingAdmission ? undefined : recovery?.attachments ?? message.attachments;
+    const visibleAttachments = pendingAdmission || inboxChip ? undefined : recovery?.attachments ?? ('attachments' in message ? message.attachments : undefined);
     const visibleComposerDocument = recovery?.composerDocument ?? ('composerDocument' in message ? message.composerDocument : undefined);
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
         id: queueItemID,
@@ -196,6 +206,18 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                         <Icon name="loader-4" className={cn(isMobile ? 'size-3' : 'size-3.5', 'animate-spin')} aria-hidden="true" />
                         <span>{t('chat.queuedMessage.queuing')}</span>
                     </span>
+                ) : waitingForCompaction ? (
+                    <span
+                        className={cn(
+                            'inline-flex items-center gap-1 font-medium text-muted-foreground',
+                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-7 typography-ui-label',
+                        )}
+                        aria-live="polite"
+                        aria-label={t('chat.queuedMessage.waitingForCompactionAria')}
+                    >
+                        <Icon name="loader-4" className={cn(isMobile ? 'size-3' : 'size-3.5', 'animate-spin')} aria-hidden="true" />
+                        <span>{t('chat.queuedMessage.waitingForCompaction')}</span>
+                    </span>
                 ) : (
                     <>
                         <button
@@ -238,6 +260,27 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                                 {t('chat.queuedMessage.send')}
                             </span>
                         </button>
+                        {canQueueInbox ? (
+                            <button
+                                type="button"
+                                onClick={() => onQueue?.(message)}
+                                disabled={!canQueueInbox}
+                                aria-label={t('settings.openchamber.visual.option.followUpBehavior.queue.label')}
+                                className={cn(
+                                    'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+                                    isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                                )}
+                            >
+                                <Icon
+                                    name="time"
+                                    className={cn(isMobile ? 'size-3' : 'size-3.5')}
+                                    aria-hidden="true"
+                                />
+                                <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
+                                    {t('settings.openchamber.visual.option.followUpBehavior.queue.label')}
+                                </span>
+                            </button>
+                        ) : null}
                     </>
                 )}
                 {!isMobile && !pendingAdmission ? removeAction : null}
@@ -266,9 +309,12 @@ interface QueuedMessageChipsProps {
      * Client-only pending-admission chips (e.g. establishing-session follow-ups).
      * Rendered with the same "Queuing…" treatment as legacy/server pending admissions.
      */
-    clientPendingItems?: readonly QueuePendingAdmissionItem[];
+    clientPendingItems?: readonly SessionComposerPendingItem[];
     /** Remove a client-only pending chip (restoring content is caller-owned). */
     onRemoveClientPending?: (requestID: string) => void;
+    onSteerClientPending?: (inboxID: string) => void;
+    onQueueClientPending?: (inboxID: string) => void;
+    compactionBarrier?: boolean;
     /**
      * Optional trailing strip inside the same shell as queue chips (e.g. session goal).
      * Renders below the queue with a divider when both are present; shell still
@@ -279,7 +325,7 @@ interface QueuedMessageChipsProps {
 
 const EMPTY_QUEUE: QueueItem[] = [];
 const EMPTY_LEGACY_DISPLAY: Array<QueuedMessage | QueuePendingAdmissionItem> = [];
-const EMPTY_PENDING_CLIENT: readonly QueuePendingAdmissionItem[] = [];
+const EMPTY_PENDING_CLIENT: readonly SessionComposerPendingItem[] = [];
 const EMPTY_PENDING_OPERATION_KINDS: ReadonlySet<ServerQueueOperationKind> = new Set();
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -320,7 +366,7 @@ export const queuedMessageItemScope = (message: QueuedMessage, scope: BoundQueue
     return queueScopeKey(owner) === queueScopeKey(scope) ? scope : null;
 };
 
-export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCommitted, draftKey, scope: queueScope, draftTarget, clientPendingItems = EMPTY_PENDING_CLIENT, onRemoveClientPending, trailing }: QueuedMessageChipsProps) => {
+export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCommitted, draftKey, scope: queueScope, draftTarget, clientPendingItems = EMPTY_PENDING_CLIENT, onRemoveClientPending, onSteerClientPending, onQueueClientPending, compactionBarrier = false, trailing }: QueuedMessageChipsProps) => {
     const { t } = useI18n();
     const isMobile = useUIStore((state) => state.isMobile);
     const serverQueue = useMessageQueueServerScope({
@@ -506,8 +552,8 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         reorderQueue(activeScope, String(active.id), String(over.id), activeMessage.operationID);
     });
 
-    const handleEdit = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
-        if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
+    const handleEdit = useEvent((message: ChipMessage) => {
+        if (frozen || isSessionInboxChip(message) || isMessageQueuePendingAdmissionItem(message)) return;
         if (serverQueue.mode === 'server') {
             if (!queueScope || !serverQueue.scope || !draftKey || !draftTarget) return;
             const serverMessage = message as MessageQueueItem;
@@ -561,7 +607,12 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         })();
     });
 
-    const handleSend = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
+    const handleSend = useEvent((message: ChipMessage) => {
+        if (isSessionInboxChip(message)) {
+            if (compactionBarrier) return;
+            onSteerClientPending?.(message.queueItemID);
+            return;
+        }
         if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
         if (serverQueue.mode === 'server') {
             if (!queueScope || !serverQueue.scope) return;
@@ -590,7 +641,18 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         onSendMessage(legacyMessage.queueItemID ?? legacyMessage.id);
     });
 
-    const handleRemove = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
+    const handleQueueInbox = useEvent((message: ChipMessage) => {
+        if (compactionBarrier) return;
+        if (isSessionInboxChip(message)) {
+            onQueueClientPending?.(message.queueItemID);
+        }
+    });
+
+    const handleRemove = useEvent((message: ChipMessage) => {
+        if (isSessionInboxChip(message)) {
+            onRemoveClientPending?.(message.requestID);
+            return;
+        }
         if (isMessageQueuePendingAdmissionItem(message)) {
             if (clientPendingItems.some((item) => item.requestID === message.requestID)) {
                 onRemoveClientPending?.(message.requestID);
@@ -671,7 +733,9 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
                                         isMobile={isMobile}
                                         onEdit={handleEdit}
                                         onSend={handleSend}
+                                        onQueue={handleQueueInbox}
                                         onRemove={handleRemove}
+                                        compactionBarrier={compactionBarrier}
                                     />
                                 ))}
                             </SortableContext>

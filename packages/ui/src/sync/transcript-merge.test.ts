@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
 
 import {
   boundaryFromTranscriptData,
@@ -103,6 +104,34 @@ describe("mergeSessionTranscript", () => {
     expect(data?.pages[1]?.messageOrder).toContain("msg_10")
     const flat = projectFlatFromTranscriptData(data, SESSION)
     expect(flat.messageOrder[0]).toBe("msg_01")
+  })
+
+  test("prepend keeps an earlier high-id message from the projection page", () => {
+    const initial = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [{ info: userMessage("msg_10") }, { info: assistantMessage("msg_11") }],
+        { cursor: "cur_older", complete: false, turnCount: 1 },
+      ),
+    }).data!
+
+    const { data, result } = mergeSessionTranscript(initial, SESSION, {
+      type: "http-page",
+      purpose: "prepend",
+      page: page(
+        [{ info: userMessage("msg_zz") }, { info: assistantMessage("msg_aa") }],
+        { cursor: "cur_oldest", complete: false, turnCount: 1 },
+      ),
+    })
+    expect(result.applied).toBe(true)
+    expect("msg_zz" > "msg_10").toBe(true)
+    expect(data?.pages[0]?.kind).toBe("history")
+    expect(data?.pages[0]?.messageOrder).toContain("msg_zz")
+    expect(data?.pages[0]?.messageOrder).toContain("msg_aa")
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    expect(flat.messageOrder).toContain("msg_zz")
+    expect(flat.messageOrder.indexOf("msg_zz")).toBeLessThan(flat.messageOrder.indexOf("msg_10"))
   })
 
   test("complete page closes hasPreviousPage", () => {

@@ -7,7 +7,8 @@
  * id-sort and conversation order disagree.
  */
 import { describe, expect, test } from "bun:test"
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
 
 import { applyTranscriptDirectoryEvent, type TranscriptEventDraft } from "./transcript-event-reducer"
 import { materializeSessionSnapshots } from "./materialization"
@@ -19,6 +20,7 @@ import {
   type TranscriptStoreSurface,
 } from "./transcript-repository-store-adapter"
 import type { TranscriptScope, TranscriptTransportPage } from "./transcript-repository"
+import type { SessionMessageReducerState } from "./session-message-reducer"
 import type { SessionHistoryBoundary } from "./types"
 
 const SESSION = "ses_1"
@@ -69,7 +71,7 @@ function transportPage(messages: Message[]): TranscriptTransportPage {
 }
 
 function createHarnessStore(messages: Message[] = []): TranscriptStoreSurface {
-  let state = {
+  let state: SessionMessageReducerState = {
     message: messages.length > 0 ? { [SESSION]: messages } : {},
     part: {} as Record<string, Part[]>,
     session_history_boundary: {} as Record<string, SessionHistoryBoundary>,
@@ -240,6 +242,22 @@ describe("conversation-order writers", () => {
     })
 
     expect(repo.getTranscript(SCOPE).messageOrder).toEqual([...LIVE_ORDER, "msg_15"])
+  })
+
+  test("v2 text.delta updates an existing high-id assistant in place", () => {
+    const draft = transcriptDraft(liveConversation())
+    draft.part.msg_1 = [{ ...textPart("msg_1:text:0", "msg_1"), text: "hi" } as Part]
+    expect(applyTranscriptDirectoryEvent(draft, {
+      type: "session.text.delta",
+      properties: {
+        sessionID: SESSION,
+        assistantMessageID: "msg_1",
+        ordinal: 0,
+        delta: " more",
+      },
+    } as Event)).not.toBe(false)
+    expect(draft.message[SESSION]?.map((message) => message.id)).toEqual([...LIVE_ORDER])
+    expect((draft.part.msg_1?.[0] as { text?: string }).text).toBe("hi more")
   })
 
   test("store adapter SSE remove keeps earlier high-id rows", () => {

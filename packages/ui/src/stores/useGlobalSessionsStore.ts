@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import { opencodeClient } from '@/lib/opencode/client';
 import { isVisibleGlobalSession, listGlobalSessionPages } from '@/stores/globalSessions';

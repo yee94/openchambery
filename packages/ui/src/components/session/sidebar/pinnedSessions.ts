@@ -1,4 +1,4 @@
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 
 const getSessionCreatedAt = (session: Session): number => {
   const created = session.time?.created;

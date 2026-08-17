@@ -16,7 +16,9 @@
  *   multi-domain cache operation outside this repository.
  */
 
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
 import type { SessionHistoryBoundary } from "./types"
 import type {
   SessionMergeStrategy,
@@ -351,6 +353,23 @@ export const TRANSCRIPT_SSE_EVENT_TYPES = [
   "message.part.updated",
   "message.part.removed",
   "message.part.delta",
+  "session.text.started",
+  "session.text.delta",
+  "session.text.ended",
+  "session.reasoning.started",
+  "session.reasoning.delta",
+  "session.reasoning.ended",
+  "session.tool.input.started",
+  "session.tool.input.delta",
+  "session.tool.input.ended",
+  "session.tool.called",
+  "session.tool.progress",
+  "session.tool.success",
+  "session.tool.failed",
+  "session.compaction.started",
+  "session.compaction.delta",
+  "session.compaction.ended",
+  "session.compaction.failed",
 ] as const
 
 export type TranscriptSseEventType = (typeof TRANSCRIPT_SSE_EVENT_TYPES)[number]

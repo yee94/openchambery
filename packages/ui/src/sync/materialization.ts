@@ -1,4 +1,5 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import { isMessageSnapshotOpen } from "./displayParts"
 import {
   DEFAULT_SESSION_MERGE_STRATEGY,

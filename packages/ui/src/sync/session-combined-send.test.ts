@@ -6,7 +6,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { opencodeClient } from '@/lib/opencode/client'
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry'
 import { routeMessage, useSessionUIStore } from './session-ui-store'
@@ -188,9 +188,26 @@ function createChildStore() {
  * via setActionRefs. Default rejects so an ordinary selection fetch does not materialize an
  * authoritative empty page that would wipe optimistic fallback rows.
  */
-let sessionMessagesHandler: (params: any) => Promise<any> | any = async () => {
+let sessionMessagesHandler: (params: any) => Promise<any> | any = async (params: any) => {
+  // Confirmation (30) and edit-refetch (100) must not throw: settleSessionPromptAfterSend
+  // always reads projection. Selection (20) still rejects so an empty page cannot wipe
+  // optimistic fallback rows.
+  if (params?.limit === 30 || params?.limit === 100) return { data: [] }
   throw new Error('session.messages not mocked')
 }
+
+mock.module("./session-projection-api", () => ({
+  fetchSessionProjectionPage: async (input: { sessionID: string; directory: string; limit?: number }) => {
+    const result = await sessionMessagesHandler({
+      sessionID: input.sessionID,
+      directory: input.directory,
+      limit: input.limit,
+    })
+    const records = Array.isArray(result?.data) ? result.data : []
+    return { records, complete: true }
+  },
+  fetchSessionContext: async () => ({ records: [], complete: true, cursor: undefined }),
+}))
 
 function makeActionSdk() {
   return {
@@ -285,7 +302,8 @@ beforeEach(() => {
   opencodeClient.createSession = (async (_params: any, _dir?: string | null) => ({ id: SESSION_ID, slug: 't', projectID: 'proj-comb', directory: _dir ?? PROJECT.path, title: 'Test', time: { created: Date.now(), updated: Date.now() }, version: '1' })) as any
 
   resetAll()
-  sessionMessagesHandler = async () => {
+  sessionMessagesHandler = async (params: any) => {
+    if (params?.limit === 30 || params?.limit === 100) return { data: [] }
     throw new Error('session.messages not mocked')
   }
   setupChildStores()
@@ -314,7 +332,8 @@ beforeEach(() => {
   setActionRefs(null as any, null as any, () => '')
   setOptimisticRefs(null as any, null as any)
   resetCombinedSendConfirmationOptions()
-  sessionMessagesHandler = async () => {
+  sessionMessagesHandler = async (params: any) => {
+    if (params?.limit === 30 || params?.limit === 100) return { data: [] }
     throw new Error('session.messages not mocked')
   }
   // Drain any fire-and-forget confirmation retries scheduled by the prior test.
@@ -1215,14 +1234,11 @@ describe('staged message edits', () => {
       ensureChild: () => childStore,
       getChild: () => childStore,
     }
+    const restoreMessages = installSessionMessagesMock(async () => ({
+      data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
+    }))
     setActionRefs({
-      session: {
-        // Authoritative snapshot: the commit range is derived from this, not the store.
-        messages: async () => ({
-          data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
-        }),
-        abort: async () => ({ data: true }),
-      },
+      session: {},
     } as any, childStores as any, () => PROJECT.path)
     useSessionUIStore.setState({
       currentSessionId: SESSION_ID,
@@ -1252,6 +1268,7 @@ describe('staged message edits', () => {
     // still idle / after abort), then dispatch the replacement.
     expect(sequence).toEqual(['send:programmatic', 'delete:msg_3', 'delete:msg_2', 'send:replacement'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
+    restoreMessages()
   })
 
   test('staged edit waits for idle after abort before deleting the old tail', async () => {
@@ -1282,17 +1299,14 @@ describe('staged message edits', () => {
       ensureChild: () => childStore,
       getChild: () => childStore,
     }
+    const restoreMessages = installSessionMessagesMock(async () => ({
+      data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
+    }))
+    // Interrupt is now postSessionInterrupt; drive idle independently so delete
+    // still waits for the live status rather than the SDK abort mock.
+    setTimeout(() => { status = { type: 'idle' } }, 30)
     setActionRefs({
-      session: {
-        messages: async () => ({
-          data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
-        }),
-        abort: async () => {
-          // Abort is async relative to status events: stay busy briefly, then idle.
-          setTimeout(() => { status = { type: 'idle' } }, 30)
-          return { data: true }
-        },
-      },
+      session: {},
     } as any, childStores as any, () => PROJECT.path)
     useSessionUIStore.setState({
       currentSessionId: SESSION_ID,
@@ -1319,6 +1333,7 @@ describe('staged message edits', () => {
     expect(sequence).toEqual(['delete:msg_3', 'delete:msg_2', 'send:replacement'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
     expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
+    restoreMessages()
   })
 
   test('staged edit keeps the old tail when delete fails before send', async () => {
@@ -1344,13 +1359,11 @@ describe('staged message edits', () => {
       ensureChild: () => childStore,
       getChild: () => childStore,
     }
+    const restoreMessages = installSessionMessagesMock(async () => ({
+      data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
+    }))
     setActionRefs({
-      session: {
-        messages: async () => ({
-          data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
-        }),
-        abort: async () => ({ data: true }),
-      },
+      session: {},
     } as any, childStores as any, () => PROJECT.path)
     useSessionUIStore.setState({
       currentSessionId: SESSION_ID,
@@ -1391,6 +1404,7 @@ describe('staged message edits', () => {
     expect(useSessionUIStore.getState().stagedMessageEdit).toEqual({ sessionId: SESSION_ID, messageId: 'msg_2' })
     expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
     expect(messages[SESSION_ID].map((message) => message.id)).toEqual(['msg_2', 'msg_3'])
+    restoreMessages()
   })
 
   test('an explicit queued owner directory routes POST and optimistic state to that directory', async () => {

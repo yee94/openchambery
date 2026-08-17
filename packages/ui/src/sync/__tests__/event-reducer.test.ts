@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import type { Session } from "@opencode-ai/sdk/v2"
-import type { Event, Message, Part, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Session } from '@/lib/opencode/v2-types'
+
+import type { Message, Part, SessionStatus } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+import type { PermissionRequest } from '@/types/permission'
+import type { QuestionRequest } from '@/types/question'
+
 import { applyTranscriptDirectoryEvent } from "../transcript-event-reducer"
 import type { TranscriptEventDraft } from "../transcript-event-reducer"
 import { applyDirectoryEvent } from "../event-reducer"
@@ -19,6 +24,10 @@ function directoryState(overrides: Partial<State> = {}): State {
     ...INITIAL_STATE,
     ...overrides,
   }
+}
+
+function eventOf(type: string, properties: object): Event {
+  return { type, properties: properties as Record<string, unknown> }
 }
 
 function deltaEvent(): Event {
@@ -328,10 +337,7 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
       sessionID: "ses_1",
       permission: "edit",
     } as PermissionRequest
-    expect(applyDirectoryEvent(draft, {
-      type: "permission.asked",
-      properties: permission,
-    } as Event)).toBe(true)
+    expect(applyDirectoryEvent(draft, eventOf("permission.asked", permission))).toBe(true)
     expect(draft.permission.ses_1?.[0]?.id).toBe("perm_1")
   })
 
@@ -341,10 +347,7 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
       id: "q_1",
       sessionID: "ses_1",
     } as QuestionRequest
-    expect(applyDirectoryEvent(draft, {
-      type: "question.asked",
-      properties: question,
-    } as Event)).toBe(true)
+    expect(applyDirectoryEvent(draft, eventOf("question.asked", question))).toBe(true)
     expect(draft.question.ses_1?.[0]?.id).toBe("q_1")
   })
 

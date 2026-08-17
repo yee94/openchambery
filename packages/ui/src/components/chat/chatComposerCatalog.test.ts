@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Agent } from '@opencode-ai/sdk/v2';
+import type { Agent } from '@/lib/opencode/v2-types';
 import { resolveComposerPrimaryAgents, resolveComposerVisibleAgents } from './chatComposerCatalog';
 
 const agent = (

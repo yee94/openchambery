@@ -68,11 +68,13 @@ const strategy = (value: SessionMergeStrategy): SessionMergeStrategy => Object.f
  * `reconcile-page` reconcile server truth against a transcript the live stream
  * already owns, so they are the only purposes that upsert existing message
  * objects.
+ * Ticket 05: `initial` / `materialize` backfill when stale instead of dropping
+ * the whole HTTP page after liveRevision advances.
  */
 const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>> = Object.freeze({
   initial: strategy({
     id: "initial",
-    onStale: "drop",
+    onStale: "backfill",
     messages: "insert-only",
     parts: "replace",
     preserveStreaming: "assistant",
@@ -105,7 +107,7 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
   }),
   materialize: strategy({
     id: "materialize",
-    onStale: "drop",
+    onStale: "backfill",
     messages: "insert-only",
     parts: "replace",
     preserveStreaming: "assistant",

@@ -15,7 +15,7 @@ import {
 } from './chatContainerHost';
 import { hasUserDisplayableParts } from './message/normalizeUserDisplayParts';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 
 const sampleHost = (features?: ChatContainerHost['features']): ChatContainerHost => ({
   sessionId: 'ses_test',

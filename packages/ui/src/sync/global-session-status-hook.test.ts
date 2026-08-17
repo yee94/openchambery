@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus } from '@/lib/opencode/v2-types'
 
 import { resolveGlobalSessionStatus } from "./sync-context"
 

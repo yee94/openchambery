@@ -1,4 +1,5 @@
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
+import { isSessionCompactionCard } from '@/sync/session-projection-api';
 
 const GITHUB_ISSUE_CONTEXT_PREFIX = 'GitHub issue context (JSON)';
 const GITHUB_PR_CONTEXT_PREFIX = 'GitHub pull request context (JSON)';
@@ -121,6 +122,9 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
         .map((part) => {
             const rawPart = part as Record<string, unknown>;
             if (rawPart.type === 'compaction') {
+                if (isSessionCompactionCard(rawPart)) {
+                    return part;
+                }
                 return { type: 'text', text: '/compact' } as Part;
             }
             if (rawPart.type === 'text') {

@@ -5,7 +5,8 @@
  * compensation controller per SyncProvider lifecycle.
  */
 
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import type { QueryClient } from "@tanstack/react-query"
 
 import { queryClient as defaultQueryClient } from "@/lib/queryRuntime"
@@ -33,10 +34,8 @@ import {
 import {
   registerTranscriptReconnectCompensationController,
 } from "./transcript-reconnect-compensation-runtime"
-import {
-  fetchHostSessionTurnPageForPurpose,
-  type SessionTurnPage,
-} from "./session-turn-page-api"
+import { fetchSessionContext, fetchSessionProjectionPage, normalizeSessionProjectionMessage } from "./session-projection-api"
+import { rememberCompactionBarrierFromRecords } from "./session-compaction-api"
 import {
   findMissingAssistantParentUserIDs,
   loadSessionMessage,
@@ -75,20 +74,37 @@ export async function fetchProductionTranscriptTransportPage(input: {
     || rawPurpose === "materialize"
       ? rawPurpose
       : "initial"
+  void purpose
 
   // Ticket 09 batch 2: no nested retry() — Query classifier owns retries;
   // pass abort signal through to Host for cancellation fidelity.
-  const page: SessionTurnPage = await fetchHostSessionTurnPageForPurpose({
+  // Ticket 08: first paint prefers GET /context (post-checkpoint). Prepend
+  // still uses the projection cursor so older history remains reachable.
+  const projection = await fetchSessionProjectionPage({
     sessionID: input.sessionID,
     directory: input.directory,
-    purpose,
-    ...(input.before ? { before: input.before } : {}),
+    ...(input.before ? { cursor: input.before } : {}),
     signal: input.signal,
   })
+  const context = input.before
+    ? null
+    : await fetchSessionContext({
+      sessionID: input.sessionID,
+      directory: input.directory,
+      signal: input.signal,
+    })
+  const page = context && context.records.length > 0
+    ? {
+      records: context.records,
+      cursor: projection.cursor,
+      complete: projection.complete,
+      turnCount: context.turnCount,
+    }
+    : projection
 
   let records = page.records.map((record) => ({
     info: stripMessageDiffSnapshots(record.info),
-    parts: sortParts(record.parts ?? []),
+    parts: sortParts((record.parts ?? []) as Part[]),
   }))
 
   // Incomplete tails may omit parent user rows; recover by exact message ID.
@@ -106,15 +122,11 @@ export async function fetchProductionTranscriptTransportPage(input: {
             sessionID: input.sessionID,
             messageID,
             request: async () => {
-              const response = await scopedClient.session.message({
+              const raw = await scopedClient.session.message({
                 sessionID: input.sessionID,
                 messageID,
-                directory: input.directory,
               })
-              if (response.error) {
-                throw new Error("session.message failed")
-              }
-              const data = response.data as SessionMessageQueryRecord | undefined
+              const data = normalizeSessionProjectionMessage(input.sessionID, raw)
               if (!data?.info?.id) throw new Error("session.message failed: empty response")
               return {
                 info: stripMessageDiffSnapshots(data.info),
@@ -134,6 +146,8 @@ export async function fetchProductionTranscriptTransportPage(input: {
       }))
     }
   }
+
+  rememberCompactionBarrierFromRecords(input.sessionID, records)
 
   return {
     records,

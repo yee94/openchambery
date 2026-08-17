@@ -1,4 +1,5 @@
-import type { Part, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Part, Todo } from '@/lib/opencode/v2-types'
+
 import type { StoreApi } from "zustand"
 
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"

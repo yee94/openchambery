@@ -10,6 +10,14 @@ import { getSyncSessions, getSyncMessages, getSyncParts } from '@/sync/sync-refs
 import { useStreamingStore } from '@/sync/streaming';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { locationToPath } from '@/sync/v2-runtime';
+
+const locationOf = (directory?: string | null) => {
+  if (typeof directory !== 'string') return undefined;
+  const trimmed = directory.trim();
+  if (!trimmed) return undefined;
+  return { location: { directory: trimmed } };
+};
 
 export interface DebugMessageInfo {
   messageId: string;
@@ -254,19 +262,15 @@ export const debugUtils = {
     let opencodeHealth: unknown = null;
 
     try {
-      const pathResult = await opencodeClient.getSdkClient().path.get(
-        currentDirectory ? { directory: currentDirectory } : undefined
-      );
-      pathInfo = pathResult.error ? { error: pathResult.error } : pathResult.data;
+      // v2 location.get is the directory snapshot and throws on failure.
+      const location = await opencodeClient.getSdkClient().location.get(locationOf(currentDirectory));
+      pathInfo = locationToPath(location);
     } catch (error) {
       pathInfo = { error: error instanceof Error ? error.message : String(error) };
     }
 
     try {
-      const projectResult = await opencodeClient.getSdkClient().project.current(
-        currentDirectory ? { directory: currentDirectory } : undefined
-      );
-      projectInfo = projectResult.error ? { error: projectResult.error } : projectResult.data;
+      projectInfo = await opencodeClient.getSdkClient().project.current(locationOf(currentDirectory));
     } catch (error) {
       projectInfo = { error: error instanceof Error ? error.message : String(error) };
     }

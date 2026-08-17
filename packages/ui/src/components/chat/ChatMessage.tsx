@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@/lib/opencode/v2-types';
 import { useEvent } from '@reactuses/core';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -19,6 +19,8 @@ import MessageBody from './message/MessageBody';
 import type { AgentMentionInfo } from './message/types';
 import type { StreamPhase, ToolPopupContent } from './message/types';
 import { deriveMessageRole } from './message/messageRole';
+import { CompactionCard } from './message/CompactionCard';
+import { getSessionCompactionCard } from '@/sync/session-projection-api';
 import { filterVisibleParts, normalizeParts } from './message/partUtils';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
@@ -213,6 +215,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const messageRole = React.useMemo(() => deriveMessageRole(message.info), [message.info]);
     const isUser = messageRole.isUser;
+    const compactionCard = React.useMemo(
+        () => getSessionCompactionCard(message.parts),
+        [message.parts],
+    );
     const useExternalUserActionsRow = isUser && (isMobile || !stickyUserHeader);
     const showStickyInlineHoverRow = isUser && !isMobile && stickyUserHeader && !useExternalUserActionsRow;
 
@@ -1041,6 +1047,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     if (shouldHideUserMessage) {
         return null;
+    }
+
+    if (compactionCard) {
+        return (
+            <div
+                className="group w-full pt-4 pb-4"
+                id={`message-${message.info.id}`}
+                data-message-id={message.info.id}
+                data-compaction-status={compactionCard.status}
+            >
+                <div className="chat-message-column relative">
+                    <CompactionCard part={compactionCard} />
+                </div>
+            </div>
+        );
     }
 
     const assistantTopPaddingClass = !isUser && shouldShowHeader

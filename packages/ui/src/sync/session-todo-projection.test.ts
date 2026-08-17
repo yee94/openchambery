@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { create, type StoreApi } from "zustand"
-import type { Part, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Part, Todo } from '@/lib/opencode/v2-types'
 
 import { INITIAL_STATE, type State } from "./types"
 import type { DirectoryStore } from "./child-store"

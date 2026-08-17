@@ -627,3 +627,37 @@ describe('createSessionTurnPageService', () => {
     }));
   });
 });
+
+describe('SessionMessageInfo turn pages', () => {
+  const v2User = (id, extra = {}) => ({ id, type: 'user', time: { created: 1 }, text: 'hi', ...extra });
+  const v2Assistant = (id, extra = {}) => ({
+    id,
+    type: 'assistant',
+    time: { created: 2, completed: 3 },
+    content: [{ type: 'text', text: 'ok' }],
+    ...extra,
+  });
+
+  it('counts SessionMessageInfo type=user as an authored boundary', () => {
+    expect(isUserAuthoredTurnBoundary(v2User('msg_u1'))).toBe(true);
+    expect(isUserAuthoredTurnBoundary(v2Assistant('msg_a1'))).toBe(false);
+    expect(isUserAuthoredTurnBoundary({ id: 'msg_syn', type: 'synthetic', time: { created: 1 }, text: 'loop' })).toBe(false);
+    expect(isUserAuthoredTurnBoundary({
+      id: `oc_asst_session_divider:ses_old`,
+      type: 'system',
+      time: { created: 0 },
+    })).toBe(false);
+  });
+
+  it('aggregates SessionMessageInfo pages by id and type', async () => {
+    const fetchPage = vi.fn(async () => ({
+      records: [v2User('msg_u1'), v2Assistant('msg_a1')],
+      nextCursor: null,
+      complete: true,
+    }));
+    const service = createSessionTurnPageService({ fetchPage });
+    const result = await service.loadPage({ sessionID: 'ses_1', turns: 1 });
+    expect(result).toMatchObject({ ok: true, turnCount: 1, complete: true });
+    expect(result.records.map((entry) => entry.id)).toEqual(['msg_u1', 'msg_a1']);
+  });
+});

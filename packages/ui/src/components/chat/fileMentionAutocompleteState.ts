@@ -1,4 +1,4 @@
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
 
@@ -151,7 +151,7 @@ export const getVisibleSessionMentionCandidates = ({
     return sessions
         .filter((session) => session.id !== currentSessionId)
         .filter((session) => !normalizedQuery || `${session.title ?? ''} ${session.id}`.toLowerCase().includes(normalizedQuery))
-        .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+        .sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
         .slice(0, normalizedQuery ? 10 : 3);
 };
 

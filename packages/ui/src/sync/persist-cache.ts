@@ -7,7 +7,8 @@
  * source of truth.
  */
 
-import type { VcsInfo } from "@opencode-ai/sdk/v2/client"
+import type { VcsInfo } from '@/sync/types'
+
 import type { ProjectMeta } from "./types"
 
 // ---------------------------------------------------------------------------

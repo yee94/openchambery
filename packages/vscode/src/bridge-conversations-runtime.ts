@@ -1,10 +1,5 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
-import type {
-  TextPartInput,
-  FilePartInput,
-  AgentPartInput,
-  Session,
-} from '@opencode-ai/sdk/v2';
+import { ClientError, OpenCode } from '@opencode-ai/client';
+import type { JsonValue, SessionInfo } from '@opencode-ai/client';
 import type { BridgeContext, BridgeResponse } from './bridge';
 
 // =========================================================================
@@ -15,9 +10,31 @@ import type { BridgeContext, BridgeResponse } from './bridge';
 //   packages/ui/src/lib/api/types.ts
 // =========================================================================
 
-type ConversationTextPart = TextPartInput;
-type ConversationFilePart = FilePartInput;
-type ConversationAgentPart = AgentPartInput;
+type ConversationTextPart = {
+  type: 'text';
+  text: string;
+  id?: string;
+  synthetic?: boolean;
+  ignored?: boolean;
+  time?: { start: number; end?: number };
+  metadata?: { [key: string]: unknown };
+};
+
+type ConversationFilePart = {
+  type: 'file';
+  mime: string;
+  url: string;
+  id?: string;
+  filename?: string;
+  source?: unknown;
+};
+
+type ConversationAgentPart = {
+  type: 'agent';
+  name: string;
+  id?: string;
+  source?: unknown;
+};
 
 type ConversationMessagePart =
   | ConversationTextPart
@@ -37,7 +54,7 @@ type ConversationCreateWithPromptInput = {
   parts: ConversationMessagePart[];
 };
 
-type ConversationSession = Session;
+type ConversationSession = SessionInfo;
 
 type ConversationCreateWithPromptResult =
   | { ok: true; session: ConversationSession; messageID: string }
@@ -63,6 +80,7 @@ const safeError = (phase: keyof typeof CLIENT_SAFE_ERRORS): string =>
 
 const isTransportError = (error: unknown): boolean => {
   if (!error) return true;
+  if (error instanceof ClientError) return error.reason === 'Transport';
   if (error instanceof Error) {
     const err = error as Error & { name?: string; code?: string; cause?: { code?: string } };
     if (err.name === 'TypeError' || err.name === 'FetchError' || err.name === 'AbortError') return true;
@@ -70,6 +88,16 @@ const isTransportError = (error: unknown): boolean => {
     if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EPIPE') return true;
   }
   return false;
+};
+
+const extractHttpStatus = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object') return undefined;
+  const rec = error as { status?: unknown; cause?: { status?: unknown }; _tag?: unknown };
+  if (typeof rec.status === 'number' && Number.isFinite(rec.status)) return rec.status;
+  if (rec.cause && typeof rec.cause.status === 'number' && Number.isFinite(rec.cause.status)) return rec.cause.status;
+  if (rec._tag === 'InvalidRequestError') return 400;
+  if (rec._tag === 'UnauthorizedError') return 401;
+  return undefined;
 };
 
 const isRetryableHttpStatus = (status: unknown): boolean => {
@@ -326,18 +354,34 @@ const internalResult = (id: string, type: string): BridgeResponse => ({
 
 // --- build promptAsync params (returns SDK parameter type directly) ---
 
-const buildPromptAsyncParams = (
+const buildV2PromptInput = (
   sessionID: string,
   input: ConversationCreateWithPromptInput,
-): Parameters<import('@opencode-ai/sdk/v2').OpencodeClient['session']['promptAsync']>[0] => ({
-  sessionID,
-  directory: input.directory,
-  messageID: input.messageID,
-  model: input.model,
-  ...(input.agent ? { agent: input.agent } : {}),
-  ...(input.variant ? { variant: input.variant } : {}),
-  parts: input.parts,
-});
+) => {
+  const text = input.parts
+    .filter((part): part is ConversationTextPart => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n');
+  const files = input.parts
+    .filter((part): part is ConversationFilePart => part.type === 'file')
+    .map((part) => ({
+      uri: part.url,
+      ...(part.filename ? { name: part.filename } : {}),
+    }));
+  const agents = input.parts
+    .filter((part): part is ConversationAgentPart => part.type === 'agent')
+    .map((part) => ({ name: part.name }));
+
+  return {
+    sessionID,
+    id: input.messageID,
+    text,
+    delivery: 'steer' as const,
+    ...(files.length > 0 ? { files } : {}),
+    ...(agents.length > 0 ? { agents } : {}),
+    ...(input.metadata ? { metadata: input.metadata as { readonly [key: string]: JsonValue } } : {}),
+  };
+};
 
 // --- main handler ---
 
@@ -499,72 +543,64 @@ export async function handleConversationsBridgeMessage(
       }
 
       const authHeaders = ctx?.manager?.getOpenCodeAuthHeaders() ?? {};
-      const client = createOpencodeClient({
+      const client = OpenCode.make({
         baseUrl: apiUrl.replace(/\/+$/, ''),
         headers: authHeaders,
+        fetch: globalThis.fetch,
       });
 
       const requestAbort = new AbortController();
       abortControllers.set(id, requestAbort);
 
       try {
+        if (input.parentID) {
+          console.warn('[bridge:conversations] session.create has no v2 parentID; failing closed');
+          return { ok: false, phase: 'create', error: safeError('create') };
+        }
+
         // Phase 1: create session
-        let createResult: { data?: unknown; error?: unknown; response?: { status?: number } };
+        let session: ConversationSession;
         try {
-          createResult = (await client.session.create(
+          session = await client.session.create(
             {
-              directory: input.directory,
+              location: { directory: input.directory },
               ...(input.title ? { title: input.title } : {}),
-              ...(input.parentID ? { parentID: input.parentID } : {}),
-              ...(input.metadata ? { metadata: input.metadata } : {}),
+              ...(input.agent ? { agent: input.agent } : {}),
+              model: {
+                id: input.model.modelID,
+                providerID: input.model.providerID,
+                ...(input.variant ? { variant: input.variant } : {}),
+              },
             },
             {
               signal: AbortSignal.any([requestAbort.signal, AbortSignal.timeout(30_000)]),
             },
-          )) as { data?: unknown; error?: unknown; response?: { status?: number } };
-        } catch {
-          console.warn('[bridge:conversations] session.create transport error');
-          return { ok: false, phase: 'create', error: safeError('create') };
-        }
-
-        const createStatus = createResult.response?.status;
-        if (createResult.error) {
-          console.warn(`[bridge:conversations] session.create SDK error (${createStatus || 'no status'})`);
+          );
+        } catch (err) {
+          const createStatus = extractHttpStatus(err);
+          console.warn(`[bridge:conversations] session.create ${isTransportError(err) ? 'transport' : 'client'} error (${createStatus || 'no status'})`);
           return {
             ok: false, phase: 'create', error: safeError('create'),
             ...(typeof createStatus === 'number' && Number.isFinite(createStatus) ? { status: createStatus } : {}),
           };
         }
 
-        const sessionObj = createResult.data as Record<string, unknown> | undefined;
-        const sessionID = sessionObj && typeof sessionObj.id === 'string' ? sessionObj.id : '';
+        const sessionID = typeof session?.id === 'string' ? session.id : '';
         if (!sessionID) {
           console.warn('[bridge:conversations] session.create returned no session ID');
           return { ok: false, phase: 'create', error: safeError('create') };
         }
 
-        const session = createResult.data as ConversationSession;
-
         // Phase 2: promptAsync
-        let promptResult: { data?: unknown; error?: unknown; response?: { status?: number } };
         try {
-          promptResult = (await client.session.promptAsync(
-            buildPromptAsyncParams(sessionID, input),
+          await client.session.prompt(
+            buildV2PromptInput(sessionID, input),
             { signal: AbortSignal.any([requestAbort.signal, AbortSignal.timeout(45_000)]) },
-          )) as { data?: unknown; error?: unknown; response?: { status?: number } };
+          );
         } catch (err) {
-          const ambiguous = isTransportError(err);
-          console.warn(`[bridge:conversations] promptAsync throw (ambiguous=${ambiguous})`);
-          return {
-            ok: false, phase: 'prompt', session, messageID: input.messageID,
-            ambiguous, error: safeError('prompt'),
-          };
-        }
-
-        if (promptResult.error) {
-          const httpStatus = promptResult.response?.status;
-          const ambiguous = isAmbiguousPromptError(promptResult.error, promptResult.response);
-          console.warn(`[bridge:conversations] promptAsync SDK error (${httpStatus || 'no status'}, ambiguous=${ambiguous})`);
+          const httpStatus = extractHttpStatus(err);
+          const ambiguous = isAmbiguousPromptError(err, httpStatus !== undefined ? { status: httpStatus } : undefined);
+          console.warn(`[bridge:conversations] prompt throw (${httpStatus || 'no status'}, ambiguous=${ambiguous})`);
           return {
             ok: false, phase: 'prompt', session, messageID: input.messageID,
             ambiguous, error: safeError('prompt'),

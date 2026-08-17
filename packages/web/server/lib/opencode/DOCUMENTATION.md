@@ -11,6 +11,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/cli-entry-runtime.js`: CLI entrypoint runtime that detects direct execution, parses CLI options, and starts server bootstrap.
 - `packages/web/server/lib/opencode/routes.js`: OpenCode/provider settings and auth-related route registration.
 - `packages/web/server/lib/opencode/lifecycle.js`: OpenCode process lifecycle runtime (startup, restart, readiness, health monitoring).
+- `packages/web/server/lib/opencode/v1-migration-gate.js`: pure V1→v2 migration admission gate (`GET /api/experimental/migration/v1` → whether transcript may be fetched).
 - `packages/web/server/lib/opencode/managed-capabilities-runtime.js`: managed-child scheduled-task resources, config injection, rotating bridge identity, and bridge authorization.
 - `packages/web/server/lib/opencode/env-runtime.js`: OpenCode CLI/binary resolution and shell environment runtime.
 - `packages/web/server/lib/opencode/env-config.js`: OpenCode-related environment variable parsing and validation (host/port/hostname).
@@ -111,8 +112,14 @@ This module provides OpenCode server integration utilities for the web server ru
   membership — that remains a UI-side authoritative pull fused with directory
   `/session/status`.
 
+## Public exports (v1-migration-gate.js)
+- `OPENCODE_V1_MIGRATION_PATH`: `/api/experimental/migration/v1`.
+- `V1_MIGRATION_USER_NOTICE`: user-visible backfill notes (reuse message ids; in-progress tools become interrupted; V1 subtasks omitted from v2).
+- `evaluateV1MigrationGate(input)`: pure function. Accepts migration JSON (`{ status }`), an HTTP envelope (`{ httpStatus|status, body }`), or a transport failure (`{ error }`). Returns `{ admitTranscript, phase, progress?, error?, userNotice? }`. `required` / `running` / `error` / network failure → `admitTranscript: false`. `completed` or HTTP 404 (no V1 library) → `true`. Unknown or empty bodies fail closed and are never treated as an empty-list success.
+- `fetchV1MigrationGate({ url, headers, signal, fetchImpl })`: GET-only status poll used by lifecycle.
+
 ## Public exports (lifecycle.js)
-- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration.
+- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. Managed spawn defaults to `opencode2`. Startup accepts both `server listening on http://127.0.0.1:PORT` and the legacy `opencode server listening on …` line. Readiness/health probes `GET /api/health` first (`{ healthy: true }`), then `/global/health`, and send Basic auth from `getOpenCodeAuthHeaders()` (username `opencode`). After health ok, `startOpenCode` / `waitForOpenCodeReady` poll `GET /api/experimental/migration/v1` (no POST; backfill is owned by opencode2). `isOpenCodeReady` means transcript may be fetched only when the gate admits (`completed`, or no V1 library such as HTTP 404). `required` / `running` / `error` keep the ready gate closed; `error` is retried. The last gate result is stored on `state.v1Migration` and published on the OpenChamber `/health` snapshot so UI can render `phase` and running `progress` (`label` / `numerator` / `denominator`) plus `userNotice` (reuse message ids; in-progress tools become interrupted; V1 subtasks do not appear in v2).
 - Returned API:
   - `startOpenCode()`
   - `restartOpenCode()`
@@ -126,7 +133,8 @@ This module provides OpenCode server integration utilities for the web server ru
   - `killProcessOnPort(port)`
 
 ## Public exports (env-runtime.js)
-- `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state.
+- `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state. Auto-discovery looks for `opencode2` (PATH, `~/.bun/bin/opencode2`, `~/.opencode/bin/opencode2`, Homebrew, bundled `opencode2` / `opencode2.exe`). A resolved basename of `opencode` / `opencode.exe` / `opencode.cmd` fails closed with `OPENCODE_BINARY_INVALID` (message says the basename is reserved for 1.x; rename or symlink to `opencode2`). OpenChamber does not treat PATH 1.x `opencode` as a hit and does not reuse an already-running `opencode2 service`.
+- VS Code keeps a copied sidecar (`packages/vscode/src/opencode-sidecar.ts`) with the same invariants: discovery order may differ (no Electron bundled fallback), but reject list, listening lines, health path order (`/api/health` then `/global/health`), `{ healthy: true }`, and Basic username `opencode` must stay aligned. Changing one copy requires changing the other.
 - Returned API:
   - `applyLoginShellEnvSnapshot()`
   - `getLoginShellEnvSnapshot()`
@@ -174,7 +182,7 @@ This module provides OpenCode server integration utilities for the web server ru
 ## Public exports (network-runtime.js)
 - `createOpenCodeNetworkRuntime(dependencies)`: creates runtime for OpenCode network and URL concerns.
 - Returned API:
-  - `waitForReady(url, timeoutMs?)`
+  - `waitForReady(url, timeoutMs?)`: probes `GET /api/health` then `/global/health` with `getOpenCodeAuthHeaders()`; `{ healthy: true }` is ready.
   - `normalizeApiPrefix(prefix)`
   - `setDetectedOpenCodeApiPrefix()`
   - `buildOpenCodeUrl(path, prefixOverride?)`
@@ -378,7 +386,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - Session message forwarder: `POST /api/session/:sessionId/message`
   - Generic `/api/*` forwarding with hop-by-hop header filtering
   - Windows `/session` merge fallback path behavior
-  - OpenCode readiness gate for proxied `/api` requests
+  - OpenCode readiness gate for proxied `/api` requests: process warmup still uses `OPEN_CODE_READY_GRACE_MS`; `state.v1Migration.admitTranscript !== true` holds with no grace until the gate admits or the client cancels, so a `running` migration past 12s cannot `next()` an empty session list through as success
 
 ## Public exports (watcher.js)
 - `createOpenCodeWatcherRuntime(dependencies)`: creates global event watcher runtime backed by the shared upstream SSE reader.

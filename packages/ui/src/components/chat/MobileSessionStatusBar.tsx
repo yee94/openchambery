@@ -11,7 +11,7 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { cn, formatDirectoryName } from '@/lib/utils';
@@ -32,6 +32,7 @@ import { toast } from '@/components/ui/toast';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useI18n } from '@/lib/i18n';
+import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
@@ -536,10 +537,12 @@ export function SessionItem({
             </ContextMenuItem>
           </>
         ) : (
+          isSessionSharingAvailable() ? (
           <ContextMenuItem className="min-h-10 px-3" onClick={onShare}>
             <Icon name="share-2" className="size-4" />
             {t('sessions.sidebar.session.menu.share')}
           </ContextMenuItem>
+          ) : null
         )}
         <ContextMenuSeparator />
         <ContextMenuItem className="min-h-10 px-3" onClick={onArchive}>
@@ -1498,6 +1501,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
           />
         </>
       ) : (
+        isSessionSharingAvailable() ? (
         <MobileActionButton
           icon="share-2"
           label={t('sessions.sidebar.session.menu.share')}
@@ -1507,6 +1511,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
             void handleShareSession(session);
           }}
         />
+        ) : null
       )}
       <MobileActionButton
         icon="archive"

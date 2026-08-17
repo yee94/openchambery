@@ -70,13 +70,11 @@ afterEach(() => {
 
 function createSdkWithSingleEvent(event, hold) {
   return {
-    global: {
-      event: async () => ({
-        stream: (async function* () {
+    event: {
+      subscribe: async () => ((async function* () {
           yield event;
           await hold;
-        })(),
-      }),
+        })()),
     },
   };
 }
@@ -92,15 +90,13 @@ function withTimeout(promise, ms, message) {
 // Helper to create an SDK that yields multiple events in sequence, then holds.
 function createSdkWithEvents(events, hold) {
   return {
-    global: {
-      event: async () => ({
-        stream: (async function* () {
+    event: {
+      subscribe: async () => ((async function* () {
           for (const event of events) {
             yield event;
           }
           await hold;
-        })(),
-      }),
+        })()),
     },
   };
 }
@@ -553,8 +549,8 @@ describe('createEventPipeline', () => {
 
     const received = [];
     const sdk = {
-      global: {
-        event: async () => {
+      event: {
+        subscribe: async () => {
           throw new Error('SSE should not be used in ws mode');
         },
       },
@@ -726,14 +722,12 @@ describe('createEventPipeline', () => {
     const recovered = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async (options) => {
+          event: {
+        subscribe: async (options) => {
               eventOptions.push(options);
-              return {
-                stream: (async function* () {
+              return (async function* () {
                   await hold;
-                })(),
-              };
+                })();
             },
           },
         },
@@ -833,12 +827,10 @@ describe('createEventPipeline', () => {
     const recovered = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async () => ({
-              stream: (async function* () {
+          event: {
+        subscribe: async () => ((async function* () {
                 await hold;
-              })(),
-            }),
+              })()),
           },
         },
         transport: 'auto',
@@ -908,11 +900,10 @@ describe('createEventPipeline', () => {
     const eventOptions = [];
     const received = [];
     const sdk = {
-      global: {
-        event: async (options) => {
+      event: {
+        subscribe: async (options) => {
           eventOptions.push(options);
-          return {
-            stream: (async function* () {
+          return (async function* () {
               yield {
                 payload: {
                   type: 'server.connected',
@@ -920,8 +911,7 @@ describe('createEventPipeline', () => {
                 },
               };
               await hold;
-            })(),
-          };
+            })();
         },
       },
     };
@@ -981,8 +971,8 @@ describe('createEventPipeline', () => {
     let reconnectCount = 0;
 
     const sdk = {
-      global: {
-        event: async () => {
+      event: {
+        subscribe: async () => {
           throw new Error('SSE should not be used in ws mode');
         },
       },
@@ -1037,11 +1027,11 @@ describe('createEventPipeline', () => {
     const recovered = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: () => {
+          event: {
+        subscribe: () => {
               calls += 1;
               if (calls === 1) return new Promise(() => {});
-              return Promise.resolve({ stream: (async function* () { await new Promise(() => {}); })() });
+              return Promise.resolve((async function* () { await new Promise(() => {}); })());
             },
           },
         },
@@ -1076,17 +1066,15 @@ describe('createEventPipeline', () => {
     const secondConnected = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async () => {
+          event: {
+        subscribe: async () => {
               calls += 1;
               if (calls === 1) {
-                return {
-                  stream: (async function* () {
+                return (async function* () {
                     callbacks.push('eof');
-                  })(),
-                };
+                  })();
               }
-              return { stream: (async function* () { await new Promise(() => {}); })() };
+              return (async function* () { await new Promise(() => {}); })();
             },
           },
         },
@@ -1123,11 +1111,11 @@ describe('createEventPipeline', () => {
     const activity = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async (options) => {
-              options.onSseEvent({ id: 'heartbeat-1' });
-              return { stream: (async function* () { await new Promise(() => {}); })() };
-            },
+          event: {
+            subscribe: async () => (async function* () {
+              yield { id: 'heartbeat-1' };
+              await new Promise(() => {});
+            })(),
           },
         },
         transport: 'sse',
@@ -1157,7 +1145,7 @@ describe('createEventPipeline', () => {
     let cleanup;
     const connected = new Promise((resolve) => {
       const pipeline = createEventPipeline({
-        sdk: { global: { event: async () => ({ stream: (async function* () { await hold; })() }) } },
+        sdk: { event: { subscribe: async () => ((async function* () { await hold; })()) } },
         transport: 'auto',
         reconnectDelayMs: 0,
         onEvent: () => {},
@@ -1191,8 +1179,8 @@ describe('createEventPipeline', () => {
     const recovered = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async () => {
+          event: {
+        subscribe: async () => {
               throw new Error('SSE should not be used in ws mode');
             },
           },
@@ -1284,8 +1272,8 @@ describe('createEventPipeline', () => {
     const recovered = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async () => {
+          event: {
+        subscribe: async () => {
               throw new Error('SSE should not be used in ws mode');
             },
           },
@@ -1361,8 +1349,8 @@ describe('createEventPipeline', () => {
     const secondCompensation = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async () => {
+          event: {
+        subscribe: async () => {
               throw new Error('SSE should not be used in ws mode');
             },
           },
@@ -1498,8 +1486,8 @@ describe('createEventPipeline', () => {
     const secondCompensation = new Promise((resolve) => {
       const pipeline = createEventPipeline({
         sdk: {
-          global: {
-            event: async () => {
+          event: {
+        subscribe: async () => {
               throw new Error('SSE should not be used in ws mode');
             },
           },
@@ -1627,8 +1615,8 @@ describe('createEventPipeline', () => {
     let cleanup;
     const pipeline = createEventPipeline({
       sdk: {
-        global: {
-          event: async () => {
+        event: {
+          subscribe: async () => {
             throw new Error('SSE should not be used in ws mode');
           },
         },
@@ -1941,12 +1929,10 @@ describe('event pipeline benign drops', () => {
     const disconnectReasons = [];
     const { cleanup } = createEventPipeline({
       sdk: {
-        global: {
-          event: async () => ({
-            stream: (async function* () {
+        event: {
+          subscribe: async () => ((async function* () {
               await hold;
-            })(),
-          }),
+            })()),
         },
       },
       transport: 'ws',
@@ -2032,12 +2018,10 @@ describe('event pipeline benign drops', () => {
 
     const { cleanup } = createEventPipeline({
       sdk: {
-        global: {
-          event: async () => ({
-            stream: (async function* () {
+        event: {
+          subscribe: async () => ((async function* () {
               await hold;
-            })(),
-          }),
+            })()),
         },
       },
       transport: 'ws',

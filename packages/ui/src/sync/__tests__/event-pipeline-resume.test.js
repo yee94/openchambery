@@ -62,15 +62,14 @@ describe('createEventPipeline — system resume reconnect', () => {
     const firstHold = new Promise((resolve) => { releaseFirstStream = resolve; });
 
     const sdk = {
-      global: {
+      event: {
         // Accept options with signal so the mock generator can abort.
-        event: async (options) => {
+        subscribe: async (options) => {
           const callIndex = sdkCallIndex++;
           eventCalls.push(callIndex);
           const signal = options?.signal;
           if (callIndex === 0) {
-            return {
-              stream: (async function* () {
+            return (async function* () {
                 yield {
                   payload: { type: 'session.status', properties: { sessionID: 's1', status: { type: 'idle' } } },
                 };
@@ -84,17 +83,14 @@ describe('createEventPipeline — system resume reconnect', () => {
                     });
                   }),
                 ]);
-              })(),
-            };
+              })();
           }
-          return {
-            stream: (async function* () {
+          return (async function* () {
               yield {
                 payload: { type: 'session.status', properties: { sessionID: 's1', status: { type: 'idle' } } },
               };
               await new Promise(() => {});
-            })(),
-          };
+            })();
         },
       },
     };
@@ -146,13 +142,12 @@ describe('createEventPipeline — system resume reconnect', () => {
     const disconnectReasons = [];
     let sdkCallIndex = 0;
     const sdk = {
-      global: {
-        event: async (options) => {
+      event: {
+        subscribe: async (options) => {
           const idx = sdkCallIndex++;
           const signal = options?.signal;
           if (idx === 0) {
-            return {
-              stream: (async function* () {
+            return (async function* () {
                 yield {
                   payload: { type: 'session.status', properties: { sessionID: 's1', status: { type: 'idle' } } },
                 };
@@ -160,17 +155,14 @@ describe('createEventPipeline — system resume reconnect', () => {
                   if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
                   signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
                 });
-              })(),
-            };
+              })();
           }
-          return {
-            stream: (async function* () {
+          return (async function* () {
               yield {
                 payload: { type: 'session.status', properties: { sessionID: 's1', status: { type: 'idle' } } },
               };
               await new Promise(() => {});
-            })(),
-          };
+            })();
         },
       },
     };
@@ -216,14 +208,13 @@ describe('createEventPipeline — system resume reconnect', () => {
     const disconnectReasons = [];
     let sdkCallIndex = 0;
     const sdk = {
-      global: {
-        event: async () => {
+      event: {
+        subscribe: async () => {
           const idx = sdkCallIndex++;
           if (idx === 0) {
             throw new Error('simulated network error');
           }
-          return {
-            stream: (async function* () {
+          return (async function* () {
               yield {
                 payload: {
                   type: 'session.status',
@@ -231,8 +222,7 @@ describe('createEventPipeline — system resume reconnect', () => {
                 },
               };
               await new Promise(() => {});
-            })(),
-          };
+            })();
         },
       },
     };

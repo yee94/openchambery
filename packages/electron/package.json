@@ -36,7 +36,7 @@
     "generate:macos-icon": "node ./scripts/generate-macos-icon-assets.cjs",
     "generate:preview-icons": "node ./scripts/generate-preview-icons.mjs",
     "rebuild:native": "node ./scripts/rebuild-native.mjs",
-    "test:architecture": "node --test ./scripts/target-architecture.test.mjs ./scripts/desktop-profile.test.mjs ./scripts/verify-linux-appimage.test.mjs ./scripts/verify-update-manifest.test.mjs",
+    "test:architecture": "node --test ./scripts/target-architecture.test.mjs ./scripts/desktop-profile.test.mjs ./scripts/verify-linux-appimage.test.mjs ./scripts/verify-update-manifest.test.mjs ./scripts/opencode2-bundle-contract.test.mjs",
     "test:input-draft-indexeddb": "bun ./scripts/test-input-draft-indexeddb.mjs",
     "test:updater": "node --test ./ipc-command-gate.test.mjs ./updater-capability.test.mjs ./updater-check.test.mjs ./updater-download-status.test.mjs ./updater-idle-download.test.mjs ./updater-feed.test.mjs ./scripts/updater-e2e-fixture.test.mjs",
     "test:virtual-asset": "node --test ./virtual-asset-protocol.test.mjs",

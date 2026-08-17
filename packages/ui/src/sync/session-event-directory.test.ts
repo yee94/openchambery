@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Event } from "@opencode-ai/sdk/v2/client"
+import type { Event } from '@/sync/types'
 
 import { getSessionInfoFromPayload } from "./session-event-router"
 

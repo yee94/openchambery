@@ -13,7 +13,8 @@
  * This adapter is not bound in production SyncProvider.
  */
 
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
 
 import { applyTranscriptDirectoryEvent } from "./transcript-event-reducer"
 import { materializeSessionSnapshots } from "./materialization"

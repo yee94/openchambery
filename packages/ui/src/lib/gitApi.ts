@@ -73,21 +73,24 @@ const extractJsonObject = (value: string): Record<string, unknown> | null => {
   return null;
 };
 
-const extractAssistantText = (response: unknown): string => {
-  const data = (response as { data?: { parts?: Array<unknown> } } | null)?.data;
-  const parts = Array.isArray(data?.parts) ? data.parts : [];
-  return parts
-    .map((part) => {
-      const item = part as { type?: unknown; text?: unknown; content?: unknown; value?: unknown };
-      if (item.type !== 'text') return '';
-      if (typeof item.text === 'string') return item.text;
-      if (typeof item.content === 'string') return item.content;
-      if (typeof item.value === 'string') return item.value;
-      return '';
-    })
-    .filter((text) => text.trim().length > 0)
-    .join('\n')
-    .trim();
+const extractAssistantTextFromMessages = (records: unknown): string => {
+  const messages = Array.isArray(records) ? records : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const record = messages[index] as {
+      type?: unknown;
+      content?: Array<{ type?: unknown; text?: unknown }>;
+      text?: unknown;
+    };
+    if (record?.type !== 'assistant') continue;
+    const fromContent = (Array.isArray(record.content) ? record.content : [])
+      .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
+      .filter((text) => text.trim().length > 0)
+      .join('\n')
+      .trim();
+    if (fromContent) return fromContent;
+    if (typeof record.text === 'string' && record.text.trim()) return record.text.trim();
+  }
+  return '';
 };
 
 export async function checkIsGitRepository(directory: string): Promise<boolean> {
@@ -621,7 +624,6 @@ const runStructuredGenerationInActiveSession = async ({
     agent: generationSession.agent,
     variant: generationSession.variant,
   });
-  const trimmedDirectory = typeof directory === 'string' ? directory.trim() : '';
   const visiblePromptText = typeof visiblePrompt === 'string' ? visiblePrompt.trim() : '';
   const hiddenPromptText = typeof hiddenPrompt === 'string' ? hiddenPrompt.trim() : '';
   const promptParts: Array<{ type: 'text'; text: string; synthetic?: boolean }> = [];
@@ -641,37 +643,46 @@ const runStructuredGenerationInActiveSession = async ({
 
   requestChatForceScrollBottom(generationSession.sessionId);
 
-  const response = await opencodeClient.withDirectory(directory, async () => {
-    return opencodeClient.getApiClient().session.prompt({
-      sessionID: generationSession.sessionId,
-      ...(trimmedDirectory.length > 0 ? { directory: trimmedDirectory } : {}),
-      model: {
-        providerID: generationSession.providerID,
-        modelID: generationSession.modelID,
-      },
-      ...(generationSession.agent ? { agent: generationSession.agent } : {}),
-      ...(generationSession.variant ? { variant: generationSession.variant } : {}),
-      parts: promptParts,
-    });
-  });
-
-  const responseError = response?.error as { message?: string } | undefined;
-  if (!response?.data) {
-    throw new Error(responseError?.message || `Failed to generate ${kind} output`);
+  const promptText = promptParts.map((part) => part.text).join('\n\n').trim();
+  if (!promptText) {
+    throw new Error('Generation prompts are empty');
   }
 
-  const info = response.data.info as { finish?: string; error?: unknown };
-  const assistantText = extractAssistantText(response);
+  // v2 session.prompt uses id/text/delivery and returns an inbox item, not {data,error}.
+  const client = opencodeClient.getSdkClient();
+  await opencodeClient.withDirectory(directory, async () => {
+    await client.session.prompt({
+      sessionID: generationSession.sessionId,
+      text: promptText,
+      delivery: 'steer',
+      metadata: {
+        model: {
+          providerID: generationSession.providerID,
+          modelID: generationSession.modelID,
+        },
+        ...(generationSession.agent ? { agent: generationSession.agent } : {}),
+        ...(generationSession.variant ? { variant: generationSession.variant } : {}),
+      },
+    });
+    await client.session.wait({ sessionID: generationSession.sessionId });
+  });
+
+  const listed = await opencodeClient.withDirectory(directory, () =>
+    client.message.list({
+      sessionID: generationSession.sessionId,
+      limit: 20,
+      order: 'desc',
+    }),
+  );
+  const assistantText = extractAssistantTextFromMessages(listed.data);
   const parsedOutput = extractJsonObject(assistantText);
   if (!parsedOutput) {
     console.error('[git-generation][browser] invalid JSON output', {
       kind,
       sessionId: generationSession.sessionId,
       elapsedMs: Date.now() - requestStartedAt,
-      finish: info?.finish,
       assistantText,
-      messageInfo: response.data.info,
-      messageParts: response.data.parts,
+      messages: listed.data,
     });
     throw new Error('No JSON output returned by session');
   }

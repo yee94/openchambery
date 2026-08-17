@@ -197,6 +197,55 @@ describe('OpenCode proxy SSE forwarding', () => {
     expect(await response.json()).toMatchObject({ restarting: true });
   });
 
+  it('does not forward session messages while V1 migration stays running past the ready grace', async () => {
+    let upstreamHits = 0;
+    const upstream = express();
+    upstream.get('/session/ses_1/message', (_req, res) => {
+      upstreamHits += 1;
+      res.json([]);
+    });
+    upstreamServer = await listen(upstream);
+    const upstreamPort = upstreamServer.address().port;
+
+    const runtime = {
+      openCodePort: upstreamPort,
+      isOpenCodeReady: false,
+      openCodeNotReadySince: Date.now() - 5000,
+      isRestartingOpenCode: false,
+      v1Migration: {
+        admitTranscript: false,
+        phase: 'running',
+        progress: { label: 'Sessions', numerator: 1, denominator: 4 },
+      },
+    };
+
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: {},
+      os: {},
+      path,
+      OPEN_CODE_READY_GRACE_MS: 80,
+      getRuntime: () => runtime,
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
+      ensureOpenCodeApiPrefix: () => {},
+    });
+    proxyServer = await listen(app);
+    const proxyPort = proxyServer.address().port;
+
+    const pending = fetch(`http://127.0.0.1:${proxyPort}/api/session/ses_1/message`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(upstreamHits).toBe(0);
+
+    runtime.isOpenCodeReady = true;
+    runtime.v1Migration = { admitTranscript: true, phase: 'completed' };
+
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+    expect(upstreamHits).toBe(1);
+  });
+
   it('waits for drain when writing to a slow SSE response', async () => {
     const writes = [];
     const res = new EventEmitter();

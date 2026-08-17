@@ -9,6 +9,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 const { createOpenCodeLifecycleRuntime } = await import('./lifecycle.js');
+const { createOpenCodeNetworkRuntime } = await import('./network-runtime.js');
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalPath = process.env.PATH;
@@ -57,6 +58,7 @@ const createRuntime = (overrides = {}, stateRef = null) => {
     openCodeApiDetectionTimer: null,
     lastOpenCodeError: null,
     isOpenCodeReady: false,
+    v1Migration: null,
     openCodeNotReadySince: 0,
     isExternalOpenCode: false,
     isShuttingDown: false,
@@ -109,6 +111,44 @@ const createRuntime = (overrides = {}, stateRef = null) => {
   });
 };
 
+const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { 'content-type': 'application/json' },
+});
+
+const stubOpenCodeFetch = (overrides = {}) => {
+  const fetchMock = vi.fn(async (url) => {
+    const href = String(url);
+    if (href.includes('/api/experimental/migration/v1')) {
+      const migration = overrides.migration;
+      if (typeof migration === 'function') {
+        return migration();
+      }
+      if (migration && typeof migration === 'object' && Number.isInteger(migration.httpStatus)) {
+        return jsonResponse(migration.body ?? {}, migration.httpStatus);
+      }
+      return jsonResponse(migration ?? { status: 'completed' });
+    }
+    if (href.includes('/api/health') || href.includes('/global/health')) {
+      return jsonResponse(overrides.health ?? { healthy: true });
+    }
+    return new Response('not found', { status: 404 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+};
+
+const startListeningChild = () => {
+  const child = createMockChild();
+  spawnMock.mockImplementationOnce(() => {
+    queueMicrotask(() => {
+      child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+    });
+    return child;
+  });
+  return child;
+};
+
 describe('OpenCode lifecycle', () => {
   it('launches managed OpenCode with the managed PATH', async () => {
     delete process.env.OPENCODE_BINARY;
@@ -124,11 +164,75 @@ describe('OpenCode lifecycle', () => {
     const server = await runtime.startOpenCode();
     const [binary, args, options] = spawnMock.mock.calls[0];
 
-    expect(binary).toBe('opencode');
+    expect(binary).toBe('opencode2');
     expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
+
+    await server.close();
+  });
+
+  it('parses a v2 server listening line without the opencode prefix', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+
+    expect(server.url).toBe('http://127.0.0.1:45678');
+
+    await server.close();
+  });
+
+  it('probes /api/health with Basic auth after the managed server is listening', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('/api/health')) {
+        return new Response(JSON.stringify({ healthy: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const authHeaders = { Authorization: 'Basic Zml4dHVyZQ==' };
+    const network = createOpenCodeNetworkRuntime({
+      state: {
+        openCodePort: 45678,
+        openCodeBaseUrl: null,
+        openCodeApiPrefix: '',
+        openCodeApiPrefixDetected: false,
+        openCodeApiDetectionTimer: null,
+      },
+      getOpenCodeAuthHeaders: () => authHeaders,
+    });
+    const runtime = createRuntime({
+      getOpenCodeAuthHeaders: () => authHeaders,
+      waitForReady: network.waitForReady,
+    });
+    const server = await runtime.startOpenCode();
+    const healthCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/health'));
+
+    expect(healthCall).toBeDefined();
+    expect(String(healthCall[0])).toContain('/api/health');
+    expect(healthCall[1].headers.Authorization).toMatch(/^Basic /);
 
     await server.close();
   });
@@ -215,7 +319,7 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime();
 
-    await expect(runtime.startOpenCode()).rejects.toThrow('OpenCode process exited before serving with signal SIGTERM. Binary used: opencode. No stdout/stderr captured');
+    await expect(runtime.startOpenCode()).rejects.toThrow('OpenCode process exited before serving with signal SIGTERM. Binary used: opencode2. No stdout/stderr captured');
     expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 
@@ -298,7 +402,7 @@ describe('OpenCode lifecycle', () => {
     stateRef.current.openCodeProcess = managedChild;
     stateRef.current.openCodePort = 45678;
     stateRef.current.isExternalOpenCode = false;
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ healthy: true }), { status: 200 })));
+    stubOpenCodeFetch();
     await runtime.bootstrapOpenCodeAtStartup();
     expect(managedChild.close).toHaveBeenCalledTimes(1);
     expect(stateRef.current.openCodeProcess).toBeNull();
@@ -324,7 +428,7 @@ describe('OpenCode lifecycle', () => {
     }, stateRef);
     stateRef.current.isExternalOpenCode = true;
     stateRef.current.openCodeBaseUrl = 'http://127.0.0.1:3001';
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ healthy: true }), { status: 200 })));
+    stubOpenCodeFetch();
 
     await runtime.bootstrapOpenCodeAtStartup();
 
@@ -378,10 +482,7 @@ describe('OpenCode lifecycle', () => {
       });
       return child;
     });
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ healthy: true }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })));
+    stubOpenCodeFetch();
 
     try {
       await runtime.retryOpenCodeStartup();
@@ -392,5 +493,138 @@ describe('OpenCode lifecycle', () => {
       errorLog.mockRestore();
       await stateRef.current.openCodeProcess?.close();
     }
+  });
+
+  it('does not mark OpenCode ready for messages while V1 migration is required', async () => {
+    delete process.env.OPENCODE_BINARY;
+    startListeningChild();
+    const stateRef = {};
+    stubOpenCodeFetch({ migration: { status: 'required' } });
+    const runtime = createRuntime({}, stateRef);
+
+    const server = await runtime.startOpenCode();
+
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.v1Migration).toMatchObject({
+      admitTranscript: false,
+      phase: 'required',
+    });
+
+    await server.close();
+  });
+
+  it('keeps the ready gate closed while waitForOpenCodeReady sees required migration', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stubOpenCodeFetch({
+      migration: { status: 'required' },
+    });
+
+    await expect(runtime.waitForOpenCodeReady(250, 40)).rejects.toThrow(/V1 migration is required/);
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.v1Migration).toMatchObject({
+      admitTranscript: false,
+      phase: 'required',
+    });
+  });
+
+  it('marks OpenCode ready for messages after V1 migration completed', async () => {
+    delete process.env.OPENCODE_BINARY;
+    startListeningChild();
+    const stateRef = {};
+    stubOpenCodeFetch({ migration: { status: 'completed' } });
+    const runtime = createRuntime({}, stateRef);
+
+    const server = await runtime.startOpenCode();
+
+    expect(stateRef.current.isOpenCodeReady).toBe(true);
+    expect(stateRef.current.v1Migration).toMatchObject({
+      admitTranscript: true,
+      phase: 'completed',
+    });
+
+    await server.close();
+  });
+
+  it('admits messages when V1 migration is absent', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stubOpenCodeFetch({
+      migration: { httpStatus: 404, body: {} },
+    });
+
+    await runtime.waitForOpenCodeReady(1000, 40);
+
+    expect(stateRef.current.isOpenCodeReady).toBe(true);
+    expect(stateRef.current.v1Migration).toMatchObject({
+      admitTranscript: true,
+      phase: 'absent',
+    });
+  });
+
+  it('retries V1 migration error and still blocks messages until completed', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    let migrationCalls = 0;
+    const fetchMock = stubOpenCodeFetch({
+      migration: () => {
+        migrationCalls += 1;
+        if (migrationCalls === 1) {
+          return jsonResponse({ status: 'error', error: 'locked' });
+        }
+        return jsonResponse({ status: 'completed' });
+      },
+    });
+
+    await runtime.waitForOpenCodeReady(2000, 40);
+
+    expect(migrationCalls).toBeGreaterThan(1);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/experimental/migration/v1'))).toBe(true);
+    expect(fetchMock.mock.calls.every((call) => !call[1] || call[1].method !== 'POST')).toBe(true);
+    expect(stateRef.current.isOpenCodeReady).toBe(true);
+    expect(stateRef.current.v1Migration).toMatchObject({
+      admitTranscript: true,
+      phase: 'completed',
+    });
+  });
+
+  it('publishes v1Migration on lifecycle state for health snapshot', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stubOpenCodeFetch({
+      migration: {
+        status: 'running',
+        progress: { label: 'Sessions', numerator: 2, denominator: 8 },
+      },
+    });
+
+    await expect(runtime.waitForOpenCodeReady(200, 40)).rejects.toThrow(/V1 migration is running/);
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.v1Migration).toMatchObject({
+      admitTranscript: false,
+      phase: 'running',
+      progress: { label: 'Sessions', numerator: 2, denominator: 8 },
+    });
+    expect(stateRef.current.v1Migration.userNotice).toContain('V1 subtasks do not appear in v2');
+  });
+
+  it('clears v1Migration when an external OpenCode restart probe fails', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.isExternalOpenCode = true;
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.v1Migration = { admitTranscript: true, phase: 'completed' };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ healthy: false }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })));
+
+    await expect(runtime.restartOpenCode()).rejects.toThrow('External OpenCode server on port 45678 is not responding');
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.v1Migration).toBeNull();
   });
 });

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query"
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
 
 import {
   createSessionTranscriptController,
@@ -712,6 +716,186 @@ describe("createQueryTranscriptRepository", () => {
     repo.destroy()
   })
 
+  test("refreshFromAuthority force GET matches projection page id set, order, and parts", async () => {
+    const { normalizeSessionProjectionPage } = await import("./session-projection-api")
+    const projection = normalizeSessionProjectionPage(
+      {
+        data: [
+          {
+            id: "msg_new",
+            type: "assistant",
+            time: { created: 20 },
+            content: [{ type: "text", text: "fresh-answer" }],
+          },
+          {
+            id: "msg_old",
+            type: "user",
+            time: { created: 10 },
+            text: "fresh-hello",
+          },
+        ],
+        cursor: { previous: null, next: null },
+      },
+      SESSION,
+      "desc",
+    )
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [
+              { info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "stale")] },
+              { info: assistantMessage("msg_extra") },
+            ],
+            { complete: true },
+          )
+        }
+        return projection
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_old", "msg_extra"])
+    const refreshed = await repo.refreshFromAuthority(scope)
+    expect(fetches).toBe(2)
+    expect(refreshed.messageOrder).toEqual(projection.records.map((record) => record.info.id))
+    expect(new Set(refreshed.messageOrder)).toEqual(
+      new Set(projection.records.map((record) => record.info.id)),
+    )
+    for (const record of projection.records) {
+      const parts = repo.getParts(scope, record.info.id)
+      expect(parts.map((part) => (part as { text?: string }).text)).toEqual(
+        (record.parts ?? []).map((part) => (part as { text?: string }).text),
+      )
+    }
+    expect(repo.getMessage(scope, "msg_extra")).toBeUndefined()
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority on an incomplete page keeps earlier history rows", async () => {
+    const pages = new Map<string, TranscriptTransportPage>()
+    pages.set("tail", transportPage(
+      [
+        { info: userMessage("msg_10"), parts: [textPart("p10", "msg_10", "stale")] },
+        { info: assistantMessage("msg_11"), parts: [textPart("p11", "msg_11")] },
+      ],
+      { cursor: "msg_10", complete: false },
+    ))
+    pages.set("msg_10", transportPage(
+      [
+        { info: userMessage("msg_01"), parts: [textPart("p01", "msg_01", "history")] },
+        { info: assistantMessage("msg_02"), parts: [textPart("p02", "msg_02", "history")] },
+      ],
+      { complete: true },
+    ))
+    let refreshes = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async ({ before }) => {
+        if (!before && refreshes > 0) {
+          return transportPage(
+            [
+              { info: userMessage("msg_10"), parts: [textPart("p10", "msg_10", "fresh")] },
+              { info: assistantMessage("msg_12"), parts: [textPart("p12", "msg_12", "added")] },
+            ],
+            { cursor: "msg_10", complete: false },
+          )
+        }
+        if (!before) refreshes += 1
+        const key = before?.trim() || "tail"
+        const page = pages.get(key)
+        if (!page) throw new Error(`missing ${key}`)
+        return page
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    await repo.fetchPreviousPage(scope)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_01", "msg_02", "msg_10", "msg_11"])
+    refreshes += 1
+    const refreshed = await repo.refreshFromAuthority(scope)
+    expect(refreshed.messageOrder).toEqual(["msg_01", "msg_02", "msg_10", "msg_12"])
+    expect((repo.getParts(scope, "msg_10")[0] as { text?: string })?.text).toBe("fresh")
+    expect((repo.getParts(scope, "msg_01")[0] as { text?: string })?.text).toBe("history")
+    expect(repo.getMessage(scope, "msg_11")).toBeUndefined()
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority keeps in-flight SSE updates for touched ids", async () => {
+    let release: ((page: TranscriptTransportPage) => void) | undefined
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [
+              { info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "stale")] },
+              { info: assistantMessage("msg_extra") },
+            ],
+            { complete: true },
+          )
+        }
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    const pending = repo.refreshFromAuthority(scope)
+    await Promise.resolve()
+    await Promise.resolve()
+    repo.apply(scope, {
+      type: "sse-event",
+      event: {
+        type: "message.part.updated",
+        properties: { part: textPart("p_old", "msg_old", "live-sse") },
+      } as Event,
+    })
+    release?.(transportPage(
+      [
+        { info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "from-get")] },
+        { info: assistantMessage("msg_new"), parts: [textPart("p_new", "msg_new", "added")] },
+      ],
+      { complete: true },
+    ))
+    const refreshed = await pending
+    expect(fetches).toBe(2)
+    expect(refreshed.messageOrder).toEqual(["msg_old", "msg_new"])
+    expect((repo.getParts(scope, "msg_old")[0] as { text?: string })?.text).toBe("live-sse")
+    expect(repo.getMessage(scope, "msg_extra")).toBeUndefined()
+    repo.destroy()
+  })
+
   test("hasSession is true for empty-records http-page apply (loaded empty)", () => {
     const repo = createQueryTranscriptRepository({
       client,
@@ -726,6 +910,38 @@ describe("createQueryTranscriptRepository", () => {
     expect(repo.hasSession?.(scope)).toBe(true)
     expect(repo.getTranscript(scope).messageOrder).toHaveLength(0)
     repo.destroy()
+  })
+})
+
+describe("ticket 04 force-refresh source contracts", () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+
+  test("sync messages / open / focus force GET go through refreshFromAuthority, not ensureInitial", () => {
+    const useSync = readFileSync(join(here, "use-sync.ts"), "utf8")
+    const sessionActions = readFileSync(join(here, "session-actions.ts"), "utf8")
+    const runtime = readFileSync(join(here, "transcript-repository-runtime.ts"), "utf8")
+    expect(useSync.includes("refreshTranscriptFromAuthority(")).toBe(true)
+    expect(useSync.includes("refreshSessionTranscript")).toBe(true)
+    expect(runtime.includes("repository.refreshFromAuthority(")).toBe(true)
+    expect(runtime.includes("Do not use ensureInitial (hot-cache no-op)")).toBe(true)
+    expect(sessionActions.includes("refreshFromAuthority")).toBe(true)
+    expect(useSync.includes("await refreshTranscriptFromAuthority(targetDirectory, sessionID)")).toBe(true)
+    const loadMessagesTail = useSync.slice(useSync.indexOf("const loadMessages"))
+    expect(loadMessagesTail.includes("refreshTranscriptFromAuthority(")).toBe(true)
+    expect(loadMessagesTail.includes("ensureTranscriptInitial(")).toBe(false)
+  })
+
+  test("project-level sync sessions only syncs the directory index, not transcripts", () => {
+    const store = readFileSync(
+      join(here, "../stores/useGlobalSessionsStore.ts"),
+      "utf8",
+    )
+    const syncBlock = store.slice(store.indexOf("syncSessionsForDirectories:"))
+    expect(syncBlock.includes("startSessionIndexBackgroundSync")).toBe(true)
+    expect(syncBlock.includes("refreshTranscriptFromAuthority")).toBe(false)
+    expect(syncBlock.includes("ensureTranscriptInitial")).toBe(false)
+    expect(syncBlock.includes("fetchMessagesForSession")).toBe(false)
+    expect(syncBlock.includes("refreshFromAuthority")).toBe(false)
   })
 })
 

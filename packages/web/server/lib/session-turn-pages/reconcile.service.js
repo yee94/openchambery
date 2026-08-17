@@ -45,7 +45,7 @@ const PROCESS_CONTINUATION_SECRET = randomBytes(32);
 const fail = (error) => ({ ok: false, error });
 
 const recordId = (record) => {
-  const id = record?.info?.id;
+  const id = record?.info?.id ?? record?.id;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 

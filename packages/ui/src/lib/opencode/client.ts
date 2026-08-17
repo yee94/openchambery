@@ -1,18 +1,23 @@
-import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2";
-import type { PermissionV2Request, PermissionV2Effect, PermissionV2Source } from "@opencode-ai/sdk/v2/client";
+import { ClientError, isPermissionNotFoundError, OpenCode } from "@opencode-ai/client";
 import type { FilesAPI } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
 import type {
-  Session,
-  Message,
-  Part,
-  Provider,
-  Config,
   Agent,
-  TextPartInput,
+  Config,
   FilePartInput,
+  Message,
+  OpenCodeClient,
+  Part,
+  PermissionV2Effect,
+  PermissionV2Request,
+  PermissionV2Source,
+  ProjectedSessionMessage,
+  Provider,
+  Session,
   SnapshotFileDiff,
-} from "@opencode-ai/sdk/v2";
+  TextPartInput,
+} from "./v2-types";
+import { mergeConfigDocuments, projectSession } from "./v2-types";
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 
@@ -48,6 +53,11 @@ import { getRuntimeKey } from "@/lib/runtime-switch";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { markStartupTrace } from "@/lib/startupTrace";
 import { ascendingId } from "@/sync/message-id";
+import { postSessionPrompt, postSessionInterrupt } from "@/sync/session-prompt-api";
+import { fetchSessionProjectionPage } from "@/sync/session-projection-api";
+import { postSessionCompact } from "@/sync/session-compaction-api";
+import { postSessionRevertClear, postSessionRevertStage } from "@/sync/session-revert-api";
+import { postSessionPermissionReply } from "@/sync/session-permission-api";
 import {
   assertProviderCircuitClosed,
   recordProviderSuccess,
@@ -81,33 +91,68 @@ function formatSdkError(error: unknown): string {
     return String(error);
   }
 }
-type SdkResult<T> = {
-  data?: T;
-  error?: unknown;
-  response?: { status?: number };
-};
 
-function unwrapSdkData<T>(result: SdkResult<T>, operation: string): T {
-  if (result.error) {
-    const status = result.response?.status;
-    const error = new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`) as Error & { status?: number };
-    if (status !== undefined) error.status = status;
-    throw error;
-  }
-  if (result.data === undefined || result.data === null) {
-    throw new Error(`${operation} failed: empty response`);
-  }
-  return result.data;
+/**
+ * Fail closed when v2 has no client method and no Host shallow-proxy module.
+ * Callers must treat this as an observable error, not an empty success.
+ */
+function v2CapabilityUnavailable(capability: string): Error {
+  const error = new Error(`${capability} is not available on OpenCode v2`);
+  error.name = "V2CapabilityUnavailableError";
+  return error;
 }
 
-function unwrapSdkOptional<T>(result: SdkResult<T>, operation: string): T | undefined {
-  if (result.error) {
-    const status = result.response?.status;
-    const error = new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`) as Error & { status?: number };
-    if (status !== undefined) error.status = status;
-    throw error;
+function clientErrorStatus(error: unknown): number | undefined {
+  if (error instanceof ClientError && error.reason === "UnexpectedStatus") {
+    const cause = error.cause;
+    if (cause && typeof cause === "object" && "status" in cause) {
+      const status = (cause as { status?: unknown }).status;
+      if (typeof status === "number") return status;
+    }
   }
-  return result.data;
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number") return status;
+  }
+  return undefined;
+}
+
+function isUnsupportedStatus(status: number | undefined): boolean {
+  return status === 404 || status === 405 || status === 501;
+}
+
+function locationOf(directory?: string | null): { location: { directory: string } } | undefined {
+  if (typeof directory !== "string") return undefined;
+  const trimmed = directory.trim();
+  if (!trimmed) return undefined;
+  return { location: { directory: trimmed } };
+}
+
+function resolveV2ClientBaseUrl(hostApiBase: string): string {
+  const trimmed = hostApiBase.replace(/\/+$/, "");
+  if (trimmed.endsWith("/api")) {
+    const origin = trimmed.slice(0, -4);
+    if (origin.length > 0) return origin;
+  }
+  const runtimeV2 = resolveRuntimeV2BaseUrl();
+  if (runtimeV2) return ensureAbsoluteBaseUrl(runtimeV2);
+  return ensureAbsoluteBaseUrl("/");
+}
+
+function toLocalPermission(item: PermissionV2Request): PermissionRequest | null {
+  if (!item || typeof item.id !== "string" || item.id.length === 0) return null;
+  if (typeof item.sessionID !== "string" || item.sessionID.length === 0) return null;
+  return {
+    id: item.id,
+    sessionID: item.sessionID,
+    permission: item.action,
+    patterns: Array.isArray(item.resources) ? item.resources : [],
+    metadata: (item.metadata as Record<string, unknown> | undefined) ?? {},
+    always: Array.isArray(item.save) ? item.save : [],
+    ...(item.source
+      ? { tool: { messageID: item.source.messageID, callID: item.source.id } }
+      : {}),
+  };
 }
 
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//;
@@ -207,9 +252,10 @@ const mergeAbortSignals = (signals: AbortSignal[]): { signal: AbortSignal; clean
   };
 };
 
-const createRuntimeOpencodeClient = (config: { baseUrl: string; directory?: string }): OpencodeClient => {
-  return createOpencodeClient({
-    ...config,
+const createRuntimeOpencodeClient = (config: { baseUrl: string; headers?: HeadersInit }): OpenCodeClient => {
+  return OpenCode.make({
+    baseUrl: config.baseUrl,
+    ...(config.headers ? { headers: config.headers } : {}),
     fetch: runtimeFetch,
   });
 };
@@ -346,9 +392,9 @@ const getDesktopFilesApi = (): FilesAPI | null => {
 };
 
 class OpencodeService {
-  private client: OpencodeClient;
+  private client: OpenCodeClient;
   private baseUrl: string;
-  private scopedClients: Map<string, OpencodeClient> = new Map();
+  private scopedClients: Map<string, OpenCodeClient> = new Map();
   private currentDirectory: string | undefined = undefined;
   private directoryContextQueue: Promise<void> = Promise.resolve();
   private listDirectoryInFlight: Map<string, Promise<FilesystemEntry[]>> = new Map();
@@ -366,7 +412,7 @@ class OpencodeService {
     const runtimeBase = resolveRuntimeBaseUrl();
     const requestedBaseUrl = runtimeBase || baseUrl;
     this.baseUrl = ensureAbsoluteBaseUrl(requestedBaseUrl);
-    this.client = createRuntimeOpencodeClient({ baseUrl: this.baseUrl });
+    this.client = createRuntimeOpencodeClient({ baseUrl: resolveV2ClientBaseUrl(this.baseUrl) });
   }
 
   getBaseUrl(): string {
@@ -380,7 +426,7 @@ class OpencodeService {
       return;
     }
     this.baseUrl = nextBaseUrl;
-    this.client = createRuntimeOpencodeClient({ baseUrl: this.baseUrl });
+    this.client = createRuntimeOpencodeClient({ baseUrl: resolveV2ClientBaseUrl(this.baseUrl) });
     this.scopedClients.clear();
     this.listDirectoryInFlight.clear();
     this.configProvidersInFlight.clear();
@@ -391,12 +437,12 @@ class OpencodeService {
   }
 
   /** Expose the raw SDK client for direct use (e.g., SyncProvider) */
-  getSdkClient(): OpencodeClient {
+  getSdkClient(): OpenCodeClient {
     return this.client;
   }
 
   /** Get a scoped SDK client for a specific directory */
-  getScopedSdkClient(directory: string): OpencodeClient {
+  getScopedSdkClient(directory: string): OpenCodeClient {
     return this.getScopedApiClient(directory);
   }
 
@@ -404,14 +450,14 @@ class OpencodeService {
    * Returns an SDK client scoped to a project directory.
    * Needed for worktree APIs where backend ignores per-call directory.
    */
-  getScopedApiClient(directory: string): OpencodeClient {
+  getScopedApiClient(directory: string): OpenCodeClient {
     const normalized = this.normalizeCandidatePath(directory) ?? directory;
     const key = normalized || '';
     const existing = this.scopedClients.get(key);
     if (existing) {
       return existing;
     }
-    const scoped = createRuntimeOpencodeClient({ baseUrl: this.baseUrl, directory: normalized });
+    const scoped = createRuntimeOpencodeClient({ baseUrl: resolveV2ClientBaseUrl(this.baseUrl) });
     this.scopedClients.set(key, scoped);
     return scoped;
   }
@@ -524,7 +570,7 @@ class OpencodeService {
   }
 
   // Get the raw API client for direct access
-  getApiClient(): OpencodeClient {
+  getApiClient(): OpenCodeClient {
     return this.client;
   }
 
@@ -539,14 +585,11 @@ class OpencodeService {
     };
 
     try {
-      const response = await this.client.path.get(
-        this.currentDirectory ? { directory: this.currentDirectory } : undefined
-      );
-      const info = response.data;
+      const info = await this.client.location.get(locationOf(this.currentDirectory));
       if (info) {
         addCandidate(info.directory);
-        addCandidate(info.worktree);
-        addCandidate(info.state);
+        addCandidate(info.project?.directory);
+        addCandidate(info.project?.canonical);
       }
     } catch (error) {
       console.debug('Failed to load path info:', error);
@@ -554,10 +597,9 @@ class OpencodeService {
 
     if (!candidates.size) {
       try {
-        const project = await this.client.project.current(
-          this.currentDirectory ? { directory: this.currentDirectory } : undefined
-        );
-        addCandidate(project.data?.worktree);
+        const project = await this.client.project.current(locationOf(this.currentDirectory));
+        addCandidate(project.directory);
+        addCandidate(project.canonical);
       } catch (error) {
         console.debug('Failed to load project info:', error);
       }
@@ -605,8 +647,7 @@ class OpencodeService {
       return false;
     }
     try {
-      const response = await this.client.path.get({ directory: normalized });
-      const info = response.data as { directory?: unknown } | undefined;
+      const info = await this.client.location.get({ location: { directory: normalized } });
       const returned = typeof info?.directory === 'string' ? info.directory : null;
       return Boolean(returned && returned.trim().length > 0);
     } catch {
@@ -619,46 +660,47 @@ class OpencodeService {
     const response = await this.client.session.list(
       this.currentDirectory ? { directory: this.currentDirectory } : undefined
     );
-    return Array.isArray(response.data) ? response.data : [];
+    return Array.isArray(response.data) ? response.data.map(projectSession) : [];
   }
 
   async createSession(params?: { parentID?: string; title?: string; metadata?: Record<string, unknown> }, directory?: string | null): Promise<Session> {
     const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.session.create({
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-      parentID: params?.parentID,
+    void params?.metadata;
+    if (params?.parentID) {
+      const forked = await this.client.session.fork({
+        sessionID: params.parentID,
+        boundary: { type: "through" },
+      });
+      if (params.title) {
+        await this.client.session.rename({ sessionID: forked.id, title: params.title });
+        return projectSession(await this.client.session.get({ sessionID: forked.id }));
+      }
+      return projectSession(forked);
+    }
+    const created = await this.client.session.create({
+      ...(requestDirectory ? { location: { directory: requestDirectory } } : {}),
       title: params?.title,
-      metadata: params?.metadata,
     });
-    return unwrapSdkData(response, 'session.create');
+    return projectSession(created);
   }
 
   async getSession(id: string, directory?: string | null): Promise<Session> {
-    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.session.get({
-      sessionID: id,
-      ...(requestDirectory ? { directory: requestDirectory } : {})
-    });
-    return unwrapSdkData(response, 'session.get');
+    void directory;
+    const info = await this.client.session.get({ sessionID: id });
+    return projectSession(info);
   }
 
   async deleteSession(id: string, directory?: string | null): Promise<boolean> {
-    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.session.delete({
-      sessionID: id,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-    });
-    return unwrapSdkOptional(response, 'session.delete') === true;
+    void directory;
+    await this.client.session.remove({ sessionID: id });
+    return true;
   }
 
   async deleteSessionMessage(sessionId: string, messageId: string, directory?: string | null): Promise<boolean> {
-    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.session.deleteMessage({
-      sessionID: sessionId,
-      messageID: messageId,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-    });
-    return unwrapSdkOptional(response, 'session.deleteMessage') === true;
+    void sessionId;
+    void messageId;
+    void directory;
+    throw v2CapabilityUnavailable('session.deleteMessage');
   }
 
   async updateSession(
@@ -666,27 +708,24 @@ class OpencodeService {
     patch: { title?: string; metadata?: Record<string, unknown>; time?: { archived?: number | null } },
     directory?: string | null,
   ): Promise<Session> {
-    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const sdkPatch = {
-      ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),
-      ...(patch.time?.archived !== undefined && patch.time.archived !== null ? { time: { archived: patch.time.archived } } : {}),
-    };
-    const response = await this.client.session.update({
-      sessionID: id,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-      ...sdkPatch,
-    });
-    return unwrapSdkData(response, 'session.update');
+    void directory;
+    if (patch.metadata !== undefined || patch.time?.archived !== undefined) {
+      throw v2CapabilityUnavailable('session.update.metadata|archive');
+    }
+    if (patch.title === undefined) {
+      throw v2CapabilityUnavailable('session.update');
+    }
+    await this.client.session.rename({ sessionID: id, title: patch.title });
+    return projectSession(await this.client.session.get({ sessionID: id }));
   }
 
-  async getSessionMessages(id: string, limit?: number): Promise<{ info: Message; parts: Part[] }[]> {
-    const response = await this.client.session.messages({
+  async getSessionMessages(id: string, limit?: number): Promise<ProjectedSessionMessage[]> {
+    const page = await fetchSessionProjectionPage({
       sessionID: id,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      ...(typeof limit === 'number' ? { limit } : {}),
+      directory: this.currentDirectory ?? "",
+      ...(typeof limit === "number" ? { limit } : {}),
     });
-    return unwrapSdkData(response, 'session.messages');
+    return page.records as unknown as ProjectedSessionMessage[];
   }
 
   /**
@@ -699,37 +738,13 @@ class OpencodeService {
     directory?: string | null;
     messageID?: string | null;
   }): Promise<SnapshotFileDiff[]> {
-    const requestDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
-    const messageID = typeof params.messageID === 'string' && params.messageID.trim().length > 0
-      ? params.messageID.trim()
-      : undefined;
-    const response = await this.client.session.diff({
-      sessionID: params.sessionID,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-      ...(messageID ? { messageID } : {}),
-    });
-    return unwrapSdkData(response, 'session.diff');
+    void params;
+    throw v2CapabilityUnavailable('session.diff');
   }
 
   async getSessionTodos(sessionId: string): Promise<Array<{ id: string; content: string; status: string; priority: string }>> {
-    try {
-      const response = await this.client.session.todo({
-        sessionID: sessionId,
-        ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      });
-      if (response.error) {
-        return [];
-      }
-
-      const data = response.data;
-      if (!data || !Array.isArray(data)) {
-        return [];
-      }
-
-      return data as Array<{ id: string; content: string; status: string; priority: string }>;
-    } catch {
-      return [];
-    }
+    void sessionId;
+    throw v2CapabilityUnavailable('session.todo');
   }
 
   /**
@@ -904,7 +919,7 @@ class OpencodeService {
     }>;
     messageId?: string;
     agentMentions?: Array<{ name: string; source?: { value: string; start: number; end: number } }>;
-    delivery?: 'steer';
+    delivery?: 'steer' | 'queue';
     format?: {
       type: 'json_schema';
       schema: Record<string, unknown>;
@@ -943,62 +958,47 @@ class OpencodeService {
 
     assertProviderCircuitClosed(params.providerID);
 
-    let response: Response;
+    const text = parts
+      .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
+      .join("\n") || params.text;
+    const files = parts.flatMap((part) => {
+      if (part.type !== "file" || typeof part.url !== "string") return [];
+      return [{ uri: part.url, ...(part.filename ? { name: part.filename } : {}) }];
+    });
+    const agents = parts.flatMap((part) => (
+      part.type === "agent" && typeof part.name === "string" ? [{ name: part.name }] : []
+    ));
 
     try {
-      const result = await this.client.session.promptAsync({
+      // Ticket 06/07: v2 prompt via Host shallow proxy. Idle uses delivery=steer;
+      // busy same-session follow-up uses delivery=queue. Do not retry after a
+      // transport failure: through a remote tunnel the POST may already be
+      // running server-side even though the client lost the response.
+      const inbox = await postSessionPrompt({
         sessionID: params.id,
-        ...(requestDirectory ? { directory: requestDirectory } : {}),
-        model: {
-          providerID: params.providerID,
-          modelID: params.modelID,
-        },
-        agent: params.agent,
-        variant: params.variant,
+        directory: requestDirectory ?? "",
         messageID: messageId,
-        ...(params.delivery ? { delivery: params.delivery } : {}),
-        ...(params.format ? { format: params.format } : {}),
-        parts,
+        text,
+        delivery: params.delivery,
+        ...(files.length > 0 ? { files } : {}),
+        ...(agents.length > 0 ? { agents } : {}),
+        ...(params.agent || params.variant || params.format
+          ? {
+              metadata: {
+                ...(params.agent ? { agent: params.agent } : {}),
+                ...(params.variant ? { variant: params.variant } : {}),
+                model: { providerID: params.providerID, modelID: params.modelID },
+                ...(params.format ? { format: params.format } : {}),
+              },
+            }
+          : {}),
       });
-      if (result.response instanceof Response) {
-        response = result.response;
-      } else if (result.error) {
-        const status = (result as SdkResult<unknown>).response?.status;
-        if (!status) {
-          // The SDK caught a thrown fetch error (network/tunnel transport
-          // failure) — there is no HTTP response to report. Never fabricate a
-          // status: surface it as a transport error so callers treat it like
-          // any other network failure instead of a server 500.
-          throw new Error(`Message send transport failure: ${formatSdkError(result.error)}`);
-        }
-        response = new Response(JSON.stringify(result.error), { status });
-      } else {
-        response = new Response(JSON.stringify(result.data ?? true), { status: 200 });
-      }
+      recordProviderSuccess(params.providerID);
+      return inbox.id;
     } catch (error) {
-      // Do not retry prompt_async after a transport failure: through a remote
-      // tunnel the POST may already be running server-side even though the
-      // client lost the response.
-      recordProviderError(params.providerID);
+      recordProviderError(params.providerID, (error as Error & { status?: number }).status);
       throw error;
     }
-
-    if (response.ok) {
-      recordProviderSuccess(params.providerID);
-      return messageId;
-    }
-
-    let detail = '';
-    try {
-      detail = await response.text();
-    } catch {
-      // ignore
-    }
-    const suffix = detail && detail.trim().length > 0 ? `: ${detail.trim()}` : '';
-    const error = new Error(`Failed to send message (${response.status})${suffix}`) as Error & { status?: number };
-    error.status = response.status;
-    recordProviderError(params.providerID, response.status);
-    throw error;
   }
 
   async sendCommand(params: {
@@ -1015,40 +1015,37 @@ class OpencodeService {
   }): Promise<string> {
     const tempMessageId = params.messageId ?? ascendingId("msg");
 
-    const parts: FilePartInput[] = [];
+    const files: Array<{ uri: string; name?: string }> = [];
     if (params.files && params.files.length > 0) {
       for (const file of params.files) {
-        parts.push(await this.toNormalizedFilePartInput(file));
+        const normalized = await this.toNormalizedFilePartInput(file);
+        files.push({ uri: normalized.url, ...(normalized.filename ? { name: normalized.filename } : {}) });
       }
     }
 
-    const requestDirectory = this.normalizeCandidatePath(params.directory ?? null) ?? this.currentDirectory;
-
-    const response = await this.client.session.command({
+    void params.directory;
+    const inbox = await this.client.session.command({
       sessionID: params.id,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
+      id: tempMessageId,
       command: params.command,
       arguments: params.arguments ?? '',
-      model: `${params.providerID}/${params.modelID}`,
-      agent: params.agent,
-      variant: params.variant,
-      ...(parts.length > 0 ? { parts } : {}),
-      messageID: tempMessageId,
+      ...(params.agent ? { agent: params.agent } : {}),
+      model: {
+        id: params.modelID,
+        providerID: params.providerID,
+        ...(params.variant ? { variant: params.variant } : {}),
+      },
+      ...(files.length > 0 ? { files } : {}),
     });
-
-    unwrapSdkOptional(response, 'session.command');
-    return tempMessageId;
+    return inbox.id || tempMessageId;
   }
 
   async abortSession(id: string): Promise<boolean> {
-    const response = await this.client.session.abort(
-      {
-        sessionID: id,
-        ...(this.currentDirectory ? { directory: this.currentDirectory } : {})
-      },
-      { throwOnError: true }
-    );
-    return Boolean(response.data);
+    await postSessionInterrupt({
+      sessionID: id,
+      directory: this.currentDirectory,
+    });
+    return true;
   }
 
   async shellSession(params: {
@@ -1059,67 +1056,85 @@ class OpencodeService {
     messageId?: string;
     directory?: string | null;
   }): Promise<{ info: Message; parts: Part[] }> {
-    const requestDirectory = this.normalizeCandidatePath(params.directory ?? null) ?? this.currentDirectory;
-    const response = await this.client.session.shell({
+    void params.directory;
+    await this.client.session.shell({
       sessionID: params.sessionId,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-      messageID: params.messageId,
-      agent: params.agent,
-      model: params.model,
       command: params.command,
+      ...(params.messageId ? { id: params.messageId } : {}),
     });
-    return unwrapSdkData(response, 'session.shell') as { info: Message; parts: Part[] };
+    return {
+      info: {
+        id: params.messageId ?? "",
+        sessionID: params.sessionId,
+        role: "assistant",
+        time: { created: Date.now() },
+        clientRole: "shell",
+        agent: params.agent,
+        modelID: params.model.modelID,
+        providerID: params.model.providerID,
+      },
+      parts: [],
+    };
   }
 
   async revertSession(sessionId: string, messageId: string, partId?: string, directory?: string | null): Promise<Session> {
     const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.session.revert({
+    void partId;
+    const revert = await postSessionRevertStage({
       sessionID: sessionId,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
+      directory: requestDirectory,
       messageID: messageId,
-      partID: partId,
+      files: true,
     });
-    return unwrapSdkData(response, 'session.revert');
+    return {
+      id: sessionId,
+      time: { created: 0, updated: Date.now() },
+      revert,
+    } as Session;
   }
 
   async summarizeSession(sessionId: string, providerId: string, modelId: string, directory?: string | null): Promise<boolean> {
     const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.session.summarize({
+    void providerId;
+    void modelId;
+    await postSessionCompact({
       sessionID: sessionId,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-      providerID: providerId,
-      modelID: modelId,
+      directory: requestDirectory ?? "",
     });
-    return unwrapSdkOptional(response, 'session.summarize') === true;
+    return true;
   }
 
-  async unrevertSession(sessionId: string): Promise<Session> {
-    const response = await this.client.session.unrevert({
+  async unrevertSession(sessionId: string, directory?: string | null): Promise<Session> {
+    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
+    await postSessionRevertClear({
       sessionID: sessionId,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {})
+      directory: requestDirectory,
     });
-    return unwrapSdkData(response, 'session.unrevert');
+    return {
+      id: sessionId,
+      time: { created: 0, updated: Date.now() },
+    } as Session;
   }
 
   async forkSession(sessionId: string, messageId?: string, directory?: string | null): Promise<Session> {
-    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
+    void directory;
     console.info('[session-fork] SDK request starting', {
       sessionId,
       messageId: messageId ?? null,
-      hasDirectory: Boolean(requestDirectory),
+      hasDirectory: Boolean(this.normalizeCandidatePath(directory) ?? this.currentDirectory),
     });
-    const response = await this.client.session.fork({
+    const forkedSession = await this.client.session.fork({
       sessionID: sessionId,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
-      messageID: messageId,
+      boundary: messageId
+        ? { type: "before", messageID: messageId }
+        : { type: "through" },
     });
-    const forkedSession = unwrapSdkData(response, 'session.fork');
     console.info('[session-fork] SDK request completed', {
       sessionId,
       messageId: messageId ?? null,
       forkedSessionId: forkedSession.id,
     });
-    return forkedSession;
+    return projectSession(forkedSession);
   }
 
   async getSessionStatus(): Promise<
@@ -1140,22 +1155,9 @@ class OpencodeService {
     directory: string | null | undefined,
     signal?: AbortSignal,
   ): Promise<Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }> | null> {
-    try {
-      const trimmedDirectory = typeof directory === "string" ? directory.trim() : "";
-      const result = await this.client.session.status(
-        trimmedDirectory ? { directory: trimmedDirectory } : undefined,
-        signal ? { signal } : undefined,
-      );
-      if (result.error || !result.data || typeof result.data !== "object") {
-        return null;
-      }
-      return result.data as Record<
-        string,
-        { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }
-      >;
-    } catch {
-      return null;
-    }
+    void directory;
+    void signal;
+    return null;
   }
 
   /**
@@ -1170,40 +1172,19 @@ class OpencodeService {
    */
   async getSessionActive(signal?: AbortSignal): Promise<SessionActiveResult> {
     try {
-      const baseUrl = ensureAbsoluteBaseUrl(resolveRuntimeV2BaseUrl() || '/');
-      const client = createRuntimeOpencodeClient({ baseUrl });
-      const result = await client.v2.session.active(
-        signal ? { signal } : undefined,
-      );
-      const status = result.response?.status;
-
-      if (result.error) {
-        if (status === 404 || status === 405 || status === 501) {
-          return { state: "unsupported" };
-        }
-        return { state: "unknown" };
-      }
-
-      if (status !== undefined && status !== 200) {
-        if (status === 404 || status === 405 || status === 501) {
-          return { state: "unsupported" };
-        }
-        return { state: "unknown" };
-      }
-
-      const data = result.data;
+      const rawMap = await this.client.session.active(signal ? { signal } : undefined);
       // HeyApi may nest the 200 payload as `{ data: map }` or return the map directly.
-      const rawMap =
-        data && typeof data === "object" && "data" in data && (data as { data?: unknown }).data !== undefined
-          ? (data as { data: unknown }).data
-          : data;
+      const membershipSource =
+        rawMap && typeof rawMap === "object" && "data" in rawMap && (rawMap as { data?: unknown }).data !== undefined
+          ? (rawMap as { data: unknown }).data
+          : rawMap;
 
-      if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) {
+      if (!membershipSource || typeof membershipSource !== "object" || Array.isArray(membershipSource)) {
         return { state: "unknown" };
       }
 
       const membership: SessionActiveMembership = {};
-      for (const [sessionID, entry] of Object.entries(rawMap as Record<string, unknown>)) {
+      for (const [sessionID, entry] of Object.entries(membershipSource as Record<string, unknown>)) {
         if (typeof sessionID !== "string" || sessionID.length === 0) {
           return { state: "unknown" };
         }
@@ -1218,7 +1199,10 @@ class OpencodeService {
       }
 
       return { state: "supported", membership };
-    } catch {
+    } catch (error) {
+      if (isUnsupportedStatus(clientErrorStatus(error))) {
+        return { state: "unsupported" };
+      }
       return { state: "unknown" };
     }
   }
@@ -1262,33 +1246,28 @@ class OpencodeService {
 
   // Tools
   async listToolIds(options?: { directory?: string | null }): Promise<string[]> {
-    try {
-      const directory = typeof options?.directory === 'string'
-        ? options.directory.trim()
-        : (this.currentDirectory ? this.currentDirectory.trim() : '');
-
-      const result = await this.client.tool.ids(directory ? { directory } : undefined);
-      const tools = (result.data || []) as unknown as string[];
-      return tools.filter((tool) => typeof tool === 'string' && tool !== 'invalid');
-    } catch {
-      return [];
-    }
+    void options;
+    throw v2CapabilityUnavailable('tool.ids');
   }
 
   // Permissions
   async replyToPermission(
     requestId: string,
     reply: 'once' | 'always' | 'reject',
-    options?: { message?: string; directory?: string | null }
+    options?: { message?: string; directory?: string | null; sessionID?: string }
   ): Promise<boolean> {
     const requestDirectory = this.normalizeCandidatePath(options?.directory ?? null) ?? this.currentDirectory;
-    const response = await this.client.permission.reply({
+    if (!options?.sessionID) {
+      throw v2CapabilityUnavailable('permission.reply (sessionID required)');
+    }
+    await postSessionPermissionReply({
+      sessionID: options.sessionID,
       requestID: requestId,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
       reply,
-      ...(options?.message ? { message: options.message } : {}),
+      ...(options.message ? { message: options.message } : {}),
+      directory: requestDirectory,
     });
-    return unwrapSdkOptional(response, 'permission.reply') === true;
+    return true;
   }
 
   /**
@@ -1319,20 +1298,18 @@ class OpencodeService {
     }
   ): Promise<{ id: string; effect: PermissionV2Effect } | null> {
     try {
-      const response = await this.client.v2.session.permission.create({
+      const payload = await this.client.permission.create({
         sessionID,
         action,
         resources,
         ...(options?.id ? { id: options.id } : {}),
         ...(options?.save ? { save: options.save } : {}),
-        ...(options?.metadata ? { metadata: options.metadata } : {}),
+        ...(options?.metadata ? { metadata: options.metadata as PermissionV2Request["metadata"] } : {}),
         ...(options?.source ? { source: options.source } : {}),
         ...(options?.agent ? { agent: options.agent } : {}),
       });
       // Discriminated union narrowing on `error` (see fetchPermission).
-      if (response.error !== undefined) return null;
-      const payload = response.data?.data;
-      if (payload === undefined) return null;
+      if (!payload || typeof payload.id !== "string") return null;
       return { id: payload.id, effect: payload.effect };
     } catch {
       return null;
@@ -1359,7 +1336,7 @@ class OpencodeService {
       // The V2 path is session-scoped and does not require a `directory`
       // parameter. The client-scoped directory (set via setDirectory) is
       // honored by the underlying SDK client when the call is routed.
-      const response = await this.client.v2.session.permission.get({
+      const payload = await this.client.permission.get({
         sessionID,
         requestID,
       });
@@ -1368,25 +1345,22 @@ class OpencodeService {
       // collapses `data` to `undefined`; the data branch returns the
       // 200-response payload as `{ data: PermissionV2Request }`. Narrow
       // via `error` first, then unwrap the inner `data` field.
-      if (response.error === undefined) {
-        const payload = response.data?.data;
-        if (payload !== undefined) {
-          return { state: "ok", permission: payload };
-        }
+      if (payload !== undefined) {
+        return { state: "ok", permission: payload };
       }
       // On the error branch the server has answered but the request was
       // not found. V2SessionPermissionGetErrors maps 404 to
       // `PermissionNotFoundError`, so the only server-confirmed
       // "no longer pending" signal we have is HTTP 404.
-      if (response.response?.status === 404) {
-        return { state: "resolved" };
-      }
       return { state: "unknown" };
-    } catch {
+    } catch (error) {
       // Network failure, pre-v1.17.12 server, or runtimeFetch throwing.
       // Treat as "unknown" — caller must decide what to do (auto-accept
       // fails closed, but the permission stays in the resync output so
       // the user can still act on it).
+      if (isPermissionNotFoundError(error) || clientErrorStatus(error) === 404) {
+        return { state: "resolved" };
+      }
       return { state: "unknown" };
     }
   }
@@ -1401,12 +1375,14 @@ class OpencodeService {
     const fetches: Array<Promise<PermissionRequest[]>> = [];
 
     const fetchForDirectory = async (directory?: string | null): Promise<PermissionRequest[]> => {
-      const trimmed = typeof directory === 'string' ? directory.trim() : '';
-      const result = await this.client.permission.list(trimmed ? { directory: trimmed } : undefined);
-      if (result.error) {
-        throw new Error(`permission.list failed: ${formatSdkError(result.error)}`);
+      const result = await this.client.permission.request.list(locationOf(directory));
+      if (!result || !Array.isArray(result.data)) {
+        throw new Error(`permission.list failed: ${formatSdkError(result)}`);
       }
-      return (result.data || []) as unknown as PermissionRequest[];
+      return result.data.flatMap((item) => {
+        const mapped = toLocalPermission(item);
+        return mapped ? [mapped] : [];
+      });
     };
 
     // Try unscoped first (server may return global pending items).
@@ -1443,7 +1419,7 @@ class OpencodeService {
   }
 
   // Questions ("ask" tool)
-  async replyToQuestion(requestId: string, answers: string[] | string[][], directory?: string | null): Promise<boolean> {
+  async replyToQuestion(requestId: string, answers: string[] | string[][], directory?: string | null, sessionID?: string): Promise<boolean> {
     const normalizedAnswers: string[][] = (() => {
       if (!Array.isArray(answers) || answers.length === 0) {
         return [];
@@ -1454,21 +1430,27 @@ class OpencodeService {
       return [answers as string[]];
     })();
 
-    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.question.reply({
+    void directory;
+    if (!sessionID) {
+      throw v2CapabilityUnavailable('question.reply (sessionID required)');
+    }
+    await this.client.question.reply({
       requestID: requestId,
-      ...(requestDirectory ? { directory: requestDirectory } : {}),
+      sessionID,
       answers: normalizedAnswers,
     });
-    return unwrapSdkOptional(response, 'question.reply') === true;
+    return true;
   }
 
-  async rejectQuestion(requestId: string): Promise<boolean> {
-    const result = await this.client.question.reject({
+  async rejectQuestion(requestId: string, sessionID?: string): Promise<boolean> {
+    if (!sessionID) {
+      throw v2CapabilityUnavailable('question.reject (sessionID required)');
+    }
+    await this.client.question.reject({
       requestID: requestId,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
+      sessionID,
     });
-    return unwrapSdkOptional(result, 'question.reject') === true;
+    return true;
   }
 
   /**
@@ -1480,12 +1462,11 @@ class OpencodeService {
     const fetches: Array<Promise<QuestionRequest[]>> = [];
 
     const fetchForDirectory = async (directory?: string | null): Promise<QuestionRequest[]> => {
-      const trimmed = typeof directory === 'string' ? directory.trim() : '';
-      const result = await this.client.question.list(trimmed ? { directory: trimmed } : undefined);
-      if (result.error) {
-        throw new Error(`question.list failed: ${formatSdkError(result.error)}`);
+      const result = await this.client.question.request.list(locationOf(directory));
+      if (!result || !Array.isArray(result.data)) {
+        throw new Error(`question.list failed: ${formatSdkError(result)}`);
       }
-      return (result.data || []) as unknown as QuestionRequest[];
+      return result.data as unknown as QuestionRequest[];
     };
 
     // Try unscoped first (server may return global pending items).
@@ -1553,18 +1534,18 @@ class OpencodeService {
     const request = (async () => {
       markStartupTrace('opencodeClient.getConfig:start', { directory: effectiveDirectory ?? null });
       const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const scopedClient = effectiveDirectory ? this.getScopedApiClient(effectiveDirectory) : this.client;
-      const response = await scopedClient.config.get();
-      if (!response.data) throw new Error('Failed to get config');
+      const entries = await this.client.config.get(locationOf(effectiveDirectory));
+      if (!Array.isArray(entries)) throw new Error('Failed to get config');
+      const config = mergeConfigDocuments(entries);
       const ended = typeof performance !== 'undefined' ? performance.now() : Date.now();
       markStartupTrace('opencodeClient.getConfig:end', {
         directory: effectiveDirectory ?? null,
         durationMs: Math.round(ended - started),
       });
       if (generation === this.configCacheGeneration) {
-        this.configCache.set(key, { config: response.data, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS });
+        this.configCache.set(key, { config, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS });
       }
-      return response.data;
+      return config;
     })();
 
     this.configInFlight.set(key, request);
@@ -1580,10 +1561,8 @@ class OpencodeService {
   async updateConfig(config: Record<string, unknown>): Promise<Config> {
     // IMPORTANT: Do NOT pass directory parameter for config updates
     // The config should be global, not directory-specific
-    const response = await this.client.config.update({ config: config as Config });
-    const data = unwrapSdkData(response, 'global.config.update');
-    this.clearConfigCache();
-    return data;
+    void config;
+    throw v2CapabilityUnavailable('config.update');
   }
 
   /**
@@ -1625,10 +1604,20 @@ class OpencodeService {
     }
 
     const request = (async () => {
-      const response = await this.client.config.providers(
-        effectiveDirectory ? { directory: effectiveDirectory } : undefined,
-      );
-      return unwrapSdkData(response, 'config.providers');
+      const response = await this.client.provider.list(locationOf(effectiveDirectory));
+      if (!response || !Array.isArray(response.data)) {
+        throw new Error(`config.providers failed: ${formatSdkError(response)}`);
+      }
+      const defaults: { [key: string]: string } = {};
+      try {
+        const modelDefault = await this.client.model.default(locationOf(effectiveDirectory));
+        if (modelDefault?.data) {
+          defaults[modelDefault.data.providerID] = modelDefault.data.modelID;
+        }
+      } catch {
+        // default model is optional; keep providers observable
+      }
+      return { providers: response.data, default: defaults };
     })();
 
     this.configProvidersInFlight.set(key, request);
@@ -1682,30 +1671,14 @@ class OpencodeService {
       const timeout = createTimeoutSignal(LIST_AGENTS_TIMEOUT_MS);
       const merged = mergeAbortSignals(signal ? [signal, timeout.signal] : [timeout.signal]);
       try {
-        const params = effectiveDirectory ? { directory: effectiveDirectory } : undefined;
-        const response = await this.client.app.agents(params, { signal: merged.signal });
-        if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
-          return response.data;
+        const params = locationOf(effectiveDirectory);
+        const response = await this.client.agent.list(params, { signal: merged.signal });
+        if (!response || !Array.isArray(response.data)) {
+          throw new Error(`app.agents failed: ${formatSdkError(response)}`);
         }
-
         // SDK gap / endpoint drift: current OpenCode exposes the authoritative
         // agent list at /agent, while app.agents can be empty on some runtimes.
-        const fallbackResponse = await runtimeFetch('/api/agent', {
-          ...(effectiveDirectory ? { query: { directory: effectiveDirectory } } : {}),
-          signal: merged.signal,
-        });
-        if (!fallbackResponse.ok) {
-          if (response.error) {
-            throw new Error(`app.agents failed${response.response?.status ? ` (${response.response.status})` : ''}: ${formatSdkError(response.error)}`);
-          }
-          throw new Error(`agent.list failed (${fallbackResponse.status})`);
-        }
-
-        const fallbackData = await fallbackResponse.json().catch(() => null) as unknown;
-        if (!Array.isArray(fallbackData)) {
-          throw new Error('agent.list failed: invalid response');
-        }
-        return fallbackData as Agent[];
+        return response.data;
       } finally {
         timeout.cleanup();
         merged.cleanup();
@@ -1727,11 +1700,11 @@ class OpencodeService {
   // File Operations
   async readFile(path: string): Promise<string> {
     try {
-      const response = await this.client.file.read({
+      const bytes = await this.client.file.read({
         path,
-        ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
+        ...locationOf(this.currentDirectory),
       });
-      return String(unwrapSdkData(response, 'file.read'));
+      return new TextDecoder().decode(bytes);
     } catch {
       // Return placeholder for development
       return `// Content of ${path}\n// This would be loaded from the server`;
@@ -1743,9 +1716,9 @@ class OpencodeService {
       const targetDir = directory || this.currentDirectory || '/';
       const response = await this.client.file.list({
         path: targetDir,
-        ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
+        ...locationOf(this.currentDirectory),
       });
-      const data = unwrapSdkData(response, 'file.list');
+      const data = response.data;
       return Array.isArray(data) ? data as Record<string, unknown>[] : [];
     } catch {
       // Return mock data for development
@@ -1755,49 +1728,49 @@ class OpencodeService {
 
   // Command Management
   async listCommands(): Promise<Array<{ name: string; description?: string; agent?: string; model?: string; source?: string }>> {
-    const response = await this.client.command.list(
-      this.currentDirectory ? { directory: this.currentDirectory } : undefined
-    );
-    const commands = unwrapSdkData(response, 'command.list');
+    const response = await this.client.command.list(locationOf(this.currentDirectory));
+    const commands = response.data;
+    if (!Array.isArray(commands)) {
+      throw new Error(`command.list failed: ${formatSdkError(response)}`);
+    }
     // Return only lightweight info for autocomplete
-    return (commands || []).map((cmd: Record<string, unknown>) => ({
-      name: cmd.name as string,
-      description: cmd.description as string | undefined,
-      agent: cmd.agent as string | undefined,
-      model: cmd.model as string | undefined,
-      source: cmd.source as string | undefined,
+    return commands.map((cmd) => ({
+      name: cmd.name,
+      description: cmd.description,
+      agent: cmd.agent,
+      model: cmd.model ? `${cmd.model.providerID}/${cmd.model.id}` : undefined,
+      source: undefined,
       // Intentionally excluding template to keep memory usage low
     }));
   }
 
   async listCommandsWithDetails(): Promise<Array<{ name: string; description?: string; agent?: string; model?: string; source?: string; template?: string }>> {
-    const response = await this.client.command.list(
-      this.currentDirectory ? { directory: this.currentDirectory } : undefined
-    );
-    const commands = unwrapSdkData(response, 'command.list');
+    const response = await this.client.command.list(locationOf(this.currentDirectory));
+    const commands = response.data;
+    if (!Array.isArray(commands)) {
+      throw new Error(`command.list failed: ${formatSdkError(response)}`);
+    }
     // Return full command details including template
-    return (commands || []).map((cmd: Record<string, unknown>) => ({
-      name: cmd.name as string,
-      description: cmd.description as string | undefined,
-      agent: cmd.agent as string | undefined,
-      model: cmd.model as string | undefined,
-      source: cmd.source as string | undefined,
-      template: cmd.template as string | undefined,
+    return commands.map((cmd) => ({
+      name: cmd.name,
+      description: cmd.description,
+      agent: cmd.agent,
+      model: cmd.model ? `${cmd.model.providerID}/${cmd.model.id}` : undefined,
+      source: undefined,
+      template: cmd.template,
     }));
   }
 
   async listSkillsWithDetails(): Promise<Array<{ name: string; description?: string; location: string; content?: string }>> {
     try {
-      const response = await this.client.app.skills(
-        this.currentDirectory ? { directory: this.currentDirectory } : undefined,
-      );
+      const response = await this.client.skill.list(locationOf(this.currentDirectory));
       const data = response.data;
       if (!Array.isArray(data)) {
         return [];
       }
 
       const skills: Array<{ name: string; description?: string; location: string; content?: string }> = [];
-      for (const item of data as Array<Record<string, unknown>>) {
+      for (const item of data) {
           const name = typeof item.name === 'string' ? item.name.trim() : '';
           const location = typeof item.location === 'string' ? item.location : '';
           if (!name || !location) {
@@ -1816,19 +1789,17 @@ class OpencodeService {
 
   async getCommandDetails(name: string): Promise<{ name: string; template: string; description?: string; agent?: string; model?: string } | null> {
     try {
-      const response = await this.client.command.list(
-        this.currentDirectory ? { directory: this.currentDirectory } : undefined
-      );
+      const response = await this.client.command.list(locationOf(this.currentDirectory));
 
       if (response.data) {
-        const command = response.data.find((cmd: Record<string, unknown>) => cmd.name === name);
+        const command = response.data.find((cmd) => cmd.name === name);
         if (command) {
           return {
-            name: command.name as string,
-            template: command.template as string,
-            description: command.description as string | undefined,
-            agent: command.agent as string | undefined,
-            model: command.model as string | undefined
+            name: command.name,
+            template: command.template,
+            description: command.description,
+            agent: command.agent,
+            model: command.model ? `${command.model.providerID}/${command.model.id}` : undefined,
           };
         }
       }
@@ -2044,19 +2015,18 @@ class OpencodeService {
       ? options.directory.trim()
       : this.currentDirectory;
     const normalizedDirectory = directory ? normalizeFsPath(directory) : null;
-    const scopedClient = directory ? this.getScopedApiClient(directory) : this.client;
 
     try {
-      const response = await scopedClient.find.files({
+      const response = await this.client.file.find({
         query,
+        ...locationOf(directory),
         limit: typeof options?.limit === 'number' && Number.isFinite(options.limit) ? options.limit : undefined,
-        dirs: options?.dirs === false || options?.type === 'file' ? 'false' : 'true',
         type: options?.type,
       });
 
       const items = Array.isArray(response?.data) ? response.data : [];
       return items.map<ProjectFileSearchHit>((item) => {
-        const normalizedRelativePath = normalizeFsPath(item);
+        const normalizedRelativePath = normalizeFsPath(item.path);
         const name = normalizedRelativePath.split('/').filter(Boolean).pop() || normalizedRelativePath;
         const normalizedPath = normalizedDirectory
           ? normalizeFsPath(`${normalizedDirectory}/${normalizedRelativePath}`)
@@ -2067,6 +2037,7 @@ class OpencodeService {
           path: normalizedPath,
           relativePath: normalizedRelativePath,
           extension: name.includes('.') ? name.split('.').pop()?.toLowerCase() : undefined,
+          isDirectory: item.type === 'directory',
         };
       });
     } catch (error) {

@@ -5,7 +5,7 @@ import type {
   TextPartInput,
   FilePartInput,
   AgentPartInput,
-} from '@opencode-ai/sdk/v2';
+} from '@/lib/opencode/v2-types';
 
 type RuntimePlatform = 'web' | 'desktop' | 'vscode';
 
@@ -1379,8 +1379,8 @@ export type ConversationMessagePart =
   | ConversationFilePart
   | ConversationAgentPart;
 
-// Session shape: the @opencode-ai/sdk Session type. The server returns the
-// full SDK session object on success / prompt failure; clients need directory,
+// Session shape: the v2 Session type. The server returns the
+// full session object on success / prompt failure; clients need directory,
 // title etc. — not just id.
 export type ConversationSession = Session;
 

@@ -2,8 +2,57 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 import { projectProviderCatalog } from './provider-catalog.js';
+
+// Compose official v2 provider.list + model.list (+ optional default) into the
+// catalog shape consumed by projectProviderCatalog. Missing arrays are failure.
+const composeV2ProviderCatalogSource = (providers, models, defaultModel) => {
+  if (!Array.isArray(providers) || !Array.isArray(models)) return null;
+
+  const modelsByProvider = new Map();
+  for (const model of models) {
+    if (!model || typeof model !== 'object') continue;
+    const providerID = typeof model.providerID === 'string' ? model.providerID : '';
+    const modelID = typeof model.modelID === 'string' && model.modelID
+      ? model.modelID
+      : (typeof model.id === 'string' ? model.id : '');
+    if (!providerID || !modelID) continue;
+    if (!modelsByProvider.has(providerID)) modelsByProvider.set(providerID, Object.create(null));
+    const entry = { id: modelID };
+    if (typeof model.name === 'string' && model.name) entry.name = model.name;
+    if (typeof model.family === 'string' && model.family) entry.family = model.family;
+    if (model.limit && typeof model.limit === 'object') entry.limit = model.limit;
+    if (model.capabilities) entry.capabilities = model.capabilities;
+    if (model.cost && typeof model.cost === 'object' && !Array.isArray(model.cost)) entry.cost = model.cost;
+    if (model.variants && typeof model.variants === 'object' && !Array.isArray(model.variants)) {
+      entry.variants = model.variants;
+    }
+    if (typeof model.time?.released === 'number' && Number.isFinite(model.time.released)) {
+      entry.release_date = new Date(model.time.released).toISOString().slice(0, 10);
+    }
+    modelsByProvider.get(providerID)[modelID] = entry;
+  }
+
+  const list = [];
+  for (const provider of providers) {
+    if (!provider || typeof provider.id !== 'string' || !provider.id) continue;
+    list.push({
+      id: provider.id,
+      name: typeof provider.name === 'string' && provider.name ? provider.name : provider.id,
+      models: modelsByProvider.get(provider.id) || Object.create(null),
+    });
+  }
+
+  const defaults = Object.create(null);
+  if (defaultModel && typeof defaultModel.providerID === 'string' && typeof defaultModel.modelID === 'string') {
+    defaults[defaultModel.providerID] = defaultModel.modelID;
+  }
+  return { providers: list, default: defaults };
+};
+
+const createOpenCodeClient = ({ baseUrl, headers, fetch: fetchImpl }) =>
+  OpenCode.make({ baseUrl, headers, fetch: fetchImpl });
 
 const MAX_GLOBAL_CONFIG_SIZE = 2 * 1024 * 1024;
 const GLOBAL_CONFIG_FILES = {
@@ -115,18 +164,27 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       if (!directory) {
         return res.status(400).json({ error });
       }
-      const client = createOpencodeClient({
+      const client = createOpenCodeClient({
         baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
-        directory,
         headers: getOpenCodeAuthHeaders(),
         fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
       });
-      const response = await client.config.providers({ directory });
-      if (response?.error || response?.data === undefined) {
+      const location = { directory };
+      const [providersResult, modelsResult, defaultResult] = await Promise.all([
+        client.provider.list({ location }),
+        client.model.list({ location }),
+        client.model.default({ location }),
+      ]);
+      const source = composeV2ProviderCatalogSource(
+        providersResult?.data,
+        modelsResult?.data,
+        defaultResult?.data,
+      );
+      if (!source) {
         console.error('Provider catalog upstream response failed');
         return res.status(502).json({ error: 'Provider catalog is unavailable' });
       }
-      const catalog = projectProviderCatalog(response?.data);
+      const catalog = projectProviderCatalog(source);
       if (!catalog.ok) {
         console.error('Provider catalog upstream response is malformed');
         return res.status(502).json({ error: 'Provider catalog is unavailable' });
@@ -496,14 +554,17 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         if (!getOpenCodePort()) {
           return res.json({ commands: [] });
         }
-        const client = createOpencodeClient({
+        const client = createOpenCodeClient({
           baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
-          directory,
           headers: getOpenCodeAuthHeaders(),
           fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
         });
-        const response = await client.command.list({ directory });
-        const commands = Array.isArray(response?.data) ? response.data : [];
+        const response = await client.command.list({ location: { directory } });
+        if (!Array.isArray(response?.data)) {
+          console.error('Command catalog upstream response failed');
+          return res.status(502).json({ error: 'Command catalog is unavailable' });
+        }
+        const commands = response.data;
         return res.json({
           commands: commands
             .filter((command) => command?.source !== 'skill')

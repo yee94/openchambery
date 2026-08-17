@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from '@/lib/opencode/v2-types'
 
 const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
 let deleteSessionResult: boolean | Error = true

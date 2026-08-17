@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import { QueryClient } from "@tanstack/react-query"
 
 import {
@@ -592,6 +593,7 @@ describe("createTranscriptReconnectCompensationController", () => {
     const a1 = msg("a1", "assistant")
     const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let ensureInitialCalls = 0
+    let refreshCalls = 0
     let destructiveCalls = 0
     const repo = createQueryTranscriptRepository({
       client: clientLocal,
@@ -611,6 +613,11 @@ describe("createTranscriptReconnectCompensationController", () => {
     repo.ensureInitial = async (scope) => {
       ensureInitialCalls += 1
       return originalEnsure(scope)
+    }
+    const originalRefresh = repo.refreshFromAuthority!.bind(repo)
+    repo.refreshFromAuthority = async (scope) => {
+      refreshCalls += 1
+      return originalRefresh(scope)
     }
     const originalDestructive = repo.destructiveReset.bind(repo)
     repo.destructiveReset = async (scope) => {
@@ -674,7 +681,8 @@ describe("createTranscriptReconnectCompensationController", () => {
 
     expect(reconcileCalls).toBe(0)
     expect(destructiveCalls).toBe(0)
-    expect(ensureInitialCalls).toBeGreaterThanOrEqual(2)
+    expect(refreshCalls).toBeGreaterThanOrEqual(1)
+    expect(ensureInitialCalls).toBeGreaterThanOrEqual(1)
     expect(
       repo.getTranscript({
         directory: DIRECTORY,
@@ -692,6 +700,7 @@ describe("createTranscriptReconnectCompensationController", () => {
     const subtaskPart = { id: "p_sub", messageID: "u_sub", sessionID: "ses_child", type: "subtask" } as Part
     const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let ensureInitialCalls = 0
+    let refreshCalls = 0
     let destructiveCalls = 0
     const repo = createQueryTranscriptRepository({
       client: clientLocal,
@@ -713,7 +722,10 @@ describe("createTranscriptReconnectCompensationController", () => {
     const originalEnsure = repo.ensureInitial.bind(repo)
     repo.ensureInitial = async (scope) => {
       ensureInitialCalls += 1
-      if (ensureInitialCalls === 1) return originalEnsure(scope)
+      return originalEnsure(scope)
+    }
+    repo.refreshFromAuthority = async () => {
+      refreshCalls += 1
       throw new Error("tail_fetch_failed")
     }
     const originalDestructive = repo.destructiveReset.bind(repo)
@@ -780,7 +792,8 @@ describe("createTranscriptReconnectCompensationController", () => {
     }
 
     expect(destructiveCalls).toBe(0)
-    expect(ensureInitialCalls).toBeGreaterThanOrEqual(2)
+    expect(refreshCalls).toBeGreaterThanOrEqual(1)
+    expect(ensureInitialCalls).toBeGreaterThanOrEqual(1)
     expect(
       repo.getTranscript({
         directory: DIRECTORY,

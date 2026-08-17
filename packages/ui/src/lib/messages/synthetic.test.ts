@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Part } from "@opencode-ai/sdk/v2"
-import { isSyntheticPart, isFullySyntheticMessage, filterSyntheticParts } from "./synthetic"
+import type { Part } from '@/lib/opencode/v2-types';import { isSyntheticPart, isFullySyntheticMessage, filterSyntheticParts } from "./synthetic"
 
 function createTextPart(id: string, text: string, synthetic?: boolean): Part {
   return {

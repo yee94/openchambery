@@ -4,6 +4,7 @@ import request from 'supertest';
 import fs from 'fs';
 
 import { registerOpenCodeRoutes } from './routes.js';
+import { isOpenCode1xVersion } from './opencode2-pin.js';
 
 const createDependencies = ({ formatSettingsResponse }) => ({
   crypto: {},
@@ -124,5 +125,63 @@ describe('behavior AGENTS.md route', () => {
 
     expect(response.body).toEqual({ error: 'Failed to read AGENTS.md' });
     readFile.mockRestore();
+  });
+});
+
+describe('opencode2 upgrade pin (ticket 12)', () => {
+  const createUpgradeApp = (overrides = {}) => {
+    const app = express();
+    app.use(express.json());
+    const deps = {
+      ...createDependencies({ formatSettingsResponse: vi.fn(() => ({})) }),
+      getOpenCodeResolutionSnapshot: vi.fn(async () => ({ source: 'path' })),
+      buildOpenCodeUrl: vi.fn((pathname) => `http://opencode.test${pathname}`),
+      getOpenCodeAuthHeaders: vi.fn(() => ({ Authorization: 'Basic secret' })),
+      refreshOpenCodeAfterConfigChange: vi.fn(async () => undefined),
+      ...overrides,
+    };
+    registerOpenCodeRoutes(app, deps);
+    return { app, deps };
+  };
+
+  it('rejects 1.x upgrade targets and never calls /global/upgrade', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { app } = createUpgradeApp();
+
+    const response = await request(app)
+      .post('/api/opencode/upgrade')
+      .send({ target: '1.18.4' })
+      .expect(400);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.error).toMatch(/1\.x/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not treat a 1.x latest string as an available upgrade', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      const href = String(url);
+      if (href.includes('/api/health')) {
+        return {
+          ok: true,
+          json: async () => ({ version: '0.0.0-next-17444', healthy: true }),
+        };
+      }
+      if (href.includes('registry.npmjs.org/opencode-ai') || href.includes('github.com/repos/anomalyco/opencode')) {
+        return { ok: true, json: async () => ({ version: '1.18.18', tag_name: 'v1.18.18' }) };
+      }
+      throw new Error(`unexpected fetch ${href}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { app } = createUpgradeApp();
+
+    const response = await request(app).get('/api/opencode/upgrade-status').expect(200);
+
+    expect(response.body.latestVersion).not.toMatch(/^v?1\./);
+    expect(isOpenCode1xVersion(response.body.latestVersion)).toBe(false);
+    expect(String(response.body.latestVersion || '')).not.toContain('1.18');
+    vi.unstubAllGlobals();
   });
 });

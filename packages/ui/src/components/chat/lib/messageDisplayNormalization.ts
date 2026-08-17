@@ -1,13 +1,14 @@
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 
 import { filterSyntheticParts } from '@/lib/messages/synthetic';
+import { isSessionCompactionCard } from '@/sync/session-projection-api';
 import { normalizeParts } from '../message/partUtils';
 import type { ChatMessageEntry } from './turns/types';
 
 export const hasCompactionPart = (message: ChatMessageEntry): boolean => {
     return message.parts.some((part) => {
         const type = (part as { type?: unknown } | null | undefined)?.type;
-        return type === 'compaction';
+        return type === 'compaction' && !isSessionCompactionCard(part);
     });
 };
 

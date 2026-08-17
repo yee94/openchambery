@@ -1,15 +1,29 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { validateConversationInput } from './validation.js';
 
-// Mock the SDK module before any imports
-vi.mock('@opencode-ai/sdk/v2', () => ({
-  createOpencodeClient: vi.fn(),
+// Mock the official v2 client before any imports
+vi.mock('@opencode-ai/client', () => ({
+  OpenCode: { make: vi.fn() },
 }));
 
 // Lazy import to allow vi.mock to take effect
 const { createConversationsService } = await import('./service.js');
 
-const mockCreateOpencodeClient = (await import('@opencode-ai/sdk/v2')).createOpencodeClient;
+const mockMake = (await import('@opencode-ai/client')).OpenCode.make;
+
+const clientError = (reason, cause) => {
+  const error = new Error(reason);
+  error.name = 'ClientError';
+  error.reason = reason;
+  if (cause !== undefined) error.cause = cause;
+  return error;
+};
+
+const httpError = (status, message) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
 
 describe('conversations validation', () => {
   it('rejects non-object body', () => {
@@ -270,7 +284,7 @@ describe('conversations service', () => {
     mockBuildUrl.mockReturnValue('http://127.0.0.1:4096/');
     mockGetHeaders.mockReturnValue({ Authorization: 'Basic test' });
     mockWaitReady.mockResolvedValue(undefined);
-    mockCreateOpencodeClient.mockReset();
+    mockMake.mockReset();
   });
 
   const baseInput = (overrides = {}) => ({
@@ -295,9 +309,9 @@ describe('conversations service', () => {
   // --- create failures ---
 
   it('returns create failure with safe error when SDK returns error', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: null, error: new Error('internal: port 4096 unreachable'), response: { status: 500 } }),
+        create: async () => { throw clientError('UnexpectedStatus', { status: 500 }); },
       },
     });
     const service = createService();
@@ -311,7 +325,7 @@ describe('conversations service', () => {
   });
 
   it('returns create failure on transport error during create', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
         create: async () => { throw new Error('Connection refused'); },
       },
@@ -325,15 +339,19 @@ describe('conversations service', () => {
 
   // --- create: no agent/model ---
 
-  it('does NOT pass agent/model/variant to session.create', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+  it('passes agent/model/variant to session.create', async () => {
+    mockMake.mockReturnValue({
       session: {
         create: async (params) => {
-          expect(params.agent).toBeUndefined();
-          expect(params.model).toBeUndefined();
-          return { data: { id: 'ses_ok' }, error: null, response: { status: 200 } };
+          expect(params.agent).toBe('builder');
+          expect(params.model).toEqual({
+            id: 'gpt-4o',
+            providerID: 'openai',
+            variant: 'v1',
+          });
+          return { id: 'ses_ok' };
         },
-        promptAsync: async () => ({ data: undefined, error: null, response: { status: 204 } }),
+        prompt: async () => undefined,
       },
     });
     const service = createService();
@@ -343,42 +361,55 @@ describe('conversations service', () => {
     expect(result.ok).toBe(true);
   });
 
-  // --- promptAsync usage ---
+  // --- prompt usage ---
 
-  it('uses promptAsync (not prompt) and does not pass delivery', async () => {
-    let promptAsyncCalled = false;
-    mockCreateOpencodeClient.mockReturnValue({
+  it('uses prompt with delivery=steer and does not cache message body', async () => {
+    let promptCalled = false;
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_pa' }, error: null, response: { status: 200 } }),
-        promptAsync: async (params) => {
-          promptAsyncCalled = true;
-          expect(params.delivery).toBeUndefined();
-          return { data: undefined, error: null, response: { status: 204 } };
+        create: async () => ({ id: 'ses_pa' }),
+        prompt: async (params) => {
+          promptCalled = true;
+          expect(params.delivery).toBe('steer');
+          return {
+            id: 'msg_test',
+            sessionID: 'ses_pa',
+            type: 'user',
+            delivery: 'steer',
+            payload: { text: 'hello' },
+            timeCreated: 1,
+          };
         },
       },
     });
     const service = createService();
     const result = await service.createAndPrompt({ sanitizedInput: baseInput() });
-    expect(promptAsyncCalled).toBe(true);
+    expect(promptCalled).toBe(true);
     expect(result.ok).toBe(true);
+    expect(result.inbox).toEqual(expect.objectContaining({ id: 'msg_test', delivery: 'steer' }));
+    expect(result.parts).toBeUndefined();
+    expect(result.text).toBeUndefined();
   });
 
   // --- success ---
 
-  it('returns success when create + promptAsync succeed', async () => {
+  it('returns success when create + prompt succeed', async () => {
     const sessionData = { id: 'ses_created', title: 'Test' };
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
         create: async (params) => {
-          expect(params.directory).toBe('/test');
-          return { data: sessionData, error: null, response: { status: 200 } };
+          expect(params.location).toEqual({ directory: '/test' });
+          expect(params.model).toEqual({ id: 'gpt-4o', providerID: 'openai' });
+          return sessionData;
         },
-        promptAsync: async (params) => {
+        prompt: async (params) => {
           expect(params.sessionID).toBe('ses_created');
-          expect(params.messageID).toBe('msg_test');
-          expect(params.model).toEqual({ providerID: 'openai', modelID: 'gpt-4o' });
-          expect(params.parts).toEqual([{ type: 'text', text: 'hello' }]);
-          return { data: undefined, error: null, response: { status: 204 } };
+          expect(params.id).toBe('msg_test');
+          expect(params.text).toBe('hello');
+          expect(params.delivery).toBe('steer');
+          expect(params.model).toBeUndefined();
+          expect(params.parts).toBeUndefined();
+          return undefined;
         },
       },
     });
@@ -390,14 +421,19 @@ describe('conversations service', () => {
     expect(mockMarkSent).toHaveBeenCalledWith('ses_created');
   });
 
-  it('passes agent, variant to promptAsync', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+  it('passes agent, variant to session.create and not prompt', async () => {
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_avd' }, error: null, response: { status: 200 } }),
-        promptAsync: async (params) => {
+        create: async (params) => {
           expect(params.agent).toBe('builder');
-          expect(params.variant).toBe('fast');
-          return { data: undefined, error: null, response: { status: 204 } };
+          expect(params.model).toEqual({ id: 'gpt-4o', providerID: 'openai', variant: 'fast' });
+          return { id: 'ses_avd' };
+        },
+        prompt: async (params) => {
+          expect(params.agent).toBeUndefined();
+          expect(params.variant).toBeUndefined();
+          expect(params.delivery).toBe('steer');
+          return undefined;
         },
       },
     });
@@ -412,14 +448,10 @@ describe('conversations service', () => {
 
   it('returns prompt failure with ambiguous=false for 400 SDK error, safe error, no mark', async () => {
     const sessionData = { id: 'ses_400' };
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: sessionData, error: null, response: { status: 200 } }),
-        promptAsync: async () => ({
-          data: null,
-          error: new Error('path /foo/bar does not exist'),
-          response: { status: 400 },
-        }),
+        create: async () => sessionData,
+        prompt: async () => { throw httpError(400, 'path /foo/bar does not exist'); },
       },
     });
     const service = createService();
@@ -433,14 +465,10 @@ describe('conversations service', () => {
   });
 
   it('returns prompt failure with ambiguous=false for 404, no mark', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_404' }, error: null, response: { status: 200 } }),
-        promptAsync: async () => ({
-          data: null,
-          error: new Error('Session not found'),
-          response: { status: 404 },
-        }),
+        create: async () => ({ id: 'ses_404' }),
+        prompt: async () => { throw httpError(404, 'Session not found'); },
       },
     });
     const service = createService();
@@ -456,14 +484,10 @@ describe('conversations service', () => {
 
   it('returns ambiguous=true for 503, safe error, marks activity', async () => {
     const sessionData = { id: 'ses_503' };
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: sessionData, error: null, response: { status: 200 } }),
-        promptAsync: async () => ({
-          data: null,
-          error: new Error('Service Unavailable'),
-          response: { status: 503 },
-        }),
+        create: async () => sessionData,
+        prompt: async () => { throw clientError('UnexpectedStatus', { status: 503 }); },
       },
     });
     const service = createService();
@@ -477,10 +501,10 @@ describe('conversations service', () => {
   });
 
   it('returns ambiguous=true for transport throw, marks activity', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_transport' }, error: null, response: { status: 200 } }),
-        promptAsync: async () => { throw new TypeError('fetch failed'); },
+        create: async () => ({ id: 'ses_transport' }),
+        prompt: async () => { throw new TypeError('fetch failed'); },
       },
     });
     const service = createService();
@@ -493,14 +517,10 @@ describe('conversations service', () => {
   });
 
   it('returns ambiguous=true for 408, marks activity', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_408' }, error: null, response: { status: 200 } }),
-        promptAsync: async () => ({
-          data: null,
-          error: new Error('Request Timeout'),
-          response: { status: 408 },
-        }),
+        create: async () => ({ id: 'ses_408' }),
+        prompt: async () => { throw clientError('UnexpectedStatus', { status: 408 }); },
       },
     });
     const service = createService();
@@ -511,14 +531,10 @@ describe('conversations service', () => {
   });
 
   it('returns ambiguous=true for 429, marks activity', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_429' }, error: null, response: { status: 200 } }),
-        promptAsync: async () => ({
-          data: null,
-          error: new Error('Too Many Requests'),
-          response: { status: 429 },
-        }),
+        create: async () => ({ id: 'ses_429' }),
+        prompt: async () => { throw clientError('UnexpectedStatus', { status: 429 }); },
       },
     });
     const service = createService();
@@ -529,10 +545,10 @@ describe('conversations service', () => {
   });
 
   it('does NOT mark on non-transport, non-ambiguous throw', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_perm' }, error: null, response: { status: 200 } }),
-        promptAsync: async () => { throw new Error('Some permanent failure'); },
+        create: async () => ({ id: 'ses_perm' }),
+        prompt: async () => { throw new Error('Some permanent failure'); },
       },
     });
     const service = createService();
@@ -552,10 +568,10 @@ describe('conversations service', () => {
       markUserMessageSent: throwingMark,
       waitForOpenCodeReady: mockWaitReady,
     });
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_safe' }, error: null, response: { status: 200 } }),
-        promptAsync: async () => ({ data: undefined, error: null, response: { status: 204 } }),
+        create: async () => ({ id: 'ses_safe' }),
+        prompt: async () => undefined,
       },
     });
     const result = await svc.createAndPrompt({ sanitizedInput: baseInput() });
@@ -568,13 +584,13 @@ describe('conversations service', () => {
   it('passes directory/headers through buildOpenCodeUrl and getOpenCodeAuthHeaders', async () => {
     mockBuildUrl.mockReturnValue('http://custom:9999/');
     mockGetHeaders.mockReturnValue({ Authorization: 'Bearer secret123' });
-    mockCreateOpencodeClient.mockImplementation((config) => {
+    mockMake.mockImplementation((config) => {
       expect(config.baseUrl).toBe('http://custom:9999');
       expect(config.headers).toEqual({ Authorization: 'Bearer secret123' });
       return {
         session: {
-          create: async () => ({ data: { id: 'ses_url' }, error: null, response: { status: 200 } }),
-          promptAsync: async () => ({ data: undefined, error: null, response: { status: 204 } }),
+          create: async () => ({ id: 'ses_url' }),
+          prompt: async () => undefined,
         },
       };
     });
@@ -585,10 +601,10 @@ describe('conversations service', () => {
 
   it('awaits waitForOpenCodeReady before calling SDK', async () => {
     let createCalled = false;
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => { createCalled = true; return { data: { id: 'ses_w' }, error: null, response: { status: 200 } }; },
-        promptAsync: async () => ({ data: undefined, error: null, response: { status: 204 } }),
+        create: async () => { createCalled = true; return { id: 'ses_w' }; },
+        prompt: async () => undefined,
       },
     });
     const service = createService();
@@ -600,16 +616,16 @@ describe('conversations service', () => {
   // --- internal timeouts ---
 
   it('uses internal timeout signal for session.create', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
         create: async (_params, opts) => {
           expect(opts.signal).toBeDefined();
           expect(opts.signal.aborted).toBe(false);
-          return { data: { id: 'ses_to' }, error: null, response: { status: 200 } };
+          return { id: 'ses_to' };
         },
-        promptAsync: async (_params, opts) => {
+        prompt: async (_params, opts) => {
           expect(opts.signal).toBeDefined();
-          return { data: undefined, error: null, response: { status: 204 } };
+          return undefined;
         },
       },
     });
@@ -619,7 +635,7 @@ describe('conversations service', () => {
   });
 
   it('maps AbortError from create to create failure', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
         create: async () => { throw new DOMException('Aborted', 'AbortError'); },
       },
@@ -631,11 +647,11 @@ describe('conversations service', () => {
     expect(result.error).toBe('Failed to create session');
   });
 
-  it('maps AbortError from promptAsync to ambiguous=true', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+  it('maps AbortError from prompt to ambiguous=true', async () => {
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: { id: 'ses_pto' }, error: null, response: { status: 200 } }),
-        promptAsync: async () => { throw new DOMException('Aborted', 'AbortError'); },
+        create: async () => ({ id: 'ses_pto' }),
+        prompt: async () => { throw new DOMException('Aborted', 'AbortError'); },
       },
     });
     const service = createService();
@@ -649,9 +665,9 @@ describe('conversations service', () => {
   // --- create failure no session ID ---
 
   it('returns create failure when no session ID in response', async () => {
-    mockCreateOpencodeClient.mockReturnValue({
+    mockMake.mockReturnValue({
       session: {
-        create: async () => ({ data: null, error: null, response: { status: 200 } }),
+        create: async () => null,
       },
     });
     const service = createService();

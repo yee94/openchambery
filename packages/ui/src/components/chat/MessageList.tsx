@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEvent, useInterval, useIsomorphicLayoutEffect } from '@reactuses/core';
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 import { elementScroll, useVirtualizer as useTanstackVirtualizer, type ReactVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { isAssistantSessionDivider } from './hostedSessionHistory';
 import { useI18n } from '@/lib/i18n';

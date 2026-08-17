@@ -26,7 +26,7 @@ describe('Assistant DTO parsing', () => {
     expect(share.state).toBe('running');
     expect(history.entries[0]?.sessionID).toBe('ses_fixture');
     expect(history.entries[0]?.directory).toBeNull();
-    expect(parseAssistantCapabilityDTO({ supported: true, enabled: false, revision: 3, serverInstanceID: null }).serverInstanceID).toBeNull();
+    expect(parseAssistantCapabilityDTO({ supported: true, enabled: false, revision: 3, serverInstanceID: null })).toMatchObject({ serverInstanceID: null, sharingAvailable: false });
   });
   test('accepts every terminal and in-flight share state', () => {
     for (const state of ['submitting', 'running', 'completed', 'failed', 'unresolved'] as const) expect(parseShareOperation({ ...assistantContractFixtures.shareOperation, state }).state).toBe(state);

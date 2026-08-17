@@ -4,24 +4,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@opencode-ai/sdk/v2', () => ({ createOpencodeClient: vi.fn() }));
-const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
+vi.mock('../opencode/v2-client.js', () => ({ makeOpenCodeV2Client: vi.fn() }));
+const { makeOpenCodeV2Client } = await import('../opencode/v2-client.js');
 import { createMessageQueueRuntime } from './runtime.js';
 
 describe('message queue runtime ownership', () => {
   it('keeps the durable queue identity separate from the upstream OpenCode adapter URL', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'message-queue-runtime-'));
     const uiUrl = 'http://127.0.0.1:57123'; const upstreamUrl = 'http://127.0.0.1:4096/';
-    const status = vi.fn(() => ({ data: {} })); const messages = vi.fn(() => ({ data: [] }));
-    createOpencodeClient.mockReturnValue({ session: { status, messages, promptAsync: vi.fn() } });
+    const active = vi.fn(() => ({})); const list = vi.fn(() => ({ data: [] }));
+    makeOpenCodeV2Client.mockReturnValue({ session: { active, prompt: vi.fn() }, message: { list } });
     const runtime = createMessageQueueRuntime({ dbPath: path.join(root, 'queue.sqlite'), getRuntimeConfig: () => ({ apiBaseUrl: uiUrl }), getOpenCodeRuntimeConfig: () => ({ apiBaseUrl: upstreamUrl }), buildOpenCodeUrl: () => upstreamUrl, getOpenCodeAuthHeaders: () => ({}) });
     try {
       const adapterRuntime = runtime.adapter.captureRuntime();
       await runtime.adapter.checkEligibility({ directory: '/repo', sessionID: 'session' }, adapterRuntime);
       expect(runtime.service.getRuntimeKey()).toBe(crypto.createHash('sha256').update(`url:${uiUrl}`).digest('hex'));
       expect(adapterRuntime.config.apiBaseUrl).toBe(upstreamUrl);
-      expect(createOpencodeClient).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://127.0.0.1:4096' }));
-      expect(createOpencodeClient.mock.calls.map(([options]) => options.baseUrl)).not.toContain(uiUrl);
+      expect(makeOpenCodeV2Client).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://127.0.0.1:4096' }));
+      expect(makeOpenCodeV2Client.mock.calls.map(([options]) => options.baseUrl)).not.toContain(uiUrl);
     } finally {
       await runtime.stop(); fs.rmSync(root, { recursive: true, force: true });
     }

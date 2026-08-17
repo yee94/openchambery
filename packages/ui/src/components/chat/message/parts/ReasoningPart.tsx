@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { animate, type AnimationPlaybackControls } from 'motion';
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 import { cn } from '@/lib/utils';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';

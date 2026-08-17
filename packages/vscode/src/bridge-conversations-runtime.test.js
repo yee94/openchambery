@@ -3,15 +3,23 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test';
 const sdkClient = {
   session: {
     create: mock(),
-    promptAsync: mock(),
+    prompt: mock(),
   },
 };
 
-const createOpencodeClient = mock(() => sdkClient);
+const make = mock(() => sdkClient);
+
+class ClientError extends Error {
+  constructor(reason, options) {
+    super(reason, options);
+    this.name = 'ClientError';
+    this.reason = reason;
+  }
+}
 
 // No setSessionActivityPhase import — VS Code does not manually mark activity
 
-mock.module('@opencode-ai/sdk/v2', () => ({ createOpencodeClient }));
+mock.module('@opencode-ai/client', () => ({ OpenCode: { make }, ClientError }));
 
 const { handleConversationsBridgeMessage, resetVSCodeRegistry } = await import(
   './bridge-conversations-runtime'
@@ -35,30 +43,36 @@ const validPayload = {
 const sessionFixture = {
   id: 'ses_abc123',
   projectID: 'proj_1',
-  directory: '/repo',
   title: 'My Session',
-  version: '1',
+  location: { directory: '/repo' },
+  cost: 0,
+  tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   time: { created: Date.now(), updated: Date.now() },
+};
+
+const throwWithStatus = (status, message) => {
+  const error = new ClientError('UnexpectedStatus', { cause: { status } });
+  error.message = message;
+  throw error;
 };
 
 describe('bridge conversations runtime', () => {
   beforeEach(() => {
     resetVSCodeRegistry();
     sdkClient.session.create.mockReset();
-    sdkClient.session.promptAsync.mockReset();
-    createOpencodeClient.mockReset();
+    sdkClient.session.prompt.mockReset();
+    make.mockReset();
 
-    createOpencodeClient.mockImplementation(() => sdkClient);
+    make.mockImplementation(() => sdkClient);
 
-    sdkClient.session.create.mockImplementation(async () => ({
-      data: sessionFixture,
-      error: undefined,
-      response: { status: 200 },
-    }));
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: true,
-      error: undefined,
-      response: { status: 204 },
+    sdkClient.session.create.mockImplementation(async () => sessionFixture);
+    sdkClient.session.prompt.mockImplementation(async () => ({
+      id: 'inbox_1',
+      sessionID: sessionFixture.id,
+      timeCreated: Date.now(),
+      type: 'user',
+      payload: { text: 'Hello' },
+      delivery: 'steer',
     }));
   });
 
@@ -98,7 +112,7 @@ describe('bridge conversations runtime', () => {
   it('abort cancels between create success and prompt start', async () => {
     // Create succeeds, but promptAsync never resolves (aborted)
     let promptCalled = false;
-    sdkClient.session.promptAsync.mockImplementation(async (_params, opts) => {
+    sdkClient.session.prompt.mockImplementation(async (_params, opts) => {
       promptCalled = true;
       // Simulate abort happening during prompt wait
       await new Promise((r) => setTimeout(r, 10));
@@ -292,23 +306,26 @@ describe('bridge conversations runtime', () => {
       messageID: 'msg_hex_01',
     });
 
-    expect(createOpencodeClient).toHaveBeenCalledWith({
+    expect(make).toHaveBeenCalledWith({
       baseUrl: 'http://opencode.test',
       headers: { Authorization: 'Bearer test' },
+      fetch: expect.any(Function),
     });
 
     expect(sdkClient.session.create).toHaveBeenCalledWith(
-      expect.objectContaining({ directory: '/repo' }),
+      expect.objectContaining({
+        location: { directory: '/repo' },
+        model: { id: 'gpt-4o', providerID: 'openai' },
+      }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
 
-    expect(sdkClient.session.promptAsync).toHaveBeenCalledWith(
+    expect(sdkClient.session.prompt).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionID: 'ses_abc123',
-        directory: '/repo',
-        messageID: 'msg_hex_01',
-        model: { providerID: 'openai', modelID: 'gpt-4o' },
-        parts: [{ type: 'text', text: 'Hello' }],
+        id: 'msg_hex_01',
+        text: 'Hello',
+        delivery: 'steer',
       }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
@@ -317,11 +334,9 @@ describe('bridge conversations runtime', () => {
   // --- create error (safe, no raw error leaked) ---
 
   it('returns create failure with safe error on SDK error', async () => {
-    sdkClient.session.create.mockImplementation(async () => ({
-      data: null,
-      error: new Error('internal: port 4096 unreachable'),
-      response: { status: 500 },
-    }));
+    sdkClient.session.create.mockImplementation(async () => {
+      throwWithStatus(500, 'internal: port 4096 unreachable');
+    });
 
     const result = await handleConversationsBridgeMessage(
       {
@@ -339,7 +354,7 @@ describe('bridge conversations runtime', () => {
       status: 500,
     });
     expect(result.data.error).not.toContain('4096');
-    expect(sdkClient.session.promptAsync).not.toHaveBeenCalled();
+    expect(sdkClient.session.prompt).not.toHaveBeenCalled();
   });
 
   it('returns create failure on transport throw', async () => {
@@ -366,11 +381,9 @@ describe('bridge conversations runtime', () => {
   // --- prompt error: explicit (ambiguous=false, 400/404) ---
 
   it('returns prompt failure with ambiguous=false for 400', async () => {
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: null,
-      error: new Error('path /foo does not exist'),
-      response: { status: 400 },
-    }));
+    sdkClient.session.prompt.mockImplementation(async () => {
+      throwWithStatus(400, 'path /foo does not exist');
+    });
 
     const result = await handleConversationsBridgeMessage(
       {
@@ -394,11 +407,9 @@ describe('bridge conversations runtime', () => {
   });
 
   it('returns prompt failure with ambiguous=false for 404', async () => {
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: null,
-      error: new Error('Session not found'),
-      response: { status: 404 },
-    }));
+    sdkClient.session.prompt.mockImplementation(async () => {
+      throwWithStatus(404, 'Session not found');
+    });
 
     const result = await handleConversationsBridgeMessage(
       {
@@ -415,11 +426,9 @@ describe('bridge conversations runtime', () => {
   // --- prompt error: ambiguous (503/408/429/transport throw) ---
 
   it('returns ambiguous=true for 503', async () => {
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: null,
-      error: new Error('Service Unavailable'),
-      response: { status: 503 },
-    }));
+    sdkClient.session.prompt.mockImplementation(async () => {
+      throwWithStatus(503, 'Service Unavailable');
+    });
 
     const result = await handleConversationsBridgeMessage(
       {
@@ -442,8 +451,8 @@ describe('bridge conversations runtime', () => {
   });
 
   it('returns ambiguous=true for transport throw', async () => {
-    sdkClient.session.promptAsync.mockImplementation(async () => {
-      throw new TypeError('fetch failed');
+    sdkClient.session.prompt.mockImplementation(async () => {
+      throw new ClientError('Transport', { cause: new TypeError('fetch failed') });
     });
 
     const result = await handleConversationsBridgeMessage(
@@ -461,11 +470,9 @@ describe('bridge conversations runtime', () => {
   });
 
   it('returns ambiguous=true for 408', async () => {
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: null,
-      error: new Error('Request Timeout'),
-      response: { status: 408 },
-    }));
+    sdkClient.session.prompt.mockImplementation(async () => {
+      throwWithStatus(408, 'Request Timeout');
+    });
 
     const result = await handleConversationsBridgeMessage(
       {
@@ -480,11 +487,9 @@ describe('bridge conversations runtime', () => {
   });
 
   it('returns ambiguous=true for 429', async () => {
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: null,
-      error: new Error('Too Many Requests'),
-      response: { status: 429 },
-    }));
+    sdkClient.session.prompt.mockImplementation(async () => {
+      throwWithStatus(429, 'Too Many Requests');
+    });
 
     const result = await handleConversationsBridgeMessage(
       {
@@ -504,18 +509,14 @@ describe('bridge conversations runtime', () => {
     const fullSession = {
       id: 'ses_full',
       projectID: 'proj_full',
-      directory: '/repo',
       title: 'Full Session',
-      version: '1',
+      location: { directory: '/repo' },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: 1, updated: 2 },
       parentID: 'parent_001',
-      tags: ['chat'],
     };
-    sdkClient.session.create.mockImplementation(async () => ({
-      data: fullSession,
-      error: undefined,
-      response: { status: 200 },
-    }));
+    sdkClient.session.create.mockImplementation(async () => fullSession);
 
     const result = await handleConversationsBridgeMessage(
       {
@@ -529,7 +530,7 @@ describe('bridge conversations runtime', () => {
     expect(result.data.ok).toBe(true);
     expect(result.data.session).toEqual(fullSession);
     expect(result.data.session.id).toBe('ses_full');
-    expect(result.data.session.directory).toBe('/repo');
+    expect(result.data.session.location.directory).toBe('/repo');
     expect(result.data.session.title).toBe('Full Session');
   });
 
@@ -541,7 +542,6 @@ describe('bridge conversations runtime', () => {
       title: 'My Chat',
       agent: 'code-reviewer',
       variant: 'fast',
-      parentID: 'parent_xyz',
       metadata: { key: 'value' },
     };
 
@@ -557,19 +557,41 @@ describe('bridge conversations runtime', () => {
     expect(sdkClient.session.create).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'My Chat',
-        parentID: 'parent_xyz',
-        metadata: { key: 'value' },
+        agent: 'code-reviewer',
+        model: { id: 'gpt-4o', providerID: 'openai', variant: 'fast' },
+        location: { directory: '/repo' },
       }),
       expect.any(Object),
     );
 
-    expect(sdkClient.session.promptAsync).toHaveBeenCalledWith(
+    expect(sdkClient.session.prompt).toHaveBeenCalledWith(
       expect.objectContaining({
-        agent: 'code-reviewer',
-        variant: 'fast',
+        id: 'msg_hex_01',
+        text: 'Hello',
+        delivery: 'steer',
+        metadata: { key: 'value' },
       }),
       expect.any(Object),
     );
+  });
+
+  it('fails closed when parentID has no v2 session.create equivalent', async () => {
+    const result = await handleConversationsBridgeMessage(
+      {
+        id: '1',
+        type: 'api:conversations:createWithPrompt',
+        payload: { ...validPayload, parentID: 'parent_xyz' },
+      },
+      defaultCtx,
+    );
+
+    expect(result.data).toEqual({
+      ok: false,
+      phase: 'create',
+      error: 'Failed to create session',
+    });
+    expect(sdkClient.session.create).not.toHaveBeenCalled();
+    expect(sdkClient.session.prompt).not.toHaveBeenCalled();
   });
 
   // --- file part ---
@@ -593,11 +615,14 @@ describe('bridge conversations runtime', () => {
       defaultCtx,
     );
 
-    const promptCall = sdkClient.session.promptAsync.mock.calls[0][0];
-    expect(promptCall.parts).toHaveLength(3);
-    expect(promptCall.parts[1]).toEqual({
-      type: 'file', mime: 'text/typescript', url: 'file:///repo/src/a.ts', filename: 'a.ts', id: 'f1', source: { type: 'selection', path: '/a.ts' },
-    });
+    const promptCall = sdkClient.session.prompt.mock.calls[0][0];
+    expect(promptCall).toEqual(expect.objectContaining({
+      id: 'msg_hex_01',
+      text: 'Check',
+      delivery: 'steer',
+      files: [{ uri: 'file:///repo/src/a.ts', name: 'a.ts' }],
+      agents: [{ name: 'builder' }],
+    }));
   });
 
   // --- messageID is echoed ---
@@ -613,11 +638,9 @@ describe('bridge conversations runtime', () => {
     );
     expect(result.data.messageID).toBe('msg_hex_01');
 
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: null,
-      error: new Error('fail'),
-      response: { status: 503 },
-    }));
+    sdkClient.session.prompt.mockImplementation(async () => {
+      throwWithStatus(503, 'fail');
+    });
     const errResult = await handleConversationsBridgeMessage(
       {
         id: '2',
@@ -663,18 +686,17 @@ describe('bridge conversations registry dedup', () => {
   beforeEach(() => {
     resetVSCodeRegistry();
     sdkClient.session.create.mockReset();
-    sdkClient.session.promptAsync.mockReset();
-    createOpencodeClient.mockReset();
-    createOpencodeClient.mockImplementation(() => sdkClient);
-    sdkClient.session.create.mockImplementation(async () => ({
-      data: sessionFixture,
-      error: undefined,
-      response: { status: 200 },
-    }));
-    sdkClient.session.promptAsync.mockImplementation(async () => ({
-      data: true,
-      error: undefined,
-      response: { status: 204 },
+    sdkClient.session.prompt.mockReset();
+    make.mockReset();
+    make.mockImplementation(() => sdkClient);
+    sdkClient.session.create.mockImplementation(async () => sessionFixture);
+    sdkClient.session.prompt.mockImplementation(async () => ({
+      id: 'inbox_1',
+      sessionID: sessionFixture.id,
+      timeCreated: Date.now(),
+      type: 'user',
+      payload: { text: 'Hello' },
+      delivery: 'steer',
     }));
   });
 

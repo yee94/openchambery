@@ -1,4 +1,4 @@
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 import { sessionOrderActivityMatches, type SessionFolder } from '@/stores/useSessionFoldersStore';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import { compareSessionsByPinnedAndTime } from './utils';

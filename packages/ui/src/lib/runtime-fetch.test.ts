@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+
 import {
   clearRuntimeAuthCredentialProvider,
   setRuntimeAuthCredentialProvider,
@@ -181,7 +181,11 @@ describe('runtimeFetch transport contract', () => {
       });
 
       globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-        const request = input instanceof Request ? input : new Request(input, init);
+        const request = input instanceof Request
+          ? input
+          : new Request(typeof input === "string" && input.startsWith("/")
+            ? `https://app.example${input}`
+            : input, init);
         calls.push({
           url: request.url,
           method: request.method,
@@ -194,59 +198,36 @@ describe('runtimeFetch transport contract', () => {
         });
       }) as typeof fetch;
 
-      const client = createOpencodeClient({
-        baseUrl: 'https://app.example/api',
-        fetch: runtimeFetch,
+      await runtimeFetch('/api/session/ses_1/revert/stage', {
+        method: 'POST',
+        query: { directory: '/repo' },
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messageID: 'msg_1' }),
       });
-
-      await client.session.revert({ sessionID: 'ses_1', directory: '/repo', messageID: 'msg_1' });
-      await client.session.shell({
-        sessionID: 'ses_1',
-        directory: '/repo',
-        messageID: 'msg_2',
-        agent: 'build',
-        model: { providerID: 'anthropic', modelID: 'claude-sonnet' },
-        command: 'ls',
+      await runtimeFetch('/api/session/ses_1/interrupt', {
+        method: 'POST',
+        query: { directory: '/repo' },
       });
-      await client.session.update({ sessionID: 'ses_1', directory: '/repo', time: { archived: 123 } });
-      await client.permission.reply({ requestID: 'perm_1', directory: '/repo', reply: 'once' });
-      await client.question.reply({ requestID: 'q_1', directory: '/repo', answers: [['yes']] });
-      await client.auth.set({ providerID: 'anthropic', auth: { type: 'api', key: 'secret' } });
-      await client.provider.oauth.callback({ providerID: 'github-copilot', method: 0, code: 'oauth-code' });
+      await runtimeFetch('/api/session/ses_1/permission/perm_1/reply', {
+        method: 'POST',
+        query: { directory: '/repo' },
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reply: 'once' }),
+      });
+      await runtimeFetch('/api/session/ses_1/message', {
+        method: 'GET',
+        query: { directory: '/repo', limit: '20', order: 'desc' },
+      });
 
       expect(calls.map((call) => call.url)).toEqual([
-        'https://app.example/api/session/ses_1/revert?directory=%2Frepo',
-        'https://app.example/api/session/ses_1/shell?directory=%2Frepo',
-        'https://app.example/api/session/ses_1?directory=%2Frepo',
-        'https://app.example/api/permission/perm_1/reply?directory=%2Frepo',
-        'https://app.example/api/question/q_1/reply?directory=%2Frepo',
-        'https://app.example/api/auth/anthropic',
-        'https://app.example/api/provider/github-copilot/oauth/callback',
+        'https://app.example/api/session/ses_1/revert/stage?directory=%2Frepo',
+        'https://app.example/api/session/ses_1/interrupt?directory=%2Frepo',
+        'https://app.example/api/session/ses_1/permission/perm_1/reply?directory=%2Frepo',
+        'https://app.example/api/session/ses_1/message?directory=%2Frepo&limit=20&order=desc',
       ]);
-      expect(calls.map((call) => call.method)).toEqual(['POST', 'POST', 'PATCH', 'POST', 'POST', 'PUT', 'POST']);
-      expect(calls.map((call) => call.headers.get('content-type'))).toEqual([
-        'application/json',
-        'application/json',
-        'application/json',
-        'application/json',
-        'application/json',
-        'application/json',
-        'application/json',
-      ]);
-      expect(calls.map((call) => JSON.parse(call.body))).toEqual([
-        { messageID: 'msg_1' },
-        {
-          messageID: 'msg_2',
-          agent: 'build',
-          model: { providerID: 'anthropic', modelID: 'claude-sonnet' },
-          command: 'ls',
-        },
-        { time: { archived: 123 } },
-        { reply: 'once' },
-        { answers: [['yes']] },
-        { type: 'api', key: 'secret' },
-        { method: 0, code: 'oauth-code' },
-      ]);
+      expect(calls.map((call) => call.method)).toEqual(['POST', 'POST', 'POST', 'GET']);
+      expect(JSON.parse(calls[0].body)).toEqual({ messageID: 'msg_1' });
+      expect(JSON.parse(calls[2].body)).toEqual({ reply: 'once' });
     } finally {
       setRuntimeUrlResolver(previous);
       Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });

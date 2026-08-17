@@ -20,7 +20,7 @@ const createPayload = () => {
     '[Desktop Entry]', 'Name=OpenChamber', 'Exec=AppRun --no-sandbox %U', 'Icon=openchamber', 'StartupWMClass=openchamber', '',
   ].join('\n'));
   writeElf(path.join(root, 'openchamber'), 'x64');
-  writeElf(path.join(root, 'resources/opencode-cli/opencode'), 'x64');
+  writeElf(path.join(root, 'resources/opencode-cli/opencode2'), 'x64');
   for (const name of ['better_sqlite3.node', 'pty.node', 'sherpa-onnx.node']) {
     writeElf(path.join(root, 'resources/app.asar.unpacked/node_modules', name), 'x64');
   }

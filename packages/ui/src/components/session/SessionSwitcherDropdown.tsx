@@ -1,7 +1,7 @@
 import React from 'react';
 import { Menu as BaseMenu } from '@base-ui/react/menu';
 import { useEvent } from '@reactuses/core';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 
 import {
   DropdownMenu,

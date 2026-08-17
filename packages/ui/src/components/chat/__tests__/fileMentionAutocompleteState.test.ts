@@ -11,7 +11,7 @@ import {
     resolveSessionMentionDeletion,
 } from '../fileMentionAutocompleteState';
 import { buildSessionMentionInstruction, type SessionMentionContext } from '@/composer/delivery';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 
 describe('getFileMentionAutocompleteQuery', () => {
     test('opens file mention autocomplete for manually typed boundary @ text', () => {
@@ -104,6 +104,20 @@ describe('session mentions', () => {
             currentSessionId: null,
             searchQuery: 'a',
         }).map((session) => session.id)).toEqual(['ses_4', 'ses_3', 'ses_2', 'ses_1']);
+    });
+
+    test('sorts sessions with missing timestamps safely', () => {
+        const sessions = [
+            { id: 'ses_without_time', title: 'No timestamp' },
+            { id: 'ses_recent', title: 'Recent', time: { updated: 2 } },
+            { id: 'ses_created', title: 'Created', time: { created: 1 } },
+        ] as Session[];
+
+        expect(getVisibleSessionMentionCandidates({
+            sessions,
+            currentSessionId: null,
+            searchQuery: '',
+        }).map((session) => session.id)).toEqual(['ses_recent', 'ses_created', 'ses_without_time']);
     });
 
     test('creates stable tokens and collects unique session IDs in message order', () => {

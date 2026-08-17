@@ -37,7 +37,7 @@ const hasPartType = (parts, type) =>
   Array.isArray(parts) && parts.some((part) => part && typeof part === 'object' && part.type === type);
 
 const isHostedSessionDivider = (record) => {
-  const id = record?.info?.id;
+  const id = record?.info?.id ?? record?.id;
   return typeof id === 'string' && id.startsWith(ASSISTANT_SESSION_DIVIDER_PREFIX);
 };
 
@@ -50,6 +50,10 @@ const isHostedSessionDivider = (record) => {
 export const isUserAuthoredTurnBoundary = (record) => {
   if (!record || typeof record !== 'object') return false;
   if (isHostedSessionDivider(record)) return false;
+
+  if (typeof record.type === 'string' && record.info == null) {
+    return record.type === 'user';
+  }
 
   const info = record.info ?? {};
   const role = typeof info.clientRole === 'string' ? info.clientRole : info.role;
@@ -92,7 +96,7 @@ export const selectTurnRecords = (timeline, turnLimit) => {
 };
 
 const recordId = (record) => {
-  const id = record?.info?.id;
+  const id = record?.info?.id ?? record?.id;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 

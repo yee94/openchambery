@@ -13,7 +13,8 @@
  */
 
 import { create } from "zustand"
-import type { Session, Part, Message, TextPart } from "@opencode-ai/sdk/v2/client"
+import type { Session, Part, Message, TextPart } from '@/lib/opencode/v2-types'
+
 import type { AttachedFile, SessionContextUsage, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
 import type { WorktreeMetadata } from "@/types/worktree"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -58,7 +59,9 @@ import {
   unshareSession as unshareSessionAction,
   optimisticSend,
   optimisticInsertUserMessage,
+  settleSessionPromptAfterSend,
   revertToMessage as revertToMessageAction,
+  commitStagedRevertBeforeSend,
   stageMessageEdit,
   commitMessageEdit,
   unrevertSession as unrevertSessionAction,
@@ -86,6 +89,7 @@ import { queueScopeKey, type QueueScope } from "@/stores/messageQueueStore"
 import { setSessionOpener } from "./session-opener"
 import { getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { rememberRuntimeLiveStatus } from "./runtime-live-memory"
+import { isSessionRevertBusyError } from "./session-revert-api"
 import { beginSessionSwitchMeasure } from "@/lib/sessionSwitchPerf"
 import { parseSlashCommandInvocation } from "@/composer/inline-visual"
 import { announceSessionSwitchIntent } from "@/lib/sessionSwitchIntent"
@@ -204,6 +208,14 @@ function retainPendingUserMessageForSession(
   })
 }
 
+async function notifyRevertBusy(error: unknown): Promise<void> {
+  if (!isSessionRevertBusyError(error)) return
+  const { toast } = await import("sonner")
+  const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
+  const { dictionary } = useI18nStore.getState()
+  toast.error(formatMessage(dictionary, "chat.revert.toast.busy"))
+}
+
 // ---------------------------------------------------------------------------
 // Send routing — shell mode, slash commands, or normal prompt
 // ---------------------------------------------------------------------------
@@ -221,7 +233,7 @@ export async function routeMessage(params: {
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
   additionalParts?: Array<{ text: string; synthetic?: boolean; files?: Array<{ type: "file"; mime: string; url: string; filename: string }> }>
   optimisticParts?: readonly Part[]
-  delivery?: 'steer'
+  delivery?: 'steer' | 'queue'
   messageID?: string
   /** Ticket from a prior `beginOptimisticSend` — skips re-insert and reuses messageID. */
   ticket?: OptimisticSendTicket
@@ -229,6 +241,7 @@ export async function routeMessage(params: {
   onSendConfirmed?: (messageID: string) => void
 }): Promise<void> {
   const requestDirectory = params.directory ?? undefined
+  await commitStagedRevertBeforeSend(params.sessionId, requestDirectory)
   const onSendConfirmed = createConfirmedSendCallback(params.sessionId, params.onSendConfirmed)
   let content = params.content
   if (params.inputMode === "shell") {
@@ -329,27 +342,37 @@ export async function routeMessage(params: {
     ticket: params.ticket,
     preserveOptimisticOnAmbiguous: params.preserveOptimisticOnAmbiguous,
     onSendConfirmed,
-    send: (messageID) => opencodeClient.sendMessage({
-      id: params.sessionId,
-      providerID: params.providerID,
-      modelID: params.modelID,
-      text: content,
-      agent: params.agent,
-      agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
-      variant: params.variant,
-      files: params.files,
-      additionalParts: params.additionalParts,
-      delivery: params.delivery,
-      messageId: messageID,
-      directory: requestDirectory,
-    }).then(() => {}),
+    send: async (messageID) => {
+      const inboxID = await opencodeClient.sendMessage({
+        id: params.sessionId,
+        providerID: params.providerID,
+        modelID: params.modelID,
+        text: content,
+        agent: params.agent,
+        agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
+        variant: params.variant,
+        files: params.files,
+        additionalParts: params.additionalParts,
+        delivery: params.delivery,
+        messageId: messageID,
+        directory: requestDirectory,
+      })
+      await settleSessionPromptAfterSend({
+        sessionId: params.sessionId,
+        directory: requestDirectory,
+        optimisticID: messageID,
+        inboxID,
+        text: content,
+        delivery: params.delivery,
+      })
+    },
   })
 }
 
 type SendMessageOptions = {
   sessionId?: string
   directoryHint?: string | null
-  delivery?: 'steer'
+  delivery?: 'steer' | 'queue'
   commitStagedMessageEdit?: boolean
   messageID?: string
   /** Ticket from a prior `beginOptimisticSend` — passed through to routeMessage / optimisticSend. */
@@ -2338,7 +2361,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   revertToMessage: async (sessionId, messageId, options) => {
     // Reverted UI is derived from session.revert + stored messages. Do not
     // materialize a refetch here — that rewrites messageOrder by id.
-    await revertToMessageAction(sessionId, messageId, options?.directory)
+    try {
+      await revertToMessageAction(sessionId, messageId, options?.directory)
+    } catch (error) {
+      await notifyRevertBusy(error)
+      throw error
+    }
   },
 
   editMessagePreservingChanges: async (sessionId, messageId, snapshot) => {
@@ -2370,7 +2398,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       : "[No text]"
 
     // revertToMessage handles the redo stack push internally
-    await get().revertToMessage(sessionId, targetMessage.id)
+    try {
+      await get().revertToMessage(sessionId, targetMessage.id)
+    } catch (error) {
+      if (isSessionRevertBusyError(error)) return
+      throw error
+    }
 
     const { toast } = await import("sonner")
     const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
@@ -2384,7 +2417,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   handleSlashRedo: async (sessionId, options) => {
     if (options?.fullUnrevert) {
       const { unrevertSession } = await import("./session-actions")
-      await unrevertSession(sessionId)
+      try {
+        await unrevertSession(sessionId)
+      } catch (error) {
+        await notifyRevertBusy(error)
+        throw error
+      }
       const { toast } = await import("sonner")
       const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
       const { dictionary } = useI18nStore.getState()
@@ -2401,7 +2439,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const targetMessage = resolveRevertRedoTarget(messages, revertToId)
 
     if (targetMessage) {
-      await get().revertToMessage(sessionId, targetMessage.id, { skipRedoPush: true })
+      try {
+        await get().revertToMessage(sessionId, targetMessage.id, { skipRedoPush: true })
+      } catch (error) {
+        if (isSessionRevertBusyError(error)) return
+        throw error
+      }
       const { toast } = await import("sonner")
       const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
       const { dictionary } = useI18nStore.getState()
@@ -2409,7 +2452,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       return
     }
 
-    await unrevertSessionAction(sessionId)
+    try {
+      await unrevertSessionAction(sessionId)
+    } catch (error) {
+      await notifyRevertBusy(error)
+      throw error
+    }
     const { toast } = await import("sonner")
     const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
     const { dictionary } = useI18nStore.getState()

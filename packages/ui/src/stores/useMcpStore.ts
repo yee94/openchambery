@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { McpStatus } from '@opencode-ai/sdk/v2';
+import type { McpStatus } from '@/lib/opencode/v2-types';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { queryClient } from '@/lib/queryRuntime';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { v2CapabilityUnavailable } from '@/sync/v2-runtime';
 import {
   normalizeMcpDirectory,
   readMcpStatusSnapshot,
@@ -47,6 +48,10 @@ const getMcpApiClient = (directory: string | null | undefined) => {
   }
   return opencodeClient.getScopedApiClient(normalized);
 };
+
+const locationOf = (directory: string | null) => (
+  directory ? { location: { directory } } : undefined
+);
 
 const resolveMcpDirectoryArg = (directory: string | null | undefined): string | null =>
   normalizeMcpDirectory(directory === undefined ? useDirectoryStore.getState().currentDirectory : directory);
@@ -98,7 +103,7 @@ export const useMcpStore = create<McpStore>()(
       const key = toKey(normalized, transport);
       const api = getMcpApiClient(normalized);
       try {
-        await api.mcp.connect({ name }, { throwOnError: true });
+        await api.mcp.connect({ server: name, ...locationOf(normalized) });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Connection failed';
         set((state) => ({
@@ -121,42 +126,29 @@ export const useMcpStore = create<McpStore>()(
       const transport = getRuntimeTransportIdentity();
       const key = toKey(normalized, transport);
       const api = getMcpApiClient(normalized);
-      await api.mcp.disconnect({ name }, { throwOnError: true });
+      await api.mcp.disconnect({ server: name, ...locationOf(normalized) });
       await refreshMcpStatusQuery(queryClient, normalized, transport);
       set((state) => ({ diagnosticsByDirectory: withoutDiagnostic(state.diagnosticsByDirectory, key, name) }));
     },
 
-    startAuth: async (name, directory) => {
-      const normalized = resolveMcpDirectoryArg(directory);
-      const api = getMcpApiClient(normalized);
-      const result = await api.mcp.auth.start({ name }, { throwOnError: true });
-      const authorizationUrl = result.data?.authorizationUrl;
-
-      if (!authorizationUrl) {
-        throw new Error('Authorization URL was not returned');
-      }
-
-      return authorizationUrl;
+    startAuth: async (_name, _directory) => {
+      // v2 has no MCP OAuth/auth pair; fail closed instead of faking a URL.
+      void _name;
+      void _directory;
+      throw v2CapabilityUnavailable('mcp.auth');
     },
 
-    completeAuth: async (name, code, directory) => {
-      const normalized = resolveMcpDirectoryArg(directory);
-      const transport = getRuntimeTransportIdentity();
-      const key = toKey(normalized, transport);
-      const api = getMcpApiClient(normalized);
-      await api.mcp.auth.callback({ name, code }, { throwOnError: true });
-      await refreshMcpStatusQuery(queryClient, normalized, transport);
-      set((state) => ({ diagnosticsByDirectory: withoutDiagnostic(state.diagnosticsByDirectory, key, name) }));
+    completeAuth: async (_name, _code, _directory) => {
+      void _name;
+      void _code;
+      void _directory;
+      throw v2CapabilityUnavailable('mcp.auth');
     },
 
-    clearAuth: async (name, directory) => {
-      const normalized = resolveMcpDirectoryArg(directory);
-      const transport = getRuntimeTransportIdentity();
-      const key = toKey(normalized, transport);
-      const api = getMcpApiClient(normalized);
-      await api.mcp.auth.remove({ name }, { throwOnError: true });
-      await refreshMcpStatusQuery(queryClient, normalized, transport);
-      set((state) => ({ diagnosticsByDirectory: withoutDiagnostic(state.diagnosticsByDirectory, key, name) }));
+    clearAuth: async (_name, _directory) => {
+      void _name;
+      void _directory;
+      throw v2CapabilityUnavailable('mcp.auth');
     },
 
     testConnection: async (name, directory) => {
@@ -170,7 +162,7 @@ export const useMcpStore = create<McpStore>()(
       let warningMessage: string | undefined;
 
       try {
-        await api.mcp.connect({ name }, { throwOnError: true });
+        await api.mcp.connect({ server: name, ...locationOf(normalized) });
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : 'Connection failed';
         set((state) => ({
@@ -190,7 +182,7 @@ export const useMcpStore = create<McpStore>()(
 
       if (!wasConnected && currentStatus?.status === 'connected') {
         try {
-          await api.mcp.disconnect({ name }, { throwOnError: true });
+          await api.mcp.disconnect({ server: name, ...locationOf(normalized) });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Disconnect failed';
           warningMessage = `Connection test succeeded, but cleanup disconnect failed: ${message}`;

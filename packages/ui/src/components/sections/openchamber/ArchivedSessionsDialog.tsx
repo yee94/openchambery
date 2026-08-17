@@ -1,6 +1,5 @@
 import React from 'react'
-import type { Session } from '@opencode-ai/sdk/v2'
-import {
+import type { Session } from '@/lib/opencode/v2-types';import {
   Dialog,
   DialogContent,
   DialogDescription,

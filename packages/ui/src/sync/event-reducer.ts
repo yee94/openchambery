@@ -1,18 +1,102 @@
-import type {
-  Event,
-  PermissionRequest,
-  Project,
-  QuestionRequest,
-  Session,
-  SessionStatus,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
+import type { Session, SessionStatus, Todo } from '@/lib/opencode/v2-types'
+import type { Event, Project } from '@/sync/types'
+import type { PermissionRequest } from '@/types/permission'
+import type { QuestionRequest } from '@/types/question'
+
 import { isVisibleGlobalSession } from "@/stores/globalSessions"
 import { Binary } from "./binary"
 import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots, summarizeFileDiffs } from "./sanitize"
 import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
+import { mapV2PermissionRequest, mapV2QuestionRequest } from "./v2-runtime"
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === "string")
+}
+
+/** Guard v2/legacy permission.asked properties onto PermissionRequest. */
+export function permissionRequestFromEventProperties(properties: unknown): PermissionRequest | null {
+  const record = asRecord(properties)
+  if (!record) return null
+  const id = asNonEmptyString(record.id)
+  const sessionID = asNonEmptyString(record.sessionID) ?? asNonEmptyString(record.sessionId)
+  const action = asNonEmptyString(record.permission) ?? asNonEmptyString(record.action)
+  if (!id || !sessionID || !action) return null
+  const source = asRecord(record.source) ?? asRecord(record.tool)
+  const patterns = asStringArray(record.patterns)
+  const resources = asStringArray(record.resources)
+  const always = asStringArray(record.always)
+  const save = asStringArray(record.save)
+  return mapV2PermissionRequest({
+    id,
+    sessionID,
+    action,
+    resources: patterns.length > 0 ? patterns : resources,
+    save: always.length > 0 ? always : save,
+    metadata: asRecord(record.metadata) ?? {},
+    source: source
+      ? {
+        messageID: asNonEmptyString(source.messageID),
+        id: asNonEmptyString(source.callID) ?? asNonEmptyString(source.id),
+      }
+      : undefined,
+  })
+}
+
+/** Guard v2/legacy question.asked properties onto QuestionRequest. */
+export function questionRequestFromEventProperties(properties: unknown): QuestionRequest | null {
+  const record = asRecord(properties)
+  if (!record) return null
+  const id = asNonEmptyString(record.id)
+  const sessionID = asNonEmptyString(record.sessionID) ?? asNonEmptyString(record.sessionId)
+  if (!id || !sessionID) return null
+  const rawQuestions = Array.isArray(record.questions) ? record.questions : []
+  const questions = rawQuestions.flatMap((item) => {
+    const question = asRecord(item)
+    if (!question) return []
+    const options = Array.isArray(question.options)
+      ? question.options.flatMap((option) => {
+        const rec = asRecord(option)
+        if (!rec) return []
+        const label = asNonEmptyString(rec.label)
+        if (!label) return []
+        return [{
+          label,
+          description: typeof rec.description === "string" ? rec.description : "",
+        }]
+      })
+      : []
+    return [{
+      question: asNonEmptyString(question.question) ?? "",
+      header: asNonEmptyString(question.header) ?? "",
+      options,
+      ...(question.multiple === true ? { multiple: true } : {}),
+    }]
+  })
+  const tool = asRecord(record.tool)
+  return mapV2QuestionRequest({
+    id,
+    sessionID,
+    questions,
+    tool: tool
+      ? {
+        messageID: asNonEmptyString(tool.messageID),
+        id: asNonEmptyString(tool.callID) ?? asNonEmptyString(tool.id),
+      }
+      : undefined,
+  })
+}
 
 function areSessionStatusesEqual(left: SessionStatus | undefined, right: SessionStatus): boolean {
   if (left === right) return true
@@ -181,7 +265,7 @@ export function applyDirectoryEvent(
       // system-owned, subagent, or archived sessions — scheduled tasks and
       // assistants archive before/while prompting, and wiping caches is what
       // made in-progress viewing look nothing like a normal live session.
-      if (!isVisibleGlobalSession(info) || info.time.archived) {
+      if (!isVisibleGlobalSession(info) || info.time?.archived) {
         return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
       }
 
@@ -249,6 +333,30 @@ export function applyDirectoryEvent(
       return true
     }
 
+    case "session.execution.started": {
+      const props = event.properties as { sessionID: string }
+      const status = { type: "busy" } as const
+      if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
+      if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
+        return callbacks?.now ? true : false
+      }
+      draft.session_status[props.sessionID] = status
+      return true
+    }
+
+    case "session.execution.succeeded":
+    case "session.execution.failed":
+    case "session.execution.interrupted": {
+      const props = event.properties as { sessionID: string }
+      const status = { type: "idle" } as const
+      if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
+      if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
+        return callbacks?.now ? true : false
+      }
+      draft.session_status[props.sessionID] = status
+      return true
+    }
+
     // Ticket 09 batch 2: transcript SSE (message/part) is owned by
     // transcript-event-reducer + Query repository apply. Production event-reducer
     // only mutates non-transcript directory domains.
@@ -260,14 +368,19 @@ export function applyDirectoryEvent(
       return false
 
     case "vcs.branch.updated": {
-      const props = event.properties as { branch: string }
-      if (draft.vcs?.branch === props.branch) return false
-      draft.vcs = { branch: props.branch }
+      const branch = asNonEmptyString(asRecord(event.properties)?.branch)
+      if (!branch) return false
+      if (draft.vcs?.branch?.current === branch) return false
+      draft.vcs = {
+        ...draft.vcs,
+        branch: { ...draft.vcs?.branch, current: branch },
+      }
       return true
     }
 
     case "permission.asked": {
-      const permission = event.properties as PermissionRequest
+      const permission = permissionRequestFromEventProperties(event.properties)
+      if (!permission) return false
       const permissions = draft.permission[permission.sessionID] ?? []
       const next = [...permissions]
       const result = Binary.search(next, permission.id, (p) => p.id)
@@ -295,7 +408,8 @@ export function applyDirectoryEvent(
     }
 
     case "question.asked": {
-      const question = event.properties as QuestionRequest
+      const question = questionRequestFromEventProperties(event.properties)
+      if (!question) return false
       const questions = draft.question[question.sessionID] ?? []
       const next = [...questions]
       const result = Binary.search(next, question.id, (q) => q.id)

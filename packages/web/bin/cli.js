@@ -28,7 +28,13 @@ import {
   findClosestMatch,
 } from './lib/cli-args.js';
 import { readDesktopLocalPortFromSettings } from './lib/cli-paths.js';
-import { resolveExplicitBinary, searchPathFor } from './lib/cli-executables.js';
+import { searchPathFor } from './lib/cli-executables.js';
+import {
+  assertOpenCode2Binary,
+  createLegacyOpenCodeBinaryError,
+  isLegacyOpenCodeCliBasename,
+  readConfiguredOpenCodeBinary,
+} from './lib/cli-startup.js';
 import { startupCommand } from './lib/commands-startup.js';
 import { logsCommand } from './lib/commands-logs.js';
 import { statusCommand } from './lib/commands-status.js';
@@ -104,9 +110,14 @@ function importFromFilePath(filePath) {
   return import(pathToFileURL(filePath).href);
 }
 
+// Binary validation is policy, not presentation: TTY, non-TTY, --quiet, and
+// --json all run this same check before serve starts.
 async function checkOpenCodeCLI(onNotice) {
   if (process.env.OPENCODE_BINARY) {
-    const override = resolveExplicitBinary(process.env.OPENCODE_BINARY);
+    if (isLegacyOpenCodeCliBasename(process.env.OPENCODE_BINARY)) {
+      throw createLegacyOpenCodeBinaryError(process.env.OPENCODE_BINARY);
+    }
+    const override = assertOpenCode2Binary(process.env.OPENCODE_BINARY);
     if (override) {
       process.env.OPENCODE_BINARY = override;
       return override;
@@ -119,15 +130,28 @@ async function checkOpenCodeCLI(onNotice) {
     }
   }
 
-  const resolvedFromPath = searchPathFor('opencode');
+  const configured = readConfiguredOpenCodeBinary();
+  if (configured) {
+    if (isLegacyOpenCodeCliBasename(configured)) {
+      throw createLegacyOpenCodeBinaryError(configured);
+    }
+    const fromConfig = assertOpenCode2Binary(configured);
+    if (fromConfig) {
+      process.env.OPENCODE_BINARY = fromConfig;
+      return fromConfig;
+    }
+  }
+
+  const resolvedFromPath = searchPathFor('opencode2');
   if (resolvedFromPath) {
-    process.env.OPENCODE_BINARY = resolvedFromPath;
-    return resolvedFromPath;
+    const verified = assertOpenCode2Binary(resolvedFromPath) || resolvedFromPath;
+    process.env.OPENCODE_BINARY = verified;
+    return verified;
   }
 
   throw new Error(
-    `Unable to locate the opencode CLI on PATH (${process.env.PATH || '<empty>'}). ` +
-    'Ensure the CLI is installed and reachable, or set OPENCODE_BINARY to its full path.'
+    `Unable to locate the opencode2 CLI on PATH (${process.env.PATH || '<empty>'}). ` +
+    'Ensure opencode2 is installed and reachable, or set OPENCODE_BINARY to its full path.'
   );
 }
 
@@ -367,4 +391,5 @@ export {
   TunnelCliError,
   EXIT_CODE,
   warnIfUnsafeFilePermissions,
+  checkOpenCodeCLI,
 };

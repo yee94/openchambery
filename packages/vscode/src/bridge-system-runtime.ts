@@ -10,6 +10,7 @@ import { fetchOpenCodeGoUsage } from './opencodeGoQuota';
 import { credentialStatus, deleteCredential, importCursorCredential, normalizeCredential, readCredential, validateCredential, writeCredential, type ManagedProvider } from './quotaCredentials';
 import { getSessionActivitySnapshot } from './sessionActivityWatcher';
 import type { BridgeContext, BridgeResponse } from './bridge';
+import { fetchOpenCodeHealth } from './opencode-sidecar';
 
 type BridgeMessageInput = {
   id: string;
@@ -238,20 +239,11 @@ export async function handleSystemBridgeMessage(
         if (!apiUrl) {
           return { id, type, success: true, data: { version: null, error: 'OpenCode manager unavailable' } };
         }
-        const base = `${apiUrl.replace(/\/+$/, '')}/`;
-        const response = await fetch(new URL('global/health', base).toString(), {
-          method: 'GET',
-          headers: { Accept: 'application/json', ...ctx?.manager?.getOpenCodeAuthHeaders() },
-        });
-        const health = await response.json().catch(() => null) as { version?: unknown; error?: unknown } | null;
-        if (!response.ok) {
-          const message = typeof health?.error === 'string' ? health.error : response.statusText || 'Failed to read OpenCode version';
-          return { id, type, success: true, data: { version: null, error: message } };
+        const health = await fetchOpenCodeHealth(apiUrl, ctx?.manager?.getOpenCodeAuthHeaders() || {});
+        if (!health) {
+          return { id, type, success: true, data: { version: null, error: 'Failed to read OpenCode version' } };
         }
-        const version = typeof health?.version === 'string' && health.version.trim().length > 0
-          ? health.version.trim().replace(/^v/, '')
-          : null;
-        return { id, type, success: true, data: { version } };
+        return { id, type, success: true, data: { version: health.version } };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return { id, type, success: true, data: { version: null, error: errorMessage } };

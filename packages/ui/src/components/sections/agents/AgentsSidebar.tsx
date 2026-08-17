@@ -22,7 +22,7 @@ import { useAgentsStore, isAgentBuiltIn, isAgentHidden, type AgentScope, type Ag
 import { useAgentsQuery } from '@/queries/agentQueries';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
-import type { Agent } from '@opencode-ai/sdk/v2';
+import type { Agent } from '@/lib/opencode/v2-types';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
 import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';

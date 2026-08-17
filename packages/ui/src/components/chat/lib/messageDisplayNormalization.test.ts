@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Part } from '@opencode-ai/sdk/v2'
-import { getNormalizedMessageForDisplay } from './messageDisplayNormalization'
+import type { Part } from '@/lib/opencode/v2-types';import { getNormalizedMessageForDisplay } from './messageDisplayNormalization'
 import { buildMessageReferenceParts } from '@/lib/messages/references'
 import { buildSessionMentionInstruction, parseSessionMentionInstruction } from '@/composer/delivery'
 import { isSyntheticPart } from '@/lib/messages/synthetic'

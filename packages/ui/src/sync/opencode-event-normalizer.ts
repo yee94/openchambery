@@ -42,6 +42,10 @@ const CURRENT_ACTIVITY_PREFIXES = [
   "session.next.tool.",
   "session.next.shell.",
   "session.next.compaction.",
+  "session.text.",
+  "session.reasoning.",
+  "session.tool.",
+  "session.compaction.",
 ] as const
 
 const CURRENT_TERMINAL_TYPES = new Set([

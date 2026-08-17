@@ -500,6 +500,7 @@ let openCodeApiDetectionTimer = null;
 let lastOpenCodeError = null;
 let lastOpenCodeLaunchDiagnostics = null;
 let isOpenCodeReady = false;
+let v1Migration = null;
 let openCodeNotReadySince = 0;
 let isExternalOpenCode = false;
 let exitOnShutdown = true;
@@ -1049,6 +1050,7 @@ Object.defineProperties(openCodeLifecycleState, {
   lastOpenCodeError: { get: () => lastOpenCodeError, set: (value) => { lastOpenCodeError = value; } },
   lastOpenCodeLaunchDiagnostics: { get: () => lastOpenCodeLaunchDiagnostics, set: (value) => { lastOpenCodeLaunchDiagnostics = value; } },
   isOpenCodeReady: { get: () => isOpenCodeReady, set: (value) => { isOpenCodeReady = value; } },
+  v1Migration: { get: () => v1Migration, set: (value) => { v1Migration = value; } },
   openCodeNotReadySince: { get: () => openCodeNotReadySince, set: (value) => { openCodeNotReadySince = value; } },
   isExternalOpenCode: { get: () => isExternalOpenCode, set: (value) => { isExternalOpenCode = value; } },
   isShuttingDown: { get: () => isShuttingDown, set: (value) => { isShuttingDown = value; } },
@@ -1508,6 +1510,7 @@ async function main(options = {}) {
         openCodeApiPrefix: '',
         openCodeApiPrefixDetected: true,
         isOpenCodeReady,
+        v1Migration,
         lastOpenCodeError,
         lastOpenCodeLaunchDiagnostics,
         opencodeBinaryResolved: resolvedOpencodeBinary || null,

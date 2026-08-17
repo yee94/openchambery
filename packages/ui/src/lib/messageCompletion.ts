@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Part } from "@opencode-ai/sdk/v2";
+import type { Part } from '@/lib/opencode/v2-types';
 
 interface MessageInfo {
     id: string;

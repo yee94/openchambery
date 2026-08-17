@@ -276,7 +276,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   const bundledOpenCodeCliCandidates = () => {
-    const names = process.platform === 'win32' ? ['opencode.exe'] : ['opencode'];
+    const names = process.platform === 'win32' ? ['opencode2.exe'] : ['opencode2'];
     const roots = [
       process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR,
       typeof process.resourcesPath === 'string' ? path.join(process.resourcesPath, 'opencode-cli') : null,
@@ -330,6 +330,27 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return trimmed;
   };
 
+  // PATH still ships 1.x `opencode` beside `opencode2`. A basename without the
+  // trailing 2 is never a valid managed CLI — fail closed instead of spawning it.
+  const isLegacyOpenCodeCliBasename = (candidate) => {
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+      return false;
+    }
+    if (isWindowsOpenCodeDesktopAppPath(candidate) || isMacOpenCodeAppBundlePath(candidate)) {
+      return false;
+    }
+    const name = path.basename(candidate.trim()).toLowerCase();
+    return name === 'opencode' || name === 'opencode.exe' || name === 'opencode.cmd';
+  };
+
+  const createLegacyOpenCodeBinaryError = (candidate) => {
+    const error = new Error(
+      `Basename opencode is reserved for 1.x (${candidate}); rename or symlink to opencode2.`
+    );
+    error.code = 'OPENCODE_BINARY_INVALID';
+    return error;
+  };
+
   const resolveOpencodeCliPath = () => {
     const explicit = [
       process.env.OPENCODE_BINARY,
@@ -341,6 +362,9 @@ export const createOpenCodeEnvRuntime = (deps) => {
       .filter(Boolean);
 
     for (const candidate of explicit) {
+      if (isLegacyOpenCodeCliBasename(candidate)) {
+        throw createLegacyOpenCodeBinaryError(candidate);
+      }
       if (isExecutable(candidate) && !isWindowsOpenCodeDesktopAppPath(candidate)) {
         clearWslOpencodeResolution();
         state.resolvedOpencodeBinarySource = 'env';
@@ -351,7 +375,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     // The bundled CLI is the LAST resort (see bundledOpenCodeCliFallback at the
     // exit points below): a user's own OpenCode install — PATH, known install
     // locations, or shell-resolved — must win over the pinned bundled copy.
-    const resolvedFromPath = searchPathFor('opencode');
+    const resolvedFromPath = searchPathFor('opencode2');
     if (resolvedFromPath) {
       clearWslOpencodeResolution();
       state.resolvedOpencodeBinarySource = 'path';
@@ -360,15 +384,15 @@ export const createOpenCodeEnvRuntime = (deps) => {
 
     const home = resolveHomeDir();
     const unixFallbacks = [
-      path.join(home, '.opencode', 'bin', 'opencode'),
-      path.join(home, '.bun', 'bin', 'opencode'),
-      path.join(home, '.local', 'bin', 'opencode'),
-      path.join(home, 'bin', 'opencode'),
-      '/opt/homebrew/bin/opencode',
-      '/usr/local/bin/opencode',
-      '/home/linuxbrew/.linuxbrew/bin/opencode',
-      '/usr/bin/opencode',
-      '/bin/opencode',
+      path.join(home, '.opencode', 'bin', 'opencode2'),
+      path.join(home, '.bun', 'bin', 'opencode2'),
+      path.join(home, '.local', 'bin', 'opencode2'),
+      path.join(home, 'bin', 'opencode2'),
+      '/opt/homebrew/bin/opencode2',
+      '/usr/local/bin/opencode2',
+      '/home/linuxbrew/.linuxbrew/bin/opencode2',
+      '/usr/bin/opencode2',
+      '/bin/opencode2',
     ];
 
     const winFallbacks = (() => {
@@ -380,24 +404,24 @@ export const createOpenCodeEnvRuntime = (deps) => {
       const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
 
       return [
-        path.join(userProfile, '.opencode', 'bin', 'opencode.exe'),
-        path.join(userProfile, '.opencode', 'bin', 'opencode.cmd'),
-        path.join(appData, 'npm', 'opencode.cmd'),
+        path.join(userProfile, '.opencode', 'bin', 'opencode2.exe'),
+        path.join(userProfile, '.opencode', 'bin', 'opencode2.cmd'),
+        path.join(appData, 'npm', 'opencode2.cmd'),
         // System-wide Node installer keeps the global npm prefix here
         // (npm i -g opencode-ai → opencode.cmd shim).
-        path.join(programFiles, 'nodejs', 'opencode.cmd'),
-        path.join(userProfile, 'scoop', 'shims', 'opencode.exe'),
-        path.join(userProfile, 'scoop', 'shims', 'opencode.cmd'),
-        path.join(programData, 'chocolatey', 'bin', 'opencode.exe'),
-        path.join(programData, 'chocolatey', 'bin', 'opencode.cmd'),
-        path.join(userProfile, '.bun', 'bin', 'opencode.exe'),
-        path.join(userProfile, '.bun', 'bin', 'opencode.cmd'),
+        path.join(programFiles, 'nodejs', 'opencode2.cmd'),
+        path.join(userProfile, 'scoop', 'shims', 'opencode2.exe'),
+        path.join(userProfile, 'scoop', 'shims', 'opencode2.cmd'),
+        path.join(programData, 'chocolatey', 'bin', 'opencode2.exe'),
+        path.join(programData, 'chocolatey', 'bin', 'opencode2.cmd'),
+        path.join(userProfile, '.bun', 'bin', 'opencode2.exe'),
+        path.join(userProfile, '.bun', 'bin', 'opencode2.cmd'),
       ].filter(Boolean);
     })();
 
     const fallbacks = process.platform === 'win32' ? winFallbacks : unixFallbacks;
     for (const candidate of fallbacks) {
-      if (isExecutable(candidate)) {
+      if (isExecutable(candidate) && !isLegacyOpenCodeCliBasename(candidate)) {
         clearWslOpencodeResolution();
         state.resolvedOpencodeBinarySource = 'fallback';
         return candidate;
@@ -406,7 +430,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
 
     if (process.platform === 'win32') {
       try {
-        const result = runSpawnSync('where', ['opencode'], {
+        const result = runSpawnSync('where', ['opencode2'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
@@ -416,7 +440,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
             .split(/\r?\n/)
             .map((line) => line.trim())
             .filter(Boolean);
-          const found = lines.find((line) => isExecutable(line) && !isWindowsOpenCodeDesktopAppPath(line));
+          const found = lines.find((line) => isExecutable(line) && !isWindowsOpenCodeDesktopAppPath(line) && !isLegacyOpenCodeCliBasename(line));
           if (found) {
             clearWslOpencodeResolution();
             state.resolvedOpencodeBinarySource = 'where';
@@ -435,14 +459,14 @@ export const createOpenCodeEnvRuntime = (deps) => {
     for (const shell of shells) {
       if (!isExecutable(shell)) continue;
       try {
-        const result = runSpawnSync(shell, ['-lic', 'command -v opencode'], {
+        const result = runSpawnSync(shell, ['-lic', 'command -v opencode2'], {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
         if (result.status === 0) {
           const found = (result.stdout || '').trim().split(/\s+/).pop() || '';
-          if (found && isExecutable(found)) {
+          if (found && isExecutable(found) && !isLegacyOpenCodeCliBasename(found)) {
             clearWslOpencodeResolution();
             state.resolvedOpencodeBinarySource = 'shell';
             return found;
@@ -775,7 +799,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   const resolveManagedOpenCodeLaunchSpec = (opencodePath) => {
     const fallbackBinary = typeof opencodePath === 'string' && opencodePath.trim().length > 0
       ? opencodePath.trim()
-      : 'opencode';
+      : 'opencode2';
 
     if (process.platform !== 'win32') {
       return { binary: fallbackBinary, args: [], wrapperType: null };
@@ -912,7 +936,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   const createConfiguredOpencodeBinaryError = (raw, normalized) => {
     const configured = typeof raw === 'string' ? raw.trim() : '';
     const candidate = typeof normalized === 'string' && normalized.trim().length > 0 ? normalized.trim() : configured;
-    const messageSuffix = 'OpenChamber needs the standalone opencode CLI. Install it and set settings.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode, or leave the setting empty to use PATH lookup.';
+    const messageSuffix = 'OpenChamber needs the standalone opencode2 CLI. Install it and set settings.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode2, or leave the setting empty to use PATH lookup.';
     const error = (() => {
       if (isKnownOpenCodeDesktopAppPath(candidate) || isKnownOpenCodeDesktopAppPath(configured)) {
         const platformName = process.platform === 'win32' ? 'Windows desktop app install' : 'macOS desktop app bundle';
@@ -922,7 +946,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       try {
         const configuredStat = fs.statSync(configured);
         if (configuredStat.isDirectory()) {
-          return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}: ${configured}. ${messageSuffix}`);
+          return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode2.exe' : 'opencode2'}: ${configured}. ${messageSuffix}`);
         }
       } catch {
       }
@@ -930,7 +954,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       try {
         const stat = fs.statSync(candidate);
         if (stat.isDirectory()) {
-          return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}: ${candidate}. ${messageSuffix}`);
+          return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode2.exe' : 'opencode2'}: ${candidate}. ${messageSuffix}`);
         }
         if (!stat.isFile()) {
           return new Error(`Configured OpenCode binary is not a file: ${candidate}. ${messageSuffix}`);
@@ -960,7 +984,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     try {
       const stat = fs.statSync(trimmed);
       if (stat.isDirectory()) {
-        const bin = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
+        const bin = process.platform === 'win32' ? 'opencode2.exe' : 'opencode2';
         return path.join(trimmed, bin);
       }
     } catch {
@@ -1013,6 +1037,22 @@ export const createOpenCodeEnvRuntime = (deps) => {
         return null;
       }
 
+      if (normalized && isKnownOpenCodeDesktopAppPath(normalized)) {
+        if (strict) {
+          throw createConfiguredOpencodeBinaryError(raw, normalized);
+        }
+        console.warn(`Configured settings.opencodeBinary points at a desktop app, not the CLI: ${normalized}`);
+        return null;
+      }
+
+      if (normalized && isLegacyOpenCodeCliBasename(normalized)) {
+        if (strict) {
+          throw createLegacyOpenCodeBinaryError(normalized);
+        }
+        console.warn(`Configured settings.opencodeBinary points at OpenCode 1.x, which OpenChamber refuses: ${normalized}`);
+        return null;
+      }
+
       if (normalized && isExecutable(normalized) && !isKnownOpenCodeDesktopAppPath(normalized)) {
         clearWslOpencodeResolution();
         process.env.OPENCODE_BINARY = normalized;
@@ -1048,6 +1088,9 @@ export const createOpenCodeEnvRuntime = (deps) => {
     }
 
     const existing = typeof process.env.OPENCODE_BINARY === 'string' ? process.env.OPENCODE_BINARY.trim() : '';
+    if (existing && isLegacyOpenCodeCliBasename(existing)) {
+      throw createLegacyOpenCodeBinaryError(existing);
+    }
     if (existing && isExecutable(existing)) {
       clearWslOpencodeResolution();
       state.resolvedOpencodeBinary = existing;

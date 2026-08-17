@@ -1,4 +1,4 @@
-import type { ToolPart } from '@opencode-ai/sdk/v2';
+import type { ToolPart } from '@/lib/opencode/v2-types';
 import { getRelativeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 
 export interface ChangedFile {

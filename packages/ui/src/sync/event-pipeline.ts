@@ -12,7 +12,9 @@
  * Abort controller created once at init, cleaned up via returned cleanup fn.
  */
 
-import type { Event, OpencodeClient, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { OpenCodeClient, SessionStatus } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
 import { opencodeClient } from "@/lib/opencode/client"
 import { getRuntimeUrlResolver } from "@/lib/runtime-url"
 import { clearRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken } from "@/lib/runtime-auth"
@@ -84,7 +86,7 @@ export type EventPipelineRecoveryContextCapture = {
 }
 
 export type EventPipelineInput = {
-  sdk: OpencodeClient
+  sdk: OpenCodeClient
   onEvent: (directory: string, payload: Event) => void
   routeDirectory?: (directory: string, payload: Event) => string
   /**
@@ -425,6 +427,16 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       const props = payload.properties as { messageID: string; partID: string; field: string }
       return `message.part.delta:${props.messageID}:${props.partID}:${props.field}`
     }
+    if (payload.type === "session.text.delta" || payload.type === "session.reasoning.delta") {
+      const props = payload.properties as { assistantMessageID?: string; ordinal?: number }
+      if (!props.assistantMessageID) return undefined
+      return `${payload.type}:${props.assistantMessageID}:${props.ordinal ?? 0}`
+    }
+    if (payload.type === "session.tool.input.delta") {
+      const props = payload.properties as { assistantMessageID?: string; id?: string }
+      if (!props.assistantMessageID || !props.id) return undefined
+      return `session.tool.input.delta:${props.assistantMessageID}:${props.id}`
+    }
     return undefined
   }
 
@@ -681,7 +693,12 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     if (k) {
       const i = d.coalesced.get(k)
       if (i !== undefined) {
-        if (normalizedPayload.type === "message.part.delta") {
+        if (
+          normalizedPayload.type === "message.part.delta"
+          || normalizedPayload.type === "session.text.delta"
+          || normalizedPayload.type === "session.reasoning.delta"
+          || normalizedPayload.type === "session.tool.input.delta"
+        ) {
           const prev = d.queue[i] as unknown as { properties: { delta: string } }
           const inc = normalizedPayload.properties as { delta: string }
           d.queue[i] = {
@@ -767,31 +784,26 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
   const runSseAttempt = async (signal: AbortSignal) => {
     armHeartbeat()
-    const events = await awaitWithAttemptAbort(sdk.global.event({
+    const stream = await awaitWithAttemptAbort(Promise.resolve(sdk.event.subscribe({
       signal,
       ...(lastEventId && lastEventId.length > 0 ? { headers: { "Last-Event-ID": lastEventId } } : {}),
-      onSseEvent: (event: { id?: unknown }) => {
-        reportTransportActivity()
-        if (typeof event.id === "string" && event.id.length > 0) {
-          lastEventId = event.id
-        }
-      },
-      onSseError: (error: unknown) => {
-        if (isAbortError(error)) return
-        if (streamErrorLogged) return
-        streamErrorLogged = true
-        console.error("[event-pipeline] SSE stream error", error)
-      },
-    }), signal)
+    })), signal)
 
     markConnected()
 
     let yielded = Date.now()
     reportTransportActivity()
 
-    for await (const event of events.stream) {
+    for await (const event of stream) {
       reportTransportActivity()
       streamErrorLogged = false
+
+      const eventId = typeof (event as { id?: unknown }).id === "string"
+        ? (event as { id: string }).id
+        : undefined
+      if (eventId && eventId.length > 0) {
+        lastEventId = eventId
+      }
 
       ingestTransportPayload(event, (event as { payload?: unknown }).payload ?? event)
 

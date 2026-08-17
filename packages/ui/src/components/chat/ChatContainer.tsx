@@ -7,7 +7,7 @@ import {
     useResizeObserver,
     useUnmount,
 } from '@reactuses/core';
-import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@/lib/opencode/v2-types';
 import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
 
@@ -45,6 +45,9 @@ import { useGlobalSyncStore } from '@/sync/global-sync-store';
 import MessageList, { type MessageListHandle } from './MessageList';
 import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
+import { FormCard } from './FormCard';
+import { refreshSessionForms, useSessionFormStore } from '@/sync/session-form-store';
+import { isSessionRetryAction, resolveRetryActionCopy } from '@/sync/session-retry-action';
 import { StatusRowContainer } from './StatusRowContainer';
 import { SessionRecapNote } from '@/components/chat/SessionRecapSpacer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
@@ -106,7 +109,7 @@ import {
 } from './transcriptStallWatchdog';
 
 import { usePlanDetection } from '@/hooks/usePlanDetection';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { BusyDots } from './message/parts/BusyDots';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -263,6 +266,8 @@ type ChatViewportProps = {
     scrollToBottom: () => void;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
+    sessionForms: import('@/sync/session-form-api').SessionFormInfo[];
+    retryActionCopy: { title: string; message: string; label: string; link?: string } | null;
     isProgrammaticFollowActive: boolean;
     showLoadOlderButton: boolean;
     onLoadOlder: () => void;
@@ -297,6 +302,8 @@ const ChatViewport = React.memo(({
     scrollToBottom,
     sessionQuestions,
     sessionPermissions,
+    sessionForms,
+    retryActionCopy,
     isProgrammaticFollowActive,
     showLoadOlderButton,
     onLoadOlder,
@@ -485,13 +492,32 @@ const ChatViewport = React.memo(({
                             scrollRef={scrollRef}
                             directory={directory}
                         />
-                        {(sessionQuestions.length > 0 || sessionPermissions.length > 0) && (
+                        {(sessionQuestions.length > 0 || sessionPermissions.length > 0 || sessionForms.length > 0 || retryActionCopy) && (
                             <div>
+                                {retryActionCopy ? (
+                                    <div className="mb-2 rounded-xl border border-border/20 bg-muted/10 px-2.5 py-2">
+                                        <div className="typography-ui-label text-foreground">{retryActionCopy.title}</div>
+                                        <div className="typography-meta text-muted-foreground mt-1">{retryActionCopy.message}</div>
+                                        {retryActionCopy.link ? (
+                                            <a
+                                                href={retryActionCopy.link}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="mt-2 inline-block typography-meta text-primary underline"
+                                            >
+                                                {retryActionCopy.label}
+                                            </a>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                                 {sessionQuestions.map((question) => (
                                     <QuestionCard key={question.id} question={question} />
                                 ))}
                                 {sessionPermissions.map((permission) => (
                                     <PermissionCard key={permission.id} permission={permission} />
+                                ))}
+                                {sessionForms.map((form) => (
+                                    <FormCard key={form.id} form={form} directory={directory} />
                                 ))}
                             </div>
                         )}
@@ -542,6 +568,8 @@ const ChatViewport = React.memo(({
         && prev.scrollToBottom === next.scrollToBottom
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
+        && prev.sessionForms === next.sessionForms
+        && prev.retryActionCopy === next.retryActionCopy
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
         && prev.showLoadOlderButton === next.showLoadOlderButton
         && prev.onLoadOlder === next.onLoadOlder
@@ -839,6 +867,18 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // the directory.
     const sessionPermissions = useScopedBlockingPermissions(currentSessionId, effectiveSessionDirectory);
     const sessionQuestions = useScopedBlockingQuestions(currentSessionId, effectiveSessionDirectory);
+    const sessionForms = useSessionFormStore(
+        (state) => (currentSessionId ? state.forms[currentSessionId] ?? [] : []),
+    );
+    React.useEffect(() => {
+        if (!currentSessionId) return;
+        void refreshSessionForms({
+            sessionID: currentSessionId,
+            directory: effectiveSessionDirectory,
+        }).catch((error) => {
+            console.error('[ChatContainer] Failed to list session forms:', error);
+        });
+    }, [currentSessionId, effectiveSessionDirectory]);
 
     const sessionIsWorking = React.useMemo(() => {
         if (!currentSessionId || sessionPermissions.length > 0 || sessionQuestions.length > 0) {
@@ -919,12 +959,19 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         if (!activeRetryStatus) {
             return null;
         }
+        if (isSessionRetryAction(sessionStatusForCurrent)) {
+            return null;
+        }
 
         return {
             ...activeRetryStatus,
             fallbackTimestamp: retryFallbackTimestamp,
         };
-    }, [activeRetryStatus, retryFallbackTimestamp]);
+    }, [activeRetryStatus, retryFallbackTimestamp, sessionStatusForCurrent]);
+    const retryActionCopy = React.useMemo(
+        () => resolveRetryActionCopy(sessionStatusForCurrent, (key) => t(key as I18nKey)),
+        [sessionStatusForCurrent, t],
+    );
 
     // History metadata — boundary facts from the directory child store; request
     // lifecycle (loading) stays on sync/assistant page flights but never feeds
@@ -1861,6 +1908,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 scrollToBottom={resumeToLatestInstant}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
+                sessionForms={sessionForms}
+                retryActionCopy={retryActionCopy}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
                 showLoadOlderButton={showLoadOlderButton}
                 onLoadOlder={handleLoadOlderClick}

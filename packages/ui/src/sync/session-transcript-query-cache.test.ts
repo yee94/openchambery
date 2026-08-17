@@ -25,7 +25,7 @@ import {
 } from "./session-cache-limits"
 import { createQueryTranscriptRepository } from "./transcript-repository-query-adapter"
 import type { TranscriptTransportPage } from "./transcript-repository"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
 
 const TRANSPORT = "runtime-cache"
 const GENERATION = 1

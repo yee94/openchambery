@@ -1,32 +1,26 @@
 import { describe, expect, test } from 'bun:test'
-import type { OpencodeClient } from '@opencode-ai/sdk/v2'
-
+import type { OpenCodeClient } from '@/lib/opencode/v2-types'
 import { isVisibleGlobalSession, listGlobalSessionPages } from './globalSessions'
 
 describe('listGlobalSessionPages', () => {
   test('retries resolved transient SDK errors before returning data', async () => {
     let attempts = 0
     const apiClient = {
-      experimental: {
-        session: {
-          list: async () => {
-            attempts += 1
-            if (attempts < 3) {
-              return {
-                data: undefined,
-                error: { message: 'warming up' },
-                response: new Response(null, { status: 503 }),
-              }
-            }
-            return {
-              data: [{ id: 'ses_ready', directory: '/repo/app', time: { created: 1, updated: 2 } }],
-              error: undefined,
-              response: new Response(null, { status: 200 }),
-            }
-          },
+      session: {
+        list: async () => {
+          attempts += 1
+          if (attempts < 3) {
+            const error = new Error('warming up 503') as Error & { status?: number }
+            error.status = 503
+            throw error
+          }
+          return {
+            data: [{ id: 'ses_ready', directory: '/repo/app', time: { created: 1, updated: 2 } }],
+            cursor: {},
+          }
         },
       },
-    } as unknown as OpencodeClient
+    } as unknown as OpenCodeClient
 
     const sessions = await listGlobalSessionPages(apiClient, {
       directory: '/repo/app',
@@ -40,25 +34,23 @@ describe('listGlobalSessionPages', () => {
   })
 
   test('stops a directory-style load at the requested item limit', async () => {
-    const calls: Array<{ limit?: number; cursor?: number }> = []
+    const calls: Array<Record<string, unknown>> = []
     const apiClient = {
-      experimental: {
-        session: {
-          list: async (input: { limit?: number; cursor?: number }) => {
-            calls.push(input)
-            return {
-              data: Array.from({ length: input.limit ?? 0 }, (_, index) => ({
-                id: `ses_${index}`,
-                directory: '/repo/app',
-                title: `Session ${index}`,
-                time: { created: index, updated: 100 - index },
-              })),
-              response: { headers: new Headers({ 'x-next-cursor': '80' }) },
-            }
-          },
+      session: {
+        list: async (input: { limit?: number; cursor?: string }) => {
+          calls.push(input)
+          return {
+            data: Array.from({ length: input.limit ?? 0 }, (_, index) => ({
+              id: `ses_${index}`,
+              directory: '/repo/app',
+              title: `Session ${index}`,
+              time: { created: index, updated: 100 - index },
+            })),
+            cursor: { next: '80' },
+          }
         },
       },
-    } as unknown as OpencodeClient
+    } as unknown as OpenCodeClient
 
     const sessions = await listGlobalSessionPages(apiClient, {
       directory: '/repo/app',
@@ -68,41 +60,39 @@ describe('listGlobalSessionPages', () => {
     })
 
     expect(sessions).toHaveLength(20)
-    expect(calls).toEqual([{ directory: '/repo/app', archived: false, limit: 20 }])
+    expect(calls).toEqual([{ directory: '/repo/app', limit: 20 }])
   })
 
   test('sanitizes session list records before returning them', async () => {
     const apiClient = {
-      experimental: {
-        session: {
-          list: async () => ({
-            data: [
-              {
-                id: 'ses_1',
-                directory: '/repo/app',
-                title: 'Alpha',
-                time: { created: 1, updated: 2 },
-                metadata: {
-                  openchamber: {
-                    kind: 'review',
-                    originalSessionID: 'ses_original',
-                  },
-                },
-                permission: [{ permission: 'todowrite' }],
-                revert: { messageID: 'msg_1', snapshot: 'abc123', diff: 'diff --git a/x b/x' },
-                summary: {
-                  additions: 5,
-                  deletions: 3,
-                  files: 2,
-                  diffs: [{ patch: '@@ -1 +1 @@', additions: 5, deletions: 3 }],
+      session: {
+        list: async () => ({
+          data: [
+            {
+              id: 'ses_1',
+              directory: '/repo/app',
+              title: 'Alpha',
+              time: { created: 1, updated: 2 },
+              metadata: {
+                openchamber: {
+                  kind: 'review',
+                  originalSessionID: 'ses_original',
                 },
               },
-            ],
-            response: { headers: new Headers() },
-          }),
-        },
+              permission: [{ permission: 'todowrite' }],
+              revert: { messageID: 'msg_1', snapshot: 'abc123', diff: 'diff --git a/x b/x' },
+              summary: {
+                additions: 5,
+                deletions: 3,
+                files: 2,
+                diffs: [{ patch: '@@ -1 +1 @@', additions: 5, deletions: 3 }],
+              },
+            },
+          ],
+          cursor: {},
+        }),
       },
-    } as unknown as OpencodeClient
+    } as unknown as OpenCodeClient
 
     const sessions = await listGlobalSessionPages(apiClient, { archived: false, pageSize: 500 })
     const session = sessions[0] as typeof sessions[number] & {
@@ -158,29 +148,27 @@ describe('listGlobalSessionPages', () => {
   })
 
   test('excludes SmartFetch secondary sessions while continuing pagination', async () => {
-    const calls: Array<{ cursor?: number }> = []
+    const calls: Array<{ cursor?: string }> = []
     const apiClient = {
-      experimental: {
-        session: {
-          list: async (options: { cursor?: number }) => {
-            calls.push(options)
-            if (options.cursor === undefined) {
-              return {
-                data: [
-                  { id: 'ses_temporary_1', title: 'smartfetch-secondary', time: { created: 1, updated: 2 } },
-                  { id: 'ses_temporary_2', title: 'smartfetch-secondary', time: { created: 2, updated: 1 } },
-                ],
-                response: { headers: new Headers({ 'x-next-cursor': '1' }) },
-              }
-            }
+      session: {
+        list: async (options: { cursor?: string }) => {
+          calls.push(options)
+          if (options.cursor === undefined) {
             return {
-              data: [{ id: 'ses_visible', title: 'Visible session', time: { created: 3, updated: 0 } }],
-              response: { headers: new Headers() },
+              data: [
+                { id: 'ses_temporary_1', title: 'smartfetch-secondary', time: { created: 1, updated: 2 } },
+                { id: 'ses_temporary_2', title: 'smartfetch-secondary', time: { created: 2, updated: 1 } },
+              ],
+              cursor: { next: '1' },
             }
-          },
+          }
+          return {
+            data: [{ id: 'ses_visible', title: 'Visible session', time: { created: 3, updated: 0 } }],
+            cursor: {},
+          }
         },
       },
-    } as unknown as OpencodeClient
+    } as unknown as OpenCodeClient
 
     const sessions = await listGlobalSessionPages(apiClient, { archived: false, pageSize: 2 })
 
@@ -191,29 +179,27 @@ describe('listGlobalSessionPages', () => {
   test('paginates through all session-list pages', async () => {
     const calls: Array<Record<string, unknown>> = []
     const apiClient = {
-      experimental: {
-        session: {
-          list: async (options: Record<string, unknown>) => {
-            calls.push(options)
-            if (options.cursor === undefined) {
-              return {
-                data: [
-                  { id: 'ses_root', time: { updated: 20 } },
-                  { id: 'ses_child_1', time: { updated: 10 } },
-                ],
-                response: { headers: new Headers({ 'x-next-cursor': '10' }) },
-              }
-            }
+      session: {
+        list: async (options: Record<string, unknown>) => {
+          calls.push(options)
+          if (options.cursor === undefined) {
             return {
               data: [
-                { id: 'ses_child_2', time: { updated: 5 } },
+                { id: 'ses_root', time: { updated: 20 } },
+                { id: 'ses_child_1', time: { updated: 10 } },
               ],
-              response: { headers: new Headers() },
+              cursor: { next: '10' },
             }
-          },
+          }
+          return {
+            data: [
+              { id: 'ses_child_2', time: { updated: 5 } },
+            ],
+            cursor: {},
+          }
         },
       },
-    } as unknown as OpencodeClient
+    } as unknown as OpenCodeClient
 
     const sessions = await listGlobalSessionPages(apiClient, {
       directory: '/repo',
@@ -223,8 +209,45 @@ describe('listGlobalSessionPages', () => {
     })
 
     expect(calls).toHaveLength(2)
-    expect(calls[0]).toEqual({ directory: '/repo', archived: false, roots: false, limit: 2 })
-    expect(calls[1]).toEqual({ directory: '/repo', archived: false, roots: false, limit: 2, cursor: 10 })
+    expect(calls[0]).toEqual({ directory: '/repo', limit: 2 })
+    expect(calls[1]).toEqual({ directory: '/repo', limit: 2, cursor: '10' })
     expect(sessions.map((session) => session.id)).toEqual(['ses_root', 'ses_child_1', 'ses_child_2'])
+  })
+
+  test('keeps walking raw pages when a numeric cursor filters the first page empty', async () => {
+    const calls: Array<Record<string, unknown>> = []
+    const apiClient = {
+      session: {
+        list: async (options: Record<string, unknown>) => {
+          calls.push(options)
+          if (options.cursor === undefined) {
+            return {
+              data: [
+                { id: 'ses_new', time: { updated: 90 } },
+                { id: 'ses_newer', time: { updated: 81 } },
+              ],
+              cursor: { next: 'page-2' },
+            }
+          }
+          return {
+            data: [
+              { id: 'ses_old', time: { updated: 60 } },
+            ],
+            cursor: {},
+          }
+        },
+      },
+    } as unknown as OpenCodeClient
+
+    const sessions = await listGlobalSessionPages(apiClient, {
+      directory: '/repo',
+      archived: false,
+      pageSize: 2,
+      maxItems: 2,
+      cursor: 81,
+    })
+
+    expect(calls).toHaveLength(2)
+    expect(sessions.map((session) => session.id)).toEqual(['ses_old'])
   })
 })

@@ -1,4 +1,4 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import {
   createSessionReconcileService,
   MAX_ANCHOR_LENGTH,
@@ -161,46 +161,103 @@ const requestSignal = (req, res) => {
   return controller.signal;
 };
 
-const createSdkFetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
-  return async ({ sessionID, directory, before, limit, signal }) => {
+/**
+ * Project SessionMessageInfo (or an already-projected {info, parts} row)
+ * into the host HTTP DTO. External route contract stays {info, parts}.
+ */
+const projectV2Parts = (entry) => {
+  if (Array.isArray(entry?.parts)) return entry.parts;
+  const messageID = typeof entry?.id === 'string' ? entry.id : '';
+  const sessionID = typeof entry?.sessionID === 'string' ? entry.sessionID : '';
+  const parts = [];
+  if (typeof entry?.text === 'string' && entry.text) {
+    parts.push({ id: `${messageID}:text`, sessionID, messageID, type: 'text', text: entry.text });
+  }
+  if (Array.isArray(entry?.files)) {
+    entry.files.forEach((file, index) => {
+      parts.push({
+        id: `${messageID}:file:${index}`,
+        sessionID,
+        messageID,
+        type: 'file',
+        mime: file?.mime || 'application/octet-stream',
+        url: file?.uri ?? file?.url,
+        ...(file?.name ? { filename: file.name } : {}),
+      });
+    });
+  }
+  if (Array.isArray(entry?.content)) {
+    entry.content.forEach((item, index) => {
+      const partID = item?.id || `${messageID}:content:${index}`;
+      if (item?.type === 'text') {
+        parts.push({ id: partID, sessionID, messageID, type: 'text', text: item.text ?? '' });
+      } else if (item?.type === 'reasoning') {
+        parts.push({ id: partID, sessionID, messageID, type: 'reasoning', text: item.text ?? '' });
+      } else if (item?.type === 'tool') {
+        parts.push({
+          id: partID,
+          sessionID,
+          messageID,
+          type: 'tool',
+          tool: item.name,
+          callID: item.id,
+          state: item.state ?? {},
+        });
+      }
+    });
+  }
+  return parts;
+};
+
+const projectSessionMessage = (entry) => {
+  if (entry && typeof entry === 'object' && entry.info && typeof entry.info === 'object') {
+    return { info: entry.info, parts: Array.isArray(entry.parts) ? entry.parts : [] };
+  }
+  if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || entry.id.length === 0) {
+    return entry;
+  }
+  const role = entry.type === 'user' || entry.type === 'assistant' ? entry.type : (entry.role ?? entry.type);
+  return {
+    info: {
+      id: entry.id,
+      sessionID: entry.sessionID,
+      role,
+      time: entry.time ?? { created: 0 },
+      ...entry,
+    },
+    parts: projectV2Parts(entry),
+  };
+};
+
+const projectRecords = (records) =>
+  (Array.isArray(records) ? records : []).map(projectSessionMessage);
+
+const createV2FetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
+  return async ({ sessionID, before, limit, signal }) => {
     const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
     const headers = typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders() : {};
-    const client = createOpencodeClient({ baseUrl, headers });
+    const client = makeOpenCodeV2Client({ baseUrl, authHeaders: headers });
 
-    const result = await client.session.messages({
+    const result = await client.message.list({
       sessionID,
-      ...(typeof directory === 'string' && directory.length > 0 ? { directory } : {}),
       ...(Number.isFinite(limit) ? { limit } : {}),
-      ...(typeof before === 'string' && before.length > 0 ? { before } : {}),
+      order: 'desc',
+      ...(typeof before === 'string' && before.length > 0 ? { cursor: before } : {}),
     }, { signal });
 
-    if (result?.error) {
-      logger?.warn?.('[session-turn-pages] session.messages SDK error');
+    const items = Array.isArray(result?.data) ? result.data : null;
+    if (!items) {
+      logger?.warn?.('[session-turn-pages] message.list malformed payload');
       const error = new Error('upstream');
       error.code = 'upstream';
       throw error;
     }
 
-    const data = result?.data;
-    const records = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.items)
-        ? data.items
-        : null;
-    if (!records) {
-      logger?.warn?.('[session-turn-pages] session.messages malformed payload');
-      const error = new Error('upstream');
-      error.code = 'upstream';
-      throw error;
-    }
-
-    const headerCursor = result?.response?.headers?.get?.('x-next-cursor');
-    const nextCursor = typeof headerCursor === 'string' && headerCursor.length > 0
-      ? headerCursor
-      : null;
+    const previous = result?.cursor?.previous;
+    const nextCursor = typeof previous === 'string' && previous.length > 0 ? previous : null;
 
     return {
-      records,
+      records: items.slice().reverse(),
       nextCursor,
       complete: nextCursor == null,
     };
@@ -304,7 +361,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
 
   const needsDefaultFetch = !injectedService || !injectedReconcileService;
   const defaultFetchPage = needsDefaultFetch
-    ? createSdkFetchPage({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger })
+    ? createV2FetchPage({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger })
     : null;
 
   const service = injectedService ?? createSessionTurnPageService({
@@ -368,7 +425,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       }
 
       return res.status(200).json({
-        records: Array.isArray(result.records) ? result.records : [],
+        records: projectRecords(result.records),
         anchorFound: result.anchorFound === true,
         capturedHeadMessageID: result.capturedHeadMessageID ?? null,
         latestHeadMessageID: result.latestHeadMessageID ?? null,
@@ -456,7 +513,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       }
 
       return res.status(200).json({
-        records: result.records,
+        records: projectRecords(result.records),
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,

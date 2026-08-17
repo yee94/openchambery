@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 import {
   getMobileSessionDefaultVisibleCount,
@@ -8,6 +9,8 @@ import {
 } from './mobileSessionPagination';
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import type { WorktreeMetadata } from '@/types/worktree';
+
+const mobileSessionsSheetSource = readFileSync(new URL('./MobileSessionsSheet.tsx', import.meta.url), 'utf8');
 
 const worktree = (path: string): WorktreeMetadata => ({
   path,
@@ -56,6 +59,14 @@ describe('MobileSessionsSheet worktree refresh', () => {
 
     expect(next.get('/failed')).toEqual([worktree('/failed/feature')]);
     expect(next.get('/success')).toEqual([worktree('/success/new')]);
+  });
+});
+
+describe('MobileSessionsSheet sharing capability', () => {
+  test('gates the existing share and unshare menu branch', () => {
+    expect(mobileSessionsSheetSource).toContain("import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';");
+    expect(mobileSessionsSheetSource).toContain('const sharingAvailable = isSessionSharingAvailable();');
+    expect(mobileSessionsSheetSource).toContain('{sharingAvailable ? (actionTarget.session.share?.url ? (');
   });
 });
 

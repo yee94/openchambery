@@ -1,4 +1,4 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2"
+import type { Message, Part } from '@/lib/opencode/v2-types'
 
 /**
  * Snapshot message still mid-turn: completion metadata is absent. Laggy HTTP

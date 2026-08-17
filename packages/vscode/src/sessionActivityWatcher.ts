@@ -1,4 +1,4 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 import type { OpenCodeManager } from './opencode';
 
 // Session activity tracking (mirrors web server and desktop behavior)
@@ -26,40 +26,26 @@ const clearGlobalEventWatcherRetry = (): void => {
   globalEventWatcherRetryTimer = null;
 };
 
-const unwrapGlobalEventPayload = (eventData: unknown): Record<string, unknown> | null => {
+const unwrapV2Event = (eventData: unknown): Record<string, unknown> | null => {
   if (!eventData || typeof eventData !== 'object') {
     return null;
-  }
-
-  const record = eventData as { payload?: unknown };
-  if (record.payload && typeof record.payload === 'object') {
-    return record.payload as Record<string, unknown>;
   }
 
   return eventData as Record<string, unknown>;
 };
 
-const reconcileSessionActivityFromStatus = async (manager: OpenCodeManager): Promise<void> => {
-  const baseUrl = manager.getApiUrl();
-  if (!baseUrl) {
-    return;
-  }
+const reconcileSessionActivityFromActive = async (
+  client: ReturnType<typeof OpenCode.make>,
+): Promise<void> => {
+  const active = await client.session.active();
+  const statuses = active && typeof active === 'object' ? active : {};
+  const knownSessionIds = new Set(Object.keys(statuses));
 
-  const url = new URL('/session/status', baseUrl);
-  const response = await fetch(url.toString(), {
-    headers: manager.getOpenCodeAuthHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`session status fetch failed (${response.status})`);
-  }
-
-  const statuses = await response.json() as Record<string, { type?: string }>;
-  const knownSessionIds = new Set(Object.keys(statuses || {}));
-
-  for (const [sessionId, data] of Object.entries(statuses || {})) {
-    const type = typeof data?.type === 'string' ? data.type : 'idle';
-    const phase: ActivityPhase = type === 'busy' || type === 'retry' ? 'busy' : 'idle';
+  for (const [sessionId, data] of Object.entries(statuses)) {
+    const type = data && typeof data === 'object' && typeof (data as { type?: unknown }).type === 'string'
+      ? (data as { type: string }).type
+      : '';
+    const phase: ActivityPhase = type === 'running' || type === 'busy' || type === 'retry' ? 'busy' : 'idle';
     setSessionActivityPhase(sessionId, phase);
   }
 
@@ -120,38 +106,41 @@ export const getSessionActivitySnapshot = (): Record<string, { type: ActivityPha
   return snapshot;
 };
 
-const deriveSessionActivity = (payload: Record<string, unknown>): SessionActivity | null => {
-  if (!payload || typeof payload !== 'object') {
+const deriveSessionActivity = (event: Record<string, unknown>): SessionActivity | null => {
+  if (!event || typeof event !== 'object') {
     return null;
   }
 
-  const type = payload.type as string;
-  const properties = (payload.properties ?? payload) as Record<string, unknown>;
+  const type = event.type as string;
+  const data = (event.data && typeof event.data === 'object' ? event.data : event) as Record<string, unknown>;
+  const sessionId = (data.sessionID ?? data.sessionId) as string;
 
   if (type === 'session.status') {
-    const status = properties?.status as Record<string, unknown> | undefined;
-    const info = properties?.info as Record<string, unknown> | undefined;
-    const sessionId = (properties?.sessionID ?? properties?.sessionId) as string;
-    const statusType = (status?.type ?? info?.type) as string;
-
+    const status = data.status as Record<string, unknown> | undefined;
+    const statusType = status?.type as string;
     if (typeof sessionId === 'string' && sessionId.length > 0 && typeof statusType === 'string') {
-      const phase = statusType === 'busy' || statusType === 'retry' ? 'busy' : 'idle';
+      const phase = statusType === 'busy' || statusType === 'retry' || statusType === 'running' ? 'busy' : 'idle';
       return { sessionId, phase };
     }
   }
 
-  if (type === 'message.updated' || type === 'message.part.updated' || type === 'message.part.delta') {
-    const info = properties?.info as Record<string, unknown> | undefined;
-    const sessionId = (info?.sessionID ?? info?.sessionId ?? properties?.sessionID ?? properties?.sessionId) as string;
-    const role = info?.role as string;
-    const finish = info?.finish as string;
-    if (typeof sessionId === 'string' && sessionId.length > 0 && role === 'assistant' && finish === 'stop') {
+  if (type === 'session.execution.started' || type === 'session.retry.scheduled') {
+    if (typeof sessionId === 'string' && sessionId.length > 0) {
+      return { sessionId, phase: 'busy' };
+    }
+  }
+
+  if (
+    type === 'session.execution.succeeded'
+    || type === 'session.execution.failed'
+    || type === 'session.execution.interrupted'
+  ) {
+    if (typeof sessionId === 'string' && sessionId.length > 0) {
       return { sessionId, phase: 'cooldown' };
     }
   }
 
-  if (type === 'session.idle') {
-    const sessionId = (properties?.sessionID ?? properties?.sessionId) as string;
+  if (type === 'session.idle' || type === 'session.deleted') {
     if (typeof sessionId === 'string' && sessionId.length > 0) {
       return { sessionId, phase: 'idle' };
     }
@@ -221,27 +210,25 @@ export const startGlobalEventWatcher = async (
           throw new Error('OpenCode API URL not available');
         }
 
-        const client = createOpencodeClient({
+        const client = OpenCode.make({
           baseUrl,
           headers: manager.getOpenCodeAuthHeaders(),
+          fetch: globalThis.fetch,
         });
         try {
-          await reconcileSessionActivityFromStatus(manager);
+          await reconcileSessionActivityFromActive(client);
         } catch (error) {
           console.warn(
             '[VSCode:Activity] session status reconcile failed',
             error instanceof Error ? error.message : error,
           );
         }
-        const result = await client.global.event({
-          signal,
-          sseMaxRetryAttempts: 0,
-        });
+        const events = client.event.subscribe({ signal });
 
         console.log('[VSCode:Activity] connected');
 
-        for await (const event of result.stream) {
-          const payload = unwrapGlobalEventPayload((event as { payload?: unknown }).payload ?? event);
+        for await (const event of events) {
+          const payload = unwrapV2Event(event);
           if (payload) {
             const activity = deriveSessionActivity(payload);
             if (activity) {

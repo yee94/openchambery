@@ -41,13 +41,18 @@ export const primarySendOptionsFromDeliveryRequest = (
 ): {
   sessionId?: string;
   directoryHint?: string | null;
-  delivery?: 'steer';
+  delivery?: 'steer' | 'queue';
   commitStagedMessageEdit?: boolean;
   messageID?: string;
   ticket?: NonNullable<ChatInputDeliveryRequest['options']>['ticket'];
 } => {
+  const delivery: 'steer' | 'queue' | undefined = request.options?.delivery === 'steer'
+    ? 'steer'
+    : request.options?.delivery === 'queue'
+      ? 'queue'
+      : undefined;
   const base = {
-    ...(request.options?.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
+    ...(delivery ? { delivery } : {}),
     ...(request.options?.commitStagedMessageEdit !== undefined
       ? { commitStagedMessageEdit: request.options.commitStagedMessageEdit }
       : {}),

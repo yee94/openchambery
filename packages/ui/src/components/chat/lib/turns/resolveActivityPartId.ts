@@ -1,4 +1,4 @@
-import type { Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@/lib/opencode/v2-types';
 
 /**
  * Stable identity for a projected turn part: React row key, expand-state id, and

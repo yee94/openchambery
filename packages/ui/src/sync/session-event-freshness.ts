@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2"
+import type { Session } from '@/lib/opencode/v2-types'
 
 const getSessionRecencyTimestamp = (session: Session): number => {
   const updatedAt = session.time?.updated

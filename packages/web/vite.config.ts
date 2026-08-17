@@ -29,7 +29,6 @@ function resolveVendorChunkName(id: string): string | undefined {
   if (packageName === 'react' || packageName === 'react-dom') return 'vendor-react';
   if (packageName === 'zustand' || packageName === 'zustand/middleware') return 'vendor-zustand';
 
-  if (packageName === '@opencode-ai/sdk') return 'vendor-opencode-sdk';
   if (packageName.includes('remark') || packageName.includes('rehype') || packageName === 'react-markdown') return 'vendor-markdown';
   if (packageName === '@base-ui/react' || packageName.startsWith('@base-ui')) return 'vendor-base-ui';
   if (packageName.includes('react-syntax-highlighter') || packageName.includes('highlight.js')) return 'vendor-syntax';
@@ -91,7 +90,6 @@ export default defineConfig(({ command }) => ({
   ],
   resolve: {
     alias: [
-      { find: '@opencode-ai/sdk/v2', replacement: path.resolve(__dirname, '../../node_modules/@opencode-ai/sdk/dist/v2/client.js') },
       { find: '@openchamber/ui', replacement: path.resolve(__dirname, '../ui/src') },
       { find: '@web', replacement: path.resolve(__dirname, './src') },
       { find: '@', replacement: path.resolve(__dirname, '../ui/src') },
@@ -110,7 +108,6 @@ export default defineConfig(({ command }) => ({
     // imports do not keep discovering new deps mid-session (which rewrites
     // browserHash and 504s open tabs with "Outdated Optimize Dep").
     include: [
-      '@opencode-ai/sdk/v2',
       'react',
       'react/jsx-runtime',
       'react/jsx-dev-runtime',

@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type { Message } from '@opencode-ai/sdk/v2';
+import type { Message } from '@/lib/opencode/v2-types';
 import type { AssistantHistoryEntry } from '@/queries/assistantQueries';
 import {
   ASSISTANT_SESSION_DIVIDER_PREFIX,
   createAssistantSessionDivider,
   flattenAssistantHistoryPages,
   isAssistantSessionDivider,
+  isLegacyAssistantMirrorEntry,
   mergeHostedCurrentSessionHistory,
   stitchHostedSessionHistory,
   toChatMessageEntries,
@@ -102,6 +103,18 @@ describe('hostedSessionHistory', () => {
 
     expect(stitchHostedSessionHistory([source], 'ses_live')[0]?.sourceSessionID).toBe('ses_a');
     expect(stitchHostedSessionHistory([source], 'ses_live')[0]?.sourceDirectory).toBeNull();
+  });
+
+  test('ignores leftover assistant body mirrors on the live session', () => {
+    const mirrored: AssistantHistoryEntry = {
+      sessionID: 'ses_live',
+      directory: '/workspace',
+      info: { ...bare('msg_mirror'), sessionID: 'ses_live', openchamberAssistantAdmission: true } as Message,
+      parts: [{ type: 'text', text: 'stale-mirror' } as never],
+    };
+    const live = entry('msg_live');
+    expect(isLegacyAssistantMirrorEntry(mirrored)).toBe(true);
+    expect(mergeHostedCurrentSessionHistory([mirrored], 'ses_live', [live]).map((item) => item.info.id)).toEqual(['msg_live']);
   });
 
   test('keeps SQLite current-session admissions until live sync replaces the same identity', () => {

@@ -7,7 +7,8 @@
  * compaction rules). Arbitrary assistant heads are never anchors.
  */
 
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import type { QueryClient } from "@tanstack/react-query"
 
 import { isSyntheticPart } from "@/lib/messages/synthetic"

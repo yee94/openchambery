@@ -6,7 +6,8 @@
  */
 
 import { create } from "zustand"
-import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Message, SessionStatus } from '@/lib/opencode/v2-types'
+
 import type { State } from "./types"
 import {
   getTranscriptRepository,

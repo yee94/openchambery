@@ -1,4 +1,4 @@
-import type { Session } from '@opencode-ai/sdk/v2/client';
+import type { Session } from '@/lib/opencode/v2-types';
 
 import type { ProjectMeta } from './useMobileProjectsHomeModel';
 

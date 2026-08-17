@@ -6,7 +6,9 @@
  * so merge strategy / live-revision semantics stay single-sourced.
  */
 
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
 import type { InfiniteData } from "@tanstack/react-query"
 
 import { applyTranscriptDirectoryEvent } from "./transcript-event-reducer"
@@ -324,8 +326,7 @@ function rebuildFromReducedState(
       if (page.records.some((record) => record.info.id === message.id)) return true
       if (!previousIDs.has(message.id)) {
         // Only place newly inserted messages that sort before the previous head.
-        const previousFirst = previous.pages[0]?.messageOrder[0]
-        return !previousFirst || message.id < previousFirst
+        return true
       }
       return false
     })
@@ -587,11 +588,13 @@ function sortParts(parts: readonly Part[]): Part[] {
 function extractEventMessageID(event: Event): string | undefined {
   const props = event.properties as {
     messageID?: string
+    assistantMessageID?: string
     info?: { id?: string }
     part?: { messageID?: string }
   } | undefined
   if (!props) return undefined
   if (typeof props.messageID === "string") return props.messageID
+  if (typeof props.assistantMessageID === "string") return props.assistantMessageID
   if (typeof props.info?.id === "string") return props.info.id
   if (typeof props.part?.messageID === "string") return props.part.messageID
   return undefined

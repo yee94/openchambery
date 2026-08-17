@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-vi.mock('@opencode-ai/sdk/v2', () => ({
-  createOpencodeClient: vi.fn(),
+vi.mock('../opencode/v2-client.js', () => ({
+  makeOpenCodeV2Client: vi.fn(),
 }));
 
-const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
+vi.mock('../session-goal/objectives.js', () => ({
+  writeObjective: vi.fn(async () => ({ content: 'ok' })),
+}));
+
+const { makeOpenCodeV2Client } = await import('../opencode/v2-client.js');
+const { writeObjective } = await import('../session-goal/objectives.js');
 const {
   computeNextRunAt,
   createScheduledTasksRuntime,
@@ -282,10 +290,26 @@ describe('scheduled-tasks project sync isolation', () => {
   });
 });
 
+describe('scheduled-tasks v2 cutover residuals', () => {
+  it('runtime source has no 1.x SDK, HeyAPI wrappers, or retired session APIs', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'runtime.js'), 'utf8');
+    expect(source).not.toContain('@opencode-ai/sdk');
+    expect(source).not.toContain('createOpencodeClient');
+    expect(source).not.toContain('prompt_async');
+    expect(source).not.toContain('session.abort');
+    expect(source).not.toContain('session.status');
+    expect(source).not.toContain('session.messages');
+    expect(source).not.toContain('session.update');
+    expect(source).not.toContain('time: { archived');
+    expect(source).not.toContain('result?.error');
+  });
+});
+
 describe('scheduled-tasks run history and session lifecycle', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    createOpencodeClient.mockReset();
+    makeOpenCodeV2Client.mockReset();
+    writeObjective.mockClear();
   });
 
   const createHistoryStore = () => {
@@ -313,105 +337,69 @@ describe('scheduled-tasks run history and session lifecycle', () => {
   };
 
   const createSuccessfulClient = ({
-    updateResult,
     sessionID = 'ses_1',
     /** Override session settlement polls after prompt/command admission. */
     settlement = 'success',
+    activeImpl,
+    messageListImpl,
   } = {}) => {
-    const create = vi.fn(async () => ({ data: { id: sessionID } }));
-    const update = vi.fn(async () => updateResult ?? { data: { id: sessionID } });
-    const command = vi.fn(async () => ({ data: {} }));
-    const abort = vi.fn(async () => ({ data: true }));
+    const create = vi.fn(async () => ({ id: sessionID }));
+    const prompt = vi.fn(async () => ({ id: 'inbox_1', type: 'user' }));
+    const command = vi.fn(async () => ({ id: 'inbox_1', type: 'user' }));
+    const interrupt = vi.fn(async () => undefined);
     const list = vi.fn(async () => ({ data: [] }));
-    // Default settlement: idle + completed assistant so history records the real
-    // turn outcome (not prompt_async admission alone).
+    // Default settlement: idle (absent from active map) + completed assistant
+    // so history records the real turn outcome (not prompt admission alone).
     let poll = 0;
-    const status = vi.fn(async () => {
+    const active = vi.fn(async () => {
+      if (typeof activeImpl === 'function') {
+        return activeImpl();
+      }
       poll += 1;
       if (settlement === 'busy-then-success' && poll < 2) {
-        return { data: { [sessionID]: { type: 'busy' } } };
+        return { [sessionID]: { type: 'running' } };
       }
-      return { data: { [sessionID]: { type: 'idle' } } };
+      return {};
     });
-    const messages = vi.fn(async () => {
+    const messageList = vi.fn(async () => {
+      if (typeof messageListImpl === 'function') {
+        return messageListImpl();
+      }
       if (settlement === 'assistant-error') {
         return {
           data: [{
-            info: {
-              id: 'msg_err',
-              role: 'assistant',
-              error: { name: 'ProviderError', message: 'upstream failed' },
-            },
+            id: 'msg_err',
+            type: 'assistant',
+            error: { name: 'ProviderError', message: 'upstream failed' },
           }],
         };
       }
-      if (settlement === 'busy-then-success') {
-        if (poll < 2) {
-          return { data: [{ info: { id: 'msg_user', role: 'user' } }] };
-        }
+      if (settlement === 'busy-then-success' && poll < 2) {
+        return { data: [{ id: 'msg_user', type: 'user' }] };
       }
       return {
         data: [{
-          info: {
-            id: 'msg_ok',
-            role: 'assistant',
-            time: { completed: Date.now() },
-          },
+          id: 'msg_ok',
+          type: 'assistant',
+          time: { completed: Date.now() },
         }],
       };
     });
-    const get = vi.fn(async () => {
-      if (settlement === 'goal-complete') {
-        return {
-          data: {
-            id: sessionID,
-            metadata: {
-              openchamber: {
-                goal: { id: 'g1', status: 'complete', objective: 'done' },
-              },
-            },
-          },
-        };
-      }
-      if (settlement === 'goal-blocked') {
-        return {
-          data: {
-            id: sessionID,
-            metadata: {
-              openchamber: {
-                goal: { id: 'g1', status: 'blocked', objective: 'x', note: 'stuck' },
-              },
-            },
-          },
-        };
-      }
-      return { data: { id: sessionID, metadata: {} } };
-    });
-    createOpencodeClient.mockReturnValue({
-      session: { create, update, command, abort, status, messages, get },
+    const get = vi.fn(async () => ({
+      id: sessionID,
+      location: { directory: '/tmp/project-1' },
+    }));
+    makeOpenCodeV2Client.mockReturnValue({
+      session: { create, prompt, command, interrupt, active, get },
+      message: { list: messageList },
       command: { list },
     });
-    return { create, update, command, abort, list, status, messages, get };
+    return { create, prompt, command, interrupt, list, active, messageList, get };
   };
 
-  const settledSessionApis = (sessionID = 'ses_1') => ({
-    status: vi.fn(async () => ({ data: { [sessionID]: { type: 'idle' } } })),
-    messages: vi.fn(async () => ({
-      data: [{ info: { id: 'msg_ok', role: 'assistant', time: { completed: Date.now() } } }],
-    })),
-    get: vi.fn(async () => ({ data: { id: sessionID, metadata: {} } })),
-  });
-
-  it('creates session with Scheduled title and scheduledTask metadata, attaches history, archives before prompt', async () => {
+  it('creates session with Scheduled title and location, attaches history, then prompts via session.prompt', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient();
-    const fetchMock = vi.fn(async (url, init) => {
-      if (String(url).includes('prompt_async')) {
-        return { ok: true, text: async () => '' };
-      }
-      throw new Error(`unexpected fetch ${url} ${init?.method}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
@@ -435,49 +423,35 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     });
     expect(typeof started.id).toBe('string');
 
+    expect(makeOpenCodeV2Client).toHaveBeenCalledWith({
+      baseUrl: 'http://127.0.0.1:4096',
+      authHeaders: {},
+    });
     expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
-      directory: '/tmp/project-1',
+      location: { directory: '/tmp/project-1' },
       title: expect.stringMatching(/^\[Scheduled\] Task /),
-      metadata: {
-        openchamber: {
-          scheduledTask: {
-            projectID: 'project-1',
-            taskID: 'task-1',
-            runID: started.id,
-            name: 'Task',
-          },
-        },
-      },
+      model: { id: 'gpt-4.1', providerID: 'openai' },
     }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(client.create.mock.calls[0][0].metadata).toBeUndefined();
+    expect(client.create.mock.calls[0][0].directory).toBeUndefined();
     expect(history.attachSession).toHaveBeenCalledWith(started.id, 'ses_1');
-    expect(client.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(client.prompt).toHaveBeenCalledWith({
       sessionID: 'ses_1',
-      directory: '/tmp/project-1',
-      time: { archived: expect.any(Number) },
-    }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    expect(client.update.mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0]);
+      text: 'run',
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(history.finishRun).toHaveBeenCalledWith(started.id, expect.objectContaining({
       status: 'success',
       sessionId: 'ses_1',
     }));
-    // Must wait for session settlement, not finish on prompt_async admission alone.
-    expect(client.status).toHaveBeenCalled();
-    expect(client.messages).toHaveBeenCalled();
-    expect(client.status.mock.invocationCallOrder[0]).toBeGreaterThan(fetchMock.mock.invocationCallOrder[0]);
-
-    vi.unstubAllGlobals();
+    // Must wait for session settlement, not finish on prompt admission alone.
+    expect(client.active).toHaveBeenCalled();
+    expect(client.messageList).toHaveBeenCalled();
+    expect(client.active.mock.invocationCallOrder[0]).toBeGreaterThan(client.prompt.mock.invocationCallOrder[0]);
   });
 
   it('records error outcome and real duration when the assistant turn fails after admission', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ settlement: 'assistant-error' });
-    const fetchMock = vi.fn(async (url) => {
-      if (String(url).includes('prompt_async')) {
-        return { ok: true, text: async () => '' };
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
@@ -500,22 +474,13 @@ describe('scheduled-tasks run history and session lifecycle', () => {
         durationMs: expect.any(Number),
       }),
     );
-    expect(client.messages).toHaveBeenCalled();
-
-    vi.unstubAllGlobals();
+    expect(client.messageList).toHaveBeenCalled();
   });
 
-  it('keeps the run open while the session is busy and only finalizes after idle settlement', async () => {
+  it('keeps the run open while the session is in the active map and only finalizes after idle settlement', async () => {
     vi.useFakeTimers();
     const history = createHistoryStore();
     createSuccessfulClient({ settlement: 'busy-then-success' });
-    const fetchMock = vi.fn(async (url) => {
-      if (String(url).includes('prompt_async')) {
-        return { ok: true, text: async () => '' };
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
@@ -527,7 +492,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     await runtime.syncProject('project-1');
 
     const runPromise = runtime.runNow('project-1', 'task-1');
-    // First settlement poll sees busy and sleeps — history must still be open.
+    // First settlement poll sees membership and sleeps — history must still be open.
     await vi.advanceTimersByTimeAsync(0);
     expect(history.finishRun).not.toHaveBeenCalled();
 
@@ -540,17 +505,15 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       expect.objectContaining({ status: 'success', sessionId: 'ses_1' }),
     );
 
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
-  it('does not prompt when archive fails and finalizes the run as error', async () => {
+  it('does not prompt when attachSession fails and finalizes the run as error', async () => {
     const history = createHistoryStore();
-    createSuccessfulClient({
-      updateResult: { error: { status: 500, message: 'archive failed' } },
+    const client = createSuccessfulClient();
+    history.attachSession.mockImplementation(() => {
+      throw new Error('attach exploded');
     });
-    const fetchMock = vi.fn(async () => ({ ok: true, text: async () => '' }));
-    vi.stubGlobal('fetch', fetchMock);
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
@@ -564,28 +527,22 @@ describe('scheduled-tasks run history and session lifecycle', () => {
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe('error');
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.error).toMatch(/attachSession failed/);
+    expect(client.prompt).not.toHaveBeenCalled();
     expect(history.finishRun).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ status: 'error' }),
     );
-
-    vi.unstubAllGlobals();
   });
 
-  it('retries archive once on 404 then prompts on success', async () => {
+  it('does not treat session.active failure as idle success', async () => {
     vi.useFakeTimers();
     const history = createHistoryStore();
-    const create = vi.fn(async () => ({ data: { id: 'ses_404' } }));
-    const update = vi.fn()
-      .mockResolvedValueOnce({ error: { status: 404 } })
-      .mockResolvedValueOnce({ data: { id: 'ses_404' } });
-    createOpencodeClient.mockReturnValue({
-      session: { create, update, command: vi.fn(), ...settledSessionApis('ses_404') },
-      command: { list: vi.fn(async () => ({ data: [] })) },
+    createSuccessfulClient({
+      activeImpl: async () => {
+        throw new Error('active unavailable');
+      },
     });
-    const fetchMock = vi.fn(async () => ({ ok: true, text: async () => '' }));
-    vi.stubGlobal('fetch', fetchMock);
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
@@ -593,63 +550,67 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const runtime = createRuntime(updateScheduledTaskState, {
       runHistoryStore: history,
       waitForOpenCodeReady: vi.fn(async () => {}),
+      maxRunDurationMs: 2_500,
     });
     await runtime.syncProject('project-1');
 
     const runPromise = runtime.runNow('project-1', 'task-1');
-    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(history.finishRun).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_500);
     const result = await runPromise;
 
-    expect(result.ok).toBe(true);
-    expect(update).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('error');
+    expect(result.error).toBe('schedule run timed out');
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        status: 'error',
+        error: 'schedule run timed out',
+      }),
+    );
 
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
-  it('watchdog timeout aborts in-flight work, calls session.abort, and does not continue later stages', async () => {
+  it('watchdog timeout interrupts in-flight work and does not continue later stages', async () => {
     vi.useFakeTimers();
     const history = createHistoryStore();
     let resolvePrompt;
     let promptStarted = false;
     let promptCompleted = false;
-    const create = vi.fn(async () => ({ data: { id: 'ses_timeout' } }));
-    const update = vi.fn(async () => ({ data: { id: 'ses_timeout' } }));
-    const abort = vi.fn(async () => ({ data: true }));
+    const create = vi.fn(async () => ({ id: 'ses_timeout' }));
+    const interrupt = vi.fn(async () => undefined);
     const command = vi.fn(async () => {
       throw new Error('command must not run after hanging prompt path');
     });
     const list = vi.fn(async () => ({ data: [] }));
-    createOpencodeClient.mockReturnValue({
-      session: { create, update, command, abort },
+    const prompt = vi.fn((_params, options) => {
+      promptStarted = true;
+      return new Promise((resolve, reject) => {
+        resolvePrompt = () => {
+          promptCompleted = true;
+          resolve({ id: 'inbox_1', type: 'user' });
+        };
+        const signal = options?.signal;
+        if (signal) {
+          const onAbort = () => {
+            reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+          };
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+      });
+    });
+    makeOpenCodeV2Client.mockReturnValue({
+      session: { create, prompt, command, interrupt },
       command: { list },
     });
-
-    const fetchMock = vi.fn((url, init) => {
-      if (String(url).includes('prompt_async')) {
-        promptStarted = true;
-        return new Promise((resolve, reject) => {
-          resolvePrompt = () => {
-            promptCompleted = true;
-            resolve({ ok: true, text: async () => '' });
-          };
-          const signal = init?.signal;
-          if (signal) {
-            const onAbort = () => {
-              reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
-            };
-            if (signal.aborted) {
-              onAbort();
-              return;
-            }
-            signal.addEventListener('abort', onAbort, { once: true });
-          }
-        });
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
@@ -678,9 +639,9 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       expect(result.ok).toBe(false);
       expect(result.status).toBe('error');
       expect(result.error).toBe('schedule run timed out');
-      expect(abort).toHaveBeenCalledWith({
+      expect(interrupt).toHaveBeenCalledWith({
         sessionID: 'ses_timeout',
-        directory: '/tmp/project-1',
+        continue: false,
       });
       expect(promptCompleted).toBe(false);
       expect(command).not.toHaveBeenCalled();
@@ -703,18 +664,16 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     } finally {
       process.off('unhandledRejection', onUnhandled);
       resolvePrompt?.();
-      vi.unstubAllGlobals();
       vi.useRealTimers();
     }
   });
 
-  it('watchdog timeout during hanging command aborts session and never prompt_async', async () => {
+  it('watchdog timeout during hanging command interrupts session and never session.prompt', async () => {
     vi.useFakeTimers();
     const history = createHistoryStore();
     let commandReached = false;
-    const create = vi.fn(async () => ({ data: { id: 'ses_cmd' } }));
-    const update = vi.fn(async () => ({ data: { id: 'ses_cmd' } }));
-    const abort = vi.fn(async () => ({ data: true }));
+    const create = vi.fn(async () => ({ id: 'ses_cmd' }));
+    const interrupt = vi.fn(async () => undefined);
     const command = vi.fn((_params, options) => {
       commandReached = true;
       return new Promise((_resolve, reject) => {
@@ -733,14 +692,13 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       });
     });
     const list = vi.fn(async () => ({ data: [{ name: 'review' }] }));
-    createOpencodeClient.mockReturnValue({
-      session: { create, update, command, abort },
+    const prompt = vi.fn(async () => {
+      throw new Error('session.prompt must not run when command is selected');
+    });
+    makeOpenCodeV2Client.mockReturnValue({
+      session: { create, prompt, command, interrupt },
       command: { list },
     });
-    const fetchMock = vi.fn(async () => {
-      throw new Error('prompt_async must not run when command is selected');
-    });
-    vi.stubGlobal('fetch', fetchMock);
 
     const taskWithCommand = {
       ...scheduledTask,
@@ -780,13 +738,21 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       status: 'error',
       error: 'schedule run timed out',
     });
-    expect(abort).toHaveBeenCalledWith({
+    expect(interrupt).toHaveBeenCalledWith({
       sessionID: 'ses_cmd',
-      directory: '/tmp/project-1',
+      continue: false,
     });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({
+      sessionID: 'ses_cmd',
+      command: 'review',
+      arguments: 'src',
+      model: { id: 'gpt-4.1', providerID: 'openai' },
+    }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(list).toHaveBeenCalledWith({
+      location: { directory: '/tmp/project-1' },
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(prompt).not.toHaveBeenCalled();
 
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -795,22 +761,19 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const history = createHistoryStore();
     let resolveDistill;
     let distillStarted = false;
-    const create = vi.fn(async () => ({ data: { id: 'ses_distill' } }));
-    const update = vi.fn(async () => ({ data: { id: 'ses_distill' } }));
-    const abort = vi.fn(async () => ({ data: true }));
+    const create = vi.fn(async () => ({ id: 'ses_distill' }));
+    const interrupt = vi.fn(async () => undefined);
     const command = vi.fn(async () => {
       throw new Error('command must not run after hanging distill');
     });
     const list = vi.fn(async () => ({ data: [] }));
-    createOpencodeClient.mockReturnValue({
-      session: { create, update, command, abort },
+    const prompt = vi.fn(async () => {
+      throw new Error('session.prompt must not run after hanging distill');
+    });
+    makeOpenCodeV2Client.mockReturnValue({
+      session: { create, prompt, command, interrupt },
       command: { list },
     });
-
-    const fetchMock = vi.fn(async (url, init) => {
-      throw new Error(`unexpected fetch ${url} ${init?.method}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
 
     const generateSmallModelText = vi.fn(() => {
       distillStarted = true;
@@ -870,11 +833,11 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       expect(result.ok).toBe(false);
       expect(result.status).toBe('error');
       expect(result.error).toBe('schedule run timed out');
-      expect(abort).toHaveBeenCalledWith({
+      expect(interrupt).toHaveBeenCalledWith({
         sessionID: 'ses_distill',
-        directory: '/tmp/project-1',
+        continue: false,
       });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(prompt).not.toHaveBeenCalled();
       expect(command).not.toHaveBeenCalled();
 
       const started = history.startRun.mock.calls[0][0];
@@ -887,35 +850,23 @@ describe('scheduled-tasks run history and session lifecycle', () => {
         }),
       );
 
-      // Release distill after finalize; abort gate must block goal PATCH / prompt.
+      // Release distill after finalize; abort gate must block goal write / prompt.
       resolveDistill?.();
       await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
       await Promise.resolve();
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(prompt).not.toHaveBeenCalled();
       expect(unhandled).toEqual([]);
     } finally {
       process.off('unhandledRejection', onUnhandled);
       resolveDistill?.();
-      vi.unstubAllGlobals();
       vi.useRealTimers();
     }
   });
 
-  it('goalEnabled PATCH preserves scheduledTask marker alongside goal', async () => {
+  it('goalEnabled writes the file-backed objective and does not PATCH session metadata', async () => {
     const history = createHistoryStore();
-    // Goal runs settle on terminal goal metadata, not the first idle turn.
-    const client = createSuccessfulClient({ sessionID: 'ses_goal', settlement: 'goal-complete' });
-    const fetchMock = vi.fn(async (url, init) => {
-      if (String(url).includes('/session/ses_goal') && init?.method === 'PATCH') {
-        return { ok: true, text: async () => '' };
-      }
-      if (String(url).includes('prompt_async')) {
-        return { ok: true, text: async () => '' };
-      }
-      throw new Error(`unexpected fetch ${url} ${init?.method}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    const client = createSuccessfulClient({ sessionID: 'ses_goal' });
 
     const goalTask = {
       ...scheduledTask,
@@ -946,37 +897,18 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const result = await runtime.runNow('project-1', 'task-1');
 
     expect(result.ok).toBe(true);
-    expect(client.get).toHaveBeenCalled();
-    const patchCall = fetchMock.mock.calls.find(
-      ([url, init]) => String(url).includes('/session/ses_goal') && init?.method === 'PATCH',
-    );
-    expect(patchCall).toBeTruthy();
-    const body = JSON.parse(patchCall[1].body);
-    expect(body.metadata.openchamber.scheduledTask).toEqual({
-      projectID: 'project-1',
-      taskID: 'task-1',
-      runID: history.startRun.mock.calls[0][0].id,
-      name: 'Task',
-    });
-    expect(body.metadata.openchamber.goal).toMatchObject({
-      status: 'active',
-      tokenBudget: 12_000,
-    });
-    expect(typeof body.metadata.openchamber.goal.objectiveFile).toBe('boolean');
-    expect(typeof body.metadata.openchamber.goal.objective).toBe('string');
-    if (!body.metadata.openchamber.goal.objectiveFile) {
-      expect(body.metadata.openchamber.goal.objective.length).toBeGreaterThan(0);
-    }
-    expect(client.abort).not.toHaveBeenCalled();
-
-    vi.unstubAllGlobals();
+    expect(writeObjective).toHaveBeenCalledWith('ses_goal', 'finish the migration');
+    expect(client.prompt).toHaveBeenCalledWith({
+      sessionID: 'ses_goal',
+      text: expect.stringContaining('Goal mode is active for this session'),
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(client.prompt.mock.calls[0][0].text).toContain('finish the migration');
+    expect(client.interrupt).not.toHaveBeenCalled();
   });
 
-  it('successful runs never call session.abort', async () => {
+  it('successful runs never call session.interrupt', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient();
-    const fetchMock = vi.fn(async () => ({ ok: true, text: async () => '' }));
-    vi.stubGlobal('fetch', fetchMock);
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
@@ -989,8 +921,6 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const result = await runtime.runNow('project-1', 'task-1');
 
     expect(result.ok).toBe(true);
-    expect(client.abort).not.toHaveBeenCalled();
-
-    vi.unstubAllGlobals();
+    expect(client.interrupt).not.toHaveBeenCalled();
   });
 });

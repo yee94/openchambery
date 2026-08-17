@@ -22,7 +22,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '@/lib/opencode/v2-types';
 
 import { shouldEnsureChatSessionRenderable } from './chatSessionMaterialization';
 import { resolveLiveTailStart, splitTurnRecordsByLiveTail } from './hooks/useTurnRecords';

@@ -13,10 +13,11 @@ const permissionGetMock = mock((args: { sessionID: string; requestID: string }) 
       if (r.kind === 'throw') {
         reject(new Error('network down'));
       } else if (r.kind === 'ok') {
-        resolve(makeSuccessResult(r.permission));
+        resolve(r.permission);
+      } else if (r.kind === 'not-found') {
+        reject({ _tag: 'PermissionNotFoundError', requestID: args.requestID, message: 'not found' });
       } else {
-        const status = r.kind === 'not-found' ? 404 : 500;
-        resolve(makeErrorResult(status));
+        reject(new Error('server error'));
       }
     });
     pendingArgs.push(args);
@@ -38,40 +39,52 @@ const pendingArgs: Array<{ sessionID: string; requestID: string }> = [];
  *   - data.data === the permission (200 status payload)
  *   - response.status === 200
  */
-const makeSuccessResult = (permission: PermissionV2Fixture) => ({
-  data: { data: permission },
-  error: undefined,
-  request: new Request('http://test/'),
-  response: new Response(null, { status: 200 }),
-});
+const makeSuccessResult = (permission: PermissionV2Fixture) => permission;
 
 /**
  * Build a HeyApi error result with the given status code.
  */
 const makeErrorResult = (status: number) => ({
-  data: undefined,
-  error: {
-    name: status === 404 ? 'PermissionNotFoundError' : 'ServerError',
-    data: { message: 'err' },
-  },
-  request: new Request('http://test/'),
-  response: new Response(null, { status }),
+  _tag: status === 404 ? 'PermissionNotFoundError' : 'ServerError',
+  message: 'err',
 });
 
-const createOpencodeClientMock = mock(() => ({
-  v2: {
-    session: {
-      permission: {
-        get: permissionGetMock,
-      },
-    },
+void makeSuccessResult;
+void makeErrorResult;
+
+const createV2ClientMock = mock(() => ({
+  permission: {
+    get: permissionGetMock,
+    request: { list: mock(async () => ({ data: [] })) },
+    create: mock(async () => ({ id: 'perm_1', effect: 'ask' })),
+  },
+  session: {
+    active: mock(async () => ({})),
+  },
+  config: {
+    get: mock(async () => []),
+  },
+  agent: {
+    list: mock(async () => ({ data: [] })),
   },
 }));
 
 (mock as unknown as { restore?: () => void }).restore?.();
 
-mock.module('@opencode-ai/sdk/v2', () => ({
-  createOpencodeClient: createOpencodeClientMock,
+mock.module('@opencode-ai/client', () => ({
+  OpenCode: {
+    make: createV2ClientMock,
+  },
+  ClientError: class ClientError extends Error {
+    reason: string;
+    constructor(reason: string, options?: ErrorOptions) {
+      super(reason, options);
+      this.name = 'ClientError';
+      this.reason = reason;
+    }
+  },
+  isPermissionNotFoundError: (value: unknown) =>
+    !!value && typeof value === 'object' && (value as { _tag?: unknown })._tag === 'PermissionNotFoundError',
 }));
 
 mock.module('@/contexts/runtimeAPIRegistry', () => ({

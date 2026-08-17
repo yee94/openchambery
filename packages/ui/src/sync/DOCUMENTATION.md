@@ -317,8 +317,9 @@ Modules:
 | `session-transcript-recovery-checkpoint.ts` | Stable authored-user turn anchor selection + recovery checkpoint model / QueryCache read-write |
 | `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset` |
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
-| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `purgeTranscriptSession` |
-| `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
+| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `refreshTranscriptFromAuthority` / `purgeTranscriptSession` |
+| `session-projection-api.ts` | Official v2 `GET /api/session/:id/message` projection page via Host shallow proxy + `runtimeFetch`; normalizes `SessionMessage.Info` to Message+Part; unknown variants stay as placeholders; `reconcileFetched` (fetched as base, in-flight SSE ids touched, incomplete pages keep earlier rows) |
+| `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation) and v2 projection production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers for the Query transport fetcher (no nested store commit) |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
 | `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
@@ -443,7 +444,7 @@ HTTP pull (initial / prepend / recovery / materialize)
   session-merge-strategy.ts          (purpose, stale) → frozen merge strategy
   session-message-reducer.ts         pure page → transcript draft (model/test)
   transcript-repository-production   fetchProductionTranscriptTransportPage
-                                     Host turn-page + parent recovery
+                                     v2 projection + parent recovery
   transcript-repository-query-adapter
                                      http-page → canonical InfiniteData (QueryCache)
   transcript-repository-runtime      fetchTranscriptPreviousPage / ensureInitial
@@ -528,7 +529,7 @@ Rules that keep this single-sourced:
   pure function so all four purposes stay unit-testable (store adapter / tests).
 - UI transcript selectors read Query / TranscriptRepository projections via
   repository facades — never child-store message/part maps.
-- Pagination fact ownership is exclusive: Host turn-page responses are
+- Pagination fact ownership is exclusive: v2 projection page responses are
   **transport input** into Query; repository `SessionHistoryBoundary` is the
   **only client-side fact** for older-history availability; request lifecycle
   is `getRequestState` and must never be read for cursor/complete/loaded-turns.
@@ -640,6 +641,8 @@ both readers agree on when a frame may shrink.
   Known limitation: `initial` resolves to `insert-only`, so a first-screen load
   cannot refresh a message body the server has since changed. Whether to change
   that is a separate decision; the table makes the behavior visible.
+  Ticket 05: a stale `initial` / `materialize` page no longer drops when
+  liveRevision advanced — it backfills missing ids and keeps live rows.
   User-triggered refresh is a different path: `refreshFromAuthority` fetches a
   fresh tail first, then replaces the canonical transcript with that page.
   Fetch failure keeps the prior transcript. The fetch is outside the
@@ -650,23 +653,28 @@ both readers agree on when a frame may shrink.
    (no transcript yet), or while reconnecting before any messages exist.
    A loaded transcript hides it even if the socket is still reconnecting or
    the InfiniteQuery observer is still `isFetching`. Desktop session context-menu
-  "Sync messages" and the dedicated-mobile overflow "Refresh" both call
+   "Sync messages" and the dedicated-mobile overflow "Refresh" both call
    `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
    (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).
    The chat load-error wall has no transcript to keep, so Retry calls
    `retryTranscriptInitial` (`destructiveReset` + fresh ensure) and the gate
    treats that click as `hydrating` until the reload settles.
    Busy/retry refuse only when the child-store live status is busy/retry.
-  Sticky global fallback busy (missed idle, no mobile tray snapshot) must not
-  disable refresh. Send self-heal: if the event stream has been silent past
-  the stale threshold, `waitForConnectionOrThrow` reconnects before trusting
-  `isConnected`; a hung prompt times out and requests the same reconnect so
-  "Sending message" cannot stick forever.
+   Sticky global fallback busy (missed idle, no mobile tray snapshot) must not
+   disable refresh. Send self-heal: if the event stream has been silent past
+   the stale threshold, `waitForConnectionOrThrow` reconnects before trusting
+   `isConnected`; a hung prompt times out and requests the same reconnect so
+   "Sending message" cannot stick forever.
+   Open / focus / 「同步消息」 force GET the v2 projection tail and merge with
+   `reconcileFetched` (fetched as base, in-flight SSE ids touched, incomplete
+   pages keep earlier rows). `ensureInitial` may still short-circuit a hot cache
+   on other ensure/selection paths; those buttons and the force-GET refresh
+   must not use it.
 - Production application orchestration for transcript pages is owned by
-  `transcript-repository-production.ts` + the Query adapter: Host turn-page
-  via `fetchProductionTranscriptTransportPage` (policy limit, parent recovery,
-  abort signal), then repository `http-page` / InfiniteQuery
-  `fetchPreviousPage` / `ensureInitial`. Stale pages gate with
+  `transcript-repository-production.ts` + the Query adapter: official v2
+  projection via `fetchProductionTranscriptTransportPage` (limit=20 order=desc,
+  response cursor, parent recovery, abort signal), then repository `http-page` /
+  InfiniteQuery `fetchPreviousPage` / `ensureInitial`. Stale pages gate with
   `shouldDropStalePage(purpose)`. Loading / ready / error status lives on
   repository `getRequestState`. Pure `reduceSessionMessagePage` remains the
   model for merge math (Query adapter and test store adapter).

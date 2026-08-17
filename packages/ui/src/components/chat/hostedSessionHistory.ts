@@ -1,4 +1,4 @@
-import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@/lib/opencode/v2-types';
 import { hasUserDisplayableParts } from '@/components/chat/message/normalizeUserDisplayParts';
 import type { ChatMessageEntry } from '@/components/chat/lib/turns/types';
 import type { AssistantHistoryEntry, AssistantHistoryPage } from '@/queries/assistantQueries';
@@ -40,6 +40,11 @@ export const toChatMessageEntries = (
 
 export const flattenAssistantHistoryPages = (pages: readonly Pick<AssistantHistoryPage, 'entries'>[]): AssistantHistoryEntry[] => (
   pages.slice().reverse().flatMap((page) => page.entries)
+);
+
+/** Leftover Assistant SQLite admission/body mirrors must not paint on the live session. */
+export const isLegacyAssistantMirrorEntry = (entry: AssistantHistoryEntry | null | undefined): boolean => (
+  Boolean(entry?.info && typeof entry.info === 'object' && (entry.info as { openchamberAssistantAdmission?: unknown }).openchamberAssistantAdmission)
 );
 
 export const stitchHostedSessionHistory = (
@@ -174,6 +179,7 @@ export const mergeHostedCurrentSessionHistory = (
   let order = 0;
   for (const entry of entries) {
     if (entry.sessionID !== currentSessionID) continue;
+    if (isLegacyAssistantMirrorEntry(entry)) continue;
     byID.set(entry.info.id, { message: { info: entry.info, parts: entry.parts }, order: order++ });
   }
   for (const message of liveMessages) {

@@ -5,7 +5,7 @@ import type { AttachedFile } from '@/stores/types/sessionTypes';
 import type { InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import type { SyntheticContextPart } from '@/sync/input-store';
 import type { OptimisticSendTicket } from '@/sync/session-actions';
-import type { Agent } from '@opencode-ai/sdk/v2';
+import type { Agent } from '@/lib/opencode/v2-types';
 
 export type ChatInputDeliveryTarget = { kind: 'primary' } | { kind: 'assistant'; assistantID: string };
 

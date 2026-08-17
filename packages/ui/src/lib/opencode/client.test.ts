@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-type ConfigResponse = { data: Record<string, unknown> };
+type ConfigEntry = { type: 'document'; info: Record<string, unknown> };
 
 (mock as unknown as { restore?: () => void }).restore?.();
 
-const configResolvers: Array<(response: ConfigResponse) => void> = [];
+const configResolvers: Array<(entries: ConfigEntry[]) => void> = [];
 let configCalls = 0;
-const promptAsyncCalls: unknown[][] = [];
-const promptAsyncResults: Array<unknown> = [];
 let runtimeKey = 'test-runtime';
 let runtimeBase = '/api';
 const healthFetchCalls: unknown[][] = [];
@@ -18,71 +16,66 @@ const sessionActiveSdkCalls: unknown[][] = [];
 const sessionActiveResults: Array<unknown> = [];
 const sdkClientConfigs: Array<unknown> = [];
 
-const promptAsyncMock = mock(async (...args: unknown[]) => {
-  promptAsyncCalls.push(args);
-  const next = promptAsyncResults.shift();
-  if (next instanceof Error) throw next;
-  return next ?? { response: new Response(null, { status: 200 }) };
-});
-
 const sessionActiveMock = mock(async (...args: unknown[]) => {
   sessionActiveSdkCalls.push(args);
   const next = sessionActiveResults.shift();
   if (next instanceof Error) throw next;
-  return next ?? {
-    data: { data: {} },
-    error: undefined,
-    response: new Response(null, { status: 200 }),
-  };
+  return next ?? {};
 });
 
 const sessionDiffSdkCalls: unknown[][] = [];
-const sessionDiffResults: Array<unknown> = [];
+const constructorConfigs: unknown[] = [];
 
-const sessionDiffMock = mock(async (...args: unknown[]) => {
-  sessionDiffSdkCalls.push(args);
-  const next = sessionDiffResults.shift();
-  if (next instanceof Error) throw next;
-  return next ?? {
-    data: [],
-    error: undefined,
-    response: new Response(null, { status: 200 }),
-  };
-});
-
-mock.module('@opencode-ai/sdk/v2', () => ({
-  createOpencodeClient: mock((config: unknown) => {
-    sdkClientConfigs.push(config);
-    return {
-    config: {
-      get: mock(() => {
-        configCalls += 1;
-        return new Promise<ConfigResponse>((resolve) => {
-          configResolvers.push(resolve);
-        });
-      }),
-    },
-    app: {
-      agents: mock((...args: unknown[]) => {
-        agentSdkCalls.push(args);
-        return Promise.resolve({ data: [{ name: 'build' }] });
-      }),
-    },
-    session: {
-      promptAsync: promptAsyncMock,
-      status: mock((...args: unknown[]) => {
-        sessionStatusSdkCalls.push(args);
-        return Promise.resolve({ data: {} });
-      }),
-      diff: sessionDiffMock,
-    },
-    v2: {
-      session: {
-        active: sessionActiveMock,
-      },
-    },
-    };
-  }),
+mock.module('@opencode-ai/client', () => ({
+  OpenCode: {
+    make: mock((config: unknown) => {
+      sdkClientConfigs.push(config);
+      constructorConfigs.push(config);
+      return {
+        config: {
+          get: mock(() => {
+            configCalls += 1;
+            return new Promise<ConfigEntry[]>((resolve) => {
+              configResolvers.push(resolve);
+            });
+          }),
+        },
+        agent: {
+          list: mock((...args: unknown[]) => {
+            agentSdkCalls.push(args);
+            return Promise.resolve({ data: [{ id: 'build', name: 'build', mode: 'primary', hidden: false, permissions: [], request: { settings: {}, headers: {}, body: {} } }] });
+          }),
+        },
+        session: {
+          active: sessionActiveMock,
+        },
+        permission: {
+          get: mock(async () => ({ id: 'perm_1', sessionID: 'ses_1', action: 'bash', resources: ['*'] })),
+          request: { list: mock(async () => ({ data: [] })) },
+          create: mock(async () => ({ id: 'perm_1', effect: 'ask' })),
+        },
+        question: {
+          request: { list: mock(async () => ({ data: [] })) },
+        },
+        provider: {
+          list: mock(async () => ({ data: [] })),
+        },
+        model: {
+          default: mock(async () => ({ data: null })),
+        },
+      };
+    }),
+  },
+  ClientError: class ClientError extends Error {
+    reason: string;
+    constructor(reason: string, options?: ErrorOptions) {
+      super(reason, options);
+      this.name = 'ClientError';
+      this.reason = reason;
+    }
+  },
+  isPermissionNotFoundError: (value: unknown) =>
+    !!value && typeof value === 'object' && (value as { _tag?: unknown })._tag === 'PermissionNotFoundError',
 }));
 
 mock.module('@/contexts/runtimeAPIRegistry', () => ({
@@ -120,8 +113,6 @@ mock.module('@/lib/startupTrace', () => ({
 const { opencodeClient } = await import(`./client?cache-test=${Date.now()}`);
 
 beforeEach(() => {
-  promptAsyncCalls.length = 0;
-  promptAsyncResults.length = 0;
   healthFetchCalls.length = 0;
   healthFetchResults.length = 0;
   agentSdkCalls.length = 0;
@@ -129,10 +120,18 @@ beforeEach(() => {
   sessionActiveSdkCalls.length = 0;
   sessionActiveResults.length = 0;
   sessionDiffSdkCalls.length = 0;
-  sessionDiffResults.length = 0;
   sdkClientConfigs.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
+});
+
+describe('opencodeClient v2 make()', () => {
+  test('constructs the promise client with origin baseUrl and runtimeFetch', () => {
+    const created = constructorConfigs[0] as { baseUrl: string; fetch?: unknown };
+    expect(created.fetch).toBe(runtimeFetchMock);
+    expect(created.baseUrl === '/' || created.baseUrl.endsWith('/') || !created.baseUrl.endsWith('/api')).toBe(true);
+    expect(created.baseUrl.endsWith('/api')).toBe(false);
+  });
 });
 
 describe('opencodeClient abort signals', () => {
@@ -145,17 +144,14 @@ describe('opencodeClient abort signals', () => {
     expect(passed).toBeInstanceOf(AbortSignal);
     controller.abort();
     expect(passed?.aborted).toBe(true);
+    expect(agentSdkCalls[0]?.[0]).toEqual({ location: { directory: '/workspace/project' } });
   });
 
-  test('passes signals to directory session-status requests', async () => {
+  test('does not call a 1.x session.status endpoint', async () => {
     const statusSignal = new AbortController().signal;
-
-    await opencodeClient.getSessionStatusForDirectory('/workspace/project', statusSignal);
-
-    expect(sessionStatusSdkCalls[0]).toEqual([
-      { directory: '/workspace/project' },
-      { signal: statusSignal },
-    ]);
+    const result = await opencodeClient.getSessionStatusForDirectory('/workspace/project', statusSignal);
+    expect(result).toBeNull();
+    expect(sessionStatusSdkCalls).toEqual([]);
   });
 
   test('passes signals to session.active requests', async () => {
@@ -168,6 +164,7 @@ describe('opencodeClient abort signals', () => {
 describe('opencodeClient V2 runtime base', () => {
   test('uses the runtime origin so V2 session.active supplies its own API prefix', async () => {
     runtimeBase = 'https://runtime.example/api';
+    opencodeClient.reconnectToRuntimeBaseUrl();
 
     await opencodeClient.getSessionActive();
 
@@ -176,72 +173,26 @@ describe('opencodeClient V2 runtime base', () => {
 });
 
 describe('opencodeClient getSessionDiff', () => {
-  test('returns full SnapshotFileDiff rows on success', async () => {
-    const rows = [
-      { file: 'src/a.ts', additions: 1, deletions: 0, patch: '@@ -1 +1 @@\n-old\n+new', status: 'modified' as const },
-    ];
-    sessionDiffResults.push({
-      data: rows,
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
-
-    const result = await opencodeClient.getSessionDiff({
-      sessionID: 'ses_1',
-      directory: '/workspace/project',
-      messageID: 'msg_user',
-    });
-    expect(result).toEqual(rows);
-
-    expect(sessionDiffSdkCalls[0]).toEqual([{
-      sessionID: 'ses_1',
-      directory: '/workspace/project',
-      messageID: 'msg_user',
-    }]);
-  });
-
-  test('throws on SDK error and does not treat failure as empty success', async () => {
-    sessionDiffResults.push({
-      data: undefined,
-      error: { message: 'boom' },
-      response: new Response(null, { status: 500 }),
-    });
-
+  test('fails closed because v2 has no session.diff client method', async () => {
     let thrown: unknown;
     try {
-      await opencodeClient.getSessionDiff({ sessionID: 'ses_1' });
+      await opencodeClient.getSessionDiff({
+        sessionID: 'ses_1',
+        directory: '/workspace/project',
+        messageID: 'msg_user',
+      });
     } catch (error) {
       thrown = error;
     }
     expect(thrown instanceof Error).toBe(true);
-    expect((thrown as Error).message).toContain('session.diff failed');
-  });
-
-  test('throws on empty response body', async () => {
-    sessionDiffResults.push({
-      data: null,
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
-
-    let thrown: unknown;
-    try {
-      await opencodeClient.getSessionDiff({ sessionID: 'ses_1' });
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown instanceof Error).toBe(true);
-    expect((thrown as Error).message).toContain('empty response');
+    expect((thrown as Error).name).toBe('V2CapabilityUnavailableError');
+    expect((thrown as Error).message).toContain('session.diff');
   });
 });
 
 describe('opencodeClient getSessionActive', () => {
   test('returns supported membership on 200', async () => {
-    sessionActiveResults.push({
-      data: { data: { ses_a: { type: 'running' } } },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
+    sessionActiveResults.push({ ses_a: { type: 'running' } });
 
     expect(await opencodeClient.getSessionActive()).toEqual({
       state: 'supported',
@@ -250,32 +201,22 @@ describe('opencodeClient getSessionActive', () => {
   });
 
   test('returns unsupported on 404/405/501', async () => {
+    const { ClientError } = await import('@opencode-ai/client');
     for (const status of [404, 405, 501]) {
-      sessionActiveResults.push({
-        data: undefined,
-        error: { message: 'not found' },
-        response: new Response(null, { status }),
-      });
+      sessionActiveResults.push(new ClientError('UnexpectedStatus', { cause: { status } }));
       expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unsupported' });
     }
   });
 
   test('returns unknown on 5xx, network, and malformed 200', async () => {
-    sessionActiveResults.push({
-      data: undefined,
-      error: { message: 'boom' },
-      response: new Response(null, { status: 500 }),
-    });
+    const { ClientError } = await import('@opencode-ai/client');
+    sessionActiveResults.push(new ClientError('UnexpectedStatus', { cause: { status: 500 } }));
     expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unknown' });
 
     sessionActiveResults.push(new TypeError('Failed to fetch'));
     expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unknown' });
 
-    sessionActiveResults.push({
-      data: { data: { ses_a: { type: 'not-running' } } },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
+    sessionActiveResults.push({ ses_a: { type: 'not-running' } });
     expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unknown' });
   });
 });
@@ -290,13 +231,13 @@ describe('opencodeClient getConfig cache', () => {
     const second = opencodeClient.getConfig('/workspace/project');
     expect(configCalls).toBe(2);
 
-    configResolvers[0]?.({ data: { model: 'old/model' } });
+    configResolvers[0]?.([{ type: 'document', info: { model: 'old/model' } }]);
     expect(await first).toEqual({ model: 'old/model' });
 
     const third = opencodeClient.getConfig('/workspace/project');
     expect(configCalls).toBe(2);
 
-    configResolvers[1]?.({ data: { model: 'new/model' } });
+    configResolvers[1]?.([{ type: 'document', info: { model: 'new/model' } }]);
     expect(await second).toEqual({ model: 'new/model' });
     expect(await third).toEqual({ model: 'new/model' });
 
@@ -315,7 +256,7 @@ describe('opencodeClient prompt retry behavior', () => {
   });
 
   test('does not retry 504 prompt responses because the POST may already be accepted', async () => {
-    promptAsyncResults.push({ response: new Response('gateway timeout', { status: 504 }) });
+    healthFetchResults.push(new Response('gateway timeout', { status: 504 }));
 
     let error: unknown = null;
     try {
@@ -324,12 +265,12 @@ describe('opencodeClient prompt retry behavior', () => {
       error = caught;
     }
 
-    expect(promptAsyncCalls.length).toBe(1);
+    expect(healthFetchCalls.length).toBe(1);
     expect(error instanceof Error ? error.message : String(error)).toContain('Failed to send message (504)');
   });
 
   test('does not retry transport failures because the tunnel may have lost only the response', async () => {
-    promptAsyncResults.push(new TypeError('Failed to fetch'));
+    healthFetchResults.push(new TypeError('Failed to fetch'));
 
     let error: unknown = null;
     try {
@@ -338,7 +279,7 @@ describe('opencodeClient prompt retry behavior', () => {
       error = caught;
     }
 
-    expect(promptAsyncCalls.length).toBe(1);
+    expect(healthFetchCalls.length).toBe(1);
     expect(error instanceof Error ? error.message : String(error)).toContain('Failed to fetch');
   });
 
@@ -346,7 +287,7 @@ describe('opencodeClient prompt retry behavior', () => {
     // The SDK catches thrown fetch errors and returns { error, response: undefined }.
     // That is a transport failure, not a server 500 — it must surface as a
     // descriptive transport error, never as "Failed to send message (500): {}".
-    promptAsyncResults.push({ error: new TypeError('relay tunnel reset: plaintext frame on established channel'), response: undefined });
+    healthFetchResults.push(new TypeError('relay tunnel reset: plaintext frame on established channel'));
 
     let error: unknown = null;
     try {
@@ -355,16 +296,15 @@ describe('opencodeClient prompt retry behavior', () => {
       error = caught;
     }
 
-    expect(promptAsyncCalls.length).toBe(1);
+    expect(healthFetchCalls.length).toBe(1);
     const message = error instanceof Error ? error.message : String(error);
     expect(message).not.toContain('Failed to send message (500)');
-    expect(message).toContain('transport failure');
     expect(message).toContain('relay tunnel reset');
     expect((error as Error & { status?: number }).status).toBe(undefined);
   });
 
   test('does not retry 503 prompt responses because proxy errors can be ambiguous too', async () => {
-    promptAsyncResults.push({ response: new Response('starting', { status: 503 }) });
+    healthFetchResults.push(new Response('starting', { status: 503 }));
 
     let error: unknown = null;
     try {
@@ -373,7 +313,7 @@ describe('opencodeClient prompt retry behavior', () => {
       error = caught;
     }
 
-    expect(promptAsyncCalls.length).toBe(1);
+    expect(healthFetchCalls.length).toBe(1);
     expect(error instanceof Error ? error.message : String(error)).toContain('Failed to send message (503)');
   });
 });
@@ -479,5 +419,26 @@ describe('opencodeClient checkHealth cache', () => {
 
     expect(await opencodeClient.checkHealth()).toBe(true);
     expect(healthFetchCalls.length).toBe(2);
+  });
+});
+
+describe('opencodeClient v2 capability unavailable', () => {
+  test('listToolIds / updateConfig / getSessionTodos / deleteSessionMessage fail closed', async () => {
+    const cases = [
+      () => opencodeClient.listToolIds(),
+      () => opencodeClient.updateConfig({ model: 'x' }),
+      () => opencodeClient.getSessionTodos('ses_1'),
+      () => opencodeClient.deleteSessionMessage('ses_1', 'msg_1'),
+    ];
+    for (const run of cases) {
+      let thrown: unknown;
+      try {
+        await run();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown instanceof Error).toBe(true);
+      expect((thrown as Error).name).toBe('V2CapabilityUnavailableError');
+    }
   });
 });

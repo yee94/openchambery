@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Session } from '@opencode-ai/sdk/v2/client';
+import type { Session } from '@/lib/opencode/v2-types';
 import { useEvent } from '@reactuses/core';
 
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
@@ -35,6 +35,7 @@ import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions, useAllSessionStatuses } from '@/sync/sync-context';
+import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
@@ -476,6 +477,7 @@ const PaginationRow: React.FC<{
 export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, onOpenChange, variant = 'sheet' }) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
+  const sharingAvailable = isSessionSharingAvailable();
   const liveSessions = useAllLiveSessions();
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const activePaginationByDirectory = useGlobalSessionsStore((state) => state.activePaginationByDirectory);
@@ -1385,7 +1387,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           togglePinnedSession(sessionId);
         }}
       />
-      {actionTarget.session.share?.url ? (
+      {sharingAvailable ? (actionTarget.session.share?.url ? (
         <>
           <MobileActionButton
             icon="file-copy"
@@ -1416,7 +1418,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
             void handleShareFromMenu(session);
           }}
         />
-      )}
+      )) : null}
       <MobileActionButton
         icon="archive"
         label={t('sessions.sidebar.bulkActions.archive')}

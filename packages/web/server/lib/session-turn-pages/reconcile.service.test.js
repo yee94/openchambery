@@ -642,4 +642,20 @@ describe('createSessionReconcileService', () => {
     expect(result.ok).toBe(true);
     expect(result.resetRequired).toBe(true);
   });
+
+  it('locates a SessionMessageInfo anchor by top-level id', async () => {
+    const fetchPage = vi.fn(async () => pageResult([
+      { id: 'msg_u1', type: 'user', time: { created: 1 }, text: 'hi' },
+      { id: 'msg_a1', type: 'assistant', time: { created: 2, completed: 3 }, content: [{ type: 'text', text: 'ok' }] },
+    ], null));
+    const service = createSessionReconcileService(serviceOptions(fetchPage));
+    const result = await service.reconcile({
+      sessionID: 'ses_1',
+      directory: '/repo',
+      anchor: 'msg_u1',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.anchorFound).toBe(true);
+    expect(result.records.map((entry) => entry.id)).toEqual(['msg_u1', 'msg_a1']);
+  });
 });

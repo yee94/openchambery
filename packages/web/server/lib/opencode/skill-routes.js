@@ -1,4 +1,4 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 
 const summarizeDescription = (value) => {
   const normalized = typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
@@ -127,19 +127,18 @@ export const registerSkillRoutes = (app, dependencies) => {
     }
 
     try {
-      const client = createOpencodeClient({
+      const client = OpenCode.make({
         baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
-        directory: workingDirectory || undefined,
         headers: getOpenCodeAuthHeaders(),
         fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
       });
 
-      const response = await client.app.skills(
-        workingDirectory ? { directory: workingDirectory } : undefined,
+      const response = await client.skill.list(
+        workingDirectory ? { location: { directory: workingDirectory } } : undefined,
       );
       const payload = response?.data;
       if (!Array.isArray(payload)) {
-        return [];
+        throw new Error('OpenCode skill catalog is unavailable');
       }
 
       return payload
@@ -177,7 +176,7 @@ export const registerSkillRoutes = (app, dependencies) => {
         .filter(Boolean);
     } catch (error) {
       console.error('Failed to list OpenCode skills:', error);
-      return [];
+      throw error;
     }
   };
 

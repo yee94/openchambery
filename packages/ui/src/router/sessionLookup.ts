@@ -4,7 +4,7 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { lookupSessionIndexById } from '@/lib/session-index-api';
 import { opencodeClient } from '@/lib/opencode/client';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 
 export type SessionLookupResult = {
   sessionId: string;

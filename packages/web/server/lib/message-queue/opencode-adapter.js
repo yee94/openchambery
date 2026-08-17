@@ -1,24 +1,29 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { createAscendingMessageID } from './message-id.js';
 import { createSessionTurnGate } from './session-turn-gate.js';
 
 // SDK 1.18 result shapes vary: success may be 2xx with empty body (200/202/204),
 // failures may place status on response, error, or the top-level result.
-const safeStatus = (result) => {
-  for (const candidate of [result?.response?.status, result?.error?.status, result?.status]) {
+const isSuccessStatus = (status) => Number.isInteger(status) && status >= 200 && status < 300;
+const runtimeToken = (config, generation) => JSON.stringify([generation ?? null, config?.apiBaseUrl ?? config?.baseUrl ?? null]);
+const messageIdentity = (message) => message?.info?.id ?? message?.id;
+const inboxItemIdentity = (item) => item?.id ?? item?.info?.id ?? messageIdentity(item);
+const httpStatus = (error) => {
+  for (const candidate of [error?.cause?.status, error?.status, error?.response?.status, error?.statusCode]) {
     if (Number.isInteger(candidate)) return candidate;
   }
   return undefined;
 };
-const isSuccessStatus = (status) => Number.isInteger(status) && status >= 200 && status < 300;
-const runtimeToken = (config, generation) => JSON.stringify([generation ?? null, config?.apiBaseUrl ?? config?.baseUrl ?? null]);
-const messageIdentity = (message) => message?.info?.id ?? message?.id;
-const isNotFoundOrUnsupported = (status) => status === 404 || status === 405 || status === 501;
-const isUnsupportedLookupError = (error) => {
-  if (!error) return false;
-  if (error instanceof TypeError) return true;
-  const message = typeof error?.message === 'string' ? error.message : '';
-  return /is not a function|not a function|undefined is not|Cannot read properties of undefined/i.test(message);
+const isNotFoundError = (error) => {
+  if (httpStatus(error) === 404) return true;
+  const code = error?.code ?? error?.type ?? error?.error?.code ?? error?.error?.type;
+  return code === 'not_found' || code === 'NotFound';
+};
+const messageType = (message) => {
+  const info = message?.info ?? message;
+  if (info?.type === 'assistant' || info?.type === 'user') return info.type;
+  if (info?.role === 'assistant' || info?.role === 'user') return info.role;
+  return message ? 'unknown' : null;
 };
 
 export const createOpenCodeMessageQueueAdapter = ({
@@ -35,7 +40,7 @@ export const createOpenCodeMessageQueueAdapter = ({
 } = {}) => {
   const captureRuntime = () => { const config = getRuntimeConfig(); const generation = getRuntimeGeneration(); return { config: { ...config, apiBaseUrl: config?.apiBaseUrl ?? config?.baseUrl ?? buildOpenCodeUrl('/', ''), authHeaders: { ...getOpenCodeAuthHeaders() } }, generation, token: runtimeToken(config, generation) }; };
   const isCurrent = (runtime) => !runtime || runtime.token === runtimeToken(getRuntimeConfig(), getRuntimeGeneration());
-  const client = (runtime) => createOpencodeClient({ baseUrl: (runtime?.config?.apiBaseUrl ?? buildOpenCodeUrl('/', '')).replace(/\/$/, ''), headers: runtime?.config?.authHeaders ?? getOpenCodeAuthHeaders() });
+  const client = (runtime) => makeOpenCodeV2Client({ baseUrl: (runtime?.config?.apiBaseUrl ?? buildOpenCodeUrl('/', '')).replace(/\/$/, ''), authHeaders: runtime?.config?.authHeaders ?? getOpenCodeAuthHeaders() });
   const turnKey = (scope, runtime) => JSON.stringify([runtime?.token ?? runtimeToken(getRuntimeConfig(), getRuntimeGeneration()), scope.directory, scope.sessionID]);
   const checkEligibility = async (scope, runtime, { signal } = {}) => {
     const key = turnKey(scope, runtime);
@@ -44,24 +49,25 @@ export const createOpenCodeMessageQueueAdapter = ({
       return { available: false, idle: false, settled: false };
     };
     try {
-      const api = client(runtime); const status = getSessionEligibility ? await getSessionEligibility(scope, { signal }) : await api.session.status({ directory: scope.directory }, { signal });
-      const messages = getLatestMessageID ? null : await api.session.messages({ sessionID: scope.sessionID, directory: scope.directory }, { signal });
+      const api = client(runtime);
+      const status = getSessionEligibility ? await getSessionEligibility(scope, { signal }) : await api.session.active({ signal });
+      const listed = getLatestMessageID ? null : await api.message.list({ sessionID: scope.sessionID, limit: 1, order: 'desc' }, { signal });
+      const messages = getLatestMessageID ? null : listed?.data;
       const injectedStatus = getSessionEligibility && status && typeof status === 'object' && typeof status.idle === 'boolean' && typeof status.settled === 'boolean';
-      const apiStatus = !getSessionEligibility && status?.data && typeof status.data === 'object' && !Array.isArray(status.data);
-      if (status?.error || messages?.error || (!injectedStatus && !apiStatus) || (!getSessionEligibility && !Array.isArray(messages?.data))) return unavailable();
-      const latestMessageID = getLatestMessageID ? await getLatestMessageID(scope, { signal }) : (messages?.data ?? []).at(-1)?.info?.id ?? (messages?.data ?? []).at(-1)?.id;
+      const activeMap = !getSessionEligibility && status && typeof status === 'object' && !Array.isArray(status);
+      if (!injectedStatus && !activeMap) return unavailable();
+      if (!getLatestMessageID && !Array.isArray(messages)) return unavailable();
+      const latest = Array.isArray(messages) ? messages[0] : null;
+      const latestMessageID = getLatestMessageID ? await getLatestMessageID(scope, { signal }) : latest?.id ?? latest?.info?.id;
       if (latestMessageID !== undefined && latestMessageID !== null && typeof latestMessageID !== 'string') return unavailable();
-      const last = (messages?.data ?? []).at(-1); const lastInfo = last?.info ?? last;
-      const statusMap = status?.data;
-      const statusValue = statusMap && typeof statusMap === 'object' && !Array.isArray(statusMap) ? statusMap[scope.sessionID] : statusMap;
-      const missingSessionStatus = statusMap && typeof statusMap === 'object' && !Array.isArray(statusMap) && !Object.hasOwn(statusMap, scope.sessionID);
-      const idle = getSessionEligibility ? status.idle : missingSessionStatus || statusValue?.type === 'idle' || statusValue?.status === 'idle' || status?.idle === true;
+      const lastInfo = latest?.info ?? latest;
+      const idle = getSessionEligibility ? status.idle : !Object.hasOwn(status, scope.sessionID);
       if (getSessionEligibility) return { available: true, idle, settled: status?.settled === true, latestMessageID };
       const settlement = turnGate.evaluate(key, {
         available: true,
         idle,
         tailID: typeof lastInfo?.id === 'string' ? lastInfo.id : null,
-        tailRole: lastInfo?.role === 'assistant' || lastInfo?.role === 'user' ? lastInfo.role : last ? 'unknown' : null,
+        tailRole: messageType(latest),
         tailCompleted: Boolean(lastInfo?.time?.completed),
       });
       return { available: true, idle, settled: settlement.ready, latestMessageID, settlementReason: settlement.reason, ...(settlement.nextCheckAt === undefined ? {} : { nextCheckAt: settlement.nextCheckAt }) };
@@ -84,95 +90,88 @@ export const createOpenCodeMessageQueueAdapter = ({
       return { type: 'file', mime: part.mime, url: file.url };
     }));
   };
+  const openCodeUrl = (pathname, directory, runtime) => {
+    const base = (runtime?.config?.apiBaseUrl ?? buildOpenCodeUrl('/', '')).replace(/\/$/, '');
+    const url = new URL(`${base}${pathname.startsWith('/') ? pathname : `/${pathname}`}`);
+    if (directory) url.searchParams.set('directory', directory);
+    return url;
+  };
+  const authHeaders = (runtime) => runtime?.config?.authHeaders ?? getOpenCodeAuthHeaders();
+  const promptBodyFromContext = (context) => {
+    const parts = Array.isArray(context.parts) ? context.parts : [];
+    const text = typeof context.content === 'string' && context.content
+      ? context.content
+      : parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n');
+    const files = parts
+      .filter((part) => part?.type === 'file' && typeof part.url === 'string')
+      .map((part) => ({
+        uri: part.url,
+        ...(part.filename || part.name ? { name: part.filename || part.name } : {}),
+        ...(part.mime ? { mime: part.mime } : {}),
+      }));
+    const config = context.sendConfig ?? context;
+    return {
+      id: context.messageID,
+      text,
+      delivery: context.delivery === 'queue' ? 'queue' : 'steer',
+      ...(files.length ? { files } : {}),
+      ...(config.agent ? { agent: config.agent } : {}),
+      ...(config.variant ? { variant: config.variant } : {}),
+      ...(config.providerID && config.modelID ? { model: { providerID: config.providerID, modelID: config.modelID } } : {}),
+    };
+  };
+  const classifyHttpStatus = (status, { ok } = {}) => {
+    if (ok || isSuccessStatus(status)) return { ok: true, status };
+    if (status === 408 || status === 429 || (Number.isInteger(status) && status >= 500)) {
+      return { ok: false, status, kind: 'ambiguous' };
+    }
+    if (Number.isInteger(status) && status >= 400 && status < 500) {
+      return { ok: false, status, kind: 'failed' };
+    }
+    return { ok: false, kind: 'ambiguous', code: 'malformed_result' };
+  };
   const send = async (context, { signal } = {}) => {
     if (!isCurrent(context.runtime)) return { ok: false, kind: 'retry', code: 'runtime_stale' };
     try {
-      const config = context.sendConfig ?? context;
-      const result = await client(context.runtime).session.promptAsync({
-        sessionID: context.scope?.sessionID ?? context.sessionID,
-        directory: context.scope?.directory ?? context.directory,
-        messageID: context.messageID,
-        model: { providerID: config.providerID, modelID: config.modelID },
-        ...(config.agent ? { agent: config.agent } : {}),
-        ...(config.variant ? { variant: config.variant } : {}),
-        parts: context.parts ?? await materializeAttachments(context, { signal }),
-      }, { signal });
+      const parts = context.parts ?? await materializeAttachments(context, { signal });
+      const sessionID = context.scope?.sessionID ?? context.sessionID;
+      const directory = context.scope?.directory ?? context.directory;
+      const response = await fetch(openCodeUrl(`/api/session/${encodeURIComponent(sessionID)}/prompt`, directory, context.runtime), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders(context.runtime) },
+        body: JSON.stringify(promptBodyFromContext({ ...context, parts })),
+        signal,
+      });
       // Only an explicit 2xx (incl. empty 200/202/204) with no error is success.
       // undefined/malformed results must not be treated as accepted POSTs.
-      if (!result || typeof result !== 'object') return { ok: false, kind: 'ambiguous', code: 'malformed_result' };
-      const status = safeStatus(result);
-      if (result.error) {
-        return {
-          ok: false,
-          status,
-          kind: status === 408 || status === 429 || (Number.isInteger(status) && status >= 500) || status === undefined
-            ? 'ambiguous'
-            : Number.isInteger(status) && status >= 400 && status < 500
-              ? 'failed'
-              : 'ambiguous',
-        };
-      }
-      if (isSuccessStatus(status)) return { ok: true, status };
-      if (Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429) {
-        return { ok: false, status, kind: 'failed' };
-      }
-      if (status === 408 || status === 429 || (Number.isInteger(status) && status >= 500)) {
-        return { ok: false, status, kind: 'ambiguous' };
-      }
-      // Missing status without error is ambiguous (empty/malformed transport), not ok.
-      return { ok: false, kind: 'ambiguous', code: 'malformed_result' };
+      if (!response || typeof response !== 'object') return { ok: false, kind: 'ambiguous', code: 'malformed_result' };
+      return classifyHttpStatus(response.status, { ok: response.ok });
     } catch (error) {
       if (error?.name === 'AbortError') return { ok: false, kind: 'ambiguous', code: 'aborted' };
       return { ok: false, kind: 'ambiguous', code: 'transport' };
     }
   };
-  const findViaBoundedMessages = async (api, scope, messageID, { signal } = {}) => {
-    const result = await api.session.messages({ sessionID: scope.sessionID, directory: scope.directory, limit: 100 }, { signal });
-    if (result?.error) return { unavailable: true };
-    const found = (result?.data ?? []).some((message) => messageIdentity(message) === messageID);
-    if (found) return { found: true };
-    if (result?.data?.length >= 100 || result?.nextCursor || result?.hasMore) return { unavailable: true };
-    return { found: false };
-  };
-  const findViaLegacySessionMessage = async (api, scope, messageID, { signal } = {}) => {
-    const legacy = api?.session?.message;
-    if (typeof legacy !== 'function') return null;
+  const findViaInbox = async (scope, messageID, { signal, runtime } = {}) => {
     try {
-      const result = await legacy.call(api.session, { sessionID: scope.sessionID, messageID, directory: scope.directory }, { signal });
-      const status = safeStatus(result);
-      if (result?.error) {
-        if (status === 404) return { found: false };
-        if (isNotFoundOrUnsupported(status)) return null;
-        return { unavailable: true };
-      }
-      const record = result?.data ?? result;
+      const list = await client(runtime).session.inbox.list({ sessionID: scope.sessionID }, { signal });
+      if (!Array.isArray(list)) throw Object.assign(new Error('upstream'), { code: 'upstream' });
+      return { found: list.some((item) => inboxItemIdentity(item) === messageID) };
+    } catch (error) {
+      if (isNotFoundError(error)) return { found: false };
+      throw error;
+    }
+  };
+  // Prefer client.v2.session.message when the 1.18 SDK surface exposes it.
+  // Ticket 12: after prompt admission, reconcile only asks inbox + projection.
+  const findViaProjection = async (scope, messageID, { signal, runtime } = {}) => {
+    try {
+      const record = await client(runtime).session.message({ sessionID: scope.sessionID, messageID }, { signal });
       const id = messageIdentity(record);
       if (id === messageID || Boolean(record?.info ?? record?.id)) return { found: true };
       return { found: false };
     } catch (error) {
-      if (isUnsupportedLookupError(error)) return null;
-      return { unavailable: true };
-    }
-  };
-  const findViaExactV2Message = async (api, scope, messageID, { signal } = {}) => {
-    // Prefer client.v2.session.message when the 1.18 SDK surface exposes it.
-    const exact = api?.v2?.session?.message;
-    if (typeof exact !== 'function') return { kind: 'unsupported' };
-    try {
-      const result = await exact.call(api.v2.session, { sessionID: scope.sessionID, messageID, directory: scope.directory }, { signal });
-      const status = safeStatus(result);
-      if (result?.error) {
-        if (status === 404) return { kind: 'result', value: { found: false } };
-        if (isNotFoundOrUnsupported(status)) return { kind: 'unsupported' };
-        return { kind: 'result', value: { unavailable: true } };
-      }
-      const record = result?.data ?? result;
-      const id = messageIdentity(record);
-      if (id === messageID || Boolean(record?.info ?? record?.id)) return { kind: 'result', value: { found: true } };
-      return { kind: 'result', value: { found: false } };
-    } catch (error) {
-      if (isUnsupportedLookupError(error)) return { kind: 'unsupported' };
-      return { kind: 'result', value: { unavailable: true } };
+      if (isNotFoundError(error)) return { found: false };
+      throw error;
     }
   };
   const findMessage = async (scope, messageID, { signal, runtime } = {}) => {
@@ -182,13 +181,10 @@ export const createOpenCodeMessageQueueAdapter = ({
         if (exact?.unavailable) return { unavailable: true };
         return { found: Boolean(exact?.found ?? exact?.data ?? exact?.id) };
       }
-      const api = client(runtime);
-      const v2 = await findViaExactV2Message(api, scope, messageID, { signal });
-      if (v2.kind === 'result') return v2.value;
-      // Missing/unsupported v2 endpoint (or 405/501): try legacy client.session.message, then bounded list.
-      const legacy = await findViaLegacySessionMessage(api, scope, messageID, { signal });
-      if (legacy) return legacy;
-      return findViaBoundedMessages(api, scope, messageID, { signal });
+      const inbox = await findViaInbox(scope, messageID, { signal, runtime });
+      if (inbox.unavailable) return { unavailable: true };
+      if (inbox.found) return { found: true };
+      return findViaProjection(scope, messageID, { signal, runtime });
     } catch { return { unavailable: true }; }
   };
   const observeSessionEvent = (scope, phase, runtime = captureRuntime()) => turnGate.observeEvent(turnKey(scope, runtime), phase);

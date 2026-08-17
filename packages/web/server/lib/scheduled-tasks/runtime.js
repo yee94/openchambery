@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { DateTime } from 'luxon';
 import parser from 'cron-parser';
+import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { expandSnippets } from '../opencode/snippets.js';
 
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
@@ -14,7 +14,6 @@ const TASK_DUE_SLACK_MS = 5_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const PROJECT_SYNC_RETRY_DELAY_MS = 1_000;
 const MAX_PROJECT_SYNC_RETRIES = 3;
-const ARCHIVE_404_RETRY_DELAY_MS = 250;
 /** Poll interval while waiting for the OpenCode session turn (or goal) to settle. */
 const SESSION_SETTLEMENT_POLL_MS = 1_000;
 /**
@@ -22,8 +21,6 @@ const SESSION_SETTLEMENT_POLL_MS = 1_000;
  * treat them as settled (OpenCode sometimes leaves time.completed unset).
  */
 const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
-/** Goal terminal statuses — active/paused mean the run is still open. */
-const GOAL_TERMINAL_STATUSES = new Set(['complete', 'blocked', 'budgetLimited']);
 
 const buildTaskKey = (projectID, taskID) => `${projectID}:${taskID}`;
 
@@ -234,22 +231,6 @@ export const formatScheduledSessionTitle = (task, nowMs = Date.now()) => {
   return `${SCHEDULED_TITLE_PREFIX}${trimmedName}${suffix}`;
 };
 
-const buildScheduledTaskMetadata = ({ projectID, taskID, runID, name }) => ({
-  openchamber: {
-    scheduledTask: {
-      projectID,
-      taskID,
-      runID,
-      name,
-    },
-  },
-});
-
-const isMissingSessionError = (result) => {
-  const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status;
-  return status === 404 || result?.error?.code === 'not_found';
-};
-
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) {
     reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
@@ -272,9 +253,7 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
 
 const readMessageInfo = (entry) => {
   if (!entry || typeof entry !== 'object') return null;
-  const info = entry.info && typeof entry.info === 'object' ? entry.info : entry;
-  if (!info || typeof info !== 'object') return null;
-  return info;
+  return entry;
 };
 
 const formatAssistantError = (error) => {
@@ -288,21 +267,6 @@ const formatAssistantError = (error) => {
     return error.message.trim();
   }
   return 'assistant error';
-};
-
-const extractGoalFromSession = (session) => {
-  const metadata = session?.metadata;
-  if (!metadata || typeof metadata !== 'object') return null;
-  const namespace = metadata.openchamber;
-  if (!namespace || typeof namespace !== 'object') return null;
-  const goal = namespace.goal;
-  if (!goal || typeof goal !== 'object') return null;
-  const status = typeof goal.status === 'string' ? goal.status.trim() : '';
-  if (!status) return null;
-  return {
-    status,
-    note: typeof goal.note === 'string' ? goal.note.trim() : '',
-  };
 };
 
 export const createScheduledTasksRuntime = (deps) => {
@@ -556,41 +520,39 @@ export const createScheduledTasksRuntime = (deps) => {
       + '\n</system-reminder>';
   };
 
-  const buildPromptAsyncPayload = (task, projectPath) => ({
-    model: {
-      providerID: task.execution.providerID,
-      modelID: task.execution.modelID,
-    },
+  const buildSessionCreateInput = (task, projectPath, title) => ({
+    title,
+    location: { directory: projectPath },
     ...(task.execution.agent ? { agent: task.execution.agent } : {}),
-    ...(task.execution.variant ? { variant: task.execution.variant } : {}),
-    parts: [
-      {
-        type: 'text',
-        text: expandSnippets(task.execution.prompt, projectPath),
-      },
-      ...(task.execution.goalEnabled
-        ? [{ type: 'text', text: buildGoalIntroText(task.execution.goalTokenBudget), synthetic: true }]
-        : []),
-    ],
+    model: {
+      id: task.execution.modelID,
+      providerID: task.execution.providerID,
+      ...(task.execution.variant ? { variant: task.execution.variant } : {}),
+    },
   });
 
-  // Scheduled goal runs: stamp the goal onto the fresh session's metadata
-  // before the prompt goes out; the session-goal runtime picks the loop up
-  // from session events like any other goal.
+  const buildPromptText = (task, projectPath) => {
+    const promptText = expandSnippets(task.execution.prompt, projectPath);
+    if (!task.execution.goalEnabled) {
+      return promptText;
+    }
+    return `${promptText}\n${buildGoalIntroText(task.execution.goalTokenBudget)}`;
+  };
+
+  // Scheduled goal runs: write the file-backed objective before the prompt
+  // goes out. v2 SessionInfo has no metadata, so we do not PATCH goal onto
+  // the session; ownership lives in run-history, and the session-goal loop
+  // will not attach until it also reads OpenChamber storage.
   const createTaskGoal = async ({
-    baseUrl,
-    authHeaders,
     sessionID,
     projectPath,
     task,
-    scheduledTaskMarker,
     signal,
   }) => {
     signal?.throwIfAborted?.();
-    const now = Date.now();
-    // File-backed objective keyed by session id: metadata stays light, the
-    // full expanded prompt lives under the OpenChamber data dir. If the file
-    // write fails, fall back to an inline (clamped) objective.
+    // File-backed objective keyed by session id: the full expanded prompt
+    // lives under the OpenChamber data dir. If the file write fails, warn
+    // and continue — the working agent still receives the full prompt in chat.
     // Oversized prompts are distilled into audit criteria by the small model
     // (the working agent gets the full prompt in chat anyway); on distill
     // failure a head+tail excerpt keeps intent and acceptance criteria.
@@ -638,111 +600,39 @@ export const createScheduledTasksRuntime = (deps) => {
       }
     }
     signal?.throwIfAborted?.();
-    let objectiveFile = false;
     try {
       const { writeObjective } = await import('../session-goal/objectives.js');
       await writeObjective(sessionID, objectiveText);
       signal?.throwIfAborted?.();
-      objectiveFile = true;
     } catch (error) {
       if (signal?.aborted) {
         throw error;
       }
-      console.warn('[scheduled-tasks] goal objective file write failed, falling back to inline:', error?.message || error);
+      console.warn('[scheduled-tasks] goal objective file write failed, continuing without file-backed objective:', error?.message || error);
     }
     signal?.throwIfAborted?.();
-    const goal = {
-      id: `${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`,
-      objective: objectiveFile ? '' : objectiveText.slice(0, 5000),
-      objectiveFile,
-      status: 'active',
-      tokenBudget: task.execution.goalTokenBudget || null,
-      tokensUsed: 0,
-      turnsUsed: 0,
-      blockedStreak: 0,
-      note: '',
-      statusReason: '',
-      lastAccountedMessageID: '',
-      createdAt: now,
-      updatedAt: now,
-    };
-    const url = new URL(`${baseUrl}/session/${encodeURIComponent(sessionID)}`);
-    url.searchParams.set('directory', projectPath);
-    // Preserve the scheduledTask marker when goal metadata is patched; a full
-    // openchamber replace would otherwise drop ownership for history/UI.
-    const response = await fetch(url.toString(), {
-      method: 'PATCH',
-      headers: {
-        ...authHeaders,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify({
-        metadata: {
-          openchamber: {
-            ...(scheduledTaskMarker ? { scheduledTask: scheduledTaskMarker } : {}),
-            goal,
-          },
-        },
-      }),
-      ...(signal ? { signal } : {}),
-    });
-    if (!response.ok) {
-      throw new Error(`goal metadata patch failed (${response.status})`);
-    }
   };
 
-  const archiveSessionBeforePrompt = async ({ client, sessionID, projectPath, signal }) => {
-    const archivePayload = {
-      sessionID,
-      directory: projectPath,
-      time: { archived: Date.now() },
-    };
+  const runSessionPrompt = async ({ client, sessionID, projectPath, task, signal }) => {
+    signal?.throwIfAborted?.();
     const requestOptions = signal ? { signal } : undefined;
-    let result = await client.session.update(archivePayload, requestOptions);
-    if (isMissingSessionError(result)) {
-      await sleep(ARCHIVE_404_RETRY_DELAY_MS, signal);
-      signal?.throwIfAborted?.();
-      result = await client.session.update(archivePayload, requestOptions);
-    }
-    if (result?.error || (result?.data == null && result?.response?.ok === false)) {
-      const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status;
-      const message = result?.error?.message || result?.error?.data?.message || 'session archive failed';
-      throw new Error(`session archive failed${status ? ` (${status})` : ''}: ${message}`);
-    }
-  };
-
-  const runPromptAsync = async ({ baseUrl, authHeaders, sessionID, projectPath, task, signal }) => {
-    signal?.throwIfAborted?.();
-    const promptUrl = new URL(`${baseUrl}/session/${encodeURIComponent(sessionID)}/prompt_async`);
-    promptUrl.searchParams.set('directory', projectPath);
-    const response = await fetch(promptUrl.toString(), {
-      method: 'POST',
-      headers: {
-        ...authHeaders,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(buildPromptAsyncPayload(task, projectPath)),
-      ...(signal ? { signal } : {}),
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`prompt_async failed (${response.status})${body ? `: ${body}` : ''}`);
-    }
+    await client.session.prompt({
+      sessionID,
+      text: buildPromptText(task, projectPath),
+    }, requestOptions);
   };
 
   /**
-   * prompt_async / command return when the turn is *admitted*, not when the
-   * agent finishes. History must reflect the real session (or goal) outcome and
-   * wall-clock duration — poll OpenCode until idle+settled or a terminal goal.
+   * session.prompt / command return when the turn is *admitted*, not when the
+   * agent finishes. History must reflect the real session outcome and
+   * wall-clock duration — poll until idle+settled. v2 has no session metadata,
+   * so goal-enabled runs settle on the same assistant tail (no terminal-goal
+   * wait). session.active / message.list failures stay unknown — never idle
+   * or empty success.
    */
   const waitForRunOutcome = async ({
     client,
     sessionID,
-    projectPath,
-    goalEnabled,
     signal,
   }) => {
     const requestOptions = signal ? { signal } : undefined;
@@ -752,65 +642,38 @@ export const createScheduledTasksRuntime = (deps) => {
     for (;;) {
       signal?.throwIfAborted?.();
 
-      if (goalEnabled && typeof client?.session?.get === 'function') {
+      let sessionBusy = null;
+      if (typeof client?.session?.active === 'function') {
         try {
-          const sessionResult = await client.session.get({
-            sessionID,
-            directory: projectPath,
-          }, requestOptions);
-          if (!sessionResult?.error) {
-            const goal = extractGoalFromSession(sessionResult?.data);
-            if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
-              if (goal.status === 'complete') {
-                return { outcome: 'success' };
-              }
-              return {
-                outcome: 'error',
-                error: goal.note || `goal ${goal.status}`,
-              };
-            }
-          }
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          // Transient get failures: keep polling until watchdog aborts.
-        }
-      }
-
-      let sessionBusy = false;
-      if (typeof client?.session?.status === 'function') {
-        try {
-          const statusResult = await client.session.status({
-            directory: projectPath,
-          }, requestOptions);
-          if (!statusResult?.error && statusResult?.data && typeof statusResult.data === 'object') {
-            const statusValue = statusResult.data[sessionID];
-            const type = statusValue?.type ?? statusValue?.status;
-            sessionBusy = type === 'busy' || type === 'retry';
+          const activeMap = await client.session.active(requestOptions);
+          if (activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap)) {
+            sessionBusy = Object.prototype.hasOwnProperty.call(activeMap, sessionID);
           }
         } catch (error) {
           if (signal?.aborted) throw error;
         }
       }
 
-      if (sessionBusy) {
-        incompleteAssistantProbes = 0;
-        emptyIdleProbes = 0;
+      if (sessionBusy !== false) {
+        if (sessionBusy === true) {
+          incompleteAssistantProbes = 0;
+          emptyIdleProbes = 0;
+        }
         await sleep(SESSION_SETTLEMENT_POLL_MS, signal);
         continue;
       }
 
-      // Non-goal runs settle on the first idle assistant tail. Goal runs only
-      // finish via terminal goal status above — idle between goal turns is normal.
-      if (!goalEnabled && typeof client?.session?.messages === 'function') {
+      if (typeof client?.message?.list === 'function') {
         try {
-          const messagesResult = await client.session.messages({
+          const messagesResult = await client.message.list({
             sessionID,
-            directory: projectPath,
             limit: 50,
+            order: 'asc',
           }, requestOptions);
-          if (!messagesResult?.error && Array.isArray(messagesResult?.data)) {
-            const lastInfo = readMessageInfo(messagesResult.data.at(-1));
-            if (lastInfo?.role === 'assistant') {
+          const messages = Array.isArray(messagesResult?.data) ? messagesResult.data : null;
+          if (messages) {
+            const lastInfo = readMessageInfo(messages.at(-1));
+            if (lastInfo?.type === 'assistant') {
               emptyIdleProbes = 0;
               if (lastInfo.error) {
                 return {
@@ -830,7 +693,7 @@ export const createScheduledTasksRuntime = (deps) => {
               emptyIdleProbes += 1;
               // Prompt admitted but no assistant yet, or aborted before reply.
               // Allow several idle probes so we don't race the first token.
-              if (emptyIdleProbes >= 5 && lastInfo?.role === 'user') {
+              if (emptyIdleProbes >= 5 && lastInfo?.type === 'user') {
                 return {
                   outcome: 'error',
                   error: 'session ended without assistant response',
@@ -857,7 +720,9 @@ export const createScheduledTasksRuntime = (deps) => {
     const requestOptions = signal ? { signal } : undefined;
     let commands = [];
     try {
-      const response = await client.command.list({ directory: projectPath }, requestOptions);
+      const response = await client.command.list({
+        location: { directory: projectPath },
+      }, requestOptions);
       commands = Array.isArray(response?.data) ? response.data : [];
     } catch (error) {
       if (signal?.aborted) {
@@ -874,28 +739,30 @@ export const createScheduledTasksRuntime = (deps) => {
 
     await client.session.command({
       sessionID,
-      directory: projectPath,
       command: parsed.command,
       arguments: parsed.arguments,
       ...(task.execution.agent ? { agent: task.execution.agent } : {}),
-      model: `${task.execution.providerID}/${task.execution.modelID}`,
-      ...(task.execution.variant ? { variant: task.execution.variant } : {}),
+      model: {
+        id: task.execution.modelID,
+        providerID: task.execution.providerID,
+        ...(task.execution.variant ? { variant: task.execution.variant } : {}),
+      },
     }, requestOptions);
 
     return true;
   };
 
-  const abortCreatedSessionBestEffort = async ({ client, sessionID, projectPath }) => {
-    if (!sessionID || !client?.session?.abort) {
+  const interruptCreatedSessionBestEffort = async ({ client, sessionID }) => {
+    if (!sessionID || typeof client?.session?.interrupt !== 'function') {
       return;
     }
     try {
-      await client.session.abort({
+      await client.session.interrupt({
         sessionID,
-        directory: projectPath,
+        continue: false,
       });
     } catch {
-      // Never let upstream abort failure replace the watchdog timeout error.
+      // Never let upstream interrupt failure replace the watchdog timeout error.
     }
   };
 
@@ -916,26 +783,16 @@ export const createScheduledTasksRuntime = (deps) => {
 
     const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
     const authHeaders = getOpenCodeAuthHeaders();
-    const client = createOpencodeClient({
+    const client = makeOpenCodeV2Client({
       baseUrl,
-      headers: authHeaders,
+      authHeaders,
     });
     const requestOptions = signal ? { signal } : undefined;
 
-    const taskName = typeof task?.name === 'string' && task.name.trim().length > 0
-      ? task.name.trim()
-      : 'Schedule';
-    const scheduledTaskMarker = {
-      projectID,
-      taskID: task.id,
-      runID,
-      name: taskName,
-    };
-
     let sessionID;
-    // Watchdog abort must fire session.abort even while awaiting non-cancellable
-    // work (small-model distill / writeObjective). Register once after create;
-    // never on ordinary non-timeout failures or success.
+    // Watchdog abort must fire session.interrupt even while awaiting
+    // non-cancellable work (small-model distill / writeObjective). Register
+    // once after create; never on ordinary non-timeout failures or success.
     let sessionAbortStarted = false;
     let onWatchdogAbort = null;
     const triggerSessionAbortOnce = () => {
@@ -943,7 +800,7 @@ export const createScheduledTasksRuntime = (deps) => {
         return;
       }
       sessionAbortStarted = true;
-      void abortCreatedSessionBestEffort({ client, sessionID, projectPath });
+      void interruptCreatedSessionBestEffort({ client, sessionID });
     };
     const clearWatchdogAbortListener = () => {
       if (onWatchdogAbort && signal) {
@@ -953,12 +810,11 @@ export const createScheduledTasksRuntime = (deps) => {
     };
 
     try {
-      const sessionResponse = await client.session.create({
-        directory: projectPath,
-        title,
-        metadata: buildScheduledTaskMetadata(scheduledTaskMarker),
-      }, requestOptions);
-      sessionID = sessionResponse?.data?.id;
+      const session = await client.session.create(
+        buildSessionCreateInput(task, projectPath, title),
+        requestOptions,
+      );
+      sessionID = session?.id;
       if (!sessionID) {
         throw new Error('failed to create session');
       }
@@ -984,19 +840,6 @@ export const createScheduledTasksRuntime = (deps) => {
         }
       }
 
-      try {
-        // Archive must succeed before any goal/prompt/command work. A 404 gets
-        // one short bounded retry; any other failure aborts without prompting.
-        await archiveSessionBeforePrompt({ client, sessionID, projectPath, signal });
-      } catch (archiveError) {
-        if (attachFailed) {
-          throw new Error(
-            `attachSession failed (${safeErrorMessage(attachFailed)}); archive also failed: ${safeErrorMessage(archiveError)}`,
-          );
-        }
-        throw archiveError;
-      }
-
       if (attachFailed) {
         throw new Error(`attachSession failed: ${safeErrorMessage(attachFailed)}`);
       }
@@ -1016,12 +859,9 @@ export const createScheduledTasksRuntime = (deps) => {
 
       if (task.execution.goalEnabled) {
         await createTaskGoal({
-          baseUrl,
-          authHeaders,
           sessionID,
           projectPath,
           task,
-          scheduledTaskMarker,
           signal,
         });
       }
@@ -1036,9 +876,8 @@ export const createScheduledTasksRuntime = (deps) => {
         signal,
       });
       if (!executedAsCommand) {
-        await runPromptAsync({
-          baseUrl,
-          authHeaders,
+        await runSessionPrompt({
+          client,
           sessionID,
           projectPath,
           task,
@@ -1046,13 +885,11 @@ export const createScheduledTasksRuntime = (deps) => {
         });
       }
 
-      // Do not finalize on admission alone — wait for the real agent turn (or
-      // goal loop) so history status/duration match what the user sees in chat.
+      // Do not finalize on admission alone — wait for the real agent turn so
+      // history status/duration match what the user sees in chat.
       const settlement = await waitForRunOutcome({
         client,
         sessionID,
-        projectPath,
-        goalEnabled: Boolean(task.execution?.goalEnabled),
         signal,
       });
 
@@ -1199,8 +1036,8 @@ export const createScheduledTasksRuntime = (deps) => {
 
           if (raced.timedOut) {
             // Bound: do not await uncancellable steps (distill / writeObjective).
-            // session.abort is started by the signal listener on create; later
-            // throwIfAborted gates stop goal PATCH / command / prompt.
+            // session.interrupt is started by the signal listener on create;
+            // later throwIfAborted gates stop goal write / command / prompt.
             throw timeoutError;
           }
 

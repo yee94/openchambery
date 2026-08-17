@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@/lib/opencode/v2-types';
 import { projectTurnRecords } from './projectTurnRecords';
 import type { ChatMessageEntry } from './types';
 
@@ -89,6 +89,29 @@ describe('projectTurnRecords', () => {
         expect(projection.turns).toHaveLength(0);
         expect(projection.ungroupedMessageIds.has('a1')).toBe(false);
         expect(projection.indexes.messageToTurnId.has('a1')).toBe(false);
+    });
+
+    test('keeps v2 compaction cards as ungrouped timeline entries', () => {
+        const compact = {
+            info: {
+                id: 'msg_compact',
+                role: 'assistant',
+                clientRole: 'compaction',
+                time: { created: 1 },
+            } as Message,
+            parts: [{
+                id: 'msg_compact:compaction',
+                type: 'compaction',
+                status: 'completed',
+                reason: 'manual',
+                summary: 'kept last turns',
+            } as Part],
+        };
+
+        const projection = projectTurnRecords([compact]);
+
+        expect(projection.turns).toHaveLength(0);
+        expect(projection.ungroupedMessageIds.has('msg_compact')).toBe(true);
     });
 
     test('keeps non-assistant orphan messages available as ungrouped entries', () => {

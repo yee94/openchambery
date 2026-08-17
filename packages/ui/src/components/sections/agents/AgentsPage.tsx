@@ -27,10 +27,11 @@ import {
 import { Icon } from '@/components/icon/Icon';
 import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import { buildAgentSaveConfig, type AgentEditorSnapshot } from './agentSaveConfig';
+import { displayPermissionRulesLastMatch, toPermissionRuleset } from '@/sync/permission-rules';
+import { SavedPermissionsSection } from './SavedPermissionsSection';
 
 type PermissionAction = 'allow' | 'ask' | 'deny';
 type PermissionRule = { permission: string; pattern: string; action: PermissionAction };
-type PermissionConfigValue = PermissionAction | Record<string, PermissionAction>;
 type PermissionRuleKey = `${string}::${string}`;
 
 const STANDARD_PERMISSION_KEYS = [
@@ -126,7 +127,18 @@ const filterRulesAgainstGlobal = (ruleset: PermissionRule[], globalAction: Permi
 
 const permissionConfigToRuleset = (value: unknown): PermissionRule[] => {
   if (Array.isArray(value)) {
-    return normalizeRuleset(value as PermissionRule[]);
+    return normalizeRuleset(value.flatMap((rule): PermissionRule[] => {
+      if (
+        !rule
+        || typeof rule !== 'object'
+        || typeof rule.action !== 'string'
+        || typeof rule.resource !== 'string'
+        || !isPermissionAction(rule.effect)
+      ) {
+        return [];
+      }
+      return [{ permission: rule.action, pattern: rule.resource, action: rule.effect }];
+    }));
   }
 
   if (isPermissionAction(value)) {
@@ -161,39 +173,16 @@ const permissionConfigToRuleset = (value: unknown): PermissionRule[] => {
 const buildPermissionConfigWithGlobal = (
   globalAction: PermissionAction,
   ruleset: PermissionRule[],
-): AgentConfig['permission'] => {
-  const normalized = normalizeRuleset(ruleset);
-  const grouped: Record<string, Record<string, PermissionAction>> = {};
-
-  for (const rule of normalized) {
-    (grouped[rule.permission] ||= {})[rule.pattern] = rule.action;
-  }
-
-  const result: Record<string, PermissionConfigValue> = {};
-
-  for (const [permissionName, patterns] of Object.entries(grouped)) {
-    if (permissionName === '*') {
-      continue;
-    }
-
-    if (Object.keys(patterns).length === 1 && patterns['*']) {
-      result[permissionName] = patterns['*'];
-      continue;
-    }
-
-    result[permissionName] = patterns;
-  }
-
-  if (Object.keys(result).length === 0) {
-    return globalAction;
-  }
-
-  if (globalAction !== 'allow') {
-    result['*'] = globalAction;
-  }
-
-  return result as AgentConfig['permission'];
-};
+): AgentConfig['permission'] => [
+  { action: '*', resource: '*', effect: globalAction },
+  ...normalizeRuleset(ruleset)
+    .filter((rule) => !(rule.permission === '*' && rule.pattern === '*'))
+    .map((rule) => ({
+      action: rule.permission,
+      resource: rule.pattern,
+      effect: rule.action,
+    })),
+];
 
 type AgentVariantProvider = {
   id: string;
@@ -544,8 +533,8 @@ export const AgentsPage: React.FC = () => {
         ? `${selectedAgent.model.providerID}/${selectedAgent.model.modelID}`
         : '';
       const variantValue = selectedAgent.variant || '';
-      const temperatureValue = selectedAgent.temperature;
-      const topPValue = selectedAgent.topP;
+      const temperatureValue = selectedAgent.temperature ?? undefined;
+      const topPValue = selectedAgent.topP ?? undefined;
       const promptValue = selectedAgent.prompt || '';
 
       setDescription(descriptionValue);
@@ -684,19 +673,26 @@ export const AgentsPage: React.FC = () => {
 
   if (!selectedAgentName) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center text-muted-foreground">
-          <Icon name="robot-2" className="mx-auto mb-3 h-12 w-12 opacity-50" />
-          <p className="typography-body">{t('settings.agents.page.empty.title')}</p>
-          <p className="typography-meta mt-1 opacity-75">{t('settings.agents.page.empty.description')}</p>
+      <ScrollableOverlay outerClassName="h-full" className="w-full">
+        <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+          <SavedPermissionsSection />
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <Icon name="robot-2" className="mx-auto mb-3 h-12 w-12 opacity-50" />
+              <p className="typography-body">{t('settings.agents.page.empty.title')}</p>
+              <p className="typography-meta mt-1 opacity-75">{t('settings.agents.page.empty.description')}</p>
+            </div>
+          </div>
         </div>
-      </div>
+      </ScrollableOverlay>
     );
   }
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
       <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+
+        <SavedPermissionsSection />
 
         {/* Header & Actions */}
         <div className="mb-4 flex items-center justify-between gap-4">
@@ -1013,33 +1009,24 @@ export const AgentsPage: React.FC = () => {
 
           {!showPermissionEditor ? (
             <>
-              {summaryPermissionNames.map((permissionName) => {
-                const { defaultAction, patternRulesCount, patternSummary, hasDefaultHint } = getPermissionSummary(permissionName);
-                const label = formatPermissionLabel(permissionName);
-                const summary = hasDefaultHint ? `${defaultAction} (env blocked)` : defaultAction;
-                return (
-                  <SettingsRow
-                    key={permissionName}
-                    label={(
-                      <div className="flex items-center gap-2">
-                        <span>{label}</span>
-                      <span className="typography-micro text-muted-foreground/70 font-mono hidden sm:inline-block">{permissionName}</span>
-                      </div>
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      {patternRulesCount > 0 ? (
-                        <span className="typography-micro text-muted-foreground bg-[var(--surface-muted)] px-1.5 py-0.5 rounded">{t('settings.agents.page.permissions.globalSummary', { summary })}</span>
-                      ) : (
-                        <span className={cn("typography-micro capitalize px-1.5 py-0.5 rounded", summary === 'allow' ? "text-[var(--status-success)] bg-[var(--status-success)]/10" : summary === 'deny' ? "text-[var(--status-error)] bg-[var(--status-error)]/10" : "text-[var(--status-warning)] bg-[var(--status-warning)]/10")}>{summary}</span>
-                      )}
-                      {patternRulesCount > 0 && (
-                        <span className="typography-micro text-muted-foreground bg-[var(--surface-muted)] px-1.5 py-0.5 rounded">{t('settings.agents.page.permissions.rulesSummary', { summary: patternSummary })}</span>
-                      )}
+              <p className="typography-micro text-muted-foreground px-3 pt-2">{t('settings.agents.page.permissions.lastMatchHint')}</p>
+              {displayPermissionRulesLastMatch(toPermissionRuleset(permissionRules)).map((rule, index) => (
+                <SettingsRow
+                  key={`${rule.action}::${rule.resource}::${index}`}
+                  label={(
+                    <div className="flex items-center gap-2">
+                      <span className="typography-micro text-muted-foreground font-mono">{index + 1}</span>
+                      <span>{rule.action}</span>
+                      <span className="typography-micro text-muted-foreground/70 font-mono">{rule.resource}</span>
                     </div>
-                  </SettingsRow>
-                );
-              })}
+                  )}
+                >
+                  <span className={cn(
+                    "typography-micro capitalize px-1.5 py-0.5 rounded",
+                    rule.effect === 'allow' ? "text-[var(--status-success)] bg-[var(--status-success)]/10" : rule.effect === 'deny' ? "text-[var(--status-error)] bg-[var(--status-error)]/10" : "text-[var(--status-warning)] bg-[var(--status-warning)]/10",
+                  )}>{rule.effect}</span>
+                </SettingsRow>
+              ))}
             </>
           ) : (
             <div className="space-y-6 p-2">

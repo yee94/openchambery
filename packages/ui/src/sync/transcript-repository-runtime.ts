@@ -221,6 +221,7 @@ export async function retryTranscriptInitial(
  * User-triggered refresh: fetch a fresh tail, then replace. Failure keeps the
  * prior transcript. Do not use ensureInitial (hot-cache no-op) or
  * destructiveReset (ensure failure blanks the chat).
+ * Open / focus / 「同步消息」 use this force GET + reconcileFetched path.
  */
 export async function refreshTranscriptFromAuthority(
   directory: string,

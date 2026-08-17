@@ -1,5 +1,6 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { projectBootstrapSettingsResponse } from './settings-helpers.js';
+import { PINNED_OPENCODE2_VERSION, isOpenCode1xVersion, resolveOpenCode2UpgradeTarget } from './opencode2-pin.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -49,7 +50,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   };
 
   const readOpenCodeCurrentVersion = async () => {
-    const healthResponse = await fetch(buildOpenCodeUrl('/global/health', ''), {
+    const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
       method: 'GET',
       headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
     });
@@ -175,25 +176,16 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
 
-      const target = typeof req.body?.target === 'string' && req.body.target.trim().length > 0
+      const rawTarget = typeof req.body?.target === 'string' && req.body.target.trim().length > 0
         ? req.body.target.trim()
         : undefined;
-      const response = await fetch(buildOpenCodeUrl('/global/upgrade', ''), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        body: JSON.stringify(target ? { target } : {}),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        return res.status(response.status).json({
+      if (isOpenCode1xVersion(rawTarget)) {
+        return res.status(400).json({
           success: false,
-          error: payload?.error || response.statusText || 'Failed to upgrade OpenCode',
+          error: 'OpenCode upgrade refuses 1.x targets. Only pinned opencode2 is allowed.',
         });
       }
+      const target = resolveOpenCode2UpgradeTarget(rawTarget);
 
       try {
         await refreshOpenCodeAfterConfigChange('OpenCode upgrade');
@@ -207,7 +199,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
 
-      return res.json({ ...(payload ?? { success: true }), restarted: true });
+      return res.json({ success: true, restarted: true, version: target, pinned: true });
     } catch (error) {
       console.error('Failed to upgrade OpenCode:', error);
       return res.status(500).json({
@@ -229,13 +221,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
 
-      const [healthResponse, latestVersion] = await Promise.all([
-        fetch(buildOpenCodeUrl('/global/health', ''), {
-          method: 'GET',
-          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-        }),
-        fetchLatestOpenCodeVersion(),
-      ]);
+      const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
+        method: 'GET',
+        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+      });
       const health = await healthResponse.json().catch(() => null);
       if (!healthResponse.ok) {
         return res.status(healthResponse.status).json({
@@ -244,10 +233,11 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
       const currentVersion = typeof health?.version === 'string' ? health.version.replace(/^v/, '') : null;
+      const latestVersion = isOpenCode1xVersion(PINNED_OPENCODE2_VERSION) ? null : PINNED_OPENCODE2_VERSION;
       if (!currentVersion || !latestVersion) {
-        return res.json({ available: null, currentVersion, latestVersion: latestVersion || null });
+        return res.json({ available: null, currentVersion, latestVersion });
       }
-      const available = compareVersions(latestVersion, currentVersion) > 0;
+      const available = !isOpenCode1xVersion(currentVersion) && compareVersions(latestVersion, currentVersion) > 0;
       return res.json({
         available,
         currentVersion,
@@ -263,7 +253,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.get('/api/opencode/health', async (_req, res) => {
     try {
-      const healthResponse = await fetch(buildOpenCodeUrl('/global/health', ''), {
+      const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
         method: 'GET',
         headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
         signal: AbortSignal.timeout(4_000),
@@ -286,7 +276,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.get('/api/opencode/version', async (_req, res) => {
     try {
-      const healthResponse = await fetch(buildOpenCodeUrl('/global/health', ''), {
+      const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
         method: 'GET',
         headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
       });

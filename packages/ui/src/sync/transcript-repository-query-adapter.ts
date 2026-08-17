@@ -11,7 +11,9 @@
  * endpoint switches do not pin creation-time identity.
  */
 
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
+
 import type { QueryClient } from "@tanstack/react-query"
 
 import { queryClient as defaultQueryClient } from "@/lib/queryRuntime"
@@ -31,6 +33,7 @@ import {
   type SessionTranscriptQueryKey,
 } from "./session-message-query"
 import { materializeSessionSnapshots } from "./materialization"
+import { forgetPromotedInbox } from "./session-inbox-overlay"
 import {
   boundaryFromTranscriptData,
   flattenTranscriptData,
@@ -61,6 +64,7 @@ import {
 } from "./transcript-repository"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
+import { reconcileFetched } from "./session-projection-api"
 
 // ---------------------------------------------------------------------------
 // Deps
@@ -139,6 +143,21 @@ function scopeKey(identity: {
   return `${identity.transport}\n${identity.generation}\n${identity.directory}\n${identity.sessionID}`
 }
 
+function extractEventMessageID(event: Event): string | undefined {
+  const props = event.properties as {
+    messageID?: string
+    assistantMessageID?: string
+    info?: { id?: string }
+    part?: { messageID?: string }
+  } | undefined
+  if (!props) return undefined
+  if (typeof props.messageID === "string") return props.messageID
+  if (typeof props.assistantMessageID === "string") return props.assistantMessageID
+  if (typeof props.info?.id === "string") return props.info.id
+  if (typeof props.part?.messageID === "string") return props.part.messageID
+  return undefined
+}
+
 function emptyTranscript(sessionID: string): TranscriptData {
   return {
     sessionID,
@@ -190,6 +209,8 @@ export type QueryTranscriptRepository = TranscriptRepository & {
   /**
    * User-triggered refresh: fetch a fresh tail first. Success replaces the
    * canonical transcript with that page; failure leaves prior data untouched.
+   * Merge is reconcileFetched: fetched is the base, in-flight SSE ids are
+   * touched and keep the local row, and an incomplete page keeps earlier rows.
    */
   refreshFromAuthority: (scope: TranscriptScope) => Promise<TranscriptData>
   /** Evict one session's transcript key families (delete / ordinary eviction). */
@@ -212,6 +233,8 @@ export function createQueryTranscriptRepository(
   const activeRegistry = cacheBudget.activeRegistry
   const controllers = new Map<string, SessionTranscriptController>()
   const listeners = new Map<string, Set<TranscriptChangeListener>>()
+  /** Message ids SSE changed while refreshFromAuthority is in flight. */
+  const refreshTouched = new Map<string, Set<string>>()
   const cacheUnsubs = new Map<string, () => void>()
   /** Per-scope release for repository subscribe → active registry retain. */
   const listenerRetainReleases = new Map<string, () => void>()
@@ -561,6 +584,9 @@ export function createQueryTranscriptRepository(
             identity.sessionID,
             { type: "sse-event", event: command.event },
           )
+          const inFlight = refreshTouched.get(scopeKey(identity))
+          const touchedID = extractEventMessageID(command.event)
+          if (inFlight && touchedID) inFlight.add(touchedID)
           if (merge.result.changed) notify(scope)
           return merge.result
         }
@@ -734,28 +760,63 @@ export function createQueryTranscriptRepository(
         )
       }
       const identity = resolveScopeIdentity(scope, deps)
+      const key = scopeKey(identity)
       const previous = repository.getTranscript(scope)
-      const page = await deps.fetcher({
-        directory: identity.directory,
-        sessionID: identity.sessionID,
-        limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
-        signal: new AbortController().signal,
-      })
-      repository.apply(scope, { type: "reset", page })
-      const next = repository.getTranscript(scope)
-      if (deps.clearOptimisticShadow) {
-        for (const messageID of previous.messageOrder) {
-          if (!next.messagesByID[messageID]) {
-            deps.clearOptimisticShadow({
-              directory: identity.directory,
-              sessionID: identity.sessionID,
-              messageID,
-            })
+      const touched = refreshTouched.get(key) ?? new Set<string>()
+      refreshTouched.set(key, touched)
+      try {
+        const page = await deps.fetcher({
+          directory: identity.directory,
+          sessionID: identity.sessionID,
+          limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
+          signal: new AbortController().signal,
+        })
+        const live = repository.getTranscript(scope)
+        const previousRecords = live.messageOrder.flatMap((messageID) => {
+          const info = live.messagesByID[messageID]
+          if (!info) return []
+          return [{
+            info,
+            parts: [...(live.partsByMessageID[messageID] ?? [])],
+          }]
+        })
+        const fetchedRecords = page.records.map((record) => ({
+          info: record.info,
+          parts: [...(record.parts ?? [])],
+        }))
+        const reconciled = reconcileFetched({
+          fetched: fetchedRecords,
+          previous: previousRecords,
+          touched,
+          completeTail: page.complete,
+        })
+        repository.apply(scope, {
+          type: "reset",
+          page: {
+            records: reconciled,
+            cursor: page.cursor,
+            complete: page.complete,
+            turnCount: reconciled.filter((record) => record.info.role === "user").length,
+          },
+        })
+        const next = repository.getTranscript(scope)
+        if (deps.clearOptimisticShadow) {
+          for (const messageID of previous.messageOrder) {
+            if (!next.messagesByID[messageID]) {
+              deps.clearOptimisticShadow({
+                directory: identity.directory,
+                sessionID: identity.sessionID,
+                messageID,
+              })
+            }
           }
         }
+        cacheBudget.noteScopeObserved(toCacheScope(scope))
+        forgetPromotedInbox(identity.sessionID, next.messageOrder)
+        return next
+      } finally {
+        refreshTouched.delete(key)
       }
-      cacheBudget.noteScopeObserved(toCacheScope(scope))
-      return next
     },
 
     async destructiveReset(scope) {

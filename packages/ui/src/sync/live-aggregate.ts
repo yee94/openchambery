@@ -1,5 +1,7 @@
-import type { SessionStatus } from '@opencode-ai/sdk/v2/client'
-import type { Session } from '@opencode-ai/sdk/v2'
+import type { SessionStatus } from '@/lib/opencode/v2-types'
+
+import type { Session } from '@/lib/opencode/v2-types'
+
 import { isVisibleGlobalSession } from '@/stores/globalSessions'
 import type { State } from './types'
 

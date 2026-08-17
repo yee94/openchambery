@@ -19,7 +19,7 @@ import {
   subscribeTranscriptRepositoryBinding,
   transcriptScope,
 } from '@/sync/transcript-repository-runtime';
-import type { Message } from '@opencode-ai/sdk/v2/client';
+import type { Message } from '@/lib/opencode/v2-types';
 
 interface DebugPanelProps {
   onClose?: () => void;

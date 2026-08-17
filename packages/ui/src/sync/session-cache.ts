@@ -1,9 +1,7 @@
-import type {
-  PermissionRequest,
-  QuestionRequest,
-  SessionStatus,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus, Todo } from '@/lib/opencode/v2-types'
+import type { PermissionRequest } from '@/types/permission'
+import type { QuestionRequest } from '@/types/question'
+
 import type { FileDiff } from "./types"
 
 type SessionCache = {
