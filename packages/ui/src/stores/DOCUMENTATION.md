@@ -263,8 +263,10 @@ the complete set.
 
 Electron cache refresh uses two timestamps per directory. Recent restarts query
 the Electron Web Server, which performs `session.list(start=lastSyncedAt)` and
-merges changed summaries into SQLite;
-`lastFullSyncedAt` enforces a periodic full newest-page reconciliation so
+merges changed summaries into SQLite when that directory already has cached
+root summaries. Empty cached directories omit `start` so a later refresh can
+rediscover historical roots older than `lastSyncedAt`;
+`lastFullSyncedAt` still enforces a periodic full newest-page reconciliation so
 offline deletes/archives cannot remain indefinitely.
 
 Directory session loads also wait on the runtime-keyed OpenCode readiness

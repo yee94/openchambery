@@ -1032,6 +1032,138 @@ describe('useGlobalSessionsStore', () => {
     }
   });
 
+  test('replaces an empty directory snapshot with recovered historical sessions', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const historyA = buildSession('https://share.example/history-a', {
+      id: 'ses_history_a',
+      directory: '/repo/empty-lock',
+      title: '招商业务独立页面服务方案',
+      time: { created: 1, updated: 20 },
+    });
+    const historyB = buildSession('https://share.example/history-b', {
+      id: 'ses_history_b',
+      directory: '/repo/empty-lock',
+      title: 'Hermes 招商活动代码分析机器人方案设计',
+      time: { created: 1, updated: 10 },
+    });
+    const other = buildSession('https://share.example/other', {
+      id: 'ses_other',
+      directory: '/repo/other',
+    });
+    useGlobalSessionsStore.setState({
+      activeSessions: [other],
+      sessionsByDirectory: new Map([
+        ['/repo/empty-lock', []],
+        ['/repo/other', [other]],
+      ]),
+      loadedDirectories: new Set(['/repo/empty-lock', '/repo/other']),
+      cachedDirectories: new Set(['/repo/empty-lock', '/repo/other']),
+      sessionIndexSyncByDirectory: new Map([
+        ['/repo/empty-lock', { lastSyncedAt: 5000, lastFullSyncedAt: 5000 }],
+        ['/repo/other', { lastSyncedAt: 1000, lastFullSyncedAt: 1000 }],
+      ]),
+      activePaginationByDirectory: new Map([
+        ['/repo/empty-lock', { cursor: null, hasMore: false, loadingMore: false }],
+        ['/repo/other', { cursor: 2, hasMore: false, loadingMore: false }],
+      ]),
+      hasLoaded: true,
+      status: 'ready',
+    });
+    const pending = {
+      revision: 1,
+      sync: {
+        active: true,
+        completed: 0,
+        total: 1,
+        pendingDirectories: ['/repo/empty-lock'],
+        completedDirectories: [] as string[],
+        failedDirectories: [] as string[],
+      },
+      directories: [{
+        directory: '/repo/empty-lock',
+        cursor: null,
+        hasMore: false,
+        lastSyncedAt: 5000,
+        lastFullSyncedAt: 5000,
+        lastAccessedAt: 5000,
+        sessions: [] as Session[],
+      }, {
+        directory: '/repo/other',
+        cursor: 2,
+        hasMore: false,
+        lastSyncedAt: 1000,
+        lastFullSyncedAt: 1000,
+        lastAccessedAt: 1000,
+        sessions: [other],
+      }],
+    };
+    const recovered = {
+      revision: 2,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [] as string[],
+        completedDirectories: ['/repo/empty-lock'],
+        failedDirectories: [] as string[],
+      },
+      directories: [{
+        directory: '/repo/empty-lock',
+        cursor: null,
+        hasMore: false,
+        lastSyncedAt: 6000,
+        lastFullSyncedAt: 6000,
+        lastAccessedAt: 6000,
+        sessions: [historyA, historyB],
+      }, {
+        directory: '/repo/other',
+        cursor: 2,
+        hasMore: false,
+        lastSyncedAt: 1000,
+        lastFullSyncedAt: 1000,
+        lastAccessedAt: 1000,
+        sessions: [other],
+      }],
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(pending), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ available: true, ...recovered }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const sync = useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/empty-lock']);
+      while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      await sync;
+
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/empty-lock')?.map((session) => session.id))
+        .toEqual(['ses_history_a', 'ses_history_b']);
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/other')).toEqual([other]);
+      expect(useGlobalSessionsStore.getState().activePaginationByDirectory.get('/repo/other')).toEqual({
+        cursor: 2,
+        hasMore: false,
+        loadingMore: false,
+      });
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('recovers manual session-index sync when the completion tip is missed', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;

@@ -42,10 +42,13 @@
   the existing SDK-backed global session list; unsupported `null` must not be
   treated as an authoritative empty success that wipes the client seed.
 - Cached starts use OpenCode's `start` timestamp filter and merge only sessions
-  changed since the last successful sync. SQLite separately tracks the last
-  incremental and last full reconciliation times; a full newest-20 pass runs at
-  most once per 24 hours to remove sessions deleted or archived while the app
-  was closed.
+  changed since the last successful sync, and only when that directory already
+  has at least one cached root summary. An empty cached directory is not
+  incrementally eligible, so a later refresh can rediscover historical roots
+  whose `time.updated` is older than `lastSyncedAt`. SQLite separately tracks
+  the last incremental and last full reconciliation times; a full newest-20
+  pass also runs at most once per 24 hours to remove sessions deleted or
+  archived while the app was closed.
 - `SessionStartupCoordinator` owns that pass before `SessionSidebar` mounts its
   normal orchestration. Hydrate of the SQLite session-summary index starts
   immediately (does not wait for settings) so the last snapshot can fill the

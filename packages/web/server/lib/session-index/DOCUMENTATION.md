@@ -34,14 +34,19 @@ events that remain outside the newest-20 bound follow the same no-op path.
 
 `sync-runtime.js` owns cold-start synchronization. The renderer submits all
 known project directories once to `POST /api/openchamber/session-index/sync`.
-The runtime processes them sequentially, applies `start=lastSyncedAt` for recent
-indexes, performs a full reconciliation after 24 hours, and commits each result
-to SQLite. It publishes an in-memory revision after every externally observable
-index or synchronization-state change. A successful empty directory refresh
-remains in the snapshot so another client can use it as a worktree-topology
-recovery hint. Stopping the runtime marks queued and in-flight directories as
-failed in the published progress snapshot so clients can retire their matching
-loading state.
+The runtime processes them sequentially, applies `start=lastSyncedAt` for
+recent indexes, performs a full reconciliation after 24 hours, and commits each
+result to SQLite. A directory is incrementally eligible only when it already
+has at least one cached root summary; empty cached directories always request
+the full newest page, because a successful `[]` still stores `lastSyncedAt` as
+a worktree-topology hint and reusing that watermark as `start` would hide older
+historical roots until the next full pass. Request count stays one GET per
+directory (`limit=20`). It publishes an in-memory revision after every
+externally observable index or synchronization-state change. A successful empty
+directory refresh remains in the snapshot so another client can use it as a
+worktree-topology recovery hint. Stopping the runtime marks queued and in-flight
+directories as failed in the published progress snapshot so clients can retire
+their matching loading state.
 
 The renderer observes revisions through OpenChamber SSE tip events
 (`openchamber:session-index-changed`). Each tip carries the new revision and
