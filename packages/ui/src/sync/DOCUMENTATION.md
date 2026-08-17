@@ -320,7 +320,8 @@ Modules:
 | `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40 sessions) plus durable body budgets (`getTranscriptDurableByteBudget`: 4 / 12 / 40 MiB) |
 | `session-transcript-reconcile-api.ts` | Host anchor-reconcile HTTP client (`fetchSessionTranscriptReconcile`) — runtimeFetch, timeout race, strict contract, classified retry |
 | `session-transcript-recovery-checkpoint.ts` | Stable authored-user turn anchor selection + recovery checkpoint model / QueryCache read-write |
-| `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset` |
+| `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset`; observe-time 60s TTL reconcile head check for non-stale cached sessions |
+| `transcript-event-broadcast.ts` | Pure helper: list every current-runtime canonical scope that should receive one transcript `sse-event` (multi-directory broadcast; zero hits fall back to resolved directory) |
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
 | `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `materializeTranscriptMessage` / `getTranscriptHydrationState` / `getTranscriptMessageMaterializationState` / `purgeTranscriptSession` |
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
@@ -466,6 +467,13 @@ Modules:
   insert by (`time.created`, id) so a later older Host window cannot append
   past a newer gap page already merged in the same round. Checkpoint is
   fixed on disconnect / recovery-context capture before replay.
+  `ensureOnObserve` still runs stale-marked ensure/reconcile. For a
+  **non-stale** cached canonical it also fires a background reconcile head
+  check (local tail `messageID` as anchor, one page) throttled by an
+  in-process 60s TTL per scope. Empty / no-new pages are silent; new
+  records merge through existing `reconcile-page` upsert. Fetch failure is
+  discarded (no request error, prior transcript kept). Scopes with no
+  canonical Query entry skip the check.
 
 Pagination projection is derived solely from repository `SessionHistoryBoundary`
 (`unknown` / `has-more` / `exhausted`). Request lifecycle is
@@ -497,11 +505,18 @@ HTTP pull (initial / prepend / recovery / materialize)
 
 SSE push (live transcript increments)
   event-pipeline.ts                  WS/SSE transport
-  handleEvent → TranscriptRepository.apply(sse-event)
+  handleEvent → listTranscriptEventBroadcastScopes
+              → TranscriptRepository.apply(sse-event) per matching scope
   transcript-event-reducer.ts        pure applyTranscriptDirectoryEvent
                 │
                 ▼
         QueryCache / TranscriptRepository
+
+  Transcript `sse-event` commands broadcast to every canonical scope whose
+  sessionID matches on the current transport/generation. Zero inventory
+  hits fall back to the resolved directory (apply is a no-op when that
+  scope has no canonical). Child-store session_status / todo / permission
+  routing stays single-directory.
 
 UI history pagination
   Chat / Context → fetchTranscriptPreviousPage
@@ -945,7 +960,9 @@ both readers agree on when a frame may shrink.
   remain independent: a ready transcript page with missing identity still
   performs the exact identity read.
 - Snapshot-revision and live transcript SSE commit through repository
-  `sse-event` (and related ensure/materialize). Repository pagination and
+  `sse-event` (and related ensure/materialize). Each event is applied to
+  every current-runtime canonical scope for that session, not only the
+  single resolved directory. Repository pagination and
   request state own older-history facts and flight status. An `unknown`
   boundary always ensures; a known boundary retains UI facts while background
   ensure/compensation may refresh. The next `syncSession` / selection ensure

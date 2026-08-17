@@ -51,7 +51,8 @@ import {
   getRuntimeTransportIdentity,
   subscribeRuntimeEndpointChanged,
 } from "@/lib/runtime-switch"
-import { isTranscriptSseEventType } from "./transcript-repository"
+import { isTranscriptSseEventType, type TranscriptScope } from "./transcript-repository"
+import { listTranscriptEventBroadcastScopes } from "./transcript-event-broadcast"
 import {
   materializationStatusFromTranscriptData,
   messagesFromTranscriptData,
@@ -1068,6 +1069,8 @@ const findSessionInChildStores = (
       ?.filter((entry) => entry.scope.sessionID === sessionID)
       .map((entry) => entry.scope.directory) ?? []
     const unique = [...new Set(matches)]
+    // Unique inventory only. Multi-directory canonical is not a child-store
+    // routing answer; transcript SSE broadcasts separately.
     if (unique.length === 1) {
       const dir = unique[0]!
       setIndexedSessionDirectory(routingIndex, sessionID, dir)
@@ -1709,6 +1712,96 @@ export async function resyncDirectoryAfterReconnect(
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
 }
 
+function listCanonicalScopesForTranscriptEvent(sessionID: string): TranscriptScope[] {
+  try {
+    const repository = getTranscriptRepository() as
+      | (ReturnType<typeof getTranscriptRepository> & {
+        getCacheBudget?: () => {
+          listCanonical: (filter?: {
+            transport?: string
+            generation?: number
+          }) => Array<{
+            scope: {
+              directory: string
+              sessionID: string
+              transport: string
+              generation: number
+            }
+          }>
+        }
+      })
+      | null
+    const transport = getRuntimeTransportIdentity()
+    const generation = getRuntimeGeneration()
+    return repository?.getCacheBudget?.().listCanonical({ transport, generation })
+      ?.filter((entry) => entry.scope.sessionID === sessionID)
+      .map((entry) => transcriptScope(entry.scope.directory, entry.scope.sessionID, {
+        transport: entry.scope.transport,
+        generation: entry.scope.generation,
+      })) ?? []
+  } catch {
+    return []
+  }
+}
+
+function resolveTranscriptSseSessionID(payload: Event): string | undefined {
+  const eventSessionID = getSessionIdFromPayload(payload) ?? undefined
+  if (eventSessionID) return eventSessionID
+  if (payload.type === "message.updated") {
+    return (payload.properties as { info?: { sessionID?: string } }).info?.sessionID ?? undefined
+  }
+  return undefined
+}
+
+function commitTranscriptSseEvent(
+  payload: Event,
+  transcriptSessionID: string,
+  resolvedDirectory: string,
+  eventMessageID: string | undefined,
+  childStores: ChildStoreManager,
+  routingIndex: EventRoutingIndex,
+): void {
+  const scopes = listTranscriptEventBroadcastScopes({
+    sessionID: transcriptSessionID,
+    resolvedDirectory,
+    transport: getRuntimeTransportIdentity(),
+    generation: getRuntimeGeneration(),
+    listCanonicalScopes: listCanonicalScopesForTranscriptEvent,
+  })
+  let anyChanged = false
+  for (const scope of scopes) {
+    const repoResult = applyTranscriptCommand(
+      scope,
+      { type: "sse-event", event: payload },
+    ) ?? { applied: false, changed: false }
+    if (repoResult.changed) {
+      anyChanged = true
+    }
+    const materializationResult = repoResult.materialization
+    if (materializationResult) {
+      const materializationSessionID = resolveMaterializationSessionID(
+        materializationResult.sessionID ?? transcriptSessionID,
+        materializationResult.messageID ?? eventMessageID,
+        scope.directory,
+        routingIndex,
+      )
+      if (materializationSessionID) {
+        enqueueSessionMaterialization(scope.directory, materializationSessionID, childStores, {
+          reason: materializationResult.reason,
+          messageID: materializationResult.messageID,
+          partID: materializationResult.partID,
+        })
+      }
+    }
+  }
+  if (anyChanged) {
+    syncDebug.dispatch.eventApplied(payload.type, transcriptSessionID, eventMessageID)
+  } else {
+    syncDebug.dispatch.eventNoChange(payload.type, transcriptSessionID, eventMessageID)
+  }
+  updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
+}
+
 /** Directory event dispatch. Exported as a minimal test seam for idle materialization. */
 export function handleEvent(
   rawDirectory: string,
@@ -1760,6 +1853,20 @@ export function handleEvent(
 
   // Global events
   if (directory === "global" || !directory) {
+    if (isTranscriptSseEventType(payload.type)) {
+      const transcriptSessionID = resolveTranscriptSseSessionID(payload)
+      if (transcriptSessionID) {
+        commitTranscriptSseEvent(
+          payload,
+          transcriptSessionID,
+          directory || "global",
+          getMessageIdFromPayload(payload) ?? undefined,
+          childStores,
+          routingIndex,
+        )
+        return
+      }
+    }
     const recent = isRecentBoot()
     const result = reduceGlobalEvent(payload)
     if (!result) return
@@ -1810,6 +1917,20 @@ export function handleEvent(
   }
 
   if (!store) {
+    if (isTranscriptSseEventType(payload.type)) {
+      const transcriptSessionID = resolveTranscriptSseSessionID(payload)
+      if (transcriptSessionID) {
+        commitTranscriptSseEvent(
+          payload,
+          transcriptSessionID,
+          resolvedDirectory,
+          getMessageIdFromPayload(payload) ?? undefined,
+          childStores,
+          routingIndex,
+        )
+        return
+      }
+    }
     // Try as global event for unknown directories
     const result = reduceGlobalEvent(payload)
     if (result?.type === "refresh") {
@@ -1974,45 +2095,22 @@ export function handleEvent(
   // Ticket 03: transcript SSE events commit exclusively through
   // TranscriptRepository. Non-transcript events keep the draft+reducer path.
   if (isTranscriptSseEventType(payload.type)) {
-    const transcriptSessionID =
-      eventSessionID
-      ?? (payload.type === "message.updated"
-        ? ((payload.properties as { info?: { sessionID?: string } }).info?.sessionID ?? undefined)
-        : undefined)
+    const transcriptSessionID = resolveTranscriptSseSessionID(payload)
     if (!transcriptSessionID) {
       updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
       return
     }
 
     // Ticket 09: SSE transcript events write Query only (no store dual-write).
-    const repoResult = applyTranscriptCommand(
-      transcriptScope(resolvedDirectory, transcriptSessionID),
-      { type: "sse-event", event: payload },
-    ) ?? { applied: false, changed: false }
-    if (repoResult.changed) {
-      syncDebug.dispatch.eventApplied(payload.type, transcriptSessionID, eventMessageID)
-    } else {
-      syncDebug.dispatch.eventNoChange(payload.type, transcriptSessionID, eventMessageID)
-    }
-
-    const materializationResult = repoResult.materialization
-    if (materializationResult) {
-      const materializationSessionID = resolveMaterializationSessionID(
-        materializationResult.sessionID ?? transcriptSessionID,
-        materializationResult.messageID ?? eventMessageID,
-        resolvedDirectory,
-        routingIndex,
-      )
-      if (materializationSessionID) {
-        enqueueSessionMaterialization(resolvedDirectory, materializationSessionID, childStores, {
-          reason: materializationResult.reason,
-          messageID: materializationResult.messageID,
-          partID: materializationResult.partID,
-        })
-      }
-    }
-
-    updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
+    // Broadcast to every current-runtime canonical scope for this session.
+    commitTranscriptSseEvent(
+      payload,
+      transcriptSessionID,
+      resolvedDirectory,
+      eventMessageID,
+      childStores,
+      routingIndex,
+    )
     return
   }
 

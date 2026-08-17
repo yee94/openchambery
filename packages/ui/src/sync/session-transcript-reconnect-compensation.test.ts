@@ -1423,6 +1423,216 @@ describe("createTranscriptReconnectCompensationController", () => {
     expect(result).not.toBe(null)
     expect(ensureCalls).toBeGreaterThanOrEqual(1)
   })
+
+  test("observe-time head check fetches once; TTL skips the second observe", async () => {
+    const user = msg("u1", "user")
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createRepo(clientLocal, createFetcher([{ info: user, parts: [part("p1", "u1")] }]))
+    let fetches = 0
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => null,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetchReconcile: async () => {
+        fetches += 1
+        return reconcilePage({
+          records: [],
+          capturedHeadMessageID: "u1",
+          latestHeadMessageID: "u1",
+          complete: true,
+        })
+      },
+    })
+    controllers.push(controller)
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+
+    const scope = {
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    }
+    const first = await controller.ensureOnObserve(scope)
+    expect(first).toBe(null)
+    for (let i = 0; i < 50; i += 1) {
+      if (fetches > 0) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(fetches).toBe(1)
+
+    const second = await controller.ensureOnObserve(scope)
+    expect(second).toBe(null)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fetches).toBe(1)
+  })
+
+  test("observe-time empty reconcile page leaves canonical unchanged and does not error", async () => {
+    const user = msg("u1", "user")
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createRepo(clientLocal, createFetcher([{ info: user, parts: [part("p1", "u1")] }]))
+    let fetches = 0
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => null,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetchReconcile: async () => {
+        fetches += 1
+        return reconcilePage({
+          records: [],
+          capturedHeadMessageID: "u1",
+          latestHeadMessageID: "u1",
+          complete: true,
+        })
+      },
+    })
+    controllers.push(controller)
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const scope = {
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    }
+    const before = [...repo.getTranscript(scope).messageOrder]
+    expect(before).toEqual(["u1"])
+
+    await controller.ensureOnObserve(scope)
+    for (let i = 0; i < 50; i += 1) {
+      if (fetches > 0) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(fetches).toBe(1)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(before)
+    expect(repo.getRequestState?.(scope)?.status).not.toBe("error")
+  })
+
+  test("observe-time reconcile upserts new records into canonical", async () => {
+    const user = msg("u1", "user")
+    const next = msg("a2", "assistant")
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createRepo(clientLocal, createFetcher([{ info: user, parts: [part("p1", "u1")] }]))
+    let fetches = 0
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => null,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetchReconcile: async () => {
+        fetches += 1
+        return reconcilePage({
+          records: [{ info: next, parts: [part("p2", "a2")] }],
+          capturedHeadMessageID: "a2",
+          latestHeadMessageID: "a2",
+          complete: true,
+        })
+      },
+    })
+    controllers.push(controller)
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const scope = {
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    }
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["u1"])
+
+    await controller.ensureOnObserve(scope)
+    for (let i = 0; i < 50; i += 1) {
+      if (repo.getTranscript(scope).messageOrder.includes("a2")) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(fetches).toBe(1)
+    expect(repo.getTranscript(scope).messageOrder).toContain("a2")
+    expect(repo.getRequestState?.(scope)?.status).not.toBe("error")
+  })
+
+  test("observe-time reconcile fetch failure is silent and leaves state unchanged", async () => {
+    const user = msg("u1", "user")
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createRepo(clientLocal, createFetcher([{ info: user, parts: [part("p1", "u1")] }]))
+    let fetches = 0
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => null,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetchReconcile: async () => {
+        fetches += 1
+        throw new Error("network down")
+      },
+    })
+    controllers.push(controller)
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const scope = {
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    }
+    const before = [...repo.getTranscript(scope).messageOrder]
+    const beforeStatus = repo.getRequestState?.(scope)?.status
+
+    await controller.ensureOnObserve(scope)
+    for (let i = 0; i < 50; i += 1) {
+      if (fetches > 0) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(fetches).toBe(1)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(before)
+    expect(repo.getRequestState?.(scope)?.status).toBe(beforeStatus)
+    expect(repo.getRequestState?.(scope)?.status).not.toBe("error")
+  })
 })
 
 describe("transcript-reconnect-compensation-runtime seam", () => {

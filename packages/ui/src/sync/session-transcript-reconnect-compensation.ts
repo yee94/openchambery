@@ -42,6 +42,7 @@ import {
   createTranscriptQueryCacheBudget,
   normalizeTranscriptCacheScope,
   sessionTranscriptReconcileTaskQueryKey,
+  transcriptCacheScopeKey,
   type TranscriptCacheScope,
   type TranscriptQueryCacheBudget,
 } from "./session-transcript-query-cache"
@@ -216,6 +217,8 @@ export type CreateTranscriptReconnectCompensationControllerInput = {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_DIRECTORY_CONCURRENCY = 2
+/** In-process observe-time reconcile head-check throttle. */
+const OBSERVE_HEAD_CHECK_TTL_MS = 60_000
 
 function resolveIdentity(
   input: CreateTranscriptReconnectCompensationControllerInput,
@@ -307,6 +310,10 @@ export function createTranscriptReconnectCompensationController(
   const directoryActive = new Map<string, number>()
   /** Inactive sessions marked stale — ensure on next observe. */
   const staleOnObserve = new Set<string>()
+  /** Observe-time head-check throttle (not persisted). */
+  const observeHeadCheckedAt = new Map<string, { checkedAt: number }>()
+  /** In-flight observe-time head checks (single-flight per scope). */
+  const observeHeadInFlight = new Set<string>()
 
   const markStale = (directory: string, sessionID: string) => {
     staleOnObserve.add(flightKey(directory, sessionID))
@@ -970,6 +977,57 @@ export function createTranscriptReconnectCompensationController(
     scheduleImmediateCompensation(identity)
   }
 
+  const scheduleObserveHeadCheck = (scope: TranscriptScope): void => {
+    if (destroyed) return
+    const directory = scope.directory.trim()
+    const identity = resolveIdentity(input, scope)
+    const transcriptScope = toTranscriptScope(
+      { directory, sessionID: scope.sessionID },
+      identity,
+    )
+    const cacheScope = toCacheScope(
+      { directory, sessionID: scope.sessionID },
+      identity,
+    )
+    const key = transcriptCacheScopeKey(cacheScope)
+    const previous = observeHeadCheckedAt.get(key)
+    if (previous && now() - previous.checkedAt < OBSERVE_HEAD_CHECK_TTL_MS) {
+      return
+    }
+    if (observeHeadInFlight.has(key)) return
+    if (sessionFlights.has(flightKey(directory, scope.sessionID))) return
+    // Empty Query / no canonical: cold start already goes through network tail.
+    if (!repository.hasSession?.(transcriptScope)) return
+    const transcript = repository.getTranscript(transcriptScope)
+    const tailMessageID = transcript.messageOrder[transcript.messageOrder.length - 1]
+    if (!tailMessageID) return
+
+    observeHeadInFlight.add(key)
+    void (async () => {
+      try {
+        assertRuntimeCurrent(identity, input)
+        if (destroyed) return
+        const page = await fetchReconcile({
+          sessionID: scope.sessionID,
+          directory,
+          anchor: tailMessageID,
+        })
+        assertRuntimeCurrent(identity, input)
+        if (destroyed) return
+        observeHeadCheckedAt.set(key, { checkedAt: now() })
+        if (page.resetRequired) return
+        if (page.complete && page.records.length === 0) return
+        if (page.records.length === 0) return
+        const capturedLiveRevision = repository.getTranscript(transcriptScope).liveRevision
+        applyReconcilePage(transcriptScope, page, capturedLiveRevision)
+      } catch {
+        // Silent: never surface observe-time head-check failure as transcript error.
+      } finally {
+        observeHeadInFlight.delete(key)
+      }
+    })()
+  }
+
   const ensureOnObserve = async (
     scope: TranscriptScope,
   ): Promise<TranscriptData | null> => {
@@ -977,6 +1035,8 @@ export function createTranscriptReconnectCompensationController(
     const directory = scope.directory.trim()
     const key = flightKey(directory, scope.sessionID)
     if (!staleOnObserve.has(key)) {
+      // Non-stale cached sessions still get a throttled reconcile head check.
+      scheduleObserveHeadCheck(scope)
       return null
     }
     clearStale(directory, scope.sessionID)
