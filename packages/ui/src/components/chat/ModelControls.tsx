@@ -2175,7 +2175,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             : null;
 
         return (
-            <Tooltip open={agentMenuOpen ? false : modelTooltipOpen} onOpenChange={handleModelTooltipOpenChange} delayDuration={600}>
+            <Tooltip open={agentMenuOpen ? false : modelTooltipOpen} onOpenChange={handleModelTooltipOpenChange} delayDuration={200}>
                 {!isCompact ? (
                     <DropdownMenu
                         open={isModelControlReady && agentMenuOpen}
