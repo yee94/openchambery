@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.9] - 2026-08-17
+
+- **Image citations:** sending `[image-1.png]` now also writes the durable host file path into the agent-facing message, so a later turn can Read the same image. The chat chip still shows the short filename; relay/slim still omit the image bytes.
+
 ## [1.17.0-beta.8] - 2026-08-17
 
 - **Transcript cache:** reopening the app after a session advanced elsewhere no longer pins stale message bodies from the local cache. Seeded tool/reasoning/file parts revalidate against the exact message record in the background after the first paint, so the latest content appears without a manual refresh.

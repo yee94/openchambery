@@ -17,7 +17,8 @@ import type {
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 import { convertHeicToJpegViaNative } from "../native-image-transcode";
-import { blobFromDataUrl, needsPromptAttachmentUpload, uploadPromptAttachmentBytes } from "../prompt-attachment-upload";
+import { expandImageAttachmentCitations } from "@/components/chat/attachmentCitations";
+import { blobFromDataUrl, needsPromptAttachmentUpload, pathFromPromptAttachmentFileUrl, uploadPromptAttachmentBytes } from "../prompt-attachment-upload";
 
 /**
  * Tagged result of `OpencodeService.fetchPermission()`. The caller can
@@ -262,6 +263,24 @@ type FileInputLite = {
  * File normalization is injected so the instance method uses OpencodeService's
  * toNormalizedFilePartInput while tests can supply a passthrough.
  */
+const isImagePromptFile = (file: { mime?: string; filename?: string }): boolean => {
+  if (typeof file.mime === 'string' && file.mime.startsWith('image/')) return true;
+  return typeof file.filename === 'string' && /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|heic|heif|tiff?)$/i.test(file.filename);
+};
+
+const imageCitationPathsFromFiles = (files: readonly FilePartInput[]): Array<{ filename: string; path: string }> => {
+  const paths: Array<{ filename: string; path: string }> = [];
+  for (const file of files) {
+    if (!isImagePromptFile(file)) continue;
+    const filename = typeof file.filename === 'string' ? file.filename.trim() : '';
+    const url = typeof file.url === 'string' ? file.url : '';
+    if (!filename || !url.toLowerCase().startsWith('file://')) continue;
+    const path = pathFromPromptAttachmentFileUrl(url).trim();
+    if (path) paths.push({ filename, path });
+  }
+  return paths;
+};
+
 const _buildPromptParts = async (params: {
   text: string;
   prefaceText?: string;
@@ -275,11 +294,30 @@ const _buildPromptParts = async (params: {
   agentMentions?: Array<{ name: string; source?: { value: string; start: number; end: number } }>;
 }, normalizeFile: (file: FileInputLite) => Promise<FilePartInput>): Promise<Array<TextPartInput | FilePartInput | AgentPartInputLite>> => {
   const parts: Array<TextPartInput | FilePartInput | AgentPartInputLite> = [];
+  const normalizedFiles = params.files?.length
+    ? await Promise.all(params.files.map((file) => normalizeFile(file)))
+    : [];
+  const additionalNormalized = params.additionalParts?.length
+    ? await Promise.all(params.additionalParts.map(async (additional) => ({
+      text: additional.text,
+      synthetic: additional.synthetic,
+      files: additional.files?.length
+        ? await Promise.all(additional.files.map((file) => normalizeFile(file)))
+        : [],
+    })))
+    : [];
+  const expandText = (text: string): string => expandImageAttachmentCitations(
+    text,
+    imageCitationPathsFromFiles([
+      ...normalizedFiles,
+      ...additionalNormalized.flatMap((additional) => additional.files),
+    ]),
+  );
 
   if (params.prefaceText && params.prefaceText.trim()) {
     parts.push({
       type: 'text',
-      text: params.prefaceText,
+      text: expandText(params.prefaceText),
       synthetic: params.prefaceTextSynthetic !== false,
     });
   }
@@ -287,28 +325,20 @@ const _buildPromptParts = async (params: {
   if (params.text && params.text.trim()) {
     parts.push({
       type: 'text',
-      text: params.text,
+      text: expandText(params.text),
     });
   }
 
-  if (params.files && params.files.length > 0) {
-    for (const file of params.files) {
-      parts.push(await normalizeFile(file));
-    }
-  }
+  parts.push(...normalizedFiles);
 
-  if (params.additionalParts && params.additionalParts.length > 0) {
-    for (const additional of params.additionalParts) {
+  if (additionalNormalized.length > 0) {
+    for (const additional of additionalNormalized) {
       if (additional.text && additional.text.trim()) {
-        const tp: TextPartInput = { type: 'text', text: additional.text };
+        const tp: TextPartInput = { type: 'text', text: expandText(additional.text) };
         if (additional.synthetic) (tp as Record<string, unknown>).synthetic = true;
         parts.push(tp);
       }
-      if (additional.files && additional.files.length > 0) {
-        for (const file of additional.files) {
-          parts.push(await normalizeFile(file));
-        }
-      }
+      parts.push(...additional.files);
     }
   }
 

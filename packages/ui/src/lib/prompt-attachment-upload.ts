@@ -37,6 +37,27 @@ export const toPromptAttachmentFileUrl = (filepath: string): string => {
   return `${FILE_URI_PREFIX}${encoded}`;
 };
 
+/** Inverse of `toPromptAttachmentFileUrl` — `file:///C:/a.png` → `C:/a.png`. */
+export const pathFromPromptAttachmentFileUrl = (url: string): string => {
+  const trimmed = url.trim();
+  if (!trimmed.toLowerCase().startsWith(FILE_URI_PREFIX)) return trimmed;
+  let rest = trimmed.slice(FILE_URI_PREFIX.length);
+  if (rest.toLowerCase().startsWith('localhost/')) rest = rest.slice('localhost'.length);
+  const decoded = rest
+    .split('/')
+    .map((segment) => {
+      if (/^[A-Za-z]:$/.test(segment)) return segment;
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join('/');
+  if (/^\/[A-Za-z]:/.test(decoded)) return decoded.slice(1);
+  return decoded;
+};
+
 const digestHex = async (value: Blob): Promise<string> => {
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', await value.arrayBuffer()));
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');

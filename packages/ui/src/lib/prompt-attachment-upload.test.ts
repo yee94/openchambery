@@ -12,7 +12,7 @@ mock.module('@/lib/runtime-fetch', () => ({
   }),
 }));
 
-const { blobFromDataUrl, needsPromptAttachmentUpload, uploadPromptAttachmentBytes, PromptAttachmentUploadError, toPromptAttachmentFileUrl } = await import('./prompt-attachment-upload');
+const { blobFromDataUrl, needsPromptAttachmentUpload, pathFromPromptAttachmentFileUrl, uploadPromptAttachmentBytes, PromptAttachmentUploadError, toPromptAttachmentFileUrl } = await import('./prompt-attachment-upload');
 
 beforeEach(() => {
   fetchCalls.length = 0;
@@ -69,5 +69,11 @@ describe('prompt attachment upload', () => {
 
   test('encodes Windows drive letters as file:///C:/...', () => {
     expect(toPromptAttachmentFileUrl('C:/Users/demo/photo.png')).toBe('file:///C:/Users/demo/photo.png');
+  });
+
+  test('decodes file:// URLs back to host paths', () => {
+    expect(pathFromPromptAttachmentFileUrl('file:///data/openchamber/prompt-attachments/ab/abcd.png'))
+      .toBe('/data/openchamber/prompt-attachments/ab/abcd.png');
+    expect(pathFromPromptAttachmentFileUrl('file:///C:/Users/demo/photo.png')).toBe('C:/Users/demo/photo.png');
   });
 });

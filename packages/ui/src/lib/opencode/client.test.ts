@@ -417,6 +417,30 @@ describe('opencodeClient prompt retry behavior', () => {
     expect(parts?.some((part) => part.type === 'file' && part.url === 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin' && part.mime === 'image/png')).toBe(true);
     expect(parts?.some((part) => part.type === 'file' && part.url?.startsWith('data:'))).toBe(false);
   });
+
+  test('expands image citations to the uploaded host path in authored text', async () => {
+    promptAsyncResults.push({ response: new Response(null, { status: 200 }) });
+
+    await opencodeClient.sendMessage({
+      id: 'ses_1',
+      providerID: 'anthropic-upload',
+      modelID: 'claude-sonnet',
+      text: '[photo.png] what is this',
+      files: [{
+        type: 'file',
+        mime: 'image/png',
+        filename: 'photo.png',
+        url: 'data:image/png;base64,aGVsbA==',
+      }],
+    });
+
+    const parts = (promptAsyncCalls[0]?.[0] as { parts?: Array<{ type: string; text?: string; url?: string }> })?.parts;
+    expect(parts?.some((part) => (
+      part.type === 'text'
+      && part.text === '[/data/openchamber/prompt-attachments/ab/uploaded.bin] what is this'
+    ))).toBe(true);
+    expect(parts?.some((part) => part.type === 'file' && part.url === 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin')).toBe(true);
+  });
 });
 
 describe('opencodeClient checkHealth cache', () => {

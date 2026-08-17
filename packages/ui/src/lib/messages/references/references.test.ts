@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import type { Part } from '@opencode-ai/sdk/v2';
 import {
+    buildCitationHintsFromParts,
     buildMessageReferenceParts,
     detectMessageReferences,
     hasMessageReferenceHint,
@@ -168,6 +170,17 @@ describe('tokenizeMessageReferences', () => {
             'file-image',
         ]);
     });
+
+    test('buildMessageReferenceParts shows the short image name for expanded host paths', () => {
+        const path = '/data/openchamber/prompt-attachments/aa/one.png';
+        const parts = buildMessageReferenceParts(`[${path}] please review`, {
+            citationIcons: new Map([[path.toLowerCase(), 'image']]),
+            citationDisplayNames: new Map([[path.toLowerCase(), 'image-1.png']]),
+        });
+        expect(parts?.[0]?.type).toBe('reference');
+        if (parts?.[0]?.type !== 'reference') throw new Error('expected reference part');
+        expect(parts[0].decoration.label).toBe('image-1.png');
+    });
 });
 
 describe('toComposerHighlightRanges', () => {
@@ -211,5 +224,17 @@ describe('messageReferenceTriggerIconSpec', () => {
         expect(messageReferenceTriggerIconSpec({ kind: 'session', label: 'OpenChamber', icon: 'chat-thread', className: 'reference' })).toEqual({
             trigger: '@', icon: 'chat-thread', label: 'OpenChamber',
         });
+    });
+});
+
+describe('buildCitationHintsFromParts', () => {
+    test('maps expanded host paths back to the short file-part filename', () => {
+        const path = '/data/openchamber/prompt-attachments/aa/one.png';
+        const hints = buildCitationHintsFromParts(
+            [{ type: 'file', mime: 'image/png', filename: 'image-1.png' } as Part],
+            `[${path}] 这里写的什么`,
+        );
+        expect(hints.displayNames.get(path.toLowerCase())).toBe('image-1.png');
+        expect(hints.icons.get(path.toLowerCase())).toBe('image');
     });
 });

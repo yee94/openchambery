@@ -27,7 +27,7 @@ export {
     tokenizeMessageReferences,
 } from './detect';
 
-export { buildCitationIconsFromParts } from './citations';
+export { buildCitationHintsFromParts, buildCitationIconsFromParts } from './citations';
 
 export {
     messageReferenceTriggerIconSpec,

@@ -4,6 +4,7 @@ import {
     assignImageAttachmentFilenames,
     buildAttachmentCitationText,
     expandCodeSelectionCitations,
+    expandImageAttachmentCitations,
     findAttachmentCitationRanges,
     getAttachmentCitationIconPath,
     isInlineAttachmentCitation,
@@ -80,6 +81,23 @@ describe('attachment citations', () => {
                 vscodePath: '/Users/example/project/src/SidebarFooter.tsx',
             }],
         )).toBe('check [/Users/example/project/src/SidebarFooter.tsx:199-200] and [image-1.png]');
+    });
+
+    test('expands sent image citations to their durable host paths', () => {
+        expect(expandImageAttachmentCitations(
+            'what is [\u2003image-1.png] vs [image-2.png]',
+            [
+                { filename: 'image-1.png', path: '/data/openchamber/prompt-attachments/aa/one.png' },
+                { filename: 'image-2.png', path: '/data/openchamber/prompt-attachments/bb/two.png' },
+            ],
+        )).toBe('what is [/data/openchamber/prompt-attachments/aa/one.png] vs [/data/openchamber/prompt-attachments/bb/two.png]');
+    });
+
+    test('does not rewrite image citations that are already absolute paths', () => {
+        expect(expandImageAttachmentCitations(
+            'see [/data/openchamber/prompt-attachments/aa/one.png]',
+            [{ filename: '/data/openchamber/prompt-attachments/aa/one.png', path: '/other/one.png' }],
+        )).toBe('see [/data/openchamber/prompt-attachments/aa/one.png]');
     });
 
     test('classifies code-selection file parts as reference-only display data', () => {
