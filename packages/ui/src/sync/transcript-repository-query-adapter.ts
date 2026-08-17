@@ -62,6 +62,7 @@ import {
   countTranscriptAuthoredUserTurns,
   evaluateTranscriptP0Satisfied,
   messageNeedsExactMaterialization,
+  messageNeedsExactRevalidation,
   projectPagination,
   resolveTranscriptHydrationPhase,
   type TranscriptChangeListener,
@@ -287,6 +288,11 @@ export function createQueryTranscriptRepository(
   const messageStates = new Map<string, { status: "idle" | "loading" | "ready" | "error"; error?: string }>()
   /** In-flight exact-fill promises so repeat expands share one Host request. */
   const messageFlights = new Map<string, Promise<TranscriptData>>()
+  /**
+   * Durable-seeded message IDs still awaiting an exact `session.message`
+   * revalidation. Keyed by scopeKey; values are unverified message IDs.
+   */
+  const durableSeededExact = new Map<string, Set<string>>()
   /** Latched P0 so a later empty/stale read cannot reopen the skeleton. */
   const p0Latches = new Map<string, true>()
   /** First on-screen paint for a scope; one hydration event per latch. */
@@ -546,6 +552,23 @@ export function createQueryTranscriptRepository(
     messageID: string,
   ): string => `${scopeKey(identity)}\n${messageID}`
 
+  const clearDurableSeededExactMessage = (
+    identity: ReturnType<typeof resolveScopeIdentity>,
+    messageID: string,
+  ) => {
+    const key = scopeKey(identity)
+    const pending = durableSeededExact.get(key)
+    if (!pending) return
+    pending.delete(messageID)
+    if (pending.size === 0) durableSeededExact.delete(key)
+  }
+
+  const clearDurableSeededExact = (prefix: string) => {
+    for (const key of durableSeededExact.keys()) {
+      if (key === prefix || key.startsWith(prefix)) durableSeededExact.delete(key)
+    }
+  }
+
   const clearMessageMaterialization = (prefix: string) => {
     for (const key of messageStates.keys()) {
       if (key.startsWith(prefix)) messageStates.delete(key)
@@ -720,6 +743,17 @@ export function createQueryTranscriptRepository(
           return repository.getTranscript(scope)
         }
         repository.apply(scope, { type: "http-page", purpose: "initial", page })
+        // Durable-seeded full tool/reasoning/file parts stay unverified until
+        // one background exact fill. Bounded by this authority tail page.
+        const pending = durableSeededExact.get(flightKey)
+        if (pending && pending.size > 0) {
+          for (const record of page.records) {
+            const id = record.info.id
+            if (!id || !pending.has(id)) continue
+            if (!messageNeedsExactRevalidation(record.parts ?? [])) continue
+            void repository.materializeMessage(scope, id).catch(() => undefined)
+          }
+        }
         authorityFlights.delete(flightKey)
         cacheBudget.noteScopeObserved(toCacheScope(scope))
         enforceBudgetAfterWrite(scope)
@@ -883,6 +917,9 @@ export function createQueryTranscriptRepository(
       if (!repository.getMessage(scope, messageID)) {
         return { sessionID: identity.sessionID, messageID, status: "idle" }
       }
+      if (durableSeededExact.get(scopeKey(identity))?.has(messageID)) {
+        return { sessionID: identity.sessionID, messageID, status: "idle" }
+      }
       if (messageNeedsExactMaterialization(repository.getParts(scope, messageID))) {
         return { sessionID: identity.sessionID, messageID, status: "idle" }
       }
@@ -896,69 +933,76 @@ export function createQueryTranscriptRepository(
       if (existing) return existing
 
       const run = (async (): Promise<TranscriptData> => {
-        const info = repository.getMessage(scope, messageID)
-        if (!info) {
-          messageStates.set(flightKey, { status: "idle" })
-          return repository.getTranscript(scope)
-        }
-        if (!messageNeedsExactMaterialization(repository.getParts(scope, messageID))) {
-          messageStates.set(flightKey, { status: "ready" })
-          return repository.getTranscript(scope)
-        }
-
-        messageStates.set(flightKey, { status: "loading" })
-        notify(scope)
         try {
-          const record = await fetchExactSessionMessageRecord({
-            transport: captured.transport,
-            generation: captured.generation,
-            directory: captured.directory,
-            sessionID: captured.sessionID,
-            messageID,
-            request: async () => {
-              if (deps.fetchMessage) {
-                const next = await deps.fetchMessage({
-                  directory: captured.directory,
+          const info = repository.getMessage(scope, messageID)
+          if (!info) {
+            messageStates.set(flightKey, { status: "idle" })
+            return repository.getTranscript(scope)
+          }
+          if (
+            !messageNeedsExactMaterialization(repository.getParts(scope, messageID))
+            && !durableSeededExact.get(scopeKey(captured))?.has(messageID)
+          ) {
+            messageStates.set(flightKey, { status: "ready" })
+            return repository.getTranscript(scope)
+          }
+
+          messageStates.set(flightKey, { status: "loading" })
+          notify(scope)
+          try {
+            const record = await fetchExactSessionMessageRecord({
+              transport: captured.transport,
+              generation: captured.generation,
+              directory: captured.directory,
+              sessionID: captured.sessionID,
+              messageID,
+              request: async () => {
+                if (deps.fetchMessage) {
+                  const next = await deps.fetchMessage({
+                    directory: captured.directory,
+                    sessionID: captured.sessionID,
+                    messageID,
+                  })
+                  return { data: { info: next.info, parts: [...(next.parts ?? [])] } }
+                }
+                const scoped = opencodeClient.getScopedSdkClient(captured.directory)
+                return scoped.session.message({
                   sessionID: captured.sessionID,
                   messageID,
+                  directory: captured.directory,
                 })
-                return { data: { info: next.info, parts: [...(next.parts ?? [])] } }
-              }
-              const scoped = opencodeClient.getScopedSdkClient(captured.directory)
-              return scoped.session.message({
-                sessionID: captured.sessionID,
-                messageID,
-                directory: captured.directory,
-              })
-            },
-          })
-          if (!liveIdentityMatches(captured)) {
-            messageStates.delete(flightKey)
-            return repository.getTranscript(scope)
-          }
-          repository.apply(scope, {
-            type: "materialize-snapshots",
-            records: [{ info: record.info, parts: record.parts ?? [] }],
-          })
-          if (messageNeedsExactMaterialization(repository.getParts(scope, messageID))) {
-            messageStates.set(flightKey, {
-              status: "error",
-              error: "session.message failed: slim parts remain",
+              },
             })
-          } else {
-            messageStates.set(flightKey, { status: "ready" })
-          }
-          notify(scope)
-          return repository.getTranscript(scope)
-        } catch (error) {
-          if (!liveIdentityMatches(captured)) {
-            messageStates.delete(flightKey)
+            if (!liveIdentityMatches(captured)) {
+              messageStates.delete(flightKey)
+              return repository.getTranscript(scope)
+            }
+            repository.apply(scope, {
+              type: "materialize-snapshots",
+              records: [{ info: record.info, parts: record.parts ?? [] }],
+            })
+            if (messageNeedsExactMaterialization(repository.getParts(scope, messageID))) {
+              messageStates.set(flightKey, {
+                status: "error",
+                error: "session.message failed: slim parts remain",
+              })
+            } else {
+              messageStates.set(flightKey, { status: "ready" })
+            }
+            notify(scope)
+            return repository.getTranscript(scope)
+          } catch (error) {
+            if (!liveIdentityMatches(captured)) {
+              messageStates.delete(flightKey)
+              return repository.getTranscript(scope)
+            }
+            const message = error instanceof Error ? error.message : "session.message failed"
+            messageStates.set(flightKey, { status: "error", error: message })
+            notify(scope)
             return repository.getTranscript(scope)
           }
-          const message = error instanceof Error ? error.message : "session.message failed"
-          messageStates.set(flightKey, { status: "error", error: message })
-          notify(scope)
-          return repository.getTranscript(scope)
+        } finally {
+          clearDurableSeededExactMessage(captured, messageID)
         }
       })()
 
@@ -1056,6 +1100,7 @@ export function createQueryTranscriptRepository(
         }
         case "reset": {
           prependFlights.delete(scopeKey(identity))
+          durableSeededExact.delete(scopeKey(identity))
           // Clear reserved task/checkpoint/transport families alongside the
           // canonical reset so old cursor chains cannot survive.
           cacheBudget.purgeSession(toCacheScope(scope))
@@ -1174,6 +1219,12 @@ export function createQueryTranscriptRepository(
                   parts: [...record.parts],
                 })),
               })
+              const pending = new Set<string>()
+              for (const record of session.records) {
+                if (!messageNeedsExactRevalidation(record.parts)) continue
+                pending.add(record.info.id)
+              }
+              if (pending.size > 0) durableSeededExact.set(flightKey, pending)
             } finally {
               suppressDurableWrite -= 1
             }
@@ -1386,6 +1437,7 @@ export function createQueryTranscriptRepository(
       }
       projectionCache.delete(key)
       clearMessageMaterialization(`${key}\n`)
+      durableSeededExact.delete(key)
       clearHydration(key)
       cacheBudget.purgeSession(toCacheScope(scope))
       notify(scope)
@@ -1414,6 +1466,7 @@ export function createQueryTranscriptRepository(
         }
       }
       clearMessageMaterialization(`${transport}\n${generation}\n`)
+      clearDurableSeededExact(`${transport}\n${generation}\n`)
       clearHydration(`${transport}\n${generation}\n`)
       cacheBudget.purgeGeneration(transport, generation)
       if (durableQueue) {
@@ -1434,6 +1487,7 @@ export function createQueryTranscriptRepository(
       authorityTailInflight.clear()
       messageStates.clear()
       messageFlights.clear()
+      durableSeededExact.clear()
       p0Latches.clear()
       p0Painted.clear()
       prependFlights.clear()

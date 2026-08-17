@@ -1252,6 +1252,83 @@ describe("Query repository on-demand message materialization", () => {
     })
   })
 
+  test("durable-seeded full tool part revalidates against the exact Host record after cold start", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    // Previous app run cached a settled assistant whose tool output changed
+    // server-side afterwards (session advanced in another surface).
+    await inner.upsertSettled(durableScope, settledAssistant("msg_asst"), [fullTool("t1", "msg_asst", "stale output")])
+    let exactFetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetcher: async () => transportPage([
+        { info: settledAssistant("msg_asst"), parts: [slimTool("t1", "msg_asst")] },
+      ], { complete: true }),
+      fetchMessage: async () => {
+        exactFetches += 1
+        return { info: settledAssistant("msg_asst"), parts: [fullTool("t1", "msg_asst", "fresh output")] }
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    await repo.ensureInitial(scope)
+    // Anti-degradation contract: first paint keeps the cached full body.
+    expect((repo.getParts(scope, "msg_asst")[0] as { state?: { output?: string } }).state?.output).toBe("stale output")
+    // The seeded full record is unverified, so it must revalidate through the
+    // exact Host fetch instead of reporting ready.
+    await waitUntil(() =>
+      exactFetches >= 1
+      && repo.getMessageMaterializationState(scope, "msg_asst").status === "ready",
+    )
+    expect(repo.getMessageMaterializationState(scope, "msg_asst").status).toBe("ready")
+    expect((repo.getParts(scope, "msg_asst")[0] as { state?: { output?: string } }).state?.output).toBe("fresh output")
+    // The revalidated body self-heals the durable cache.
+    await waitUntil(async () => {
+      const stored = await inner.readMessage(durableScope, "msg_asst")
+      return (stored?.parts[0] as { state?: { output?: string } } | undefined)?.state?.output === "fresh output"
+    })
+    // Revalidation runs once per cold start — no fetch loop.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const settledFetches = exactFetches
+    await repo.ensureInitial(scope)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(exactFetches).toBe(settledFetches)
+    repo.destroy()
+  })
+
+  test("durable-seeded text-only records do not trigger exact revalidation fetches", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    await inner.upsertSettled(durableScope, settledAssistant("msg_text"), [slimText("p1", "msg_text", "cached")])
+    let exactFetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetcher: async () => transportPage([
+        { info: settledAssistant("msg_text"), parts: [slimText("p1", "msg_text", "cached")] },
+      ], { complete: true }),
+      fetchMessage: async () => {
+        exactFetches += 1
+        return { info: settledAssistant("msg_text"), parts: [slimText("p1", "msg_text", "cached")] }
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    await repo.ensureInitial(scope)
+    await repo.materializeMessage(scope, "msg_text")
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(exactFetches).toBe(0)
+    expect(repo.getMessageMaterializationState(scope, "msg_text").status).toBe("ready")
+    repo.destroy()
+  })
+
   test("messageNeedsExactMaterialization is only true for slim tool/reasoning/file", () => {
     expect(messageNeedsExactMaterialization([slimTool("t1", "msg_a")])).toBe(true)
     expect(messageNeedsExactMaterialization([

@@ -118,6 +118,15 @@ export function messageNeedsExactMaterialization(parts: readonly Part[]): boolea
   )
 }
 
+/**
+ * Whether a durable-seeded message has tool / reasoning / file parts that
+ * still need an exact `session.message` revalidation even when those parts
+ * already look full.
+ */
+export function messageNeedsExactRevalidation(parts: readonly Part[]): boolean {
+  return parts.some((part) => EXACT_MATERIALIZATION_PART_TYPES.has(part.type))
+}
+
 export type TranscriptHydrationPhase = "idle" | "p0" | "p1" | "p2"
 
 export type TranscriptHydrationState = {

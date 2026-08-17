@@ -313,8 +313,8 @@ Modules:
 
 | Module | Role |
 |---|---|
-| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization`; optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
-| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial`; on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
+| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
+| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial`; on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded tool/reasoning/file parts revalidate via exact `session.message` after the authority tail; post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
 | `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset |
 | `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40 sessions) plus durable body budgets (`getTranscriptDurableByteBudget`: 4 / 12 / 40 MiB) |
@@ -352,8 +352,12 @@ Modules:
 - Initial / recovery / materialize / selection: production transport fetcher
   (`fetchProductionTranscriptTransportPage`) enters Query as `http-page`
   directly, or via `ensureTranscriptInitial` / `ensureInitial`. On-demand
-  exact fills use `materializeTranscriptMessage` → Query `materializeMessage`
+   exact fills use `materializeTranscriptMessage` → Query `materializeMessage`
   (`session.message`, captured transport+generation, `materialize-snapshots`).
+  Durable first-paint seeds the canonical transcript from the local cache
+  before the authority tail; seeded full tool / reasoning / file parts stay
+  unverified until one background exact `session.message` revalidation
+  self-heals the cache.
   Visible slim file images subscribe to that message's live parts so the fill
   upgrades in place. File `url` / `slim` are part of merge equality so an exact
   fill is not dropped as a no-op. A fill that leaves slim parts is `error`, not
@@ -680,8 +684,12 @@ both readers agree on when a frame may shrink.
   the strategy field names that asymmetry explicitly.
 
   Known limitation: `initial` resolves to `insert-only`, so a first-screen load
-  cannot refresh a message body the server has since changed. Whether to change
-  that is a separate decision; the table makes the behavior visible.
+  cannot refresh a message body the server has since changed. Durable-seeded
+  full tool / reasoning / file parts are the exception: after the authority
+  tail applies, those messages schedule one background exact `session.message`
+  revalidation and rewrite the durable cache when the body changed. Whether to
+  widen insert-only itself is a separate decision; the table makes the
+  behavior visible.
   User-triggered refresh is a different path: `refreshFromAuthority` fetches a
   fresh tail first, then replaces the canonical transcript with that page.
   Fetch failure keeps the prior transcript. The fetch is outside the
