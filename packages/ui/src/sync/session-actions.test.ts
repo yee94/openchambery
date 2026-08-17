@@ -3064,6 +3064,98 @@ describe("message edit staging", () => {
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_0", "msg_5"])
   })
 
+  test("commitMessageEdit removes the deleted tail from every canonical scope of the session", async () => {
+    const { QueryClient } = await import("@tanstack/react-query")
+    const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")
+    const { createMemoryTranscriptDurableStore } = await import("./transcript-durable-store")
+    const {
+      bindTranscriptRepositoryInstance,
+      unbindTranscriptRepository,
+      transcriptScope,
+    } = await import("./transcript-repository-runtime")
+    const { getRuntimeGeneration, getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
+
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const older = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const tail = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 }, finish: "stop" } as Message
+    const page = {
+      records: [
+        { info: older, parts: [] },
+        { info: target, parts: [] },
+        { info: tail, parts: [] },
+      ],
+      complete: true,
+      turnCount: 2,
+    }
+    const dirA = "/test/project"
+    const dirB = "/other/project"
+    const sessionStore = createStore({}, { session: [session] })
+    const childStores = createChildStores([[dirA, sessionStore]])
+    sessionMessagesResult = { data: page.records }
+
+    const transport = getRuntimeTransportIdentity()
+    const generation = getRuntimeGeneration()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const durable = createMemoryTranscriptDurableStore()
+    const repo = createQueryTranscriptRepository({
+      client,
+      durableStore: durable,
+      transport,
+      generation,
+      probe: {
+        getTransport: () => transport,
+        getGeneration: () => generation,
+      },
+    })
+    bindTranscriptRepositoryInstance(repo)
+    const scopeA = transcriptScope(dirA, "session-a", { transport, generation })
+    const scopeB = transcriptScope(dirB, "session-a", { transport, generation })
+    repo.apply(scopeA, { type: "http-page", purpose: "initial", page })
+    repo.apply(scopeB, { type: "http-page", purpose: "initial", page })
+
+    const durableA = { transport, generation, directory: dirA, sessionID: "session-a" }
+    const durableB = { transport, generation, directory: dirB, sessionID: "session-a" }
+    const waitUntil = async (predicate: () => boolean | Promise<boolean>, timeout = 800) => {
+      const started = Date.now()
+      while (!(await predicate())) {
+        if (Date.now() - started > timeout) throw new Error("timed out waiting for durable side effect")
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+    }
+    await waitUntil(async () => {
+      const a = await durable.readSession(durableA)
+      const b = await durable.readSession(durableB)
+      return a.records.some((record) => record.messageID === "msg_2")
+        && b.records.some((record) => record.messageID === "msg_2")
+    })
+
+    try {
+      const { commitMessageEdit, setActionRefs } = await import("./session-actions")
+      setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+      await commitMessageEdit("session-a", "msg_2")
+
+      expect(repo.getTranscript(scopeA).messageOrder).not.toContain("msg_2")
+      expect(repo.getTranscript(scopeA).messageOrder).not.toContain("msg_3")
+      expect(repo.getTranscript(scopeB).messageOrder).not.toContain("msg_2")
+      expect(repo.getTranscript(scopeB).messageOrder).not.toContain("msg_3")
+
+      await waitUntil(async () => {
+        const a = await durable.readSession(durableA)
+        const b = await durable.readSession(durableB)
+        const leftover = (session: typeof a) => session.records.filter((record) => (
+          record.messageID === "msg_2" || record.messageID === "msg_3"
+        ))
+        return leftover(a).length === 0 && leftover(b).length === 0
+      })
+      expect((await durable.readSession(durableA)).records.map((record) => record.messageID)).toEqual(["msg_1"])
+      expect((await durable.readSession(durableB)).records.map((record) => record.messageID)).toEqual(["msg_1"])
+    } finally {
+      unbindTranscriptRepository()
+      repo.destroy()
+    }
+  })
+
 })
 
 describe("session history mutation serial coordinator", () => {

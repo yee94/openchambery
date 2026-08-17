@@ -12,6 +12,7 @@
 
 import type { StoreApi } from "zustand"
 
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import {
   createStoreTranscriptRepository,
@@ -145,6 +146,44 @@ export function transcriptScope(
     sessionID,
     ...(options?.transport !== undefined ? { transport: options.transport } : {}),
     ...(options?.generation !== undefined ? { generation: options.generation } : {}),
+  }
+}
+
+/**
+ * List every current-runtime canonical transcript scope for a session.
+ * Local writers that must sweep every directory copy use this (same contract
+ * as transcript SSE broadcast). An unbound repository or inventory failure
+ * returns [].
+ */
+export function listCanonicalTranscriptScopes(sessionID: string): TranscriptScope[] {
+  try {
+    const repository = getTranscriptRepository() as
+      | (ReturnType<typeof getTranscriptRepository> & {
+        getCacheBudget?: () => {
+          listCanonical: (filter?: {
+            transport?: string
+            generation?: number
+          }) => Array<{
+            scope: {
+              directory: string
+              sessionID: string
+              transport: string
+              generation: number
+            }
+          }>
+        }
+      })
+      | null
+    const transport = getRuntimeTransportIdentity()
+    const generation = getRuntimeGeneration()
+    return repository?.getCacheBudget?.().listCanonical({ transport, generation })
+      ?.filter((entry) => entry.scope.sessionID === sessionID)
+      .map((entry) => transcriptScope(entry.scope.directory, entry.scope.sessionID, {
+        transport: entry.scope.transport,
+        generation: entry.scope.generation,
+      })) ?? []
+  } catch {
+    return []
   }
 }
 

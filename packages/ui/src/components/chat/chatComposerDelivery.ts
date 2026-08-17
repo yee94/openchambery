@@ -4,7 +4,7 @@ import { parseAgentMentions } from '@/lib/messages/agentMentions';
 import { compileAuthoredDeliveryPlan, dedupeDeliveryAttachments } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import type { ComposerSendPlan } from '@/composer/send-plan';
-import { getSyncSessions } from '@/sync/sync-refs';
+import { getAllSyncSessionMap, getSyncSessions } from '@/sync/sync-refs';
 import { basename, isAbsolute, join, normalize } from 'pathe';
 import {
     DIRECTORY_ATTACHMENT_MIME,
@@ -12,6 +12,7 @@ import {
     stripAttachmentCitationSlotsForDelivery,
 } from './attachmentCitations';
 import { collectSessionMentionIds, replaceSessionMentionTokens } from './fileMentionAutocompleteState';
+import { COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
 
 // Optional reserved icon em-space between `/` and the skill name.
 const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/\u2003?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
@@ -105,6 +106,16 @@ const collectSkillSemantics = (text: string, installedSkillNames: ReadonlySet<st
     return semantics;
 };
 
+/** Collects referenced sessions whose visible `@<title>` label appears in authored text, so pasted references still deliver session semantics. */
+const collectLoadedSessionTitleMentionIds = (text: string, loadedTitles: ReadonlyArray<{ id: string; title: string }>): string[] => {
+    if (!text.includes('@') || loadedTitles.length === 0) return [];
+    const ids: string[] = [];
+    for (const { id, title } of loadedTitles) {
+        if (text.includes(`@${title}`) || text.includes(`@${COMPOSER_TRIGGER_ICON_SLOT}${title}`)) ids.push(id);
+    }
+    return ids;
+};
+
 export const compileChatComposerDelivery = ({ plan, agents, installedSkillNames, directory, root, confirmedFilePaths = [], confirmedDirectoryPaths = [], citationAttachments = [] }: {
     plan: ComposerSendPlan;
     agents: Parameters<typeof parseAgentMentions>[1];
@@ -117,9 +128,19 @@ export const compileChatComposerDelivery = ({ plan, agents, installedSkillNames,
 }) => {
     const agentNames = new Set(agents.map((agent) => agent.name.toLowerCase()));
     const labels = new Map(getSyncSessions(directory).map((session) => [session.id, session.title || session.id]));
+    // Title-matching source for pasted visible `@<title>` references; same matching the sent-message display fallback uses.
+    const loadedTitles: Array<{ id: string; title: string }> = [];
+    for (const session of getAllSyncSessionMap().values()) {
+        const title = typeof session.title === 'string' ? session.title.trim() : '';
+        if (title) loadedTitles.push({ id: session.id, title });
+    }
     return compileAuthoredDeliveryPlan(plan, (authored) => {
         const agent = parseAgentMentions(authored, agents);
-        const semantics = [...collectSkillSemantics(authored, installedSkillNames), ...collectSessionMentionIds(authored).map((sessionId) => ({ type: 'session' as const, sessionId }))];
+        const sessionMentionIds = [...new Set([
+            ...collectSessionMentionIds(authored),
+            ...collectLoadedSessionTitleMentionIds(authored, loadedTitles),
+        ])];
+        const semantics = [...collectSkillSemantics(authored, installedSkillNames), ...sessionMentionIds.map((sessionId) => ({ type: 'session' as const, sessionId }))];
         const attachments = extractInlineFileMentions({ text: agent.sanitizedText, root, confirmedFilePaths, confirmedDirectoryPaths, agentNames });
         return {
             text: replaceSessionMentionTokens(

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildSessionMentionInstruction, buildSkillMentionInstruction, compileAuthoredDeliveryPlan, parseSessionMentionInstruction, partitionComposerSemantics } from './delivery';
+import { buildSessionMentionInstruction, buildSkillMentionInstruction, compileAuthoredDeliveryPlan, parseSessionMentionInstruction, partitionComposerSemantics, type SessionMentionContext } from './delivery';
 
 test('delivery partitions semantic references with stable type-local deduplication', () => {
     expect(partitionComposerSemantics([
@@ -15,29 +15,31 @@ test('delivery emits compact canonical tags for legacy skill semantics', () => {
     expect(buildSkillMentionInstruction(['review', 'test'])).toBe('[skill:review] [skill:test]');
 });
 
-test('delivery keeps bounded session context JSON parseable', () => {
+test('delivery keeps session reference JSON parseable and lightweight', () => {
     const instruction = buildSessionMentionInstruction([
-        { id: 's1', title: 'One', messages: [{ role: 'user', text: 'x'.repeat(500) }] },
-        { id: 's2', title: 'Two', messages: [{ role: 'assistant', text: 'y'.repeat(500) }] },
-    ], 500);
-    expect((instruction?.length ?? Infinity) <= 500).toBe(true);
+        { id: 's1', title: 'One' },
+        { id: 's2', title: 'Two' },
+    ]);
     const payload = instruction?.slice((instruction.indexOf('\n') ?? -1) + 1) ?? '';
     expect((JSON.parse(payload) as Array<{ id: string }>).map((context) => context.id)).toEqual(['s1', 's2']);
+    expect(JSON.parse(payload)).toEqual([{ id: 's1', title: 'One' }, { id: 's2', title: 'Two' }]);
 });
 
-test('delivery recovers authoritative visible session mention metadata', () => {
-    const contexts = [{ id: 's1', title: 'OpenChamber status', messages: [{ role: 'user', text: 'hello' }] }];
+test('delivery recovers session reference metadata from instructions', () => {
+    const contexts = [{ id: 's1', title: 'OpenChamber status' }];
     const instruction = buildSessionMentionInstruction(contexts);
     expect(parseSessionMentionInstruction(instruction ?? '')).toEqual(contexts);
     expect(parseSessionMentionInstruction('ordinary text')).toEqual([]);
-    expect(parseSessionMentionInstruction('The user explicitly referenced these loaded OpenCode sessions. Use their conversation content as context for this request. Some content may be omitted to fit the context limit.\n{}')).toEqual([]);
+    expect(parseSessionMentionInstruction(`${'The user referenced these OpenCode sessions.'.repeat(1)}\n{}`)).toEqual([]);
 });
 
-test('delivery preserves the original small-budget session instruction behavior', () => {
-    const contexts = [{ id: 's1', title: 'One', messages: [] }];
-    const prefix = 'The user explicitly referenced these loaded OpenCode sessions. Use their conversation content as context for this request. Some content may be omitted to fit the context limit.\n';
-    expect(buildSessionMentionInstruction(contexts, 1)).toBe(prefix.slice(0, 1));
-    expect(buildSessionMentionInstruction(contexts, prefix.length + 2)).toBe(`${prefix}[{"id":"s1","title":"","messages":[]}]`);
+test('delivery caps session reference titles instead of dropping sessions', () => {
+    const contexts = [{ id: 's1', title: 'x'.repeat(600) }];
+    const instruction = buildSessionMentionInstruction(contexts, 100);
+    const payload = instruction?.slice((instruction.indexOf('\n') ?? -1) + 1) ?? '';
+    const parsed = JSON.parse(payload) as SessionMentionContext[];
+    expect(parsed[0].title.length).toBe(103);
+    expect(parsed[0].title.endsWith('...')).toBe(true);
 });
 
 test('delivery trims only authored document boundaries and deduplicates inline attachments', () => {

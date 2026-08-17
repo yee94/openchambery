@@ -133,27 +133,27 @@ describe('session mentions', () => {
         });
     });
 
-    test('builds bounded loaded-session context', () => {
+    test('builds lightweight loaded-session references', () => {
         const instruction = buildSessionMentionInstruction([
             {
                 id: 'ses_123',
                 title: 'Previous implementation',
-                messages: [{ role: 'user', text: 'Implement grouped mentions' }],
             },
         ]);
 
         expect(instruction).toContain('ses_123');
-        expect(instruction).toContain('Implement grouped mentions');
-        expect(buildSessionMentionInstruction([], 100)).toBeNull();
+        expect(instruction).toContain('Previous implementation');
+        expect(instruction).not.toContain('messages');
+        expect(buildSessionMentionInstruction([])).toBeNull();
         const boundedInstruction = buildSessionMentionInstruction([
-            { id: 'ses_123', title: 'Long', messages: [{ role: 'user', text: 'x'.repeat(500) }] },
-            { id: 'ses_456', title: 'Second', messages: [{ role: 'assistant', text: 'y'.repeat(500) }] },
-        ], 500);
-        expect((boundedInstruction?.length ?? 0) <= 500).toBe(true);
+            { id: 'ses_123', title: 'L'.repeat(500) },
+            { id: 'ses_456', title: 'Second' },
+        ], 10);
         const payload = boundedInstruction?.slice((boundedInstruction.indexOf('\n') ?? -1) + 1) ?? '';
         const parsed = JSON.parse(payload) as SessionMentionContext[];
         expect(parsed.map((context) => context.id)).toEqual(['ses_123', 'ses_456']);
-        expect(parsed[0].messages[0]?.text).toContain('[Message truncated]');
+        expect(parsed[0].title).toBe(`${'L'.repeat(10)}...`);
+        expect(parsed[1].title).toBe('Second');
     });
 });
 

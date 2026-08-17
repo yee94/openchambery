@@ -32,6 +32,7 @@ import {
 import {
   applyTranscriptCommand,
   getTranscriptRepository,
+  listCanonicalTranscriptScopes,
   materializeTranscriptMessage,
   resolveTranscriptRepositoryForStore,
   transcriptScope,
@@ -2449,13 +2450,23 @@ function removeSessionMessageFromStore(
   directory?: string,
 ): void {
   const resolvedDirectory = directory ?? getSessionDirectory(sessionId) ?? _getDirectory()
-  const scope = transcriptScope(resolvedDirectory, sessionId)
-  const applied = applyTranscriptCommand(scope, {
-    type: "remove-message",
-    messageID: messageId,
-  })
-  if (!applied) {
-    resolveTranscriptRepositoryForStore(resolvedDirectory, store).apply(scope, {
+  const resolvedScope = transcriptScope(resolvedDirectory, sessionId)
+  const scopes = [...listCanonicalTranscriptScopes(sessionId)]
+  if (!scopes.some((scope) => scope.directory === resolvedDirectory && scope.sessionID === sessionId)) {
+    scopes.push(resolvedScope)
+  }
+  let boundApplied = false
+  for (const scope of scopes) {
+    const applied = applyTranscriptCommand(scope, {
+      type: "remove-message",
+      messageID: messageId,
+    })
+    if (applied != null) boundApplied = true
+  }
+  // Store-adapter fallback is only needed for the resolved directory when the
+  // production repository is unbound (unit tests without a Query bind).
+  if (!boundApplied) {
+    resolveTranscriptRepositoryForStore(resolvedDirectory, store).apply(resolvedScope, {
       type: "remove-message",
       messageID: messageId,
     })

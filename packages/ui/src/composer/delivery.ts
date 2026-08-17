@@ -1,5 +1,4 @@
-import { getSyncMessages, getSyncParts, getSyncSessions, resolveMaterializedSessionDirectory } from '@/sync/sync-refs';
-import { isSyntheticPart } from '@/lib/messages/synthetic';
+import { getAllSyncSessionMap, getSyncSessions } from '@/sync/sync-refs';
 import type { ComposerReferenceSemantic } from './extensions';
 import type { ComposerSendPlan } from './send-plan';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
@@ -44,9 +43,9 @@ export const dedupeDeliveryAttachments = (attachments: readonly AttachedFile[]):
     });
 };
 
-export type SessionMentionContext = { id: string; title: string; messages: Array<{ role: string; text: string }> };
+export type SessionMentionContext = { id: string; title: string };
 
-const SESSION_MENTION_INSTRUCTION_PREFIX = 'The user explicitly referenced these loaded OpenCode sessions. Use their conversation content as context for this request. Some content may be omitted to fit the context limit.\n';
+const SESSION_MENTION_INSTRUCTION_PREFIX = 'The user referenced these OpenCode sessions. Their conversation content is not inlined in this prompt; when the request depends on it, look the sessions up by ID and read them there instead of guessing from the title alone.\n';
 
 export const parseSessionMentionInstruction = (text: string): SessionMentionContext[] => {
     if (!text.startsWith(SESSION_MENTION_INSTRUCTION_PREFIX)) return [];
@@ -55,16 +54,10 @@ export const parseSessionMentionInstruction = (text: string): SessionMentionCont
         if (!Array.isArray(value)) return [];
         return value.flatMap((item) => {
             if (!item || typeof item !== 'object') return [];
-            const candidate = item as { id?: unknown; title?: unknown; messages?: unknown };
-            if (typeof candidate.id !== 'string' || typeof candidate.title !== 'string' || !Array.isArray(candidate.messages)) return [];
-            const messages = candidate.messages.flatMap((message) => {
-                if (!message || typeof message !== 'object') return [];
-                const entry = message as { role?: unknown; text?: unknown };
-                return typeof entry.role === 'string' && typeof entry.text === 'string'
-                    ? [{ role: entry.role, text: entry.text }]
-                    : [];
-            });
-            return [{ id: candidate.id, title: candidate.title, messages }];
+            const candidate = item as { id?: unknown; title?: unknown };
+            return typeof candidate.id === 'string' && typeof candidate.title === 'string'
+                ? [{ id: candidate.id, title: candidate.title }]
+                : [];
         });
     } catch {
         return [];
@@ -76,43 +69,14 @@ export const buildSkillMentionInstruction = (skillNames: readonly string[]): str
     return skillNames.map((name) => `[skill:${name}]`).join(' ');
 };
 
-export const buildSessionMentionInstruction = (contexts: SessionMentionContext[], maxChars = 36_000): string | null => {
+/** Session references stay lightweight: only stable IDs plus display titles travel in the prompt. */
+export const buildSessionMentionInstruction = (contexts: readonly SessionMentionContext[], maxTitleChars = 200): string | null => {
     if (contexts.length === 0) return null;
-    const prefix = SESSION_MENTION_INSTRUCTION_PREFIX;
-    const payloadBudget = maxChars - prefix.length;
-    if (payloadBudget < 2) return prefix.slice(0, maxChars);
-
-    const separatorsLength = contexts.length + 1;
-    const contextBudget = Math.max(2, Math.floor((payloadBudget - separatorsLength) / contexts.length));
-    const payloads = contexts.map((context) => {
-        const fitted: SessionMentionContext = { id: context.id, title: context.title, messages: [] };
-        if (JSON.stringify(fitted).length > contextBudget) {
-            let low = 0; let high = fitted.title.length; let fittedTitle = '';
-            while (low <= high) {
-                const middle = Math.floor((low + high) / 2);
-                const candidateTitle = `${fitted.title.slice(0, middle)}...`;
-                if (JSON.stringify({ ...fitted, title: candidateTitle }).length <= contextBudget) { fittedTitle = candidateTitle; low = middle + 1; }
-                else high = middle - 1;
-            }
-            fitted.title = fittedTitle;
-        }
-        for (const message of context.messages) {
-            const nextMessages = [...fitted.messages, message];
-            if (JSON.stringify({ ...fitted, messages: nextMessages }).length <= contextBudget) { fitted.messages = nextMessages; continue; }
-            let low = 0; let high = message.text.length; let truncatedText = '';
-            while (low <= high) {
-                const middle = Math.floor((low + high) / 2);
-                const candidateText = `${message.text.slice(0, middle)}\n[Message truncated]`;
-                const candidate = { ...fitted, messages: [...fitted.messages, { ...message, text: candidateText }] };
-                if (JSON.stringify(candidate).length <= contextBudget) { truncatedText = candidateText; low = middle + 1; }
-                else high = middle - 1;
-            }
-            if (truncatedText) fitted.messages.push({ ...message, text: truncatedText });
-            break;
-        }
-        return JSON.stringify(fitted);
-    });
-    return `${prefix}[${payloads.join(',')}]`;
+    const payload = contexts.map((context) => JSON.stringify({
+        id: context.id,
+        title: context.title.length > maxTitleChars ? `${context.title.slice(0, maxTitleChars)}...` : context.title,
+    }));
+    return `${SESSION_MENTION_INSTRUCTION_PREFIX}[${payload.join(',')}]`;
 };
 
 export const partitionComposerSemantics = (semantics: readonly ComposerReferenceSemantic[]) => {
@@ -128,19 +92,14 @@ export const partitionComposerSemantics = (semantics: readonly ComposerReference
     return { sessionIds, skillNames, attachmentRefIDs };
 };
 
-/** Resolves semantic delivery at the owner boundary from the loaded directory snapshot. */
+/** Resolves semantic delivery from loaded session summaries — no transcript reads, so an unopened or evicted referenced session still resolves. */
 export const buildComposerSemanticParts = (semantics: readonly ComposerReferenceSemantic[], directory: string): Array<{ text: string; synthetic: true }> => {
     const { sessionIds, skillNames } = partitionComposerSemantics(semantics);
+    const loadedSessions = sessionIds.length > 0 ? getAllSyncSessionMap() : undefined;
     const contexts: SessionMentionContext[] = sessionIds.flatMap((sessionId) => {
-        const sessionDirectory = resolveMaterializedSessionDirectory(sessionId, directory);
-        if (!sessionDirectory) return [];
-        const session = getSyncSessions(sessionDirectory).find((candidate) => candidate.id === sessionId);
+        const session = loadedSessions?.get(sessionId) ?? getSyncSessions(directory).find((candidate) => candidate.id === sessionId);
         if (!session) return [];
-        const messages = getSyncMessages(sessionId, sessionDirectory).flatMap((message) => {
-            const text = getSyncParts(message.id, sessionDirectory).filter((part) => part.type === 'text' && !isSyntheticPart(part)).map((part) => 'text' in part && typeof part.text === 'string' ? part.text : '').filter(Boolean).join('\n');
-            return text ? [{ role: message.role, text }] : [];
-        });
-        return [{ id: session.id, title: session.title || session.id, messages }];
+        return [{ id: session.id, title: session.title || session.id }];
     });
     const parts: Array<{ text: string; synthetic: true }> = [];
     const skill = buildSkillMentionInstruction(skillNames);
