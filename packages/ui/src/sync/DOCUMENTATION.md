@@ -324,7 +324,7 @@ Modules:
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
 | `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `materializeTranscriptMessage` / `getTranscriptHydrationState` / `getTranscriptMessageMaterializationState` / `purgeTranscriptSession` |
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
-| `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers plus shared exact `session.message` fetch (`fetchExactSessionMessageRecord`, transport+generation flight key; no nested store commit) |
+| `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers plus shared exact `session.message` fetch (`fetchExactSessionMessageRecord`, transport+generation flight key; no nested store commit). Parent recovery is best-effort: a 404/failed exact fetch keeps the Host page. |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
 | `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` today), redacted snapshots (no bodies/tokens/URLs), bounded recorder, export schema `openchamber.client-diagnostics.v1` |
 | `transcript-diagnostics-runtime.ts` | Production selector: About switch (beta default on, stable default off), IndexedDB/memory sink, export/download |
@@ -809,9 +809,10 @@ both readers agree on when a frame may shrink.
   `GET /api/openchamber/sessions/:id/messages?turns=…` (no scanLimit by default)
   and commit via repository `http-page` / `ensureInitial`. Policy lives in
   `session-message-policy.ts`. Incomplete Host pages may recover missing parent
-  user messages by exact ID (up to eight). Authoritative complete pages skip
-  parent recovery. Loading failures are subscribable via repository request
-  state and preserve prior ready records.
+  user messages by exact ID (up to eight). A missing or failed parent fetch is a
+  miss: the Host page stays, and one 404 must not fail the initial transcript.
+  Authoritative complete pages skip parent recovery. Loading failures are
+  subscribable via repository request state and preserve prior ready records.
 - Message loading status is runtime-scoped on the Query repository. Reactive
   ensure/selection share Query single-flight so a remounted provider does not
   dual-commit a shared transport response into a detached child store.

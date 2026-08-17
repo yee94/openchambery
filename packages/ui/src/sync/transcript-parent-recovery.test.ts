@@ -56,6 +56,45 @@ describe("assistant-tail parent recovery", () => {
     expect(recovered.partial).toBe(false)
   })
 
+  test("keeps the page when a missing parent 404s and newer user turns are already present", async () => {
+    const requested: string[] = []
+    const recovered = await recoverAssistantTailBoundary({
+      records: [
+        record("assistant-old", "assistant", "user-old"),
+        record("user-new", "user"),
+        record("assistant-new", "assistant", "user-new"),
+      ],
+      complete: false,
+      requestMessage: async (messageID) => {
+        requested.push(messageID)
+        throw new Error("session.message failed")
+      },
+    })
+
+    expect(requested).toEqual(["user-old"])
+    expect(recovered.records.map((item) => item.info.id)).toEqual([
+      "assistant-new",
+      "assistant-old",
+      "user-new",
+    ])
+    expect(recovered.boundaryFound).toBe(true)
+    expect(recovered.partial).toBe(false)
+  })
+
+  test("keeps an assistant-only tail when every parent request fails", async () => {
+    const recovered = await recoverAssistantTailBoundary({
+      records: [record("assistant", "assistant", "user-missing")],
+      complete: false,
+      requestMessage: async () => {
+        throw new Error("session.message failed")
+      },
+    })
+
+    expect(recovered.records.map((item) => item.info.id)).toEqual(["assistant"])
+    expect(recovered.boundaryFound).toBe(false)
+    expect(recovered.partial).toBe(true)
+  })
+
   test("skips parent recovery when every assistant parent is already on the page", async () => {
     let calls = 0
     const recovered = await recoverAssistantTailBoundary({

@@ -94,6 +94,7 @@ function isRole(record: SessionMessageRecord, role: string): boolean {
 
 /**
  * Collect parent user IDs referenced by assistant rows but absent from the page.
+ * Recovery of those IDs is best-effort; a miss must not fail the Host page.
  */
 export function findMissingAssistantParentUserIDs(records: SessionMessageRecord[]): string[] {
   const present = new Set(records.map((record) => record.info.id))
@@ -126,9 +127,21 @@ export async function recoverAssistantTailBoundary<T extends SessionMessageRecor
     return { records: input.records, boundaryFound, partial: !boundaryFound }
   }
 
-  const parents = await Promise.all(parentIDs.map(input.requestMessage))
+  // One missing/failed parent must not fail the Host page. The page records
+  // already landed; treat each exact fetch as best-effort.
+  const parents = await Promise.all(parentIDs.map(async (messageID) => {
+    try {
+      return await input.requestMessage(messageID)
+    } catch {
+      return null
+    }
+  }))
   const byID = new Map<string, T>()
-  for (const record of [...input.records, ...parents]) byID.set(record.info.id, record)
+  for (const record of input.records) byID.set(record.info.id, record)
+  for (const record of parents) {
+    if (!record?.info?.id) continue
+    byID.set(record.info.id, record)
+  }
   const records = [...byID.values()].sort((a, b) => a.info.id.localeCompare(b.info.id))
   const boundaryFound = records.some((record) => isRole(record, "user"))
   return { records, boundaryFound, partial: !boundaryFound }
