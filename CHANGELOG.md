@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.11] - 2026-08-17
+
+- **Android attachments:** tapping attach in the chat composer now offers Attach photos or Attach files. Photos open the Android system Photo Picker (gallery, multi-select) through a new native bridge; files keep the document picker. iOS, desktop, web, and VS Code keep their existing attach flows.
+- **Transcript hydration:** completed activity groups hydrate their slim reasoning/tool parts in the background after mount, so a cold-start tail no longer shows truncated bodies until manual expansion.
+
 ## [1.17.0-beta.10] - 2026-08-17
 
 - **Session list recovery:** a project whose sidebar stayed empty after OpenCode once returned an empty session snapshot now rediscovers its historical sessions on the next sync, instead of waiting for the 24-hour full reconcile. Empty worktree directories keep their topology hint and normal projects keep incremental sync.

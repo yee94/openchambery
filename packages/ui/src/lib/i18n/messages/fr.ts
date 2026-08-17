@@ -1882,6 +1882,7 @@ export const dict = {
   'chat.messageBody.toast.generateImageFailed': 'Échec de la génération de l\'image',
   'chat.chatInput.actions.commands': 'Commandes',
   'chat.chatInput.actions.attachFiles': 'Joindre des fichiers',
+  'chat.chatInput.actions.attachPhotos': 'Joindre des photos',
   'chat.chatInput.actions.addAttachment': 'Ajouter une pièce jointe',
   'chat.chatInput.actions.linkGithubIssue': 'Lien vers le problème GitHub',
   'chat.chatInput.actions.linkGithubPr': 'Lien GitHub PR',

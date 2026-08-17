@@ -2129,6 +2129,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.toast.generateImageFailed': '이미지 생성 실패',
   'chat.chatInput.actions.commands': '명령',
   'chat.chatInput.actions.attachFiles': '파일 첨부',
+  'chat.chatInput.actions.attachPhotos': '사진 첨부',
   'chat.chatInput.actions.addAttachment': '첨부 파일 추가',
   'chat.chatInput.actions.linkGithubIssue': 'GitHub 이슈 연결',
   'chat.chatInput.actions.linkGithubPr': 'GitHub PR 연결',

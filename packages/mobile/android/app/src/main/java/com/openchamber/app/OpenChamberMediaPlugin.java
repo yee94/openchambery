@@ -1,17 +1,22 @@
 package com.openchamber.app;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.util.Base64;
 import androidx.activity.result.ActivityResult;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -19,8 +24,13 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,7 +38,7 @@ import java.util.concurrent.Executors;
  * Native media/file writes so the WebView never depends on navigator.share
  * or a browser download: saveImage writes to the gallery; saveFile opens
  * ACTION_CREATE_DOCUMENT. transcode converts HEIC/HEIF bytes to JPEG via
- * BitmapFactory on a background executor.
+ * BitmapFactory on a background executor. pickMedia opens the Android photo picker.
  */
 @CapacitorPlugin(name = "OpenChamberMedia")
 public class OpenChamberMediaPlugin extends Plugin {
@@ -291,5 +301,209 @@ public class OpenChamberMediaPlugin extends Plugin {
             name = name + "." + ext;
         }
         return name;
+    }
+
+    @PluginMethod
+    public void pickMedia(PluginCall call) {
+        Integer rawLimit = call.getInt("limit");
+        int limit = rawLimit == null ? 20 : rawLimit;
+        int maxLimit = 100;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                int systemMax = MediaStore.getPickImagesMaxLimit();
+                if (systemMax > 0) maxLimit = systemMax;
+            } catch (Exception ignored) {
+                maxLimit = 100;
+            }
+        }
+        if (limit < 1) limit = 1;
+        if (limit > maxLimit) limit = maxLimit;
+
+        Intent intent = new Intent(MediaStore.ACTION_PICK_IMAGES);
+        intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, limit);
+        try {
+            startActivityForResult(call, intent, "pickMediaResult");
+        } catch (ActivityNotFoundException primaryError) {
+            Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+            fallback.addCategory(Intent.CATEGORY_OPENABLE);
+            fallback.setType("image/*");
+            fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            fallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivityForResult(call, fallback, "pickMediaFallbackResult");
+            } catch (ActivityNotFoundException fallbackError) {
+                call.reject(
+                    fallbackError.getMessage() != null ? fallbackError.getMessage() : "Photo picker is unavailable",
+                    fallbackError
+                );
+            }
+        }
+    }
+
+    @ActivityCallback
+    private void pickMediaResult(PluginCall call, ActivityResult result) {
+        resolvePickMedia(call, result);
+    }
+
+    @ActivityCallback
+    private void pickMediaFallbackResult(PluginCall call, ActivityResult result) {
+        resolvePickMedia(call, result);
+    }
+
+    private void resolvePickMedia(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+            call.resolve(cancelledPickMedia());
+            return;
+        }
+
+        ArrayList<Uri> uris = new ArrayList<>();
+        ClipData clip = result.getData().getClipData();
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                Uri uri = clip.getItemAt(i).getUri();
+                if (uri != null) uris.add(uri);
+            }
+        } else if (result.getData().getData() != null) {
+            uris.add(result.getData().getData());
+        }
+
+        executor.execute(() -> {
+            try {
+                File dir = new File(getContext().getCacheDir(), "pick-media");
+                clearPickMediaCache(dir);
+                if (!dir.exists() && !dir.mkdirs()) {
+                    call.reject("Could not create pick-media cache");
+                    return;
+                }
+                ContentResolver resolver = getContext().getContentResolver();
+                JSArray files = new JSArray();
+                for (Uri uri : uris) {
+                    try {
+                        JSObject file = copyPickedMedia(resolver, uri, dir);
+                        if (file != null) files.put(file);
+                    } catch (Exception ignored) {
+                        // One failed file must not erase the rest.
+                    }
+                }
+                JSObject resolved = new JSObject();
+                resolved.put("cancelled", false);
+                resolved.put("files", files);
+                call.resolve(resolved);
+            } catch (Exception error) {
+                call.reject(error.getMessage() != null ? error.getMessage() : "Pick media failed", error);
+            }
+        });
+    }
+
+    private static JSObject cancelledPickMedia() {
+        JSObject cancelled = new JSObject();
+        cancelled.put("cancelled", true);
+        cancelled.put("files", new JSArray());
+        return cancelled;
+    }
+
+    private static JSObject copyPickedMedia(ContentResolver resolver, Uri uri, File dir) throws Exception {
+        String displayName = null;
+        try (Cursor cursor = resolver.query(
+            uri,
+            new String[] { OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE },
+            null,
+            null,
+            null
+        )) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                    displayName = cursor.getString(nameIndex);
+                }
+            }
+        }
+
+        String mimeType = resolver.getType(uri);
+        if (mimeType == null || mimeType.trim().isEmpty()) {
+            mimeType = mimeFromExtension(extensionOf(displayName));
+            if (mimeType == null) mimeType = "image/jpeg";
+        }
+
+        String ext = extensionOf(displayName);
+        if ((ext == null || ext.isEmpty()) && mimeType.startsWith("image/")) {
+            ext = "jpg";
+        }
+        String destName = UUID.randomUUID().toString();
+        if (ext != null && !ext.isEmpty()) {
+            destName = destName + "." + ext;
+        }
+        File dest = new File(dir, destName);
+        try (InputStream in = resolver.openInputStream(uri); FileOutputStream out = new FileOutputStream(dest)) {
+            if (in == null) {
+                dest.delete();
+                return null;
+            }
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            out.flush();
+        } catch (Exception error) {
+            dest.delete();
+            throw error;
+        }
+
+        String name = displayName != null && !displayName.trim().isEmpty() ? displayName : dest.getName();
+        JSObject file = new JSObject();
+        file.put("path", dest.getAbsolutePath());
+        file.put("name", name);
+        file.put("mimeType", mimeType);
+        file.put("size", dest.length());
+        return file;
+    }
+
+    private static void clearPickMediaCache(File dir) {
+        if (dir.isFile()) {
+            dir.delete();
+            return;
+        }
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            deleteQuietly(child);
+        }
+    }
+
+    private static void deleteQuietly(File file) {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) deleteQuietly(child);
+            }
+        }
+        file.delete();
+    }
+
+    private static String extensionOf(String name) {
+        if (name == null) return null;
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        String base = slash >= 0 ? name.substring(slash + 1) : name;
+        int dot = base.lastIndexOf('.');
+        if (dot <= 0 || dot == base.length() - 1) return null;
+        String ext = base.substring(dot + 1).trim();
+        if (ext.isEmpty() || ext.length() > 8) return null;
+        return ext;
+    }
+
+    private static String mimeFromExtension(String ext) {
+        if (ext == null || ext.isEmpty()) return null;
+        String lower = ext.toLowerCase(Locale.ROOT);
+        if ("jpg".equals(lower) || "jpeg".equals(lower)) return "image/jpeg";
+        if ("png".equals(lower)) return "image/png";
+        if ("gif".equals(lower)) return "image/gif";
+        if ("webp".equals(lower)) return "image/webp";
+        if ("heic".equals(lower)) return "image/heic";
+        if ("heif".equals(lower)) return "image/heif";
+        if ("bmp".equals(lower)) return "image/bmp";
+        if ("avif".equals(lower)) return "image/avif";
+        return null;
     }
 }

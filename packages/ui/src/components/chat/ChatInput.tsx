@@ -2,6 +2,7 @@ import React from 'react';
 import { flushSync } from 'react-dom';
 import { useEvent } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
+import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -568,6 +569,8 @@ type ComposerAttachmentControlsProps = {
     onMenuOpenChange?: (open: boolean) => void;
     /** Mobile: open the attachment bottom sheet instead of the dropdown menu. */
     onOpenMobileSheet?: () => void;
+    /** Android Capacitor：打开照片/文件二选一 sheet */
+    onOpenAndroidPickSheet?: () => void;
     withTooltip?: boolean;
 };
 
@@ -595,7 +598,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
         <button
             type="button"
             className={footerIconButtonClass}
-            onClick={handlePick}
+            onClick={() => (props.onOpenAndroidPickSheet ? props.onOpenAndroidPickSheet() : handlePick())}
             // Keep the tap from dismissing the keyboard. On Android's
             // resizes-content viewport the keyboard-close relayout
             // moves this button mid-tap and the click never lands.
@@ -707,6 +710,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
     && prev.onOpenSettings === next.onOpenSettings
     && prev.onMenuOpenChange === next.onMenuOpenChange
     && prev.onOpenMobileSheet === next.onOpenMobileSheet
+    && prev.onOpenAndroidPickSheet === next.onOpenAndroidPickSheet
     && prev.withTooltip === next.withTooltip
 ));
 
@@ -1032,6 +1036,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, []);
     const [mobileDictationActive, setMobileDictationActive] = React.useState(false);
     const [mobileAttachMenuOpen, setMobileAttachMenuOpen] = React.useState(false);
+    const [androidMediaPickSheetOpen, setAndroidMediaPickSheetOpen] = React.useState(false);
     const [mobileDraftPicker, setMobileDraftPicker] = React.useState<'project' | null>(null);
     const mobileDraftProjectSheetId = React.useId();
     const [mobileDraftPickerQuery, setMobileDraftPickerQuery] = React.useState('');
@@ -5706,6 +5711,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         imageInputRef.current?.click();
     }, [handleVSCodePickFiles]);
 
+    const handlePickAndroidPhotos = React.useCallback(async () => {
+        if (!canUseNativeMediaPick()) { handlePickLocalImages(); return; }
+        try {
+            const files = await pickNativeMediaFiles(NATIVE_MEDIA_PICK_LIMIT);
+            if (files === null) { handlePickLocalImages(); return; }
+            if (files.length > 0) await attachFiles(files);
+        } catch (error) {
+            console.error('Native photo pick failed', error);
+            toast.error(t('chat.chatInput.toast.attachFileFailed'));
+        }
+    }, [attachFiles, handlePickLocalImages, t]);
+
     const handleLocalFileSelect = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files) return;
@@ -6094,6 +6111,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         textareaRef.current?.blur();
     }, [markComposerActionGesture]);
 
+    // Android Capacitor 专用，sheet 提供照片/文件二选一。
+    const openAndroidMediaPickSheet = React.useCallback(() => {
+        markComposerActionGesture();
+        setAndroidMediaPickSheetOpen(true);
+        textareaRef.current?.blur();
+    }, [markComposerActionGesture]);
+
     const handleMobileDictationActiveChange = React.useCallback((active: boolean) => {
         setMobileDictationActive(active);
         if (active) {
@@ -6151,6 +6175,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const mobileOverlayOpen = mobileOverlayHostBusy
         || Boolean(mobileControlsPanel)
         || mobileAttachMenuOpen
+        || androidMediaPickSheetOpen
         || issuePickerOpen
         || prPickerOpen;
     // Installed PWA (standalone): a focus() from a bare timeout is outside the
@@ -6290,6 +6315,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         || mobileDictationActive
         || Boolean(mobileControlsPanel)
         || mobileAttachMenuOpen
+        || androidMediaPickSheetOpen
         || mobileDraftPicker !== null
         || issuePickerOpen
         || prPickerOpen
@@ -6298,6 +6324,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         || mobileDictationActive
         || Boolean(mobileControlsPanel)
         || mobileAttachMenuOpen
+        || androidMediaPickSheetOpen
         || mobileDraftPicker !== null
         || issuePickerOpen
         || prPickerOpen
@@ -6592,6 +6619,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         openIssuePicker={openIssuePicker}
                         openPrPicker={openPrPicker}
                         onOpenMobileSheet={openMobileAttachSheet}
+                        onOpenAndroidPickSheet={canUseNativeMediaPick() ? openAndroidMediaPickSheet : undefined}
                     />
                 </div>
                 {canAbort ? (
@@ -6635,6 +6663,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         openPrPicker={openPrPicker}
                         onOpenSettings={onOpenSettings}
                         onOpenMobileSheet={openMobileAttachSheet}
+                        onOpenAndroidPickSheet={canUseNativeMediaPick() ? openAndroidMediaPickSheet : undefined}
                     />
                     {showPermissionAutoAcceptControl ? (
                         <PermissionAutoAcceptButton
@@ -7722,6 +7751,40 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     >
                         <Icon name="git-pull-request" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
                         {t('chat.chatInput.actions.linkGithubPr')}
+                    </button>
+                </div>
+            </MobileOverlayPanel>
+        ) : null}
+
+        {/* Android Capacitor photo/file chooser: the all-files WebView input opens
+            the system file manager and loses the gallery experience; iOS keeps the
+            single attach flow (WKWebView's picker already offers the photo library). */}
+        {isMobile && androidMediaPickSheetOpen ? (
+            <MobileOverlayPanel open onClose={() => setAndroidMediaPickSheetOpen(false)} title={t('chat.chatInput.actions.addAttachment')}>
+                <div className="flex flex-col px-3 pb-4 pt-1">
+                    <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        onClick={() => {
+                            restoreKeyboardAfterOverlayRef.current = false;
+                            setAndroidMediaPickSheetOpen(false);
+                            requestAnimationFrame(handlePickAndroidPhotos);
+                        }}
+                    >
+                        <Icon name="file-image" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        {t('chat.chatInput.actions.attachPhotos')}
+                    </button>
+                    <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        onClick={() => {
+                            restoreKeyboardAfterOverlayRef.current = false;
+                            setAndroidMediaPickSheetOpen(false);
+                            requestAnimationFrame(handlePickLocalFiles);
+                        }}
+                    >
+                        <Icon name="attachment-2" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        {t('chat.chatInput.actions.attachFiles')}
                     </button>
                 </div>
             </MobileOverlayPanel>

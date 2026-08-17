@@ -39,6 +39,10 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **iOS:** ImageIO (`CGImageSourceCreateWithData` → `CGImageDestinationAddImage` with `kCGImageDestinationLossyCompressionQuality`) on `com.openchamber.media.transcode`.
 - **Android:** `BitmapFactory.decodeByteArray` → `Bitmap.compress(JPEG)` on the existing media executor. Devices without a HEIF decoder reject so the JS fallback can run.
 
+## Native Photo Picker
+
+- `OpenChamberMedia.pickMedia({ limit? })` is Android-only. It opens the system Photo Picker (`ACTION_PICK_IMAGES`, falling back to `ACTION_GET_CONTENT` `image/*` on older devices) and returns absolute cache file paths. UI calls this only on Android Capacitor; iOS uses the WKWebView file picker. No extra permission declaration is required.
+
 ## Native Haptics Hot Path
 
 - The `OpenChamberHaptics` Capacitor 8 plugin provides fire-and-forget impact feedback at three strengths: `impactLight`, `impactMedium`, and `impactHeavy`.

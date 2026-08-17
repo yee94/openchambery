@@ -1060,6 +1060,15 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         }
         onToggle();
     });
+    // Completed slim groups hydrate in the background after mount; otherwise a
+    // cold-start tail keeps truncated reasoning/tool bodies until manual expand.
+    // Active groups are excluded — their slim parts keep updating via SSE.
+    React.useEffect(() => {
+        if (isActive) {
+            return;
+        }
+        requestMaterialization();
+    }, [isActive]);
     React.useLayoutEffect(() => {
         const anchor = pendingToggleAnchorRef.current;
         const header = activityHeaderRef.current;

@@ -1260,6 +1260,7 @@ export const dict: Record<I18nKey, string> = {
   'branchPickerDialog.tooltip.worktreeAlreadyExists': 'Drzewo pracy już istnieje',
   'chat.chatInput.actions.addAttachment': 'Dodaj załącznik',
   'chat.chatInput.actions.attachFiles': 'Attach files',
+  'chat.chatInput.actions.attachPhotos': 'Załącz zdjęcia',
   'chat.chatInput.actions.commands': 'Commands',
   'chat.chatInput.actions.linkGithubIssue': 'Link GitHub Issue',
   'chat.chatInput.actions.linkGithubPr': 'Link GitHub PR',

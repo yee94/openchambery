@@ -290,6 +290,14 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
     });
 
+    test('auto-materializes slim parts of completed groups without waiting for expansion', () => {
+        // Completed groups must hydrate their slim reasoning/tool parts in the
+        // background after mount (cold-start tails render slim bodies as
+        // truncated text otherwise). Active groups keep streaming via SSE.
+        expect(progressiveGroupSource).toContain('if (isActive) {\n            return;\n        }\n        requestMaterialization();');
+        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(\);\n {4}\}, \[isActive\]\);/);
+    });
+
     test('shows localized loading, error, retry, and empty-output states only while expanded', () => {
         expect(progressiveGroupSource).toContain("requestedStatuses.includes('loading')");
         expect(progressiveGroupSource).toContain("requestedStatuses.includes('error')");

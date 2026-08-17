@@ -2099,6 +2099,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.toast.generateImageFailed': '生成圖片失敗',
   'chat.chatInput.actions.commands': '命令',
   'chat.chatInput.actions.attachFiles': '附加檔案',
+  'chat.chatInput.actions.attachPhotos': '附加照片',
   'chat.chatInput.actions.addAttachment': '加入附件',
   'chat.chatInput.actions.linkGithubIssue': '關聯 GitHub Issue',
   'chat.chatInput.actions.linkGithubPr': '關聯 GitHub PR',
