@@ -2013,6 +2013,7 @@ export const dict = {
   'chat.fileAttachment.image.loadFailed': 'Impossible de charger l’image.',
   'chat.fileAttachment.image.retry': 'Réessayer de charger l’image',
   'chat.fileAttachment.image.loadManually': 'Charger l’image',
+  'chat.fileAttachment.image.loadManuallyCount': 'Charger {count} images',
   'chat.toolPart.lspErrors': 'Erreurs LSP',
   'chat.toolPart.moreErrors': '+{count} plus d\'erreurs',
   'chat.toolPart.error': 'Erreur:',

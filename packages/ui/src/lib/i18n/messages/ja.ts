@@ -2267,6 +2267,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.fileAttachment.image.loadFailed': '画像を読み込めませんでした。',
   'chat.fileAttachment.image.retry': '画像の読み込みを再試行',
   'chat.fileAttachment.image.loadManually': '画像を読み込む',
+  'chat.fileAttachment.image.loadManuallyCount': '{count}枚の画像を読み込む',
   'chat.toolPart.lspErrors': 'LSPエラー',
   'chat.toolPart.moreErrors': '+{count}件のエラー',
   'chat.toolPart.error': 'エラー:',

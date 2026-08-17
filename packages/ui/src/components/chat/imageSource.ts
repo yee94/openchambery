@@ -99,7 +99,19 @@ export const releaseRuntimeImageObjectUrl = (url: string): void => {
   releaseRelayImageDisplayUrl(url);
 };
 
-export const isRelayTransport = (transportIdentity: string): boolean => transportIdentity.startsWith('relay:');
+const simulateRelayImageGate = (): boolean => {
+  if (!import.meta.env.DEV) return false;
+  try {
+    if (window.localStorage.getItem('openchamber.debug.simulateRelayImageGate') === '1') return true;
+    return new URLSearchParams(window.location.search).get('simulateRelayImageGate') === '1';
+  } catch {
+    return false;
+  }
+};
+
+export const isRelayTransport = (transportIdentity: string): boolean => (
+  transportIdentity.startsWith('relay:') || simulateRelayImageGate()
+);
 
 /**
  * Above this known byte size, images transported through the relay tunnel wait

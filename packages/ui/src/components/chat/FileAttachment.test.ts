@@ -7,6 +7,10 @@ mock.module('./markdown/markdown-shiki.worker.ts?worker&url', () => ({ default: 
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, 'FileAttachment.tsx'), 'utf8');
+const manualImageGroupSource = source.slice(
+  source.indexOf('const MessageManualImageLoadGroup'),
+  source.indexOf('const MessageImageRow'),
+);
 const messageBodySource = readFileSync(join(here, 'message/MessageBody.tsx'), 'utf8');
 const messageDirectory = join(here, '../../lib/i18n/messages');
 const localeFiles = ['en.ts', 'es.ts', 'fr.ts', 'ja.ts', 'ko.ts', 'pl.ts', 'pt-BR.ts', 'uk.ts', 'zh-CN.ts', 'zh-TW.ts'];
@@ -18,6 +22,8 @@ const {
   filePartImageManualLoadRequired,
   isDirectImageUrl,
   messageSlimImageManualLoadRequired,
+  resolveMessageDisplayFiles,
+  resolveSlimImageMaterializationStatus,
 } = await import('./FileAttachment');
 const { RELAY_IMAGE_AUTO_LOAD_MAX_BYTES } = await import('./imageSource');
 
@@ -39,6 +45,82 @@ describe('slim transcript image attachments', () => {
     expect(filePartDedupeKey(slim)).toBe('part:part-image-1');
     expect(filePartDedupeKey(full)).toBe('part:part-image-1');
     expect(dedupeMessageFileParts([slim, full])).toEqual([full]);
+  });
+
+  test('upgrades a timeline slim image with the live Query file part', () => {
+    const slim = {
+      id: 'part-image-1',
+      type: 'file',
+      mime: 'image/png',
+      filename: 'capture.png',
+      slim: true,
+    };
+    const full = {
+      ...slim,
+      slim: false,
+      url: 'data:image/png;base64,full',
+    };
+    expect(resolveMessageDisplayFiles([slim], [full])).toEqual([full]);
+    expect(resolveMessageDisplayFiles([slim], [])).toEqual([slim]);
+    const urlLess = { id: 'part-image-1', type: 'file', mime: 'image/png', filename: 'capture.png' };
+    expect(resolveMessageDisplayFiles([urlLess], [full])).toEqual([full]);
+  });
+
+  test('does not turn tool or text parts into unnamed files', () => {
+    const slim = {
+      id: 'part-image-1',
+      type: 'file',
+      mime: 'image/png',
+      filename: 'capture.png',
+      slim: true,
+    };
+    const tool = { id: 'prt_tool', type: 'tool', tool: 'bash' };
+    const text = { id: 'prt_text', type: 'text', text: 'hello' };
+    expect(resolveMessageDisplayFiles([text, tool, slim], [tool, text])).toEqual([slim]);
+    expect(resolveMessageDisplayFiles([text, tool], [tool, text])).toEqual([]);
+  });
+
+  test('does not append extra live file parts that were not on the snapshot', () => {
+    const slim = {
+      id: 'part-image-1',
+      type: 'file',
+      mime: 'image/png',
+      filename: 'capture.png',
+      slim: true,
+    };
+    const extra = {
+      id: 'part-extra',
+      type: 'file',
+      mime: 'application/octet-stream',
+      url: 'file:///tmp/extra.bin',
+    };
+    expect(resolveMessageDisplayFiles([slim], [slim, extra])).toEqual([slim]);
+  });
+
+  test('does not treat a ready Query plus a still-slim snapshot as a load failure', () => {
+    expect(resolveSlimImageMaterializationStatus({
+      hasSlimImage: true,
+      flightActive: false,
+      failed: false,
+      repositoryStatus: 'ready',
+    })).toBe('idle');
+    expect(resolveSlimImageMaterializationStatus({
+      hasSlimImage: true,
+      flightActive: true,
+      failed: false,
+      repositoryStatus: 'ready',
+    })).toBe('loading');
+    expect(resolveSlimImageMaterializationStatus({
+      hasSlimImage: false,
+      flightActive: false,
+      failed: false,
+      repositoryStatus: 'ready',
+    })).toBe('ready');
+  });
+
+  test('reads live session parts so an on-demand fill can upgrade a historical snapshot', () => {
+    expect(source).toContain('useSessionParts(messageID, effectiveDirectory, resolvedSessionID || undefined)');
+    expect(source).toContain('resolveMessageDisplayFiles(files, [...liveParts, ...fetchedParts])');
   });
 
   test('keeps a visible aspect-video slot for a slim image without a URL', () => {
@@ -77,6 +159,7 @@ describe('slim transcript image attachments', () => {
       expect(dictionary).toContain('chat.fileAttachment.image.loadFailed');
       expect(dictionary).toContain('chat.fileAttachment.image.retry');
       expect(dictionary).toContain('chat.fileAttachment.image.loadManually');
+      expect(dictionary).toContain('chat.fileAttachment.image.loadManuallyCount');
     }
   });
 });
@@ -126,13 +209,14 @@ describe('relay image auto-load size gate', () => {
     expect(filePartImageManualLoadRequired(direct, fileBig)).toBe(false);
   });
 
-  test('renders a manual load action and holds visibility materialization while gated', () => {
-    expect(source).toContain('manualLoad={{ onLoad: approveManualImageLoad }}');
-    expect(source).toContain('manualLoad={!file.url && slimImageLoadGateActive ? { onLoad: approveManualImageLoad } : undefined}');
+  test('renders one click-to-load action per gated image and holds visibility materialization while gated', () => {
+    expect(source).toContain('<MessageManualImageLoadGroup images={manualImageLoadItems} onLoad={approveManualImageLoad} />');
+    expect(manualImageGroupSource).toContain('onClick={() => onLoad(image.key)}');
+    expect(manualImageGroupSource).toContain('data-manual-image-load-group="true"');
+    expect(manualImageGroupSource).toContain('data-manual-image-load-item={image.key}');
     expect(source).toContain('hasSlimImage && !slimImageLoadGateActive ? hydrationRootRef : null');
     expect(source).toContain('if (slimImageLoadGateActive) return;');
     expect(source).toContain("t('chat.fileAttachment.image.loadManually')");
-    expect(source).toContain('gatedImageKeys={gatedImageKeys}');
-    expect(source).toContain('const displaySource = useResolvedImageSource(manualLoad ? \'\' : (source ?? \'\'), effectiveDirectory);');
+    expect(source).toContain('const displaySource = useResolvedImageSource(source ?? \'\', effectiveDirectory);');
   });
 });

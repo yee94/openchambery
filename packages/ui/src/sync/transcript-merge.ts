@@ -593,6 +593,9 @@ function partPayloadEqual(left: Part, right: Part): boolean {
   if ((left as { output?: unknown }).output !== (right as { output?: unknown }).output) return false
   if ((left as { metadata?: unknown }).metadata !== (right as { metadata?: unknown }).metadata) return false
   if ((left as { time?: unknown }).time !== (right as { time?: unknown }).time) return false
+  // Slim file projections drop `url`; a later exact fill only changes url/slim.
+  if ((left as { url?: unknown }).url !== (right as { url?: unknown }).url) return false
+  if ((left as { slim?: unknown }).slim !== (right as { slim?: unknown }).slim) return false
   return true
 }
 

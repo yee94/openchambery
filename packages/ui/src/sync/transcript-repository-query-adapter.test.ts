@@ -1400,6 +1400,69 @@ describe("Query repository on-demand message materialization", () => {
     repo.destroy()
   })
 
+  test("full Host snapshot overlays a slim user file part", async () => {
+    const user = {
+      id: "msg_user",
+      sessionID: SESSION,
+      role: "user",
+      time: { created: 1 },
+    } as Message
+    const slimFile = {
+      id: "f1",
+      messageID: "msg_user",
+      sessionID: SESSION,
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      slim: true,
+    } as unknown as Part
+    const fullFile = {
+      ...slimFile,
+      slim: false,
+      url: "data:image/png;base64,full",
+    } as unknown as Part
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async () => ({ info: user, parts: [fullFile] }),
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([{ info: user, parts: [slimFile] }], { complete: true }),
+    })
+    await repo.materializeMessage(scope, "msg_user")
+    const part = repo.getParts(scope, "msg_user")[0] as { slim?: boolean; url?: string }
+    expect(part.slim).not.toBe(true)
+    expect(part.url).toBe("data:image/png;base64,full")
+    expect(repo.getMessageMaterializationState(scope, "msg_user").status).toBe("ready")
+    repo.destroy()
+  })
+
+  test("a fill that leaves slim parts is an error, not ready", async () => {
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async () => ({
+        info: settledAssistant("msg_a"),
+        parts: [slimTool("t1", "msg_a")],
+      }),
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_a"), parts: [slimTool("t1", "msg_a")] },
+      ], { complete: true }),
+    })
+    await repo.materializeMessage(scope, "msg_a")
+    expect(repo.getMessageMaterializationState(scope, "msg_a").status).toBe("error")
+    expect((repo.getParts(scope, "msg_a")[0] as { slim?: boolean }).slim).toBe(true)
+    repo.destroy()
+  })
+
   test("full Host snapshot overlays the existing slim part", async () => {
     const repo = createQueryTranscriptRepository({
       client,

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.6] - 2026-08-17
+
+- **Chat images:** slim first-paint images now upgrade in place from the exact message fetch. Assistant tool rows no longer appear as unnamed file attachments.
+- **Relay images:** large images wait for a per-image Load tap instead of covering the whole card; already-visible images start loading without another scroll.
+
 ## [1.17.0-beta.5] - 2026-08-17
 
 - **Transcript load:** a missing parent message no longer blocks the whole conversation. Sessions that OpenCode can open now load in OpenChamber even if one assistant row points at a deleted user message.

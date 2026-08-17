@@ -2268,6 +2268,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.fileAttachment.image.loadFailed': '이미지를 불러오지 못했습니다.',
   'chat.fileAttachment.image.retry': '이미지 다시 불러오기',
   'chat.fileAttachment.image.loadManually': '이미지 불러오기',
+  'chat.fileAttachment.image.loadManuallyCount': '이미지 {count}개 불러오기',
   'chat.toolPart.lspErrors': 'LSP 오류',
   'chat.toolPart.moreErrors': '+오류 {count}개 더 보기',
   'chat.toolPart.error': '오류:',

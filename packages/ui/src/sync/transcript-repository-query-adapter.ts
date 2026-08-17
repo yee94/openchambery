@@ -940,7 +940,14 @@ export function createQueryTranscriptRepository(
             type: "materialize-snapshots",
             records: [{ info: record.info, parts: record.parts ?? [] }],
           })
-          messageStates.set(flightKey, { status: "ready" })
+          if (messageNeedsExactMaterialization(repository.getParts(scope, messageID))) {
+            messageStates.set(flightKey, {
+              status: "error",
+              error: "session.message failed: slim parts remain",
+            })
+          } else {
+            messageStates.set(flightKey, { status: "ready" })
+          }
           notify(scope)
           return repository.getTranscript(scope)
         } catch (error) {

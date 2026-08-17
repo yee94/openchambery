@@ -354,6 +354,10 @@ Modules:
   directly, or via `ensureTranscriptInitial` / `ensureInitial`. On-demand
   exact fills use `materializeTranscriptMessage` → Query `materializeMessage`
   (`session.message`, captured transport+generation, `materialize-snapshots`).
+  Visible slim file images subscribe to that message's live parts so the fill
+  upgrades in place. File `url` / `slim` are part of merge equality so an exact
+  fill is not dropped as a no-op. A fill that leaves slim parts is `error`, not
+  `ready`.
   A late result after a runtime switch is discarded and does not write the
   current Query. SSE, optimistic, and recovery reconcile apply through the
   repository command path. Store adapter / pure reducer paths are **tests or

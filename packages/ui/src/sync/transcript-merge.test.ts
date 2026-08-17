@@ -695,4 +695,40 @@ describe("mergeSessionTranscript", () => {
     expect(part?.text).toBe("full body")
     expect(part?.slim).not.toBe(true)
   })
+
+  test("durable-seed overlays a slim file part with the exact url fill", () => {
+    const info = {
+      id: "msg_u",
+      sessionID: SESSION,
+      role: "user",
+      time: { created: 1 },
+    } as Message
+    const slim = {
+      id: "p_file",
+      messageID: "msg_u",
+      sessionID: SESSION,
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      slim: true,
+    } as unknown as Part
+    const full = {
+      ...slim,
+      slim: false,
+      url: "data:image/png;base64,full",
+    } as unknown as Part
+    const paged = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info, parts: [slim] }], { complete: true, turnCount: 1 }),
+    })
+    const { data, result } = mergeSessionTranscript(paged.data, SESSION, {
+      type: "durable-seed",
+      records: [{ info, parts: [full] }],
+    })
+    expect(result.changed).toBe(true)
+    const part = data?.pages[0]?.partsByMessageID.msg_u?.[0] as { url?: string; slim?: boolean } | undefined
+    expect(part?.url).toBe("data:image/png;base64,full")
+    expect(part?.slim).not.toBe(true)
+  })
 })

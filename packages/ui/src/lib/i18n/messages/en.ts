@@ -2269,6 +2269,7 @@ export const dict = {
   'chat.fileAttachment.image.loadFailed': 'Could not load image.',
   'chat.fileAttachment.image.retry': 'Retry loading image',
   'chat.fileAttachment.image.loadManually': 'Load image',
+  'chat.fileAttachment.image.loadManuallyCount': 'Load {count} images',
   'chat.toolPart.lspErrors': 'LSP errors',
   'chat.toolPart.moreErrors': '+{count} more errors',
   'chat.toolPart.error': 'Error:',

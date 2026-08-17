@@ -2234,6 +2234,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.fileAttachment.image.loadFailed": "No se pudo cargar la imagen.",
   "chat.fileAttachment.image.retry": "Reintentar la carga de la imagen",
   "chat.fileAttachment.image.loadManually": "Cargar imagen",
+  "chat.fileAttachment.image.loadManuallyCount": "Cargar {count} imágenes",
   "chat.toolPart.lspErrors": "Errores LSP",
   "chat.toolPart.moreErrors": "+{count} errores más",
   "chat.toolPart.error": "Error:",

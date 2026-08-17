@@ -61,13 +61,20 @@ export function transcriptExactMessageRuntimeKey(transport: string, generation: 
  * transport + generation. Callers must drop the result when live identity
  * no longer matches — this helper only dedupes the HTTP request.
  */
+const lastFetchedPartsByMessage = new Map<string, SessionMessageQueryRecord["parts"]>()
+
+/** Last exact `session.message` parts for a message, if a fill already ran. */
+export function getLastFetchedSessionMessageParts(messageID: string): SessionMessageQueryRecord["parts"] | undefined {
+  return lastFetchedPartsByMessage.get(messageID)
+}
+
 export async function fetchExactSessionMessageRecord(input: {
   transport: string
   generation: number
   directory: string
   sessionID: string
   messageID: string
-  request: () => Promise<{ error?: unknown; data?: SessionMessageQueryRecord | undefined }>
+  request: () => Promise<{ error?: unknown; data?: SessionMessageQueryRecord | undefined; parts?: SessionMessageQueryRecord["parts"] }>
 }): Promise<SessionMessageQueryRecord> {
   return loadSessionMessage({
     runtimeKey: transcriptExactMessageRuntimeKey(input.transport, input.generation),
@@ -78,10 +85,13 @@ export async function fetchExactSessionMessageRecord(input: {
       const response = await input.request()
       if (response.error) throw new Error("session.message failed")
       const data = response.data
-      if (!data?.info?.id) throw new Error("session.message failed: empty response")
+      const info = data?.info
+      const parts = data?.parts ?? response.parts ?? []
+      if (!info?.id) throw new Error("session.message failed: empty response")
+      lastFetchedPartsByMessage.set(info.id, parts)
       return {
-        info: stripMessageDiffSnapshots(data.info),
-        parts: data.parts ?? [],
+        info: stripMessageDiffSnapshots(info),
+        parts,
       }
     },
   })
