@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.21] - 2026-08-18
+
+- **整理后显示的偶现大间距：** 中间过程折叠后出现整屏空白、且滚动或切换会话后才恢复的问题已修复。根因有二：其一，宿主始终以 slim 摘要回应精确补拉时，后台自动补全在每次虚拟列表重挂载时重试失败请求（诊断日志：约 10 秒内 104 次 materialize diff，slim/full 数量始终不变），高频投影扰动令部分中间消息丢失回合上下文；其二，sorted 模式下丢失上下文的助手消息会回退为 Activity 宿主，把工具行内联平铺成一整屏异常占位。现在后台补全不再自动重试失败消息（展开与重试按钮仍可手动重试），sorted 模式下无上下文的助手消息保持折叠占位，不再平铺工具。
+
 ## [1.17.0-beta.20] - 2026-08-18
 
 - **Skill activity rows:** consecutive Load Skill calls now collapse into one group, like Explored. The header shows original skill names on a single line (up to three, then “and N more”), and the summary flips upward as more skills arrive.
