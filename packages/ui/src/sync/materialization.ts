@@ -10,6 +10,7 @@ import {
   compareTranscriptSortKey,
   transcriptSortKeyOf,
 } from "./transcript-durable-store"
+import { mergeTranscriptMessageUpdate } from "./transcript-event-reducer"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
@@ -502,10 +503,12 @@ function mergeInsertOnlyMessages(
 }
 
 /**
- * `upsert` semantics: fetched snapshots replace their existing counterparts and
- * unseen snapshots keep conversation position. Contrast with `mergeMessages`,
- * which is insert-only and therefore never refreshes a message the store
- * already holds.
+ * `upsert` semantics: fetched snapshots win for the fields they carry, while
+ * agent/model identity fields the snapshot omits stay on the live object
+ * (same rule as the SSE `message.updated` merge — a recovery/reconcile page
+ * must not blank the assistant header identity a live event established).
+ * Contrast with `mergeMessages`, which is insert-only and therefore never
+ * refreshes a message the store already holds.
  */
 function upsertMessages(
   existing: Message[],
@@ -517,7 +520,8 @@ function upsertMessages(
     snapshots,
     (live, snapshot) => {
       if (!snapshot) return live
-      return JSON.stringify(live) === JSON.stringify(snapshot) ? live : snapshot
+      if (JSON.stringify(live) === JSON.stringify(snapshot)) return live
+      return mergeTranscriptMessageUpdate(live, snapshot)
     },
     unanchored,
   )

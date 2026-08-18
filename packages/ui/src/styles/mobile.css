@@ -2766,18 +2766,20 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 }
 
-/* Expand/collapse motion (~200ms). Same DOM node; only silhouette + chrome
-   change. Keep it short and ease-out so it reads as a soft open, not a bounce.
-   IMPORTANT: overflow stays visible when expanded so slash-command /
+/* Expand/collapse silhouette swap. Same DOM node; the height/padding change
+   is instant (see transition below — animating layout properties reflowed
+   the whole chat every frame under the moving keyboard and read as a laggy
+   open). The soft feel comes from the corner-radius ease plus the footer
+   fade-in. IMPORTANT: overflow stays visible when expanded so slash-command /
    @-mention / skill autocomplete (absolute bottom-full) is not clipped. */
 .oc-mobile-composer-surface {
   overflow: visible;
   transform-origin: bottom center;
-  transition:
-    border-radius 200ms cubic-bezier(0.32, 0.72, 0, 1),
-    max-height 200ms cubic-bezier(0.32, 0.72, 0, 1),
-    min-height 200ms cubic-bezier(0.32, 0.72, 0, 1),
-    padding 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  /* Height/padding swap instantly on expand/collapse: layout properties
+     must not animate — every frame reflows the whole chat under the moving
+     keyboard. Only the corner radius eases (paint-only, ~free); the footer
+     keeps its fade-in animation below. */
+  transition: border-radius 200ms cubic-bezier(0.32, 0.72, 0, 1);
   min-height: 2.75rem;
   max-height: min(70vh, 22rem);
 }

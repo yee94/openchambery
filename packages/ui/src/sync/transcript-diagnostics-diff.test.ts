@@ -77,6 +77,7 @@ describe("captureTranscriptCanonicalSnapshot", () => {
         id: "m2",
         partCount: 3,
         slimCount: 2,
+        identityMissing: true,
         fullCount: 1,
         optimistic: false,
         completed: false,

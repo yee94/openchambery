@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  captureTranscriptCanonicalSnapshot,
   createMemoryTranscriptDiagnosticsSink,
   createTranscriptDiagnosticsRecorder,
   diagnosticsExportEventCount,
@@ -8,6 +9,7 @@ import {
   diagnosticsHttpStatus,
   diagnosticsKindForCommand,
   diagnosticsSourceForCommand,
+  diffTranscriptCanonicalSnapshots,
   isPrereleaseClientVersion,
   lastTranscriptMessageIDs,
   parseTranscriptDiagnosticsPreference,
@@ -129,6 +131,56 @@ describe("transcript diagnostics", () => {
   test("lastTranscriptMessageIDs keeps the newest tail", () => {
     expect(lastTranscriptMessageIDs(["a", "b"], 4)).toEqual(["a", "b"])
     expect(lastTranscriptMessageIDs(["a", "b", "c", "d", "e"], 4)).toEqual(["b", "c", "d", "e"])
+  })
+
+  test("records assistant identity-missing facts without values", () => {
+    const identified = {
+      id: "m1",
+      sessionID: "ses_1",
+      role: "assistant",
+      mode: "explorer",
+      providerID: "deepseek",
+      modelID: "deepseek-v4-flash",
+      time: { created: 1 },
+    }
+    const identityless = {
+      id: "m2",
+      sessionID: "ses_1",
+      role: "assistant",
+      time: { created: 2 },
+    }
+    const transcript = {
+      sessionID: "ses_1",
+      messageOrder: ["m1", "m2"],
+      messagesByID: { m1: identified, m2: identityless },
+      partsByMessageID: {},
+      boundary: UNKNOWN_SESSION_HISTORY_BOUNDARY,
+      liveRevision: 0,
+    }
+
+    const event = snapshotTranscriptDiagnostics({
+      kind: "sse-event",
+      sessionID: "ses_1",
+      transcript: transcript as never,
+      now: () => 10,
+    })
+    expect(event.identityMissingCount).toBe(1)
+    expect(JSON.stringify(event)).not.toContain("explorer")
+    expect(JSON.stringify(event)).not.toContain("deepseek")
+
+    const before = captureTranscriptCanonicalSnapshot(transcript as never)
+    expect(before.messages[1]?.identityMissing).toBe(true)
+    expect(before.messages[0]?.identityMissing).toBe(false)
+
+    const after = captureTranscriptCanonicalSnapshot({
+      ...transcript,
+      messagesByID: {
+        m1: { ...identified, mode: undefined, providerID: undefined, modelID: undefined },
+        m2: identityless,
+      },
+    } as never)
+    const diff = diffTranscriptCanonicalSnapshots(before, after)
+    expect(diff.identityLost).toEqual(["m1"])
   })
 
   test("export helpers name the file and read eventCount without throwing on junk", () => {

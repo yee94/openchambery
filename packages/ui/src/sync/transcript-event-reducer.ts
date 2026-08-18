@@ -108,7 +108,14 @@ function readNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
-function mergeTranscriptMessageUpdate(existing: Message, incoming: Message): Message {
+/**
+ * Merge an incoming message payload into the stored one while preserving
+ * agent/model identity fields the payload omitted. Runtime `message.updated`
+ * ticks (tokens/cost/finish) carry identity only on the first publish of a
+ * message; a wholesale replace there blanks the assistant header until the
+ * next step publishes identity again.
+ */
+export function mergeTranscriptMessageUpdate(existing: Message, incoming: Message): Message {
   const merged = { ...existing, ...incoming } as Message
   const existingRecord = existing as Record<string, unknown>
   const incomingRecord = incoming as Record<string, unknown>

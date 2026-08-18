@@ -83,6 +83,43 @@ const writeCollapsedToolsCache = (messageId: string, value: Set<string>): void =
     collapsedToolsStateCache.set(messageId, new Set(value));
 };
 
+// Last-known assistant identity per message. Runtime message updates carry
+// agent/provider/model only on the first publish of a message, and rows can
+// remount (virtualizer, nested-session navigation); both would flash the
+// header to the generic fallback until identity arrives again.
+const MESSAGE_IDENTITY_CACHE_MAX = 200;
+
+interface CachedMessageIdentity {
+    agent?: string;
+    provider?: string;
+    model?: string;
+}
+
+const messageIdentitiesCache = new Map<string, CachedMessageIdentity>();
+
+const readCachedMessageIdentity = (messageId: string): CachedMessageIdentity | undefined =>
+    messageIdentitiesCache.get(messageId);
+
+const writeCachedMessageIdentity = (messageId: string, identity: CachedMessageIdentity): void => {
+    if (!identity.agent && !identity.provider && !identity.model) return;
+    const cached = messageIdentitiesCache.get(messageId);
+    if (
+        cached
+        && cached.agent === identity.agent
+        && cached.provider === identity.provider
+        && cached.model === identity.model
+    ) {
+        return;
+    }
+    if (messageIdentitiesCache.size >= MESSAGE_IDENTITY_CACHE_MAX && !messageIdentitiesCache.has(messageId)) {
+        const oldest = messageIdentitiesCache.keys().next().value;
+        if (typeof oldest === 'string') {
+            messageIdentitiesCache.delete(oldest);
+        }
+    }
+    messageIdentitiesCache.set(messageId, identity);
+};
+
 function useStickyDisplayValue<T>(value: T | null | undefined): T | null | undefined {
     const [stickyValue, setStickyValue] = React.useState<T | null | undefined>(value);
 
@@ -375,14 +412,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return contextModelSelection?.modelId ?? null;
     }, [isUser, messageModelID, contextModelSelection]);
 
+    // Fill identity gaps from the last known values for this message so a
+    // remount or an identity-less runtime update keeps a stable header.
+    const cachedMessageIdentity = message.info.id
+        ? readCachedMessageIdentity(message.info.id)
+        : undefined;
+    if (!isUser) {
+        writeCachedMessageIdentity(message.info.id, {
+            agent: agentName,
+            provider: providerID ?? undefined,
+            model: modelID ?? undefined,
+        });
+    }
+    const stableAgentName = agentName ?? cachedMessageIdentity?.agent;
+    const stableProviderID = providerID ?? cachedMessageIdentity?.provider ?? null;
+    const stableModelID = modelID ?? cachedMessageIdentity?.model ?? null;
+
     const modelName = React.useMemo(() => {
         if (isUser) return undefined;
 
-        const provider = providerID && providers.length > 0
-            ? providers.find((p) => p.id === providerID)
+        const provider = stableProviderID && providers.length > 0
+            ? providers.find((p) => p.id === stableProviderID)
             : undefined;
-        return getProviderModelDisplayName(provider, modelID) || undefined;
-    }, [isUser, providerID, modelID, providers]);
+        return getProviderModelDisplayName(provider, stableModelID) || undefined;
+    }, [isUser, stableProviderID, stableModelID, providers]);
 
     const modelHasVariants = React.useMemo(() => {
         if (isUser) return false;
@@ -401,9 +454,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return Boolean(variants && Object.keys(variants).length > 0);
     }, [isUser, modelID, providerID, providers]);
 
-    const displayAgentName = useStickyDisplayValue<string>(agentName);
-    const displayProviderIDValue = useStickyDisplayValue<string>(providerID ?? undefined);
-    const displayModelIDValue = useStickyDisplayValue<string>(modelID ?? undefined);
+    const displayAgentName = useStickyDisplayValue<string>(stableAgentName);
+    const displayProviderIDValue = useStickyDisplayValue<string>(stableProviderID ?? undefined);
+    const displayModelIDValue = useStickyDisplayValue<string>(stableModelID ?? undefined);
     const displayModelName = useStickyDisplayValue<string>(modelName);
 
     const headerAgentName = displayAgentName ?? undefined;

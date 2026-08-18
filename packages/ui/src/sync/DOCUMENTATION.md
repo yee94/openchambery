@@ -1102,6 +1102,15 @@ both readers agree on when a frame may shrink.
   replaced. Token/cost/time ticks that omit `agent` / `mode` / `providerID` /
   `modelID` / `variant` keep the identity already stored so the assistant
   header cannot flash between a model name and the empty `Assistant` fallback.
+  The same identity preservation applies to every transcript write seam that
+  replaces existing messages — HTTP `recovery` / `reconcile-page` upserts
+  (`materialization.ts`) route through `mergeTranscriptMessageUpdate` too, so
+  a fetched snapshot can refresh content without blanking identity a live
+  event established. Assistant-header display additionally keeps a bounded
+  last-known-identity cache per message id (`ChatMessage.tsx`) so a remounted
+  row renders stable identity before authoritative fields arrive, and client
+  diagnostics record `identityMissingCount` / diff `identityLost` (facts
+  only, never values) to make any remaining loss visible in exports.
 - A WebSocket-to-SSE fallback enters connecting or reconnecting state. Connected
   state publishes after the fallback SSE stream reports its real connection.
 - A successful directory status snapshot records its conservative request-start

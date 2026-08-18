@@ -593,8 +593,43 @@ describe("materializeSessionSnapshots", () => {
 
     expect(result.message.ses_1).toEqual([older, completed])
     expect(result.message.ses_1[0]).toBe(older)
-    expect(result.message.ses_1[1]).toBe(completed)
+    expect(result.message.ses_1[1]).toEqual(completed)
     expect(result.part.msg_2[0]).toBe(livePart)
+  })
+
+  test("recovery preserves agent/model identity when the fetched snapshot omits them", () => {
+    const identified = {
+      ...message("msg_2"),
+      agent: "explorer",
+      mode: "explorer",
+      providerID: "deepseek",
+      modelID: "deepseek-v4-flash",
+    } as Message
+    const identitylessTick = {
+      ...message("msg_2"),
+      finish: "stop",
+      tokens: { input: 10, output: 20 },
+      time: { created: 1, completed: 2 },
+    } as Message
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [identified] }, part: {} },
+      "ses_1",
+      [{ info: identitylessTick, parts: [] }],
+      { merge: RECOVERY_MERGE },
+    )
+
+    const merged = result.message.ses_1?.[0] as Message & {
+      agent?: string
+      mode?: string
+      providerID?: string
+      modelID?: string
+      finish?: string
+    }
+    expect(merged.agent).toBe("explorer")
+    expect(merged.mode).toBe("explorer")
+    expect(merged.providerID).toBe("deepseek")
+    expect(merged.modelID).toBe("deepseek-v4-flash")
+    expect(merged.finish).toBe("stop")
   })
 
   test("recovery preserves references for equivalent fetched messages", () => {

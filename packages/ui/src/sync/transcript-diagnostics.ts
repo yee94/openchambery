@@ -57,6 +57,12 @@ export type TranscriptMessageSnapshot = {
   /** True when `time.completed` is a positive number. Used only for optimisticLost. */
   readonly completed: boolean
   readonly role?: "user" | "assistant" | "system"
+  /**
+   * True when an assistant message lacks agent/mode identity or model
+   * identity. Assistant-header display depends on these; recording the fact
+   * (never the values) makes identity loss visible in exported diagnostics.
+   */
+  readonly identityMissing?: boolean
 }
 
 export type TranscriptCanonicalSnapshot = {
@@ -83,6 +89,8 @@ export type TranscriptDiff = {
   }[]
   readonly downgraded: readonly string[]
   readonly optimisticLost: readonly string[]
+  /** Assistant messages whose agent/model identity was present before and missing after. */
+  readonly identityLost: readonly string[]
 }
 
 export type TranscriptDiagnosticsSource = "network" | "query-cache" | "durable-cache" | "sse"
@@ -106,6 +114,8 @@ export type TranscriptDiagnosticsEvent = {
   readonly boundaryKind?: TranscriptData["boundary"]["kind"]
   readonly slimPartCount?: number
   readonly fullPartCount?: number
+  /** Assistant messages currently held without agent/model identity (header display facts only). */
+  readonly identityMissingCount?: number
   readonly command?: TranscriptCommand["type"]
   readonly purpose?: string
   readonly sseType?: string
@@ -210,6 +220,17 @@ export function lastTranscriptMessageIDs(
   return messageOrder.slice(messageOrder.length - limit)
 }
 
+/** Count assistant messages currently held without agent/model identity. */
+export function countIdentityMissingMessages(transcript: TranscriptData): number {
+  let missing = 0
+  for (const id of transcript.messageOrder) {
+    if (snapshotMessageIdentityMissing(transcript.messagesByID[id]) === true) {
+      missing += 1
+    }
+  }
+  return missing
+}
+
 export function snapshotTranscriptDiagnostics(input: {
   kind: TranscriptDiagnosticsKind
   sessionID: string
@@ -249,6 +270,7 @@ export function snapshotTranscriptDiagnostics(input: {
         boundaryKind: input.transcript.boundary.kind,
         slimPartCount: parts?.slimPartCount,
         fullPartCount: parts?.fullPartCount,
+        identityMissingCount: countIdentityMissingMessages(input.transcript),
       }
       : {}),
     ...(input.command ? { command: input.command } : {}),
@@ -375,6 +397,19 @@ function snapshotMessageCompleted(info: Message | undefined): boolean {
   return typeof completed === "number" && completed > 0
 }
 
+const nonEmptyInfoString = (value: unknown): boolean =>
+  typeof value === "string" && value.trim().length > 0
+
+/** Assistant-header identity facts only — never records the values themselves. */
+function snapshotMessageIdentityMissing(info: Message | undefined): boolean | undefined {
+  if (!info) return undefined
+  if (snapshotMessageRole(info) !== "assistant") return undefined
+  const record = info as Record<string, unknown>
+  const agentMissing = !nonEmptyInfoString(record.mode) && !nonEmptyInfoString(record.agent)
+  const modelMissing = !nonEmptyInfoString(record.modelID) || !nonEmptyInfoString(record.providerID)
+  return agentMissing || modelMissing
+}
+
 function toPartCountSnapshot(message: TranscriptMessageSnapshot): TranscriptPartCountSnapshot {
   return {
     partCount: message.partCount,
@@ -402,6 +437,7 @@ export function captureTranscriptCanonicalSnapshot(
     }
     const info = transcript.messagesByID[id]
     const role = snapshotMessageRole(info)
+    const identityMissing = snapshotMessageIdentityMissing(info)
     return {
       id,
       partCount: parts.length,
@@ -410,6 +446,7 @@ export function captureTranscriptCanonicalSnapshot(
       optimistic,
       completed: snapshotMessageCompleted(info),
       ...(role ? { role } : {}),
+      ...(identityMissing !== undefined ? { identityMissing } : {}),
     }
   })
   return {
@@ -434,6 +471,7 @@ export function diffTranscriptCanonicalSnapshots(
   const partsChanged: TranscriptDiff["partsChanged"][number][] = []
   const downgraded: string[] = []
   const optimisticLost: string[] = []
+  const identityLost: string[] = []
 
   for (const id of before.messageIDs) {
     const previous = beforeByID.get(id)
@@ -461,9 +499,12 @@ export function diffTranscriptCanonicalSnapshots(
     if (previous.optimistic && !next.optimistic && !next.completed) {
       optimisticLost.push(id)
     }
+    if (previous.identityMissing !== true && next.identityMissing === true) {
+      identityLost.push(id)
+    }
   }
 
-  return { addedMessageIDs, removedMessageIDs, partsChanged, downgraded, optimisticLost }
+  return { addedMessageIDs, removedMessageIDs, partsChanged, downgraded, optimisticLost, identityLost }
 }
 
 export function snapshotTranscriptDiff(input: {
