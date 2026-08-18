@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.20] - 2026-08-18
+
+- **Skill activity rows:** consecutive Load Skill calls now collapse into one group, like Explored. The header shows original skill names on a single line (up to three, then “and N more”), and the summary flips upward as more skills arrive.
+- **Empty skill names:** first-packet slim pages now keep skill `name` / `id` locators, and the row reads `metadata.name`, `input.name`, or `input.id`. Opening another conversation no longer shows blank “Load Skill” rows until a manual sync.
+- **Queue abort:** stopping a turn immediately hides the next queued chip and paints it as a sending user row, so the follow-up does not sit visible while the real POST still waits for the turn gate.
+
 ## [1.17.0-beta.19] - 2026-08-18
 
 - **Activity timeline:** the vertical guide line beside tool, thinking, and JSON summary rows is now lighter so it recedes behind the activity content.

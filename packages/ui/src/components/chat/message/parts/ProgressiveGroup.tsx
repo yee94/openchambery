@@ -13,9 +13,11 @@ import { Icon } from "@/components/icon/Icon";
 import { getToolIcon } from './toolPresentation';
 import { resolveToolDisplayName } from '@/lib/toolHelpers';
 import { ContextToolGroup } from './ContextToolGroup';
+import { SkillToolGroup } from './SkillToolGroup';
 import { collectConsecutiveContextTools, hasContextExploreSuccessor } from './contextToolGrouping';
+import { collectConsecutiveSkillTools, getSkillNameFromToolPart } from './skillToolGrouping';
 import { LatticeOrb } from './LatticeOrb';
-import { isContextGroupTool, isExpandableTool, isStandaloneTool, isStaticTool, isToolPartActive } from './toolRenderUtils';
+import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isStandaloneTool, isStaticTool, isToolPartActive } from './toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -387,10 +389,7 @@ const getToolShortDescription = (activity: TurnActivityPart): string | null => {
 
     // For skill, show name
     if (toolName === 'skill') {
-        const name = input?.name;
-        if (typeof name === 'string' && name.trim().length > 0) {
-            return name;
-        }
+        return getSkillNameFromToolPart(part);
     }
 
     // For fetch-url tools, show URL
@@ -420,6 +419,7 @@ type AggregatedRow =
     | { type: 'tool-expandable'; activity: TurnActivityPart }
     | { type: 'tool-static-group'; toolName: string; activities: TurnActivityPart[] }
     | { type: 'tool-context-group'; activities: TurnActivityPart[]; hasFollowingOtherType: boolean }
+    | { type: 'tool-skill-group'; activities: TurnActivityPart[] }
     | { type: 'reasoning'; activity: TurnActivityPart }
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
@@ -531,7 +531,8 @@ const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) =
 
 /**
  * Aggregate sorted activity parts into display rows.
- * Static tools render one row per call (no consecutive merge).
+ * Consecutive skill calls collapse into one SkillToolGroup.
+ * Other static tools render one row per call (no consecutive merge).
  * Reasoning/justification become inline text.
  * Expandable tools (edit, bash, write, question) stay as individual rows.
  * Unknown tools stay as individual expandable rows (fallback).
@@ -574,6 +575,21 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
             });
             i = grouped.end;
             continue;
+        }
+
+        if (isSkillGroupTool(toolName)) {
+            const grouped = collectConsecutiveSkillTools(parts, i, (item) => {
+                const tool = item.part as ToolPartType;
+                return tool.tool;
+            });
+            if (grouped.items.length > 0) {
+                rows.push({
+                    type: 'tool-skill-group',
+                    activities: grouped.items,
+                });
+                i = grouped.end;
+                continue;
+            }
         }
 
         if (isStandaloneTool(toolName)) {
@@ -1237,6 +1253,28 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             );
                         })}
                     </ContextToolGroup>
+                );
+
+            case 'tool-skill-group':
+                return (
+                    <SkillToolGroup
+                        key={row.activities[0]?.id ?? `skill-${index}`}
+                        activities={row.activities}
+                        isMobile={isMobile}
+                    >
+                        {row.activities.map((activity) => {
+                            const groupedTool = activity.part as ToolPartType;
+                            return (
+                                <StaticToolRow
+                                    key={activity.id}
+                                    toolName={groupedTool.tool?.toLowerCase() ?? ''}
+                                    activities={[activity]}
+                                    isMobile={isMobile}
+                                    animateTailText={false}
+                                />
+                            );
+                        })}
+                    </SkillToolGroup>
                 );
 
             case 'tool-fallback':

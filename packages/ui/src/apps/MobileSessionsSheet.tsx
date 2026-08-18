@@ -39,6 +39,7 @@ import type { WorktreeMetadata } from '@/types/worktree';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { abortCurrentOperation } from '@/sync/session-actions';
+import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 
 import { MobileProjectEditSurface } from './MobileProjectEditSurface';
 import { MobileDeleteWorktreeDialog } from './MobileDeleteWorktreeDialog';
@@ -549,11 +550,15 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
 
   // Abort helpers retain stable event identities for prop passing.
   const handleStopSession = useEvent((sessionId: string) => {
+    promoteQueueHeadOnAbort(sessionId);
     void abortCurrentOperation(sessionId);
   });
 
   const handleStopSessions = useEvent((sessionIds: string[]) => {
-    void Promise.all(sessionIds.map((id) => abortCurrentOperation(id)));
+    void Promise.all(sessionIds.map((id) => {
+      promoteQueueHeadOnAbort(id);
+      return abortCurrentOperation(id);
+    }));
   });
 
   React.useEffect(() => {

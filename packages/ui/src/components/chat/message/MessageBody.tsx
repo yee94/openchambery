@@ -43,10 +43,12 @@ import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
 import { computeAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
+import { SkillToolGroup } from './parts/SkillToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
 import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
 import { hasContextExploreSuccessor } from './parts/contextToolGrouping';
-import { isContextGroupTool, isExpandableTool, isToolPartActive, isToolPartSettled } from './parts/toolRenderUtils';
+import { collectConsecutiveSkillTools } from './parts/skillToolGrouping';
+import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isToolPartActive, isToolPartSettled } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
@@ -2004,6 +2006,46 @@ const AssistantMessageBody = React.memo(({
                     }
                 }
 
+                if (isSkillGroupTool(toolName)) {
+                    const grouped = collectConsecutiveSkillTools(visibleParts, i, (item) => {
+                        if (item.type !== 'tool') return '';
+                        if (activityByPart.get(item)?.kind === 'tool') return '';
+                        return (item as ToolPartType).tool;
+                    });
+                    if (grouped.items.length > 0) {
+                        const skillRun = grouped.items.map((item, offset) => {
+                            const nextTool = item as ToolPartType;
+                            return {
+                                id: nextTool.id,
+                                turnId: '',
+                                messageId,
+                                partIndex: i + offset,
+                                part: nextTool,
+                                kind: 'tool' as const,
+                            };
+                        });
+                        rendered.push(
+                            <SkillToolGroup
+                                key={`skill-tools-${skillRun[0].id}`}
+                                activities={skillRun}
+                                isMobile={isMobile}
+                            >
+                                {skillRun.map((activity) => (
+                                    <StaticToolRow
+                                        key={activity.id}
+                                        toolName={activity.part.tool?.toLowerCase() ?? ''}
+                                        activities={[activity]}
+                                        isMobile={isMobile}
+                                        animateTailText={false}
+                                    />
+                                ))}
+                            </SkillToolGroup>
+                        );
+                        i = grouped.end;
+                        continue;
+                    }
+                }
+
                 // Expandable tools: bash, edit, write, task, question — individual rows
                 if (isExpandableTool(toolName)) {
                     rendered.push(
@@ -2025,7 +2067,7 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
 
-                // Static tools: one row per tool call (no grouping)
+                // Static tools: one row per leftover call (a lone skill, or any other static tool)
                 rendered.push(
                     <div key={`static-tools-${toolPart.id}`} className={getToolRowBlockClass(isMobile)}>
                         <StaticToolRow

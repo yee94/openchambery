@@ -118,6 +118,8 @@ const SLIM_TOOL_INPUT_KEYS = [
   'subagentType',
   'agent',
   'subagent',
+  'name',
+  'id',
 ];
 const SLIM_TOOL_INPUT_STRING_MAX = 240;
 
@@ -256,6 +258,14 @@ const projectSlimToolMetadata = (metadata) => {
 
   if (additions !== undefined) slim.additions = additions;
   if (deletions !== undefined) slim.deletions = deletions;
+  if (typeof metadata.name === 'string') {
+    const name = metadata.name.trim();
+    if (name) {
+      slim.name = name.length > SLIM_TOOL_INPUT_STRING_MAX
+        ? name.slice(0, SLIM_TOOL_INPUT_STRING_MAX)
+        : name;
+    }
+  }
   return Object.keys(slim).length > 0 ? slim : undefined;
 };
 

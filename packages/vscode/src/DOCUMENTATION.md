@@ -48,8 +48,8 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`.
   - Turn-page `slim-v1` projection is Host-parity (first packet and prepend): tool / reasoning / file
     summaries after `selectTurnRecords`. Slim tools keep short locator input
-    (path / pattern / query / command / `subagent_type` / `description`),
-    `metadata.sessionId`, and edit `additions`/`deletions`, and drop result bodies. Slim `file` parts keep identity, mime,
+    (path / pattern / query / command / `subagent_type` / `description` / skill `name` / `id`),
+    `metadata.sessionId`, skill `metadata.name`, and edit `additions`/`deletions`, and drop result bodies. Slim `file` parts keep identity, mime,
     filename, and size metadata only — never `url` or base64. Clients must
     hydrate the full message by `messageID` before rendering or editing an
     attachment.

@@ -7,7 +7,8 @@ import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useChildStoreManager, useScopedSessionStatusReader, useScopedSessionStatusRevision } from '@/sync/sync-context';
 import type { ScopedSessionStatus } from '@/sync/scoped-session-status';
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
-import { fetchRecentSendConfirmationRecords, getSendFailureKind, releaseUnconfirmedQueueSend } from '@/sync/session-actions';
+import { fetchRecentSendConfirmationRecords, getSendFailureKind, releaseUnconfirmedQueueSend, type OptimisticSendTicket } from '@/sync/session-actions';
+import { confirmQueueAbortOptimistic, getQueueAbortOptimisticPresentation } from '@/sync/queue-abort-optimistic';
 import { ascendingIdAfter } from '@/sync/message-id';
 import { getSyncMessages } from '@/sync/sync-refs';
 import {
@@ -176,7 +177,7 @@ export const buildQueuedAutoSendPayload = (queue: QueuedMessage[]) => {
 };
 type Payload = NonNullable<ReturnType<typeof buildQueuedAutoSendPayload>>;
 type Resolved = { providerID: string; modelID: string; agent?: string; variant?: string };
-export const sendQueuedAutoSendPayload = (sessionId: string, payload: Payload, resolved: Resolved, options: { directory: string; delivery?: 'steer'; onSendConfirmed?: (messageID: string) => void }) => useSessionUIStore.getState().sendMessage(payload.primaryText, resolved.providerID, resolved.modelID, resolved.agent, payload.primaryAttachments, payload.agentMentionName, payload.additionalParts, resolved.variant, 'normal', { sessionId, directoryHint: options.directory, delivery: options.delivery, messageID: payload.messageID, preserveOptimisticOnAmbiguous: true, onSendConfirmed: options.onSendConfirmed });
+export const sendQueuedAutoSendPayload = (sessionId: string, payload: Payload, resolved: Resolved, options: { directory: string; delivery?: 'steer'; onSendConfirmed?: (messageID: string) => void; ticket?: OptimisticSendTicket }) => useSessionUIStore.getState().sendMessage(payload.primaryText, resolved.providerID, resolved.modelID, resolved.agent, payload.primaryAttachments, payload.agentMentionName, payload.additionalParts, resolved.variant, 'normal', { sessionId, directoryHint: options.directory, delivery: options.delivery, messageID: payload.messageID, ticket: options.ticket, preserveOptimisticOnAmbiguous: true, onSendConfirmed: options.onSendConfirmed });
 const resolve = (sessionID: string, captured?: QueuedMessage['sendConfig']): Resolved => {
   if (captured) return { ...captured };
   return resolveQueueSendConfig({ currentConfig: useConfigStore.getState(), sessionID, selection: useSelectionStore.getState() }) ?? { providerID: '', modelID: '' };
@@ -232,7 +233,10 @@ export function dispatchQueuedMessage(sessionID: string, options: { delivery?: '
   void (async () => {
     try {
       const floorMessageID = latestMessageID(sessionID, scope.directory);
-      const freshMessageID = ascendingIdAfter('msg', floorMessageID);
+      const pinned = getQueueAbortOptimisticPresentation(sessionID);
+      const freshMessageID = pinned?.queueItemID === item.queueItemID
+        ? pinned.messageID
+        : ascendingIdAfter('msg', floorMessageID);
       const ready = store.beginQueueItemDispatch(scope, identity as Required<typeof identity>, freshMessageID, manual);
       if (!ready) return;
       item = ready;
@@ -250,8 +254,8 @@ export function dispatchQueuedMessage(sessionID: string, options: { delivery?: '
       if (!legacyDispatchEnabled()) { store.markQueueItemPreDispatchRetry(scope, freshIdentity, Date.now() + getQueuedAutoSendRetryDelayMs(ready.attemptCount + 1)); return; }
       const confirmationMatches = () => { const current = useMessageQueueStore.getState().getQueueForScope(scope)[0] as QueueItem | undefined; return getRuntimeTransportIdentity() === scope.transportIdentity && getRuntimeGeneration() === generation && current?.queueItemID === freshIdentity.queueItemID && current.operationID === freshIdentity.operationID && current.messageID === freshIdentity.messageID && queueScopeKey(current.owner) === queueScopeKey(scope); };
       const failureMatches = () => { const current = useMessageQueueStore.getState().getQueueForScope(scope)[0] as QueueItem | undefined; return current?.queueItemID === freshIdentity.queueItemID && current.operationID === freshIdentity.operationID && current.messageID === freshIdentity.messageID && queueScopeKey(current.owner) === queueScopeKey(scope); };
-      const confirm = (messageID: string) => { if (confirmationMatches() && messageID === freshIdentity.messageID) useMessageQueueStore.getState().confirmQueueItem(scope, freshIdentity); };
-      try { await sendQueuedAutoSendPayload(sessionID, payload, resolved, { directory: scope.directory, delivery: options.delivery, onSendConfirmed: confirm }); confirm(freshIdentity.messageID); }
+      const confirm = (messageID: string) => { if (confirmationMatches() && messageID === freshIdentity.messageID) { useMessageQueueStore.getState().confirmQueueItem(scope, freshIdentity); confirmQueueAbortOptimistic(sessionID); } };
+      try { await sendQueuedAutoSendPayload(sessionID, payload, resolved, { directory: scope.directory, delivery: options.delivery, ticket: pinned?.queueItemID === ready.queueItemID ? pinned.ticket : undefined, onSendConfirmed: confirm }); confirm(freshIdentity.messageID); }
       catch (error) { if (!failureMatches()) return; const kind = getSendFailureKind(error); if (kind === 'pre-dispatch') store.markQueueItemPreDispatchRetry(scope, freshIdentity, Date.now() + getQueuedAutoSendRetryDelayMs(ready.attemptCount + 1)); else if (kind === 'definitive-rejection') store.markQueueItemDefinitiveFailure(scope, freshIdentity); else store.markQueueItemReconciling(scope, freshIdentity); }
     } finally {
       let changed = false;

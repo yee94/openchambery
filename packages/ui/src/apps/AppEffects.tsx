@@ -8,6 +8,7 @@ import { setOptimisticRefs } from '@/sync/session-actions';
 import { markSessionViewed } from '@/sync/notification-store';
 import { getMessageQueueServerRuntime, installMessageQueueServerRuntimeSwitch } from '@/sync/message-queue-server-runtime';
 import { getMessageQueueCutover } from '@/sync/message-queue-cutover';
+import { useQueueAbortOptimisticReconcile } from '@/sync/queue-abort-optimistic';
 import { setExternallyViewedSession } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { useWorktreeOrderSync } from '@/sync/worktree-order-sync';
@@ -77,6 +78,7 @@ export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   useSessionAutoCleanup({ enabled: embeddedBackgroundWorkEnabled, autoRun: false });
   const queueOwnershipGate = React.useSyncExternalStore(subscribeQueuedMessageOwnershipGate, getQueuedMessageOwnershipGate, getQueuedMessageOwnershipGate);
   useQueuedMessageAutoSend(embeddedBackgroundWorkEnabled && queueOwnershipGate === 'legacy-enabled');
+  useQueueAbortOptimisticReconcile();
 
   React.useEffect(() => {
     const runtime = getMessageQueueServerRuntime();

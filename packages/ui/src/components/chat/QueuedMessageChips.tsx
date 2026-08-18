@@ -31,6 +31,7 @@ import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
 import { MessageReferenceChip } from './MessageReferenceChip';
 import { canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, buildQueuedMessagePreviewParts, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueCommittedSendShadow, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { isQueueItemHiddenByAbortOptimistic, subscribeQueueAbortOptimistic, getQueueAbortOptimisticRevision } from '@/sync/queue-abort-optimistic';
 import { enqueueServerQueueScopeMutation, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -432,13 +433,21 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         [queueScope],
     );
     const legacyMessages = useMessageQueueStore(legacyQueueSelector);
+    const abortOptimisticRevision = React.useSyncExternalStore(
+        subscribeQueueAbortOptimistic,
+        getQueueAbortOptimisticRevision,
+        getQueueAbortOptimisticRevision,
+    );
     const queuedMessages = React.useMemo(() => {
+        const sessionID = queueScope?.sessionID;
         const base = serverQueue.mode === 'server'
             ? projectServerQueueChipItems(serverQueue.items, chipOverlayOperations)
             : legacyMessages;
-        if (clientPendingItems.length === 0) return base;
-        return [...base, ...clientPendingItems];
-    }, [chipOverlayOperations, clientPendingItems, legacyMessages, serverQueue.items, serverQueue.mode]);
+        const withPending = clientPendingItems.length === 0 ? base : [...base, ...clientPendingItems];
+        if (!sessionID) return withPending;
+        const visible = withPending.filter((item) => !isQueueItemHiddenByAbortOptimistic(sessionID, item.queueItemID ?? ''));
+        return visible.length === withPending.length ? withPending : visible;
+    }, [abortOptimisticRevision, chipOverlayOperations, clientPendingItems, legacyMessages, queueScope?.sessionID, serverQueue.items, serverQueue.mode]);
     const pendingKindsByItem = React.useMemo(() => {
         const result = new Map<string, Set<ServerQueueOperationKind>>();
         for (const operation of chipOverlayOperations) {

@@ -1,4 +1,5 @@
 import { abortCurrentOperation, patchSessionMetadata } from '@/sync/session-actions';
+import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 import { distillGoalObjective } from '@/lib/smallModel';
 import { formatMessage, useI18nStore } from '@/lib/i18n';
 import { toast } from '@/components/ui';
@@ -176,6 +177,7 @@ export async function setSessionGoalStatus(
   // as the stop button, expressed through goal control. A no-op when the
   // session is already idle.
   if (status === 'paused') {
+    promoteQueueHeadOnAbort(sessionId);
     void abortCurrentOperation(sessionId);
   }
   await writeGoal(sessionId, directory, (currentGoal) => {
@@ -205,6 +207,7 @@ export async function clearSessionGoal(sessionId: string, directory: string | un
   // Removing a running goal is a "stop" too — abort the current turn like
   // pause does. A no-op when the session is idle.
   if (wasActive) {
+    promoteQueueHeadOnAbort(sessionId);
     void abortCurrentOperation(sessionId);
   }
 }

@@ -808,4 +808,36 @@ describe('projectSlimParts (VS Code parity with web host)', () => {
     expect(JSON.stringify(record.parts)).not.toContain('file:///');
     expect(JSON.stringify(record.parts)).not.toContain('base64');
   });
+
+  it('keeps skill name and id locators and drops skill output', async () => {
+    const { projectSlimParts } = await loadRuntime();
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_skill',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_skill',
+          type: 'tool',
+          tool: 'skill',
+          state: {
+            status: 'completed',
+            title: 'Load Skill',
+            input: { name: 'sync-state-invariants', id: 'sync-state-invariants' },
+            metadata: { name: 'sync-state-invariants', dir: '/tmp/skills/sync', huge: 'x'.repeat(200) },
+            output: '<skill_content name="sync-state-invariants">SECRET BODY</skill_content>',
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].state.input).toEqual({
+      name: 'sync-state-invariants',
+      id: 'sync-state-invariants',
+    });
+    expect(record.parts[0].state.metadata).toEqual({ name: 'sync-state-invariants' });
+    expect(JSON.stringify(record.parts[0])).not.toContain('SECRET BODY');
+    expect(JSON.stringify(record.parts[0])).not.toContain('/tmp/skills/sync');
+  });
 });

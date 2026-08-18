@@ -47,6 +47,10 @@ export const isContextGroupTool = (toolName: unknown): boolean => {
     return CONTEXT_GROUP_TOOL_NAMES.has(normalizeToolName(toolName));
 };
 
+export const isSkillGroupTool = (toolName: unknown): boolean => {
+    return normalizeToolName(toolName) === 'skill';
+};
+
 export const isToolPartSettled = (part: unknown): boolean => {
     if (!part || typeof part !== 'object') return false;
 

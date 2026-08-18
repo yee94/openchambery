@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
     isContextGroupTool,
     isExpandableTool,
+    isSkillGroupTool,
     isStaticTool,
     isToolPartActive,
     isToolPartSettled,
@@ -43,6 +44,13 @@ describe('tool rendering classification', () => {
         expect(isContextGroupTool('skill')).toBe(false);
         expect(isContextGroupTool('bash')).toBe(false);
         expect(isContextGroupTool('edit')).toBe(false);
+    });
+
+    test('marks skill tools as skill-group members', () => {
+        expect(isSkillGroupTool('skill')).toBe(true);
+        expect(isSkillGroupTool('runtime.skill:2')).toBe(true);
+        expect(isSkillGroupTool('read')).toBe(false);
+        expect(isSkillGroupTool('bash')).toBe(false);
     });
 
     test('keeps visible calls active until status or timing proves settlement', () => {

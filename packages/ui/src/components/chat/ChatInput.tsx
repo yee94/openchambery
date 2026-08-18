@@ -23,6 +23,7 @@ import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
 import { commitMessageEdit } from '@/sync/session-actions';
 import type { OptimisticSendTicket } from '@/sync/session-actions';
+import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 import {
     useDirectoryStore as useChildDirectoryStore,
     useDirectorySync,
@@ -1433,12 +1434,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             sendQueued: (request) => dispatchQueuedMessage(request.sessionID ?? '', { delivery: request.options?.delivery === 'steer' ? 'steer' : undefined, queueItemID: request.queueItemID, manual: request.manual, scope: request.queueScope ? { state: 'bound', ...request.queueScope } : undefined }),
             create: async () => openNewSessionDraft(),
             compact: async (request) => opencodeClient.summarizeSession(request.sessionID ?? '', request.providerID ?? '', request.modelID ?? '', request.directory),
-            abort: (request) => sessionActions.abortCurrentOperation(request.sessionID ?? ''),
+            abort: (request) => {
+                if (request.sessionID) promoteQueueHeadOnAbort(request.sessionID);
+                return sessionActions.abortCurrentOperation(request.sessionID ?? '');
+            },
         },
         shortcuts: {
             cycle: (direction) => primaryCycleAgentRef.current(direction),
             new: () => openNewSessionDraft(),
-            abort: () => sessionActions.abortCurrentOperation(primarySessionID ?? ''),
+            abort: () => {
+                if (primarySessionID) promoteQueueHeadOnAbort(primarySessionID);
+                return sessionActions.abortCurrentOperation(primarySessionID ?? '');
+            },
             submit: () => {},
         },
         deliveryTarget: { kind: 'primary' },

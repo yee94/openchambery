@@ -18,8 +18,18 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('animateTailText={false}');
     });
 
-    test('skill and non-context static tools stay one-call rows; context tools collapse into Explored groups', () => {
-        // skill / other non-context static tools: one call per tool-static-group row
+    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; context tools collapse into Explored groups', () => {
+        // consecutive 2+ skill calls collapse into one SkillToolGroup
+        expect(progressiveGroupSource).toContain('if (isSkillGroupTool(toolName))');
+        expect(progressiveGroupSource).toContain('collectConsecutiveSkillTools');
+        expect(progressiveGroupSource).toContain("type: 'tool-skill-group'");
+        expect(progressiveGroupSource).toContain('if (grouped.items.length > 0)');
+        expect(progressiveGroupSource).toContain("case 'tool-skill-group':");
+        expect(progressiveGroupSource).toContain('<SkillToolGroup');
+        expect(messageBodySource).toContain('isSkillGroupTool');
+        expect(messageBodySource).toContain('SkillToolGroup');
+        expect(messageBodySource).toContain('collectConsecutiveSkillTools');
+        // other non-context static tools: one call per tool-static-group row
         expect(progressiveGroupSource).toContain("rows.push({ type: 'tool-static-group', toolName, activities: [activity] });");
         // context tools (read/glob/grep/list): consecutive collapse via collectConsecutiveContextTools
         expect(progressiveGroupSource).toContain('if (isContextGroupTool(toolName))');
@@ -100,6 +110,9 @@ describe('progressive activity presentation', () => {
             expect(dictionarySource).toContain('chat.contextGroup.searchPlural');
             expect(dictionarySource).toContain('chat.contextGroup.readPlural');
             expect(dictionarySource).toContain('chat.contextGroup.listPlural');
+            expect(dictionarySource).toContain('chat.skillGroup.expandAria');
+            expect(dictionarySource).toContain('chat.skillGroup.collapseAria');
+            expect(dictionarySource).toContain('chat.skillGroup.summaryOverflow');
         }
         const simplifiedChinese = readFileSync(join(messageDictionaryDirectory, 'zh-CN.ts'), 'utf-8');
         const traditionalChinese = readFileSync(join(messageDictionaryDirectory, 'zh-TW.ts'), 'utf-8');
@@ -116,6 +129,7 @@ describe('progressive activity presentation', () => {
         expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 Agent 参与'");
         expect(simplifiedChinese).toContain("'chat.contextGroup.explored': '探索'");
         expect(simplifiedChinese).toContain("'chat.contextGroup.listPlural': '{count} 次列举'");
+        expect(simplifiedChinese).toContain("'chat.skillGroup.summaryOverflow': '{names} 等{count}个'");
         expect(traditionalChinese).toContain("'chat.activity.title': '處理詳情'");
         expect(traditionalChinese).toContain("'chat.activity.compacting': '正在壓縮'");
         expect(traditionalChinese).toContain("'chat.assistantStatus.compacting': '正在壓縮中'");

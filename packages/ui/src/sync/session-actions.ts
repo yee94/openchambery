@@ -2043,6 +2043,9 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
     })
   } catch (error) {
     if (scope && blockToken) useSessionUIStore.getState().clearQueueAbortBlock(scope, blockToken)
+    void import("./queue-abort-optimistic").then(({ rollbackQueueAbortOptimistic }) => {
+      rollbackQueueAbortOptimistic(sessionId)
+    }).catch(() => {})
     console.error("[session-actions] abort failed", error)
   }
 }
