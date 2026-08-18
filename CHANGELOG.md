@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.18] - 2026-08-18
+
+- **Out-of-order transcripts on open:** a session whose local cache loaded just after the network page no longer renders older turns below newer ones. The durable cache seed is skipped once the canonical transcript is already filled, and any seed rows that do land are inserted by their created time instead of being appended to the tail. A manual refresh could not repair the earlier misorder; the transcript is now ordered correctly from the first paint.
+
 ## [1.17.0-beta.17] - 2026-08-18
 
 - **Compaction transcript:** `/compact` is no longer painted as a user bubble. The compact turn stays in place so the previous assistant stream does not remount, and Compacting / Compaction complete attach to the continuous assistant Activity.
