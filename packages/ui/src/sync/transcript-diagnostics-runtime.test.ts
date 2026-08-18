@@ -46,4 +46,12 @@ describe("downloadDiagnosticsReport", () => {
     const { downloadDiagnosticsReport } = await import("./transcript-diagnostics-runtime")
     expect(await downloadDiagnosticsReport("{}", "export.json")).toBe("cancelled")
   })
+
+  test("sends a large diagnostics payload to the native saver", async () => {
+    const content = `{"eventCount":1,"pad":"${"x".repeat(200_000)}"}`
+    const { downloadDiagnosticsReport } = await import("./transcript-diagnostics-runtime")
+    expect(await downloadDiagnosticsReport(content, "openchamber-diagnostics.json")).toBe("saved")
+    const payload = saveFileCalls[0] as { dataBase64: string }
+    expect(payload.dataBase64.length).toBeGreaterThan(200_000)
+  })
 })

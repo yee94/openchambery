@@ -59,6 +59,10 @@ import {
 } from "@/lib/sessionReviewMetadata"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
 import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projection"
+import {
+  recordTranscriptDiff,
+  tryCaptureTranscriptCanonicalSnapshot,
+} from "./transcript-diagnostics-runtime"
 
 const SEND_CONFIRMATION_REFETCH_ATTEMPTS = 2
 const SEND_CONFIRMATION_REFETCH_RETRY_MS = 150
@@ -1623,8 +1627,9 @@ export async function optimisticSend(input: {
  * Used by the non-combined (fallback) send path and optimisticSend.
  *
  * Respects the shadow Map protocol: registers with real sessionID + provided
- * messageID so mergeOptimisticPage can deduplicate. If SSE has already
- * delivered the message (found in child store), skips insertion.
+ * messageID so mergeOptimisticPage can deduplicate. If the repository already
+ * holds a renderable row (message + parts), skips insertion. A hydration
+ * shell with empty parts still inserts so the user bubble can paint.
  * Returns false when the optimistic shadow ref is not mounted.
  */
 export function optimisticInsertUserMessage(input: {
@@ -1643,11 +1648,10 @@ export function optimisticInsertUserMessage(input: {
   const targetDirectory = input.directory ?? dir()
   const store = targetDirectory ? dirStoreForDirectory(targetDirectory) : dirStore()
   const resolvedDirectory = targetDirectory ?? dir() ?? ""
-  const repository = getTranscriptRepository()
-    ?? resolveTranscriptRepositoryForStore(resolvedDirectory, store)
-  const scope = transcriptScope(resolvedDirectory, input.sessionId)
   // Ticket 09 batch 1B: dedupe against Query/repository transcript, not child-store.message.
-  if (repository.getMessage(scope, input.messageID)) {
+  // Skip only when the stored row is renderable (message + parts). A hydration
+  // shell with empty parts must still receive the optimistic insert.
+  if (hasStoredSessionMessage(store, input.sessionId, input.messageID, resolvedDirectory)) {
     const state = store.getState()
     const now = Date.now()
     store.setState({
@@ -1693,12 +1697,33 @@ export function optimisticInsertUserMessage(input: {
     time: { created: now, completed: 0 },
   } as unknown as Message
 
+  const sendDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(input.sessionId, targetDirectory).data,
+  )
   _optimisticAdd({
     sessionID: input.sessionId,
     directory: targetDirectory,
     message: optimisticMessage,
     parts: optimisticParts,
   })
+  const sendDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(input.sessionId, targetDirectory).data,
+  )
+  try {
+    if (sendDiffBefore && sendDiffAfter) {
+      recordTranscriptDiff({
+        trigger: "user-send",
+        sessionID: input.sessionId,
+        directory: resolvedDirectory,
+        transport: getRuntimeTransportIdentity(),
+        generation: getRuntimeGeneration(),
+        before: sendDiffBefore,
+        after: sendDiffAfter,
+      })
+    }
+  } catch {
+    // Diagnostics must never affect optimistic insert.
+  }
 
   // Set busy status
   const current = store.getState()
@@ -2451,6 +2476,9 @@ function removeSessionMessageFromStore(
 ): void {
   const resolvedDirectory = directory ?? getSessionDirectory(sessionId) ?? _getDirectory()
   const resolvedScope = transcriptScope(resolvedDirectory, sessionId)
+  const deleteDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, resolvedDirectory).data,
+  )
   const scopes = [...listCanonicalTranscriptScopes(sessionId)]
   if (!scopes.some((scope) => scope.directory === resolvedDirectory && scope.sessionID === sessionId)) {
     scopes.push(resolvedScope)
@@ -2470,6 +2498,24 @@ function removeSessionMessageFromStore(
       type: "remove-message",
       messageID: messageId,
     })
+  }
+  const deleteDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, resolvedDirectory).data,
+  )
+  try {
+    if (deleteDiffBefore && deleteDiffAfter) {
+      recordTranscriptDiff({
+        trigger: "user-delete",
+        sessionID: sessionId,
+        directory: resolvedDirectory,
+        transport: getRuntimeTransportIdentity(),
+        generation: getRuntimeGeneration(),
+        before: deleteDiffBefore,
+        after: deleteDiffAfter,
+      })
+    }
+  } catch {
+    // Diagnostics must never affect message removal.
   }
 }
 
@@ -2683,23 +2729,47 @@ export async function commitMessageEdit(
   const preserveMessageId = options?.preserveMessageId
     ?? useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
-
-  await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
-  await waitForSessionIdleForMessageEdit(sessionId, { directory: directoryOverride })
-
-  const serverKnownIds = new Set(
-    (await fetchSessionMessageSnapshot(sessionId, directoryOverride)).map((message) => message.id),
+  const editDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, directoryOverride).data,
   )
-  // Read order after the snapshot await so abort/SSE rows that landed during
-  // the membership fetch are included in the conversation tail.
-  const conversation = readSessionMessages(sessionId, directoryOverride)
-  const removedMessages = resolveMessageEditDeleteRange(messageId, conversation, serverKnownIds, {
-    preserveMessageId,
-  })
 
-  for (const message of [...removedMessages].reverse()) {
-    await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
-    removeSessionMessageFromStore(store, sessionId, message.id, directory)
+  try {
+    await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
+    await waitForSessionIdleForMessageEdit(sessionId, { directory: directoryOverride })
+
+    const serverKnownIds = new Set(
+      (await fetchSessionMessageSnapshot(sessionId, directoryOverride)).map((message) => message.id),
+    )
+    // Read order after the snapshot await so abort/SSE rows that landed during
+    // the membership fetch are included in the conversation tail.
+    const conversation = readSessionMessages(sessionId, directoryOverride)
+    const removedMessages = resolveMessageEditDeleteRange(messageId, conversation, serverKnownIds, {
+      preserveMessageId,
+    })
+
+    for (const message of [...removedMessages].reverse()) {
+      await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
+      removeSessionMessageFromStore(store, sessionId, message.id, directory)
+    }
+  } finally {
+    try {
+      const editDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+        readSessionTranscript(sessionId, directoryOverride).data,
+      )
+      if (editDiffBefore && editDiffAfter) {
+        recordTranscriptDiff({
+          trigger: "user-edit",
+          sessionID: sessionId,
+          directory,
+          transport: getRuntimeTransportIdentity(),
+          generation: getRuntimeGeneration(),
+          before: editDiffBefore,
+          after: editDiffAfter,
+        })
+      }
+    } catch {
+      // Diagnostics must never affect message edit.
+    }
   }
 }
 
@@ -2719,6 +2789,9 @@ async function fetchSessionMessageSnapshot(sessionId: string, directoryOverride?
 /** Resolves to the authoritative snapshot this refetch materialized. */
 export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<Message[]> {
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
+  const refetchDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, directoryOverride).data,
+  )
   const result = await sdk().session.messages({
     sessionID: sessionId,
     directory,
@@ -2726,7 +2799,28 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
   })
   const records = (assertSdkSuccess(result, "session.messages") ?? [])
     .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
-  if (records.length === 0) return []
+  if (records.length === 0) {
+    try {
+      const emptyAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+        readSessionTranscript(sessionId, directoryOverride).data,
+      )
+      if (refetchDiffBefore && emptyAfter) {
+        recordTranscriptDiff({
+          trigger: "materialize",
+          sessionID: sessionId,
+          directory,
+          transport: getRuntimeTransportIdentity(),
+          generation: getRuntimeGeneration(),
+          purpose: "refetch",
+          before: refetchDiffBefore,
+          after: emptyAfter,
+        })
+      }
+    } catch {
+      // Diagnostics must never affect refetch.
+    }
+    return []
+  }
 
   const snapshots = records.map((record: { info: Message; parts?: Part[] }) => ({
     info: stripMessageDiffSnapshots(record.info),
@@ -2748,6 +2842,26 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
       records: snapshots,
       skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
     })
+  }
+
+  try {
+    const refetchDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+      readSessionTranscript(sessionId, directoryOverride).data,
+    )
+    if (refetchDiffBefore && refetchDiffAfter) {
+      recordTranscriptDiff({
+        trigger: "materialize",
+        sessionID: sessionId,
+        directory,
+        transport: getRuntimeTransportIdentity(),
+        generation: getRuntimeGeneration(),
+        purpose: "refetch",
+        before: refetchDiffBefore,
+        after: refetchDiffAfter,
+      })
+    }
+  } catch {
+    // Diagnostics must never affect refetch.
   }
 
   return snapshots.map((snapshot: { info: Message }) => snapshot.info)

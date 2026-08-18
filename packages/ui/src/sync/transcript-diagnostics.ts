@@ -33,6 +33,57 @@ export type TranscriptDiagnosticsKind =
   | "purge"
   | "request-error"
   | "hydration"
+  | "transcript-diff"
+
+export type TranscriptDiagnosticsDiffTrigger =
+  | "user-refresh"
+  | "user-send"
+  | "user-edit"
+  | "user-delete"
+  | "reconnect-compensation-reconcile"
+  | "reconnect-compensation-reset"
+  | "reconnect-compensation-ensure-tail"
+  | "materialize"
+  | "durable-seed"
+  | "ensure-initial"
+  | "destructive-reset"
+
+export type TranscriptMessageSnapshot = {
+  readonly id: string
+  readonly partCount: number
+  readonly slimCount: number
+  readonly fullCount: number
+  readonly optimistic: boolean
+  /** True when `time.completed` is a positive number. Used only for optimisticLost. */
+  readonly completed: boolean
+  readonly role?: "user" | "assistant" | "system"
+}
+
+export type TranscriptCanonicalSnapshot = {
+  readonly messageIDs: readonly string[]
+  readonly messages: readonly TranscriptMessageSnapshot[]
+  readonly boundaryKind: string
+  readonly liveRevision: number
+}
+
+export type TranscriptPartCountSnapshot = {
+  readonly partCount: number
+  readonly slimCount: number
+  readonly fullCount: number
+  readonly optimistic: boolean
+}
+
+export type TranscriptDiff = {
+  readonly addedMessageIDs: readonly string[]
+  readonly removedMessageIDs: readonly string[]
+  readonly partsChanged: readonly {
+    readonly id: string
+    readonly before: TranscriptPartCountSnapshot
+    readonly after: TranscriptPartCountSnapshot
+  }[]
+  readonly downgraded: readonly string[]
+  readonly optimisticLost: readonly string[]
+}
 
 export type TranscriptDiagnosticsSource = "network" | "query-cache" | "durable-cache" | "sse"
 
@@ -59,6 +110,10 @@ export type TranscriptDiagnosticsEvent = {
   readonly purpose?: string
   readonly sseType?: string
   readonly error?: string
+  readonly trigger?: TranscriptDiagnosticsDiffTrigger
+  readonly before?: TranscriptCanonicalSnapshot
+  readonly after?: TranscriptCanonicalSnapshot
+  readonly diff?: TranscriptDiff
 }
 
 export type TranscriptDiagnosticsSink = {
@@ -302,4 +357,138 @@ export function diagnosticsSourceForCommand(command: TranscriptCommand): Transcr
 /** Test helper: count messages without exposing Message bodies. */
 export function countSettledMessages(messagesByID: Readonly<Record<string, Message>>): number {
   return Object.keys(messagesByID).length
+}
+
+function isOptimisticPart(part: Part): boolean {
+  return (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true
+}
+
+function snapshotMessageRole(info: Message | undefined): TranscriptMessageSnapshot["role"] | undefined {
+  if (!info) return undefined
+  const raw = (info as { clientRole?: unknown; role?: unknown }).clientRole ?? info.role
+  if (raw === "user" || raw === "assistant" || raw === "system") return raw
+  return undefined
+}
+
+function snapshotMessageCompleted(info: Message | undefined): boolean {
+  const completed = (info as { time?: { completed?: unknown } } | undefined)?.time?.completed
+  return typeof completed === "number" && completed > 0
+}
+
+function toPartCountSnapshot(message: TranscriptMessageSnapshot): TranscriptPartCountSnapshot {
+  return {
+    partCount: message.partCount,
+    slimCount: message.slimCount,
+    fullCount: message.fullCount,
+    optimistic: message.optimistic,
+  }
+}
+
+/**
+ * Read-only identity/count snapshot. Never copies text, URLs, or payloads.
+ */
+export function captureTranscriptCanonicalSnapshot(
+  transcript: TranscriptData,
+): TranscriptCanonicalSnapshot {
+  const messages: TranscriptMessageSnapshot[] = transcript.messageOrder.map((id) => {
+    const parts = transcript.partsByMessageID[id] ?? []
+    let slimCount = 0
+    let fullCount = 0
+    let optimistic = false
+    for (const part of parts) {
+      if (isSlimPart(part)) slimCount += 1
+      else fullCount += 1
+      if (isOptimisticPart(part)) optimistic = true
+    }
+    const info = transcript.messagesByID[id]
+    const role = snapshotMessageRole(info)
+    return {
+      id,
+      partCount: parts.length,
+      slimCount,
+      fullCount,
+      optimistic,
+      completed: snapshotMessageCompleted(info),
+      ...(role ? { role } : {}),
+    }
+  })
+  return {
+    messageIDs: transcript.messageOrder.slice(),
+    messages,
+    boundaryKind: transcript.boundary.kind,
+    liveRevision: transcript.liveRevision,
+  }
+}
+
+export function diffTranscriptCanonicalSnapshots(
+  before: TranscriptCanonicalSnapshot,
+  after: TranscriptCanonicalSnapshot,
+): TranscriptDiff {
+  const beforeByID = new Map(before.messages.map((message) => [message.id, message]))
+  const afterByID = new Map(after.messages.map((message) => [message.id, message]))
+  const beforeIDs = new Set(before.messageIDs)
+  const afterIDs = new Set(after.messageIDs)
+
+  const addedMessageIDs = after.messageIDs.filter((id) => !beforeIDs.has(id))
+  const removedMessageIDs = before.messageIDs.filter((id) => !afterIDs.has(id))
+  const partsChanged: TranscriptDiff["partsChanged"][number][] = []
+  const downgraded: string[] = []
+  const optimisticLost: string[] = []
+
+  for (const id of before.messageIDs) {
+    const previous = beforeByID.get(id)
+    if (!previous) continue
+    const next = afterByID.get(id)
+    if (!next) {
+      if (previous.optimistic) optimisticLost.push(id)
+      continue
+    }
+    if (
+      previous.partCount !== next.partCount
+      || previous.slimCount !== next.slimCount
+      || previous.fullCount !== next.fullCount
+      || previous.optimistic !== next.optimistic
+    ) {
+      partsChanged.push({
+        id,
+        before: toPartCountSnapshot(previous),
+        after: toPartCountSnapshot(next),
+      })
+    }
+    if (previous.fullCount > 0 && next.fullCount === 0 && next.slimCount > 0) {
+      downgraded.push(id)
+    }
+    if (previous.optimistic && !next.optimistic && !next.completed) {
+      optimisticLost.push(id)
+    }
+  }
+
+  return { addedMessageIDs, removedMessageIDs, partsChanged, downgraded, optimisticLost }
+}
+
+export function snapshotTranscriptDiff(input: {
+  trigger: TranscriptDiagnosticsDiffTrigger
+  sessionID: string
+  directory?: string
+  transport?: string
+  generation?: number
+  purpose?: string
+  before: TranscriptCanonicalSnapshot
+  after: TranscriptCanonicalSnapshot
+  now?: () => number
+}): TranscriptDiagnosticsEvent {
+  return {
+    at: (input.now ?? Date.now)(),
+    feat: "transcript",
+    kind: "transcript-diff",
+    sessionID: input.sessionID,
+    trigger: input.trigger,
+    before: input.before,
+    after: input.after,
+    diff: diffTranscriptCanonicalSnapshots(input.before, input.after),
+    ...(input.directory ? { directory: input.directory } : {}),
+    ...(input.transport ? { transport: input.transport } : {}),
+    ...(input.generation !== undefined ? { generation: input.generation } : {}),
+    ...(input.purpose ? { purpose: input.purpose } : {}),
+  }
 }

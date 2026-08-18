@@ -814,6 +814,77 @@ describe("fetchMessagesForSession startup race", () => {
     expect(store.getState().message[sessionID]).toBeUndefined()
   })
 
+  test("optimisticInsertUserMessage inserts when canonical has a message shell without parts", async () => {
+    const sessionID = "session-shell-user"
+    const messageID = "msg_shell_user"
+    const shell = {
+      id: messageID,
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [shell] },
+      part: { [messageID]: [] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const added: OptimisticAddCall[] = []
+    const { optimisticInsertUserMessage, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    setOptimisticRefs((input) => { added.push(input) }, () => {})
+
+    const inserted = optimisticInsertUserMessage({
+      sessionId: sessionID,
+      messageID,
+      content: "hello after shell",
+      providerID: "openai",
+      modelID: "gpt-4o",
+      directory: "/test/project",
+    })
+
+    expect(inserted).toBe(true)
+    expect(added).toHaveLength(1)
+    expect(added[0]?.message.id).toBe(messageID)
+    expect(added[0]?.parts.length).toBeGreaterThan(0)
+    expect((added[0]?.parts[0] as { text?: string })?.text).toBe("hello after shell")
+    expect(store.getState().session_status[sessionID]).toEqual({ type: "busy" })
+  })
+
+  test("optimisticInsertUserMessage skips when canonical already has a complete row", async () => {
+    const sessionID = "session-complete-user"
+    const messageID = "msg_complete_user"
+    const existing = {
+      id: messageID,
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [existing] },
+      part: { [messageID]: [{ id: "prt_complete", type: "text", text: "already there" } as Part] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const added: OptimisticAddCall[] = []
+    const { optimisticInsertUserMessage, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    setOptimisticRefs((input) => { added.push(input) }, () => {})
+
+    const inserted = optimisticInsertUserMessage({
+      sessionId: sessionID,
+      messageID,
+      content: "should not replace complete row",
+      providerID: "openai",
+      modelID: "gpt-4o",
+      directory: "/test/project",
+    })
+
+    expect(inserted).toBe(false)
+    expect(added).toHaveLength(0)
+    expect(store.getState().session_status[sessionID]).toEqual({ type: "busy" })
+  })
+
   test("a new/empty session's first complete page commits an exhausted boundary atomically", async () => {
     const sessionID = "session-new-boundary"
     sessionMessagesResult = { data: [] }

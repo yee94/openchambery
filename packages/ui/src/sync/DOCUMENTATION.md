@@ -327,14 +327,15 @@ Modules:
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers plus shared exact `session.message` fetch (`fetchExactSessionMessageRecord`, transport+generation flight key; no nested store commit). Parent recovery is best-effort: a 404/failed exact fetch keeps the Host page. |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
-| `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` today), redacted snapshots (no bodies/tokens/URLs), bounded recorder, export schema `openchamber.client-diagnostics.v1` |
-| `transcript-diagnostics-runtime.ts` | Production selector: About switch (beta default on, stable default off), IndexedDB/memory sink, export/download |
+| `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` today), redacted snapshots (no bodies/tokens/URLs), bounded recorder, export schema `openchamber.client-diagnostics.v1`; `transcript-diff` before/after identity snapshots |
+| `transcript-diagnostics-runtime.ts` | Production selector: About switch (beta default on, stable default off), IndexedDB/memory sink, export/download, `recordTranscriptDiff` |
+| `transcript-diagnostics-diff.test.ts` | Canonical snapshot capture + added/removed/partsChanged/downgraded/optimisticLost contracts |
 | `transcript-diagnostics-indexeddb.ts` | IndexedDB ring buffer for local feat events |
 | `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
 | `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |
 | `session-transcript-reconcile-api.test.ts` / `session-transcript-reconnect-compensation.test.ts` | Client contract, checkpoint/anchor, first-ready skip, priority set, concurrency, continuation, multi-round, reset, generation cancel |
 
-**Client diagnostics hub:** Query adapter and About export share one local recorder. Each event names a `feat` (`transcript` today). About has a switch: prerelease versions default on, stable versions default off, and the user can override. Export appears only while the switch is on. Events never include message bodies, part text, URLs, tokens, or attachments. Each event records `source` (`network` / `query-cache` / `durable-cache` / `sse`), optional `durationMs`, request status, hydration/paint order (`lastMessageIDs`), command/SSE type, and sanitized `error` / `httpStatus` so GET vs cache vs on-screen order and settled load-failed walls are reconstructable. `purpose: load-failed` is the visible "unable to load this conversation" wall; `purpose: retry` is the user retry. Export writes `openchamber.client-diagnostics.v1` JSON from the local ring buffer; native `diagnostics.downloadLogs` is optional and never replaces an empty local report with a failed fetch. Capacitor uses `OpenChamberMedia.saveFile` (iOS document picker / Android create-document) so export is a real file save, not clipboard or `navigator.share`.
+**Client diagnostics hub:** Query adapter and About export share one local recorder. Each event names a `feat` (`transcript` today). About has a switch: prerelease versions default on, stable versions default off, and the user can override. Export appears only while the switch is on. Events never include message bodies, part text, URLs, tokens, or attachments. Each event records `source` (`network` / `query-cache` / `durable-cache` / `sse`), optional `durationMs`, request status, hydration/paint order (`lastMessageIDs`), command/SSE type, and sanitized `error` / `httpStatus` so GET vs cache vs on-screen order and settled load-failed walls are reconstructable. `purpose: load-failed` is the visible "unable to load this conversation" wall; `purpose: retry` is the user retry. `kind: transcript-diff` is a before/after identity snapshot (`messageIDs`, per-message part/slim/full/optimistic counts, no bodies) recorded around user send/edit/delete/refresh and reconnect compensation / materialize / destructiveReset. Diff fields are `addedMessageIDs`, `removedMessageIDs`, `partsChanged`, `downgraded` (full parts replaced by slim-only), and `optimisticLost` (optimistic row vanished or became non-optimistic without `time.completed > 0`). Capture is read-only `getTranscript` and is swallowed on throw. Export writes `openchamber.client-diagnostics.v1` JSON from the local ring buffer; native `diagnostics.downloadLogs` is optional and never replaces an empty local report with a failed fetch. Capacitor uses `OpenChamberMedia.saveFile` (iOS document picker / Android create-document) so export is a real file save, not clipboard or `navigator.share`. Android writes a cache file first and drops `dataBase64` from the persisted plugin call so DocumentsUI pause/restore cannot `TransactionTooLarge`; the create-document MIME is `application/octet-stream` because `application/json` crashes some OEM pickers on confirm.
 
 **Ownership boundary (QueryCache sole production authority):**
 
@@ -900,19 +901,24 @@ both readers agree on when a frame may shrink.
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a
   session lazily materializes its bounded identity snapshot in its owning
-  directory before inserting the durable reference. Sending resolves each
-  referenced session from loaded session summaries — no transcript reads, so an
-  unopened or evicted referenced session still resolves — and adds a lightweight
-  hidden reference part carrying only the stable session ID and display title
-  plus an instruction that the assistant should look the session up by ID when
-  the request depends on its content. Delivery compilation also matches visible
-  `@<title>` labels in authored text against loaded session summaries (the same
-  matching the sent-message display fallback uses), so pasted or copied
-  references still deliver session semantics; canonical `@session:<id>` tokens
-  and matched titles dedupe by session ID. The textarea stores visible Session
-  labels plus DraftRecord sidecars containing stable Session IDs. Sending
-  resolves each sidecar at the send boundary into stable Session identity and
-  visible sent text `@<session title>`.
+  directory before inserting the durable reference, then kicks a background
+  full-transcript prefetch (failures fall back to the send-boundary retrieval
+  card). Sending resolves each referenced session at the owner boundary and
+  adds a hidden reference part that is self-describing: every entry carries the
+  stable session ID, display title, owning directory, and messages inlined
+  from the client cache when loaded — an empty messages array means not-loaded,
+  never an empty session — and the instruction prefix embeds a verified
+  read-only SQLite recipe (candidate DB paths plus the exact query) so the
+  receiving assistant can retrieve any referenced transcript itself, because
+  the server API is auth-gated and no session-reading tool exists. Delivery
+  compilation also matches visible `@<title>` labels in authored text against
+  loaded session summaries (the same matching the sent-message display
+  fallback uses), so pasted or copied references still deliver session
+  semantics; canonical `@session:<id>` tokens and matched titles dedupe by
+  session ID. The textarea stores visible Session labels plus DraftRecord
+  sidecars containing stable Session IDs. Sending resolves each sidecar at the
+  send boundary into stable Session identity and visible sent text
+  `@<session title>`.
 - A rejected shared request is removed from the coordinator so the next
   explicit/reactive attempt can retry; failure must never be cached as an empty
   authoritative history.

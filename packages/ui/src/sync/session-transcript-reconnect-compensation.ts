@@ -53,6 +53,10 @@ import type {
 } from "./transcript-repository"
 import type { SessionMessageRuntimeProbe } from "./session-message-query"
 import { SessionMessageRuntimeStaleError } from "./session-message-query"
+import {
+  recordTranscriptDiff,
+  tryCaptureTranscriptCanonicalSnapshot,
+} from "./transcript-diagnostics-runtime"
 
 // ---------------------------------------------------------------------------
 // Query repository surface required by the controller
@@ -526,8 +530,11 @@ export function createTranscriptReconnectCompensationController(
     page: SessionTranscriptReconcilePage,
     capturedLiveRevision: number,
   ) => {
+    const reconcileDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+      repository.getTranscript(scope),
+    )
     const liveRevision = repository.getTranscript(scope).liveRevision
-    return repository.apply(scope, {
+    const applied = repository.apply(scope, {
       type: "http-page",
       purpose: "reconcile-page",
       page: {
@@ -543,6 +550,25 @@ export function createTranscriptReconnectCompensationController(
       capturedLiveRevision,
       liveRevision,
     })
+    try {
+      const reconcileDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+        repository.getTranscript(scope),
+      )
+      if (reconcileDiffBefore && reconcileDiffAfter) {
+        recordTranscriptDiff({
+          trigger: "reconnect-compensation-reconcile",
+          sessionID: scope.sessionID,
+          directory: scope.directory,
+          transport: scope.transport,
+          generation: scope.generation,
+          before: reconcileDiffBefore,
+          after: reconcileDiffAfter,
+        })
+      }
+    } catch {
+      // Diagnostics must never affect reconcile apply.
+    }
+    return applied
   }
 
   const runDestructiveTail = async (
@@ -572,6 +598,9 @@ export function createTranscriptReconnectCompensationController(
       ),
     )
 
+    const resetDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+      repository.getTranscript(scope),
+    )
     try {
       await repository.destructiveReset(scope)
       assertRuntimeCurrent(
@@ -581,6 +610,24 @@ export function createTranscriptReconnectCompensationController(
       if (epoch !== controllerEpoch) throw new SessionMessageRuntimeStaleError()
       clearTranscriptRecoveryCheckpoint(client, cacheScope)
       clearStale(cacheScope.directory, cacheScope.sessionID)
+      try {
+        const resetDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+          repository.getTranscript(scope),
+        )
+        if (resetDiffBefore && resetDiffAfter) {
+          recordTranscriptDiff({
+            trigger: "reconnect-compensation-reset",
+            sessionID: scope.sessionID,
+            directory: scope.directory,
+            transport: cacheScope.transport,
+            generation: cacheScope.generation,
+            before: resetDiffBefore,
+            after: resetDiffAfter,
+          })
+        }
+      } catch {
+        // Diagnostics must never affect destructive tail.
+      }
     } catch (error) {
       // Ensure failure must propagate; leave empty/failed (destructiveReset contract).
       writeTranscriptRecoveryCheckpoint(
@@ -634,6 +681,9 @@ export function createTranscriptReconnectCompensationController(
       ),
     )
 
+    const ensureDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+      repository.getTranscript(scope),
+    )
     try {
       await repository.ensureInitial(scope)
       assertRuntimeCurrent(
@@ -643,6 +693,24 @@ export function createTranscriptReconnectCompensationController(
       if (epoch !== controllerEpoch) throw new SessionMessageRuntimeStaleError()
       clearTranscriptRecoveryCheckpoint(client, cacheScope)
       clearStale(cacheScope.directory, cacheScope.sessionID)
+      try {
+        const ensureDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+          repository.getTranscript(scope),
+        )
+        if (ensureDiffBefore && ensureDiffAfter) {
+          recordTranscriptDiff({
+            trigger: "reconnect-compensation-ensure-tail",
+            sessionID: scope.sessionID,
+            directory: scope.directory,
+            transport: cacheScope.transport,
+            generation: cacheScope.generation,
+            before: ensureDiffBefore,
+            after: ensureDiffAfter,
+          })
+        }
+      } catch {
+        // Diagnostics must never affect ensure tail.
+      }
     } catch (error) {
       // Preserve prior authoritative transcript; leave checkpoint pending for retry.
       writeTranscriptRecoveryCheckpoint(

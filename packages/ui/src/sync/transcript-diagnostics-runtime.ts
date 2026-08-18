@@ -47,7 +47,11 @@ import {
   parseTranscriptDiagnosticsPreference,
   resolveTranscriptDiagnosticsEnabled,
   snapshotTranscriptDiagnostics,
+  snapshotTranscriptDiff,
+  captureTranscriptCanonicalSnapshot,
   TRANSCRIPT_DIAGNOSTICS_PREFERENCE_KEY,
+  type TranscriptCanonicalSnapshot,
+  type TranscriptDiagnosticsDiffTrigger,
   type TranscriptDiagnosticsEvent,
   type TranscriptDiagnosticsHydration,
   type TranscriptDiagnosticsRecorder,
@@ -132,6 +136,42 @@ export function getTranscriptDiagnosticsRecorder(): TranscriptDiagnosticsRecorde
 
 export function recordTranscriptDiagnostics(event: TranscriptDiagnosticsEvent): void {
   getTranscriptDiagnosticsRecorder().record(event)
+}
+
+/**
+ * Read-only snapshot of the current canonical transcript. Returns undefined
+ * when diagnostics are off or the reader throws. Never writes or fetches.
+ */
+export function tryCaptureTranscriptCanonicalSnapshot(
+  read: () => TranscriptData,
+): TranscriptCanonicalSnapshot | undefined {
+  try {
+    if (!isTranscriptDiagnosticsEnabled()) return undefined
+    return captureTranscriptCanonicalSnapshot(read())
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Merge a before/after pair into one `transcript-diff` event. Failures are
+ * swallowed so diagnostics cannot affect the calling path.
+ */
+export function recordTranscriptDiff(input: {
+  trigger: TranscriptDiagnosticsDiffTrigger
+  sessionID: string
+  directory?: string
+  transport?: string
+  generation?: number
+  purpose?: string
+  before: TranscriptCanonicalSnapshot
+  after: TranscriptCanonicalSnapshot
+}): void {
+  try {
+    recordTranscriptDiagnostics(snapshotTranscriptDiff(input))
+  } catch {
+    // Diagnostics must never affect the calling path.
+  }
 }
 
 export function recordTranscriptCommandDiagnostics(input: {

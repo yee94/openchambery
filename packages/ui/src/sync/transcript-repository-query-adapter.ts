@@ -78,7 +78,13 @@ import {
   type TranscriptTransportPage,
 } from "./transcript-repository"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
-import { recordTranscriptCommandDiagnostics, recordTranscriptDiagnostics, snapshotTranscriptDiagnostics } from "./transcript-diagnostics-runtime"
+import {
+  recordTranscriptCommandDiagnostics,
+  recordTranscriptDiagnostics,
+  recordTranscriptDiff,
+  snapshotTranscriptDiagnostics,
+  tryCaptureTranscriptCanonicalSnapshot,
+} from "./transcript-diagnostics-runtime"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -929,8 +935,32 @@ export function createQueryTranscriptRepository(
     async materializeMessage(scope, messageID) {
       const captured = resolveScopeIdentity(scope, deps)
       const flightKey = messageStateKey(captured, messageID)
+      const materializeDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+        repository.getTranscript(scope),
+      )
+      const recordMaterializeDiff = (readAfter: () => TranscriptData) => {
+        try {
+          const after = tryCaptureTranscriptCanonicalSnapshot(readAfter)
+          if (!materializeDiffBefore || !after) return
+          recordTranscriptDiff({
+            trigger: "materialize",
+            sessionID: captured.sessionID,
+            directory: captured.directory,
+            transport: captured.transport,
+            generation: captured.generation,
+            purpose: "exact",
+            before: materializeDiffBefore,
+            after,
+          })
+        } catch {
+          // Diagnostics must never affect materialize.
+        }
+      }
       const existing = messageFlights.get(flightKey)
-      if (existing) return existing
+      if (existing) {
+        void existing.then((data) => recordMaterializeDiff(() => data)).catch(() => undefined)
+        return existing
+      }
 
       const run = (async (): Promise<TranscriptData> => {
         try {
@@ -1007,6 +1037,7 @@ export function createQueryTranscriptRepository(
       })()
 
       messageFlights.set(flightKey, run)
+      void run.then((data) => recordMaterializeDiff(() => data)).catch(() => undefined)
       void run.finally(() => {
         if (messageFlights.get(flightKey) === run) messageFlights.delete(flightKey)
       })
@@ -1378,6 +1409,9 @@ export function createQueryTranscriptRepository(
         )
       }
       const identity = resolveScopeIdentity(scope, deps)
+      const refreshDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+        repository.getTranscript(scope),
+      )
       const previous = repository.getTranscript(scope)
       const page = await deps.fetcher({
         directory: identity.directory,
@@ -1399,10 +1433,30 @@ export function createQueryTranscriptRepository(
         }
       }
       cacheBudget.noteScopeObserved(toCacheScope(scope))
+      try {
+        const refreshDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() => next)
+        if (refreshDiffBefore && refreshDiffAfter) {
+          recordTranscriptDiff({
+            trigger: "user-refresh",
+            sessionID: identity.sessionID,
+            directory: identity.directory,
+            transport: identity.transport,
+            generation: identity.generation,
+            purpose: "refresh-from-authority",
+            before: refreshDiffBefore,
+            after: refreshDiffAfter,
+          })
+        }
+      } catch {
+        // Diagnostics must never affect authority refresh.
+      }
       return next
     },
 
     async destructiveReset(scope) {
+      const resetDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+        repository.getTranscript(scope),
+      )
       const cacheScope = toCacheScope(scope)
       if (durableQueue) {
         await durableQueue.clearSession(toTranscriptDurableScope(resolveScopeIdentity(scope, deps)))
@@ -1423,7 +1477,24 @@ export function createQueryTranscriptRepository(
             "Query transcript repository requires a fetcher for destructiveReset ensure",
           )
         }
-        return repository.ensureInitial(scope)
+        const next = await repository.ensureInitial(scope)
+        try {
+          const resetDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() => next)
+          if (resetDiffBefore && resetDiffAfter) {
+            recordTranscriptDiff({
+              trigger: "destructive-reset",
+              sessionID: identity.sessionID,
+              directory: identity.directory,
+              transport: identity.transport,
+              generation: identity.generation,
+              before: resetDiffBefore,
+              after: resetDiffAfter,
+            })
+          }
+        } catch {
+          // Diagnostics must never affect destructiveReset.
+        }
+        return next
       })
     },
 

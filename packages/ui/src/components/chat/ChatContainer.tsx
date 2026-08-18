@@ -91,12 +91,16 @@ import { useSync } from '@/sync/use-sync';
 import {
     ensureTranscriptInitial,
     fetchTranscriptPreviousPage,
+    getTranscriptRepository,
     refreshTranscriptFromAuthority,
     retryTranscriptInitial,
+    transcriptScope,
 } from '@/sync/transcript-repository-runtime';
 import {
     recordTranscriptDiagnostics,
+    recordTranscriptDiff,
     snapshotTranscriptDiagnostics,
+    tryCaptureTranscriptCanonicalSnapshot,
 } from '@/sync/transcript-diagnostics-runtime';
 import {
     INITIAL_TRANSCRIPT_STALL_STATE,
@@ -798,6 +802,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         const sessionId = currentSessionId;
         const directory = effectiveSessionDirectory;
         setRetryingSessionHistoryId(sessionId);
+        const refreshDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() => {
+            const repository = getTranscriptRepository();
+            if (!repository) throw new Error('unbound');
+            return repository.getTranscript(transcriptScope(directory, sessionId));
+        });
         recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
             kind: 'refresh',
             sessionID: sessionId,
@@ -818,6 +827,25 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             try {
                 await retryTranscriptInitial(directory, sessionId);
                 await sync.ensureSessionRenderable(sessionId, { directory });
+                try {
+                    const refreshDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() => {
+                        const repository = getTranscriptRepository();
+                        if (!repository) throw new Error('unbound');
+                        return repository.getTranscript(transcriptScope(directory, sessionId));
+                    });
+                    if (refreshDiffBefore && refreshDiffAfter) {
+                        recordTranscriptDiff({
+                            trigger: 'user-refresh',
+                            sessionID: sessionId,
+                            directory,
+                            purpose: 'retry',
+                            before: refreshDiffBefore,
+                            after: refreshDiffAfter,
+                        });
+                    }
+                } catch {
+                    // Diagnostics must never affect retry.
+                }
             } catch (error) {
                 recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
                     kind: 'request-error',
