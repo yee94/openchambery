@@ -725,9 +725,23 @@ both readers agree on when a frame may shrink.
   revalidation and rewrite the durable cache when the body changed. Whether to
   widen insert-only itself is a separate decision; the table makes the
   behavior visible.
-  User-triggered refresh is a different path: `refreshFromAuthority` fetches a
-  fresh tail first, then replaces the canonical transcript with that page.
-  Fetch failure keeps the prior transcript. The fetch is outside the
+  User-triggered refresh is a reconcile, not a reset: `refreshFromAuthority`
+  fetches a fresh tail, then merges `{type:"http-page", purpose:"reconcile-page"}`
+  with `capturedLiveRevision` taken **before** the fetch and `liveRevision` at
+  apply time. It does **not** issue `reset`. After a non-stale merge it deletes
+  only canonical messages that are absent from the new page, have
+  `time.created` strictly later than the page's oldest message (the tail-window
+  anchor), and are not unconfirmed optimistic rows (`__openchamberOptimistic`).
+  Messages older than the anchor stay — a tail page must not truncate already-
+  loaded history. Optimistic rows stay until server confirmation or a separate
+  timeout. An empty page skips the deletion pass (no anchor). Fetch failure
+  keeps the prior transcript and does not apply. `clearOptimisticShadow` runs
+  only for ids actually removed. `reconcile-page` already preserves the history
+  boundary / cursor / loadedTurns (Host `complete` ends a compensation round,
+  not older-history exhaustion); refresh keeps that, because older-than-anchor
+  pages remain. SSE that advances revision during the pull trips
+  `STALE_RECOVERY` and skips the deletion pass so live objects are not
+  overwritten. The fetch is outside the
   InfiniteQuery observer, so `getRequestState` stays `ready`;
    `refreshTranscriptFromAuthority` publishes an in-flight signal
    (`transcript-authority-refresh-flight`) for mobile title hints. The whisper
@@ -737,7 +751,7 @@ both readers agree on when a frame may shrink.
    the InfiniteQuery observer is still `isFetching`. Desktop session context-menu
    "Sync messages" and the dedicated-mobile overflow "Refresh" both call
     `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
-    (enter-and-sync reconcile, not replace) or `destructiveReset` (ensure failure blanks the chat).
+    (enter-and-sync reconcile without the in-range delete pass) or `destructiveReset` (ensure failure blanks the chat).
 
 - **Enter-and-sync hot revalidate.** A hot cache (canonical pages present,
   boundary known) used to make `ensureInitial` a no-op (`staleTime: Infinity`).
@@ -754,8 +768,9 @@ both readers agree on when a frame may shrink.
     with `capturedLiveRevision` taken **before** the fetch and `liveRevision`
     at apply time. SSE that advances revision during the pull trips
     `isLiveRevisionStale` → `STALE_RECOVERY` (insert-only + skip-existing).
-    A `refreshFromAuthority` reset that drops `liveRevision` below the capture
-    (or an in-flight user refresh) skips apply so the user-requested tail wins.
+    An in-flight user refresh (`isTranscriptAuthorityRefreshInFlight`), or a
+    writer that dropped `liveRevision` below the capture, skips apply so the
+    user-requested reconcile wins.
   - Retained scopes (repository `subscribe` / live UI) skip the hot pull —
     SSE already owns that tail. `setCurrentSession` fires
     `fetchMessagesForSession` before React commits, so the newly entered
@@ -764,7 +779,7 @@ both readers agree on when a frame may shrink.
     stamp the window, and does not surface as request `error`. Existing
     `getTranscript` data is never cleared; `getRequestState` may be `loading`
     while the check runs.
-  - `refreshFromAuthority` stays a user-triggered reset and is unchanged.
+  - `refreshFromAuthority` is a user-triggered reconcile (not reset); see above.
    The chat load-error wall has no transcript to keep, so Retry calls
    `retryTranscriptInitial` (`destructiveReset` + fresh ensure) and the gate
    treats that click as `hydrating` until the reload settles.
@@ -1037,6 +1052,9 @@ both readers agree on when a frame may shrink.
   length or collapsed tail through insert-only `materialize` so a lagging Host
   snapshot cannot replace a live last turn the stream already admitted, while
   still filling `finish` / `time.completed` / `error` the live row is missing.
+  A same-length **ref-stable subset** (`remove-message` / `message.removed`)
+  is kept: remaining message/part objects are the prior refs, so it is not a
+  rebuilt lagging tail.
   Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
 - The client stall timer starts before SSE response headers arrive. Transport

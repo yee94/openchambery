@@ -259,9 +259,10 @@ export async function retryTranscriptInitial(
 }
 
 /**
- * User-triggered refresh: fetch a fresh tail, then replace. Failure keeps the
- * prior transcript. Do not use ensureInitial (enter-and-sync reconcile, not
- * replace) or destructiveReset (ensure failure blanks the chat).
+ * User-triggered refresh: fetch a fresh tail, reconcile-page merge, then
+ * delete only in-range non-optimistic absences. Failure keeps the prior
+ * transcript. Do not use ensureInitial (enter-and-sync reconcile without
+ * that delete pass) or destructiveReset (ensure failure blanks the chat).
  */
 export async function refreshTranscriptFromAuthority(
   directory: string,

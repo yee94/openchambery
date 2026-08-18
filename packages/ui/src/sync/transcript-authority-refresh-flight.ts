@@ -2,7 +2,7 @@
  * In-flight signal for user-triggered `refreshFromAuthority`.
  *
  * That path fetches outside the InfiniteQuery observer, so `getRequestState`
- * stays `ready` while the tail is replaced. Chat headers subscribe here to
+ * stays `ready` while the tail is reconciled. Chat headers subscribe here to
  * show a WeChat-style sync hint without treating warm prefetch `isFetching`
  * (which can stick on Relay) as live work.
  */

@@ -183,7 +183,10 @@ describe("refreshTranscriptFromAuthority", () => {
     await refreshTranscriptFromAuthority("/ws", "ses_1")
     expect(isTranscriptAuthorityRefreshInFlight("ses_1", "/ws")).toBe(false)
     expect(fetches).toBe(2)
-    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_new"])
+    // Refresh now reconciles instead of resetting: the equal-timestamp msg_old is
+    // older-or-equal to the page anchor, so it is kept and msg_new is merged in.
+    // Equal created timestamps are a synthetic tiebreak; assert membership, not order.
+    expect([...repo.getTranscript(scope).messageOrder].sort()).toEqual(["msg_new", "msg_old"])
     unbindTranscriptRepository()
     repo.destroy()
   })

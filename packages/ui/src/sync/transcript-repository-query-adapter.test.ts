@@ -29,12 +29,12 @@ const SESSION = "ses_1"
 const TRANSPORT = "runtime-a"
 const GENERATION = 1
 
-function userMessage(id: string): Message {
-  return { id, sessionID: SESSION, role: "user", time: { created: 1 } } as Message
+function userMessage(id: string, created = 1): Message {
+  return { id, sessionID: SESSION, role: "user", time: { created } } as Message
 }
 
-function assistantMessage(id: string): Message {
-  return { id, sessionID: SESSION, role: "assistant", time: { created: 1 } } as Message
+function assistantMessage(id: string, created = 1): Message {
+  return { id, sessionID: SESSION, role: "assistant", time: { created } } as Message
 }
 
 function textPart(id: string, messageID: string, text = id): Part {
@@ -677,7 +677,7 @@ describe("createQueryTranscriptRepository", () => {
     repo.destroy()
   })
 
-  test("refreshFromAuthority fetches on a hot cache and replaces the tail", async () => {
+  test("refreshFromAuthority reconciles the tail without resetting history", async () => {
     let fetches = 0
     const repo = createQueryTranscriptRepository({
       client,
@@ -690,16 +690,16 @@ describe("createQueryTranscriptRepository", () => {
         if (fetches === 1) {
           return transportPage(
             [
-              { info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "stale")] },
-              { info: assistantMessage("msg_extra") },
+              { info: userMessage("msg_old", 1), parts: [textPart("p_old", "msg_old", "stale")] },
+              { info: assistantMessage("msg_extra", 2) },
             ],
             { complete: true },
           )
         }
         return transportPage(
           [
-            { info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "fresh")] },
-            { info: assistantMessage("msg_new"), parts: [textPart("p_new", "msg_new", "added")] },
+            { info: userMessage("msg_old", 1), parts: [textPart("p_old", "msg_old", "fresh")] },
+            { info: assistantMessage("msg_new", 3), parts: [textPart("p_new", "msg_new", "added")] },
           ],
           { complete: true },
         )
@@ -754,7 +754,44 @@ describe("createQueryTranscriptRepository", () => {
     repo.destroy()
   })
 
-  test("refreshFromAuthority drops unmatched optimistic ids after a successful fetch", async () => {
+  test("refreshFromAuthority keeps older-than-anchor history when the tail page is shorter", async () => {
+    const older = Array.from({ length: 15 }, (_, index) => ({
+      info: userMessage(`msg_hist_${index}`, index + 1),
+      parts: [textPart(`p_hist_${index}`, `msg_hist_${index}`, `hist-${index}`)],
+    }))
+    const tail = Array.from({ length: 15 }, (_, index) => ({
+      info: userMessage(`msg_tail_${index}`, index + 16),
+      parts: [textPart(`p_tail_${index}`, `msg_tail_${index}`, `tail-${index}`)],
+    }))
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 15,
+      historyLimit: 15,
+      fetcher: async () => transportPage(tail, { complete: false, cursor: "msg_hist_14" }),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([...older, ...tail], { complete: false, cursor: "msg_hist_0" }),
+    })
+    expect(repo.getTranscript(scope).messageOrder).toHaveLength(30)
+
+    const refreshed = await repo.refreshFromAuthority(scope)
+    expect(refreshed.messageOrder).toHaveLength(30)
+    for (const record of older) {
+      expect(refreshed.messagesByID[record.info.id]).toBeDefined()
+    }
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority deletes in-range server absences and clears only those shadows", async () => {
     const cleared: string[] = []
     const repo = createQueryTranscriptRepository({
       client,
@@ -766,7 +803,7 @@ describe("createQueryTranscriptRepository", () => {
         cleared.push(messageID)
       },
       fetcher: async () => transportPage(
-        [{ info: userMessage("msg_server") }],
+        [{ info: userMessage("msg_server", 1) }],
         { complete: true },
       ),
       probe: {
@@ -780,15 +817,29 @@ describe("createQueryTranscriptRepository", () => {
       purpose: "initial",
       page: transportPage(
         [
-          { info: userMessage("msg_server") },
-          { info: userMessage("msg_optimistic") },
+          { info: userMessage("msg_server", 1) },
+          { info: userMessage("msg_gone", 2) },
         ],
         { complete: true },
       ),
     })
+    repo.apply(scope, {
+      type: "optimistic-add",
+      message: userMessage("msg_optimistic", 3),
+      parts: [{
+        id: "p_optimistic",
+        messageID: "msg_optimistic",
+        sessionID: SESSION,
+        type: "text",
+        text: "我刚发的消息",
+        __openchamberOptimistic: true,
+      } as unknown as Part],
+    })
     const refreshed = await repo.refreshFromAuthority(scope)
-    expect(refreshed.messageOrder).toEqual(["msg_server"])
-    expect(cleared).toEqual(["msg_optimistic"])
+    expect(refreshed.messageOrder).toEqual(["msg_server", "msg_optimistic"])
+    expect(refreshed.messagesByID.msg_gone).toBeUndefined()
+    expect((repo.getParts(scope, "msg_optimistic")[0] as { text?: string })?.text).toBe("我刚发的消息")
+    expect(cleared).toEqual(["msg_gone"])
     repo.destroy()
   })
 

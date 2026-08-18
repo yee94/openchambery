@@ -210,6 +210,50 @@ function toTranscriptData(
   }
 }
 
+function messageCreatedAt(message: Message | undefined): number | undefined {
+  const created = message?.time?.created
+  return typeof created === "number" && Number.isFinite(created) ? created : undefined
+}
+
+function hasUnconfirmedOptimisticPart(parts: readonly Part[] | undefined): boolean {
+  return Boolean(
+    parts?.some(
+      (part) => (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true,
+    ),
+  )
+}
+
+/**
+ * Tail-window deletions for user refresh. Anchor = oldest `time.created` on the
+ * new page. Only messages strictly newer than that anchor, absent from the page,
+ * and not unconfirmed optimistic rows are server-deleted. Older-than-anchor
+ * history is outside the tail page and must stay.
+ */
+function collectAuthorityRefreshRemovals(
+  transcript: TranscriptData,
+  page: TranscriptTransportPage,
+): string[] {
+  if (page.records.length === 0) return []
+  let anchor: number | undefined
+  for (const record of page.records) {
+    const created = messageCreatedAt(record.info)
+    if (created === undefined) continue
+    if (anchor === undefined || created < anchor) anchor = created
+  }
+  if (anchor === undefined) return []
+
+  const pageIDs = new Set(page.records.map((record) => record.info.id))
+  const removed: string[] = []
+  for (const messageID of transcript.messageOrder) {
+    if (pageIDs.has(messageID)) continue
+    const created = messageCreatedAt(transcript.messagesByID[messageID])
+    if (created === undefined || created <= anchor) continue
+    if (hasUnconfirmedOptimisticPart(transcript.partsByMessageID[messageID])) continue
+    removed.push(messageID)
+  }
+  return removed
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -232,8 +276,8 @@ export type QueryTranscriptRepository = TranscriptRepository & {
    */
   destructiveReset: (scope: TranscriptScope) => Promise<TranscriptData>
   /**
-   * User-triggered refresh: fetch a fresh tail first. Success replaces the
-   * canonical transcript with that page; failure leaves prior data untouched.
+   * User-triggered refresh: fetch a fresh tail, merge as reconcile-page, then
+   * delete only in-range non-optimistic absences. Failure leaves prior data.
    */
   refreshFromAuthority: (scope: TranscriptScope) => Promise<TranscriptData>
   /** Evict one session's transcript key families (delete / ordinary eviction). */
@@ -835,8 +879,8 @@ export function createQueryTranscriptRepository(
           return repository.getTranscript(scope)
         }
         const liveRevision = repository.getTranscript(scope).liveRevision
-        // refreshFromAuthority reset writes liveRevision 0. A lagging hot page
-        // must not upsert over that user-requested tail.
+        // An in-flight user refresh (or a writer that dropped liveRevision
+        // below the capture) must not lose to a lagging hot page.
         if (
           liveRevision < capturedLiveRevision
           || isTranscriptAuthorityRefreshInFlight(captured.sessionID, captured.directory)
@@ -1546,26 +1590,45 @@ export function createQueryTranscriptRepository(
       const refreshDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
         repository.getTranscript(scope),
       )
-      const previous = repository.getTranscript(scope)
+      const capturedLiveRevision = repository.getTranscript(scope).liveRevision
       const page = await deps.fetcher({
         directory: identity.directory,
         sessionID: identity.sessionID,
         limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
         signal: new AbortController().signal,
       })
-      repository.apply(scope, { type: "reset", page })
-      const next = repository.getTranscript(scope)
-      if (deps.clearOptimisticShadow) {
-        for (const messageID of previous.messageOrder) {
-          if (!next.messagesByID[messageID]) {
-            deps.clearOptimisticShadow({
-              directory: identity.directory,
-              sessionID: identity.sessionID,
-              messageID,
-            })
-          }
+      const liveRevision = repository.getTranscript(scope).liveRevision
+      repository.apply(scope, {
+        type: "http-page",
+        purpose: "reconcile-page",
+        page: {
+          records: page.records.map((record) => ({
+            info: record.info,
+            parts: record.parts,
+          })),
+          complete: false,
+          cursor: undefined,
+          turnCount: 0,
+        },
+        capturedLiveRevision,
+        liveRevision,
+      })
+      // Stale tail is not evidence the server deleted in-range rows.
+      if (liveRevision <= capturedLiveRevision) {
+        const removals = collectAuthorityRefreshRemovals(
+          repository.getTranscript(scope),
+          page,
+        )
+        for (const messageID of removals) {
+          repository.apply(scope, { type: "remove-message", messageID })
+          deps.clearOptimisticShadow?.({
+            directory: identity.directory,
+            sessionID: identity.sessionID,
+            messageID,
+          })
         }
       }
+      const next = repository.getTranscript(scope)
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       try {
         const refreshDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() => next)

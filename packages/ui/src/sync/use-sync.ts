@@ -540,7 +540,7 @@ export function useSync() {
   )
 
   /**
-   * User-triggered transcript refresh — fetch first, replace tail on success.
+   * User-triggered transcript refresh — fetch first, reconcile the tail on success.
    * Failure keeps the prior transcript. Busy/retry refuses so SSE keeps the live turn.
    */
   const refreshSessionTranscript = useCallback(

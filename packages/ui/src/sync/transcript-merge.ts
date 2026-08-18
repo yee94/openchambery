@@ -1170,6 +1170,12 @@ export function shareSessionTranscriptData(
     if (isAuthoritativeSupersetTranscript(oldData, newData)) {
       return shared
     }
+    // remove-message / message.removed keep remaining row refs. A lagging
+    // Host tail rebuilds those objects, so it still falls through to
+    // insert-only materialize and cannot drop live rows.
+    if (isAuthoritativeSubsetTranscript(oldData, newData)) {
+      return shared
+    }
     const incoming = newData.pages[newData.pages.length - 1]!
     return mergeIncomingTail(oldData, incoming, sessionID) ?? shared
   }
@@ -1200,6 +1206,30 @@ function collectTranscriptMessageIDs(data: SessionTranscriptData): Set<string> {
     for (const id of page.messageOrder) ids.add(id)
   }
   return ids
+}
+
+/**
+ * True when `next` dropped ids but kept every remaining message/part by
+ * reference. That is the remove-message / message.removed writer contract —
+ * structuralSharing must not re-merge it as a lagging Host tail.
+ */
+function isAuthoritativeSubsetTranscript(
+  previous: SessionTranscriptData,
+  next: SessionTranscriptData,
+): boolean {
+  const previousIDs = collectTranscriptMessageIDs(previous)
+  const nextIDs = collectTranscriptMessageIDs(next)
+  if (nextIDs.size === 0 || nextIDs.size >= previousIDs.size) return false
+  for (const id of nextIDs) {
+    if (!previousIDs.has(id)) return false
+  }
+  const previousFlat = projectFlatFromTranscriptData(previous, "")
+  const nextFlat = projectFlatFromTranscriptData(next, "")
+  for (const id of nextIDs) {
+    if (previousFlat.messagesByID[id] !== nextFlat.messagesByID[id]) return false
+    if (previousFlat.partsByMessageID[id] !== nextFlat.partsByMessageID[id]) return false
+  }
+  return true
 }
 
 /**

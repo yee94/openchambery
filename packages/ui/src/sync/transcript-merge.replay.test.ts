@@ -465,4 +465,117 @@ describe("transcript merge command-sequence replay", () => {
     expect(partText(repo.getParts(scope, "msg_a1"))).toBe("SSE 已推进")
     repo.destroy()
   })
+
+  test("replay: refreshFromAuthority keeps unconfirmed optimistic rows and their text", async () => {
+    const u1 = userMessage("msg_u1", 1)
+    const a1 = assistantMessage("msg_a1", 2)
+    const repo = createRepo({
+      fetcher: async () => transportPage(
+        [
+          { info: u1, parts: [textPart("p_u1", "msg_u1", "先发的")] },
+          { info: a1, parts: [textPart("p_a1", "msg_a1", "回复")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+    seedBaseline(repo)
+    addOptimisticUser(repo)
+
+    await repo.refreshFromAuthority(scope)
+
+    expect(repo.getTranscript(scope).messageOrder).toContain("msg_u2")
+    expect(partText(repo.getParts(scope, "msg_u2"))).toBe("我刚发的消息")
+    repo.destroy()
+  })
+
+  test("replay: refreshFromAuthority does not downgrade full parts to a slim projection", async () => {
+    const u1 = userMessage("msg_u1", 1)
+    const a1 = assistantMessage("msg_a1", 2)
+    const repo = createRepo({
+      fetcher: async () => transportPage(
+        [
+          { info: u1, parts: [textPart("p_u1", "msg_u1", "先发的")] },
+          { info: a1, parts: [slimToolPart("pt1", "msg_a1")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [
+          { info: u1, parts: [textPart("p_u1", "msg_u1", "先发的")] },
+          { info: a1, parts: [fullToolPart("pt1", "msg_a1", "full-output")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+
+    await repo.refreshFromAuthority(scope)
+
+    const part = repo.getParts(scope, "msg_a1")[0] as {
+      slim?: boolean
+      state?: { output?: string }
+    }
+    expect(part.slim).not.toBe(true)
+    expect(part.state?.output).toBe("full-output")
+    repo.destroy()
+  })
+
+  test("replay: SSE that advances revision during refreshFromAuthority keeps live parts", async () => {
+    const u1 = userMessage("msg_u1", 1)
+    const a1 = assistantMessage("msg_a1", 2)
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    let refreshStarted!: () => void
+    const refreshStartedAt = new Promise<void>((resolve) => {
+      refreshStarted = resolve
+    })
+    const repo = createRepo({
+      fetcher: async () => {
+        refreshStarted()
+        await refreshGate
+        return transportPage(
+          [
+            { info: u1, parts: [textPart("p_u1", "msg_u1", "先发的")] },
+            { info: a1, parts: [textPart("p_a1", "msg_a1", "旧快照")] },
+          ],
+          { complete: true, turnCount: 1 },
+        )
+      },
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [
+          { info: u1, parts: [textPart("p_u1", "msg_u1", "先发的")] },
+          { info: a1, parts: [textPart("p_a1", "msg_a1", "旧快照")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+
+    const pending = repo.refreshFromAuthority(scope)
+    await refreshStartedAt
+    repo.apply(scope, {
+      type: "sse-event",
+      event: {
+        type: "message.part.updated",
+        properties: {
+          sessionID: SESSION,
+          part: textPart("p_a1", "msg_a1", "SSE 已推进"),
+        },
+      } as Event,
+    })
+    expect(repo.getTranscript(scope).liveRevision).toBeGreaterThan(0)
+    releaseRefresh()
+    await pending
+
+    expect(partText(repo.getParts(scope, "msg_a1"))).toBe("SSE 已推进")
+    repo.destroy()
+  })
 })

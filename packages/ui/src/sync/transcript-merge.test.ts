@@ -562,6 +562,30 @@ describe("mergeSessionTranscript", () => {
     expect((flat.partsByMessageID["msg_4"]?.[0] as { text?: string })?.text).toBe("just finished")
   })
 
+  test("shareSessionTranscriptData keeps a ref-stable remove-message subset", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "keep")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "gone")] },
+          { info: userMessage("msg_3"), parts: [textPart("p3", "msg_3", "keep")] },
+        ],
+        { complete: true, turnCount: 2 },
+      ),
+    }).data!
+    const removed = mergeSessionTranscript(live, SESSION, {
+      type: "optimistic-remove",
+      messageID: "msg_2",
+    }).data!
+
+    const shared = shareSessionTranscriptData(live, removed, SESSION)
+    const flat = projectFlatFromTranscriptData(shared, SESSION)
+    expect(flat.messageOrder).toEqual(["msg_1", "msg_3"])
+    expect(flat.messagesByID.msg_2).toBeUndefined()
+  })
+
   test("shareSessionTranscriptData keeps reconcile created-time order on a same-length superset", () => {
     const dated = (id: string, created: number, role: "user" | "assistant") => ({
       ...(role === "user" ? userMessage(id) : assistantMessage(id)),
