@@ -1676,9 +1676,17 @@ const AssistantMessageBody = React.memo(({
     // Collapsed compaction folds the summary body under the Activity disclosure.
     const hideCompactionBody = isSortedRenderMode && isCompactionTurn && !isActivityExpanded;
     const isActivityOwnerMessage = !isSortedRenderMode
-        || !turnGroupingContext?.activityOwnerMessageId
-        || turnGroupingContext.activityOwnerMessageId === messageId
-        || hasAnchoredActivitySegments;
+        ? (!turnGroupingContext?.activityOwnerMessageId
+            || turnGroupingContext.activityOwnerMessageId === messageId
+            || hasAnchoredActivitySegments)
+        // Sorted mode without a turn context is a degenerate frame (projection
+        // churn): assistants that miss their turn lookup must not fall back to
+        // activity-owner, or their tools inline as flat rows — a multi-step
+        // turn of empty-context assistants paints a screenful of stray rows
+        // (the intermittent huge gap). Folding them away matches how mid-turn
+        // assistants already render; a real context restores the owner.
+        : (turnGroupingContext?.activityOwnerMessageId === messageId
+            || hasAnchoredActivitySegments);
 
     // Compaction turns always own a disclosure header on the activity-owner
     // message, even when there are no tool/reasoning segments yet — the

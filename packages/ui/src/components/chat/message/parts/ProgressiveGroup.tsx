@@ -1031,7 +1031,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     const displayedTaskAvatarSeeds = isActive ? taskAvatarSeeds.active : taskAvatarSeeds.all;
     // Cap avatars so the collapsed header stays one line (text is already short).
     const visibleTaskAvatarSeeds = displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3);
-    const requestMaterialization = useEvent((retryErrorsOnly = false) => {
+    const requestMaterialization = useEvent((retryErrorsOnly = false, autoSkipFailed = false) => {
         if (!effectiveDirectory || !materializationMessageIds.length) return;
         for (const targetMessageId of materializationMessageIds) {
             const targetSessionId = materializationParts.find((activity) => activity.messageId === targetMessageId)?.part.sessionID;
@@ -1042,6 +1042,13 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                 targetMessageId,
             );
             if (current.status === 'ready') continue;
+            // Background auto-fill must not retry failed messages. A host that
+            // keeps answering exact fetches with slim parts keeps the message in
+            // `error` forever; auto-retrying re-fires one exact fetch per
+            // virtualizer remount (diagnostics: 104 materialize diffs in ~10s
+            // with slim/full counts unchanged). Manual expand and the retry
+            // button remain the retry paths.
+            if (autoSkipFailed && current.status === 'error') continue;
             if (retryErrorsOnly && current.status !== 'error' && !materializationErrorsRef.current.has(targetMessageId)) continue;
             requestedMaterializationIdsRef.current.add(targetMessageId);
             materializationErrorsRef.current.delete(targetMessageId);
@@ -1079,11 +1086,13 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     // Completed slim groups hydrate in the background after mount; otherwise a
     // cold-start tail keeps truncated reasoning/tool bodies until manual expand.
     // Active groups are excluded — their slim parts keep updating via SSE.
+    // Failed messages are skipped here (autoSkipFailed) so a permanently slim
+    // host record cannot turn every remount into another exact fetch.
     React.useEffect(() => {
         if (isActive) {
             return;
         }
-        requestMaterialization();
+        requestMaterialization(false, true);
     }, [isActive]);
     React.useLayoutEffect(() => {
         const anchor = pendingToggleAnchorRef.current;

@@ -313,8 +313,30 @@ describe('progressive activity presentation', () => {
         // Completed groups must hydrate their slim reasoning/tool parts in the
         // background after mount (cold-start tails render slim bodies as
         // truncated text otherwise). Active groups keep streaming via SSE.
-        expect(progressiveGroupSource).toContain('if (isActive) {\n            return;\n        }\n        requestMaterialization();');
-        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(\);\n {4}\}, \[isActive\]\);/);
+        expect(progressiveGroupSource).toContain('if (isActive) {\n            return;\n        }\n        requestMaterialization(false, true);');
+        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive\]\);/);
+    });
+
+    test('background auto-fill never retries failed materializations', () => {
+        // A host that keeps answering exact fetches with slim parts parks the
+        // message in `error`; auto-retrying re-fires one fetch per virtualizer
+        // remount (diagnostics trace: 104 materialize diffs in ~10s, slim/full
+        // counts unchanged). Only manual expand / retry retry errors.
+        expect(progressiveGroupSource).toContain('const requestMaterialization = useEvent((retryErrorsOnly = false, autoSkipFailed = false) => {');
+        expect(progressiveGroupSource).toContain("if (autoSkipFailed && current.status === 'error') continue;");
+        // User-driven expand keeps retrying transient errors.
+        expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
+        expect(progressiveGroupSource).toContain('requestMaterialization(true)');
+    });
+
+    test('sorted mode never treats a context-less assistant as the activity owner', () => {
+        // A missing turnGroupingContext is a degenerate projection frame; the
+        // owner fallback would inline every tool as flat rows and a multi-step
+        // turn of such frames paints the intermittent huge gap. Mid-turn
+        // assistants must fold away until a real context arrives.
+        expect(messageBodySource).toContain('const isActivityOwnerMessage = !isSortedRenderMode');
+        expect(messageBodySource).toContain(': (turnGroupingContext?.activityOwnerMessageId === messageId');
+        expect(messageBodySource).toContain('if (isSortedRenderMode && !isActivityOwnerMessage) {');
     });
 
     test('shows localized loading, error, retry, and empty-output states only while expanded', () => {
