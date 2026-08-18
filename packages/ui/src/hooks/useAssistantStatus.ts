@@ -10,6 +10,7 @@ import {
     useSessionQuestions,
     useSessionStatus,
 } from '@/sync/sync-context';
+import { isCompactionCommandParts } from '@/components/chat/lib/messageDisplayNormalization';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { useSessionActivity } from './useSessionActivity';
@@ -289,12 +290,25 @@ export function useAssistantStatus(
         return null;
     }, [rawSessionMessages]);
 
+    const lastUserId = React.useMemo(() => {
+        for (let i = rawSessionMessages.length - 1; i >= 0; i--) {
+            if (rawSessionMessages[i].role === 'user') return rawSessionMessages[i].id;
+        }
+        return null;
+    }, [rawSessionMessages]);
+
     // Ticket 02: parts via repository; session-scoped subscription when known.
     const lastAssistantParts = useSessionParts(
         lastAssistantId ?? '',
         currentSessionDirectory ?? undefined,
         currentSessionId ?? undefined,
     );
+    const lastUserParts = useSessionParts(
+        lastUserId ?? '',
+        currentSessionDirectory ?? undefined,
+        currentSessionId ?? undefined,
+    );
+    const lastUserIsCompaction = Boolean(lastUserId) && isCompactionCommandParts(lastUserParts);
     const lastAssistantStatusSignature = React.useMemo(() => {
         const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
         const parts = lastAssistantId ? lastAssistantParts : EMPTY_PARTS;
@@ -359,10 +373,11 @@ export function useAssistantStatus(
         const isStreaming = activityPhase === 'busy';
         const isCooldown = false;
         const isRetry = activityPhase === 'retry';
+        const preferCompactionStatus = isWorking && lastUserIsCompaction;
 
         let activity: AssistantActivity = 'idle';
         if (isWorking) {
-            if (parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing') {
+            if (!preferCompactionStatus && (parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing')) {
                 activity = 'tooling';
             } else {
                 activity = isCooldown ? 'cooldown' : 'streaming';
@@ -376,25 +391,27 @@ export function useAssistantStatus(
         return {
             activity,
             hasWorkingContext: isWorking,
-            hasActiveTools: parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing',
+            hasActiveTools: !preferCompactionStatus && (parsedStatus.activePartType === 'tool' || parsedStatus.activePartType === 'editing'),
             isWorking,
             isStreaming,
             isCooldown,
             lifecyclePhase: isStreaming ? 'streaming' : isCooldown ? 'cooldown' : null,
-            statusText: isWorking ? parsedStatus.statusText : null,
-            isGenericStatus: isWorking ? parsedStatus.isGenericStatus : true,
+            statusText: isWorking
+                ? (preferCompactionStatus ? t('chat.assistantStatus.compacting') : parsedStatus.statusText)
+                : null,
+            isGenericStatus: isWorking ? (preferCompactionStatus ? false : parsedStatus.isGenericStatus) : true,
             isWaitingForPermission: false,
             canAbort: isWorking,
             compactionDeadline: null,
-            activePartType: isWorking ? parsedStatus.activePartType : undefined,
-            activeToolName: isWorking ? parsedStatus.activeToolName : undefined,
+            activePartType: isWorking && !preferCompactionStatus ? parsedStatus.activePartType : undefined,
+            activeToolName: isWorking && !preferCompactionStatus ? parsedStatus.activeToolName : undefined,
             wasAborted: false,
             abortActive: false,
             lastCompletionId: null,
             isComplete: false,
             retryInfo,
         };
-    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext]);
+    }, [activityPhase, isPhaseWorking, lastUserIsCompaction, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
 
     const forming = React.useMemo<FormingSummary>(() => {
         const isActive = isPhaseWorking && parsedStatus.activePartType === 'text';

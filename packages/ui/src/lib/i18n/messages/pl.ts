@@ -792,6 +792,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.writingFile': 'Zapisywanie pliku',
   'chat.assistantStatus.editingFile': 'Edytowanie pliku',
   'chat.assistantStatus.editingFiles': 'Edytowanie plików',
+  'chat.assistantStatus.compacting': 'Kompresowanie',
   'chat.assistantStatus.applyingPatch': 'Stosowanie poprawki',
   'chat.assistantStatus.runningCommand': 'Uruchamianie polecenia',
   'chat.assistantStatus.searchingContent': 'Wyszukiwanie treści',

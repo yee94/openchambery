@@ -1932,6 +1932,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.writingFile': 'ファイルを書き込み中',
   'chat.assistantStatus.editingFile': 'ファイルを編集中',
   'chat.assistantStatus.editingFiles': 'ファイルを編集中',
+  'chat.assistantStatus.compacting': '圧縮中',
   'chat.assistantStatus.applyingPatch': 'パッチを適用中',
   'chat.assistantStatus.runningCommand': 'コマンドを実行中',
   'chat.assistantStatus.searchingContent': '内容を検索中',

@@ -1937,6 +1937,7 @@ export const dict = {
   'chat.assistantStatus.writingFile': 'Writing file',
   'chat.assistantStatus.editingFile': 'Editing file',
   'chat.assistantStatus.editingFiles': 'Editing files',
+  'chat.assistantStatus.compacting': 'Compacting',
   'chat.assistantStatus.applyingPatch': 'Applying patch',
   'chat.assistantStatus.runningCommand': 'Running command',
   'chat.assistantStatus.searchingContent': 'Searching content',

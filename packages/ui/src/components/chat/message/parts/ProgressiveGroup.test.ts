@@ -92,6 +92,7 @@ describe('progressive activity presentation', () => {
             expect(dictionarySource).toContain('chat.activity.active');
             expect(dictionarySource).toContain('chat.activity.compacting');
             expect(dictionarySource).toContain('chat.activity.compactionCompleted');
+            expect(dictionarySource).toContain('chat.assistantStatus.compacting');
             expect(dictionarySource).toContain('chat.activity.agentsWorking');
             expect(dictionarySource).toContain('chat.activity.agentsInvolved');
             expect(dictionarySource).toContain('chat.contextGroup.exploring');
@@ -105,6 +106,7 @@ describe('progressive activity presentation', () => {
         expect(simplifiedChinese).toContain("'chat.activity.title': '处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.active': '正在处理'");
         expect(simplifiedChinese).toContain("'chat.activity.compacting': '正在压缩'");
+        expect(simplifiedChinese).toContain("'chat.assistantStatus.compacting': '正在压缩中'");
         expect(simplifiedChinese).toContain("'chat.activity.compactionCompleted': '已完成压缩'");
         expect(simplifiedChinese).toContain("'chat.activity.expandAria': '展开处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.collapseAria': '收起处理详情'");
@@ -116,6 +118,7 @@ describe('progressive activity presentation', () => {
         expect(simplifiedChinese).toContain("'chat.contextGroup.listPlural': '{count} 次列举'");
         expect(traditionalChinese).toContain("'chat.activity.title': '處理詳情'");
         expect(traditionalChinese).toContain("'chat.activity.compacting': '正在壓縮'");
+        expect(traditionalChinese).toContain("'chat.assistantStatus.compacting': '正在壓縮中'");
         expect(traditionalChinese).toContain("'chat.activity.compactionCompleted': '已完成壓縮'");
         expect(traditionalChinese).toContain("'chat.activity.expandAria': '展開處理詳情'");
         expect(traditionalChinese).toContain("'chat.activity.collapseAria': '收起處理詳情'");
@@ -188,6 +191,8 @@ describe('progressive activity presentation', () => {
         expect(messageListSource).toContain("input.completionDisposition === 'normal' || input.completionDisposition === 'abnormal'");
         expect(messageListSource).toContain("if (input.completionDisposition === 'active')");
         expect(messageListSource).toContain('return input.isLastTurn && input.sessionIsWorking;');
+        expect(turnItemSource).toContain("const hideUserMessage = turn.activityPresentationKind === 'compaction'");
+        expect(turnItemSource).toContain('{hideUserMessage ? null : stickyUserHeader ? (');
         expect(turnItemSource).toContain('{showCompactionStatus ? (');
         expect(turnItemSource).toContain('parts={[]}');
         expect(turnItemSource).toContain('activityPresentationKind="compaction"');

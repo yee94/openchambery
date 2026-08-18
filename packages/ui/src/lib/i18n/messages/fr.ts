@@ -1714,6 +1714,7 @@ export const dict = {
   'chat.assistantStatus.writingFile': 'Écriture du fichier',
   'chat.assistantStatus.editingFile': 'Modification du fichier',
   'chat.assistantStatus.editingFiles': 'Modification des fichiers',
+  'chat.assistantStatus.compacting': 'Compression en cours',
   'chat.assistantStatus.applyingPatch': 'Application du correctif',
   'chat.assistantStatus.runningCommand': 'Exécution de la commande',
   'chat.assistantStatus.searchingContent': 'Recherche de contenu',

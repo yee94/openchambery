@@ -1914,6 +1914,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.assistantStatus.writingFile": "Gravando arquivo",
   "chat.assistantStatus.editingFile": "Editando arquivo",
   "chat.assistantStatus.editingFiles": "Editando arquivos",
+  "chat.assistantStatus.compacting": "Compactando",
   "chat.assistantStatus.applyingPatch": "Aplicando patch",
   "chat.assistantStatus.runningCommand": "Executando comando",
   "chat.assistantStatus.searchingContent": "Pesquisando conteúdo",

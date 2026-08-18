@@ -95,13 +95,24 @@ const isSessionGoalContinuationText = (text: string): boolean => {
     return trimmed.startsWith('Continue working toward the active session goal.');
 };
 
+/** `/compact` is a session command, not a user-authored bubble. */
+const isCompactionCommandText = (text: string): boolean => {
+    return text.trim() === '/compact';
+};
+
 export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEnabled?: boolean }): Part[] => {
     const planModeEnabled = options?.planModeEnabled === true;
     return parts
         .filter((part) => {
+            if (part.type === 'compaction') {
+                return false;
+            }
             if (part.type === 'text') {
                 const text = (part as { text?: unknown }).text;
-                if (typeof text === 'string' && isSessionGoalContinuationText(text)) {
+                if (typeof text === 'string' && (
+                    isSessionGoalContinuationText(text)
+                    || isCompactionCommandText(text)
+                )) {
                     return false;
                 }
             }
@@ -120,9 +131,6 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
         })
         .map((part) => {
             const rawPart = part as Record<string, unknown>;
-            if (rawPart.type === 'compaction') {
-                return { type: 'text', text: '/compact' } as Part;
-            }
             if (rawPart.type === 'text') {
                 const text = typeof rawPart.text === 'string' ? rawPart.text.trim() : '';
                 const synthetic = rawPart.synthetic === true;

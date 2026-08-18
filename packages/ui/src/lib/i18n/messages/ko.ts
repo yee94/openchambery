@@ -1938,6 +1938,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.writingFile': '파일 쓰는 중',
   'chat.assistantStatus.editingFile': '파일 편집 중',
   'chat.assistantStatus.editingFiles': '파일 편집 중',
+  'chat.assistantStatus.compacting': '압축 중',
   'chat.assistantStatus.applyingPatch': '패치 적용 중',
   'chat.assistantStatus.runningCommand': '명령 실행 중',
   'chat.assistantStatus.searchingContent': '콘텐츠 검색 중',

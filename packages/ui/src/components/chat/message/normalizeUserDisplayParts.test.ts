@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Part } from '@opencode-ai/sdk/v2';
-import { normalizeUserDisplayParts } from './normalizeUserDisplayParts';
+import { hasUserDisplayableParts, normalizeUserDisplayParts } from './normalizeUserDisplayParts';
 
 describe('normalizeUserDisplayParts', () => {
   test('hides session-goal auto-continuation prompts even without synthetic flag', () => {
@@ -13,8 +13,19 @@ describe('normalizeUserDisplayParts', () => {
     expect(normalizeUserDisplayParts(parts)).toEqual([]);
   });
 
-  test('keeps ordinary user text', () => {
-    const parts = [{ type: 'text', text: '输出一二三' }] as Part[];
-    expect(normalizeUserDisplayParts(parts)).toEqual(parts);
-  });
+    test('keeps ordinary user text', () => {
+        const parts = [{ type: 'text', text: '输出一二三' }] as Part[];
+        expect(normalizeUserDisplayParts(parts)).toEqual(parts);
+    });
+
+    test('hides compaction command parts so /compact is not a user bubble', () => {
+        expect(normalizeUserDisplayParts([{ type: 'compaction' } as Part])).toEqual([]);
+        expect(normalizeUserDisplayParts([{ type: 'text', text: '/compact' } as Part])).toEqual([]);
+        expect(hasUserDisplayableParts([{ type: 'compaction' } as Part])).toBe(false);
+        expect(hasUserDisplayableParts([{ type: 'text', text: '/compact' } as Part])).toBe(false);
+        expect(normalizeUserDisplayParts([
+            { type: 'text', text: '/compact' } as Part,
+            { type: 'text', text: 'keep this' } as Part,
+        ])).toEqual([{ type: 'text', text: 'keep this' } as Part]);
+    });
 });

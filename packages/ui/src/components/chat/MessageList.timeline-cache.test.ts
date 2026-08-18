@@ -18,7 +18,12 @@ mock.module('./components/TurnItem', () => ({ default: () => null }));
 mock.module('./hooks/useTurnRecords', () => ({ useTurnRecords: () => ({ projection: { ungroupedMessageIds: new Set(), lastTurnId: null }, staticTurns: [], streamingTurn: null }) }));
 mock.module('./lib/turns/applyRetryOverlay', () => ({ applyRetryOverlay: (messages: unknown[]) => messages }));
 mock.module('./lib/turns/streamingTailEntry', () => ({ buildLiveStreamingEntry: (entry: unknown) => entry }));
-mock.module('./lib/messageDisplayNormalization', () => ({ getNormalizedMessageForDisplay: (message: unknown) => message, hasCompactionPart: () => false }));
+mock.module('./lib/messageDisplayNormalization', () => ({
+    getNormalizedMessageForDisplay: (message: unknown) => message,
+    hasCompactionPart: () => false,
+    isCompactionCommandMessage: () => false,
+    isCompactionCommandParts: () => false,
+}));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: () => false }));
 mock.module('./message/FadeInOnReveal', () => ({ FadeInDisabledProvider: ({ children }: { children: unknown }) => children }));
 mock.module('@/lib/userSendAnimation', () => ({ consumePendingUserSendAnimation: () => false, hasPendingUserSendAnimation: () => false }));

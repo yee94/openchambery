@@ -1906,6 +1906,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.writingFile': '正在寫入檔案',
   'chat.assistantStatus.editingFile': '正在編輯檔案',
   'chat.assistantStatus.editingFiles': '正在編輯檔案',
+  'chat.assistantStatus.compacting': '正在壓縮中',
   'chat.assistantStatus.applyingPatch': '正在套用修補程式',
   'chat.assistantStatus.runningCommand': '正在執行命令',
   'chat.assistantStatus.searchingContent': '正在搜尋內容',
