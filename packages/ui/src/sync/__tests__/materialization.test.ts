@@ -265,6 +265,99 @@ describe("materializeSessionSnapshots", () => {
     expect(merged.state?.time?.start).toBe(1000)
   })
 
+  test("reconcile-page keeps unconfirmed optimistic parts when incoming is slim with a different part id", () => {
+    const optimisticPart = {
+      id: "prt_optimistic",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "我刚发的消息",
+      __openchamberOptimistic: true,
+    } as Part
+    const slimServer = {
+      id: "prt_server",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "",
+      slim: true,
+    } as Part
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [optimisticPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_user"), parts: [slimServer] }],
+      { merge: RECONCILE_MERGE },
+    )
+
+    expect(result.part.msg_user).toEqual([optimisticPart])
+    expect(result.part.msg_user[0]).toBe(optimisticPart)
+    expect(result.partsChanged).toBe(false)
+  })
+
+  test("reconcile-page replaces unconfirmed optimistic parts with a full incoming snapshot", () => {
+    const optimisticPart = {
+      id: "prt_optimistic",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "我刚发的消息",
+      __openchamberOptimistic: true,
+    } as Part
+    const fullServer = part("prt_server", "msg_user", "text", "我刚发的消息")
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [optimisticPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_user"), parts: [fullServer] }],
+      { merge: RECONCILE_MERGE },
+    )
+
+    expect(result.part.msg_user).toEqual([fullServer])
+    expect(result.partsChanged).toBe(true)
+  })
+
+  test("recovery still replaces unconfirmed optimistic parts with a slim different-id snapshot", () => {
+    const optimisticPart = {
+      id: "prt_optimistic",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "我刚发的消息",
+      __openchamberOptimistic: true,
+    } as Part
+    const slimServer = {
+      id: "prt_server",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "",
+      slim: true,
+    } as Part
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [optimisticPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_user"), parts: [slimServer] }],
+      { merge: RECOVERY_MERGE },
+    )
+
+    expect(result.part.msg_user).toEqual([slimServer])
+    expect(result.partsChanged).toBe(true)
+  })
+
   test("does not preserve omitted optimistic user text parts beside server snapshot parts", () => {
     const optimisticPart = { id: "prt_optimistic", messageID: "msg_1", type: "text", text: "Hello" } as Part
     const serverPart = part("prt_server", "msg_1", "text", "Hello")

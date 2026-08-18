@@ -236,7 +236,7 @@ export async function ensureTranscriptInitial(
 /**
  * User-triggered cold reload after a settled transcript failure.
  *
- * `ensureInitial` is a hot-cache no-op, so retry must purge the failed chain
+ * `ensureInitial` on a failed/empty chain is not enough, so retry must purge
  * and ensure a fresh tail. Ensure failure leaves the empty/failed state.
  */
 export async function retryTranscriptInitial(
@@ -260,8 +260,8 @@ export async function retryTranscriptInitial(
 
 /**
  * User-triggered refresh: fetch a fresh tail, then replace. Failure keeps the
- * prior transcript. Do not use ensureInitial (hot-cache no-op) or
- * destructiveReset (ensure failure blanks the chat).
+ * prior transcript. Do not use ensureInitial (enter-and-sync reconcile, not
+ * replace) or destructiveReset (ensure failure blanks the chat).
  */
 export async function refreshTranscriptFromAuthority(
   directory: string,
@@ -288,7 +288,7 @@ export async function refreshTranscriptFromAuthority(
 /**
  * Fetch the exact Host snapshot for one message and merge it into Query.
  * UI Activity lanes call this; the repository no-ops when the message has
- * no slim tool / reasoning / file parts.
+ * no slim tool / reasoning / file / text parts.
  */
 export async function materializeTranscriptMessage(
   directory: string,

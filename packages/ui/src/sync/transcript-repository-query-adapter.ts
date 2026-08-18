@@ -10,7 +10,7 @@
  * authority. Controllers resolve transport/generation through live probes so
  * endpoint switches do not pin creation-time identity.
  *
- * Ticket 07: `materializeMessage` fills slim tool/reasoning/file parts through
+ * Ticket 07: `materializeMessage` fills slim tool/reasoning/file/text parts through
  * exact `session.message` (single-flight, captured transport+generation).
  */
 
@@ -30,6 +30,7 @@ import {
   ensureSessionMessagePage,
   readSessionTranscriptData,
   SessionMessageRuntimeStaleError,
+  sessionMessagePageQueryOptions,
   sessionTranscriptQueryKey,
   type SessionMessagePageFetcher,
   type SessionMessageRuntimeProbe,
@@ -78,6 +79,8 @@ import {
   type TranscriptTransportPage,
 } from "./transcript-repository"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
+import { markSessionAuthorityRevalidated } from "./session-authority-revalidate"
+import { isTranscriptAuthorityRefreshInFlight } from "./transcript-authority-refresh-flight"
 import {
   recordTranscriptCommandDiagnostics,
   recordTranscriptDiagnostics,
@@ -133,7 +136,7 @@ export type TranscriptQueryAdapterDeps = {
   /** Override the platform durable byte budget after a successful persist. */
   getDurableByteBudget?: () => number
   /**
-   * Exact `session.message` fetch for on-demand tool/reasoning/file fill.
+    * Exact `session.message` fetch for on-demand tool/reasoning/file/text fill.
    * Tests inject this. Production omits it and uses the scoped Host SDK.
    */
   fetchMessage?: (input: {
@@ -690,6 +693,7 @@ export function createQueryTranscriptRepository(
 
   const fetchAuthorityTail = async (
     identity: ReturnType<typeof resolveScopeIdentity>,
+    options?: { fresh?: boolean },
   ): Promise<TranscriptTransportPage> => {
     if (!deps.fetcher) {
       throw new Error("Query transcript repository requires a fetcher for HTTP loads")
@@ -717,18 +721,31 @@ export function createQueryTranscriptRepository(
       getTransport: getRuntimeTransportIdentity,
       getGeneration: getRuntimeGeneration,
     }
-    const httpPage = await ensureSessionMessagePage(
-      {
-        directory: identity.directory,
-        sessionID: identity.sessionID,
-        limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
-      },
-      pageFetcher,
-      client,
-      identity.transport,
-      probe,
-      identity.generation,
-    )
+    const params = {
+      directory: identity.directory,
+      sessionID: identity.sessionID,
+      limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
+    }
+    // Hot enter-and-sync must not reuse the Infinity-staleTime transport page.
+    const httpPage = options?.fresh
+      ? await client.fetchQuery({
+        ...sessionMessagePageQueryOptions(
+          params,
+          pageFetcher,
+          identity.transport,
+          probe,
+          identity.generation,
+        ),
+        staleTime: 0,
+      })
+      : await ensureSessionMessagePage(
+        params,
+        pageFetcher,
+        client,
+        identity.transport,
+        probe,
+        identity.generation,
+      )
     return transportPageFromHttpPage(httpPage)
   }
 
@@ -749,6 +766,10 @@ export function createQueryTranscriptRepository(
           return repository.getTranscript(scope)
         }
         repository.apply(scope, { type: "http-page", purpose: "initial", page })
+        markSessionAuthorityRevalidated(captured.directory, captured.sessionID, {
+          transport: captured.transport,
+          generation: captured.generation,
+        })
         // Durable-seeded full tool/reasoning/file parts stay unverified until
         // one background exact fill. Bounded by this authority tail page.
         const pending = durableSeededExact.get(flightKey)
@@ -788,6 +809,85 @@ export function createQueryTranscriptRepository(
           error,
         }))
         throw error
+      } finally {
+        authorityTailInflight.delete(flightKey)
+      }
+    })()
+    authorityTailInflight.set(flightKey, run)
+    return run
+  }
+
+  const runAuthorityHotRevalidate = (
+    scope: TranscriptScope,
+    captured: ReturnType<typeof resolveScopeIdentity>,
+  ): Promise<TranscriptData> => {
+    const flightKey = scopeKey(captured)
+    const existing = authorityTailInflight.get(flightKey)
+    if (existing) return existing
+    const run = (async () => {
+      const startedAt = Date.now()
+      const capturedLiveRevision = repository.getTranscript(scope).liveRevision
+      authorityFlights.set(flightKey, { status: "loading" })
+      try {
+        const page = await fetchAuthorityTail(captured, { fresh: true })
+        if (!liveIdentityMatches(captured)) {
+          authorityFlights.delete(flightKey)
+          return repository.getTranscript(scope)
+        }
+        const liveRevision = repository.getTranscript(scope).liveRevision
+        // refreshFromAuthority reset writes liveRevision 0. A lagging hot page
+        // must not upsert over that user-requested tail.
+        if (
+          liveRevision < capturedLiveRevision
+          || isTranscriptAuthorityRefreshInFlight(captured.sessionID, captured.directory)
+        ) {
+          authorityFlights.delete(flightKey)
+          return repository.getTranscript(scope)
+        }
+        repository.apply(scope, {
+          type: "http-page",
+          purpose: "reconcile-page",
+          page: {
+            records: page.records.map((record) => ({
+              info: record.info,
+              parts: record.parts,
+            })),
+            complete: false,
+            cursor: undefined,
+            turnCount: 0,
+          },
+          capturedLiveRevision,
+          liveRevision,
+        })
+        markSessionAuthorityRevalidated(captured.directory, captured.sessionID, {
+          transport: captured.transport,
+          generation: captured.generation,
+        })
+        authorityFlights.delete(flightKey)
+        cacheBudget.noteScopeObserved(toCacheScope(scope))
+        enforceBudgetAfterWrite(scope)
+        return repository.getTranscript(scope)
+      } catch (error) {
+        authorityFlights.delete(flightKey)
+        if (error instanceof SessionMessageRuntimeStaleError || !liveIdentityMatches(captured)) {
+          return repository.getTranscript(scope)
+        }
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "request-error",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: "network",
+          purpose: "reconcile-page",
+          durationMs: Date.now() - startedAt,
+          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          request: repository.getRequestState?.(scope),
+          hydration: repository.getHydrationState?.(scope),
+          error,
+        }))
+        // Failure Is Not Empty: keep the prior transcript and do not stamp the window.
+        return repository.getTranscript(scope)
       } finally {
         authorityTailInflight.delete(flightKey)
       }
@@ -1295,6 +1395,34 @@ export function createQueryTranscriptRepository(
         return transcript
       }
 
+      // Enter-and-sync: a known hot cache still does one light authority check.
+      // Active retain means the UI is already subscribed and SSE owns the tail.
+      const canonical = readData(scope)
+      if (
+        canonical
+        && canonical.pages.length > 0
+        && !needsAuthorityTail(scope)
+        && deps.fetcher
+        && !activeRegistry.isRetained(toCacheScope(scope))
+      ) {
+        const startedAt = Date.now()
+        const transcript = await runAuthorityHotRevalidate(scope, captured)
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "ensure-initial",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: "network",
+          durationMs: Date.now() - startedAt,
+          transcript,
+          request: repository.getRequestState?.(scope),
+          hydration: repository.getHydrationState?.(scope),
+        }))
+        recordHydrationPaint(scope, captured)
+        return transcript
+      }
+
       const controller = ensureController(scope)
       const startedAt = Date.now()
       const hadCanonical = readData(scope) !== undefined
@@ -1320,6 +1448,12 @@ export function createQueryTranscriptRepository(
         throw error
       }
       authorityFlights.delete(flightKey)
+      if (!hadCanonical) {
+        markSessionAuthorityRevalidated(captured.directory, captured.sessionID, {
+          transport: captured.transport,
+          generation: captured.generation,
+        })
+      }
       // Start min-residency from this ensure so immediate enforce cannot evict.
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       enforceBudgetAfterWrite(scope)

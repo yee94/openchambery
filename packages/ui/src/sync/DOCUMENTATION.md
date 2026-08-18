@@ -314,7 +314,8 @@ Modules:
 | Module | Role |
 |---|---|
 | `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
-| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial`; on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded tool/reasoning/file parts revalidate via exact `session.message` after the authority tail; post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
+| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded tool/reasoning/file parts revalidate via exact `session.message` after the authority tail; post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
+| `session-authority-revalidate.ts` | Enter-and-sync 30s window keyed by transport+generation+directory+sessionID; stamped only after a successful authority pull |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
 | `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset |
 | `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40 sessions) plus durable body budgets (`getTranscriptDurableByteBudget`: 4 / 12 / 40 MiB) |
@@ -356,11 +357,18 @@ Modules:
   directly, or via `ensureTranscriptInitial` / `ensureInitial`. On-demand
    exact fills use `materializeTranscriptMessage` → Query `materializeMessage`
   (`session.message`, captured transport+generation, `materialize-snapshots`).
-  Durable first-paint seeds the canonical transcript from the local cache
-  before the authority tail; seeded full tool / reasoning / file parts stay
-  unverified until one background exact `session.message` revalidation
-  self-heals the cache.
-  Visible slim file images subscribe to that message's live parts so the fill
+   Durable first-paint seeds the canonical transcript from the local cache
+   before the authority tail; seeded full tool / reasoning / file parts stay
+   unverified until one background exact `session.message` revalidation
+   self-heals the cache.
+   Slim text parts take the on-demand exact-fill path
+   (`messageNeedsExactMaterialization` requires `isSlimPart`, and the set
+   includes `text`) so an explicit `materializeMessage` replaces a summary
+   with the Host full body. They stay out of the durable-seed revalidation
+   set (`messageNeedsExactRevalidation` remains `{tool, reasoning, file}`)
+   so cold-start text-only messages do not fan out exact `session.message`
+   fetches.
+   Visible slim file images subscribe to that message's live parts so the fill
   upgrades in place. File `url` / `slim` are part of merge equality so an exact
   fill is not dropped as a no-op. A fill that leaves slim parts is `error`, not
   `ready`.
@@ -673,6 +681,7 @@ both readers agree on when a frame may shrink.
   | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs. Insert-only also copies missing terminal settle fields (`finish`, `time.completed`, `error`) onto the live object; live terminal fields are never cleared |
   | `parts` | `replace` \| `skip-existing` | fetched parts are authoritative, or leave messages that already have parts |
   | `preserveStreaming` | `assistant` \| `all` \| `none` | which roles keep live parts the snapshot omits or truncates (streaming text/output, in-flight tools, and mid-turn completed tools) |
+  | `protectOptimistic` | `none` \| `keep-unless-full` | unconfirmed optimistic parts (`__openchamberOptimistic`) keep the local set when incoming is slim or empty; a non-empty full snapshot still replaces |
 
   Resolution (`id` is a debug label, not a behavioral input):
 
@@ -692,8 +701,18 @@ both readers agree on when a frame may shrink.
   parts. Insert-only may still copy missing terminal settle fields (`finish`,
   `time.completed`, `error`) onto a live assistant so Activity can auto-collapse
   after idle/Query backfill; a lagging snapshot cannot strip fields the live
-  row already has. Current recovery/reconcile still upserts messages and replaces parts
-  against server truth.   Every other purpose drops the page when stale
+  row already has.   Current recovery/reconcile still upserts messages and replaces parts
+  against server truth. Current `reconcile-page` (non-stale) additionally
+  sets `protectOptimistic: keep-unless-full`. When a local message already
+  holds an unconfirmed part (`__openchamberOptimistic: true`), a slim or
+  empty incoming snapshot keeps those local parts as a whole — Host
+  reconnect pages can carry an older server copy with a different slim
+  part id, and `preferExistingFullOverIncomingSlim` only shields the same
+  part id. A non-empty full incoming snapshot still replaces (authoritative
+  confirmation, same as SSE `message.part.updated`). Message shell fields
+  (`time`, …) still upsert. Other purposes, stale backfill
+  (`skip-existing`), reset, and edit/`remove-message` are unchanged.
+  Every other purpose drops the page when stale
   (`shouldDropStalePage(purpose)`), except a cold empty transcript: the first
   tail still applies so the skeleton can leave. Note the historical helper names:
   `mergeMessages` is insert-only while `mergeRecoveryMessages` is an upsert —
@@ -716,9 +735,36 @@ both readers agree on when a frame may shrink.
    (no transcript yet), or while reconnecting before any messages exist.
    A loaded transcript hides it even if the socket is still reconnecting or
    the InfiniteQuery observer is still `isFetching`. Desktop session context-menu
-  "Sync messages" and the dedicated-mobile overflow "Refresh" both call
-   `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
-   (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).
+   "Sync messages" and the dedicated-mobile overflow "Refresh" both call
+    `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
+    (enter-and-sync reconcile, not replace) or `destructiveReset` (ensure failure blanks the chat).
+
+- **Enter-and-sync hot revalidate.** A hot cache (canonical pages present,
+  boundary known) used to make `ensureInitial` a no-op (`staleTime: Infinity`).
+  Entering a session now performs one light authority check:
+  - `use-sync.syncSession` and `fetchMessagesForSession` short-circuit only
+    when the last successful authority pull for that
+    `(transport, generation, directory, sessionID)` is younger than
+    `SESSION_AUTHORITY_REVALIDATE_WINDOW_MS` (30s). The window is stamped in
+    the adapter after a real successful pull — never on a failed or skipped
+    load. Runtime/generation isolation is in the key.
+  - `ensureInitial` on a hot cache that is **not** `activeRegistry`-retained
+    fetches a fresh tail (`staleTime: 0` so the Infinity transport-page cache
+    cannot satisfy it) and applies `{type:"http-page", purpose:"reconcile-page"}`
+    with `capturedLiveRevision` taken **before** the fetch and `liveRevision`
+    at apply time. SSE that advances revision during the pull trips
+    `isLiveRevisionStale` → `STALE_RECOVERY` (insert-only + skip-existing).
+    A `refreshFromAuthority` reset that drops `liveRevision` below the capture
+    (or an in-flight user refresh) skips apply so the user-requested tail wins.
+  - Retained scopes (repository `subscribe` / live UI) skip the hot pull —
+    SSE already owns that tail. `setCurrentSession` fires
+    `fetchMessagesForSession` before React commits, so the newly entered
+    session is not retained yet and still revalidates.
+  - Fetch failure keeps the prior transcript (Failure Is Not Empty), does not
+    stamp the window, and does not surface as request `error`. Existing
+    `getTranscript` data is never cleared; `getRequestState` may be `loading`
+    while the check runs.
+  - `refreshFromAuthority` stays a user-triggered reset and is unchanged.
    The chat load-error wall has no transcript to keep, so Retry calls
    `retryTranscriptInitial` (`destructiveReset` + fresh ensure) and the gate
    treats that click as `hydrating` until the reload settles.
@@ -1217,7 +1263,7 @@ Rules:
 8. Sidebar previous/next navigation is scope-aware. `SessionSidebar` publishes the Recent order plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Project-origin navigation is restricted to the current expanded project and never falls through to hidden rows or another project.
 9. Global Mod+1…9 navigation is session-row based, not project based. `SessionSidebar` combines the currently revealed Recent rows with logically visible project rows, caps the visual order at nine, and publishes it through `sidebar-numbered-navigation.ts`. The numbered activation preserves the selected row's exact Recent/Project Focus identity.
 10. `optimisticSend()` inserts the optimistic user message and local `busy` status **before** the connection grace wait (`waitForConnectionOrThrow`). Long-idle reconnect must not leave the composer cleared / status busy while the chat list still shows the pre-send snapshot. Connection failure remains a pre-dispatch rollback of that optimistic row.
-  11. `fetchMessagesForSession()` may early-return on a renderable repository transcript only when pagination boundary is known (`has-more`/`exhausted`) **and** repository request state allows reuse (clean ready, not error/dirty); an `unknown` boundary always performs one authoritative tail ensure even when user messages are already cached. It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when request state is clean, so session switches do not force a refetch or loading flash. The pull itself goes through repository `ensureInitial` / production transport → `http-page`, so policy limit, Query single-flight, assistant-tail parent recovery, pure merge, and one atomic message/part/boundary commit into QueryCache are shared with every other caller; a switched-away stale generation completion never commits (next visit reads unknown → ensure). Concurrent callers share the in-flight Query promise.
+  11. `fetchMessagesForSession()` may early-return on a renderable repository transcript only when pagination boundary is known (`has-more`/`exhausted`) **and** repository request state allows reuse (clean ready, not error/dirty) **and** the enter-and-sync authority window is still fresh (last successful pull < 30s). An `unknown` boundary always performs one authoritative tail ensure even when user messages are already cached. A known hot cache outside the window goes through repository `ensureInitial` (reconcile-page, not reset). It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when request state is clean **and** the window is fresh, so rapid remounts do not force a refetch or loading flash. The cold pull itself goes through production transport → `http-page`; the hot revalidate shares Query single-flight / `authorityTailInflight`, assistant-tail parent recovery, and one atomic reconcile-page commit. A switched-away stale generation completion never commits (next visit reads unknown → ensure). Concurrent callers share the in-flight Query / coordinator / inflight promise.
 
 Examples of global-store updates performed in `session-actions.ts`:
 

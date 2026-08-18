@@ -3,6 +3,7 @@ import { isMessageSnapshotOpen, isSlimPart } from "./displayParts"
 import {
   DEFAULT_SESSION_MERGE_STRATEGY,
   shouldPreserveStreamingParts,
+  type OptimisticPartProtection,
   type SessionMergeStrategy,
 } from "./session-merge-strategy"
 import {
@@ -302,13 +303,38 @@ function preferExistingFullOverIncomingSlim(
   return upgraded ? resolved : incoming
 }
 
+function isUnconfirmedOptimisticPart(part: Part): boolean {
+  return (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true
+}
+
+function hasUnconfirmedOptimisticPart(parts: readonly Part[] | undefined): boolean {
+  return Boolean(parts && parts.length > 0 && parts.some(isUnconfirmedOptimisticPart))
+}
+
+function incomingPartsAreSlimOrEmpty(parts: readonly Part[]): boolean {
+  return parts.length === 0 || parts.some((part) => isSlimPart(part))
+}
+
 function mergeMaterializedParts(
   existing: Part[] | undefined,
   nextParts: Part[],
   skipPartTypes: ReadonlySet<string>,
   preserveLiveStreamingParts: boolean,
   messageStillOpen: boolean,
+  protectOptimistic: OptimisticPartProtection,
 ): Part[] {
+  // Reconcile-page only: a slim/empty Host copy must not replace an
+  // unconfirmed optimistic set. Same-id full-over-slim cannot help when the
+  // server copy uses a different part id. Full incoming still replaces.
+  if (
+    protectOptimistic === "keep-unless-full"
+    && existing
+    && hasUnconfirmedOptimisticPart(existing)
+    && incomingPartsAreSlimOrEmpty(nextParts)
+  ) {
+    return existing
+  }
+
   const incoming = preferExistingFullOverIncomingSlim(existing, nextParts)
   if (!existing || existing.length === 0) return incoming
   if (!preserveLiveStreamingParts) return incoming
@@ -533,6 +559,7 @@ export function materializeSessionSnapshots(
       skipPartTypes,
       shouldPreserveStreamingParts(merge, record.info.role),
       isMessageSnapshotOpen(record.info),
+      merge.protectOptimistic,
     )
     // User/system rows: an empty HTTP snapshot is not proof the server cleared
     // parts. Idle/materialize/initial turn pages can lag SSE and return a shell

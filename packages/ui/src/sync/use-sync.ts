@@ -27,6 +27,12 @@ import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import {
+  SESSION_AUTHORITY_REVALIDATE_WINDOW_MS,
+  isSessionAuthorityRevalidateFresh,
+} from "./session-authority-revalidate"
+
+export { SESSION_AUTHORITY_REVALIDATE_WINDOW_MS }
+import {
   getHistorySessionTurnLimit,
   getInitialSessionTurnLimit,
   getMessageRefetchLimit,
@@ -398,14 +404,15 @@ export function useSync() {
           const boundary = pagination?.boundary ?? { kind: "unknown" as const, loadedTurns: 0 }
           const hasSession = Binary.search(current.session, sessionID, (s) => s.id).found
           const request = repository?.getRequestState?.(scope)
-          // Reuse when we have a resolved transcript and known boundary (not unknown),
-          // unless forced or request is dirty/error.
+          // Reuse a resolved transcript with a known boundary unless forced,
+          // dirty/error, or the enter-and-sync window has elapsed.
           if (
             !force
             && hasTranscript
             && boundary.kind !== "unknown"
             && request?.status !== "error"
             && hasSession
+            && isSessionAuthorityRevalidateFresh(targetDirectory, sessionID)
           ) {
             seedSessionTodosFromHydratedTranscript({
               directory: targetDirectory,

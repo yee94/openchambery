@@ -31,12 +31,17 @@ import {
 } from "./stream-liveness"
 import {
   applyTranscriptCommand,
+  ensureTranscriptInitial,
   getTranscriptRepository,
   listCanonicalTranscriptScopes,
   materializeTranscriptMessage,
   resolveTranscriptRepositoryForStore,
   transcriptScope,
 } from "./transcript-repository-runtime"
+import {
+  isSessionAuthorityRevalidateFresh,
+  markSessionAuthorityRevalidated,
+} from "./session-authority-revalidate"
 import type { TranscriptData, TranscriptRepository } from "./transcript-repository"
 import { messagesFromTranscriptData } from "./transcript-repository-observers"
 import { fetchProductionTranscriptTransportPage } from "./transcript-repository-production"
@@ -3216,12 +3221,51 @@ async function fetchMessagesForSessionInternal(
   const hasUserBoundary = cachedMessages.some(isUserRole)
   const boundary = pagination.boundary
   const hasKnownBoundary = boundary.kind === "has-more" || boundary.kind === "exhausted"
-  if (
+  const hasHotCache = (
     (repository.hasSession?.(scope) ?? cachedMessages.length > 0)
     && (hasUserBoundary || boundary.kind === "exhausted")
     && hasKnownBoundary
     && request?.status !== "error"
-  ) {
+  )
+  // Ticket 09: selection materialize — raw Host turn-page → repository http-page.
+  // Bound Query in production; store adapter when tests leave production unbound.
+  // Staleness guard: skip side effects after a session switch mid-flight.
+  const isStale = () => useSessionUIStore.getState().currentSessionId !== sessionID
+  if (hasHotCache) {
+    if (isSessionAuthorityRevalidateFresh(resolvedDir, sessionID)) {
+      seedSessionTodosFromHydratedTranscript({
+        directory: resolvedDir,
+        sessionID,
+        store,
+        transcript,
+      })
+      return
+    }
+    // Production enter path: light authority check via ensureInitial
+    // (reconcile-page). Store-adapter tests keep the prior short-circuit.
+    if (getTranscriptRepository()) {
+      try {
+        await ensureTranscriptInitial(resolvedDir, sessionID)
+      } catch {
+        return
+      }
+      if (isStale()) return
+      seedSessionTodosFromHydratedTranscript({
+        directory: resolvedDir,
+        sessionID,
+        store,
+        isStale,
+      })
+      await reconcileActiveSessionStatusAfterMessagePull({
+        directory: resolvedDir,
+        sessionID,
+        store,
+        statusBeforePull,
+        statusObservedAtBeforePull,
+        hasMessages: (repository.getTranscript(scope).messageOrder.length) > 0,
+      })
+      return
+    }
     seedSessionTodosFromHydratedTranscript({
       directory: resolvedDir,
       sessionID,
@@ -3231,10 +3275,6 @@ async function fetchMessagesForSessionInternal(
     return
   }
 
-  // Ticket 09: selection materialize — raw Host turn-page → repository http-page.
-  // Bound Query in production; store adapter when tests leave production unbound.
-  // Staleness guard: skip side effects after a session switch mid-flight.
-  const isStale = () => useSessionUIStore.getState().currentSessionId !== sessionID
   void runtimeKey
   void s
 
@@ -3255,6 +3295,7 @@ async function fetchMessagesForSessionInternal(
       skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
     })
     recordCount = page.records.length
+    markSessionAuthorityRevalidated(resolvedDir, sessionID)
   } catch {
     // Preserve prior transcript on failure (Query request state carries error).
     return

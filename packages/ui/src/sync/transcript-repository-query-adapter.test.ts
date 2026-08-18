@@ -20,6 +20,7 @@ import { createMemoryTranscriptDurableStore } from "./transcript-durable-store"
 import { createTranscriptDurableQueryQueue } from "./transcript-durable-store-query"
 import {
   messageNeedsExactMaterialization,
+  messageNeedsExactRevalidation,
   type TranscriptTransportPage,
 } from "./transcript-repository"
 
@@ -569,7 +570,7 @@ describe("createQueryTranscriptRepository", () => {
     repo.destroy()
   })
 
-  test("ensureInitial on a hot cache does not refetch or replace bodies", async () => {
+  test("ensureInitial on a retained hot cache skips the enter-and-sync pull", async () => {
     let fetches = 0
     const repo = createQueryTranscriptRepository({
       client,
@@ -597,9 +598,82 @@ describe("createQueryTranscriptRepository", () => {
     })
 
     await repo.ensureInitial(scope)
+    const release = repo.subscribe(scope, () => undefined)
     await repo.ensureInitial(scope)
     expect(fetches).toBe(1)
     expect((repo.getParts(scope, "msg_1")[0] as { text?: string })?.text).toBe("stale")
+    release()
+    repo.destroy()
+  })
+
+  test("ensureInitial on a hot cache refetches and reconciles without clearing", async () => {
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [{ info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "keep")] }],
+            { complete: true },
+          )
+        }
+        return transportPage(
+          [
+            { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "keep")] },
+            { info: userMessage("msg_2"), parts: [textPart("p2", "msg_2", "added")] },
+          ],
+          { complete: true },
+        )
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    await repo.ensureInitial(scope)
+    expect(fetches).toBe(2)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_1", "msg_2"])
+    expect((repo.getParts(scope, "msg_1")[0] as { text?: string })?.text).toBe("keep")
+    repo.destroy()
+  })
+
+  test("hot ensureInitial keeps the prior transcript when the fetch fails", async () => {
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [{ info: userMessage("msg_keep"), parts: [textPart("p_keep", "msg_keep", "keep")] }],
+            { complete: true },
+          )
+        }
+        throw new Error("authority_unavailable")
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    const kept = await repo.ensureInitial(scope)
+    expect(fetches).toBe(2)
+    expect(kept.messageOrder).toEqual(["msg_keep"])
+    expect((repo.getParts(scope, "msg_keep")[0] as { text?: string })?.text).toBe("keep")
+    expect(repo.getRequestState?.(scope)?.status).not.toBe("error")
     repo.destroy()
   })
 
@@ -1322,14 +1396,14 @@ describe("Query repository on-demand message materialization", () => {
       },
     })
     await repo.ensureInitial(scope)
-    await repo.materializeMessage(scope, "msg_text")
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(exactFetches).toBe(0)
-    expect(repo.getMessageMaterializationState(scope, "msg_text").status).toBe("ready")
+    // Slim text needs on-demand materialize, but must not auto-revalidate.
+    expect(repo.getMessageMaterializationState(scope, "msg_text").status).toBe("idle")
     repo.destroy()
   })
 
-  test("messageNeedsExactMaterialization is only true for slim tool/reasoning/file", () => {
+  test("messageNeedsExactMaterialization is true for slim tool/reasoning/file/text", () => {
     expect(messageNeedsExactMaterialization([slimTool("t1", "msg_a")])).toBe(true)
     expect(messageNeedsExactMaterialization([
       { id: "r1", messageID: "msg_a", sessionID: SESSION, type: "reasoning", text: "", time: { start: 1 }, slim: true } as unknown as Part,
@@ -1337,11 +1411,13 @@ describe("Query repository on-demand message materialization", () => {
     expect(messageNeedsExactMaterialization([
       { id: "f1", messageID: "msg_a", sessionID: SESSION, type: "file", mime: "text/plain", url: "file://f1", slim: true } as unknown as Part,
     ])).toBe(true)
-    expect(messageNeedsExactMaterialization([slimText("p1", "msg_a", "summary")])).toBe(false)
+    expect(messageNeedsExactMaterialization([slimText("p1", "msg_a", "summary")])).toBe(true)
     expect(messageNeedsExactMaterialization([fullTool("t1", "msg_a", "done")])).toBe(false)
+    expect(messageNeedsExactRevalidation([slimText("p1", "msg_a", "summary")])).toBe(false)
+    expect(messageNeedsExactRevalidation([fullTool("t1", "msg_a", "done")])).toBe(true)
   })
 
-  test("skips Host fetch when the message has no slim tool/reasoning/file parts", async () => {
+  test("skips Host fetch when the message has no slim tool/reasoning/file/text parts", async () => {
     let fetches = 0
     const repo = createQueryTranscriptRepository({
       client,
@@ -1356,7 +1432,7 @@ describe("Query repository on-demand message materialization", () => {
       type: "http-page",
       purpose: "initial",
       page: transportPage([
-        { info: settledAssistant("msg_text"), parts: [slimText("p1", "msg_text", "ok")] },
+        { info: settledAssistant("msg_text"), parts: [textPart("p1", "msg_text", "ok")] },
       ], { complete: true }),
     })
     expect(repo.getMessageMaterializationState(scope, "msg_text").status).toBe("ready")

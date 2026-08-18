@@ -46,6 +46,16 @@ export type MessageMergeMode = "upsert" | "insert-only"
 export type PartMergeMode = "replace" | "skip-existing"
 
 /**
+ * Unconfirmed optimistic parts (`__openchamberOptimistic: true`) already
+ * held on a local message.
+ * - `none`: incoming parts follow the normal `parts` mode.
+ * - `keep-unless-full`: a slim or empty incoming snapshot keeps the local
+ *   parts as a whole; a non-empty full snapshot still replaces (authoritative
+ *   confirmation). Only current `reconcile-page` sets this.
+ */
+export type OptimisticPartProtection = "none" | "keep-unless-full"
+
+/**
  * Which existing parts may keep live state that the snapshot omits or
  * truncates: streaming text/output, in-flight tools, and mid-turn completed
  * tools while the snapshot message is still open.
@@ -59,6 +69,7 @@ export type SessionMergeStrategy = {
   readonly messages: MessageMergeMode
   readonly parts: PartMergeMode
   readonly preserveStreaming: StreamingPreservation
+  readonly protectOptimistic: OptimisticPartProtection
 }
 
 const strategy = (value: SessionMergeStrategy): SessionMergeStrategy => Object.freeze(value)
@@ -76,6 +87,7 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
     messages: "insert-only",
     parts: "replace",
     preserveStreaming: "assistant",
+    protectOptimistic: "none",
   }),
   prepend: strategy({
     id: "history",
@@ -83,6 +95,7 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
     messages: "insert-only",
     parts: "skip-existing",
     preserveStreaming: "assistant",
+    protectOptimistic: "none",
   }),
   recovery: strategy({
     id: "recovery",
@@ -90,11 +103,15 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
     messages: "upsert",
     parts: "replace",
     preserveStreaming: "assistant",
+    protectOptimistic: "none",
   }),
   /**
    * Reconcile page: same live-merge rules as recovery so gap records and
    * overlap-turn assistant finish updates re-enter the transcript. Boundary
    * preservation is enforced in the reducer / InfiniteData rebuild — not here.
+   * `protectOptimistic` is the extra constraint: slim/empty Host copies must
+   * not replace an unconfirmed optimistic part set (different part ids bypass
+   * same-id full-over-slim). Full incoming parts still replace.
    */
   "reconcile-page": strategy({
     id: "reconcile-page",
@@ -102,6 +119,7 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
     messages: "upsert",
     parts: "replace",
     preserveStreaming: "assistant",
+    protectOptimistic: "keep-unless-full",
   }),
   materialize: strategy({
     id: "materialize",
@@ -109,6 +127,7 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
     messages: "insert-only",
     parts: "replace",
     preserveStreaming: "assistant",
+    protectOptimistic: "none",
   }),
 })
 
@@ -126,6 +145,7 @@ const STALE_RECOVERY = strategy({
   messages: "insert-only",
   parts: "skip-existing",
   preserveStreaming: "assistant",
+  protectOptimistic: "none",
 })
 
 /**
@@ -141,6 +161,7 @@ export const SEND_GAP_FILL_SESSION_MERGE_STRATEGY = strategy({
   messages: "insert-only",
   parts: "skip-existing",
   preserveStreaming: "assistant",
+  protectOptimistic: "none",
 })
 
 /**

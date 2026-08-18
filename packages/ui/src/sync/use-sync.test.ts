@@ -8,8 +8,14 @@ import {
   hasUserMessage,
   isUserTranscriptRefreshBlocked,
   resolveSessionHistoryLoadPlan,
+  SESSION_AUTHORITY_REVALIDATE_WINDOW_MS,
   syncMetaFromBoundary,
 } from './use-sync'
+import {
+  clearSessionAuthorityRevalidateWindows,
+  isSessionAuthorityRevalidateFresh,
+  markSessionAuthorityRevalidated,
+} from './session-authority-revalidate'
 import { mergeOptimisticPage } from './optimistic'
 import { materializeSessionSnapshots } from './materialization'
 
@@ -407,6 +413,39 @@ describe('first-commit gating invariant (#2084)', () => {
     //   const deferFirstCommit = !options?.before && !page.complete && !hasUserMessage(page.session)
     const deferFirstCommit = !hasBefore && !isComplete && !hasUserMessage(assistantOnlyPage)
     expect(deferFirstCommit).toBe(false) // prepend must not defer
+  })
+})
+
+describe('enter-and-sync authority window', () => {
+  test('is fresh only after a successful stamp and inside the 30s window', () => {
+    clearSessionAuthorityRevalidateWindows()
+    expect(SESSION_AUTHORITY_REVALIDATE_WINDOW_MS).toBe(30_000)
+    expect(isSessionAuthorityRevalidateFresh('/repo', 'ses_1', {
+      transport: 'runtime-a',
+      generation: 1,
+    })).toBe(false)
+
+    markSessionAuthorityRevalidated('/repo', 'ses_1', {
+      now: 1_000,
+      transport: 'runtime-a',
+      generation: 1,
+    })
+    expect(isSessionAuthorityRevalidateFresh('/repo', 'ses_1', {
+      now: 1_000 + SESSION_AUTHORITY_REVALIDATE_WINDOW_MS - 1,
+      transport: 'runtime-a',
+      generation: 1,
+    })).toBe(true)
+    expect(isSessionAuthorityRevalidateFresh('/repo', 'ses_1', {
+      now: 1_000 + SESSION_AUTHORITY_REVALIDATE_WINDOW_MS,
+      transport: 'runtime-a',
+      generation: 1,
+    })).toBe(false)
+    expect(isSessionAuthorityRevalidateFresh('/repo', 'ses_1', {
+      now: 1_000,
+      transport: 'runtime-b',
+      generation: 1,
+    })).toBe(false)
+    clearSessionAuthorityRevalidateWindows()
   })
 })
 

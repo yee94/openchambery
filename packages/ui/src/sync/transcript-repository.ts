@@ -105,12 +105,15 @@ export type TranscriptMessageMaterializationState = {
   readonly error?: string
 }
 
-const EXACT_MATERIALIZATION_PART_TYPES = new Set(["tool", "reasoning", "file"])
+const EXACT_MATERIALIZATION_PART_TYPES = new Set(["tool", "reasoning", "file", "text"])
+
+const EXACT_REVALIDATION_PART_TYPES = new Set(["tool", "reasoning", "file"])
 
 /**
- * Whether a message still has projected tool / reasoning / file parts that
- * need an exact `session.message` fill. Callers use this plus
+ * Whether a message still has projected tool / reasoning / file / text parts
+ * that need an exact `session.message` fill. Callers use this plus
  * `getMessageMaterializationState` to decide whether to request.
+ * Requires `isSlimPart`, so a durable full text body never matches.
  */
 export function messageNeedsExactMaterialization(parts: readonly Part[]): boolean {
   return parts.some((part) =>
@@ -121,10 +124,11 @@ export function messageNeedsExactMaterialization(parts: readonly Part[]): boolea
 /**
  * Whether a durable-seeded message has tool / reasoning / file parts that
  * still need an exact `session.message` revalidation even when those parts
- * already look full.
+ * already look full. Text is intentionally excluded so cold-start
+ * text-only messages do not fan out exact fetches.
  */
 export function messageNeedsExactRevalidation(parts: readonly Part[]): boolean {
-  return parts.some((part) => EXACT_MATERIALIZATION_PART_TYPES.has(part.type))
+  return parts.some((part) => EXACT_REVALIDATION_PART_TYPES.has(part.type))
 }
 
 export type TranscriptHydrationPhase = "idle" | "p0" | "p1" | "p2"

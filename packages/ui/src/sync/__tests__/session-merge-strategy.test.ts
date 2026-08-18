@@ -33,6 +33,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "replace",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -44,6 +45,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "replace",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -55,6 +57,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "skip-existing",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -66,6 +69,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "skip-existing",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -77,6 +81,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "replace",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -88,6 +93,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "replace",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -99,6 +105,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "upsert",
       parts: "replace",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -110,6 +117,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "skip-existing",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
   {
@@ -121,6 +129,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "upsert",
       parts: "replace",
       preserveStreaming: "assistant",
+      protectOptimistic: "keep-unless-full",
     },
   },
   {
@@ -132,6 +141,7 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       messages: "insert-only",
       parts: "skip-existing",
       preserveStreaming: "assistant",
+      protectOptimistic: "none",
     },
   },
 ]
@@ -206,6 +216,7 @@ describe("shouldPreserveStreamingParts", () => {
     messages: "insert-only",
     parts: "replace",
     preserveStreaming: "assistant",
+    protectOptimistic: "none",
   }
   const allRoles: SessionMergeStrategy = {
     id: "test-all",
@@ -213,6 +224,7 @@ describe("shouldPreserveStreamingParts", () => {
     messages: "insert-only",
     parts: "replace",
     preserveStreaming: "all",
+    protectOptimistic: "none",
   }
   const none: SessionMergeStrategy = {
     id: "test-none",
@@ -220,6 +232,7 @@ describe("shouldPreserveStreamingParts", () => {
     messages: "insert-only",
     parts: "replace",
     preserveStreaming: "none",
+    protectOptimistic: "none",
   }
 
   test('preserveStreaming="assistant" only for assistant role', () => {
