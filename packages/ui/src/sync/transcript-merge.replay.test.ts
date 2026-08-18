@@ -9,9 +9,6 @@ import {
 import type { TranscriptTransportPage } from "./transcript-repository"
 import { transcriptScope } from "./transcript-repository-runtime"
 
-// bun:test ships `test.failing`; local Test typings only expose the call signature.
-const failing = (test as typeof test & { failing: typeof test }).failing
-
 const DIRECTORY = "/repo"
 const SESSION = "ses_1"
 const TRANSPORT = "runtime-a"

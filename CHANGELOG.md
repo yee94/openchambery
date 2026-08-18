@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.15] - 2026-08-18
+
+- **Swallowed sends:** an unconfirmed just-sent message is no longer overwritten when a reconnect reconcile delivers a slim server copy of it — the optimistic parts stay whole until full authoritative parts arrive. Editing (which removes old turns) is untouched by this protection.
+- **Edited text not updating:** slim text parts are now exact-materialized from the host record, so a message body that landed as a summary after an edit or refetch upgrades to the full authoritative text without a manual refresh. Cold-start revalidation keeps targeting only tool/reasoning/file parts, so no fetch storm.
+- **Enter-and-sync:** opening a session with a warm cache now runs a lightweight authority tail check in the background (30s per-session window, skipped while SSE is live, stale revisions merge conservatively) and merges the result without clearing the transcript, so turns that finished elsewhere appear on re-entry and failures keep what is on screen.
+- **Sync test harness:** new command-sequence replay tests pin the optimistic-row protection, slim text fill, and hot revalidate behavior at the repository merge boundary.
+
 ## [1.17.0-beta.14] - 2026-08-18
 
 - **Transcript diagnostics:** new `transcript-diff` diagnostics event captures a canonical snapshot (message IDs, per-message part counts, slim/full distribution, optimistic markers) before and after every user send/edit/delete/refresh and every reconnect-compensation, materialize, and destructive-reset path, then derives the added/removed/downgraded/optimistic-lost diff. Snapshots carry no message text or attachment payloads; existing merge and compensation behavior is unchanged. Export via About → client diagnostics.
