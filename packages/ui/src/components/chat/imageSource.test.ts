@@ -155,7 +155,9 @@ describe('image source contracts', () => {
     // Auto-load from reconcile on first paint/commit, plus click/keyboard retry path.
     expect(rendererSource.match(/loadImage\(image, state\);/g)).toHaveLength(2);
     expect(rendererSource).toContain('state.controller || state.objectUrl');
-    expect(rendererSource).toContain('decorateMarkdownImages(block, ctx)');
+    // First paint runs the full decorate pass (images included) so the sync
+    // layout already matches the async commit's geometry.
+    expect(rendererSource).toContain('decorateMarkdown(block, ctx)');
     expect(decorateSource).toContain("image.setAttribute('data-md-image-source', source)");
     expect(decorateSource).toContain("spriteIcon('file-image', 'size-10')");
     expect(decorateSource).toContain("spriteIcon('download', 'size-3')");
