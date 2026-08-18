@@ -420,7 +420,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                     >
                         <span
                             aria-hidden="true"
-                            className="pointer-events-none absolute left-0 top-0 bottom-0 w-px"
+                            className="pointer-events-none absolute left-0 top-0 bottom-0 w-px opacity-40"
                             style={{ backgroundColor: 'var(--tools-border)' }}
                         />
                         {isStreaming ? (

@@ -126,7 +126,7 @@ export const ContextToolGroup: React.FC<{
                 <div id={contentId} className="relative ml-2 pl-3 pt-0.5">
                     <span
                         aria-hidden="true"
-                        className="pointer-events-none absolute bottom-0 left-0 top-0 w-px"
+                        className="pointer-events-none absolute bottom-0 left-0 top-0 w-px opacity-40"
                         style={{ backgroundColor: 'var(--tools-border)' }}
                     />
                     {children}

@@ -2707,7 +2707,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         >
                             <span
                                 aria-hidden="true"
-                                className="pointer-events-none absolute left-0 top-px bottom-0 w-px"
+                                className="pointer-events-none absolute left-0 top-px bottom-0 w-px opacity-40"
                                 style={{ backgroundColor: 'var(--tools-border)' }}
                             />
                             <ToolExpandedContent

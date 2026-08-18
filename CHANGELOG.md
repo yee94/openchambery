@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.19] - 2026-08-18
+
+- **Activity timeline:** the vertical guide line beside tool, thinking, and JSON summary rows is now lighter so it recedes behind the activity content.
+
 ## [1.17.0-beta.18] - 2026-08-18
 
 - **Out-of-order transcripts on open:** a session whose local cache loaded just after the network page no longer renders older turns below newer ones. The durable cache seed is skipped once the canonical transcript is already filled, and any seed rows that do land are inserted by their created time instead of being appended to the tail. A manual refresh could not repair the earlier misorder; the transcript is now ordered correctly from the first paint.
