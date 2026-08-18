@@ -11,6 +11,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
@@ -25,6 +26,7 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -36,14 +38,17 @@ import java.util.concurrent.Executors;
 
 /**
  * Native media/file writes so the WebView never depends on navigator.share
- * or a browser download: saveImage writes to the gallery; saveFile opens
- * ACTION_CREATE_DOCUMENT. transcode converts HEIC/HEIF bytes to JPEG via
- * BitmapFactory on a background executor. pickMedia opens the Android photo picker.
+ * or a browser download: saveImage writes to the gallery; saveFile writes
+ * an app-private cache file then opens ACTION_CREATE_DOCUMENT. transcode
+ * converts HEIC/HEIF bytes to JPEG via BitmapFactory on a background
+ * executor. pickMedia opens the Android photo picker.
  */
 @CapacitorPlugin(name = "OpenChamberMedia")
 public class OpenChamberMediaPlugin extends Plugin {
     private static final int MAX_BYTES = 32 * 1024 * 1024;
-    private byte[] pendingSaveBytes;
+    private static final String SAVE_CACHE_DIR = "export-save";
+    private static final String STATE_PENDING_SAVE_PATH = "pendingSavePath";
+    private String pendingSavePath;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "openchamber-media");
@@ -169,68 +174,125 @@ public class OpenChamberMediaPlugin extends Plugin {
             dataBase64 = dataBase64.substring(comma + 1);
         }
 
-        String mimeType = call.getString("mimeType", "application/json");
-        if (mimeType == null || mimeType.isEmpty()) {
-            mimeType = "application/json";
-        }
-        mimeType = mimeType.split(";")[0].trim();
+        final String finalBase64 = dataBase64;
+        final String filename = sanitizeExportFilename(call.getString("filename", "export.json"));
 
-        String filename = sanitizeExportFilename(call.getString("filename", "export.json"));
+        // Decode and stage off the bridge thread. Capacitor persists the
+        // PluginCall JSON in onSaveInstanceState when DocumentsUI opens;
+        // a large dataBase64 blob exceeds the Binder limit and crashes
+        // the activity when the user confirms save.
+        executor.execute(() -> {
+            byte[] bytes;
+            try {
+                bytes = Base64.decode(finalBase64, Base64.DEFAULT);
+            } catch (Exception error) {
+                call.reject("File data is empty or invalid base64");
+                return;
+            }
+            if (bytes == null || bytes.length == 0) {
+                call.reject("File data is empty");
+                return;
+            }
+            if (bytes.length > MAX_BYTES) {
+                call.reject("File exceeds maximum size");
+                return;
+            }
 
-        byte[] bytes;
-        try {
-            bytes = Base64.decode(dataBase64, Base64.DEFAULT);
-        } catch (Exception error) {
-            call.reject("File data is empty or invalid base64");
-            return;
-        }
-        if (bytes == null || bytes.length == 0) {
-            call.reject("File data is empty");
-            return;
-        }
-        if (bytes.length > MAX_BYTES) {
-            call.reject("File exceeds maximum size");
-            return;
+            final File cacheFile;
+            try {
+                cacheFile = writeSaveCache(bytes);
+            } catch (Exception error) {
+                call.reject(error.getMessage() != null ? error.getMessage() : "Could not stage file", error);
+                return;
+            }
+
+            Activity activity = getActivity();
+            if (activity == null) {
+                deleteSaveCache(cacheFile.getAbsolutePath());
+                call.reject("No activity to present the save picker");
+                return;
+            }
+            activity.runOnUiThread(() -> presentSavePicker(call, cacheFile, filename));
+        });
+    }
+
+    private void presentSavePicker(PluginCall call, File cacheFile, String filename) {
+        deleteSaveCache(pendingSavePath);
+        pendingSavePath = cacheFile.getAbsolutePath();
+        // Bridge.saveInstanceState always serializes call.getData(). Strip
+        // the payload so pause/restore cannot TransactionTooLarge.
+        JSObject data = call.getData();
+        if (data != null) {
+            data.remove("dataBase64");
         }
 
-        pendingSaveBytes = bytes;
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType(mimeType);
+        // application/json crashes OEM DocumentsUI on confirm; the
+        // filename extension is the user-visible type.
+        intent.setType("application/octet-stream");
         intent.putExtra(Intent.EXTRA_TITLE, filename);
-        startActivityForResult(call, intent, "saveFileResult");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try {
+            startActivityForResult(call, intent, "saveFileResult");
+        } catch (Exception error) {
+            deleteSaveCache(pendingSavePath);
+            pendingSavePath = null;
+            call.reject(error.getMessage() != null ? error.getMessage() : "Save picker is unavailable", error);
+        }
+    }
+
+    @Override
+    protected Bundle saveInstanceState() {
+        if (pendingSavePath == null || pendingSavePath.isEmpty()) return null;
+        Bundle state = new Bundle();
+        state.putString(STATE_PENDING_SAVE_PATH, pendingSavePath);
+        return state;
+    }
+
+    @Override
+    protected void restoreState(Bundle state) {
+        if (state == null) return;
+        pendingSavePath = state.getString(STATE_PENDING_SAVE_PATH);
     }
 
     @ActivityCallback
     private void saveFileResult(PluginCall call, ActivityResult result) {
-        byte[] bytes = pendingSaveBytes;
-        pendingSaveBytes = null;
-        if (call == null) return;
-        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+        final String path = pendingSavePath;
+        pendingSavePath = null;
+        if (call == null) {
+            deleteSaveCache(path);
+            return;
+        }
+        if (
+            result == null ||
+            result.getResultCode() != Activity.RESULT_OK ||
+            result.getData() == null ||
+            result.getData().getData() == null
+        ) {
+            deleteSaveCache(path);
             JSObject cancelled = new JSObject();
             cancelled.put("cancelled", true);
             call.resolve(cancelled);
             return;
         }
-        if (bytes == null || bytes.length == 0) {
+        if (path == null || path.isEmpty()) {
             call.reject("File data is empty");
             return;
         }
-        Uri uri = result.getData().getData();
-        try (OutputStream out = getContext().getContentResolver().openOutputStream(uri)) {
-            if (out == null) {
-                call.reject("Could not open destination");
-                return;
+        final Uri uri = result.getData().getData();
+        executor.execute(() -> {
+            try {
+                writeCacheToUri(path, uri);
+                deleteSaveCache(path);
+                JSObject saved = new JSObject();
+                saved.put("cancelled", false);
+                call.resolve(saved);
+            } catch (Exception error) {
+                deleteSaveCache(path);
+                call.reject(error.getMessage() != null ? error.getMessage() : "Save failed", error);
             }
-            out.write(bytes);
-            out.flush();
-        } catch (Exception error) {
-            call.reject(error.getMessage() != null ? error.getMessage() : "Save failed", error);
-            return;
-        }
-        JSObject saved = new JSObject();
-        saved.put("cancelled", false);
-        call.resolve(saved);
+        });
     }
 
     private static String sanitizeExportFilename(String raw) {
@@ -241,6 +303,53 @@ public class OpenChamberMediaPlugin extends Plugin {
             name = name + ".json";
         }
         return name;
+    }
+
+    private File writeSaveCache(byte[] bytes) throws Exception {
+        File dir = new File(getContext().getCacheDir(), SAVE_CACHE_DIR);
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new Exception("Could not create export cache");
+        }
+        File dest = new File(dir, UUID.randomUUID().toString() + ".bin");
+        try (FileOutputStream out = new FileOutputStream(dest)) {
+            out.write(bytes);
+            out.flush();
+        } catch (Exception error) {
+            dest.delete();
+            throw error;
+        }
+        return dest;
+    }
+
+    private void writeCacheToUri(String path, Uri uri) throws Exception {
+        File file = new File(path);
+        if (!file.isFile()) {
+            throw new Exception("File data is empty");
+        }
+        ContentResolver resolver = getContext().getContentResolver();
+        OutputStream opened;
+        try {
+            opened = resolver.openOutputStream(uri, "wt");
+        } catch (Exception ignored) {
+            opened = resolver.openOutputStream(uri);
+        }
+        if (opened == null) {
+            throw new Exception("Could not open destination");
+        }
+        try (InputStream in = new FileInputStream(file); OutputStream out = opened) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            out.flush();
+        }
+    }
+
+    private static void deleteSaveCache(String path) {
+        if (path == null || path.isEmpty()) return;
+        File file = new File(path);
+        if (file.isFile()) file.delete();
     }
 
     private Uri insertImage(byte[] bytes, String filename, String mimeType) throws Exception {
