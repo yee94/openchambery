@@ -192,7 +192,7 @@ import {
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
 import { decorateComposerReference, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
 import { useComposerController } from '@/composer/use-composer-controller';
-import { buildComposerSemanticParts, dedupeDeliveryAttachments } from '@/composer/delivery';
+import { buildComposerSemanticParts, dedupeDeliveryAttachments, ensureSessionMentionTranscripts } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import {
     attachmentCitationDisplay,
@@ -5244,6 +5244,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     toast.error(t('chat.chatInput.toast.sessionReferenceLoadFailed'));
                     return;
                 }
+
+                // Background prefetch: page the referenced transcript fully into the cache so
+                // send-time inlining usually carries content. Failure is non-fatal — the send
+                // boundary's session-mention instruction embeds a read-only retrieval recipe.
+                void ensureSessionMentionTranscripts([{ type: 'session', sessionId: session.id }], sessionDirectory).catch(() => undefined);
 
                 const document = getDocument();
                 const textarea = textareaRef.current;

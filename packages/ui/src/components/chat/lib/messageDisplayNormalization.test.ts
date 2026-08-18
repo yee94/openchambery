@@ -21,6 +21,8 @@ describe('getNormalizedMessageForDisplay sourceParts', () => {
         const instruction = buildSessionMentionInstruction([{
             id: 'ses_1',
             title: 'MessageReferenceChip',
+            directory: '/project',
+            messages: [{ role: 'user', text: 'hello' }],
         }])!
         const normalized = getNormalizedMessageForDisplay({
             info: { id: 'msg_1', role: 'user' } as never,

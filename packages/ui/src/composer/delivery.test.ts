@@ -15,31 +15,44 @@ test('delivery emits compact canonical tags for legacy skill semantics', () => {
     expect(buildSkillMentionInstruction(['review', 'test'])).toBe('[skill:review] [skill:test]');
 });
 
-test('delivery keeps session reference JSON parseable and lightweight', () => {
-    const instruction = buildSessionMentionInstruction([
-        { id: 's1', title: 'One' },
-        { id: 's2', title: 'Two' },
-    ]);
+test('delivery inlines cached session messages with directory and a self-describing retrieval card', () => {
+    const contexts = [
+        { id: 's1', title: 'One', directory: '/project-a', messages: [{ role: 'user', text: 'x'.repeat(500) }] },
+        { id: 's2', title: 'Two', directory: '/project-b', messages: [{ role: 'assistant', text: 'y'.repeat(500) }] },
+    ];
+    const instruction = buildSessionMentionInstruction(contexts);
+    expect(instruction).toContain('sqlite3');
+    expect(instruction).toContain('opencode.db');
+    expect(instruction).toContain('mode=ro');
     const payload = instruction?.slice((instruction.indexOf('\n') ?? -1) + 1) ?? '';
-    expect((JSON.parse(payload) as Array<{ id: string }>).map((context) => context.id)).toEqual(['s1', 's2']);
-    expect(JSON.parse(payload)).toEqual([{ id: 's1', title: 'One' }, { id: 's2', title: 'Two' }]);
+    const parsed = JSON.parse(payload) as SessionMentionContext[];
+    expect(parsed.map((context) => context.id)).toEqual(['s1', 's2']);
+    expect(parsed[0].directory).toBe('/project-a');
+    expect(parsed[0].messages[0]?.text).toContain('xxx');
+});
+
+test('delivery keeps the session instruction within budget while truncating messages', () => {
+    const instruction = buildSessionMentionInstruction([
+        { id: 's1', title: 'One', directory: '/p', messages: [{ role: 'user', text: 'z'.repeat(10_000) }] },
+    ], 4_000);
+    expect((instruction?.length ?? Infinity) <= 4_000).toBe(true);
+    const payload = instruction?.slice((instruction.indexOf('\n') ?? -1) + 1) ?? '';
+    const parsed = JSON.parse(payload) as SessionMentionContext[];
+    expect(parsed[0].messages[0]?.text).toContain('[Message truncated]');
 });
 
 test('delivery recovers session reference metadata from instructions', () => {
-    const contexts = [{ id: 's1', title: 'OpenChamber status' }];
+    const contexts = [{ id: 's1', title: 'OpenChamber status', directory: '/p', messages: [{ role: 'user', text: 'hello' }] }];
     const instruction = buildSessionMentionInstruction(contexts);
     expect(parseSessionMentionInstruction(instruction ?? '')).toEqual(contexts);
     expect(parseSessionMentionInstruction('ordinary text')).toEqual([]);
-    expect(parseSessionMentionInstruction(`${'The user referenced these OpenCode sessions.'.repeat(1)}\n{}`)).toEqual([]);
+    const prefix = instruction?.slice(0, (instruction.indexOf('\n') ?? -1) + 1) ?? '';
+    expect(parseSessionMentionInstruction(`${prefix}{}`)).toEqual([]);
 });
 
-test('delivery caps session reference titles instead of dropping sessions', () => {
-    const contexts = [{ id: 's1', title: 'x'.repeat(600) }];
-    const instruction = buildSessionMentionInstruction(contexts, 100);
-    const payload = instruction?.slice((instruction.indexOf('\n') ?? -1) + 1) ?? '';
-    const parsed = JSON.parse(payload) as SessionMentionContext[];
-    expect(parsed[0].title.length).toBe(103);
-    expect(parsed[0].title.endsWith('...')).toBe(true);
+test('delivery documents empty messages as a cache miss, not an empty session', () => {
+    const instruction = buildSessionMentionInstruction([{ id: 's1', title: 'One', directory: '/p', messages: [] }]);
+    expect(instruction).toContain('empty messages array');
 });
 
 test('delivery trims only authored document boundaries and deduplicates inline attachments', () => {

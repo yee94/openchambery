@@ -133,27 +133,30 @@ describe('session mentions', () => {
         });
     });
 
-    test('builds lightweight loaded-session references', () => {
+    test('builds session references with directory and cached messages', () => {
         const instruction = buildSessionMentionInstruction([
             {
                 id: 'ses_123',
                 title: 'Previous implementation',
+                directory: '/project',
+                messages: [{ role: 'user', text: 'Implement grouped mentions' }],
             },
         ]);
 
         expect(instruction).toContain('ses_123');
-        expect(instruction).toContain('Previous implementation');
-        expect(instruction).not.toContain('messages');
-        expect(buildSessionMentionInstruction([])).toBeNull();
+        expect(instruction).toContain('Implement grouped mentions');
+        expect(instruction).toContain('/project');
+        expect(instruction).toContain('sqlite3');
+        expect(buildSessionMentionInstruction([], 100)).toBeNull();
         const boundedInstruction = buildSessionMentionInstruction([
-            { id: 'ses_123', title: 'L'.repeat(500) },
-            { id: 'ses_456', title: 'Second' },
-        ], 10);
+            { id: 'ses_123', title: 'Long', directory: '/p', messages: [{ role: 'user', text: 'x'.repeat(5_000) }] },
+            { id: 'ses_456', title: 'Second', directory: '/p', messages: [{ role: 'assistant', text: 'y'.repeat(5_000) }] },
+        ], 4_000);
+        expect((boundedInstruction?.length ?? 0) <= 4_000).toBe(true);
         const payload = boundedInstruction?.slice((boundedInstruction.indexOf('\n') ?? -1) + 1) ?? '';
         const parsed = JSON.parse(payload) as SessionMentionContext[];
         expect(parsed.map((context) => context.id)).toEqual(['ses_123', 'ses_456']);
-        expect(parsed[0].title).toBe(`${'L'.repeat(10)}...`);
-        expect(parsed[1].title).toBe('Second');
+        expect(parsed[0].messages[0]?.text).toContain('[Message truncated]');
     });
 });
 
