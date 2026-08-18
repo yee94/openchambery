@@ -39,6 +39,8 @@ import {
     ensureNewestMarkdownKeyHydrated,
     getMarkdownHydrationBatch,
     pruneMarkdownHydratedKeys,
+    readMarkdownHydrationRestore,
+    writeMarkdownHydrationRestore,
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
 import {
@@ -1474,7 +1476,14 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     const virtualItems = tanstackVirtualizer.getVirtualItems();
     const mountedIndexes = virtualItems.map((item) => item.index);
     const [hydratedMarkdownEntryKeys, setHydratedMarkdownEntryKeys] = React.useState(() => (
-        createInitialMarkdownHydratedKeys(entryKeys)
+        // Bottom-entering rows hydrate in this first commit; restore adds every
+        // key a previous mount of the same scope had already hydrated. The
+        // placeholder→Markdown swaps this replaces were the session-switch
+        // flicker. Scroll-time metering still governs rows past this seed.
+        createInitialMarkdownHydratedKeys(entryKeys, {
+            seedCount: resolveMarkdownPreloadEntries(activityRenderMode),
+            restore: readMarkdownHydrationRestore(timelineCacheKey),
+        })
     ));
     // Streaming-tail Markdown is already painted. When that turn remounts into
     // history it must stay hydrated in this same render — an after-paint seed
@@ -1486,6 +1495,9 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     if (activeHydratedMarkdownEntryKeys !== hydratedMarkdownEntryKeys) {
         setHydratedMarkdownEntryKeys(activeHydratedMarkdownEntryKeys);
     }
+    // Latest hydrated set for the unmount-time restore write.
+    const hydratedMarkdownKeysRef = React.useRef(activeHydratedMarkdownEntryKeys);
+    hydratedMarkdownKeysRef.current = activeHydratedMarkdownEntryKeys;
     const lastScrollDirectionRef = React.useRef<MarkdownHydrationScrollDirection>(null);
     if (tanstackVirtualizer.scrollDirection) {
         lastScrollDirectionRef.current = tanstackVirtualizer.scrollDirection;
@@ -1578,6 +1590,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
                 entriesRef.current.map((entry) => entry.key),
                 tanstackVirtualizer,
             );
+            writeMarkdownHydrationRestore(timelineCacheKey, hydratedMarkdownKeysRef.current);
             registerTanstackVirtualizer?.(null);
         };
         // registerTanstackVirtualizer is useEvent (stable identity); semantic deps only.

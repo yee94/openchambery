@@ -45,6 +45,8 @@ mock.module('./lib/markdownHydrationWindow', () => ({
     ensureNewestMarkdownKeyHydrated: (keys: Set<string>) => keys,
     getMarkdownHydrationBatch: () => [],
     pruneMarkdownHydratedKeys: (keys: Set<string>) => keys,
+    readMarkdownHydrationRestore: () => undefined,
+    writeMarkdownHydrationRestore: () => undefined,
 }));
 mock.module('./lib/shellBridge', () => ({
     USER_SHELL_MARKER: '',
