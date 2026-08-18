@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.16] - 2026-08-18
+
+- **Manual refresh no longer swallows messages:** refreshing a session transcript now reconciles against the fetched authority tail instead of rebuilding it from scratch. A just-sent message that the server has not confirmed yet survives the refresh, older history outside the tail page is kept in place, and already-loaded full parts are not downgraded to slim summaries. Server-deleted messages within the refreshed range are still removed, and a refresh that races live streaming skips deletions rather than guessing.
+- **Transcript deletion on the observer path:** structural sharing now recognizes reference-stable deletion subsets, so message removals are not silently restored by the query observer.
+
 ## [1.17.0-beta.15] - 2026-08-18
 
 - **Swallowed sends:** an unconfirmed just-sent message is no longer overwritten when a reconnect reconcile delivers a slim server copy of it — the optimistic parts stay whole until full authoritative parts arrive. Editing (which removes old turns) is untouched by this protection.
