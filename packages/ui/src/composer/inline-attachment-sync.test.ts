@@ -8,10 +8,12 @@ import {
 } from './inline-attachment-sync';
 
 describe('inline attachment citation sync', () => {
-    test('classifies image and code-selection attachments as inline', () => {
+    test('classifies every attached file as an inline citation', () => {
         expect(isInlineAttachmentCitation({ source: 'local', mimeType: 'image/png' })).toBe(true);
         expect(isInlineAttachmentCitation({ source: 'vscode', vscodeSource: 'selection' })).toBe(true);
-        expect(isInlineAttachmentCitation({ source: 'local', mimeType: 'text/plain' })).toBe(false);
+        expect(isInlineAttachmentCitation({ source: 'vscode', vscodeSource: 'file' })).toBe(true);
+        expect(isInlineAttachmentCitation({ source: 'local', mimeType: 'text/plain' })).toBe(true);
+        expect(isInlineAttachmentCitation({ source: 'server', mimeType: 'application/json' })).toBe(true);
     });
 
     test('strips reserved-slot citations from draft text', () => {

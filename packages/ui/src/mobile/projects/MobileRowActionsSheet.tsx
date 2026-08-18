@@ -17,6 +17,7 @@ export type MobileRowActionCallbacks = {
   onShare?: () => void;
   onCopyLink?: () => void;
   onUnshare?: () => void;
+  onRefreshTranscript?: () => void;
   onArchive?: () => void;
   onDelete?: () => void;
   onNewSession?: () => void;
@@ -32,6 +33,8 @@ export type MobileRowActionsSheetProps = {
   target: MobileRowActionTarget | null;
   actions: MobileRowActionCallbacks;
   onOpenChange: (open: boolean) => void;
+  refreshTranscriptDisabled?: boolean;
+  refreshTranscriptSpinning?: boolean;
 };
 
 type ActionRowProps = {
@@ -39,9 +42,18 @@ type ActionRowProps = {
   label: string;
   onClick: () => void;
   destructive?: boolean;
+  disabled?: boolean;
+  spinning?: boolean;
 };
 
-function ActionRow({ icon, label, onClick, destructive = false }: ActionRowProps) {
+function ActionRow({
+  icon,
+  label,
+  onClick,
+  destructive = false,
+  disabled = false,
+  spinning = false,
+}: ActionRowProps) {
   const handleClick = useEvent(onClick);
 
   return (
@@ -50,9 +62,10 @@ function ActionRow({ icon, label, onClick, destructive = false }: ActionRowProps
       variant={destructive ? 'destructive' : 'ghost'}
       size="lg"
       className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
+      disabled={disabled}
       onClick={handleClick}
     >
-      <Icon name={icon} className="size-5" />
+      <Icon name={icon} className={spinning ? 'size-5 animate-spin' : 'size-5'} />
       <span className="truncate">{label}</span>
     </Button>
   );
@@ -63,6 +76,8 @@ export function MobileRowActionsSheet({
   target,
   actions,
   onOpenChange,
+  refreshTranscriptDisabled = false,
+  refreshTranscriptSpinning = false,
 }: MobileRowActionsSheetProps) {
   const { t } = useI18n();
   const run = (action?: () => void) => () => {
@@ -101,6 +116,15 @@ export function MobileRowActionsSheet({
               </>
             ) : actions.onShare ? (
               <ActionRow icon="share-2" label={t('sessions.sidebar.session.menu.share')} onClick={run(actions.onShare)} />
+            ) : null}
+            {actions.onRefreshTranscript ? (
+              <ActionRow
+                icon="refresh"
+                label={t('sessions.sidebar.session.menu.refreshTranscript')}
+                disabled={refreshTranscriptDisabled}
+                spinning={refreshTranscriptSpinning}
+                onClick={run(actions.onRefreshTranscript)}
+              />
             ) : null}
             {actions.onArchive ? <ActionRow icon="archive" label={t('sessions.sidebar.bulkActions.archive')} onClick={run(actions.onArchive)} /> : null}
             {actions.onDelete ? (

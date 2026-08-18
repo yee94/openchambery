@@ -100,12 +100,45 @@ function areJsonEquivalent(left: unknown, right: unknown): boolean {
   }
 }
 
+const MESSAGE_IDENTITY_FIELDS = ["agent", "mode", "providerID", "modelID", "variant", "model"] as const
+
+function readNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function mergeTranscriptMessageUpdate(existing: Message, incoming: Message): Message {
+  const merged = { ...existing, ...incoming } as Message
+  const existingRecord = existing as Record<string, unknown>
+  const incomingRecord = incoming as Record<string, unknown>
+  const mergedRecord = merged as Record<string, unknown>
+
+  for (const field of MESSAGE_IDENTITY_FIELDS) {
+    const next = readNonEmptyString(incomingRecord[field])
+    const previous = readNonEmptyString(existingRecord[field])
+    if (next) {
+      mergedRecord[field] = next
+    } else if (previous) {
+      mergedRecord[field] = previous
+    } else {
+      delete mergedRecord[field]
+    }
+  }
+
+  if (existing.time || incoming.time) {
+    merged.time = { ...existing.time, ...incoming.time }
+  }
+
+  return merged
+}
+
 function areMessageUpdateFieldsEqual(existing: Message, next: Message): boolean {
   if (existing.role !== next.role) return false
   if ((existing as { finish?: unknown }).finish !== (next as { finish?: unknown }).finish) return false
   if ((existing.time as { completed?: number })?.completed !== (next.time as { completed?: number })?.completed) return false
 
-  const fields: Array<keyof Message | "structured" | "summary" | "tokens" | "error" | "cost" | "model" | "tools" | "format" | "variant" | "agent" | "system"> = [
+  const fields: Array<keyof Message | "structured" | "summary" | "tokens" | "error" | "cost" | "model" | "tools" | "format" | "variant" | "agent" | "system" | "mode" | "providerID" | "modelID"> = [
     "summary",
     "error",
     "cost",
@@ -116,6 +149,9 @@ function areMessageUpdateFieldsEqual(existing: Message, next: Message): boolean 
     "format",
     "variant",
     "agent",
+    "mode",
+    "providerID",
+    "modelID",
     "system",
   ]
 
@@ -161,13 +197,14 @@ export function applyTranscriptDirectoryEvent(
       if (index >= 0) {
         // Skip message replacement if unchanged — preserves reference, avoids re-render
         const existing = messages[index]
-        const unchanged = areMessageUpdateFieldsEqual(existing, info)
+        const merged = mergeTranscriptMessageUpdate(existing, info)
+        const unchanged = areMessageUpdateFieldsEqual(existing, merged)
         if (unchanged) {
           syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, (info as { finish?: unknown }).finish, (info.time as { completed?: number })?.completed)
           return false
         }
         const next = [...messages]
-        next[index] = info
+        next[index] = merged
         draft.message[info.sessionID] = next
       } else {
         draft.message[info.sessionID] = [...messages, info]

@@ -63,12 +63,13 @@ describe('attachment citations', () => {
         )).toBe('see [desktop.jpg] and [icon.png]');
     });
 
-    test('keeps code selections and image references inline while regular files stay in the attachment area', () => {
+    test('treats images, documents, and VS Code files as inline citations', () => {
         expect(isInlineAttachmentCitation({ source: 'vscode', vscodeSource: 'selection' })).toBe(true);
         expect(isInlineAttachmentCitation({ source: 'local', mimeType: 'image/png' })).toBe(true);
-        expect(isInlineAttachmentCitation({ source: 'vscode', vscodeSource: 'file' })).toBe(false);
-        expect(isInlineAttachmentCitation({ source: 'local', mimeType: 'text/plain' })).toBe(false);
-        expect(isInlineAttachmentCitation({ source: 'server', mimeType: 'application/pdf' })).toBe(false);
+        expect(isInlineAttachmentCitation({ source: 'vscode', vscodeSource: 'file' })).toBe(true);
+        expect(isInlineAttachmentCitation({ source: 'local', mimeType: 'text/plain' })).toBe(true);
+        expect(isInlineAttachmentCitation({ source: 'server', mimeType: 'application/pdf' })).toBe(true);
+        expect(isInlineAttachmentCitation({ source: 'local', mimeType: 'application/json' })).toBe(true);
     });
 
     test('expands sent code-selection citations to their absolute paths', () => {

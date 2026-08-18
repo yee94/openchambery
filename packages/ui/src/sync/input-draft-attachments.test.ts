@@ -69,12 +69,27 @@ describe("input store durable attachments", () => {
     expect(draft.revision).toBe(before + 1)
   })
 
-  test("removeDraftAttachment leaves ordinary file draft text alone", async () => {
+  test("removeDraftAttachment leaves unrelated ordinary-file draft text alone", async () => {
     const { store } = await createStore()
     const file = await store.getState().addDraftLocalAttachment(key(), new File(["note"], "note.txt", { type: "text/plain" }))
     store.getState().setDraftText(key(), "keep this body")
     expect(await store.getState().removeDraftAttachment(key(), file!.attachmentRefID)).toBe(true)
     expect(store.getState().getDraft(key())!.text).toBe("keep this body")
+  })
+
+  test("removeDraftAttachment clears ordinary file citations in the same revision", async () => {
+    const { store } = await createStore()
+    const file = await store.getState().addDraftLocalAttachment(key(), new File(["note"], "note.txt", { type: "text/plain" }))
+    store.getState().setDraftComposerState(key(), {
+      document: { text: "see [\u2003note.txt] please", references: [] },
+      mentions: [],
+    })
+    const before = store.getState().getDraft(key())!.revision
+    expect(await store.getState().removeDraftAttachment(key(), file!.attachmentRefID)).toBe(true)
+    const draft = store.getState().getDraft(key())!
+    expect(draft.text).toBe("see please")
+    expect(draft.attachments).toEqual([])
+    expect(draft.revision).toBe(before + 1)
   })
 
   test("moves and deletes blob-backed drafts through one coordinator transaction", async () => {

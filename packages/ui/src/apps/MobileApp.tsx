@@ -2687,9 +2687,9 @@ const MobileShell: React.FC<{
     void (async () => {
       try {
         await sync.refreshSessionTranscript(sessionID, { directory });
-        toast.success(t('mobile.menu.refreshTranscriptSuccess'));
+        toast.success(t('sessions.sidebar.session.menu.refreshTranscriptSuccess'));
       } catch {
-        toast.error(t('mobile.menu.refreshTranscriptFailed'));
+        toast.error(t('sessions.sidebar.session.menu.refreshTranscriptFailed'));
       } finally {
         setIsTranscriptRefreshing(false);
       }
@@ -3002,7 +3002,7 @@ const MobileShell: React.FC<{
         items.push({
           key: 'refresh-transcript',
           icon: 'refresh',
-          label: t('mobile.menu.refreshTranscript'),
+          label: t('sessions.sidebar.session.menu.refreshTranscript'),
           disabled: isTranscriptRefreshing || isSessionBusy,
           spinning: isTranscriptRefreshing,
           onSelect: refreshCurrentTranscript,

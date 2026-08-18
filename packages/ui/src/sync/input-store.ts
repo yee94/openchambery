@@ -793,7 +793,7 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     const record = get().drafts[id]
     const attachment = record && attachmentList(record).find((item) => item.attachmentRefID === attachmentRefID)
     if (!record || !attachment) return false
-    // Inline citations (images / code selections) live with the attachment metadata.
+    // Inline citations live with the attachment metadata.
     const stripped = isInlineAttachmentCitation(attachment)
       ? stripInlineAttachmentCitationsFromDraft(record.text, [attachment.filename], record.mentions, record.composerReferences)
       : undefined

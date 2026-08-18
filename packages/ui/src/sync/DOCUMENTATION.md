@@ -753,8 +753,9 @@ both readers agree on when a frame may shrink.
    stays up only while that refresh is in flight, during cold first paint
    (no transcript yet), or while reconnecting before any messages exist.
    A loaded transcript hides it even if the socket is still reconnecting or
-   the InfiniteQuery observer is still `isFetching`. Desktop session context-menu
-   "Sync messages" and the dedicated-mobile overflow "Refresh" both call
+   the InfiniteQuery observer is still `isFetching`.    Desktop session context-menu
+   "Sync messages", the dedicated-mobile overflow "Sync messages", and the
+   mobile session row-actions sheet all call
     `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
     (enter-and-sync reconcile without the in-range delete pass) or `destructiveReset` (ensure failure blanks the chat).
 
@@ -1097,6 +1098,10 @@ both readers agree on when a frame may shrink.
   counting that gap as missing flipped `hasRenderableSessionSnapshot` false and
   re-fired `ensureSessionRenderable` → thrashing `GET .../messages` mid-turn
   (Performance traces showed 5+ messages pulls within ~4s of one prompt).
+- A later `message.updated` for an existing message is merged, not wholesale
+  replaced. Token/cost/time ticks that omit `agent` / `mode` / `providerID` /
+  `modelID` / `variant` keep the identity already stored so the assistant
+  header cannot flash between a model name and the empty `Assistant` fallback.
 - A WebSocket-to-SSE fallback enters connecting or reconnecting state. Connected
   state publishes after the fallback SSE stream reports its real connection.
 - A successful directory status snapshot records its conservative request-start

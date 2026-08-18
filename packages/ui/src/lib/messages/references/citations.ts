@@ -3,10 +3,6 @@ import { stripComposerTriggerIconSlot } from '@/composer/inline-visual';
 
 const IMAGE_FILENAME_PATTERN = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|heic|heif|tiff?)$/i;
 
-const isCodeSelectionFilename = (filename: string, mime?: string): boolean => (
-    mime === 'text/plain' && /:\d+(?:-\d+)?$/.test(filename)
-);
-
 const isAbsoluteCitationPath = (value: string): boolean => (
     value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\')
 );
@@ -28,13 +24,7 @@ export const buildCitationIconsFromParts = (
         if (!filename) continue;
         const key = filename.toLowerCase();
         const mime = typeof part.mime === 'string' ? part.mime : undefined;
-        if (mime?.startsWith('image/')) {
-            icons.set(key, 'image');
-            continue;
-        }
-        if (isCodeSelectionFilename(filename, mime)) {
-            icons.set(key, 'attachment');
-        }
+        icons.set(key, isImageFilePart(filename, mime) ? 'image' : 'attachment');
     }
 
     return icons;

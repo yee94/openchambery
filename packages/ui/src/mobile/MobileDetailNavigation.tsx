@@ -95,7 +95,7 @@ export function MobileDetailNavigation({
           ) : null}
         </div>
 
-        <div className="flex min-w-0 items-center justify-end gap-1">
+        <div className="flex min-w-0 items-center justify-end gap-2">
           {trailing}
           {actions.map((action, index) => (
             <Button

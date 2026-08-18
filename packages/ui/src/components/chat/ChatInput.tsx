@@ -1021,6 +1021,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // shrinks them. Instant, synced with keyboard choreography so chat geometry
     // and focus continuity stay continuous.
     const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(false);
+    // Footer/chrome phase for the mobile composer, deliberately separate from the
+    // silhouette state: 'collapsed' = pill footer (attach + stop), 'full' =
+    // expanded footer with all controls, 'none' = transient frame with no footer
+    // while the silhouette flips first. Native shells commit the silhouette
+    // synchronously (flushSync) but defer the costly footer tree by one frame so
+    // the tap frame stays light; the footer fade-in (oc-mobile-composer-footer-in)
+    // masks the one-frame delay.
+    const [mobileComposerChrome, setMobileComposerChrome] = React.useState<'collapsed' | 'none' | 'full'>('collapsed');
+    const mobileComposerChromeFrameRef = React.useRef<number | null>(null);
     const [mobileTextareaFocused, setMobileTextareaFocused] = React.useState(false);
     // Mobile browser / installed PWA: tapping a composer control while the
     // keyboard is up blurs the textarea first, and the keyboard-resize reflow
@@ -6070,6 +6079,28 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         mobileComposerExpandedRef.current = mobileComposerExpanded;
     });
 
+    const scheduleMobileComposerChrome = React.useCallback((phase: 'collapsed' | 'full') => {
+        if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+            setMobileComposerChrome(phase);
+            return;
+        }
+        if (mobileComposerChromeFrameRef.current !== null) {
+            window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
+        }
+        mobileComposerChromeFrameRef.current = window.requestAnimationFrame(() => {
+            mobileComposerChromeFrameRef.current = null;
+            setMobileComposerChrome(phase);
+        });
+    }, []);
+    React.useEffect(() => {
+        return () => {
+            if (mobileComposerChromeFrameRef.current !== null) {
+                window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
+                mobileComposerChromeFrameRef.current = null;
+            }
+        };
+    }, []);
+
     const expandMobileComposer = React.useCallback((intent: 'focus') => {
         // Action buttons set this window — do not steal focus / open the IME.
         if (Date.now() < suppressComposerFocusUntilRef.current) {
@@ -6087,6 +6118,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // silhouette before UIKit starts presenting the keyboard; a concurrent
         // update can otherwise leave the pill behind until the keyboard is already
         // visible. Other runtimes keep the yielding transition.
+        // The heavy footer tree mounts one frame later (scheduleMobileComposerChrome)
+        // so the sync commit carries only the silhouette flip.
         // Update the ref immediately so a same-stack onFocus (after focus())
         // does not re-enter expand before the effect mirrors state.
         if (!mobileComposerExpandedRef.current) {
@@ -6098,10 +6131,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // expanded silhouette in this frame (iOS UIKit + Android CSS FLIP).
             // Deferring with startTransition leaves the pill behind the keyboard.
             if (isCapacitorApp() && (platform === 'ios' || platform === 'android')) {
-                flushSync(() => setMobileComposerExpanded(true));
+                flushSync(() => {
+                    setMobileComposerExpanded(true);
+                    setMobileComposerChrome('none');
+                });
+                scheduleMobileComposerChrome('full');
             } else {
                 React.startTransition(() => {
                     setMobileComposerExpanded(true);
+                    setMobileComposerChrome('full');
                 });
             }
         }
@@ -6111,7 +6149,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // field above the keyboard) is the only thing that moves the composer.
         // Same DOM node as the collapsed pill — focus continues rather than remounts.
         textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
-    }, []);
+    }, [scheduleMobileComposerChrome]);
 
     const openMobileAttachSheet = React.useCallback(() => {
         // Same order as handleOpenMobilePanel: mark the sheet open BEFORE the
@@ -6138,6 +6176,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // switch straight into the voice variant of the full composer.
             if (!mobileComposerExpandedRef.current) {
                 setMobileComposerExpanded(true);
+                setMobileComposerChrome('full');
             }
             return;
         }
@@ -6149,6 +6188,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (!mobileComposerExpandedRef.current) return;
             if (document.activeElement === textareaRef.current) return;
             setMobileComposerExpanded(false);
+            setMobileComposerChrome('collapsed');
             setExpandedInput(false);
         }, 30);
     }, [setExpandedInput]);
@@ -6351,6 +6391,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             mobileExpandIntentRef.current = null;
             mobileComposerExpandedRef.current = false;
             setMobileComposerExpanded(false);
+            setMobileComposerChrome('collapsed');
             setExpandedInput(false);
         }, 250);
         return () => window.clearTimeout(timer);
@@ -6407,12 +6448,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             mobileComposerExpandedRef.current = false;
             flushSync(() => {
                 setMobileComposerExpanded(false);
+                setMobileComposerChrome('none');
                 setExpandedInput(false);
             });
+            scheduleMobileComposerChrome('collapsed');
         };
         window.addEventListener('oc:keyboard-intent', handleIntent);
         return () => window.removeEventListener('oc:keyboard-intent', handleIntent);
-    }, [isMobile, setExpandedInput]);
+    }, [isMobile, setExpandedInput, scheduleMobileComposerChrome]);
 
     // Reset the picker search whenever a draft picker sheet opens/closes.
     React.useEffect(() => {
@@ -6615,7 +6658,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     ));
 
     const composerFooterContent = isMobile ? (
-        !mobileComposerExpanded ? (
+        mobileComposerChrome === 'collapsed' ? (
             <>
                 <div
                     data-mobile-composer-collapsed-slot="attach"
@@ -6662,7 +6705,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     </div>
                 ) : null}
             </>
-        ) : (
+        ) : mobileComposerChrome === 'full' ? (
             <div className="flex w-full min-w-0 items-center gap-x-1.5" data-composer-action="true">
                 <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
                     <ComposerAttachmentControls
@@ -6721,7 +6764,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     />
                 </div>
             </div>
-        )
+        ) : null
     ) : (
         <>
             <div className={cn('flex flex-shrink-0 items-center', footerGapClass)}>
@@ -7293,7 +7336,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobile && !mobileComposerExpanded && 'oc-mobile-composer-collapsed-content',
                     )}
                     inputHeader={composerInputHeader}
-                    attachmentContent={isMobile && !mobileComposerExpanded ? undefined : composerAttachmentContent}
+                    attachmentContent={isMobile && mobileComposerChrome !== 'full' ? undefined : composerAttachmentContent}
                     highlightedContent={composerHighlightedContent}
                     highlightRef={composerHighlightRef}
                     inputRef={textareaRef}

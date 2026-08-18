@@ -237,4 +237,12 @@ describe('buildCitationHintsFromParts', () => {
         expect(hints.displayNames.get(path.toLowerCase())).toBe('image-1.png');
         expect(hints.icons.get(path.toLowerCase())).toBe('image');
     });
+
+    test('maps ordinary file parts to attachment chips', () => {
+        const hints = buildCitationHintsFromParts(
+            [{ type: 'file', mime: 'application/json', filename: 'openchamber-diagnostics.json' } as Part],
+            '[\u2003openchamber-diagnostics.json] 你看一下日志',
+        );
+        expect(hints.icons.get('openchamber-diagnostics.json')).toBe('attachment');
+    });
 });

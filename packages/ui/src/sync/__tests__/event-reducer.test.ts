@@ -156,6 +156,49 @@ describe("applyTranscriptDirectoryEvent", () => {
     ])
   })
 
+  test("message.updated keeps agent and model identity when a later payload omits them", () => {
+    const identified = {
+      id: "msg_2",
+      sessionID: "ses_1",
+      role: "assistant",
+      agent: "explorer",
+      mode: "explorer",
+      providerID: "deepseek",
+      modelID: "deepseek-v4-flash",
+      variant: "default",
+      time: { created: 1 },
+    } as Message
+    const draft = transcriptDraft({
+      message: {
+        ses_1: [identified],
+      },
+    })
+    const tokenTick = {
+      id: "msg_2",
+      sessionID: "ses_1",
+      role: "assistant",
+      tokens: { input: 12, output: 4, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 1 },
+    } as Message
+
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(tokenTick))).toBe(true)
+
+    const next = draft.message.ses_1?.[0] as Message & {
+      agent?: string
+      mode?: string
+      providerID?: string
+      modelID?: string
+      variant?: string
+      tokens?: { output?: number }
+    }
+    expect(next.agent).toBe("explorer")
+    expect(next.mode).toBe("explorer")
+    expect(next.providerID).toBe("deepseek")
+    expect(next.modelID).toBe("deepseek-v4-flash")
+    expect(next.variant).toBe("default")
+    expect(next.tokens?.output).toBe(4)
+  })
+
   test("does not invent empty parts for the first assistant on a cold session", () => {
     const draft = transcriptDraft()
     const nextAssistant = {

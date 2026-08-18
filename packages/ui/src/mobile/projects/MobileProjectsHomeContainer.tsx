@@ -18,6 +18,8 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { syncGlobalSessionsForDirectories } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useLiveSessionStatus } from '@/sync/sync-context';
+import { useSync } from '@/sync/use-sync';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { normalizePath } from '@/lib/pathNormalization';
 import type { WorktreeMetadata } from '@/types/worktree';
@@ -85,6 +87,7 @@ export function MobileProjectsHomeContainer({
   const openSession = useMobileNavigationStore((state) => state.openSession);
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
   const removeProject = useProjectsStore((state) => state.removeProject);
+  const sync = useSync();
 
   const [actionTarget, setActionTarget] = React.useState<ActionTargetState | null>(null);
   const [actionsOpen, setActionsOpen] = React.useState(false);
@@ -98,6 +101,15 @@ export function MobileProjectsHomeContainer({
     project: ProjectMeta;
     worktree: WorktreeMetadata;
   } | null>(null);
+  const [refreshingSessionId, setRefreshingSessionId] = React.useState<string | null>(null);
+  const actionSessionId = actionTarget?.kind === 'session' ? actionTarget.session.id : '';
+  const actionSessionStatus = useLiveSessionStatus(actionSessionId);
+  const isActionSessionBusy = actionSessionStatus?.type === 'busy' || actionSessionStatus?.type === 'retry';
+  const actionSessionDirectory = actionTarget?.kind === 'session'
+    ? getSessionDirectory(actionTarget.session)
+    : '';
+  const isActionTranscriptRefreshing = Boolean(actionSessionId) && refreshingSessionId === actionSessionId;
+  const refreshTranscriptDisabled = !actionSessionDirectory || isActionTranscriptRefreshing || isActionSessionBusy;
 
   const collectSessionTreeIds = useEvent((sessionId: string): string[] => {
     const childrenByParent = new Map<string, string[]>();
@@ -168,6 +180,27 @@ export function MobileProjectsHomeContainer({
         ? t('sessions.sidebar.bulkActions.failedArchiveSingle', { count: failedIds.length })
         : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }));
     }
+  });
+
+  const handleRefreshTranscript = useEvent(() => {
+    if (!actionTarget || actionTarget.kind !== 'session') return;
+    const session = actionTarget.session;
+    const directory = getSessionDirectory(session);
+    const statusType = actionSessionStatus?.type ?? 'idle';
+    if (!directory || refreshingSessionId === session.id || statusType === 'busy' || statusType === 'retry') {
+      return;
+    }
+    setRefreshingSessionId(session.id);
+    void (async () => {
+      try {
+        await sync.refreshSessionTranscript(session.id, { directory });
+        toast.success(t('sessions.sidebar.session.menu.refreshTranscriptSuccess'));
+      } catch {
+        toast.error(t('sessions.sidebar.session.menu.refreshTranscriptFailed'));
+      } finally {
+        setRefreshingSessionId((current) => (current === session.id ? null : current));
+      }
+    })();
   });
 
   const handleOpenSessionActions = useEvent((session: MobileSessionTreeNode) => {
@@ -446,6 +479,7 @@ export function MobileProjectsHomeContainer({
               void handleUnshareFromMenu(session.id);
             }
           : undefined,
+        onRefreshTranscript: handleRefreshTranscript,
         onArchive: () => {
           void handleArchiveSession({
             id: session.id,
@@ -485,6 +519,7 @@ export function MobileProjectsHomeContainer({
     handleArchiveSession,
     handleCopyShareUrl,
     handleHardDeleteSession,
+    handleRefreshTranscript,
     handleNewWorktree,
     handleSyncProjectSessions,
     handleShareFromMenu,
@@ -520,6 +555,8 @@ export function MobileProjectsHomeContainer({
         open={actionsOpen}
         target={sheetTarget}
         actions={sheetActions}
+        refreshTranscriptDisabled={refreshTranscriptDisabled}
+        refreshTranscriptSpinning={isActionTranscriptRefreshing}
         onOpenChange={(open) => {
           if (!open) closeActions();
           else setActionsOpen(true);
