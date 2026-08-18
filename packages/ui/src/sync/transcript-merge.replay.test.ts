@@ -578,4 +578,46 @@ describe("transcript merge command-sequence replay", () => {
     expect(partText(repo.getParts(scope, "msg_a1"))).toBe("SSE 已推进")
     repo.destroy()
   })
+
+  // Production cold-start: HTTP initial 20 newest rows land first; a late
+  // durable-seed / materialize-snapshots of the full 45-row snapshot must
+  // insert the 25 unowned older rows by time.created, not append them.
+  test(
+    "replay: durable-seed unowned older snapshots insert by created, not append",
+    () => {
+      const repo = createRepo()
+      const oldest = Array.from({ length: 25 }, (_, index) => {
+        const id = `msg_old_${String(index + 1).padStart(2, "0")}`
+        return {
+          info: userMessage(id, index + 1),
+          parts: [textPart(`p_${id}`, id, "old")],
+        }
+      })
+      const newest = Array.from({ length: 20 }, (_, index) => {
+        const id = `msg_new_${String(index + 1).padStart(2, "0")}`
+        return {
+          info: userMessage(id, 100 + index),
+          parts: [textPart(`p_${id}`, id, "new")],
+        }
+      })
+      const newestOrder = newest.map((record) => record.info.id)
+      const oldestOrder = oldest.map((record) => record.info.id)
+
+      repo.apply(scope, {
+        type: "http-page",
+        purpose: "initial",
+        page: transportPage(newest, { cursor: newest[0]!.info.id, complete: false }),
+      })
+      expect(repo.getTranscript(scope).messageOrder).toEqual(newestOrder)
+
+      repo.apply(scope, {
+        type: "materialize-snapshots",
+        records: [...oldest, ...newest],
+      })
+
+      expect(repo.getTranscript(scope).messageOrder).toEqual([...oldestOrder, ...newestOrder])
+      expect(repo.getTranscript(scope).messageOrder).not.toEqual([...newestOrder, ...oldestOrder])
+      repo.destroy()
+    },
+  )
 })

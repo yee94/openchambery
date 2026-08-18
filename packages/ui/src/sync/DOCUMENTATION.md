@@ -358,9 +358,14 @@ Modules:
    exact fills use `materializeTranscriptMessage` → Query `materializeMessage`
   (`session.message`, captured transport+generation, `materialize-snapshots`).
    Durable first-paint seeds the canonical transcript from the local cache
-   before the authority tail; seeded full tool / reasoning / file parts stay
-   unverified until one background exact `session.message` revalidation
-   self-heals the cache.
+   before the authority tail **only while canonical is still empty**. After
+   `readSession` resolves, `ensureInitial` re-checks emptiness: a non-empty
+   canonical (HTTP `initial` won the race) skips seed — older rows load
+   through `fetchPreviousPage`, not a late seed. If a seed still lands on a
+   non-empty canonical, unowned snapshots insert by `time.created` (same as
+   reconcile-page), never append to the tail. Seeded full tool / reasoning /
+   file parts stay unverified until one background exact `session.message`
+   revalidation self-heals the cache.
    Slim text parts take the on-demand exact-fill path
    (`messageNeedsExactMaterialization` requires `isSlimPart`, and the set
    includes `text`) so an explicit `materializeMessage` replaces a summary

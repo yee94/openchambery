@@ -870,6 +870,8 @@ function applyOptimisticRemove(
  * First-paint local records. Empty canonical becomes a tail whose complete
  * flag and cursor stay unset so pagination is `unknown` — never `exhausted`.
  * Existing pages keep their cursor/complete; only message/part bodies update.
+ * Unowned snapshots insert by (`time.created`, id) so a late seed cannot
+ * append older rows after a newer HTTP tail.
  */
 function applyDurableSeed(
   previous: SessionTranscriptData | undefined,
@@ -948,7 +950,12 @@ function applyDurableSeed(
   const nextPages = previous.pages.map((prevPage, index) => {
     const bucket = pageBuckets[index] ?? []
     if (index === previous.pages.length - 1 && unowned.length > 0) {
-      return sharePageMessages(prevPage, [...bucket, ...unowned], nextPart, liveRevision)
+      return sharePageMessages(
+        prevPage,
+        insertPageMessagesByCreated(bucket, unowned),
+        nextPart,
+        liveRevision,
+      )
     }
     return sharePageMessages(prevPage, bucket, nextPart, liveRevision)
   })

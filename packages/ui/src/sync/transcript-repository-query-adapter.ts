@@ -1384,7 +1384,7 @@ export function createQueryTranscriptRepository(
       if (canonicalEmpty && deps.durableStore) {
         try {
           const session = await deps.durableStore.readSession(toTranscriptDurableScope(captured))
-          if (liveIdentityMatches(captured) && session.records.length > 0) {
+          if (liveIdentityMatches(captured) && readData(scope) === undefined && session.records.length > 0) {
             suppressDurableWrite += 1
             try {
               repository.apply(scope, {

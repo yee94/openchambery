@@ -1271,6 +1271,73 @@ describe("Query repository durable cache wiring", () => {
     repo.destroy()
   })
 
+  test("ensureInitial skips durable seed when HTTP initial fills canonical during the read", async () => {
+    const oldest = Array.from({ length: 25 }, (_, index) => {
+      const id = `msg_old_${String(index + 1).padStart(2, "0")}`
+      return {
+        info: userMessage(id, index + 1),
+        parts: [textPart(`p_${id}`, id, "old")],
+      }
+    })
+    const newest = Array.from({ length: 20 }, (_, index) => {
+      const id = `msg_new_${String(index + 1).padStart(2, "0")}`
+      return {
+        info: userMessage(id, 100 + index),
+        parts: [textPart(`p_${id}`, id, "new")],
+      }
+    })
+    const newestOrder = newest.map((record) => record.info.id)
+    const oldestOrder = oldest.map((record) => record.info.id)
+    const inner = createMemoryTranscriptDurableStore()
+    for (const record of [...oldest, ...newest]) {
+      await inner.upsertSettled(durableScope, record.info, record.parts)
+    }
+    let releaseRead!: () => void
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve
+    })
+    const durableStore = {
+      ...inner,
+      readSession: async (target: typeof durableScope) => {
+        await readGate
+        return inner.readSession(target)
+      },
+    }
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+      fetcher: async ({ before }) => {
+        if (!before) {
+          return transportPage(newest, { cursor: newest[0]!.info.id, complete: false })
+        }
+        return transportPage(oldest, { complete: true })
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    repo.subscribe(scope, () => {})
+    const pending = repo.ensureInitial(scope)
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(newest, { cursor: newest[0]!.info.id, complete: false }),
+    })
+    expect(repo.getTranscript(scope).messageOrder).toEqual(newestOrder)
+    releaseRead()
+    await pending
+    expect(repo.getTranscript(scope).messageOrder).toEqual(newestOrder)
+    expect(repo.getPagination(scope).boundary.kind).toBe("has-more")
+
+    const older = await repo.fetchPreviousPage(scope)
+    expect(older.messageOrder).toEqual([...oldestOrder, ...newestOrder])
+    expect(repo.getPagination(scope).isComplete).toBe(true)
+    repo.destroy()
+  })
+
   test("unapplied commands do not write the durable store", async () => {
     const inner = createMemoryTranscriptDurableStore()
     const upserts: Array<"written" | "skipped"> = []
