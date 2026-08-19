@@ -346,6 +346,14 @@ export function createQueryTranscriptRepository(
    * revalidation. Keyed by scopeKey; values are unverified message IDs.
    */
   const durableSeededExact = new Map<string, Set<string>>()
+  /**
+   * Scopes whose canonical tail came only from a durable seed. The seed now
+   * derives a conservative `has-more` boundary (hot-path entry), so without
+   * this latch a cold start would skip the authority tail entirely and serve
+   * arbitrarily stale durable content. Cleared once any http-page / SSE frame
+   * lands for the scope.
+   */
+  const seededAuthorityPending = new Set<string>()
   /** Latched P0 so a later empty/stale read cannot reopen the skeleton. */
   const p0Latches = new Map<string, true>()
   /** First on-screen paint for a scope; one hydration event per latch. */
@@ -943,6 +951,7 @@ export function createQueryTranscriptRepository(
   const needsAuthorityTail = (scope: TranscriptScope): boolean => {
     const data = readData(scope)
     if (!data || data.pages.length === 0) return true
+    if (seededAuthorityPending.has(scopeKey(resolveScopeIdentity(scope, deps)))) return true
     return boundaryFromTranscriptData(data).kind === "unknown"
   }
 
@@ -1208,6 +1217,7 @@ export function createQueryTranscriptRepository(
               optimistic: command.optimistic,
             },
           )
+          if (merge.result.applied) seededAuthorityPending.delete(scopeKey(identity))
           if (merge.result.changed) {
             notify(scope)
             enforceBudgetAfterWrite(scope)
@@ -1221,6 +1231,7 @@ export function createQueryTranscriptRepository(
             identity.sessionID,
             { type: "sse-event", event: command.event },
           )
+          if (merge.result.applied) seededAuthorityPending.delete(scopeKey(identity))
           if (merge.result.changed) notify(scope)
           return merge.result
         }
@@ -1276,6 +1287,7 @@ export function createQueryTranscriptRepository(
         case "reset": {
           prependFlights.delete(scopeKey(identity))
           durableSeededExact.delete(scopeKey(identity))
+          seededAuthorityPending.delete(scopeKey(identity))
           // Clear reserved task/checkpoint/transport families alongside the
           // canonical reset so old cursor chains cannot survive.
           cacheBudget.purgeSession(toCacheScope(scope))
@@ -1400,6 +1412,9 @@ export function createQueryTranscriptRepository(
                 pending.add(record.info.id)
               }
               if (pending.size > 0) durableSeededExact.set(flightKey, pending)
+              // Seeded tail still owes one authority fetch: clear only after an
+              // http-page / SSE frame lands (see apply below).
+              seededAuthorityPending.add(flightKey)
             } finally {
               suppressDurableWrite -= 1
             }

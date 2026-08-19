@@ -934,7 +934,10 @@ describe("Query repository durable cache wiring", () => {
     const pending = repo.ensureInitial(scope)
     await waitUntil(() => paints.some((order) => order.includes("msg_local")))
     expect(repo.getTranscript(scope).messageOrder).toContain("msg_local")
-    expect(repo.getPagination(scope).boundary.kind).toBe("unknown")
+    // Seed derives a conservative has-more boundary (cursor = oldest seeded
+    // record); the authority tail is still owed once — see the latch in
+    // ensureInitial — so freshness is unchanged from the unknown-boundary era.
+    expect(repo.getPagination(scope).boundary.kind).toBe("has-more")
     expect(repo.getPagination(scope).isComplete).toBe(false)
     expect(repo.getRequestState?.(scope)?.status).toBe("loading")
     release()
@@ -1166,7 +1169,10 @@ describe("Query repository durable cache wiring", () => {
     })
     await expect(repo.ensureInitial(scope)).rejects.toThrow()
     expect(repo.getTranscript(scope).messageOrder).toContain("msg_local")
-    expect(repo.getPagination(scope).boundary.kind).toBe("unknown")
+    // Failed authority tail keeps the seeded has-more boundary and the latch,
+    // so the next ensureInitial retries the tail instead of trusting stale
+    // durable content.
+    expect(repo.getPagination(scope).boundary.kind).toBe("has-more")
     expect(repo.getPagination(scope).isComplete).toBe(false)
     expect(repo.hasSession?.(scope)).toBe(true)
     expect(repo.getRequestState?.(scope)?.status).toBe("error")

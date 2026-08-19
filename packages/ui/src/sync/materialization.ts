@@ -354,12 +354,22 @@ function mergeMaterializedParts(
   }
 
   const snapshotIDs = new Set(incoming.map((part) => part.id))
+  // A projected frame (one that carries slim summaries) is not authoritative
+  // for removal either: it can omit or re-id full parts the transcript already
+  // holds — most acutely the durable seed a cold enter just laid down, whose
+  // full parts an authority initial page would otherwise drop and then
+  // re-fetch through a materialize storm. Hold existing *full* parts through
+  // projected frames ("detail only ever grows", the same rule displayParts
+  // applies). A full snapshot (no slim parts) still replaces authoritatively,
+  // so genuine server-side deletions keep landing.
+  const projectedFrame = incoming.some((part) => isSlimPart(part))
   const missingLiveParts = existing.filter(
     (part) =>
       !!part?.id
       && !snapshotIDs.has(part.id)
       && !skipPartTypes.has(part.type)
-      && shouldPreserveMissingPart(part, messageStillOpen),
+      && (shouldPreserveMissingPart(part, messageStillOpen)
+        || (projectedFrame && !isSlimPart(part))),
   )
   if (missingLiveParts.length === 0) return mergedParts
 

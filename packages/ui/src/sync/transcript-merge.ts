@@ -867,11 +867,15 @@ function applyOptimisticRemove(
 }
 
 /**
- * First-paint local records. Empty canonical becomes a tail whose complete
- * flag and cursor stay unset so pagination is `unknown` — never `exhausted`.
- * Existing pages keep their cursor/complete; only message/part bodies update.
- * Unowned snapshots insert by (`time.created`, id) so a late seed cannot
- * append older rows after a newer HTTP tail.
+ * First-paint local records. Empty canonical becomes a tail whose cursor is
+ * the oldest seeded message id, so pagination reads `has-more` — never
+ * `exhausted` — and a cold enter goes through the hot path instead of
+ * replaying a full authority initial (which would project slim summaries over
+ * durable full content on every cold start). A session whose durable cache
+ * happens to hold all history self-heals to `exhausted` on the first empty
+ * prepend. Existing pages keep their cursor/complete; only message/part
+ * bodies update. Unowned snapshots insert by (`time.created`, id) so a late
+ * seed cannot append older rows after a newer HTTP tail.
  */
 function applyDurableSeed(
   previous: SessionTranscriptData | undefined,
@@ -910,24 +914,29 @@ function applyDurableSeed(
   const nextPart = materialized.part
 
   if (!previous || previous.pages.length === 0) {
+    // Durable order is (`time.created`, id) ascending, so the first message is
+    // the oldest loaded record and a valid `before` cursor for older history.
+    const oldestSeededID = materialized.messages[0]?.id
+    const seededTurns = materialized.messages.filter((message) => message.role === "user").length
     const tail = pageFromMessages(
       "tail",
       materialized.messages,
       nextPart,
-      null,
+      typeof oldestSeededID === "string" && oldestSeededID.length > 0 ? oldestSeededID : null,
       false,
-      0,
+      seededTurns,
       liveRevision,
     )
+    const data = freezeSessionTranscriptData({
+      pages: [tail],
+      pageParams: [null],
+    })
     return {
-      data: freezeSessionTranscriptData({
-        pages: [tail],
-        pageParams: [null],
-      }),
+      data,
       result: {
         applied: true,
         changed: true,
-        boundary: UNKNOWN_SESSION_HISTORY_BOUNDARY,
+        boundary: boundaryFromTranscriptData(data),
       },
     }
   }

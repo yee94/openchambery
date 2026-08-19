@@ -12,8 +12,9 @@
  *   hydration phase (`idle` / `p0` / `p1` / `p2`) and `p0Satisfied`.
  * - Commands: HTTP page apply / reduced-page commit, SSE merge, optimistic
  *   add/confirm/remove, materialize-snapshots, remove-message, reset/clear.
- *   Query durable first-paint uses merge `durable-seed` (unknown pagination);
- *   it is not a store-adapter command so existing exhaustiveness stays intact.
+ *   Query durable first-paint uses merge `durable-seed` (conservative
+ *   has-more pagination derived from the oldest seeded record); it is not a
+ *   store-adapter command so existing exhaustiveness stays intact.
  * - Does not own session catalog, status, permission, question, or message queue.
  * - Does not own full-session eviction (`dropSessionCaches`); that remains a
  *   multi-domain cache operation outside this repository.
