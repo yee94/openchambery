@@ -2,6 +2,7 @@ import React from 'react';
 import { flushSync } from 'react-dom';
 import { useEvent } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
+import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
@@ -6296,6 +6297,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (!restoreKeyboardAfterOverlayRef.current) return;
             if (mobilePickerDialogsOpenRef.current) return;
             if (openSheetCountRef.current > 0) return;
+            if (isMobileOverlayFocusRestoreSuppressed()) {
+                // A session switch closed this overlay — the pending keyboard
+                // restore belongs to the previous conversation's composer.
+                restoreKeyboardAfterOverlayRef.current = false;
+                return;
+            }
             restoreKeyboardAfterOverlayRef.current = false;
             // iOS can still dismiss the freshly-raised keyboard when the tap
             // that closed the overlay finishes over non-input content — hold
@@ -6349,6 +6356,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // overlay appears.
         const timer = window.setTimeout(() => {
             restoreKeyboardAfterOverlayRef.current = false;
+            // A session switch closed the overlay — the pending restore was
+            // armed for the previous conversation's composer.
+            if (isMobileOverlayFocusRestoreSuppressed()) return;
             // Browsers need their native scroll-into-view (see expandMobileComposer).
             const textarea = textareaRef.current;
             if (textarea && document.activeElement !== textarea) {

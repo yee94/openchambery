@@ -15,6 +15,7 @@ import {
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { suppressMobileOverlayFocusRestore } from '@/lib/mobileOverlayFocusRestore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
@@ -977,6 +978,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   };
 
   const handleSelectSession = (session: Session) => {
+    // Switching sessions is navigation — the sheet's focus restore would
+    // otherwise raise the old conversation's composer keyboard.
+    suppressMobileOverlayFocusRestore();
     const directory = getSessionDirectory(session) || null;
     // Switching session switches the working directory (handled by
     // setCurrentSession) — also move the active project so the rest of the app
