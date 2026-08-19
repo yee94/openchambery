@@ -7,7 +7,7 @@
  * stable; simulated narrow observers report zero unrelated changes.
  *
  * Run:
- *   bun test packages/ui/src/sync/session-transcript-sse.performance.test.js
+ *   bunx vitest run --project @openchamber/ui packages/ui/src/sync/session-transcript-sse.performance.test.js
  */
 
 import { beforeEach, describe, expect, test } from "bun:test"
