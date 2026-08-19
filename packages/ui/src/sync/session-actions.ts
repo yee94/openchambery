@@ -717,7 +717,9 @@ async function ensureSentMessagePartsForComposerRestoration(input: {
   const generation = getRuntimeGeneration()
   const directory = input.directory ?? ""
   try {
-    await materializeTranscriptMessage(directory, input.sessionID, input.messageID)
+    await materializeTranscriptMessage(directory, input.sessionID, input.messageID, {
+      priority: "user",
+    })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`composer-restoration-materialize-failed: ${detail}`)

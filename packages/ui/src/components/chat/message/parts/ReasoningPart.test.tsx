@@ -27,7 +27,7 @@ const LONG_JUSTIFICATION =
   'when multiple sessions have the same activity state.';
 
 describe('ReasoningTimelineBlock', () => {
-  test('uses the 16px mobile lattice orb while streaming', () => {
+  test('uses the shared 14px lattice orb while streaming on mobile', () => {
     expect(reasoningPartSource).toContain('const isMobile = useUIStore((state) => state.isMobile);');
     expect(reasoningPartSource).toContain('<LatticeOrb isMobile={isMobile} className="text-[var(--tools-icon)]" />');
   });

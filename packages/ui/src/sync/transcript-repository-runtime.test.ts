@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { Message } from "@opencode-ai/sdk/v2/client"
 import { QueryClient } from "@tanstack/react-query"
 
 import { isTranscriptAuthorityRefreshInFlight } from "./transcript-authority-refresh-flight"
+import { resetExactFillSchedulerForTests } from "./transcript-exact-fill-scheduler"
 import {
   bindTranscriptRepositoryInstance,
   getTranscriptMessageMaterializationState,
@@ -269,7 +270,13 @@ describe("retryTranscriptInitial", () => {
 })
 
 describe("materializeTranscriptMessage facade", () => {
+  afterEach(() => {
+    resetExactFillSchedulerForTests()
+    unbindTranscriptRepository()
+  })
+
   test("reports idle when unbound and forwards to the bound Query repository", async () => {
+    resetExactFillSchedulerForTests()
     unbindTranscriptRepository()
     expect(getTranscriptMessageMaterializationState("/ws", "ses_1", "msg_a")).toEqual({
       sessionID: "ses_1",
@@ -348,7 +355,84 @@ describe("materializeTranscriptMessage facade", () => {
       (repo.getParts(transcriptScope("/ws", "ses_1"), "msg_a")[0] as { state?: { output?: string } })
         .state?.output,
     ).toBe("via-facade")
+    repo.destroy()
+  })
+
+  test("facade exact fills share the process-wide concurrency cap", async () => {
+    resetExactFillSchedulerForTests()
     unbindTranscriptRepository()
+    let inFlight = 0
+    let maxInFlight = 0
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: "transport-a",
+      generation: 1,
+      fetchMessage: async ({ messageID }) => {
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        inFlight -= 1
+        return {
+          info: {
+            id: messageID,
+            sessionID: "ses_1",
+            role: "assistant",
+            time: { created: 2 },
+            finish: "stop",
+          } as Message,
+          parts: [{
+            id: `t-${messageID}`,
+            messageID,
+            sessionID: "ses_1",
+            type: "tool",
+            tool: "bash",
+            state: { status: "completed", output: "ok" },
+          } as never],
+        }
+      },
+      probe: {
+        getTransport: () => "transport-a",
+        getGeneration: () => 1,
+      },
+    })
+    bindTranscriptRepositoryInstance(repo)
+    const scope = transcriptScope("/ws", "ses_1", {
+      transport: "transport-a",
+      generation: 1,
+    })
+    const ids = Array.from({ length: 8 }, (_, i) => `msg_${i}`)
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: {
+        records: ids.map((id, index) => ({
+          info: {
+            id,
+            sessionID: "ses_1",
+            role: "assistant",
+            time: { created: index + 1 },
+            finish: "stop",
+          } as Message,
+          parts: [{
+            id: `t-${id}`,
+            messageID: id,
+            sessionID: "ses_1",
+            type: "tool",
+            tool: "bash",
+            state: { status: "completed" },
+            slim: true,
+          } as never],
+        })),
+        complete: true,
+        turnCount: ids.length,
+      },
+    })
+    await Promise.all(ids.map((id) => materializeTranscriptMessage("/ws", "ses_1", id, { priority: "user" })))
+    expect(maxInFlight).toBeLessThanOrEqual(4)
+    expect(maxInFlight).toBeGreaterThan(1)
     repo.destroy()
   })
 })

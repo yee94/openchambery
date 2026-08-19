@@ -303,19 +303,21 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("part.slim === true && (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file')");
         expect(progressiveGroupSource).toContain('const materializationFlightsRef = React.useRef(new Map<string, Promise<void>>())');
         expect(progressiveGroupSource).toContain('if (materializationFlightsRef.current.has(targetMessageId)) continue;');
-        expect(progressiveGroupSource).toContain('const flight = materializeTranscriptMessage(effectiveDirectory, targetSessionId, targetMessageId)');
+        expect(progressiveGroupSource).toContain('materializeTranscriptMessage(\n                effectiveDirectory,\n                targetSessionId,\n                targetMessageId,\n                { priority: autoSkipFailed ? \'background\' : \'user\' },\n            )');
         expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
         expect(progressiveGroupSource).toContain("if (current.status === 'ready') continue;");
         expect(messageBodySource).toContain('materializationParts={materializationParts}');
         expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
     });
 
-    test('auto-materializes slim parts of completed groups without waiting for expansion', () => {
-        // Completed groups must hydrate their slim reasoning/tool parts in the
-        // background after mount (cold-start tails render slim bodies as
-        // truncated text otherwise). Active groups keep streaming via SSE.
-        expect(progressiveGroupSource).toContain('if (isActive) {\n            return;\n        }\n        requestMaterialization(false, true);');
-        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive\]\);/);
+    test('does not auto-materialize collapsed completed groups on mount', () => {
+        // Jump-to-top virtualizer remounts hundreds of folded activity rows;
+        // mount-time exact fill on every collapsed group recreated the 500+
+        // session.message storm. Collapsed rows keep slim summaries; expand
+        // (user priority) and already-expanded mount (background) still fill.
+        expect(progressiveGroupSource).toContain('if (isActive || !isExpanded) {\n            return;\n        }\n        requestMaterialization(false, true);');
+        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive \|\| !isExpanded\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive, isExpanded\]\);/);
+        expect(progressiveGroupSource).toContain("{ priority: autoSkipFailed ? 'background' : 'user' }");
     });
 
     test('background auto-fill never retries failed materializations', () => {

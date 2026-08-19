@@ -1054,7 +1054,15 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             materializationErrorsRef.current.delete(targetMessageId);
             if (materializationFlightsRef.current.has(targetMessageId)) continue;
 
-            const flight = materializeTranscriptMessage(effectiveDirectory, targetSessionId, targetMessageId)
+            // Expand / retry jump the shared exact-fill queue; mount auto-fill
+            // (autoSkipFailed) stays background so deep-history remounts cannot
+            // starve a user-driven disclosure.
+            const flight = materializeTranscriptMessage(
+                effectiveDirectory,
+                targetSessionId,
+                targetMessageId,
+                { priority: autoSkipFailed ? 'background' : 'user' },
+            )
                 .catch(() => {
                     materializationErrorsRef.current.add(targetMessageId);
                 })
@@ -1083,17 +1091,18 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         }
         onToggle();
     });
-    // Completed slim groups hydrate in the background after mount; otherwise a
-    // cold-start tail keeps truncated reasoning/tool bodies until manual expand.
+    // Expanded completed groups hydrate slim reasoning/tool bodies after mount.
+    // Collapsed groups stay on slim summaries — virtualizer jump-to-top remounts
+    // hundreds of folded rows and must not fan out exact session.message fills.
     // Active groups are excluded — their slim parts keep updating via SSE.
     // Failed messages are skipped here (autoSkipFailed) so a permanently slim
     // host record cannot turn every remount into another exact fetch.
     React.useEffect(() => {
-        if (isActive) {
+        if (isActive || !isExpanded) {
             return;
         }
         requestMaterialization(false, true);
-    }, [isActive]);
+    }, [isActive, isExpanded]);
     React.useLayoutEffect(() => {
         const anchor = pendingToggleAnchorRef.current;
         const header = activityHeaderRef.current;

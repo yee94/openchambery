@@ -102,6 +102,24 @@ function areJsonEquivalent(left: unknown, right: unknown): boolean {
 
 const MESSAGE_IDENTITY_FIELDS = ["agent", "mode", "providerID", "modelID", "variant", "model"] as const
 
+const TOKEN_COUNT_FIELDS = ["input", "output", "reasoning"] as const
+
+export function hasAnyPositiveTokenCount(tokens: unknown): boolean {
+  if (!tokens || typeof tokens !== "object") return false
+  const record = tokens as Record<string, unknown>
+  return TOKEN_COUNT_FIELDS.some(
+    (field) => typeof record[field] === "number" && Number.isFinite(record[field]) && record[field] > 0,
+  )
+}
+
+function isZeroTokenRecord(tokens: unknown): boolean {
+  if (!tokens || typeof tokens !== "object") return false
+  const record = tokens as Record<string, unknown>
+  return TOKEN_COUNT_FIELDS.every(
+    (field) => typeof record[field] !== "number" || !Number.isFinite(record[field]) || record[field] <= 0,
+  )
+}
+
 function readNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
@@ -135,6 +153,16 @@ export function mergeTranscriptMessageUpdate(existing: Message, incoming: Messag
 
   if (existing.time || incoming.time) {
     merged.time = { ...existing.time, ...incoming.time }
+  }
+
+  // Token counts accumulate per message and never regress. OpenCode stamps an
+  // assistant message with an all-zero `tokens` object from creation, so a
+  // mid-turn HTTP snapshot (materialize / recovery / reconcile upsert) that
+  // resolves after the settle ticks would otherwise blank the final counts —
+  // the settled message keeps its zero-token placeholder and derived display
+  // (assistant TPS) stays missing until the next full authority refresh.
+  if (hasAnyPositiveTokenCount(existingRecord.tokens) && isZeroTokenRecord(incomingRecord.tokens)) {
+    mergedRecord.tokens = existingRecord.tokens
   }
 
   return merged

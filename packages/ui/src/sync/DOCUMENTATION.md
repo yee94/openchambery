@@ -314,7 +314,7 @@ Modules:
 | Module | Role |
 |---|---|
 | `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
-| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded tool/reasoning/file parts revalidate via exact `session.message` after the authority tail; post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
+| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded slim or open tool/reasoning/file parts exact-fill via `session.message` after the authority tail (≤4 concurrent FIFO; settled full rows skip); post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
 | `session-authority-revalidate.ts` | Enter-and-sync 30s window keyed by transport+generation+directory+sessionID; stamped only after a successful authority pull |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
 | `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset |
@@ -324,7 +324,8 @@ Modules:
 | `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset`; observe-time 60s TTL reconcile head check for non-stale cached sessions |
 | `transcript-event-broadcast.ts` | Pure helper: list every current-runtime canonical scope that should receive one transcript `sse-event` (multi-directory broadcast; zero hits fall back to resolved directory) |
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
-| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `materializeTranscriptMessage` / `getTranscriptHydrationState` / `getTranscriptMessageMaterializationState` / `purgeTranscriptSession` / `listCanonicalTranscriptScopes` |
+| `transcript-exact-fill-scheduler.ts` | Process-wide exact `session.message` fill queue (concurrency ≤4, `user` ahead of `background`, same-key coalesce). Used by `materializeTranscriptMessage` and durable-seed background fills |
+| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `materializeTranscriptMessage` (shared exact-fill scheduler) / `getTranscriptHydrationState` / `getTranscriptMessageMaterializationState` / `purgeTranscriptSession` / `listCanonicalTranscriptScopes` |
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers plus shared exact `session.message` fetch (`fetchExactSessionMessageRecord`, transport+generation flight key; no nested store commit). Parent recovery is best-effort: a 404/failed exact fetch keeps the Host page. |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
@@ -363,16 +364,22 @@ Modules:
    canonical (HTTP `initial` won the race) skips seed — older rows load
    through `fetchPreviousPage`, not a late seed. If a seed still lands on a
    non-empty canonical, unowned snapshots insert by `time.created` (same as
-   reconcile-page), never append to the tail. Seeded full tool / reasoning /
-   file parts stay unverified until one background exact `session.message`
-   revalidation self-heals the cache.
+   reconcile-page), never append to the tail.    Seeded tool / reasoning / file parts schedule a background exact
+   `session.message` fill only when the store still holds a slim part of
+   those types, or the message snapshot is still open (`isMessageSnapshotOpen`).
+   Settled messages whose matching parts are already full skip revalidation
+   and report materialization `ready` (cold-start must not fan out one exact
+   fetch per historical tool/reasoning row). Remaining fills run with bounded
+   concurrency (≤4 FIFO) after the authority tail lands. Authority-tail pull
+   itself is gated by `seededAuthorityPending`, independent of the exact-fill
+   pending set.
    Slim text parts take the on-demand exact-fill path
    (`messageNeedsExactMaterialization` requires `isSlimPart`, and the set
    includes `text`) so an explicit `materializeMessage` replaces a summary
    with the Host full body. They stay out of the durable-seed revalidation
-   set (`messageNeedsExactRevalidation` remains `{tool, reasoning, file}`)
-   so cold-start text-only messages do not fan out exact `session.message`
-   fetches.
+   set (`messageNeedsExactRevalidation` remains `{tool, reasoning, file}` plus
+   slim/open gates) so cold-start text-only messages do not fan out exact
+   `session.message` fetches.
    Visible slim file images subscribe to that message's live parts so the fill
   upgrades in place. File `url` / `slim` are part of merge equality so an exact
   fill is not dropped as a no-op. A fill that leaves slim parts is `error`, not
@@ -724,12 +731,12 @@ both readers agree on when a frame may shrink.
   the strategy field names that asymmetry explicitly.
 
   Known limitation: `initial` resolves to `insert-only`, so a first-screen load
-  cannot refresh a message body the server has since changed. Durable-seeded
-  full tool / reasoning / file parts are the exception: after the authority
-  tail applies, those messages schedule one background exact `session.message`
-  revalidation and rewrite the durable cache when the body changed. Whether to
-  widen insert-only itself is a separate decision; the table makes the
-  behavior visible.
+  cannot refresh a message body the server has since changed for settled full
+  rows. Durable-seeded tool / reasoning / file parts still schedule one
+  background exact `session.message` fill when the store holds a slim part or
+  the snapshot is open; settled full parts skip that fan-out. Whether to widen
+  insert-only itself is a separate decision; the table makes the behavior
+  visible.
   User-triggered refresh is a reconcile, not a reset: `refreshFromAuthority`
   fetches a fresh tail, then merges `{type:"http-page", purpose:"reconcile-page"}`
   with `capturedLiveRevision` taken **before** the fetch and `liveRevision` at

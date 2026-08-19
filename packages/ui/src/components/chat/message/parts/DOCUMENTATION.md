@@ -36,12 +36,12 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     one-frame disposition flap unmounted every nested row. Structural stability against
     regressing store frames belongs to `@/sync/displayParts`, not to this component.
   - If you want to change how individual `read`/`skill` compact rows look inside or outside a group, edit `StaticToolRow` here.
-  - Every visible static call uses the shared tool lifecycle: a 14px desktop / 16px mobile `LatticeOrb` stays in the matching fixed leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Its 3×3 grid optically spans 12px inside the 14px desktop box, aligning with the 13px settled icons while retaining a 1px edge. Expanded context-group children use this same row.
+  - Every visible static call uses the shared tool lifecycle: a 14px `LatticeOrb` stays in the fixed 14px desktop / 16px mobile leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Its 3×3 grid optically spans 12px, aligning with the 13px settled icons; the mobile slot centers the orb with 1px of space on each side. Expanded context-group children use this same row.
 
 - `ContextToolGroup.tsx`
   - Collapsible "Exploring" / "Explored" header for consecutive context tools.
   - Receives `children` for the expanded list (do not import `StaticToolRow` here — that would cycle with `ProgressiveGroup`).
-  - Active state uses the 14px desktop / 16px mobile S1 `LatticeOrb` (same orb as streaming Thought in `ReasoningPart`) while any grouped call lacks settlement evidence, or while the turn is still live and no later non-explore part (final text / non-context tool) has appeared. Reasoning between explore calls does not settle the group. Individual child rows still use the shared per-call lifecycle.
+  - Active state uses the 14px S1 `LatticeOrb` in the 14px desktop / 16px mobile leading slot (same orb as streaming Thought in `ReasoningPart`) while any grouped call lacks settlement evidence, or while the turn is still live and no later non-explore part (final text / non-context tool) has appeared. Reasoning between explore calls does not settle the group. Individual child rows still use the shared per-call lifecycle.
   - The fixed leading slot restores the Search icon after every grouped call settles; the disclosure chevron stays in the trailing slot across activity states.
   - While Exploring, the whole count summary flips upward when the counts change. The 20px / 24px line box stays fixed (`min-h-0` so a flex item cannot grow with the moving layers). Nested `overflow: clip` keeps the `translateY` layers inside that box without creating an Android overlay scrollbar thumb.
 
@@ -54,7 +54,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - More than three names append the localized overflow (`{names} and {count} more` / `{names} 等{count}个`).
   - While any grouped call is still active, the summary uses the same `FlipUpText` upward flip as Explored counts.
   - Receives `children` for the expanded list (do not import `StaticToolRow` here — that would cycle with `ProgressiveGroup`).
-  - Active state uses the same 14px desktop / 16px mobile `LatticeOrb` while any grouped call lacks settlement evidence; the leading slot restores the Book icon after every grouped call settles.
+  - Active state uses the same 14px `LatticeOrb` in the 14px desktop / 16px mobile leading slot while any grouped call lacks settlement evidence; the leading slot restores the Book icon after every grouped call settles.
 
 - `skillToolGrouping.ts`
   - Grouping helpers: `collectConsecutiveSkillTools`, `getSkillNameFromToolPart`, `summarizeSkillNames`, visible-name limit.
@@ -72,7 +72,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `ToolPart.tsx`
   - Renders expandable tool rows (bash/edit/write/question/task + fallback).
   - Controls expandable header title/description/diff stats/timer and expanded output body.
-  - Every visible expandable call shows the shared 14px desktop / 16px mobile `LatticeOrb` in a matching fixed leading slot while active and keeps its original tool title. Only an unassigned live Task uses the delegating label; after assignment the row keeps `AgentAvatar` plus the agent nickname. Settled rows never keep the delegating label. The row opens the child session when a session id is present.
+  - Every visible expandable call shows the shared 14px `LatticeOrb` in the fixed 14px desktop / 16px mobile leading slot while active and keeps its original tool title. Only an unassigned live Task uses the delegating label; after assignment the row keeps `AgentAvatar` plus the agent nickname. Settled rows never keep the delegating label. The row opens the child session when a session id is present.
   - Expandable rows keep their chevron in the trailing slot, so hover and expansion preserve the lifecycle indicator. Task shows that chevron when Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
   - That setting defaults **off**: no vertical task-summary rail. Clicking the compact row always
     opens the sub-agent session (context panel / mobile session switch), including while the task
@@ -135,7 +135,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 - `ReasoningPart.tsx`
   - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
-  - Streaming Thought uses S1 `LatticeOrb` as the active indicator (14px desktop / 16px mobile, matching Explored context groups).
+  - Streaming Thought uses the 14px S1 `LatticeOrb` as the active indicator in the 14px desktop / 16px mobile leading slot, matching Explored context groups.
 
 - `JustificationBlock.tsx`
   - Renders intermediate assistant text projected into Activity as ordinary assistant Markdown at its timeline position.
@@ -144,7 +144,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 ## Current important behavior
 
 - `read` is both a **static navigation tool** (`StaticToolRow`) and a **context-group member**. Consecutive `read` / `glob` / `grep` / `list` collapse into one `ContextToolGroup` ("Exploring" from the first explore call until a later non-explore part appears or the turn is no longer live, otherwise "Explored" plus search/read/list counts). Expanded children are one `StaticToolRow` per call and keep the shared per-call loading lifecycle. Grouping is client-side on `part.tool` names — not an OpenCode API v1/v2 feature. Logic lives in `contextToolGrouping.ts` + `isContextGroupTool`; both Activity (`ProgressiveGroup.aggregateRows`) and the flat `MessageBody` loop apply it. In sorted mode those rows live inside Activity and collapse with the Processed disclosure.
-- A visible tool part stays in loading presentation until an explicit terminal status or valid end timing proves settlement. `completed`, `error`, `failed`, `timeout`, `cancelled`, and `aborted` restore the tool identity; `pending`, `started`, and `running` keep the 14px desktop / 16px mobile orb even when timing fields arrive early. Flat `MessageBody` rendering keeps lifecycle-unknown tool parts visible so this contract starts with the call row itself.
+- A visible tool part stays in loading presentation until an explicit terminal status or valid end timing proves settlement. `completed`, `error`, `failed`, `timeout`, `cancelled`, and `aborted` restore the tool identity; `pending`, `started`, and `running` keep the 14px orb in the 14px desktop / 16px mobile leading slot even when timing fields arrive early. Flat `MessageBody` rendering keeps lifecycle-unknown tool parts visible so this contract starts with the call row itself.
 - Consecutive `skill` calls collapse into one `SkillToolGroup` ("Load Skill" plus original names, max three, then localized overflow). A lone skill still uses this header so the next name can flip-animate. Skill is not a context-group tool and must not join Explored collapse.
 - For `read` / `skill` rows, the whole row is the hit target (same as Edit/Write). On dedicated mobile, clicks call `mobileActions.openFile` and open the same gesture `MobileResizableSheet` used by direct Edit/Write diffs (phone) or the right Files panel (iPad); desktop still uses context-panel `openContextFile`.
 - Do **not** revive multi-target chip merge (`+N` hidden targets on one static row). A lone non-skill static tool stays one call per row. Only context tools share an Explored header; consecutive skills share a Skill header.

@@ -13,8 +13,8 @@ export const LatticeOrb: React.FC<{
     isMobile?: boolean;
     className?: string;
     label?: string;
-}> = ({ size, isMobile = false, className, label = '' }) => {
-    const resolvedSize = size ?? (isMobile ? 16 : 14);
+}> = ({ size, className, label = '' }) => {
+    const resolvedSize = size ?? 14;
     const cells = Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => {
         const x = index % GRID_SIZE;
         const y = Math.floor(index / GRID_SIZE);

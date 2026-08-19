@@ -123,13 +123,32 @@ export function messageNeedsExactMaterialization(parts: readonly Part[]): boolea
 }
 
 /**
- * Whether a durable-seeded message has tool / reasoning / file parts that
- * still need an exact `session.message` revalidation even when those parts
- * already look full. Text is intentionally excluded so cold-start
- * text-only messages do not fan out exact fetches.
+ * Whether a durable-seeded message still needs an exact `session.message`
+ * revalidation after cold start.
+ *
+ * - No tool / reasoning / file parts → false (text-only stays out of the fan-out).
+ * - Any slim tool / reasoning / file part → true (needs fill).
+ * - All such parts already full and the message snapshot is settled → false
+ *   (cold-start must not re-fetch hundreds of completed full messages).
+ * - All such parts full but the snapshot is still open → true (mid-turn
+ *   durable snapshot may be stale).
+ * - When `info` is omitted, full target parts skip revalidation (same as settled).
  */
-export function messageNeedsExactRevalidation(parts: readonly Part[]): boolean {
-  return parts.some((part) => EXACT_REVALIDATION_PART_TYPES.has(part.type))
+export function messageNeedsExactRevalidation(
+  parts: readonly Part[],
+  info?: Message | null,
+): boolean {
+  let hasTarget = false
+  let hasSlimTarget = false
+  for (const part of parts) {
+    if (!EXACT_REVALIDATION_PART_TYPES.has(part.type)) continue
+    hasTarget = true
+    if (isSlimPart(part)) hasSlimTarget = true
+  }
+  if (!hasTarget) return false
+  if (hasSlimTarget) return true
+  if (!info) return false
+  return isMessageSnapshotOpen(info)
 }
 
 export type TranscriptHydrationPhase = "idle" | "p0" | "p1" | "p2"
