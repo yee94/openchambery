@@ -16,6 +16,7 @@ import { changedFilesPopoverClassName, changedFilesPopoverStyle } from './change
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Icon } from "@/components/icon/Icon";
 import type { TurnActivityRecord } from './lib/turns/types';
+import { useSessionSurface } from './SessionSurfaceContext';
 
 interface TurnChangedFilesDropdownProps {
     activityParts: TurnActivityRecord[] | undefined;
@@ -25,7 +26,9 @@ export const TurnChangedFilesDropdown: React.FC<TurnChangedFilesDropdownProps> =
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [portalContainer, setPortalContainer] = React.useState<HTMLElement | null>(null);
     const triggerButtonRef = React.useRef<HTMLButtonElement | null>(null);
-    const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
+    const sessionSurface = useSessionSurface();
+    const globalDirectory = useDirectoryStore((s) => s.currentDirectory);
+    const currentDirectory = sessionSurface.directory || globalDirectory;
     const isGitRepo = useIsGitRepo(currentDirectory);
 
     const changedFiles = React.useMemo<ChangedFile[]>(() => {
@@ -56,7 +59,15 @@ export const TurnChangedFilesDropdown: React.FC<TurnChangedFilesDropdownProps> =
         const store = useUIStore.getState();
         const relativePath = toRelativePath(file.path, currentDirectory);
         if (!store.isMobile) {
-            store.openContextDiff(currentDirectory, relativePath, false, 'turn');
+            store.openContextDiff(
+                currentDirectory,
+                relativePath,
+                false,
+                'turn',
+                undefined,
+                undefined,
+                sessionSurface.sessionId,
+            );
             setIsExpanded(false);
             return;
         }

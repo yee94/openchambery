@@ -154,4 +154,18 @@ describe('DiffView turn-scope on-demand session.diff contract', () => {
     expect(diffViewSource).toContain('setFetchedTurnFullDiffs(null)');
     expect(diffViewSource).toContain('turnDiffError');
   });
+
+  test('scopes turn diffs to the owning session instead of the global current session', () => {
+    // Nested/subagent panels pass sessionId; blank/absent falls back to the primary session.
+    expect(diffViewSource).toContain("const resolvedSessionId = (typeof sessionId === 'string' && sessionId.trim())");
+    expect(diffViewSource).toContain('        ? sessionId.trim()');
+    expect(diffViewSource).toContain('        : globalSessionId;');
+    // Transcript scan and session.diff fetch must both use the resolved session…
+    expect(diffViewSource).toContain("useSessionMessages(resolvedSessionId ?? ''");
+    expect(diffViewSource).toContain('sessionID: resolvedSessionId,');
+    // …while review stays attached to the primary chat session.
+    expect(diffViewSource).toContain('originalSessionID: globalSessionId,');
+    // Directory: explicit panel root wins over the primary effective directory.
+    expect(diffViewSource).toContain('const effectiveDirectory = (typeof directory === \'string\' && directory.trim())');
+  });
 });

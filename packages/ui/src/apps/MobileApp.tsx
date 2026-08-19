@@ -2395,6 +2395,8 @@ const MobileShell: React.FC<{
   const [changesOpen, setChangesOpen] = React.useState(false);
   const [turnDiffOpen, setTurnDiffOpen] = React.useState(false);
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
+  // Owning session for the turn-diff sheet; null = primary chat session.
+  const [turnDiffSessionId, setTurnDiffSessionId] = React.useState<string | null>(null);
   const [mcpOpen, setMcpOpen] = React.useState(false);
   const [isMcpRefreshing, setIsMcpRefreshing] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -2472,6 +2474,7 @@ const MobileShell: React.FC<{
   const openFilesSurface = useEvent(() => {
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setTurnDiffSessionId(null);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     if (isIPad) {
@@ -2498,6 +2501,7 @@ const MobileShell: React.FC<{
 
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setTurnDiffSessionId(null);
     setPendingChangesDiff(null);
     setChangesOpen(false);
 
@@ -2541,6 +2545,7 @@ const MobileShell: React.FC<{
   const openChangesSurface = useEvent((diff: PendingMobileChangesDiff | null = null) => {
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setTurnDiffSessionId(null);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setPendingChangesDiff(diff);
@@ -2552,12 +2557,13 @@ const MobileShell: React.FC<{
     setChangesOpen(true);
   });
 
-  const openTurnDiffSurface = useEvent((messageId?: string) => {
+  const openTurnDiffSurface = useEvent((messageId?: string, sessionId?: string | null) => {
     setPendingChangesDiff(null);
     setChangesOpen(false);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setTurnDiffMessageId(messageId ?? null);
+    setTurnDiffSessionId(typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null);
     if (isIPad) {
       setIpadRightPanel('turn-diff');
       if (isPortrait) setIpadSidebarOpen(false);
@@ -3274,7 +3280,13 @@ const MobileShell: React.FC<{
                         </Button>
                       </header>
                       <div className="min-h-0 flex-1 overflow-hidden">
-                        <DiffView hideStackedFileSidebar diffScope="turn" turnMessageId={turnDiffMessageId} flushContent />
+                        <DiffView
+                          hideStackedFileSidebar
+                          diffScope="turn"
+                          turnMessageId={turnDiffMessageId}
+                          sessionId={turnDiffSessionId}
+                          flushContent
+                        />
                       </div>
                     </div>
                   ) : pendingChangesDiff?.toolPatches?.length ? (
@@ -3401,7 +3413,13 @@ const MobileShell: React.FC<{
             initiallyExpanded
           >
             <ErrorBoundary>
-              <DiffView hideStackedFileSidebar diffScope="turn" turnMessageId={turnDiffMessageId} flushContent />
+              <DiffView
+                hideStackedFileSidebar
+                diffScope="turn"
+                turnMessageId={turnDiffMessageId}
+                sessionId={turnDiffSessionId}
+                flushContent
+              />
             </ErrorBoundary>
         </MobileResizableSheet>
 

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.2] - 2026-08-19
+
+- **Subagent 变更文件可查看：** 在子会话面板点击变更文件时，diff 使用该子会话的 session/directory 加载 turn 差异，不再误用父会话导致「无法查看变更内容」；移动端（iPhone / iPad）的 turn 差异面板同样按所属子会话加载。
+
 ## [1.17.1-beta.1] - 2026-08-19
 
 - **工具 loading 点阵对齐：** 槽宽保持桌面 14px / 移动 16px，点阵在盒子内放大到约 12px，与 book / search 图标同一列；「探索中」不再把前导槽拉到 18px。

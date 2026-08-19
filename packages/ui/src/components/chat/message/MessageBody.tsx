@@ -190,12 +190,16 @@ const TurnChangesPreview = React.memo(({
 }) => {
     const { t } = useI18n();
     const effectiveDirectory = useEffectiveDirectory();
+    const sessionSurface = useSessionSurface();
+    // Nested/subagent surfaces own their directory + session; primary falls back to global.
+    const diffDirectory = sessionSurface.directory || effectiveDirectory;
+    const diffSessionId = sessionSurface.sessionId;
     const navigateToDiff = useUIStore((state) => state.navigateToDiff);
     const openContextDiff = useUIStore((state) => state.openContextDiff);
     const mobileActions = useMobileAppActions();
     const visibleFiles = files.slice(0, 5);
     const hiddenCount = Math.max(0, files.length - visibleFiles.length);
-    const canOpen = Boolean(mobileActions || (!isMobile && effectiveDirectory) || (isMobile && isLatestTurn));
+    const canOpen = Boolean(mobileActions || (!isMobile && diffDirectory) || (isMobile && isLatestTurn));
     const fileCountLabel = files.length === 1
         ? t('chat.pendingChanges.fileCountSingle', { count: files.length })
         : t('chat.pendingChanges.fileCountPlural', { count: files.length });
@@ -220,12 +224,12 @@ const TurnChangesPreview = React.memo(({
 
     const openTurnDiff = useEvent((file: string) => {
         if (mobileActions) {
-            mobileActions.openTurnDiff(turnId);
+            mobileActions.openTurnDiff(turnId, diffSessionId);
             return;
         }
 
-        if (!isMobile && effectiveDirectory) {
-            openContextDiff(effectiveDirectory, file, false, 'turn', undefined, turnId);
+        if (!isMobile && diffDirectory) {
+            openContextDiff(diffDirectory, file, false, 'turn', undefined, turnId, diffSessionId);
             return;
         }
 

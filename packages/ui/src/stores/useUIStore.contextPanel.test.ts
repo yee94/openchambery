@@ -16,7 +16,7 @@ describe('useUIStore context panel tabs', () => {
   test('opens a turn-scoped file diff at the requested line', () => {
     const directory = '/repo';
 
-    useUIStore.getState().openContextDiff(directory, 'src/app.ts', false, 'turn', 42, ' msg_turn_1 ');
+    useUIStore.getState().openContextDiff(directory, 'src/app.ts', false, 'turn', 42, ' msg_turn_1 ', ' ses_child ');
 
     const tab = useUIStore.getState().contextPanelByDirectory[directory]?.tabs[0];
     expect(tab?.mode).toBe('diff');
@@ -24,13 +24,15 @@ describe('useUIStore context panel tabs', () => {
     expect(tab?.diffScope).toBe('turn');
     expect(tab?.diffTargetLine).toBe(42);
     expect(tab?.diffTurnMessageId).toBe('msg_turn_1');
+    expect(tab?.diffSessionId).toBe('ses_child');
 
-    useUIStore.getState().openContextDiff(directory, 'src/app.ts', false, 'turn', 7, 'msg_turn_2');
+    useUIStore.getState().openContextDiff(directory, 'src/app.ts', false, 'turn', 7, 'msg_turn_2', 'ses_child_2');
 
     const reopenedTabs = useUIStore.getState().contextPanelByDirectory[directory]?.tabs ?? [];
     expect(reopenedTabs).toHaveLength(1);
     expect(reopenedTabs[0]?.diffTargetLine).toBe(7);
     expect(reopenedTabs[0]?.diffTurnMessageId).toBe('msg_turn_2');
+    expect(reopenedTabs[0]?.diffSessionId).toBe('ses_child_2');
   });
 
   test('keeps a clicked tool patch transient and clears it for regular diff navigation', () => {

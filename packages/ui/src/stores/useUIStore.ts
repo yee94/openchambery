@@ -48,6 +48,8 @@ type ContextPanelTab = {
   diffScope: PendingDiffScope | null;
   diffTargetLine?: number | null;
   diffTurnMessageId: string | null;
+  /** Session that owns turn-scoped diffs (nested/subagent panels; not global currentSessionId). */
+  diffSessionId: string | null;
   touchedAt: number;
 };
 
@@ -62,6 +64,8 @@ type ContextPanelTabDescriptor = {
   diffScope?: PendingDiffScope | null;
   diffTargetLine?: number | null;
   diffTurnMessageId?: string | null;
+  /** Session that owns turn-scoped diffs (nested/subagent panels). */
+  diffSessionId?: string | null;
 };
 
 type ContextPanelDirectoryState = {
@@ -232,6 +236,15 @@ const normalizeContextDiffTurnMessageId = (value: unknown): string | null => {
   return trimmed || null;
 };
 
+const normalizeContextDiffSessionId = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
 const buildDefaultContextPanelTabDedupeKey = (mode: ContextPanelMode, targetPath: string | null): string => {
   if (mode === 'file') {
     return targetPath || mode;
@@ -288,6 +301,7 @@ const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPa
       ? Math.max(1, Math.trunc(descriptor.diffTargetLine))
       : null,
     diffTurnMessageId: normalizeContextDiffTurnMessageId(descriptor.diffTurnMessageId),
+    diffSessionId: normalizeContextDiffSessionId(descriptor.diffSessionId),
     touchedAt: Date.now(),
   };
 };
@@ -332,6 +346,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       diffScope?: unknown;
       diffTargetLine?: unknown;
       diffTurnMessageId?: unknown;
+      diffSessionId?: unknown;
       touchedAt?: unknown;
     };
 
@@ -365,6 +380,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
         ? Math.max(1, Math.trunc(candidate.diffTargetLine))
         : null,
       diffTurnMessageId: normalizeContextDiffTurnMessageId(candidate.diffTurnMessageId),
+      diffSessionId: normalizeContextDiffSessionId(candidate.diffSessionId),
       touchedAt: typeof candidate.touchedAt === 'number' && Number.isFinite(candidate.touchedAt)
         ? candidate.touchedAt
         : Date.now(),
@@ -421,6 +437,7 @@ const upsertContextPanelTab = (
           ...tab,
           diffTargetLine: nextTab.diffTargetLine,
           diffTurnMessageId: nextTab.diffTurnMessageId,
+          diffSessionId: nextTab.diffSessionId,
           mode: nextTab.mode,
           targetPath: nextTab.targetPath || tab.targetPath,
           dedupeKey: nextTab.dedupeKey,
@@ -839,8 +856,8 @@ interface UIStore {
    */
   syncWorkspacePanelsForSessionSwitch: (args: SessionWorkspacePanelSwitchArgs) => void;
   openContextPanelTab: (directory: string, tab: ContextPanelTabDescriptor) => void;
-  openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number, turnMessageId?: string | null) => void;
-  openContextToolDiff: (directory: string, filePath: string, patches: ReadonlyArray<{ path: string; patch: string }>, targetLine?: number, turnMessageId?: string | null) => void;
+  openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
+  openContextToolDiff: (directory: string, filePath: string, patches: ReadonlyArray<{ path: string; patch: string }>, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
   openContextFileDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null) => void;
   openContextFile: (directory: string, filePath: string) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
@@ -1368,7 +1385,7 @@ export const useUIStore = create<UIStore>()(
           });
         },
 
-        openContextDiff: (directory, filePath, staged = false, scope = null, targetLine, turnMessageId) => {
+        openContextDiff: (directory, filePath, staged = false, scope = null, targetLine, turnMessageId, sessionId) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedFilePath = (filePath || '').trim();
           if (!normalizedDirectory || !normalizedFilePath) {
@@ -1384,10 +1401,11 @@ export const useUIStore = create<UIStore>()(
             diffScope,
             diffTargetLine: targetLine,
             diffTurnMessageId: turnMessageId,
+            diffSessionId: sessionId,
           });
         },
 
-        openContextToolDiff: (directory, filePath, patches, targetLine, turnMessageId) => {
+        openContextToolDiff: (directory, filePath, patches, targetLine, turnMessageId, sessionId) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedFilePath = (filePath || '').trim();
           const normalizedPatches = patches.flatMap((entry) => {
@@ -1406,6 +1424,7 @@ export const useUIStore = create<UIStore>()(
             diffScope: 'turn',
             diffTargetLine: targetLine,
             diffTurnMessageId: turnMessageId,
+            diffSessionId: sessionId,
           };
 
           set((state) => {

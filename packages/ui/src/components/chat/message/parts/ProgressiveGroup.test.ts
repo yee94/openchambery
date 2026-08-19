@@ -389,8 +389,9 @@ describe('progressive activity presentation', () => {
     });
 
     test('turn changes preview carries historical turn identity across desktop and dedicated mobile', () => {
-        expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId);');
-        expect(messageBodySource).toContain("openContextDiff(effectiveDirectory, file, false, 'turn', undefined, turnId);");
+        expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId);');
+        expect(messageBodySource).toContain("openContextDiff(diffDirectory, file, false, 'turn', undefined, turnId, diffSessionId);");
+        expect(messageBodySource).toContain('const diffSessionId = sessionSurface.sessionId;');
         expect(messageBodySource).toContain('const visibleFiles = files.slice(0, 5);');
         expect(messageBodySource).toContain('&& !hasAuthoritativeChangedFiles');
     });

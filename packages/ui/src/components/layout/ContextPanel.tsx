@@ -2871,6 +2871,8 @@ export const ContextPanel: React.FC = () => {
                 showOpenInEditorAction
                 diffScope={tab.diffScope ?? (tab.stagedDiff ? 'staged' : 'working')}
                 turnMessageId={tab.diffTurnMessageId}
+                sessionId={tab.diffSessionId}
+                directory={directoryKey}
                 onDiffScopeChange={handleDiffScopeChange}
                 targetFilePath={tab.targetPath}
                 targetLine={tab.diffTargetLine ?? null}

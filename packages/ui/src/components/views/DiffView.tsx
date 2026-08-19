@@ -969,6 +969,16 @@ interface DiffViewProps {
     diffScope?: DiffScope;
     /** Assistant message whose preceding user message owns the requested turn snapshot. */
     turnMessageId?: string | null;
+    /**
+     * Session that owns turn-scoped diffs. Nested/subagent panels must pass the
+     * surface session — global currentSessionId is the parent and will miss child turns.
+     */
+    sessionId?: string | null;
+    /**
+     * Directory for turn-scoped message/diff lookup. Defaults to the primary
+     * effective directory; nested panels should pass their context-panel root.
+     */
+    directory?: string | null;
     onDiffScopeChange?: (scope: Extract<DiffScope, 'working' | 'staged' | 'turn'>) => void;
     targetFilePath?: string | null;
     /** Render diff content flush with the container edges (no outer padding). */
@@ -992,6 +1002,8 @@ export const DiffView: React.FC<DiffViewProps> = ({
     showOpenInEditorAction = false,
     diffScope = 'all',
     turnMessageId = null,
+    sessionId = null,
+    directory = null,
     onDiffScopeChange,
     targetFilePath = null,
     targetLine = null,
@@ -1003,7 +1015,10 @@ export const DiffView: React.FC<DiffViewProps> = ({
 }) => {
     const { t } = useI18n();
     const { git, files } = useRuntimeAPIs();
-    const effectiveDirectory = useEffectiveDirectory();
+    const fallbackDirectory = useEffectiveDirectory();
+    const effectiveDirectory = (typeof directory === 'string' && directory.trim())
+        ? directory.trim()
+        : fallbackDirectory;
     const { screenWidth, isMobile } = useDeviceInfo();
 
     const isGitRepo = useIsGitRepo(effectiveDirectory ?? null);
@@ -1040,14 +1055,18 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const diffWrapLinesStore = useUIStore((state) => state.diffWrapLines);
     const setDiffWrapLines = useUIStore((state) => state.setDiffWrapLines);
     const openContextFileAtLine = useUIStore((state) => state.openContextFileAtLine);
-    const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-    const sessionMessages = useSessionMessages(currentSessionId ?? '', effectiveDirectory ?? undefined);
+    const globalSessionId = useSessionUIStore((state) => state.currentSessionId);
+    // Prefer explicit session (nested/subagent panel); fall back to primary chat session.
+    const resolvedSessionId = (typeof sessionId === 'string' && sessionId.trim())
+        ? sessionId.trim()
+        : globalSessionId;
+    const sessionMessages = useSessionMessages(resolvedSessionId ?? '', effectiveDirectory ?? undefined);
     const diffWrapLines = diffWrapLinesStore;
     const forcedStaged = activeDiffScope === 'staged' ? true : activeDiffScope === 'working' ? false : null;
     const activeDiffStaged = forcedStaged ?? displayFileStaged;
 
     const isMobileLayout = isMobile || screenWidth <= 768;
-    const showReviewAction = Boolean(currentSessionId) && activeDiffScope !== 'turn' && !isMobileLayout && !isVSCodeRuntime();
+    const showReviewAction = Boolean(resolvedSessionId) && activeDiffScope !== 'turn' && !isMobileLayout && !isVSCodeRuntime();
     const showFileSidebar = !hideStackedFileSidebar && !isMobileLayout && screenWidth >= 1024;
     const diffScrollRef = React.useRef<HTMLElement | null>(null);
     const fileSectionRefs = React.useRef(new Map<string, HTMLDivElement | null>());
@@ -1137,7 +1156,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return;
         }
 
-        if (!currentSessionId || lastTurnDiffs.length === 0) {
+        if (!resolvedSessionId || lastTurnDiffs.length === 0) {
             setFetchedTurnFullDiffs(null);
             setTurnDiffError(null);
             return;
@@ -1155,7 +1174,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
 
         void opencodeClient
             .getSessionDiff({
-                sessionID: currentSessionId,
+                sessionID: resolvedSessionId,
                 directory: effectiveDirectory,
                 messageID: resolvedTurnUserMessageId,
             })
@@ -1176,7 +1195,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         };
     }, [
         activeDiffScope,
-        currentSessionId,
+        resolvedSessionId,
         effectiveDirectory,
         lastTurnDiffs,
         resolvedTurnUserMessageId,
@@ -1522,8 +1541,9 @@ export const DiffView: React.FC<DiffViewProps> = ({
     }, [cancelPendingScrollAlignment, changedFiles, queueVisibleStackedFilesSync]);
 
     const handleStartReviewFlow = React.useCallback(async (execution: ReviewFlowExecution) => {
-        if (!currentSessionId) return;
-        const directory = useSessionUIStore.getState().getDirectoryForSession(currentSessionId) || effectiveDirectory || '';
+        // Review attaches to the primary chat session, not a nested panel session.
+        if (!globalSessionId) return;
+        const directory = useSessionUIStore.getState().getDirectoryForSession(globalSessionId) || effectiveDirectory || '';
         if (!directory) {
             toast.error(t('diffView.reviewDialog.toast.noSessionDirectory'));
             return;
@@ -1532,7 +1552,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         setReviewFlowSubmitting(true);
         try {
             await startReviewFlow({
-                originalSessionID: currentSessionId,
+                originalSessionID: globalSessionId,
                 directory,
                 providerID: execution.providerID,
                 modelID: execution.modelID,
@@ -1549,7 +1569,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         } finally {
             setReviewFlowSubmitting(false);
         }
-    }, [currentSessionId, effectiveDirectory, t]);
+    }, [globalSessionId, effectiveDirectory, t]);
 
     const scrollToFile = React.useCallback((path: string): boolean => {
         const node = fileSectionRefs.current.get(path);

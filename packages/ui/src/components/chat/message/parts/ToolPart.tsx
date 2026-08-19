@@ -1937,9 +1937,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
     const mobileActions = useMobileAppActions();
     const sessionSurface = useSessionSurface();
-    const currentDirectory = sessionSurface.kind === 'embedded'
-        ? sessionSurface.directory ?? ''
-        : effectiveDirectory ?? '';
+    // Nested/embedded surfaces own their directory; primary falls back to the effective directory.
+    const currentDirectory = sessionSurface.directory || effectiveDirectory || '';
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = normalizedPartTool === 'task';
@@ -2438,7 +2437,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 targetLine,
                             });
                         } else if (normalizedPartTool === 'apply_patch') {
-                            mobileActions.openTurnDiff(messageId);
+                            mobileActions.openTurnDiff(messageId, sessionSurface.sessionId);
                         } else {
                             mobileActions.openChanges({ diffPath: relativePath, staged: false, targetLine });
                         }
@@ -2452,9 +2451,10 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 toolPatches,
                                 targetLine,
                                 messageId,
+                                sessionSurface.sessionId,
                             );
                         } else {
-                            openContextDiff(currentDirectory, relativePath, false, 'turn', targetLine, messageId);
+                            openContextDiff(currentDirectory, relativePath, false, 'turn', targetLine, messageId, sessionSurface.sessionId);
                         }
                     }
                     return;
@@ -2516,13 +2516,18 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
         if (normalizedPartTool === 'apply_patch' && mobileActions) {
             e.stopPropagation();
-            mobileActions.openTurnDiff(messageId);
+            mobileActions.openTurnDiff(messageId, sessionSurface.sessionId);
             return;
         }
 
         if (normalizedPartTool === 'apply_patch' && currentDirectory && !mobileActions && !isMobile && !runtime?.runtime.isVSCode) {
             e.stopPropagation();
-            openContextPanelTab(currentDirectory, { mode: 'diff', diffScope: 'turn', diffTurnMessageId: messageId });
+            openContextPanelTab(currentDirectory, {
+                mode: 'diff',
+                diffScope: 'turn',
+                diffTurnMessageId: messageId,
+                diffSessionId: sessionSurface.sessionId,
+            });
             return;
         }
 
