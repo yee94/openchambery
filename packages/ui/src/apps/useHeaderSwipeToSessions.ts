@@ -18,6 +18,8 @@ import { evaluateSwipeThresholdHaptic, triggerMobileHaptic } from '@/hooks/strea
  *   already-recognized swipe.
  * - Composer surfaces and horizontally-scrollable ancestors are excluded so
  *   the gesture stays separate from session switching and horizontal scrolling.
+ * - An expanded text selection anchored inside the chat body owns the touch:
+ *   long-press selection and selection-handle drags never arm the swipe.
  * - Once a leftward open candidate is armed, cancel only by retreating past the
  *   lower cancel threshold — mild off-axis arcs do not drop an armed candidate.
  */
@@ -197,6 +199,46 @@ const isExcludedTarget = (touch: Touch): boolean => {
 };
 
 // ---------------------------------------------------------------------------
+// Text-selection exclusion
+// ---------------------------------------------------------------------------
+
+/** Structural selection probe so the exclusion rule stays unit-testable without a DOM. */
+export interface HeaderSwipeSelectionProbe {
+  rangeCount: number;
+  isCollapsed: boolean;
+  anchorNode: {
+    nodeType: number;
+    parentElement: unknown;
+  } | null;
+}
+
+const ELEMENT_NODE_TYPE = 1;
+
+/**
+ * Whether an expanded text selection anchored inside the gesture host should
+ * own the touch instead of the swipe. Selecting message text starts with a
+ * long press and drag handles extend the selection horizontally; those drags
+ * must not be recognized as the session-panel swipe.
+ */
+export const isHeaderSwipeSelectionExcluded = (
+  selection: HeaderSwipeSelectionProbe | null,
+  root: HTMLElement | null,
+): boolean => {
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
+  if (!root) return true;
+  const node = selection.anchorNode;
+  if (!node) return false;
+  const element = node.nodeType === ELEMENT_NODE_TYPE
+    ? node as unknown as Element
+    : node.parentElement as Element | null;
+  return Boolean(element && root.contains(element));
+};
+
+const hasHostTextSelection = (root: HTMLElement): boolean => (
+  isHeaderSwipeSelectionExcluded(window.getSelection(), root)
+);
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -305,7 +347,7 @@ export const useHeaderSwipeToSessions = (
       const touch = event.touches[0];
       tracking = true;
       viewportWidth = window.innerWidth;
-      startedOnExcludedTarget = isExcludedTarget(touch);
+      startedOnExcludedTarget = isExcludedTarget(touch) || hasHostTextSelection(element);
       horizontalIntent = null;
       previewStarted = false;
       thresholdReached = false;
@@ -329,6 +371,9 @@ export const useHeaderSwipeToSessions = (
       const dy = touch.clientY - gestureState.segmentStart.clientY;
 
       if (horizontalIntent === null) {
+        // Long-press selection can appear mid-touch before intent locks; once
+        // the selection owns the touch, this touch never arms the swipe.
+        if (hasHostTextSelection(element)) return;
         const absDx = Math.abs(dx);
         if (absDx < INTENT_DISTANCE) return;
         if (Math.abs(dy) > absDx * MAX_OFF_AXIS_RATIO) return;

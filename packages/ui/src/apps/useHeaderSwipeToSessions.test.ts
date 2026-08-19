@@ -4,10 +4,11 @@ import {
   evaluateHeaderSwipe,
   getHeaderSwipeBackProgress,
   getHeaderSwipePresentationProgress,
+  isHeaderSwipeSelectionExcluded,
   updateHeaderSwipeGestureState,
 } from './useHeaderSwipeToSessions';
 
-import type { HeaderSwipeInput } from './useHeaderSwipeToSessions';
+import type { HeaderSwipeInput, HeaderSwipeSelectionProbe } from './useHeaderSwipeToSessions';
 
 /**
  * Pure-function tests for evaluateHeaderSwipe.
@@ -196,6 +197,53 @@ describe('getHeaderSwipePresentationProgress', () => {
     expect(getHeaderSwipePresentationProgress(startX, 130, viewportWidth)).toBe(1);
     expect(getHeaderSwipePresentationProgress(startX, 200, viewportWidth)).toBe(0);
     expect(getHeaderSwipePresentationProgress(startX, 130, viewportWidth)).toBe(1);
+  });
+});
+
+describe('isHeaderSwipeSelectionExcluded', () => {
+  const makeHost = () => {
+    const child = { nodeType: 1, parentElement: null as unknown as HTMLElement };
+    const root = {
+      nodeType: 1,
+      contains: (node: unknown) => node === root || node === child,
+    } as unknown as HTMLElement;
+    child.parentElement = root;
+    return { root, child };
+  };
+
+  const selection = (anchorNode: HeaderSwipeSelectionProbe['anchorNode']): HeaderSwipeSelectionProbe => ({
+    rangeCount: 1,
+    isCollapsed: false,
+    anchorNode,
+  });
+
+  test('never excludes without an expanded selection', () => {
+    const { root, child } = makeHost();
+    expect(isHeaderSwipeSelectionExcluded(null, root)).toBe(false);
+    expect(isHeaderSwipeSelectionExcluded({ rangeCount: 0, isCollapsed: false, anchorNode: child }, root)).toBe(false);
+    expect(isHeaderSwipeSelectionExcluded({ rangeCount: 1, isCollapsed: true, anchorNode: child }, root)).toBe(false);
+    expect(isHeaderSwipeSelectionExcluded({ rangeCount: 1, isCollapsed: false, anchorNode: null }, root)).toBe(false);
+  });
+
+  test('excludes when a text selection is anchored inside the host', () => {
+    const { root, child } = makeHost();
+    // Text node anchor: exclusion resolves through its parent element chain.
+    const textNode = { nodeType: 3, parentElement: child };
+    expect(isHeaderSwipeSelectionExcluded(selection(textNode), root)).toBe(true);
+    // Element node anchor: the anchor itself must be contained.
+    expect(isHeaderSwipeSelectionExcluded(selection(child), root)).toBe(true);
+  });
+
+  test('keeps the gesture for selections outside the host', () => {
+    const { root } = makeHost();
+    const outsideParent = { nodeType: 1 };
+    const outside = { nodeType: 3, parentElement: outsideParent };
+    expect(isHeaderSwipeSelectionExcluded(selection(outside), root)).toBe(false);
+  });
+
+  test('treats an expanded selection as owning the touch when the host is unknown', () => {
+    const { child } = makeHost();
+    expect(isHeaderSwipeSelectionExcluded(selection(child), null)).toBe(true);
   });
 });
 
