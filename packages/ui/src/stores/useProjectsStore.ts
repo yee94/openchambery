@@ -876,18 +876,33 @@ export const useProjectsStore = create<ProjectsStore>()(
       if (isVSCodeProjectsRuntime) {
         return;
       }
-      const { projects, activeProjectId } = get();
+      const { projects, activeProjectId, manualProjectOrder } = get();
       const projectIndex = projects.findIndex((project) => project.id === id);
-      if (projectIndex <= 0) {
+      if (projectIndex < 0) {
         return;
       }
 
-      const nextProjects = [...projects];
-      const [project] = nextProjects.splice(projectIndex, 1);
-      nextProjects.unshift(project);
+      const needsRegistryMove = projectIndex > 0;
+      const needsManualMove = manualProjectOrder.length > 0 && manualProjectOrder[0] !== id;
+      if (!needsRegistryMove && !needsManualMove) {
+        return;
+      }
 
-      set({ projects: nextProjects });
-      persistProjects(nextProjects, activeProjectId);
+      let nextProjects = projects;
+      if (needsRegistryMove) {
+        nextProjects = [...projects];
+        const [project] = nextProjects.splice(projectIndex, 1);
+        nextProjects.unshift(project);
+      }
+
+      // The sidebar's default sort is 'manual' and renders by manualProjectOrder, so an
+      // activity promotion must advance both the registry order and the manual order.
+      const nextManualOrder = needsManualMove
+        ? [id, ...manualProjectOrder.filter((projectId) => projectId !== id)]
+        : manualProjectOrder;
+
+      set({ projects: nextProjects, manualProjectOrder: nextManualOrder });
+      persistProjects(nextProjects, activeProjectId, nextManualOrder);
     },
 
     resetForRuntimeSwitch: () => {
@@ -942,10 +957,17 @@ export const useProjectsStore = create<ProjectsStore>()(
       }
 
       const incomingIds = new Set(incomingProjects.map((p) => p.id));
-      const cleanedOrder = get().manualProjectOrder.filter((id) => incomingIds.has(id));
-      set({ projects: incomingProjects, activeProjectId: incomingActive, manualProjectOrder: cleanedOrder });
+      // The server settings projects order is the cross-runtime order contract:
+      // another runtime's drag or activity promotion PUT the new order there, and
+      // mobile renders the server order directly. Rebase the manual order onto it
+      // so manual-mode rendering follows the shared order on every runtime; keep
+      // the local manual order untouched when the project list itself is unchanged.
+      const nextManualOrder = projectsChanged
+        ? incomingProjects.map((project) => project.id)
+        : get().manualProjectOrder.filter((id) => incomingIds.has(id));
+      set({ projects: incomingProjects, activeProjectId: incomingActive, manualProjectOrder: nextManualOrder });
       cacheProjects(incomingProjects, incomingActive);
-      persistManualProjectOrder(cleanedOrder);
+      persistManualProjectOrder(nextManualOrder);
 
       if (incomingActive) {
         const activeProject = incomingProjects.find((project) => project.id === incomingActive);

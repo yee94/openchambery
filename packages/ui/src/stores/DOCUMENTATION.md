@@ -213,7 +213,12 @@ OpenChamber-host id, so two mobile relay instances that share the UI origin
 keep independent project lists and order. LAN⇄relay for the same device
 reuses the same bucket. Relay instances never fall back to the old
 API-URL or unscoped `projects` keys. `resetForRuntimeSwitch` reloads the
-new instance's list, active project, and manual order.
+new instance's list, active project, and manual order. The server settings
+`projects` array order is the cross-runtime order contract (mobile renders
+it directly): drag reorders and activity promotions are PUT to it, and
+`synchronizeFromSettings` rebases the local manual order onto the incoming
+server order whenever the project list changes, so every runtime renders
+the same order.
 
 `useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
 use the same instance-scoped persist helper and rehydrate when `runtimeKey`
