@@ -2154,7 +2154,6 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.toast.queueOperationFailed": "Falha na operação da fila.",
   "chat.chatInput.toast.queueOperationStatusUnknown": "O status da operação da fila é desconhecido. O estado do servidor será atualizado automaticamente.",
   "chat.chatInput.toast.clipboardAttachFailed": "Não foi possível anexar a imagem da área de transferência",
-  "chat.chatInput.toast.addedFileMentions": "Foram adicionadas {count} menção(es) de arquivo",
   "chat.chatInput.toast.attachFileFailed": "Não foi possível anexar o arquivo",
   "chat.chatInput.toast.attachNamedFailed": "Não foi possível anexar {name}",
   "chat.chatInput.toast.someFilesSkipped": "Alguns arquivos foram omitidos:\n{summary}",

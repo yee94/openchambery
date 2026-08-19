@@ -2188,7 +2188,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.queueOperationFailed': '대기열 작업에 실패했습니다.',
   'chat.chatInput.toast.queueOperationStatusUnknown': '대기열 작업 상태를 알 수 없습니다. 서버 상태가 자동으로 새로 고쳐집니다.',
   'chat.chatInput.toast.clipboardAttachFailed': '클립보드 이미지 첨부 실패',
-  'chat.chatInput.toast.addedFileMentions': '파일 멘션 {count}개 추가됨',
   'chat.chatInput.toast.attachFileFailed': '첨부 파일 실패',
   'chat.chatInput.toast.attachNamedFailed': '첨부 {name} 실패',
   'chat.chatInput.toast.someFilesSkipped': '일부 파일을 건너뛰었습니다:\n{summary}',

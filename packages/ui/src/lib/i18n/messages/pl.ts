@@ -1318,7 +1318,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.projectRoot': 'Katalog główny projektu',
   'chat.chatInput.reviewComments': 'Komentarze do przeglądu:',
   'chat.chatInput.reviewCommentsRemove': 'Usuń komentarze do przeglądu',
-  'chat.chatInput.toast.addedFileMentions': 'Dodano {count} wzmianek o plikach',
   'chat.chatInput.toast.attachFileFailed': 'Nie udało się dołączyć pliku',
   'chat.chatInput.toast.attachNamedFailed': 'Nie udało się dołączyć {name}',
   'chat.chatInput.toast.attachmentsTooLarge': 'Załączniki są zbyt duże, aby je wysłać. Spróbuj zmniejszyć liczbę lub rozmiar obrazów.',

@@ -2154,7 +2154,6 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.toast.queueOperationFailed": "Не вдалося виконати операцію з чергою.",
   "chat.chatInput.toast.queueOperationStatusUnknown": "Стан операції з чергою невідомий. Стан сервера оновиться автоматично.",
   "chat.chatInput.toast.clipboardAttachFailed": "Не вдалося вкласти зображення з буфера обміну",
-  "chat.chatInput.toast.addedFileMentions": "Додано згадки файлів {count}",
   "chat.chatInput.toast.attachFileFailed": "Не вдалося прикріпити файл",
   "chat.chatInput.toast.attachNamedFailed": "Не вдалося прикріпити {name}",
   "chat.chatInput.toast.someFilesSkipped": "Деякі файли були пропущені:\n{summary}",

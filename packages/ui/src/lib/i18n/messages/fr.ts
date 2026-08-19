@@ -1937,7 +1937,6 @@ export const dict = {
   'chat.chatInput.toast.queueOperationFailed': 'L’opération sur la file d’attente a échoué.',
   'chat.chatInput.toast.queueOperationStatusUnknown': 'L’état de l’opération sur la file d’attente est inconnu. L’état du serveur sera actualisé automatiquement.',
   'chat.chatInput.toast.clipboardAttachFailed': 'Échec de la pièce jointe de l\'image du presse-papiers',
-  'chat.chatInput.toast.addedFileMentions': 'Ajout des mentions du fichier {count}',
   'chat.chatInput.toast.attachFileFailed': 'Impossible de joindre le fichier',
   'chat.chatInput.toast.attachNamedFailed': 'Échec de la connexion du {name}',
   'chat.chatInput.toast.someFilesSkipped': 'Certains fichiers ont été ignorés :\n{summary}',

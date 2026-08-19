@@ -42,6 +42,8 @@ describe('LatticeOrb', () => {
         expect(mobileMarkup).toContain('width:16px;height:16px');
         expect(desktopMarkup.match(/oc-lattice-orb-dot/g)).toHaveLength(9);
         expect(desktopMarkup).toContain('data-center="true"');
+        expect(desktopMarkup).toContain('left:4px;top:4px;width:4px;height:4px');
+        expect(desktopMarkup).toContain('left:24px;top:24px;width:4px;height:4px');
     });
 });
 
@@ -63,6 +65,8 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('aria-expanded="false"');
         expect(markup).toContain('Exploring');
         expect(markup).toContain('1 search, 3 reads');
+        expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
+        expect(markup).toContain('width:14px;height:14px');
         expect(markup).toContain('typography-meta inline-flex min-h-0 w-0 min-w-0 max-w-full flex-1 items-center');
         expect(markup).toContain('oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6');
     });
@@ -126,6 +130,7 @@ describe('ContextToolGroup', () => {
         expect(liveMarkup).toContain('oc-lattice-orb-dot');
         expect(settledMarkup).toContain('Explored');
         expect(settledMarkup).toContain('#oc-search');
+        expect(settledMarkup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
         expect(settledMarkup).not.toContain('oc-lattice-orb-dot');
     });
 

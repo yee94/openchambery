@@ -2184,7 +2184,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.queueOperationFailed': 'キュー操作に失敗しました。',
   'chat.chatInput.toast.queueOperationStatusUnknown': 'キュー操作の状態が不明です。サーバーの状態は自動的に更新されます。',
   'chat.chatInput.toast.clipboardAttachFailed': 'クリップボードからの画像添付に失敗しました',
-  'chat.chatInput.toast.addedFileMentions': '{count}件のファイルメンションを追加しました',
   'chat.chatInput.toast.attachFileFailed': 'ファイルの添付に失敗しました',
   'gitView.commit.aiHighlights.insertAria': '挿入のariaラベル',
   'gitView.commit.aiHighlights.insertTooltip': '挿入のツールチップ',

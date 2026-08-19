@@ -2158,7 +2158,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.queueOperationFailed': '佇列操作失敗。',
   'chat.chatInput.toast.queueOperationStatusUnknown': '佇列操作狀態未知，伺服器狀態將自動重新整理。',
   'chat.chatInput.toast.clipboardAttachFailed': '從剪貼簿附加圖片失敗',
-  'chat.chatInput.toast.addedFileMentions': '已加入 {count} 個檔案提及',
   'chat.chatInput.toast.attachFileFailed': '附加檔案失敗',
   'chat.chatInput.toast.attachNamedFailed': '附加 {name} 失敗',
   'chat.chatInput.toast.someFilesSkipped': '部分檔案被跳過：\n{summary}',

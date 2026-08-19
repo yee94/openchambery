@@ -2189,7 +2189,6 @@ export const dict = {
   'chat.chatInput.toast.queueOperationFailed': 'Queue operation failed.',
   'chat.chatInput.toast.queueOperationStatusUnknown': 'Queue operation status is unknown. Server state will refresh automatically.',
   'chat.chatInput.toast.clipboardAttachFailed': 'Failed to attach image from clipboard',
-  'chat.chatInput.toast.addedFileMentions': 'Added {count} file mention(s)',
   'chat.chatInput.toast.attachFileFailed': 'Failed to attach file',
   'chat.chatInput.toast.attachNamedFailed': 'Failed to attach {name}',
   'chat.chatInput.toast.someFilesSkipped': 'Some files were skipped:\n{summary}',

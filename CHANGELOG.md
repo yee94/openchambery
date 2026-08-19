@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.1] - 2026-08-19
+
+- **工具 loading 点阵对齐：** 槽宽保持桌面 14px / 移动 16px，点阵在盒子内放大到约 12px，与 book / search 图标同一列；「探索中」不再把前导槽拉到 18px。
+- **后台子 Agent 完成通知：** 父会话里的 `<subagent>` 通知渲染为可点击卡片；后台任务在子会话仍 running 时保持忙碌态，子会话 idle 后自动收敛。
+- **设置 Agent 模式芯片：** 桌面「主 Agent / 子 Agent / 全部」保持一行，不再折行。
+
 ## [1.17.0] - 2026-08-19
 
 ### 核心：渐进式转录水合

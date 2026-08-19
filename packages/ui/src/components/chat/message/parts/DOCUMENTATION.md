@@ -36,7 +36,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     one-frame disposition flap unmounted every nested row. Structural stability against
     regressing store frames belongs to `@/sync/displayParts`, not to this component.
   - If you want to change how individual `read`/`skill` compact rows look inside or outside a group, edit `StaticToolRow` here.
-  - Every visible static call uses the shared tool lifecycle: a 14px desktop / 16px mobile `LatticeOrb` stays in the matching fixed leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Expanded context-group children use this same row.
+  - Every visible static call uses the shared tool lifecycle: a 14px desktop / 16px mobile `LatticeOrb` stays in the matching fixed leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Its 3×3 grid optically spans 12px inside the 14px desktop box, aligning with the 13px settled icons while retaining a 1px edge. Expanded context-group children use this same row.
 
 - `ContextToolGroup.tsx`
   - Collapsible "Exploring" / "Explored" header for consecutive context tools.
