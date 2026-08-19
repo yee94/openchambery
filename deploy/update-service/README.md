@@ -58,6 +58,14 @@ metadata responses point signed package downloads at GitHub Release assets.
 `OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
 override for Web, VS Code, and server-side package update checks.
 
+## Tests
+
+```sh
+bunx vitest run --project @openchamber/update-service
+```
+
+Or `bun run test` from this directory.
+
 ## EdgeOne transition compatibility
 
 `edgeone.json` and `edge-functions/` keep the retired

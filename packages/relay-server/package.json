@@ -38,7 +38,7 @@
     "DOCUMENTATION.md"
   ],
   "scripts": {
-    "test": "bun test test",
+    "test": "vitest run",
     "test:node": "node test/node-smoke.js",
     "type-check": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js",
     "lint": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js",

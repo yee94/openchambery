@@ -9,7 +9,7 @@
     "build": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js",
-    "test": "bun test --isolate",
+    "test": "vitest run",
     "test:session-operations": "bun scripts/test-session-operations.mjs"
   },
   "dependencies": {

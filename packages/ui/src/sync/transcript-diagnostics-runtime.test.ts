@@ -1,31 +1,44 @@
-import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, test, vi } from "vitest"
 
-const saveFileCalls: Array<unknown> = []
-let saveFileResult: { cancelled?: boolean } = { cancelled: false }
+const { saveFileCalls, getSaveFileResult, setSaveFileResult } = vi.hoisted(() => {
+  const saveFileCalls: Array<unknown> = []
+  let saveFileResult: { cancelled?: boolean } = { cancelled: false }
+  return {
+    saveFileCalls,
+    getSaveFileResult: () => saveFileResult,
+    setSaveFileResult: (next: { cancelled?: boolean }) => {
+      saveFileResult = next
+    },
+  }
+})
 
-mock.module("@capacitor/core", () => ({
+vi.mock("@capacitor/core", () => ({
   Capacitor: {
     isPluginAvailable: () => true,
   },
   registerPlugin: () => ({
     saveFile: async (payload: unknown) => {
       saveFileCalls.push(payload)
-      return saveFileResult
+      return getSaveFileResult()
     },
   }),
 }))
 
-mock.module("@/lib/platform", () => ({
+vi.mock("@/lib/platform", () => ({
   isCapacitorApp: () => true,
 }))
 
-mock.module("@/contexts/runtimeAPIRegistry", () => ({
+vi.mock("../lib/platform", () => ({
+  isCapacitorApp: () => true,
+}))
+
+vi.mock("@/contexts/runtimeAPIRegistry", () => ({
   getRegisteredRuntimeAPIs: () => null,
 }))
 
 afterEach(() => {
   saveFileCalls.length = 0
-  saveFileResult = { cancelled: false }
+  setSaveFileResult({ cancelled: false })
 })
 
 describe("downloadDiagnosticsReport", () => {
@@ -42,7 +55,7 @@ describe("downloadDiagnosticsReport", () => {
   })
 
   test("treats a dismissed native picker as cancelled", async () => {
-    saveFileResult = { cancelled: true }
+    setSaveFileResult({ cancelled: true })
     const { downloadDiagnosticsReport } = await import("./transcript-diagnostics-runtime")
     expect(await downloadDiagnosticsReport("{}", "export.json")).toBe("cancelled")
   })

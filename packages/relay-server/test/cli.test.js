@@ -47,7 +47,7 @@ it('runs compiled relay help and version from the published bin name', () => {
   const executable = path.join(directory, 'openchamber-relay');
   try {
     const entry = fileURLToPath(new URL('../bin/openchamber-relay.js', import.meta.url));
-    expect(spawnSync(process.execPath, ['build', '--compile', entry, '--outfile', executable], { encoding: 'utf8' }).status).toBe(0);
+    expect(spawnSync('bun', ['build', '--compile', entry, '--outfile', executable], { encoding: 'utf8' }).status).toBe(0);
     expect(spawnSync(executable, ['--help'], { encoding: 'utf8' })).toMatchObject({ status: 0, stdout: expect.stringContaining('Usage: openchamber-relay') });
     expect(spawnSync(executable, ['--version'], { encoding: 'utf8' })).toMatchObject({ status: 0, stdout: expect.stringMatching(new RegExp(`^${packageManifest.version.replaceAll('.', '\\.')}\\s*$`)) });
   } finally {

@@ -755,6 +755,7 @@ export const AgentsPage: React.FC = () => {
 
             <SettingsRow
               itemId="agents.mode"
+              className="oc-settings-agents-mode-row"
               label={(
                 <div className="flex items-center gap-1.5">
                   <span>{t('settings.agents.page.field.mode')}</span>
@@ -769,13 +770,13 @@ export const AgentsPage: React.FC = () => {
                 </div>
               )}
             >
-                <div className="flex flex-wrap items-center justify-end gap-1">
+                <div className="flex flex-nowrap items-center justify-end gap-1">
                 <Button
                   variant="chip"
                   size="xs"
                   aria-pressed={mode === 'primary'}
                   onClick={() => setMode('primary')}
-                  className="!font-normal"
+                  className="!font-normal shrink-0"
                 >
                   {t('settings.agents.page.mode.primary')}
                 </Button>
@@ -784,7 +785,7 @@ export const AgentsPage: React.FC = () => {
                   size="xs"
                   aria-pressed={mode === 'subagent'}
                   onClick={() => setMode('subagent')}
-                  className="!font-normal"
+                  className="!font-normal shrink-0"
                 >
                   {t('settings.agents.page.mode.subagent')}
                 </Button>
@@ -793,7 +794,7 @@ export const AgentsPage: React.FC = () => {
                   size="xs"
                   aria-pressed={mode === 'all'}
                   onClick={() => setMode('all')}
-                  className="!font-normal"
+                  className="!font-normal shrink-0"
                 >
                   {t('settings.agents.page.mode.all')}
                 </Button>

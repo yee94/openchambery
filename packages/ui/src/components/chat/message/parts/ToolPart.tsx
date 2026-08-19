@@ -47,8 +47,10 @@ import {
     buildTaskSummaryEntriesFromSession,
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
+    readTaskRunningFromOutput,
     readTaskSessionIdFromOutput,
     readTaskSessionIdFromRecord,
+    readTaskStatusFromRecord,
     resolveTaskRowChrome,
     prepareTaskOutputForDisplay,
     type TaskToolSummaryEntry,
@@ -2135,14 +2137,46 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     }, [input, isTaskTool, metadata, parsedTaskMetadata.sessionId, partMetadata, stateWithData, taskOutputString]);
 
     const taskSessionId = explicitTaskSessionId;
-    const shouldObserveTaskStatus = isTaskTool && !isFinalized && activeLatched;
-    const activeTaskStatusSessionId = shouldObserveTaskStatus ? taskSessionId : undefined;
-    const activeTaskParentSessionId = shouldObserveTaskStatus && !taskSessionId ? part.sessionID : undefined;
+    // Background subagent：tool part 立即终结（success），但输出仍标记子会话
+    // status=running。此时继续观察子会话状态，行内保持"后台运行中"活性。
+    // 观察是一次性闩锁：子会话权威回到 idle（且观察时间晚于任务开始）后停止订阅，
+    // 历史 background 行不长期占用窄状态订阅。
+    const taskOutputRunning = React.useMemo(() => isTaskTool && isFinalized && Boolean(
+        readTaskStatusFromRecord(metadata) === 'running'
+        || readTaskStatusFromRecord(stateWithData) === 'running'
+        || readTaskStatusFromRecord(partMetadata) === 'running'
+        || parsedTaskMetadata.status === 'running'
+        || readTaskRunningFromOutput(taskOutputString)
+    ), [isTaskTool, isFinalized, metadata, parsedTaskMetadata.status, partMetadata, stateWithData, taskOutputString]);
+    const [backgroundObserveActive, setBackgroundObserveActive] = React.useState(true);
+    const wantsTaskChildStatus = isTaskTool
+        && ((!isFinalized && activeLatched) || (taskOutputRunning && backgroundObserveActive));
+    const activeTaskStatusSessionId = wantsTaskChildStatus ? taskSessionId : undefined;
+    const activeTaskParentSessionId = wantsTaskChildStatus && !taskSessionId ? part.sessionID : undefined;
     const observedTaskSessionId = activeTaskStatusSessionId ?? activeTaskParentSessionId;
     const childSessionStatus = useSessionStatus(activeTaskStatusSessionId ?? '', currentDirectory);
     const parentSessionStatus = useSessionStatus(activeTaskParentSessionId ?? '', currentDirectory);
     const statusObservedAt = useSessionStatusObservedAt(observedTaskSessionId ?? '', currentDirectory);
-    const statusSnapshotAt = useSessionStatusSnapshotAt(currentDirectory, shouldObserveTaskStatus);
+    const statusSnapshotAt = useSessionStatusSnapshotAt(currentDirectory, wantsTaskChildStatus);
+    // 与 shouldSuppressTaskLoading 相同的新鲜度守卫：仅当 idle 观察时间不早于任务开始才确认结束。
+    const childIdleConfirmed = Boolean(
+        taskOutputRunning
+        && childSessionStatus?.type === 'idle'
+        && typeof effectiveTimeStart === 'number'
+        && (
+            (typeof statusObservedAt === 'number' && effectiveTimeStart <= statusObservedAt)
+            || (typeof statusSnapshotAt === 'number' && effectiveTimeStart <= statusSnapshotAt)
+        )
+    );
+    React.useEffect(() => {
+        if (childIdleConfirmed) setBackgroundObserveActive(false);
+    }, [childIdleConfirmed]);
+    const taskBackgroundRunning = Boolean(
+        taskOutputRunning
+        && backgroundObserveActive
+        && taskSessionId
+        && childSessionStatus?.type !== 'idle'
+    );
     // 关闭详情时不必为竖线摘要拉取子会话消息
     const childSessionLookupId = (!showSubagentTaskDetails || hasFinalMetadataTaskSummary) ? '' : (taskSessionId ?? '');
 
@@ -2193,7 +2227,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         taskStartedAt: effectiveTimeStart,
         statusSnapshotAt,
     });
-    const effectiveActive = isActive && !suppressTaskLoading;
+    const effectiveActive = (isActive && !suppressTaskLoading) || taskBackgroundRunning;
     const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
     React.useEffect(() => {
         if (suppressTaskLoading) setActiveLatched(false);

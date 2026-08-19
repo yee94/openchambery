@@ -1,19 +1,19 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const gitService = {
-  stageGitFiles: mock(),
-  unstageGitFiles: mock(),
-  checkoutCommit: mock(),
-  cherryPick: mock(),
-  revertCommit: mock(),
-  resetToCommit: mock(),
-  // bridge.ts also loads bridge-git-special-runtime, whose gitService
-  // surface must stay present when this file's module mock wins the registry.
-  getGitRangeFiles: mock(),
-  getGitRangeDiff: mock(),
-};
+const gitService = vi.hoisted(() => ({
+  stageGitFiles: vi.fn(),
+  unstageGitFiles: vi.fn(),
+  checkoutCommit: vi.fn(),
+  cherryPick: vi.fn(),
+  revertCommit: vi.fn(),
+  resetToCommit: vi.fn(),
+  // Keep the special-runtime gitService surface present so shared importers
+  // never see a partial mock, even if registries merge.
+  getGitRangeFiles: vi.fn(),
+  getGitRangeDiff: vi.fn(),
+}));
 
-mock.module('./gitService', () => gitService);
+vi.mock('./gitService', () => gitService);
 
 const { handleStandardGitBridgeMessage } = await import('./bridge-git-runtime');
 

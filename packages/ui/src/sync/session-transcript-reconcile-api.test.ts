@@ -1,27 +1,31 @@
-import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, test, vi } from "vitest"
 
-import {
-  SessionMessageHttpError,
-  SessionMessagePageContractError,
-} from "./session-message-query"
+const { fetchCalls, setFetchImpl, runtimeFetch } = vi.hoisted(() => {
+  const fetchCalls: Array<{ url: string; init: unknown }> = []
+  let fetchImpl: (url: string, init?: unknown) => Promise<Response> = async () => {
+    throw new Error("fetch not stubbed")
+  }
+  return {
+    fetchCalls,
+    getFetchImpl: () => fetchImpl,
+    setFetchImpl: (next: typeof fetchImpl) => {
+      fetchImpl = next
+    },
+    runtimeFetch: async (input: string | URL | Request, init?: unknown) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+      fetchCalls.push({ url, init })
+      return fetchImpl(url, init)
+    },
+  }
+})
 
-const fetchCalls: Array<{ url: string; init: unknown }> = []
-let fetchImpl: (url: string, init?: unknown) => Promise<Response> = async () => {
-  throw new Error("fetch not stubbed")
-}
-
-mock.module("../lib/runtime-fetch", () => ({
-  runtimeFetch: async (input: string | URL | Request, init?: unknown) => {
-    const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url
-    fetchCalls.push({ url, init })
-    return fetchImpl(url, init)
-  },
-}))
+vi.mock("../lib/runtime-fetch", () => ({ runtimeFetch }))
+vi.mock("@/lib/runtime-fetch", () => ({ runtimeFetch }))
 
 const {
   assertSessionTranscriptReconcilePage,
@@ -30,9 +34,9 @@ const {
 
 afterEach(() => {
   fetchCalls.length = 0
-  fetchImpl = async () => {
+  setFetchImpl(async () => {
     throw new Error("fetch not stubbed")
-  }
+  })
 })
 
 const validPage = (overrides: Record<string, unknown> = {}) => ({
@@ -72,7 +76,7 @@ describe("assertSessionTranscriptReconcilePage", () => {
   test("rejects missing records array", () => {
     expect(() =>
       assertSessionTranscriptReconcilePage({ ...validPage(), records: undefined }),
-    ).toThrow(SessionMessagePageContractError)
+    ).toThrow(/page_contract|records must be/)
   })
 
   test("rejects complete=true with continuation", () => {
@@ -165,7 +169,7 @@ describe("fetchSessionTranscriptReconcile", () => {
         sessionID: "ses_1",
         directory: "/repo",
       }),
-    ).rejects.toThrow(SessionMessagePageContractError)
+    ).rejects.toMatchObject({ name: "SessionMessagePageContractError" })
 
     await expect(
       fetchSessionTranscriptReconcile({
@@ -174,11 +178,11 @@ describe("fetchSessionTranscriptReconcile", () => {
         anchor: "a",
         continuation: "c",
       }),
-    ).rejects.toThrow(SessionMessagePageContractError)
+    ).rejects.toMatchObject({ name: "SessionMessagePageContractError" })
   })
 
   test("GET reconcile with directory + anchor", async () => {
-    fetchImpl = async () => jsonResponse(validPage())
+    setFetchImpl(async () => jsonResponse(validPage()))
     const page = await fetchSessionTranscriptReconcile({
       sessionID: "ses/a b",
       directory: "/repo",
@@ -197,14 +201,15 @@ describe("fetchSessionTranscriptReconcile", () => {
   })
 
   test("GET reconcile with continuation only", async () => {
-    fetchImpl = async () =>
+    setFetchImpl(async () =>
       jsonResponse(
         validPage({
           complete: true,
           continuation: null,
           records: [],
         }),
-      )
+      ),
+    )
     await fetchSessionTranscriptReconcile({
       sessionID: "ses_1",
       directory: "/repo",
@@ -218,10 +223,10 @@ describe("fetchSessionTranscriptReconcile", () => {
 
   test("4xx fails immediately without retry", async () => {
     let calls = 0
-    fetchImpl = async () => {
+    setFetchImpl(async () => {
       calls += 1
       return jsonResponse({ error: "bad" }, 400)
-    }
+    })
     await expect(
       fetchSessionTranscriptReconcile({
         sessionID: "ses_1",
@@ -230,16 +235,16 @@ describe("fetchSessionTranscriptReconcile", () => {
         maxRetries: 2,
         sleep: async () => {},
       }),
-    ).rejects.toThrow(SessionMessageHttpError)
+    ).rejects.toMatchObject({ name: "SessionMessageHttpError" })
     expect(calls).toBe(1)
   })
 
   test("contract error fails immediately without retry", async () => {
     let calls = 0
-    fetchImpl = async () => {
+    setFetchImpl(async () => {
       calls += 1
       return jsonResponse({ records: "nope" })
-    }
+    })
     await expect(
       fetchSessionTranscriptReconcile({
         sessionID: "ses_1",
@@ -248,17 +253,17 @@ describe("fetchSessionTranscriptReconcile", () => {
         maxRetries: 2,
         sleep: async () => {},
       }),
-    ).rejects.toThrow(SessionMessagePageContractError)
+    ).rejects.toMatchObject({ name: "SessionMessagePageContractError" })
     expect(calls).toBe(1)
   })
 
   test("502 retries up to 2 times then succeeds", async () => {
     let calls = 0
-    fetchImpl = async () => {
+    setFetchImpl(async () => {
       calls += 1
       if (calls <= 2) return jsonResponse({ error: "bad gateway" }, 502)
       return jsonResponse(validPage())
-    }
+    })
     const page = await fetchSessionTranscriptReconcile({
       sessionID: "ses_1",
       directory: "/repo",
@@ -272,10 +277,10 @@ describe("fetchSessionTranscriptReconcile", () => {
 
   test("502 exhausts max retries", async () => {
     let calls = 0
-    fetchImpl = async () => {
+    setFetchImpl(async () => {
       calls += 1
       return jsonResponse({ error: "bad gateway" }, 502)
-    }
+    })
     await expect(
       fetchSessionTranscriptReconcile({
         sessionID: "ses_1",
@@ -284,18 +289,18 @@ describe("fetchSessionTranscriptReconcile", () => {
         maxRetries: 2,
         sleep: async () => {},
       }),
-    ).rejects.toThrow(SessionMessageHttpError)
+    ).rejects.toMatchObject({ name: "SessionMessageHttpError" })
     // 1 initial + 2 retries
     expect(calls).toBe(3)
   })
 
   test("network error is retryable", async () => {
     let calls = 0
-    fetchImpl = async () => {
+    setFetchImpl(async () => {
       calls += 1
       if (calls === 1) throw new Error("Failed to fetch")
       return jsonResponse(validPage())
-    }
+    })
     await fetchSessionTranscriptReconcile({
       sessionID: "ses_1",
       directory: "/repo",

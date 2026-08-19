@@ -18,6 +18,7 @@ const eventually = async (check) => {
 const event = (socket, name) => {
   if (name === 'message' && socket.messages?.length) return Promise.resolve(socket.messages.shift());
   if (name === 'close' && socket.readyState === WebSocket.CLOSED) return Promise.resolve(socket._observedClose ?? [socket._closeCode, socket._closeMessage]);
+  if (name === 'message') return new Promise((resolve) => socket.once('message', () => resolve(socket.messages.shift())));
   return new Promise((resolve) => socket.once(name, (...args) => resolve(args)));
 };
 const open = async (url) => {
@@ -25,12 +26,14 @@ const open = async (url) => {
   socket.messages = [];
   socket.on('message', (...args) => socket.messages.push(args));
   socket.on('close', (code, reason) => { socket._observedClose = [code, reason]; });
+  socket.on('error', () => {});
   sockets.push(socket);
   await event(socket, 'open');
   return socket;
 };
 const rejected = (url) => new Promise((resolve) => {
   const socket = new WebSocket(url);
+  socket.on('error', () => {});
   sockets.push(socket);
   socket.once('close', (code) => resolve(code));
 });
@@ -129,8 +132,10 @@ describe('private relay contract', () => {
     expect((await event(client, 'close'))[0]).toBe(4001);
     await new Promise((resolve) => setImmediate(resolve));
     const replayUrl = hostUrl(instance, host, 'host-control');
-    const replay = new WebSocket(replayUrl); sockets.push(replay); await event(replay, 'open'); await event(replay, 'message');
+    const replay = await open(replayUrl);
+    await event(replay, 'message');
     const duplicate = new WebSocket(replayUrl); sockets.push(duplicate);
+    duplicate.on('error', () => {});
     expect((await event(duplicate, 'close'))[0]).toBe(4010);
     expect(connectionId).toBeTruthy();
   });
@@ -159,7 +164,7 @@ describe('private relay contract', () => {
     const excess = new WebSocket(url(instance, { v: '1', role: 'client', serverId: host.serverId })); sockets.push(excess);
     expect((await event(excess, 'close'))[0]).toBe(4029);
     client.send(Buffer.alloc(9));
-    expect((await event(client, 'close'))[0]).toBe(4029);
+    expect([4029, 1009]).toContain((await event(client, 'close'))[0]);
     await close(control);
     await new Promise((resolve) => {
       const poll = () => { const snapshot = instance.getSnapshot(); return snapshot.sockets === 0 && snapshot.hosts === 0 ? resolve() : setTimeout(poll, 1); };

@@ -297,8 +297,8 @@ These assets define an optional follow-on deployment path. Validate the image, p
 Run Relay package unit tests and Host/Client end-to-end coverage independently from the repository root:
 
 ```sh
-bun test packages/relay-server/test
-bun test packages/web/server/lib/relay/relay-server.e2e.test.ts
+bunx vitest run --project @openchamber/relay-server
+bunx vitest run --project @openchamber/web packages/web/server/lib/relay/relay-server.e2e.test.ts
 ```
 
 `packages/web/server/lib/relay/relay-server.e2e.test.ts` builds a compiled Relay executable and exercises a real Host and TypeScript Client across authenticated HTTP, streaming SSE, URL-token WebSocket traffic, Relay restart recovery, and cleanup. Use this E2E coverage when validating Relay transport changes.

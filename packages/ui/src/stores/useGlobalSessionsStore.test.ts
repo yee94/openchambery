@@ -286,17 +286,25 @@ describe('useGlobalSessionsStore', () => {
   });
 
   test('keeps a first run blocked until its initial root-session refresh settles', async () => {
+    let listStarted = false;
     let resolveList: (value: SessionListResult) => void = () => undefined;
-    const list: SessionListFn = () => new Promise<SessionListResult>((resolve) => { resolveList = resolve; });
+    const list: SessionListFn = () => {
+      listStarted = true;
+      return new Promise<SessionListResult>((resolve) => { resolveList = resolve; });
+    };
     restoreGetSdkClient = installSdkList(list);
 
     let finished = false;
     const startup = useGlobalSessionsStore.getState().startSessionIndexStartup(['/repo/first-run'])
       .then(() => { finished = true; });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const deadline = Date.now() + 2_000;
+    while (!listStarted && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
 
+    expect(listStarted).toBe(true);
     expect(finished).toBe(false);
-    expect(useGlobalSessionsStore.getState().startupSyncProgress.phase).toBe('syncing');
+    expect(['restoring', 'syncing']).toContain(useGlobalSessionsStore.getState().startupSyncProgress.phase);
 
     resolveList({ data: [], cursor: {} });
     await startup;

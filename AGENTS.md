@@ -100,6 +100,7 @@ High-value anchors:
 - Mobile: `packages/mobile/README.md`
 - Releases (stable + beta isolation): `docs/RELEASING.md`, agent command `.opencode/commands/release.md`
 - Update feed: `deploy/update-service/README.md`
+- Tests (Vitest projects): `vitest.config.ts`
 
 ## Project Skills
 
@@ -122,10 +123,29 @@ Project skills live under `.agents/skills/*/SKILL.md`. Before editing, load ever
 
 Pure code-reading or explanation does not require implementation skills unless needed to interpret a specialized subsystem.
 
+## Tests
+
+Workspace tests run on Vitest 4 (`vitest.config.ts` `projects`). Do not use `bun test` or `node --test` as the runner.
+
+| Command | Scope |
+|---|---|
+| `bun run test` | Every workspace package `test` script |
+| `bun run test:vitest` | All Vitest projects (`ensure-node-better-sqlite3` first) |
+| `bun run test:ui` | `@openchamber/ui` |
+| `bunx vitest run --project <name> <file>` | One project, optional file |
+| `bun run --cwd packages/<pkg> test` | That package only |
+
+Project names: `@openchamber/ui`, `@openchamber/web`, `openchamber-vscode`, `@openchamber/electron`, `@openchamber/mobile`, `@openchamber/relay-server`, `@openchamber/update-service`.
+
+- New tests import from `vitest`. `bun:test` still works through `scripts/test/bun-test-shim.ts`; module mocks that must beat static imports use `vi.hoisted` + `vi.mock`, not `mock.module`.
+- `packages/ui` uses `happy-dom`. Do not read local files with `new URL(..., import.meta.url)` (not a `file:` URL); use `path.join(path.dirname(fileURLToPath(import.meta.url)), ...)`.
+- `packages/web` tests need the Node ABI `better-sqlite3` binding (`scripts/ensure-node-better-sqlite3.mjs`).
+- Electron IndexedDB evidence tests spawn a real Electron window: `bun run --cwd packages/electron test:input-draft-indexeddb` / `test:transcript-durable-indexeddb`. Skip them unless that surface changed.
+
 ## Validation
 
 - Use `package.json` scripts as the command source of truth.
-- Prefer focused tests and runtime validation during routine task iteration.
+- Prefer focused Vitest files for the touched surface, then the owning package `test` script when the contract is broader.
 - Run `bun run dead-code` when source files are added/deleted/renamed or exports, types, entrypoints, or import shape change; inspect its report because it is non-blocking.
 - Run focused tests, syntax checks, builds, or runtime validation for the touched surface when relevant.
 - For docs-only or isolated config changes, run the narrowest relevant validation.

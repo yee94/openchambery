@@ -1,11 +1,15 @@
 import { expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const directory = dirname(fileURLToPath(import.meta.url));
 
 test('phone chat title can show a live transcript sync whisper', async () => {
   const [screen, header, navigation] = await Promise.all([
-    readFile(new URL('./MobileChatScreen.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('./MobileChatHeader.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../MobileDetailNavigation.tsx', import.meta.url), 'utf8'),
+    readFile(join(directory, 'MobileChatScreen.tsx'), 'utf8'),
+    readFile(join(directory, 'MobileChatHeader.tsx'), 'utf8'),
+    readFile(join(directory, '../MobileDetailNavigation.tsx'), 'utf8'),
   ]);
 
   expect(screen).toContain('useMobileTranscriptSyncHint(');

@@ -6,15 +6,6 @@ import {
   type NativeRelayAssetBridge,
   type NativeRelayAssetOpenResult,
 } from './native-asset-bridge';
-import {
-  RELAY_IMAGE_IPC_CHUNK_BYTES,
-  RELAY_IMAGE_MAX_BYTES,
-  RELAY_IMAGE_MAX_CONCURRENT,
-  clearAllRelayImageAssets,
-  releaseRelayImageDisplayUrl,
-  resetRelayImageStreamForTests,
-  streamRelayImageDisplayUrl,
-} from './relay-image-stream';
 
 type FetchCall = {
   path: string;
@@ -45,6 +36,16 @@ mock.module('@/lib/runtime-switch', () => ({
     };
   },
 }));
+
+const {
+  RELAY_IMAGE_IPC_CHUNK_BYTES,
+  RELAY_IMAGE_MAX_BYTES,
+  RELAY_IMAGE_MAX_CONCURRENT,
+  clearAllRelayImageAssets,
+  releaseRelayImageDisplayUrl,
+  resetRelayImageStreamForTests,
+  streamRelayImageDisplayUrl,
+} = await import('./relay-image-stream');
 
 const textEncoder = new TextEncoder();
 

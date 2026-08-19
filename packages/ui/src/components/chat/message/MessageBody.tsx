@@ -64,6 +64,8 @@ import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedC
 import { getSessionSurfaceActionAvailability, navigateNestedSession, useSessionSurface } from '../SessionSurfaceContext';
 import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { isSyntheticPart } from '@/lib/messages/synthetic';
+import { parseSubagentNotification, type SubagentNotification } from './parts/taskToolModel';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const };
@@ -438,6 +440,85 @@ const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
     );
 };
 
+const SubagentNotificationCard: React.FC<{ notification: SubagentNotification }> = ({ notification }) => {
+    const effectiveDirectory = useEffectiveDirectory();
+    const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
+    const { isMobile } = useDeviceInfo();
+    const { t } = useI18n();
+    const canOpen = Boolean(effectiveDirectory && !isMobile && !isVSCodeRuntime());
+    const stateLabel = notification.state === 'completed'
+        ? t('chat.messageBody.subagent.completed')
+        : notification.state === 'error'
+            ? t('chat.messageBody.subagent.error')
+            : t('chat.messageBody.subagent.cancelled');
+    const fallbackDescription = notification.state === 'completed'
+        ? t('chat.messageBody.subagent.completedDescription')
+        : notification.state === 'error'
+            ? t('chat.messageBody.subagent.errorDescription')
+            : t('chat.messageBody.subagent.cancelledDescription');
+    const description = notification.description || fallbackDescription;
+
+    const openSession = useEvent(() => {
+        if (!canOpen || !effectiveDirectory) return;
+        openContextPanelTab(effectiveDirectory, {
+            mode: 'chat',
+            dedupeKey: `session:${notification.sessionID}`,
+            label: description,
+            readOnly: true,
+        });
+    });
+
+    const handleKeyDown = useEvent((event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openSession();
+    });
+
+    return (
+        <div
+            className={cn(
+                'mt-2 flex min-w-0 gap-2.5 rounded-[var(--radius-lg)] border border-border/60 bg-muted/20 px-3 py-2.5',
+                canOpen && 'cursor-pointer hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+            )}
+            role={canOpen ? 'button' : undefined}
+            tabIndex={canOpen ? 0 : undefined}
+            aria-label={canOpen ? t('chat.messageBody.subagent.openSession', { label: description }) : undefined}
+            onClick={canOpen ? openSession : undefined}
+            onKeyDown={canOpen ? handleKeyDown : undefined}
+        >
+            <span className="mt-0.5 flex size-6 flex-shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
+                <Icon name="robot-2" className="size-3.5" />
+            </span>
+            <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="typography-meta min-w-0 flex-1 truncate font-semibold text-foreground/90">
+                        {description}
+                    </span>
+                    <span className={cn(
+                        'inline-flex h-5 flex-shrink-0 items-center rounded px-1.5 text-[11px] leading-none',
+                        notification.state === 'completed'
+                            ? 'bg-[var(--status-success-background)] text-[var(--status-success)]'
+                            : notification.state === 'error'
+                                ? 'bg-[var(--status-error-background)] text-[var(--status-error)]'
+                                : 'bg-foreground/5 text-muted-foreground',
+                    )}>
+                        {stateLabel}
+                    </span>
+                </div>
+                {notification.body ? (
+                    <div className="typography-meta mt-1 max-h-16 overflow-hidden text-muted-foreground [&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0">
+                        <SimpleMarkdownRenderer
+                            content={notification.body}
+                            variant="tool"
+                            enableFileReferences={false}
+                        />
+                    </div>
+                ) : null}
+            </div>
+        </div>
+    );
+};
+
 const SHELL_CODE_TAG_STYLE: React.CSSProperties = { background: 'transparent', backgroundColor: 'transparent' };
 
 const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) => {
@@ -451,12 +532,12 @@ const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) 
     const status = typeof part.shellAction?.status === 'string' ? part.shellAction.status.trim().toLowerCase() : '';
     const hasOutput = output.trim().length > 0;
 
-    const clearCopiedResetTimeout = React.useCallback(() => {
+    const clearCopiedResetTimeout = useEvent(() => {
         if (copiedResetTimeoutRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(copiedResetTimeoutRef.current);
             copiedResetTimeoutRef.current = null;
         }
-    }, []);
+    });
 
     React.useEffect(() => {
         return () => {
@@ -464,7 +545,7 @@ const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) 
         };
     }, [clearCopiedResetTimeout]);
 
-    const copyOutputToClipboard = React.useCallback(async () => {
+    const copyOutputToClipboard = useEvent(async () => {
         if (!hasOutput) return;
 
         const result = await copyTextToClipboard(output);
@@ -478,7 +559,7 @@ const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) 
                 copiedResetTimeoutRef.current = null;
             }, 2000);
         }
-    }, [clearCopiedResetTimeout, hasOutput, output]);
+    });
 
     return (
         <div className="mt-2">
@@ -681,6 +762,13 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
         });
     }, [parts]);
 
+    // Synthetic subagent notifications arrive as text parts; parse them once per
+    // parts identity so the render loop does not re-run the notification regex.
+    const subagentNotifications = React.useMemo(
+        () => userContentParts.map((part) => (isSyntheticPart(part) ? parseSubagentNotification(extractTextContent(part)) : undefined)),
+        [userContentParts],
+    );
+
     const mentionToken = agentMention?.token;
     let mentionInjected = false;
 
@@ -692,14 +780,14 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
     const showUserActions = userActionsMode !== 'external-content';
     const useStickyScrollableUserContent = stickyUserHeaderEnabled && userActionsMode === 'inline';
 
-    const clearCopyHintTimeout = React.useCallback(() => {
+    const clearCopyHintTimeout = useEvent(() => {
         if (copyHintTimeoutRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(copyHintTimeoutRef.current);
             copyHintTimeoutRef.current = null;
         }
-    }, []);
+    });
 
-    const revealCopyHint = React.useCallback(() => {
+    const revealCopyHint = useEvent(() => {
         if (!isTouchContext || !canCopyMessage || !hasCopyableText || typeof window === 'undefined') {
             return;
         }
@@ -710,7 +798,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
             setCopyHintVisible(false);
             copyHintTimeoutRef.current = null;
         }, 1800);
-    }, [canCopyMessage, clearCopyHintTimeout, hasCopyableText, isTouchContext]);
+    });
 
     React.useEffect(() => {
         if (!hasCopyableText) {
@@ -719,7 +807,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
         }
     }, [clearCopyHintTimeout, hasCopyableText]);
 
-    const handleCopyButtonClick = React.useCallback(
+    const handleCopyButtonClick = useEvent(
         (event: React.MouseEvent<HTMLButtonElement>) => {
             if (!onCopyMessage || !hasCopyableText) {
                 return;
@@ -732,8 +820,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
             if (isTouchContext) {
                 revealCopyHint();
             }
-        },
-        [hasCopyableText, isTouchContext, onCopyMessage, revealCopyHint]
+        }
     );
 
     const effectiveOnFork = chatSurfaceMode === 'mini-chat' || !sessionSurfaceActions.fork ? undefined : onFork;
@@ -989,6 +1076,15 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
                         );
                     }
 
+                    const subagentNotification = subagentNotifications[index];
+                    if (subagentNotification) {
+                        return (
+                            <React.Fragment key={part.id ?? `subagent-notification-${index}`}>
+                                <SubagentNotificationCard notification={subagentNotification} />
+                            </React.Fragment>
+                        );
+                    }
+
                     let mentionForPart: AgentMentionInfo | undefined;
                     if (agentMention && mentionToken && !mentionInjected) {
                         const candidateText = extractTextContent(part);
@@ -1062,19 +1158,19 @@ const AssistantMessageActionButtons = React.memo(({
         && chatSurfaceMode !== 'mini-chat',
     );
 
-    const clearCopyHintTimeout = React.useCallback(() => {
+    const clearCopyHintTimeout = useEvent(() => {
         if (copyHintTimeoutRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(copyHintTimeoutRef.current);
             copyHintTimeoutRef.current = null;
         }
-    }, []);
+    });
 
-    const clearCopiedResetTimeout = React.useCallback(() => {
+    const clearCopiedResetTimeout = useEvent(() => {
         if (copiedResetTimeoutRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(copiedResetTimeoutRef.current);
             copiedResetTimeoutRef.current = null;
         }
-    }, []);
+    });
 
     React.useEffect(() => {
         return () => {
@@ -1092,7 +1188,7 @@ const AssistantMessageActionButtons = React.memo(({
         }
     }, [canCopyMessage, clearCopiedResetTimeout, clearCopyHintTimeout, hasCopyableText]);
 
-    const revealCopyHint = React.useCallback(() => {
+    const revealCopyHint = useEvent(() => {
         if (!isTouchContext || !canCopyMessage || !hasCopyableText || typeof window === 'undefined') {
             return;
         }
@@ -1103,9 +1199,9 @@ const AssistantMessageActionButtons = React.memo(({
             setCopyHintVisible(false);
             copyHintTimeoutRef.current = null;
         }, 1800);
-    }, [canCopyMessage, clearCopyHintTimeout, hasCopyableText, isTouchContext]);
+    });
 
-    const handleCopyButtonClick = React.useCallback(
+    const handleCopyButtonClick = useEvent(
         async (event: React.MouseEvent<HTMLButtonElement>) => {
             if (!onCopyMessage || !hasCopyableText) {
                 return;
@@ -1131,11 +1227,10 @@ const AssistantMessageActionButtons = React.memo(({
             if (isTouchContext) {
                 revealCopyHint();
             }
-        },
-        [clearCopiedResetTimeout, hasCopyableText, isTouchContext, onCopyMessage, revealCopyHint]
+        }
     );
 
-    const handleReviewTransferClick = React.useCallback(
+    const handleReviewTransferClick = useEvent(
         async (event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
             event.preventDefault();
@@ -1146,20 +1241,18 @@ const AssistantMessageActionButtons = React.memo(({
             } finally {
                 setIsTransferringReview(false);
             }
-        },
-        [hasCopyableText, isTransferringReview, reviewTransferAction]
+        }
     );
 
     // Jump from a stitched Assistant reply into the underlying OpenCode session.
-    const handleOpenSourceSessionClick = React.useCallback(
+    const handleOpenSourceSessionClick = useEvent(
         (event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
             event.preventDefault();
             const targetSessionId = sessionSurface.sessionId || sessionId;
             if (!targetSessionId || !sessionSurface.directory || !sessionSurface.openSourceSession) return;
             sessionSurface.openSourceSession(targetSessionId, sessionSurface.directory);
-        },
-        [sessionId, sessionSurface],
+        }
     );
 
     const readAloudTooltip = React.useMemo(() => {
@@ -1176,7 +1269,7 @@ const AssistantMessageActionButtons = React.memo(({
         return t('chat.messageBody.tts.readAloudWithProvider', { provider: providerLabel });
     }, [isTTSPlaying, t, voiceProvider]);
 
-    const handleTTSClick = React.useCallback(
+    const handleTTSClick = useEvent(
         (event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
             event.preventDefault();
@@ -1189,8 +1282,7 @@ const AssistantMessageActionButtons = React.memo(({
             if (ttsText.trim()) {
                 void playTTS(ttsText);
             }
-        },
-        [isTTSPlaying, playTTS, stopTTS, ttsText]
+        }
     );
 
     return (
@@ -1609,7 +1701,7 @@ const AssistantMessageBody = React.memo(({
 
     const hasCopyableText = Boolean(hasTextContent) && !awaitingMessageCompletion;
 
-    const handleForkClick = React.useCallback(
+    const handleForkClick = useEvent(
         async (event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
             event.preventDefault();
@@ -1622,8 +1714,7 @@ const AssistantMessageBody = React.memo(({
             } finally {
                 setIsForkPending(false);
             }
-        },
-        [forkFromMessage, forkTransition, isForkPending, messageId, sessionId]
+        }
     );
 
     const activityPartsForTurn = React.useMemo(() => {
@@ -1751,7 +1842,7 @@ const AssistantMessageBody = React.memo(({
         />
     ), [assistantPlanText, hasCopyableText, isTouchContext, onCopyMessage, reviewTransferAction, sessionId]);
 
-    const renderJustificationActions = React.useCallback((activity: NonNullable<TurnGroupingContext['activityParts']>[number]) => {
+    const renderJustificationActions = React.useMemo(() => (activity: NonNullable<TurnGroupingContext['activityParts']>[number]) => {
         if (!showSplitAssistantMessageActions || !isSortedRenderMode) {
             return null;
         }

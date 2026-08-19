@@ -1,6 +1,24 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { DEFAULT_LOCALE, type Locale } from './runtime';
-import { resetI18nDictionaryCacheForTests, useI18nStore } from './store';
+
+const { shouldFailKo } = vi.hoisted(() => ({
+  shouldFailKo: { value: false },
+}));
+
+vi.mock('./messages/ko', async (importOriginal) => {
+  if (shouldFailKo.value) {
+    throw new Error('forced dictionary load failure');
+  }
+  return importOriginal();
+});
+vi.mock('@/lib/i18n/messages/ko', async (importOriginal) => {
+  if (shouldFailKo.value) {
+    throw new Error('forced dictionary load failure');
+  }
+  return importOriginal();
+});
+
+const { resetI18nDictionaryCacheForTests, useI18nStore } = await import('./store');
 
 const defaultDictionary = useI18nStore.getState().dictionary;
 
@@ -13,31 +31,25 @@ const resetStore = () => {
   });
 };
 
-/**
- * Bun's throw-style mock.module leaves the bare specifier empty after mock.restore().
- * Reinstall the real dictionary export (captured via a query-bypassed import) and keep
- * that mock active so sibling suites like messages.test.ts can still import `dict`.
- */
-const reinstallRealKoModule = async () => {
-  const realKo = await import(`./messages/ko?__i18n_store_test_restore=${Date.now()}`);
-  mock.module('./messages/ko', () => ({ dict: realKo.dict }));
-};
-
 const waitForLocaleLoadToSettle = async (locale: Locale) => {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
     if (useI18nStore.getState().loadingLocale !== locale) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error(`Timed out waiting for ${locale} dictionary load`);
 };
 
 describe('i18n store', () => {
-  beforeEach(resetStore);
+  beforeEach(() => {
+    shouldFailKo.value = false;
+    resetStore();
+  });
 
-  afterAll(async () => {
-    await reinstallRealKoModule();
+  afterAll(() => {
+    shouldFailKo.value = false;
     resetStore();
   });
 
@@ -71,11 +83,7 @@ describe('i18n store', () => {
   });
 
   test('reports DEFAULT_LOCALE after a failed non-English dictionary load', async () => {
-    // Throw at import time so setLocale's loadDictionary promise rejects into the catch path.
-    // Do not call mock.restore() alone afterward — it poisons the bare ./messages/ko export.
-    mock.module('./messages/ko', () => {
-      throw new Error('forced dictionary load failure');
-    });
+    shouldFailKo.value = true;
 
     try {
       useI18nStore.getState().setLocale('ko');
@@ -86,7 +94,7 @@ describe('i18n store', () => {
       expect(useI18nStore.getState().dictionary).toBe(defaultDictionary);
       expect(useI18nStore.getState().loadingLocale).toBeNull();
     } finally {
-      await reinstallRealKoModule();
+      shouldFailKo.value = false;
       resetStore();
     }
   });

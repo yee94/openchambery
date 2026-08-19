@@ -76,7 +76,7 @@ Do not hide a required architectural migration behind a local heuristic. Do not 
 
 ## Validation Matrix
 
-Use `package.json` scripts as the command source of truth.
+Use `package.json` scripts as the command source of truth. Tests are Vitest projects (`vitest.config.ts`). Focused runs: `bunx vitest run --project <name> <file>`. Do not use `bun test` or `node --test` as the runner. See root `AGENTS.md` Tests.
 
 | Change | Minimum validation |
 |---|---|

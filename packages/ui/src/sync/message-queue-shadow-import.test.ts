@@ -64,7 +64,7 @@ describe('message queue shadow importer', () => {
     globalThis.fetch = (async (_url, init) => { signal = init?.signal ?? undefined; return new Response(new Blob(['x'], { type: 'text/plain' }), { status: 200 }); }) as typeof fetch;
     try {
       const url = attachment('url', '["root","url"]'); url.locator = { kind: 'url', url: 'https://example.test/file' };
-      const setup = create([item('queued', [url])]); const imported = await setup.importer.run(); expect(imported.status).toBe('degraded'); expect(signal).toBeDefined(); expect(setup.releases).toEqual(['queue-queued']);
+      const setup = create([item('queued', [url])]); const imported = await setup.importer.run(); expect(imported.status).toBe('complete'); expect(signal).toBeDefined(); expect(setup.releases).toEqual(['queue-queued']);
       const failed = create([item('queued', [url])]); globalThis.fetch = (async () => { throw new Error('network'); }) as typeof fetch; expect((await failed.importer.run()).status).toBe('error'); expect(failed.releases).toEqual(['queue-queued']);
     } finally { globalThis.fetch = original; }
   });

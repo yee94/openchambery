@@ -4,7 +4,7 @@
  * so CI can validate the contract without a device or Xcode/Gradle toolchain.
  */
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 
 const TTL_MS = 120_000;
 const MAX_CONCURRENT = 16;

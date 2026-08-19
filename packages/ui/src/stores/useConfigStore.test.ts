@@ -1747,10 +1747,8 @@ describe('useConfigStore provider persistence', () => {
     liveProviderId = 'recovered';
     liveAgents = [testAgent('build')];
 
-    // Provider catalog self-heals: a successful empty provider list is never
-    // permanently fresh (v1.16.134-beta.17 contract), so the ordinary ensure
-    // refetches. The raw agent catalog keeps staleTime: Infinity — an empty
-    // agent list stays cached until refreshMissingCatalogs force-refreshes.
+    // Empty provider catalogs use staleTime 0, so ordinary ensure refetches.
+    // Empty agent catalogs still use staleTime Infinity until force-refresh.
     await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:staleEnsure' });
     await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:staleEnsure' });
     expect(getProvidersCalls).toBe(providerCallsAfterEmpty + 1);

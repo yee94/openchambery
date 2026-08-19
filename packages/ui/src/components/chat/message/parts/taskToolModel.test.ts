@@ -5,10 +5,13 @@ import {
     applyAuthoritativeTaskSessionIdToSubtaskParts,
     buildTaskSummaryEntriesFromSession,
     formatTaskStructuredOutputForMarkdown,
+    parseSubagentNotification,
     parseTaskMetadataBlock,
     prepareTaskOutputForDisplay,
+    readTaskRunningFromOutput,
     readTaskSessionIdFromRecord,
     readTaskSessionIdFromOutput,
+    readTaskStatusFromRecord,
     resolveTaskRowChrome,
 } from './taskToolModel';
 
@@ -30,6 +33,39 @@ describe('taskToolModel', () => {
             summaryEntries: [{ id: 'tool-1', tool: 'read', state: { status: undefined, title: 'a.ts', input: undefined } }],
         });
         expect(readTaskSessionIdFromOutput(output)).toBe('child-1');
+    });
+
+    test('reads background running hints from settled task records and output', () => {
+        expect(readTaskStatusFromRecord({ sessionId: 'child-1', status: 'running' })).toBe('running');
+        expect(readTaskStatusFromRecord({ status: 'completed' })).toBe('completed');
+        expect(readTaskStatusFromRecord('running')).toBe(undefined);
+        expect(readTaskStatusFromRecord(undefined)).toBe(undefined);
+
+        expect(parseTaskMetadataBlock('<task_metadata>{"sessionID":"child-1","status":"running"}</task_metadata>').status).toBe('running');
+
+        expect(readTaskRunningFromOutput('<task_metadata>{"sessionID":"child-1","status":"running"}</task_metadata>')).toBe(true);
+        expect(readTaskRunningFromOutput('Task started in background.\nsession_id: ses_child_1\nstatus: running')).toBe(true);
+        expect(readTaskRunningFromOutput('All work finished. status: completed')).toBe(false);
+        expect(readTaskRunningFromOutput(undefined)).toBe(false);
+        expect(readTaskRunningFromOutput('')).toBe(false);
+    });
+
+    test('parses background subagent completion notifications', () => {
+        const completed = '<subagent sessionID="ses_child_1" state="completed" description="探查同步层现状">\n结果正文\n</subagent>';
+        expect(parseSubagentNotification(completed)).toEqual({
+            sessionID: 'ses_child_1',
+            state: 'completed',
+            description: '探查同步层现状',
+            body: '结果正文',
+        });
+
+        expect(parseSubagentNotification('<subagent sessionId="ses_child_2" state="error">失败</subagent>')?.state).toBe('error');
+        expect(parseSubagentNotification('<subagent sessionID="ses_child_3" state="cancelled"></subagent>')?.body).toBe('');
+
+        // 非 subagent 通知文本原样放行
+        expect(parseSubagentNotification('普通用户输入')).toBe(undefined);
+        expect(parseSubagentNotification('<subagent sessionID="ses_child_4">缺 state</subagent>')).toBe(undefined);
+        expect(parseSubagentNotification(undefined)).toBe(undefined);
     });
 
     test('projects tool calls while excluding nested task and todo bookkeeping', () => {

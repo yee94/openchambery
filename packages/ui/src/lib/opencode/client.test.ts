@@ -123,7 +123,7 @@ const uploadPromptAttachmentBytesMock = mock(async (input: { mime: string; filen
   };
 });
 
-mock.module('../prompt-attachment-upload', () => ({
+mock.module('@/lib/prompt-attachment-upload', () => ({
   MAX_PROMPT_ATTACHMENT_BYTES: 25 * 1024 * 1024,
   toPromptAttachmentFileUrl: (filepath: string) => `file://${filepath}`,
   pathFromPromptAttachmentFileUrl: (url: string) => url.replace(/^file:\/\//, ''),

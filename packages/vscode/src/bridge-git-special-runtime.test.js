@@ -1,31 +1,31 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const gitService = {
-  getGitRangeFiles: mock(),
-  getGitRangeDiff: mock(),
-};
+const gitService = vi.hoisted(() => ({
+  getGitRangeFiles: vi.fn(),
+  getGitRangeDiff: vi.fn(),
+}));
 
-const sdkClient = {
+const sdkClient = vi.hoisted(() => ({
   model: {
-    list: mock(),
+    list: vi.fn(),
   },
   message: {
-    list: mock(),
+    list: vi.fn(),
   },
   session: {
-    create: mock(),
-    prompt: mock(),
-    remove: mock(),
+    create: vi.fn(),
+    prompt: vi.fn(),
+    remove: vi.fn(),
   },
-};
+}));
 
-const make = mock(() => sdkClient);
-const rawFetch = mock(async () => {
+const make = vi.hoisted(() => vi.fn(() => sdkClient));
+const rawFetch = vi.hoisted(() => vi.fn(async () => {
   throw new Error('raw fetch should not be used');
-});
+}));
 
-mock.module('./gitService', () => gitService);
-mock.module('@opencode-ai/client', () => ({ OpenCode: { make } }));
+vi.mock('./gitService', () => gitService);
+vi.mock('@opencode-ai/client', () => ({ OpenCode: { make } }));
 
 const { handleSpecialGitBridgeMessage } = await import('./bridge-git-special-runtime');
 
@@ -86,7 +86,7 @@ describe('bridge git special runtime', () => {
       },
     }, {
       readSettings: () => ({}),
-      execGit: mock(),
+      execGit: vi.fn(),
     });
 
     expect(response).toEqual({

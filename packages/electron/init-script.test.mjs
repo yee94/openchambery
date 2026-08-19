@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -87,7 +88,7 @@ describe('desktop initScript with contextBridge-read-only globals', () => {
 
   it('source buildInitScript uses per-key assignment helpers', async () => {
     const mainPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.mjs');
-    const source = await Bun.file(mainPath).text();
+    const source = await readFile(mainPath, 'utf8');
     expect(source).toContain("var __oc_set=function(k,v){try{if(window[k]===undefined){window[k]=v;}}catch(_e){}};");
     expect(source).toContain("try{window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}catch(_bo){}");
     // Must not reassign preload-owned keys in one monolithic try that aborts.

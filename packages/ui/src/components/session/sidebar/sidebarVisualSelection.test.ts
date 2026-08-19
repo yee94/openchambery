@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
     cancelPendingSidebarVisualSelection,
@@ -24,6 +24,13 @@ const projectFocus = (sessionId: string, projectId = 'project-a'): SessionFocusI
     scope: 'project',
     sessionId,
     projectId,
+});
+
+beforeEach(() => {
+    window.requestAnimationFrame = (cb) => {
+        cb(0);
+        return 0;
+    };
 });
 
 afterEach(() => {

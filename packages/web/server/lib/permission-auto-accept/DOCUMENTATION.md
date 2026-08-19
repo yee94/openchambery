@@ -34,3 +34,8 @@ VS Code retains its foreground-only implementation because it does not run the w
 ## Tests
 
 `runtime.test.js` covers restart persistence, nearest explicit subagent inheritance, missing-lineage lookup, retry/deduplication, and reconnect reconciliation. `packages/ui/src/components/chat/permissionAutoAccept.test.ts` covers permission configuration normalization and visibility decisions.
+
+```sh
+bunx vitest run --project @openchamber/web packages/web/server/lib/permission-auto-accept/runtime.test.js
+bunx vitest run --project @openchamber/ui packages/ui/src/components/chat/permissionAutoAccept.test.ts
+```
