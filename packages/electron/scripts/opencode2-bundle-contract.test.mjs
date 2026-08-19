@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import { isOpenCode1xVersion } from '../../web/server/lib/opencode/opencode2-pin.js';
 import {

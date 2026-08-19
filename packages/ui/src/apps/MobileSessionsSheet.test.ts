@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   getMobileSessionDefaultVisibleCount,
@@ -10,7 +12,10 @@ import {
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import type { WorktreeMetadata } from '@/types/worktree';
 
-const mobileSessionsSheetSource = readFileSync(new URL('./MobileSessionsSheet.tsx', import.meta.url), 'utf8');
+const mobileSessionsSheetSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionsSheet.tsx'),
+  'utf8',
+);
 
 const worktree = (path: string): WorktreeMetadata => ({
   path,

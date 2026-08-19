@@ -1,4 +1,9 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+
+const readHere = (rel: string) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), rel), "utf8")
 
 mock.restore()
 
@@ -162,8 +167,8 @@ describe("idle prompt + interrupt (ticket 06)", () => {
   })
 
   test("send and STOP wire to v2 prompt / interrupt, not prompt_async / abort", async () => {
-    const client = await Bun.file(new URL("../lib/opencode/client.ts", import.meta.url)).text()
-    const actions = await Bun.file(new URL("./session-actions.ts", import.meta.url)).text()
+    const client = readHere("../lib/opencode/client.ts")
+    const actions = readHere("./session-actions.ts")
     expect(client).toContain("postSessionPrompt")
     expect(client).toContain("postSessionInterrupt")
     expect(client).not.toContain("this.client.session.promptAsync")
@@ -399,7 +404,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     const ids = useSessionInboxOverlayStore.getState().list(SESSION).map((item) => item.id)
     expect(ids).toEqual(["msg_keep", "msg_server"])
     expect(ids).not.toContain("msg_local")
-    const overlaySource = await Bun.file(new URL("./session-inbox-overlay.ts", import.meta.url)).text()
+    const overlaySource = readHere("./session-inbox-overlay.ts")
     expect(overlaySource).not.toMatch(/payload\.text\s*===/)
     expect(overlaySource).not.toMatch(/content\s*===\s*item/)
   })
@@ -453,11 +458,11 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
   })
 
   test("same-session busy send and chip actions wire to prompt/inbox, not local body scan", async () => {
-    const client = await Bun.file(new URL("../lib/opencode/client.ts", import.meta.url)).text()
-    const promptApi = await Bun.file(new URL("./session-prompt-api.ts", import.meta.url)).text()
-    const store = await Bun.file(new URL("./session-ui-store.ts", import.meta.url)).text()
-    const chatInput = await Bun.file(new URL("../components/chat/ChatInput.tsx", import.meta.url)).text()
-    const wiring = await Bun.file(new URL("../components/chat/chatInputSurfaceWiring.ts", import.meta.url)).text()
+    const client = readHere("../lib/opencode/client.ts")
+    const promptApi = readHere("./session-prompt-api.ts")
+    const store = readHere("./session-ui-store.ts")
+    const chatInput = readHere("../components/chat/ChatInput.tsx")
+    const wiring = readHere("../components/chat/chatInputSurfaceWiring.ts")
     expect(client).toMatch(/delivery:\s*params\.delivery/)
     expect(client).toContain("postSessionPrompt")
     expect(promptApi).toContain("cancelUnpromotedInboxItem")

@@ -7,6 +7,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { vi } from 'vitest'
 import { opencodeClient } from '@/lib/opencode/client'
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry'
 import { routeMessage, useSessionUIStore } from './session-ui-store'
@@ -188,17 +189,19 @@ function createChildStore() {
  * via setActionRefs. Default rejects so an ordinary selection fetch does not materialize an
  * authoritative empty page that would wipe optimistic fallback rows.
  */
-let sessionMessagesHandler: (params: any) => Promise<any> | any = async (params: any) => {
-  // Confirmation (30) and edit-refetch (100) must not throw: settleSessionPromptAfterSend
-  // always reads projection. Selection (20) still rejects so an empty page cannot wipe
-  // optimistic fallback rows.
-  if (params?.limit === 30 || params?.limit === 100) return { data: [] }
-  throw new Error('session.messages not mocked')
-}
+const sessionMessages = vi.hoisted(() => ({
+  handler: async (params: any) => {
+    // Confirmation (30) and edit-refetch (100) must not throw: settleSessionPromptAfterSend
+    // always reads projection. Selection (20) still rejects so an empty page cannot wipe
+    // optimistic fallback rows.
+    if (params?.limit === 30 || params?.limit === 100) return { data: [] }
+    throw new Error('session.messages not mocked')
+  },
+}))
 
-mock.module("./session-projection-api", () => ({
+vi.mock("./session-projection-api", () => ({
   fetchSessionProjectionPage: async (input: { sessionID: string; directory: string; limit?: number }) => {
-    const result = await sessionMessagesHandler({
+    const result = await sessionMessages.handler({
       sessionID: input.sessionID,
       directory: input.directory,
       limit: input.limit,
@@ -214,7 +217,7 @@ function makeActionSdk() {
     ...opencodeClient,
     session: {
       ...((opencodeClient as any).session ?? {}),
-      messages: async (params: any) => sessionMessagesHandler(params),
+      messages: async (params: any) => sessionMessages.handler(params),
     },
   }
 }
@@ -259,10 +262,10 @@ async function waitForPresenceRemediation() {
 }
 
 function installSessionMessagesMock(fn: (params: any) => Promise<any> | any) {
-  const previous = sessionMessagesHandler
-  sessionMessagesHandler = fn
+  const previous = sessionMessages.handler
+  sessionMessages.handler = fn
   return () => {
-    sessionMessagesHandler = previous
+    sessionMessages.handler = previous
   }
 }
 
@@ -302,7 +305,7 @@ beforeEach(() => {
   opencodeClient.createSession = (async (_params: any, _dir?: string | null) => ({ id: SESSION_ID, slug: 't', projectID: 'proj-comb', directory: _dir ?? PROJECT.path, title: 'Test', time: { created: Date.now(), updated: Date.now() }, version: '1' })) as any
 
   resetAll()
-  sessionMessagesHandler = async (params: any) => {
+  sessionMessages.handler = async (params: any) => {
     if (params?.limit === 30 || params?.limit === 100) return { data: [] }
     throw new Error('session.messages not mocked')
   }
@@ -332,7 +335,7 @@ beforeEach(() => {
   setActionRefs(null as any, null as any, () => '')
   setOptimisticRefs(null as any, null as any)
   resetCombinedSendConfirmationOptions()
-  sessionMessagesHandler = async (params: any) => {
+  sessionMessages.handler = async (params: any) => {
     if (params?.limit === 30 || params?.limit === 100) return { data: [] }
     throw new Error('session.messages not mocked')
   }
