@@ -13,7 +13,7 @@ import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/tu
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
-import { getNormalizedMessageForDisplay, hasCompactionPart } from './lib/messageDisplayNormalization';
+import { getNormalizedMessageForDisplay, isCompactionCommandMessage } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
 import { FadeInDisabledProvider } from './message/FadeInOnReveal';
 import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/lib/userSendAnimation';
@@ -39,6 +39,8 @@ import {
     ensureNewestMarkdownKeyHydrated,
     getMarkdownHydrationBatch,
     pruneMarkdownHydratedKeys,
+    readMarkdownHydrationRestore,
+    writeMarkdownHydrationRestore,
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
 import {
@@ -66,6 +68,29 @@ export {
     resolveTurnSettledForPresentation,
 };
 /* eslint-enable react-refresh/only-export-components */
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveTurnActivityExpandedByDefault = (input: {
+    expansionDisposition: TurnRecord['completionDisposition'] | undefined;
+    activityRenderMode: 'collapsed' | 'summary';
+    isLastTurn: boolean;
+    isActivelyProcessing: boolean;
+    hasConfirmedFinalBody: boolean;
+}): boolean => {
+    // Live processing / last-turn active always starts expanded so the user can
+    // watch in-progress work. Settled turns follow activityRenderMode.
+    if (input.isActivelyProcessing || input.expansionDisposition === 'active') {
+        return true;
+    }
+    return resolveDefaultActivityExpanded(
+        input.expansionDisposition,
+        input.activityRenderMode,
+        {
+            isLastTurn: input.isLastTurn,
+            hasConfirmedFinalBody: input.hasConfirmedFinalBody,
+        },
+    );
+};
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
@@ -305,18 +330,6 @@ const resolveMessageRole = (message: ChatMessageEntry): string | null => {
     return (typeof info.clientRole === 'string' ? info.clientRole : null)
         ?? (typeof info.role === 'string' ? info.role : null)
         ?? null;
-};
-
-const getPartText = (part: Part): string => {
-    const text = (part as { text?: unknown }).text;
-    if (typeof text === 'string') {
-        return text;
-    }
-    const content = (part as { content?: unknown }).content;
-    if (typeof content === 'string') {
-        return content;
-    }
-    return '';
 };
 
 const normalizeCompactionSummaryMessage = (
@@ -788,11 +801,13 @@ const TurnBlock = React.memo(({
         turnCompletionDisposition: turn.completionDisposition,
         headerPresentationDisposition: activityPresentationForDefault.completionDisposition,
     });
-    const defaultExpandedForTurn = resolveDefaultActivityExpanded(
+    const defaultExpandedForTurn = resolveTurnActivityExpandedByDefault({
         expansionDisposition,
         activityRenderMode,
-        { isLastTurn, hasConfirmedFinalBody: turn.hasConfirmedFinalBody },
-    );
+        isLastTurn,
+        isActivelyProcessing: isLastTurn && sessionIsWorking,
+        hasConfirmedFinalBody: turn.hasConfirmedFinalBody,
+    });
     // Explicit per-turn toggle wins; otherwise live-active forces open and
     // settled turns follow activityRenderMode (auto-collapses when processing ends).
     const isGroupExpandedByDefault = storedTurnUiState
@@ -1461,7 +1476,14 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     const virtualItems = tanstackVirtualizer.getVirtualItems();
     const mountedIndexes = virtualItems.map((item) => item.index);
     const [hydratedMarkdownEntryKeys, setHydratedMarkdownEntryKeys] = React.useState(() => (
-        createInitialMarkdownHydratedKeys(entryKeys)
+        // Bottom-entering rows hydrate in this first commit; restore adds every
+        // key a previous mount of the same scope had already hydrated. The
+        // placeholder→Markdown swaps this replaces were the session-switch
+        // flicker. Scroll-time metering still governs rows past this seed.
+        createInitialMarkdownHydratedKeys(entryKeys, {
+            seedCount: resolveMarkdownPreloadEntries(activityRenderMode),
+            restore: readMarkdownHydrationRestore(timelineCacheKey),
+        })
     ));
     // Streaming-tail Markdown is already painted. When that turn remounts into
     // history it must stay hydrated in this same render — an after-paint seed
@@ -1473,6 +1495,9 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     if (activeHydratedMarkdownEntryKeys !== hydratedMarkdownEntryKeys) {
         setHydratedMarkdownEntryKeys(activeHydratedMarkdownEntryKeys);
     }
+    // Latest hydrated set for the unmount-time restore write.
+    const hydratedMarkdownKeysRef = React.useRef(activeHydratedMarkdownEntryKeys);
+    hydratedMarkdownKeysRef.current = activeHydratedMarkdownEntryKeys;
     const lastScrollDirectionRef = React.useRef<MarkdownHydrationScrollDirection>(null);
     if (tanstackVirtualizer.scrollDirection) {
         lastScrollDirectionRef.current = tanstackVirtualizer.scrollDirection;
@@ -1565,6 +1590,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
                 entriesRef.current.map((entry) => entry.key),
                 tanstackVirtualizer,
             );
+            writeMarkdownHydrationRestore(timelineCacheKey, hydratedMarkdownKeysRef.current);
             registerTanstackVirtualizer?.(null);
         };
         // registerTanstackVirtualizer is useEvent (stable identity); semantic deps only.
@@ -1845,7 +1871,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         for (let index = 0; index < dedupedMessages.length; index += 1) {
             const current = dedupedMessages[index];
             const currentWithRole = normalizeCompactionSummaryMessage(current, compactionCommandIds);
-            if (hasCompactionPart(current) || current.parts.some((part) => part.type === 'text' && getPartText(part).trim() === '/compact')) {
+            if (isCompactionCommandMessage(current)) {
                 compactionCommandIds.add(current.info.id);
             }
             const previous = output.length > 0 ? output[output.length - 1] : undefined;

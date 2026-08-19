@@ -420,22 +420,6 @@ const sameSessionList = (prev: Session[], next: Session[]): boolean => {
   return true;
 };
 
-/** Structural list equality — ignores pure recency (`time.updated`) churn. */
-const sameSessionListStructurally = (prev: Session[], next: Session[]): boolean => {
-  if (prev === next) {
-    return true;
-  }
-  if (prev.length !== next.length) {
-    return false;
-  }
-  for (let index = 0; index < prev.length; index += 1) {
-    if (getSessionStructuralSignature(prev[index]) !== getSessionStructuralSignature(next[index])) {
-      return false;
-    }
-  }
-  return true;
-};
-
 const filterPendingDeletionSessions = (sessions: Session[], pendingDeletionIds: ReadonlySet<string>): Session[] => {
   if (pendingDeletionIds.size === 0) return sessions;
   const firstPendingIndex = sessions.findIndex((session) => pendingDeletionIds.has(session.id));

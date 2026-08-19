@@ -1,3 +1,4 @@
+import { isCompactionCommandMessage } from '../messageDisplayNormalization';
 import { countContinuationToolParts, hasConfirmedFinalBody } from './assistantMessageLifecycle';
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
@@ -193,17 +194,6 @@ const resolveHasConfirmedFinalBody = (
     return hasConfirmedFinalBody(info.finish, lastAssistant.parts, info.error);
 };
 
-const getPartText = (part: unknown): string => {
-    const record = part as { text?: unknown; content?: unknown };
-    if (typeof record.text === 'string') {
-        return record.text;
-    }
-    if (typeof record.content === 'string') {
-        return record.content;
-    }
-    return '';
-};
-
 /**
  * Compaction activity semantics from the user message only.
  * Matches display normalization: raw type=compaction, or normalized text exactly `/compact`.
@@ -211,23 +201,7 @@ const getPartText = (part: unknown): string => {
 const resolveTurnActivityPresentationKind = (
     userMessage: ChatMessageEntry,
 ): TurnActivityPresentationKind => {
-    const rawParts = userMessage.sourceParts ?? userMessage.parts;
-    for (const part of rawParts) {
-        if ((part as { type?: unknown }).type === 'compaction') {
-            return 'compaction';
-        }
-    }
-
-    for (const part of userMessage.parts) {
-        if ((part as { type?: unknown }).type === 'compaction') {
-            return 'compaction';
-        }
-        if ((part as { type?: unknown }).type === 'text' && getPartText(part).trim() === '/compact') {
-            return 'compaction';
-        }
-    }
-
-    return 'default';
+    return isCompactionCommandMessage(userMessage) ? 'compaction' : 'default';
 };
 
 interface ProjectTurnRecordsOptions {

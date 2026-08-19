@@ -8,10 +8,13 @@
 import type { Config, OpenCodeClient } from '@/lib/opencode/v2-types'
 
 import type { ChildStoreManager } from "./child-store"
+import type { SessionMaterializationStatus } from "./materialization"
+import { materializationStatusFromTranscriptData } from "./transcript-repository-observers"
 import {
-  getSessionMaterializationStatusFromProjection,
-  type SessionMaterializationStatus,
-} from "./materialization"
+  getTranscriptRepository,
+  resolveTranscriptRepositoryForStore,
+  transcriptScope,
+} from "./transcript-repository-runtime"
 import type { State } from "./types"
 
 let _childStores: ChildStoreManager | null = null
@@ -150,11 +153,6 @@ export function resolveMaterializedSessionDirectory(
   // Production: catalog + repository hasSession (not child-store message maps).
   const matches: string[] = []
   try {
-    const {
-      getTranscriptRepository,
-      transcriptScope,
-      resolveTranscriptRepositoryForStore,
-    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
     const bound = getTranscriptRepository()
     if (_childStores) {
       for (const [directory, store] of _childStores.children) {
@@ -193,12 +191,6 @@ export function resolveMaterializedSessionDirectory(
 export function getSyncMessages(sessionId: string, directory?: string): import('@/lib/opencode/v2-types').Message[] {
   if (!sessionId) return []
   try {
-    // Lazy import avoids circular init with transcript-repository-runtime.
-    const {
-      getTranscriptRepository,
-      transcriptScope,
-      resolveTranscriptRepositoryForStore,
-    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
     const bound = getTranscriptRepository()
     const dir = directory ?? _directory
     if (bound) {
@@ -230,14 +222,6 @@ export function getSyncSessionMaterializationStatus(
 ): SessionMaterializationStatus {
   if (!sessionId) return { hasMessages: false, renderable: false, missingPartMessageIDs: [] }
   try {
-    const {
-      getTranscriptRepository,
-      transcriptScope,
-      resolveTranscriptRepositoryForStore,
-    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
-    const {
-      materializationStatusFromTranscriptData,
-    } = require("./transcript-repository-observers") as typeof import("./transcript-repository-observers")
     const dir = directory ?? _directory
     const bound = getTranscriptRepository()
     if (bound) {
@@ -270,11 +254,6 @@ export function getSyncSessionMaterializationStatus(
 export function getSyncParts(messageId: string, directory?: string): import('@/lib/opencode/v2-types').Part[] {
   if (!messageId) return []
   try {
-    const {
-      getTranscriptRepository,
-      transcriptScope,
-      resolveTranscriptRepositoryForStore,
-    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
     const bound = getTranscriptRepository()
     const dir = directory ?? _directory
     if (bound) {

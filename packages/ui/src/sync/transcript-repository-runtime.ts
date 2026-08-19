@@ -12,6 +12,7 @@
 
 import type { StoreApi } from "zustand"
 
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import {
   createStoreTranscriptRepository,
@@ -20,6 +21,8 @@ import {
 import type {
   TranscriptCommand,
   TranscriptCommandResult,
+  TranscriptHydrationState,
+  TranscriptMessageMaterializationState,
   TranscriptRepository,
   TranscriptScope,
 } from "./transcript-repository"
@@ -147,6 +150,44 @@ export function transcriptScope(
 }
 
 /**
+ * List every current-runtime canonical transcript scope for a session.
+ * Local writers that must sweep every directory copy use this (same contract
+ * as transcript SSE broadcast). An unbound repository or inventory failure
+ * returns [].
+ */
+export function listCanonicalTranscriptScopes(sessionID: string): TranscriptScope[] {
+  try {
+    const repository = getTranscriptRepository() as
+      | (ReturnType<typeof getTranscriptRepository> & {
+        getCacheBudget?: () => {
+          listCanonical: (filter?: {
+            transport?: string
+            generation?: number
+          }) => Array<{
+            scope: {
+              directory: string
+              sessionID: string
+              transport: string
+              generation: number
+            }
+          }>
+        }
+      })
+      | null
+    const transport = getRuntimeTransportIdentity()
+    const generation = getRuntimeGeneration()
+    return repository?.getCacheBudget?.().listCanonical({ transport, generation })
+      ?.filter((entry) => entry.scope.sessionID === sessionID)
+      .map((entry) => transcriptScope(entry.scope.directory, entry.scope.sessionID, {
+        transport: entry.scope.transport,
+        generation: entry.scope.generation,
+      })) ?? []
+  } catch {
+    return []
+  }
+}
+
+/**
  * Apply a production transcript command. Returns null when the repository is
  * unbound (pre-mount).
  */
@@ -195,7 +236,7 @@ export async function ensureTranscriptInitial(
 /**
  * User-triggered cold reload after a settled transcript failure.
  *
- * `ensureInitial` is a hot-cache no-op, so retry must purge the failed chain
+ * `ensureInitial` on a failed/empty chain is not enough, so retry must purge
  * and ensure a fresh tail. Ensure failure leaves the empty/failed state.
  */
 export async function retryTranscriptInitial(
@@ -218,10 +259,10 @@ export async function retryTranscriptInitial(
 }
 
 /**
- * User-triggered refresh: fetch a fresh tail, then replace. Failure keeps the
- * prior transcript. Do not use ensureInitial (hot-cache no-op) or
- * destructiveReset (ensure failure blanks the chat).
- * Open / focus / 「同步消息」 use this force GET + reconcileFetched path.
+ * User-triggered refresh: fetch a fresh tail, reconcile-page merge, then
+ * delete only in-range non-optimistic absences. Failure keeps the prior
+ * transcript. Do not use ensureInitial (enter-and-sync reconcile without
+ * that delete pass) or destructiveReset (ensure failure blanks the chat).
  */
 export async function refreshTranscriptFromAuthority(
   directory: string,
@@ -245,11 +286,60 @@ export async function refreshTranscriptFromAuthority(
  * Purge one session's transcript families (delete / eviction).
  * No-op when the bound repository lacks purgeSession.
  */
+/**
+ * Fetch the exact Host snapshot for one message and merge it into Query.
+ * UI Activity lanes call this; the repository no-ops when the message has
+ * no slim tool / reasoning / file / text parts.
+ */
+export async function materializeTranscriptMessage(
+  directory: string,
+  sessionID: string,
+  messageID: string,
+): Promise<void> {
+  const repository = requireTranscriptRepository()
+  if (typeof repository.materializeMessage !== "function") {
+    throw new Error("TranscriptRepository does not support materializeMessage")
+  }
+  await repository.materializeMessage(transcriptScope(directory, sessionID), messageID)
+}
+
+/**
+ * Read-only hydration phase for the bound Query repository.
+ * Unbound / store-test repositories without the method report idle.
+ */
+export function getTranscriptHydrationState(
+  directory: string,
+  sessionID: string,
+): TranscriptHydrationState {
+  const repository = getTranscriptRepository()
+  if (!repository || typeof repository.getHydrationState !== "function") {
+    return { sessionID, phase: "idle", p0Satisfied: false }
+  }
+  return repository.getHydrationState(transcriptScope(directory, sessionID))
+}
+
+/**
+ * Read-only exact-message fill status. Unbound / store-test repositories
+ * report idle so later UI can subscribe without throwing.
+ */
+export function getTranscriptMessageMaterializationState(
+  directory: string,
+  sessionID: string,
+  messageID: string,
+): TranscriptMessageMaterializationState {
+  const repository = getTranscriptRepository()
+  if (!repository || typeof repository.getMessageMaterializationState !== "function") {
+    return { sessionID, messageID, status: "idle" }
+  }
+  return repository.getMessageMaterializationState(
+    transcriptScope(directory, sessionID),
+    messageID,
+  )
+}
+
 export function purgeTranscriptSession(directory: string, sessionID: string): void {
   const repository = getTranscriptRepository() as
     | (TranscriptRepository & { purgeSession?: (scope: TranscriptScope) => void })
     | null
   repository?.purgeSession?.(transcriptScope(directory, sessionID))
 }
-
-

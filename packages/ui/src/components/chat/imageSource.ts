@@ -99,7 +99,48 @@ export const releaseRuntimeImageObjectUrl = (url: string): void => {
   releaseRelayImageDisplayUrl(url);
 };
 
-export const isRelayTransport = (transportIdentity: string): boolean => transportIdentity.startsWith('relay:');
+const simulateRelayImageGate = (): boolean => {
+  if (!import.meta.env.DEV) return false;
+  try {
+    if (window.localStorage.getItem('openchamber.debug.simulateRelayImageGate') === '1') return true;
+    return new URLSearchParams(window.location.search).get('simulateRelayImageGate') === '1';
+  } catch {
+    return false;
+  }
+};
+
+export const isRelayTransport = (transportIdentity: string): boolean => (
+  transportIdentity.startsWith('relay:') || simulateRelayImageGate()
+);
+
+/**
+ * Above this known byte size, images transported through the relay tunnel wait
+ * for an explicit user tap instead of auto-loading. Bulk image bytes are the
+ * largest payloads the single relay connection carries, so oversized images
+ * must not compete with chat/SSE traffic without user intent.
+ */
+export const RELAY_IMAGE_AUTO_LOAD_MAX_BYTES = 1024 * 1024;
+
+/**
+ * True when a known image byte size should block auto-load over the relay.
+ * Unknown sizes (undefined) never gate — callers keep their current behavior.
+ */
+export const imageRequiresManualLoadOverRelay = (
+  transportIdentity: string,
+  byteSize: number | undefined,
+): boolean => (
+  typeof byteSize === 'number'
+  && Number.isFinite(byteSize)
+  && byteSize > RELAY_IMAGE_AUTO_LOAD_MAX_BYTES
+  && isRelayTransport(transportIdentity)
+);
+
+/** Current runtime transport identity; re-renders on endpoint/transport switches. */
+export const useRuntimeTransportIdentity = (): string => React.useSyncExternalStore(
+  subscribeTransport,
+  getRuntimeTransportIdentity,
+  getRuntimeTransportIdentity,
+);
 
 /**
  * Local file paths and file:// URLs cannot be assigned to img.src under web /

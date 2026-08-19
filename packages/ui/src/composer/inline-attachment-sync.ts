@@ -26,10 +26,15 @@ export interface InlineAttachmentCitationStripResult {
 
 const normalizeFilenameKey = (filename: string): string => filename.trim().toLowerCase();
 
-/** Images and VS Code code selections render as inline bracket citations. */
+/**
+ * Every attached file that can appear as `[filename]` in the composer.
+ * Images keep the image icon; other files (JSON, PDF, VS Code files/selections)
+ * use the attachment icon.
+ */
 export const isInlineAttachmentCitation = (attachment: InlineAttachmentCitationCandidate): boolean => (
-    (attachment.source === 'vscode' && attachment.vscodeSource === 'selection')
-    || attachment.mimeType?.startsWith('image/') === true
+    attachment.source === 'local'
+    || attachment.source === 'server'
+    || attachment.source === 'vscode'
 );
 
 export const findAttachmentCitationRanges = (text: string, filenames: string[]): CitationRange[] => {

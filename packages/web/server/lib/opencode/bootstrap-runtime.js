@@ -60,6 +60,7 @@ export const createBootstrapRuntime = (dependencies) => {
       setAutoAcceptSession,
       sessionIndexService,
       sessionIndexSyncRuntime,
+      transcriptCacheService,
     } = options;
 
     const uiAuthController = createUiAuth({
@@ -147,6 +148,7 @@ export const createBootstrapRuntime = (dependencies) => {
       getCachedZenModels,
       sessionIndexService,
       sessionIndexSyncRuntime,
+      transcriptCacheService,
     });
 
     return {

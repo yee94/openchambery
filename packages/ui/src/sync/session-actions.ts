@@ -30,7 +30,6 @@ import {
   rollbackComposerRestoration,
   type ComposerRestorationPayload,
 } from "./message-composer-restoration"
-import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { isRelayTransportReady } from "@/lib/relay/runtime-tunnel"
 import {
@@ -39,11 +38,17 @@ import {
 } from "./stream-liveness"
 import {
   applyTranscriptCommand,
+  ensureTranscriptInitial,
   getTranscriptRepository,
-  requireTranscriptRepository,
+  listCanonicalTranscriptScopes,
+  materializeTranscriptMessage,
   resolveTranscriptRepositoryForStore,
   transcriptScope,
 } from "./transcript-repository-runtime"
+import {
+  isSessionAuthorityRevalidateFresh,
+  markSessionAuthorityRevalidated,
+} from "./session-authority-revalidate"
 import type { TranscriptData, TranscriptRepository } from "./transcript-repository"
 import { messagesFromTranscriptData } from "./transcript-repository-observers"
 import { fetchProductionTranscriptTransportPage } from "./transcript-repository-production"
@@ -72,6 +77,10 @@ import {
 } from "@/lib/sessionReviewMetadata"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
 import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projection"
+import {
+  recordTranscriptDiff,
+  tryCaptureTranscriptCanonicalSnapshot,
+} from "./transcript-diagnostics-runtime"
 
 const SEND_CONFIRMATION_REFETCH_ATTEMPTS = 2
 const SEND_CONFIRMATION_REFETCH_RETRY_MS = 150
@@ -702,11 +711,72 @@ function restoreFilePartsToInput(fileParts: Array<Record<string, unknown>>): voi
 const sessionTitlesForRestoration = (): ReadonlyMap<string, string> =>
   new Map(Array.from(getAllSyncSessionMap(), ([id, session]) => [id, session.title || id]))
 
+function isAuthoredFilePart(part: Record<string, unknown>): boolean {
+  if (part.type !== "file") return false
+  if (isSyntheticPart(part as never)) return false
+  return true
+}
+
+/** Slim or url-less authored file parts cannot rebuild attachments. */
+function sentMessageFilePartNeedsExactBody(part: Record<string, unknown>): boolean {
+  if (!isAuthoredFilePart(part)) return false
+  if ((part as { slim?: unknown }).slim === true) return true
+  return typeof part.url !== "string" || part.url.length === 0
+}
+
+function sentMessageFilePartsNeedExactBody(parts: readonly Record<string, unknown>[]): boolean {
+  return parts.some(sentMessageFilePartNeedsExactBody)
+}
+
+/**
+ * Fill slim / url-less file parts before Composer restoration so an edit
+ * cannot silently drop attachments. Complete file parts skip the Host fetch.
+ * Captures generation so a stale materialize cannot commit into a new runtime.
+ */
+async function ensureSentMessagePartsForComposerRestoration(input: {
+  directory?: string
+  sessionID: string
+  messageID: string
+  parts: readonly Record<string, unknown>[]
+  isCurrent?: () => boolean
+}): Promise<Array<Record<string, unknown>>> {
+  let parts = [...input.parts]
+  if (!sentMessageFilePartsNeedExactBody(parts)) return parts
+
+  const generation = getRuntimeGeneration()
+  const directory = input.directory ?? ""
+  try {
+    await materializeTranscriptMessage(directory, input.sessionID, input.messageID)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`composer-restoration-materialize-failed: ${detail}`)
+  }
+  if (input.isCurrent && !input.isCurrent()) {
+    throw new Error("Session history mutation aborted because the runtime changed")
+  }
+  if (getRuntimeGeneration() !== generation) {
+    throw new Error("Session history mutation aborted because the runtime changed")
+  }
+
+  const { repository, directory: transcriptDirectory } = transcriptRepositoryForSession(input.sessionID, directory)
+  parts = [...repository.getParts(
+    transcriptScope(transcriptDirectory, input.sessionID),
+    input.messageID,
+  )] as unknown as Array<Record<string, unknown>>
+  if (sentMessageFilePartsNeedExactBody(parts)) {
+    throw new Error("composer-restoration-incomplete-attachment")
+  }
+  return parts
+}
+
 async function commitSentPartsToDraftKey(input: {
   key: DraftKey
   parts: readonly Record<string, unknown>[]
   directory?: string | null
 }): Promise<{ payload: ComposerRestorationPayload; commit: Awaited<ReturnType<typeof commitComposerRestoration>> }> {
+  if (sentMessageFilePartsNeedExactBody(input.parts)) {
+    throw new Error("composer-restoration-incomplete-attachment")
+  }
   const payload = await buildSentMessageComposerRestoration(input.parts, {
     sessionTitles: sessionTitlesForRestoration(),
     directory: input.directory,
@@ -809,21 +879,6 @@ function removeQuestionRequestFromChildStores(sessionId: string, requestId: stri
     }
   }
 
-  return removed
-}
-
-function clearSessionPermissionsFromChildStores(sessionId: string): boolean {
-  const stores = _childStores
-  if (!stores || !sessionId) return false
-  let removed = false
-  for (const [, store] of stores.children) {
-    const current = store.getState().permission
-    if (!current || !current[sessionId]) continue
-    const next = { ...current }
-    delete next[sessionId]
-    store.setState({ permission: next })
-    removed = true
-  }
   return removed
 }
 
@@ -1045,7 +1100,6 @@ async function commitRemovedSessionDelete(sessionId: string, directory?: string)
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function deleteSession(sessionId: string, _options?: Record<string, unknown>): Promise<boolean> {
   const entry = optimisticallyRemoveSessionForDelete(sessionId)
   const ok = await commitRemovedSessionDelete(sessionId, entry.directory)
@@ -1279,8 +1333,18 @@ export async function requestSessionSmartTitle(sessionId: string): Promise<void>
 }
 
 export async function commitStagedRevertBeforeSend(sessionId: string, directoryOverride?: string | null): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId, directoryOverride ?? undefined)
-  const session = store.getState().session.find((item) => item.id === sessionId)
+  let directoryState: { store: DirectoryStoreApi; directory?: string }
+  try {
+    directoryState = dirStoreForSession(sessionId, directoryOverride ?? undefined)
+  } catch {
+    // Directory store layer is not mounted (e.g. pre-sync harness); without it
+    // there is no staged revert to commit and the send must proceed.
+    return
+  }
+  const { store, directory } = directoryState
+  // A partially initialized directory state (or test harness) has no session
+  // catalog; without it there is no staged revert to commit.
+  const session = store.getState().session?.find((item) => item.id === sessionId)
   if (!session?.revert) return
   await postSessionRevertCommit({ sessionID: sessionId, directory })
   const next = [...store.getState().session]
@@ -1611,8 +1675,9 @@ export async function optimisticSend(input: {
  * Used by the non-combined (fallback) send path and optimisticSend.
  *
  * Respects the shadow Map protocol: registers with real sessionID + provided
- * messageID so mergeOptimisticPage can deduplicate. If SSE has already
- * delivered the message (found in child store), skips insertion.
+ * messageID so mergeOptimisticPage can deduplicate. If the repository already
+ * holds a renderable row (message + parts), skips insertion. A hydration
+ * shell with empty parts still inserts so the user bubble can paint.
  * Returns false when the optimistic shadow ref is not mounted.
  */
 export function optimisticInsertUserMessage(input: {
@@ -1631,11 +1696,10 @@ export function optimisticInsertUserMessage(input: {
   const targetDirectory = input.directory ?? dir()
   const store = targetDirectory ? dirStoreForDirectory(targetDirectory) : dirStore()
   const resolvedDirectory = targetDirectory ?? dir() ?? ""
-  const repository = getTranscriptRepository()
-    ?? resolveTranscriptRepositoryForStore(resolvedDirectory, store)
-  const scope = transcriptScope(resolvedDirectory, input.sessionId)
   // Ticket 09 batch 1B: dedupe against Query/repository transcript, not child-store.message.
-  if (repository.getMessage(scope, input.messageID)) {
+  // Skip only when the stored row is renderable (message + parts). A hydration
+  // shell with empty parts must still receive the optimistic insert.
+  if (hasStoredSessionMessage(store, input.sessionId, input.messageID, resolvedDirectory)) {
     const state = store.getState()
     const now = Date.now()
     store.setState({
@@ -1681,12 +1745,33 @@ export function optimisticInsertUserMessage(input: {
     time: { created: now, completed: 0 },
   } as unknown as Message
 
+  const sendDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(input.sessionId, targetDirectory).data,
+  )
   _optimisticAdd({
     sessionID: input.sessionId,
     directory: targetDirectory,
     message: optimisticMessage,
     parts: optimisticParts,
   })
+  const sendDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(input.sessionId, targetDirectory).data,
+  )
+  try {
+    if (sendDiffBefore && sendDiffAfter) {
+      recordTranscriptDiff({
+        trigger: "user-send",
+        sessionID: input.sessionId,
+        directory: resolvedDirectory,
+        transport: getRuntimeTransportIdentity(),
+        generation: getRuntimeGeneration(),
+        before: sendDiffBefore,
+        after: sendDiffAfter,
+      })
+    }
+  } catch {
+    // Diagnostics must never affect optimistic insert.
+  }
 
   // Set busy status
   const current = store.getState()
@@ -1996,6 +2081,9 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
     })
   } catch (error) {
     if (scope && blockToken) useSessionUIStore.getState().clearQueueAbortBlock(scope, blockToken)
+    void import("./queue-abort-optimistic").then(({ rollbackQueueAbortOptimistic }) => {
+      rollbackQueueAbortOptimistic(sessionId)
+    }).catch(() => {})
     console.error("[session-actions] abort failed", error)
   }
 }
@@ -2231,7 +2319,7 @@ export async function revertToMessage(
       throw new Error("The selected user message is unavailable")
     }
     const { repository, directory: transcriptDirectory } = transcriptRepositoryForSession(sessionId, directory)
-    const targetParts = [...repository.getParts(
+    let targetParts = [...repository.getParts(
       transcriptScope(transcriptDirectory, sessionId),
       messageId,
     )] as unknown as Array<Record<string, unknown>>
@@ -2251,11 +2339,28 @@ export async function revertToMessage(
 
     if (targetDraftKey) {
       try {
+        targetParts = await ensureSentMessagePartsForComposerRestoration({
+          directory: transcriptDirectory,
+          sessionID: sessionId,
+          messageID: messageId,
+          parts: targetParts,
+          isCurrent,
+        })
         restoration = await buildSentMessageComposerRestoration(targetParts, {
           sessionTitles: sessionTitlesForRestoration(),
           directory,
         })
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof Error
+          && (
+            error.message.startsWith("composer-restoration-materialize-failed")
+            || error.message === "composer-restoration-incomplete-attachment"
+            || error.message.includes("runtime changed")
+          )
+        ) {
+          throw error
+        }
         // Invalid payload must not overwrite the live draft.
         throw new Error("composer-restoration-invalid-payload")
       }
@@ -2410,16 +2515,47 @@ function removeSessionMessageFromStore(
   directory?: string,
 ): void {
   const resolvedDirectory = directory ?? getSessionDirectory(sessionId) ?? _getDirectory()
-  const scope = transcriptScope(resolvedDirectory, sessionId)
-  const applied = applyTranscriptCommand(scope, {
-    type: "remove-message",
-    messageID: messageId,
-  })
-  if (!applied) {
-    resolveTranscriptRepositoryForStore(resolvedDirectory, store).apply(scope, {
+  const resolvedScope = transcriptScope(resolvedDirectory, sessionId)
+  const deleteDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, resolvedDirectory).data,
+  )
+  const scopes = [...listCanonicalTranscriptScopes(sessionId)]
+  if (!scopes.some((scope) => scope.directory === resolvedDirectory && scope.sessionID === sessionId)) {
+    scopes.push(resolvedScope)
+  }
+  let boundApplied = false
+  for (const scope of scopes) {
+    const applied = applyTranscriptCommand(scope, {
       type: "remove-message",
       messageID: messageId,
     })
+    if (applied != null) boundApplied = true
+  }
+  // Store-adapter fallback is only needed for the resolved directory when the
+  // production repository is unbound (unit tests without a Query bind).
+  if (!boundApplied) {
+    resolveTranscriptRepositoryForStore(resolvedDirectory, store).apply(resolvedScope, {
+      type: "remove-message",
+      messageID: messageId,
+    })
+  }
+  const deleteDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, resolvedDirectory).data,
+  )
+  try {
+    if (deleteDiffBefore && deleteDiffAfter) {
+      recordTranscriptDiff({
+        trigger: "user-delete",
+        sessionID: sessionId,
+        directory: resolvedDirectory,
+        transport: getRuntimeTransportIdentity(),
+        generation: getRuntimeGeneration(),
+        before: deleteDiffBefore,
+        after: deleteDiffAfter,
+      })
+    }
+  } catch {
+    // Diagnostics must never affect message removal.
   }
 }
 
@@ -2498,9 +2634,15 @@ export async function stageMessageEdit(
 
   const key = options?.draftKey
     ?? sessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, sessionId)
+  const restoredParts = await ensureSentMessagePartsForComposerRestoration({
+    directory,
+    sessionID: sessionId,
+    messageID: messageId,
+    parts: (targetParts ?? []) as Array<Record<string, unknown>>,
+  })
   const { commit } = await commitSentPartsToDraftKey({
     key,
-    parts: (targetParts ?? []) as Array<Record<string, unknown>>,
+    parts: restoredParts,
     directory,
   })
   if (commit.status !== "committed" || !commit.current) {
@@ -2627,23 +2769,47 @@ export async function commitMessageEdit(
   const preserveMessageId = options?.preserveMessageId
     ?? useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
-
-  await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
-  await waitForSessionIdleForMessageEdit(sessionId, { directory: directoryOverride })
-
-  const serverKnownIds = new Set(
-    (await fetchSessionMessageSnapshot(sessionId, directoryOverride)).map((message) => message.id),
+  const editDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, directoryOverride).data,
   )
-  // Read order after the snapshot await so abort/SSE rows that landed during
-  // the membership fetch are included in the conversation tail.
-  const conversation = readSessionMessages(sessionId, directoryOverride)
-  const removedMessages = resolveMessageEditDeleteRange(messageId, conversation, serverKnownIds, {
-    preserveMessageId,
-  })
 
-  for (const message of [...removedMessages].reverse()) {
-    await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
-    removeSessionMessageFromStore(store, sessionId, message.id, directory)
+  try {
+    await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
+    await waitForSessionIdleForMessageEdit(sessionId, { directory: directoryOverride })
+
+    const serverKnownIds = new Set(
+      (await fetchSessionMessageSnapshot(sessionId, directoryOverride)).map((message) => message.id),
+    )
+    // Read order after the snapshot await so abort/SSE rows that landed during
+    // the membership fetch are included in the conversation tail.
+    const conversation = readSessionMessages(sessionId, directoryOverride)
+    const removedMessages = resolveMessageEditDeleteRange(messageId, conversation, serverKnownIds, {
+      preserveMessageId,
+    })
+
+    for (const message of [...removedMessages].reverse()) {
+      await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
+      removeSessionMessageFromStore(store, sessionId, message.id, directory)
+    }
+  } finally {
+    try {
+      const editDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+        readSessionTranscript(sessionId, directoryOverride).data,
+      )
+      if (editDiffBefore && editDiffAfter) {
+        recordTranscriptDiff({
+          trigger: "user-edit",
+          sessionID: sessionId,
+          directory,
+          transport: getRuntimeTransportIdentity(),
+          generation: getRuntimeGeneration(),
+          before: editDiffBefore,
+          after: editDiffAfter,
+        })
+      }
+    } catch {
+      // Diagnostics must never affect message edit.
+    }
   }
 }
 
@@ -2661,12 +2827,36 @@ async function fetchSessionMessageSnapshot(sessionId: string, directoryOverride?
 /** Resolves to the authoritative snapshot this refetch materialized. */
 export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<Message[]> {
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
+  const refetchDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
+    readSessionTranscript(sessionId, directoryOverride).data,
+  )
   const records = await fetchSessionProjectionRecords({
     sessionID: sessionId,
     directory,
     limit: getMessageRefetchLimit(),
   })
-  if (records.length === 0) return []
+  if (records.length === 0) {
+    try {
+      const emptyAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+        readSessionTranscript(sessionId, directoryOverride).data,
+      )
+      if (refetchDiffBefore && emptyAfter) {
+        recordTranscriptDiff({
+          trigger: "materialize",
+          sessionID: sessionId,
+          directory,
+          transport: getRuntimeTransportIdentity(),
+          generation: getRuntimeGeneration(),
+          purpose: "refetch",
+          before: refetchDiffBefore,
+          after: emptyAfter,
+        })
+      }
+    } catch {
+      // Diagnostics must never affect refetch.
+    }
+    return []
+  }
 
   const snapshots = records.map((record: { info: Message; parts?: Part[] }) => ({
     info: stripMessageDiffSnapshots(record.info),
@@ -2688,6 +2878,26 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
       records: snapshots,
       skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
     })
+  }
+
+  try {
+    const refetchDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
+      readSessionTranscript(sessionId, directoryOverride).data,
+    )
+    if (refetchDiffBefore && refetchDiffAfter) {
+      recordTranscriptDiff({
+        trigger: "materialize",
+        sessionID: sessionId,
+        directory,
+        transport: getRuntimeTransportIdentity(),
+        generation: getRuntimeGeneration(),
+        purpose: "refetch",
+        before: refetchDiffBefore,
+        after: refetchDiffAfter,
+      })
+    }
+  } catch {
+    // Diagnostics must never affect refetch.
   }
 
   return snapshots.map((snapshot: { info: Message }) => snapshot.info)
@@ -3042,20 +3252,53 @@ async function fetchMessagesForSessionInternal(
     .map((id) => transcript.messagesByID[id])
     .filter((message): message is Message => Boolean(message))
   const hasUserBoundary = cachedMessages.some(isUserRole)
-  const liveStatus = cachedState.session_status?.[sessionID]?.type
-  const sessionIsLive = liveStatus === "busy" || liveStatus === "retry"
-  const lastMessage = cachedMessages[cachedMessages.length - 1]
-  const tailLooksLikeInFlightSend = Boolean(lastMessage && isUserRole(lastMessage))
-  const mustRefetchLiveStaleCache = sessionIsLive && !tailLooksLikeInFlightSend
   const boundary = pagination.boundary
   const hasKnownBoundary = boundary.kind === "has-more" || boundary.kind === "exhausted"
-  if (
-    !mustRefetchLiveStaleCache
-    && (repository.hasSession?.(scope) ?? cachedMessages.length > 0)
+  const hasHotCache = (
+    (repository.hasSession?.(scope) ?? cachedMessages.length > 0)
     && (hasUserBoundary || boundary.kind === "exhausted")
     && hasKnownBoundary
     && request?.status !== "error"
-  ) {
+  )
+  // Ticket 09: selection materialize — raw Host turn-page → repository http-page.
+  // Bound Query in production; store adapter when tests leave production unbound.
+  // Staleness guard: skip side effects after a session switch mid-flight.
+  const isStale = () => useSessionUIStore.getState().currentSessionId !== sessionID
+  if (hasHotCache) {
+    if (isSessionAuthorityRevalidateFresh(resolvedDir, sessionID)) {
+      seedSessionTodosFromHydratedTranscript({
+        directory: resolvedDir,
+        sessionID,
+        store,
+        transcript,
+      })
+      return
+    }
+    // Production enter path: light authority check via ensureInitial
+    // (reconcile-page). Store-adapter tests keep the prior short-circuit.
+    if (getTranscriptRepository()) {
+      try {
+        await ensureTranscriptInitial(resolvedDir, sessionID)
+      } catch {
+        return
+      }
+      if (isStale()) return
+      seedSessionTodosFromHydratedTranscript({
+        directory: resolvedDir,
+        sessionID,
+        store,
+        isStale,
+      })
+      await reconcileActiveSessionStatusAfterMessagePull({
+        directory: resolvedDir,
+        sessionID,
+        store,
+        statusBeforePull,
+        statusObservedAtBeforePull,
+        hasMessages: (repository.getTranscript(scope).messageOrder.length) > 0,
+      })
+      return
+    }
     seedSessionTodosFromHydratedTranscript({
       directory: resolvedDir,
       sessionID,
@@ -3065,10 +3308,6 @@ async function fetchMessagesForSessionInternal(
     return
   }
 
-  // Ticket 09: selection materialize — raw Host turn-page → repository http-page.
-  // Bound Query in production; store adapter when tests leave production unbound.
-  // Staleness guard: skip side effects after a session switch mid-flight.
-  const isStale = () => useSessionUIStore.getState().currentSessionId !== sessionID
   void runtimeKey
   void s
 
@@ -3089,6 +3328,7 @@ async function fetchMessagesForSessionInternal(
       skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
     })
     recordCount = page.records.length
+    markSessionAuthorityRevalidated(resolvedDir, sessionID)
   } catch {
     // Preserve prior transcript on failure (Query request state carries error).
     return

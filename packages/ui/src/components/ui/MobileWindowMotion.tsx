@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 
+import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { cn } from '@/lib/utils';
 import { mobileWindowStack } from './MobileWindowStack';
 import {
@@ -270,7 +271,12 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      previous?.focus({ preventScroll: true });
+      // A session switch closes the sheet as navigation — restoring the
+      // composer focus would raise the old conversation's keyboard over the
+      // new one (see lib/mobileOverlayFocusRestore).
+      if (!isMobileOverlayFocusRestoreSuppressed()) {
+        previous?.focus({ preventScroll: true });
+      }
     };
   }, [active, isPreview, isTop]);
 

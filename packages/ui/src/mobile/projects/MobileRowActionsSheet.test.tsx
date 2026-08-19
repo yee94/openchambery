@@ -14,6 +14,23 @@ afterAll(() => {
   mock.restore();
 });
 
+describe('MobileRowActionsSheet session actions', () => {
+  test('renders Sync messages when the session callback is available', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileRowActionsSheet
+          open
+          target={{ kind: 'session', title: 'Session', pinned: false, shared: false }}
+          actions={{ onRefreshTranscript: () => undefined }}
+          onOpenChange={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Sync messages');
+  });
+});
+
 describe('MobileRowActionsSheet project actions', () => {
   test('renders Sync sessions when the project callback is available', () => {
     const html = renderToString(

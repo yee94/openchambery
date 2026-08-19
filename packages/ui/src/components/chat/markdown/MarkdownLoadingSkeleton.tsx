@@ -12,6 +12,29 @@ const SKELETON_LINE_WIDTHS = [
   'w-[96%]',
 ] as const;
 
+const TABLE_ROW_LINE = /^\s*\|.*\|\s*$/;
+const TABLE_SEPARATOR_LINE = /^[\s|:-]+$/;
+
+/**
+ * Table source collapses hard once rendered: every pipe row is exactly one
+ * nowrap line (the table-scroll wrapper forbids wrapping) and the `|---|`
+ * separator draws a border instead of text, while the raw characters
+ * wrap-estimate to several lines each. Normalizing rows before the invisible
+ * pre-wrap spacer and the line estimate keeps the deferred placeholder from
+ * overshooting badly on table-heavy Markdown.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper exported for tests
+export const normalizeTableLinesForEstimate = (content: string): string => (
+  content
+    .split('\n')
+    .map((line) => {
+      if (!TABLE_ROW_LINE.test(line)) return line;
+      if (TABLE_SEPARATOR_LINE.test(line)) return '';
+      return 'x';
+    })
+    .join('\n')
+);
+
 const estimateSkeletonLineCount = (content: string): number => {
   const trimmed = content.trim();
   if (!trimmed) return 1;
@@ -37,7 +60,10 @@ export const MarkdownLoadingPlaceholder: React.FC<{
   content: string;
   reservedHeight?: number;
 }> = ({ animated = true, content, reservedHeight }) => {
-  const lineCount = estimateSkeletonLineCount(content);
+  // The size spacer and the skeleton-bar count both estimate from the
+  // table-normalized source (see normalizeTableLinesForEstimate).
+  const normalizedContent = normalizeTableLinesForEstimate(content);
+  const lineCount = estimateSkeletonLineCount(normalizedContent);
   const showSkeleton = content.trim().length > 0;
   const hasReservedHeight = typeof reservedHeight === 'number'
     && Number.isFinite(reservedHeight)
@@ -58,7 +84,7 @@ export const MarkdownLoadingPlaceholder: React.FC<{
           className="invisible block whitespace-pre-wrap"
           data-markdown-size-spacer="true"
         >
-          {content || '\u00a0'}
+          {normalizedContent || '\u00a0'}
         </span>
       )}
       {showSkeleton && (

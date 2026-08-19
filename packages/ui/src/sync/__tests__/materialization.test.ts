@@ -9,6 +9,7 @@ import {
 import { resolveSessionMergeStrategy } from "../session-merge-strategy"
 
 const RECOVERY_MERGE = resolveSessionMergeStrategy({ purpose: "recovery" })
+const RECONCILE_MERGE = resolveSessionMergeStrategy({ purpose: "reconcile-page" })
 const MATERIALIZE_MERGE = resolveSessionMergeStrategy({ purpose: "materialize" })
 
 function message(id: string, sessionID = "ses_1"): Message {
@@ -265,6 +266,99 @@ describe("materializeSessionSnapshots", () => {
     expect(merged.state?.time?.start).toBe(1000)
   })
 
+  test("reconcile-page keeps unconfirmed optimistic parts when incoming is slim with a different part id", () => {
+    const optimisticPart = {
+      id: "prt_optimistic",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "我刚发的消息",
+      __openchamberOptimistic: true,
+    } as Part
+    const slimServer = {
+      id: "prt_server",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "",
+      slim: true,
+    } as Part
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [optimisticPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_user"), parts: [slimServer] }],
+      { merge: RECONCILE_MERGE },
+    )
+
+    expect(result.part.msg_user).toEqual([optimisticPart])
+    expect(result.part.msg_user[0]).toBe(optimisticPart)
+    expect(result.partsChanged).toBe(false)
+  })
+
+  test("reconcile-page replaces unconfirmed optimistic parts with a full incoming snapshot", () => {
+    const optimisticPart = {
+      id: "prt_optimistic",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "我刚发的消息",
+      __openchamberOptimistic: true,
+    } as Part
+    const fullServer = part("prt_server", "msg_user", "text", "我刚发的消息")
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [optimisticPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_user"), parts: [fullServer] }],
+      { merge: RECONCILE_MERGE },
+    )
+
+    expect(result.part.msg_user).toEqual([fullServer])
+    expect(result.partsChanged).toBe(true)
+  })
+
+  test("recovery still replaces unconfirmed optimistic parts with a slim different-id snapshot", () => {
+    const optimisticPart = {
+      id: "prt_optimistic",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "我刚发的消息",
+      __openchamberOptimistic: true,
+    } as Part
+    const slimServer = {
+      id: "prt_server",
+      messageID: "msg_user",
+      sessionID: "ses_1",
+      type: "text",
+      text: "",
+      slim: true,
+    } as Part
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [optimisticPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_user"), parts: [slimServer] }],
+      { merge: RECOVERY_MERGE },
+    )
+
+    expect(result.part.msg_user).toEqual([slimServer])
+    expect(result.partsChanged).toBe(true)
+  })
+
   test("does not preserve omitted optimistic user text parts beside server snapshot parts", () => {
     const optimisticPart = { id: "prt_optimistic", messageID: "msg_1", type: "text", text: "Hello" } as Part
     const serverPart = part("prt_server", "msg_1", "text", "Hello")
@@ -500,8 +594,43 @@ describe("materializeSessionSnapshots", () => {
 
     expect(result.message.ses_1).toEqual([older, completed])
     expect(result.message.ses_1[0]).toBe(older)
-    expect(result.message.ses_1[1]).toBe(completed)
+    expect(result.message.ses_1[1]).toEqual(completed)
     expect(result.part.msg_2[0]).toBe(livePart)
+  })
+
+  test("recovery preserves agent/model identity when the fetched snapshot omits them", () => {
+    const identified = {
+      ...message("msg_2"),
+      agent: "explorer",
+      mode: "explorer",
+      providerID: "deepseek",
+      modelID: "deepseek-v4-flash",
+    } as Message
+    const identitylessTick = {
+      ...message("msg_2"),
+      finish: "stop",
+      tokens: { input: 10, output: 20 },
+      time: { created: 1, completed: 2 },
+    } as Message
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [identified] }, part: {} },
+      "ses_1",
+      [{ info: identitylessTick, parts: [] }],
+      { merge: RECOVERY_MERGE },
+    )
+
+    const merged = result.message.ses_1?.[0] as Message & {
+      agent?: string
+      mode?: string
+      providerID?: string
+      modelID?: string
+      finish?: string
+    }
+    expect(merged.agent).toBe("explorer")
+    expect(merged.mode).toBe("explorer")
+    expect(merged.providerID).toBe("deepseek")
+    expect(merged.modelID).toBe("deepseek-v4-flash")
+    expect(merged.finish).toBe("stop")
   })
 
   test("recovery preserves references for equivalent fetched messages", () => {
@@ -511,6 +640,32 @@ describe("materializeSessionSnapshots", () => {
 
     expect(result.message).toBe(state.message)
     expect(result.messagesChanged).toBe(false)
+  })
+
+  test("reconcile by-created inserts an older unanchored window ahead of a newer gap page", () => {
+    const newer = [
+      { ...userMessage("msg_07"), time: { created: 1007 } } as Message,
+      { ...message("msg_08"), time: { created: 1008 } } as Message,
+    ]
+    const older = [
+      { ...userMessage("msg_03"), time: { created: 1003 } } as Message,
+      { ...message("msg_04"), time: { created: 1004 } } as Message,
+    ]
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: newer }, part: {} },
+      "ses_1",
+      older.map((info) => ({ info, parts: [] })),
+      { merge: RECONCILE_MERGE, placeUnanchoredNewMessages: "by-created" },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual([
+      "msg_03",
+      "msg_04",
+      "msg_07",
+      "msg_08",
+    ])
+    expect(result.message.ses_1[2]).toBe(newer[0])
+    expect(result.message.ses_1[3]).toBe(newer[1])
   })
 })
 

@@ -18,7 +18,12 @@ mock.module('./components/TurnItem', () => ({ default: () => null }));
 mock.module('./hooks/useTurnRecords', () => ({ useTurnRecords: () => ({ projection: { ungroupedMessageIds: new Set(), lastTurnId: null }, staticTurns: [], streamingTurn: null }) }));
 mock.module('./lib/turns/applyRetryOverlay', () => ({ applyRetryOverlay: (messages: unknown[]) => messages }));
 mock.module('./lib/turns/streamingTailEntry', () => ({ buildLiveStreamingEntry: (entry: unknown) => entry }));
-mock.module('./lib/messageDisplayNormalization', () => ({ getNormalizedMessageForDisplay: (message: unknown) => message, hasCompactionPart: () => false }));
+mock.module('./lib/messageDisplayNormalization', () => ({
+    getNormalizedMessageForDisplay: (message: unknown) => message,
+    hasCompactionPart: () => false,
+    isCompactionCommandMessage: () => false,
+    isCompactionCommandParts: () => false,
+}));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: () => false }));
 mock.module('./message/FadeInOnReveal', () => ({ FadeInDisabledProvider: ({ children }: { children: unknown }) => children }));
 mock.module('@/lib/userSendAnimation', () => ({ consumePendingUserSendAnimation: () => false, hasPendingUserSendAnimation: () => false }));
@@ -40,6 +45,8 @@ mock.module('./lib/markdownHydrationWindow', () => ({
     ensureNewestMarkdownKeyHydrated: (keys: Set<string>) => keys,
     getMarkdownHydrationBatch: () => [],
     pruneMarkdownHydratedKeys: (keys: Set<string>) => keys,
+    readMarkdownHydrationRestore: () => undefined,
+    writeMarkdownHydrationRestore: () => undefined,
 }));
 mock.module('./lib/shellBridge', () => ({
     USER_SHELL_MARKER: '',
@@ -60,6 +67,7 @@ const {
     resolveTanstackEstimateMinSamples,
     resolveTimelineVirtualizerCacheKey,
     resolveToggledActivityExpanded,
+    resolveTurnActivityExpandedByDefault,
     resolveTurnActivityPresentation,
     shouldShowCompactionStatus,
     syncCurrentHistoryVirtualization,
@@ -78,9 +86,16 @@ describe('history virtualization transition anchor source contract', () => {
 });
 
 describe('turn activity expansion state', () => {
-    test('live active always defaults expanded regardless of activity render mode', () => {
-        expect(resolveDefaultActivityExpanded('active', 'collapsed')).toBe(true);
-        expect(resolveDefaultActivityExpanded('active', 'summary')).toBe(true);
+    test('active Activity defaults expanded while its Working header remains live', () => {
+        for (const activityRenderMode of ['collapsed', 'summary'] as const) {
+            expect(resolveTurnActivityExpandedByDefault({
+                expansionDisposition: 'active',
+                activityRenderMode,
+                isLastTurn: true,
+                isActivelyProcessing: true,
+                hasConfirmedFinalBody: false,
+            })).toBe(true);
+        }
     });
 
     test('collapsed mode defaults settled dispositions to collapsed', () => {
@@ -114,7 +129,13 @@ describe('turn activity expansion state', () => {
             sessionIsWorking: true,
         });
         expect(live.completionDisposition).toBe('active');
-        expect(resolveDefaultActivityExpanded(live.completionDisposition, 'collapsed')).toBe(true);
+        expect(resolveTurnActivityExpandedByDefault({
+            expansionDisposition: live.completionDisposition,
+            activityRenderMode: 'collapsed',
+            isLastTurn: true,
+            isActivelyProcessing: true,
+            hasConfirmedFinalBody: false,
+        })).toBe(true);
     });
 
     test('last open turn stays expanded even when sessionIsWorking flaps idle between tools', () => {
@@ -132,7 +153,13 @@ describe('turn activity expansion state', () => {
             headerPresentationDisposition: demoted.completionDisposition,
         });
         expect(expansion).toBe('active');
-        expect(resolveDefaultActivityExpanded(expansion, 'collapsed')).toBe(true);
+        expect(resolveTurnActivityExpandedByDefault({
+            expansionDisposition: expansion,
+            activityRenderMode: 'collapsed',
+            isLastTurn: true,
+            isActivelyProcessing: false,
+            hasConfirmedFinalBody: false,
+        })).toBe(true);
         expect(resolveDefaultActivityExpanded(demoted.completionDisposition, 'collapsed')).toBe(false);
     });
 
@@ -162,12 +189,13 @@ describe('turn activity expansion state', () => {
         ).toBe(true);
     });
 
-    test('last active turn stays expanded even with a confirmed final body', () => {
-        // Active always wins: a flapping busy/idle status must not collapse a
-        // turn the projection still reports as open.
+    test('last active turn stays expanded through busy-status flaps', () => {
         expect(
-            resolveDefaultActivityExpanded('active', 'collapsed', {
+            resolveTurnActivityExpandedByDefault({
+                expansionDisposition: 'active',
+                activityRenderMode: 'collapsed',
                 isLastTurn: true,
+                isActivelyProcessing: false,
                 hasConfirmedFinalBody: true,
             }),
         ).toBe(true);

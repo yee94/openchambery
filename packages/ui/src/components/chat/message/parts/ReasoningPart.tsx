@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from '@/components/icon/Icon';
-import { BusyDots } from './BusyDots';
+import { LatticeOrb } from './LatticeOrb';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
@@ -116,6 +116,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     defaultExpanded,
 }) => {
     const { t } = useI18n();
+    const isMobile = useUIStore((state) => state.isMobile);
     const hasEnded = typeof time?.end === 'number';
     const canAutoExpand = isStreaming && !hasEnded;
     const [expansion, setExpansion] = React.useState<ExpansionState>(() => {
@@ -364,7 +365,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                             >
                                 {t(variant === 'justification' ? 'chat.reasoningTrace.justification' : 'chat.reasoningTrace.thinking')}
                             </span>
-                            <BusyDots />
+                            <LatticeOrb isMobile={isMobile} className="text-[var(--tools-icon)]" />
                         </span>
                     ) : isExpanded ? (
                         <span
@@ -378,7 +379,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                             className={TOOL_ROW_TITLE_CLASS}
                             style={{ color: 'var(--tools-title)' }}
                         >
-                            {t(variant === 'justification' ? 'chat.reasoningTrace.justification' : 'chat.reasoningTrace.thinking')}
+                            {t(variant === 'justification' ? 'chat.reasoningTrace.justification' : 'chat.reasoningTrace.thought')}
                         </span>
                     )}
                 </div>
@@ -419,7 +420,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                     >
                         <span
                             aria-hidden="true"
-                            className="pointer-events-none absolute left-0 top-0 bottom-0 w-px"
+                            className="pointer-events-none absolute left-0 top-0 bottom-0 w-px opacity-40"
                             style={{ backgroundColor: 'var(--tools-border)' }}
                         />
                         {isStreaming ? (

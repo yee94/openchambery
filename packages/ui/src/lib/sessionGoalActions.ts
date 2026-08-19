@@ -1,4 +1,5 @@
 import { abortCurrentOperation, patchSessionMetadata } from '@/sync/session-actions';
+import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 import { distillGoalObjective } from '@/lib/smallModel';
 import { formatMessage, useI18nStore } from '@/lib/i18n';
 import { toast } from '@/components/ui';
@@ -147,6 +148,26 @@ export async function setSessionGoal(
   });
 }
 
+/**
+ * Pause an active goal because a pending question is already on screen.
+ * Does not abort the current turn — the question is the wait state.
+ * No-op when there is no goal or it is not active.
+ */
+export async function pauseSessionGoalForQuestion(
+  sessionId: string,
+  directory: string | undefined,
+): Promise<void> {
+  await writeGoal(sessionId, directory, (currentGoal) => {
+    if (!currentGoal || currentGoal.status !== 'active') return currentGoal;
+    return {
+      ...currentGoal,
+      status: 'paused',
+      statusReason: 'paused for question',
+      updatedAt: Date.now(),
+    };
+  });
+}
+
 export async function setSessionGoalStatus(
   sessionId: string,
   directory: string | undefined,
@@ -156,6 +177,7 @@ export async function setSessionGoalStatus(
   // as the stop button, expressed through goal control. A no-op when the
   // session is already idle.
   if (status === 'paused') {
+    promoteQueueHeadOnAbort(sessionId);
     void abortCurrentOperation(sessionId);
   }
   await writeGoal(sessionId, directory, (currentGoal) => {
@@ -185,6 +207,7 @@ export async function clearSessionGoal(sessionId: string, directory: string | un
   // Removing a running goal is a "stop" too — abort the current turn like
   // pause does. A no-op when the session is idle.
   if (wasActive) {
+    promoteQueueHeadOnAbort(sessionId);
     void abortCurrentOperation(sessionId);
   }
 }

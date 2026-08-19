@@ -2,6 +2,8 @@ import React from 'react';
 import { flushSync } from 'react-dom';
 import { useEvent } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
+import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
+import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -22,6 +24,7 @@ import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
 import { commitMessageEdit } from '@/sync/session-actions';
 import type { OptimisticSendTicket } from '@/sync/session-actions';
+import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 import {
     useDirectoryStore as useChildDirectoryStore,
     useDirectorySync,
@@ -195,7 +198,7 @@ import {
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
 import { decorateComposerReference, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
 import { useComposerController } from '@/composer/use-composer-controller';
-import { buildComposerSemanticParts, dedupeDeliveryAttachments } from '@/composer/delivery';
+import { buildComposerSemanticParts, dedupeDeliveryAttachments, ensureSessionMentionTranscripts } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import {
     attachmentCitationDisplay,
@@ -583,6 +586,8 @@ type ComposerAttachmentControlsProps = {
     onMenuOpenChange?: (open: boolean) => void;
     /** Mobile: open the attachment bottom sheet instead of the dropdown menu. */
     onOpenMobileSheet?: () => void;
+    /** Android Capacitor：打开照片/文件二选一 sheet */
+    onOpenAndroidPickSheet?: () => void;
     withTooltip?: boolean;
 };
 
@@ -593,7 +598,6 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
         footerIconButtonClass,
         iconSizeClass,
         handlePickLocalFiles,
-        handlePickLocalImages,
         openIssuePicker,
         openPrPicker,
         onOpenSettings,
@@ -602,13 +606,16 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
 
     const isMobileAttach = Boolean(props.onOpenMobileSheet);
     const attachLabel = t('chat.chatInput.actions.attachFiles');
-    const handlePick = isMobileAttach ? handlePickLocalImages : handlePickLocalFiles;
+    // Route mobile to the all-files picker too: the image-only input hid
+    // documents (.json etc.) on iOS. WKWebView still offers the photo
+    // library from the document picker's action sheet with accept="*/*".
+    const handlePick = handlePickLocalFiles;
 
     const attachButton = (
         <button
             type="button"
             className={footerIconButtonClass}
-            onClick={handlePick}
+            onClick={() => (props.onOpenAndroidPickSheet ? props.onOpenAndroidPickSheet() : handlePick())}
             // Keep the tap from dismissing the keyboard. On Android's
             // resizes-content viewport the keyboard-close relayout
             // moves this button mid-tap and the click never lands.
@@ -720,6 +727,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
     && prev.onOpenSettings === next.onOpenSettings
     && prev.onMenuOpenChange === next.onMenuOpenChange
     && prev.onOpenMobileSheet === next.onOpenMobileSheet
+    && prev.onOpenAndroidPickSheet === next.onOpenAndroidPickSheet
     && prev.withTooltip === next.withTooltip
 ));
 
@@ -1029,6 +1037,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // shrinks them. Instant, synced with keyboard choreography so chat geometry
     // and focus continuity stay continuous.
     const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(false);
+    // Footer/chrome phase for the mobile composer, deliberately separate from the
+    // silhouette state: 'collapsed' = pill footer (attach + stop), 'full' =
+    // expanded footer with all controls, 'none' = transient frame with no footer
+    // while the silhouette flips first. Native shells commit the silhouette
+    // synchronously (flushSync) but defer the costly footer tree by one frame so
+    // the tap frame stays light; the footer fade-in (oc-mobile-composer-footer-in)
+    // masks the one-frame delay.
+    const [mobileComposerChrome, setMobileComposerChrome] = React.useState<'collapsed' | 'none' | 'full'>('collapsed');
+    const mobileComposerChromeFrameRef = React.useRef<number | null>(null);
     const [mobileTextareaFocused, setMobileTextareaFocused] = React.useState(false);
     // Mobile browser / installed PWA: tapping a composer control while the
     // keyboard is up blurs the textarea first, and the keyboard-resize reflow
@@ -1045,6 +1062,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, []);
     const [mobileDictationActive, setMobileDictationActive] = React.useState(false);
     const [mobileAttachMenuOpen, setMobileAttachMenuOpen] = React.useState(false);
+    const [androidMediaPickSheetOpen, setAndroidMediaPickSheetOpen] = React.useState(false);
     const [mobileDraftPicker, setMobileDraftPicker] = React.useState<'project' | null>(null);
     const mobileDraftProjectSheetId = React.useId();
     const [mobileDraftPickerQuery, setMobileDraftPickerQuery] = React.useState('');
@@ -1441,12 +1459,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             sendQueued: (request) => dispatchQueuedMessage(request.sessionID ?? '', { delivery: request.options?.delivery === 'steer' ? 'steer' : undefined, queueItemID: request.queueItemID, manual: request.manual, scope: request.queueScope ? { state: 'bound', ...request.queueScope } : undefined }),
             create: async () => openNewSessionDraft(),
             compact: async (request) => opencodeClient.summarizeSession(request.sessionID ?? '', request.providerID ?? '', request.modelID ?? '', request.directory),
-            abort: (request) => sessionActions.abortCurrentOperation(request.sessionID ?? ''),
+            abort: (request) => {
+                if (request.sessionID) promoteQueueHeadOnAbort(request.sessionID);
+                return sessionActions.abortCurrentOperation(request.sessionID ?? '');
+            },
         },
         shortcuts: {
             cycle: (direction) => primaryCycleAgentRef.current(direction),
             new: () => openNewSessionDraft(),
-            abort: () => sessionActions.abortCurrentOperation(primarySessionID ?? ''),
+            abort: () => {
+                if (primarySessionID) promoteQueueHeadOnAbort(primarySessionID);
+                return sessionActions.abortCurrentOperation(primarySessionID ?? '');
+            },
             submit: () => {},
         },
         deliveryTarget: { kind: 'primary' },
@@ -3108,71 +3132,98 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // activeDirectoryKey is still the parent project — capture returns
         // undefined even when the composer UI already has a model. Surface
         // selection is the user-visible truth and unblocks that silent path.
-        let sendConfig = capturedSendConfig
-            ? { ...capturedSendConfig }
-            : surface.kind === 'primary'
-                ? (() => {
-                    const configState = useConfigStore.getState();
-                    if (!primarySubmitSessionIdAtStart) {
+        const resolveSendConfig = async () => {
+            let sendConfig = capturedSendConfig
+                ? { ...capturedSendConfig }
+                : surface.kind === 'primary'
+                    ? (() => {
+                        const configState = useConfigStore.getState();
+                        if (!primarySubmitSessionIdAtStart) {
+                            return resolvePrimaryComposerSendConfig({
+                                captured: capturePrimaryComposerSendConfig(configState),
+                                surfaceSelection: surface.selection.value,
+                            });
+                        }
+                        const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                            ?? currentDirectory
+                            ?? null;
                         return resolvePrimaryComposerSendConfig({
-                            captured: capturePrimaryComposerSendConfig(configState),
+                            captured: capturePrimaryComposerSendConfig(configState, {
+                                expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
+                                activeDirectoryKey: configState.activeDirectoryKey,
+                            }),
                             surfaceSelection: surface.selection.value,
                         });
-                    }
-                    const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
-                        ?? currentDirectory
-                        ?? null;
-                    return resolvePrimaryComposerSendConfig({
+                    })()
+                    : (surface.selection.value.providerID && surface.selection.value.modelID
+                        ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
+                        : undefined);
+
+            // One more activate+recapture when still incomplete — flush may have
+            // no-op'd activateDirectory for an unresolved worktree path.
+            if (
+                surface.kind === 'primary'
+                && primarySubmitSessionIdAtStart
+                && (!sendConfig?.providerID || !sendConfig?.modelID)
+            ) {
+                const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                    ?? currentDirectory
+                    ?? null;
+                const expectedConfigKey = getConfigDirectoryKey(sessionDirectory);
+                if (useConfigStore.getState().activeDirectoryKey !== expectedConfigKey) {
+                    await useConfigStore.getState().activateDirectory(sessionDirectory);
+                }
+                if (
+                    useSessionUIStore.getState().currentSessionId === primarySubmitSessionIdAtStart
+                ) {
+                    const configState = useConfigStore.getState();
+                    sendConfig = resolvePrimaryComposerSendConfig({
                         captured: capturePrimaryComposerSendConfig(configState, {
                             expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
                             activeDirectoryKey: configState.activeDirectoryKey,
                         }),
                         surfaceSelection: surface.selection.value,
                     });
-                })()
-                : (surface.selection.value.providerID && surface.selection.value.modelID
-                    ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
-                    : undefined);
-
-        // One more activate+recapture when still incomplete — flush may have
-        // no-op'd activateDirectory for an unresolved worktree path.
-        if (
-            surface.kind === 'primary'
-            && primarySubmitSessionIdAtStart
-            && (!sendConfig?.providerID || !sendConfig?.modelID)
-        ) {
-            const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
-                ?? currentDirectory
-                ?? null;
-            const expectedConfigKey = getConfigDirectoryKey(sessionDirectory);
-            if (useConfigStore.getState().activeDirectoryKey !== expectedConfigKey) {
-                await useConfigStore.getState().activateDirectory(sessionDirectory);
+                }
             }
-            if (
-                useSessionUIStore.getState().currentSessionId === primarySubmitSessionIdAtStart
-            ) {
-                const configState = useConfigStore.getState();
-                sendConfig = resolvePrimaryComposerSendConfig({
-                    captured: capturePrimaryComposerSendConfig(configState, {
-                        expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
-                        activeDirectoryKey: configState.activeDirectoryKey,
-                    }),
-                    surfaceSelection: surface.selection.value,
-                });
-            }
-        }
 
-        const providerIdToSend = sendConfig?.providerID;
-        const modelIdToSend = sendConfig?.modelID;
-        const agentNameToSend = sendConfig?.agent;
-        const variantToSend = sendConfig?.variant;
+            return sendConfig;
+        };
+
+        let sendConfig = await resolveSendConfig();
+        let providerRefreshAttempted = false;
+
+        let providerIdToSend = sendConfig?.providerID;
+        let modelIdToSend = sendConfig?.modelID;
+        let agentNameToSend = sendConfig?.agent;
+        let variantToSend = sendConfig?.variant;
 
         if (!providerIdToSend || !modelIdToSend) {
-            console.warn('Cannot send message: provider or model not selected');
-            // Previously only console.warn'd after clearing the composer — draft
-            // recovered in finally with no toast, so Send appeared broken.
-            toast.error(t('chat.chatInput.toast.messageSendFailed'));
-            return;
+            // Recovery: the provider catalog may have failed to load (or was cached
+            // empty), leaving no selectable model. Force a refresh once and re-resolve
+            // before declaring the send a failure — a healthy catalog should not strand
+            // every following message.
+            if (!providerRefreshAttempted) {
+                providerRefreshAttempted = true;
+                try {
+                    await useConfigStore.getState().loadProviders({ forceRefresh: true, source: 'chat-input-send-recovery' });
+                    sendConfig = await resolveSendConfig();
+                    providerIdToSend = sendConfig?.providerID;
+                    modelIdToSend = sendConfig?.modelID;
+                    agentNameToSend = sendConfig?.agent;
+                    variantToSend = sendConfig?.variant;
+                } catch {
+                    // loadProviders swallows errors; an unexpected throw still fails the send.
+                }
+            }
+
+            if (!providerIdToSend || !modelIdToSend) {
+                console.warn('Cannot send message: provider or model not selected');
+                // Previously only console.warn'd after clearing the composer — draft
+                // recovered in finally with no toast, so Send appeared broken.
+                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                return;
+            }
         }
 
         // Sending is authoritative: if a question prompt is open, dismiss it
@@ -5257,6 +5308,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     return;
                 }
 
+                // Background prefetch: page the referenced transcript fully into the cache so
+                // send-time inlining usually carries content. Failure is non-fatal — the send
+                // boundary's session-mention instruction embeds a read-only retrieval recipe.
+                void ensureSessionMentionTranscripts([{ type: 'session', sessionId: session.id }], sessionDirectory).catch(() => undefined);
+
                 const document = getDocument();
                 const textarea = textareaRef.current;
                 const cursorPosition = textarea?.selectionStart ?? document.text.length;
@@ -5723,6 +5779,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         imageInputRef.current?.click();
     }, [handleVSCodePickFiles]);
 
+    const handlePickAndroidPhotos = React.useCallback(async () => {
+        if (!canUseNativeMediaPick()) { handlePickLocalImages(); return; }
+        try {
+            const files = await pickNativeMediaFiles(NATIVE_MEDIA_PICK_LIMIT);
+            if (files === null) { handlePickLocalImages(); return; }
+            if (files.length > 0) await attachFiles(files);
+        } catch (error) {
+            console.error('Native photo pick failed', error);
+            toast.error(t('chat.chatInput.toast.attachFileFailed'));
+        }
+    }, [attachFiles, handlePickLocalImages, t]);
+
     const handleLocalFileSelect = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files) return;
@@ -6058,6 +6126,28 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         mobileComposerExpandedRef.current = mobileComposerExpanded;
     });
 
+    const scheduleMobileComposerChrome = React.useCallback((phase: 'collapsed' | 'full') => {
+        if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+            setMobileComposerChrome(phase);
+            return;
+        }
+        if (mobileComposerChromeFrameRef.current !== null) {
+            window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
+        }
+        mobileComposerChromeFrameRef.current = window.requestAnimationFrame(() => {
+            mobileComposerChromeFrameRef.current = null;
+            setMobileComposerChrome(phase);
+        });
+    }, []);
+    React.useEffect(() => {
+        return () => {
+            if (mobileComposerChromeFrameRef.current !== null) {
+                window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
+                mobileComposerChromeFrameRef.current = null;
+            }
+        };
+    }, []);
+
     const expandMobileComposer = React.useCallback((intent: 'focus') => {
         // Action buttons set this window — do not steal focus / open the IME.
         if (Date.now() < suppressComposerFocusUntilRef.current) {
@@ -6075,6 +6165,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // silhouette before UIKit starts presenting the keyboard; a concurrent
         // update can otherwise leave the pill behind until the keyboard is already
         // visible. Other runtimes keep the yielding transition.
+        // The heavy footer tree mounts one frame later (scheduleMobileComposerChrome)
+        // so the sync commit carries only the silhouette flip.
         // Update the ref immediately so a same-stack onFocus (after focus())
         // does not re-enter expand before the effect mirrors state.
         if (!mobileComposerExpandedRef.current) {
@@ -6086,10 +6178,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // expanded silhouette in this frame (iOS UIKit + Android CSS FLIP).
             // Deferring with startTransition leaves the pill behind the keyboard.
             if (isCapacitorApp() && (platform === 'ios' || platform === 'android')) {
-                flushSync(() => setMobileComposerExpanded(true));
+                flushSync(() => {
+                    setMobileComposerExpanded(true);
+                    setMobileComposerChrome('none');
+                });
+                scheduleMobileComposerChrome('full');
             } else {
                 React.startTransition(() => {
                     setMobileComposerExpanded(true);
+                    setMobileComposerChrome('full');
                 });
             }
         }
@@ -6099,7 +6196,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // field above the keyboard) is the only thing that moves the composer.
         // Same DOM node as the collapsed pill — focus continues rather than remounts.
         textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
-    }, []);
+    }, [scheduleMobileComposerChrome]);
 
     const openMobileAttachSheet = React.useCallback(() => {
         // Same order as handleOpenMobilePanel: mark the sheet open BEFORE the
@@ -6111,6 +6208,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         textareaRef.current?.blur();
     }, [markComposerActionGesture]);
 
+    // Android Capacitor 专用，sheet 提供照片/文件二选一。
+    const openAndroidMediaPickSheet = React.useCallback(() => {
+        markComposerActionGesture();
+        setAndroidMediaPickSheetOpen(true);
+        textareaRef.current?.blur();
+    }, [markComposerActionGesture]);
+
     const handleMobileDictationActiveChange = React.useCallback((active: boolean) => {
         setMobileDictationActive(active);
         if (active) {
@@ -6119,6 +6223,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // switch straight into the voice variant of the full composer.
             if (!mobileComposerExpandedRef.current) {
                 setMobileComposerExpanded(true);
+                setMobileComposerChrome('full');
             }
             return;
         }
@@ -6130,6 +6235,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (!mobileComposerExpandedRef.current) return;
             if (document.activeElement === textareaRef.current) return;
             setMobileComposerExpanded(false);
+            setMobileComposerChrome('collapsed');
             setExpandedInput(false);
         }, 30);
     }, [setExpandedInput]);
@@ -6168,6 +6274,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const mobileOverlayOpen = mobileOverlayHostBusy
         || Boolean(mobileControlsPanel)
         || mobileAttachMenuOpen
+        || androidMediaPickSheetOpen
         || issuePickerOpen
         || prPickerOpen;
     // Installed PWA (standalone): a focus() from a bare timeout is outside the
@@ -6236,6 +6343,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (!restoreKeyboardAfterOverlayRef.current) return;
             if (mobilePickerDialogsOpenRef.current) return;
             if (openSheetCountRef.current > 0) return;
+            if (isMobileOverlayFocusRestoreSuppressed()) {
+                // A session switch closed this overlay — the pending keyboard
+                // restore belongs to the previous conversation's composer.
+                restoreKeyboardAfterOverlayRef.current = false;
+                return;
+            }
             restoreKeyboardAfterOverlayRef.current = false;
             // iOS can still dismiss the freshly-raised keyboard when the tap
             // that closed the overlay finishes over non-input content — hold
@@ -6289,6 +6402,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // overlay appears.
         const timer = window.setTimeout(() => {
             restoreKeyboardAfterOverlayRef.current = false;
+            // A session switch closed the overlay — the pending restore was
+            // armed for the previous conversation's composer.
+            if (isMobileOverlayFocusRestoreSuppressed()) return;
             // Browsers need their native scroll-into-view (see expandMobileComposer).
             const textarea = textareaRef.current;
             if (textarea && document.activeElement !== textarea) {
@@ -6307,6 +6423,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         || mobileDictationActive
         || Boolean(mobileControlsPanel)
         || mobileAttachMenuOpen
+        || androidMediaPickSheetOpen
         || mobileDraftPicker !== null
         || issuePickerOpen
         || prPickerOpen
@@ -6315,6 +6432,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         || mobileDictationActive
         || Boolean(mobileControlsPanel)
         || mobileAttachMenuOpen
+        || androidMediaPickSheetOpen
         || mobileDraftPicker !== null
         || issuePickerOpen
         || prPickerOpen
@@ -6329,6 +6447,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             mobileExpandIntentRef.current = null;
             mobileComposerExpandedRef.current = false;
             setMobileComposerExpanded(false);
+            setMobileComposerChrome('collapsed');
             setExpandedInput(false);
         }, 250);
         return () => window.clearTimeout(timer);
@@ -6385,12 +6504,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             mobileComposerExpandedRef.current = false;
             flushSync(() => {
                 setMobileComposerExpanded(false);
+                setMobileComposerChrome('none');
                 setExpandedInput(false);
             });
+            scheduleMobileComposerChrome('collapsed');
         };
         window.addEventListener('oc:keyboard-intent', handleIntent);
         return () => window.removeEventListener('oc:keyboard-intent', handleIntent);
-    }, [isMobile, setExpandedInput]);
+    }, [isMobile, setExpandedInput, scheduleMobileComposerChrome]);
 
     // Reset the picker search whenever a draft picker sheet opens/closes.
     React.useEffect(() => {
@@ -6593,7 +6714,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     ));
 
     const composerFooterContent = isMobile ? (
-        !mobileComposerExpanded ? (
+        mobileComposerChrome === 'collapsed' ? (
             <>
                 <div
                     data-mobile-composer-collapsed-slot="attach"
@@ -6609,6 +6730,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         openIssuePicker={openIssuePicker}
                         openPrPicker={openPrPicker}
                         onOpenMobileSheet={openMobileAttachSheet}
+                        onOpenAndroidPickSheet={canUseNativeMediaPick() ? openAndroidMediaPickSheet : undefined}
                     />
                 </div>
                 {canAbort ? (
@@ -6639,7 +6761,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     </div>
                 ) : null}
             </>
-        ) : (
+        ) : mobileComposerChrome === 'full' ? (
             <div className="flex w-full min-w-0 items-center gap-x-1.5" data-composer-action="true">
                 <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
                     <ComposerAttachmentControls
@@ -6652,6 +6774,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         openPrPicker={openPrPicker}
                         onOpenSettings={onOpenSettings}
                         onOpenMobileSheet={openMobileAttachSheet}
+                        onOpenAndroidPickSheet={canUseNativeMediaPick() ? openAndroidMediaPickSheet : undefined}
                     />
                     {showPermissionAutoAcceptControl ? (
                         <PermissionAutoAcceptButton
@@ -6697,7 +6820,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     />
                 </div>
             </div>
-        )
+        ) : null
     ) : (
         <>
             <div className={cn('flex flex-shrink-0 items-center', footerGapClass)}>
@@ -7305,7 +7428,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobile && !mobileComposerExpanded && 'oc-mobile-composer-collapsed-content',
                     )}
                     inputHeader={composerInputHeader}
-                    attachmentContent={isMobile && !mobileComposerExpanded ? undefined : composerAttachmentContent}
+                    attachmentContent={isMobile && mobileComposerChrome !== 'full' ? undefined : composerAttachmentContent}
                     highlightedContent={composerHighlightedContent}
                     highlightRef={composerHighlightRef}
                     inputRef={textareaRef}
@@ -7775,6 +7898,40 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     >
                         <Icon name="git-pull-request" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
                         {t('chat.chatInput.actions.linkGithubPr')}
+                    </button>
+                </div>
+            </MobileOverlayPanel>
+        ) : null}
+
+        {/* Android Capacitor photo/file chooser: the all-files WebView input opens
+            the system file manager and loses the gallery experience; iOS keeps the
+            single attach flow (WKWebView's picker already offers the photo library). */}
+        {isMobile && androidMediaPickSheetOpen ? (
+            <MobileOverlayPanel open onClose={() => setAndroidMediaPickSheetOpen(false)} title={t('chat.chatInput.actions.addAttachment')}>
+                <div className="flex flex-col px-3 pb-4 pt-1">
+                    <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        onClick={() => {
+                            restoreKeyboardAfterOverlayRef.current = false;
+                            setAndroidMediaPickSheetOpen(false);
+                            requestAnimationFrame(handlePickAndroidPhotos);
+                        }}
+                    >
+                        <Icon name="file-image" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        {t('chat.chatInput.actions.attachPhotos')}
+                    </button>
+                    <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        onClick={() => {
+                            restoreKeyboardAfterOverlayRef.current = false;
+                            setAndroidMediaPickSheetOpen(false);
+                            requestAnimationFrame(handlePickLocalFiles);
+                        }}
+                    >
+                        <Icon name="attachment-2" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        {t('chat.chatInput.actions.attachFiles')}
                     </button>
                 </div>
             </MobileOverlayPanel>

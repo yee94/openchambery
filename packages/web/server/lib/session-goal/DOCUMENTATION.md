@@ -98,12 +98,17 @@ before touching the filesystem). Rationale: metadata rides every
      compaction itself) and the next segment starts with a zero baseline.
      `tokensUsed = tokensCommitted + current segment`, kept monotonic so
      unflagged context shrinks never move the budget backwards;
-   - a user abort pauses the goal instead of blocking it: the event path in
-     `processPayload` pauses immediately on the MessageAbortedError message
-     (before any tick could send a continuation over the user's explicit
-     stop), with a tick-side safety net. Messages sent while paused leave
-     the goal alone; Resume re-arms the loop, and resuming over an aborted
-     tail skips the audit and goes straight to a continuation nudge;
+    - a user abort pauses the goal instead of blocking it: the event path in
+      `processPayload` pauses immediately on the MessageAbortedError message
+      (before any tick could send a continuation over the user's explicit
+      stop), with a tick-side safety net. Messages sent while paused leave
+      the goal alone; Resume re-arms the loop, and resuming over an aborted
+      tail skips the audit and goes straight to a continuation nudge;
+    - `question.asked` also pauses an active goal (including when a child /
+      sub-agent session asks — the parent session's goal is the one paused)
+      but does NOT abort the current turn: aborting would kill the pending
+      question. After the user answers, they Resume manually to re-arm
+      the loop;
    - terminal checks, cheapest first: assistant turn error → `blocked`;
      `tokensUsed >= tokenBudget` → `budgetLimited`;
      `turnsUsed >= MAX_AUTO_TURNS` (20) → `blocked`;
@@ -137,8 +142,10 @@ before touching the filesystem). Rationale: metadata rides every
    ACTIVE the notifications runtime suppresses per-turn "ready"
    notifications on every channel — they would only echo the loop's own
    continuations; error/question/permission notifications are untouched.
-   Pausing a goal from the UI also aborts the running turn (and vice versa —
-   an abort pauses the goal), so "stop" means stop on both axes.
+    Pausing a goal from the UI also aborts the running turn (and vice versa —
+    an abort pauses the goal), so "stop" means stop on both axes. A
+    `question.asked` pause is the exception: it only writes `status: paused`
+    and leaves the waiting turn intact.
 
 ## Continuation prompt
 

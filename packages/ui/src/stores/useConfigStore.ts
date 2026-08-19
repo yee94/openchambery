@@ -1099,8 +1099,8 @@ declare global {
 
 let _initializeAppInFlight: Promise<void> | null = null;
 let _refreshMissingCatalogsInFlight: Promise<void> | null = null;
-let _providerLoadEpochByDirectory: Record<string, number> = {};
-let _agentLoadEpochByDirectory: Record<string, number> = {};
+const _providerLoadEpochByDirectory: Record<string, number> = {};
+const _agentLoadEpochByDirectory: Record<string, number> = {};
 
 export const useConfigStore = create<ConfigStore>()(
     devtools(

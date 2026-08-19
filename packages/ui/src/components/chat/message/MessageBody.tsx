@@ -42,9 +42,13 @@ import { isVSCodeRuntime } from '@/lib/desktop';
 import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
 import { computeAssistantTps, formatAssistantTps } from './assistantTps';
+import { ContextToolGroup } from './parts/ContextToolGroup';
+import { SkillToolGroup } from './parts/SkillToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
 import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
-import { isExpandableTool } from './parts/toolRenderUtils';
+import { hasContextExploreSuccessor } from './parts/contextToolGrouping';
+import { collectConsecutiveSkillTools } from './parts/skillToolGrouping';
+import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isToolPartActive, isToolPartSettled } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
@@ -628,7 +632,8 @@ interface MessageBodyProps {
     reviewTransferDirection?: ReviewTransferDirection | null;
 }
 
-const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, editing, editStaged, onCancelEdit, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, editing, editStaged, onCancelEdit, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+    sessionId?: string;
     messageId: string;
     parts: Part[];
     sourceParts?: Part[];
@@ -1005,7 +1010,7 @@ const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCrea
                     );
                 })}
             </div>
-            <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} compact />
+            <MessageFilesDisplay files={parts} messageID={messageId} sessionID={sessionId} onShowPopup={onShowPopup} compact />
             {actionsBlock}
         </div>
     );
@@ -1477,40 +1482,11 @@ const AssistantMessageBody = React.memo(({
     const hasTools = toolParts.length > 0;
 
     const hasPendingTools = React.useMemo(() => {
-        return toolParts.some((toolPart) => {
-            const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
-            const status = state?.status;
-            return status === 'pending' || status === 'running' || status === 'started';
-        });
+        return toolParts.some((toolPart) => isToolPartActive(toolPart));
     }, [toolParts]);
 
-    const isActiveTool = React.useCallback((toolPart: ToolPartType): boolean => {
-        const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
-        const status = state?.status;
-        return status === 'pending' || status === 'running' || status === 'started';
-    }, []);
-
-    const isToolFinalized = React.useCallback((toolPart: ToolPartType) => {
-        const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
-        const status = state?.status;
-        if (status === 'pending' || status === 'running' || status === 'started') {
-            return false;
-        }
-        const time = state?.time as Record<string, unknown> | undefined ?? {};
-        const endTime = typeof time?.end === 'number' ? time.end : undefined;
-        const startTime = typeof time?.start === 'number' ? time.start : undefined;
-        if (typeof endTime !== 'number') {
-            return false;
-        }
-        if (typeof startTime === 'number' && endTime < startTime) {
-            return false;
-        }
-        return true;
-    }, []);
-
-    const shouldShowTool = React.useCallback((toolPart: ToolPartType): boolean => {
-        return isActiveTool(toolPart) || isToolFinalized(toolPart);
-    }, [isActiveTool, isToolFinalized]);
+    const isActiveTool = isToolPartActive;
+    const isToolFinalized = isToolPartSettled;
     const hasStreamingHapticLifecycle = hapticLifecycleRef.current.experiencedStreamingOrCooldown;
 
     const toolHapticStateRef = React.useRef<{ messageId: string; initialized: boolean; observedPartIds: Set<string> }>({
@@ -1532,7 +1508,6 @@ const AssistantMessageBody = React.memo(({
 
         for (const toolPart of toolParts) {
             if (tracker.observedPartIds.has(toolPart.id)) continue;
-            if (!shouldShowTool(toolPart)) continue;
 
             if (!shouldEmitToolAppearanceHaptic(isInitialObservation, isActiveTool(toolPart))) {
                 tracker.observedPartIds.add(toolPart.id);
@@ -1550,7 +1525,7 @@ const AssistantMessageBody = React.memo(({
                 kind: 'tool',
             });
         }
-    }, [hasStreamingHapticLifecycle, isActiveTool, messageId, sessionId, shouldShowTool, toolParts]);
+    }, [hasStreamingHapticLifecycle, isActiveTool, messageId, sessionId, toolParts]);
 
     const allToolsFinalized = React.useMemo(() => {
         if (toolParts.length === 0) {
@@ -1701,9 +1676,17 @@ const AssistantMessageBody = React.memo(({
     // Collapsed compaction folds the summary body under the Activity disclosure.
     const hideCompactionBody = isSortedRenderMode && isCompactionTurn && !isActivityExpanded;
     const isActivityOwnerMessage = !isSortedRenderMode
-        || !turnGroupingContext?.activityOwnerMessageId
-        || turnGroupingContext.activityOwnerMessageId === messageId
-        || hasAnchoredActivitySegments;
+        ? (!turnGroupingContext?.activityOwnerMessageId
+            || turnGroupingContext.activityOwnerMessageId === messageId
+            || hasAnchoredActivitySegments)
+        // Sorted mode without a turn context is a degenerate frame (projection
+        // churn): assistants that miss their turn lookup must not fall back to
+        // activity-owner, or their tools inline as flat rows — a multi-step
+        // turn of empty-context assistants paints a screenful of stray rows
+        // (the intermittent huge gap). Folding them away matches how mid-turn
+        // assistants already render; a real context restores the owner.
+        : (turnGroupingContext?.activityOwnerMessageId === messageId
+            || hasAnchoredActivitySegments);
 
     // Compaction turns always own a disclosure header on the activity-owner
     // message, even when there are no tool/reasoning segments yet — the
@@ -1826,11 +1809,13 @@ const AssistantMessageBody = React.memo(({
             const pushActivityHeader = (
                 segmentId: string,
                 visibleSegmentParts: typeof activityGroupSegmentsForMessage[number]['parts'],
+                materializationParts: typeof activityGroupSegmentsForMessage[number]['parts'] = visibleSegmentParts,
             ) => {
                 rendered.push(
                     <div key={`progressive-group-${segmentId}`}>
                         <TurnActivity
                             parts={visibleSegmentParts}
+                            materializationParts={materializationParts}
                             isExpanded={turnGroupingContext.isGroupExpanded === true}
                             collapsedPreviewCount={collapsedPreviewCount}
                             completionDisposition={turnGroupingContext.completionDisposition}
@@ -1862,7 +1847,7 @@ const AssistantMessageBody = React.memo(({
                     // (reasoning-only mid-reconcile, lagging tool materialize)
                     // unmounts the whole disclosure and makes tool rows flash
                     // away — including the live last turn vanishing for a beat.
-                    pushActivityHeader(segment.id, visibleSegmentParts);
+                    pushActivityHeader(segment.id, visibleSegmentParts, segment.parts);
                 });
             } else if (isCompactionTurn) {
                 pushActivityHeader(`${messageId}:compaction-status`, []);
@@ -1974,9 +1959,99 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
 
-                if (!shouldShowTool(toolPart)) {
-                    i++;
-                    continue;
+                if (isContextGroupTool(toolName)) {
+                    const run: Array<{
+                        id: string;
+                        turnId: string;
+                        messageId: string;
+                        partIndex: number;
+                        part: ToolPartType;
+                        kind: 'tool';
+                    }> = [];
+                    let j = i;
+                    while (j < visibleParts.length) {
+                        const next = visibleParts[j];
+                        if (next.type !== 'tool') break;
+                        const nextTool = next as ToolPartType;
+                        const nextName = nextTool.tool?.toLowerCase() ?? '';
+                        if (!isContextGroupTool(nextName)) break;
+                        if (activityByPart.get(next)?.kind === 'tool') break;
+                        run.push({
+                            id: nextTool.id,
+                            turnId: '',
+                            messageId,
+                            partIndex: j,
+                            part: nextTool,
+                            kind: 'tool' as const,
+                        });
+                        j += 1;
+                    }
+                    if (run.length > 0) {
+                        rendered.push(
+                            <ContextToolGroup
+                                key={`context-tools-${run[0].id}`}
+                                activities={run}
+                                isMobile={isMobile}
+                                isTurnLive={effectiveStreamPhase !== 'completed'}
+                                hasFollowingOtherType={hasContextExploreSuccessor(visibleParts, j, (item) => ({
+                                    type: item.type,
+                                    toolName: item.type === 'tool' ? (item as ToolPartType).tool : undefined,
+                                }))}
+                            >
+                                {run.map((activity) => (
+                                    <StaticToolRow
+                                        key={activity.id}
+                                        toolName={activity.part.tool?.toLowerCase() ?? ''}
+                                        activities={[activity]}
+                                        isMobile={isMobile}
+                                        animateTailText={false}
+                                    />
+                                ))}
+                            </ContextToolGroup>
+                        );
+                        i = j;
+                        continue;
+                    }
+                }
+
+                if (isSkillGroupTool(toolName)) {
+                    const grouped = collectConsecutiveSkillTools(visibleParts, i, (item) => {
+                        if (item.type !== 'tool') return '';
+                        if (activityByPart.get(item)?.kind === 'tool') return '';
+                        return (item as ToolPartType).tool;
+                    });
+                    if (grouped.items.length > 0) {
+                        const skillRun = grouped.items.map((item, offset) => {
+                            const nextTool = item as ToolPartType;
+                            return {
+                                id: nextTool.id,
+                                turnId: '',
+                                messageId,
+                                partIndex: i + offset,
+                                part: nextTool,
+                                kind: 'tool' as const,
+                            };
+                        });
+                        rendered.push(
+                            <SkillToolGroup
+                                key={`skill-tools-${skillRun[0].id}`}
+                                activities={skillRun}
+                                isMobile={isMobile}
+                            >
+                                {skillRun.map((activity) => (
+                                    <StaticToolRow
+                                        key={activity.id}
+                                        toolName={activity.part.tool?.toLowerCase() ?? ''}
+                                        activities={[activity]}
+                                        isMobile={isMobile}
+                                        animateTailText={false}
+                                    />
+                                ))}
+                            </SkillToolGroup>
+                        );
+                        i = grouped.end;
+                        continue;
+                    }
                 }
 
                 // Expandable tools: bash, edit, write, task, question — individual rows
@@ -2000,7 +2075,7 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
 
-                // Static tools: one row per tool call (no grouping)
+                // Static tools: one row per leftover call (a lone skill, or any other static tool)
                 rendered.push(
                     <div key={`static-tools-${toolPart.id}`} className={getToolRowBlockClass(isMobile)}>
                         <StaticToolRow
@@ -2015,6 +2090,7 @@ const AssistantMessageBody = React.memo(({
                                     kind: 'tool' as const,
                                 },
                             ]}
+                            isMobile={isMobile}
                             animateTailText={false}
                         />
                     </div>
@@ -2051,7 +2127,6 @@ const AssistantMessageBody = React.memo(({
         onToggleTool,
         shouldRenderActivityGroup,
         shouldShowStandaloneMessageActions,
-        shouldShowTool,
         effectiveStreamPhase,
         hasStreamingHapticLifecycle,
         showReasoningTraces,
@@ -2257,7 +2332,7 @@ const AssistantMessageBody = React.memo(({
                         isMobile={isMobile}
                     />
                 ) : null}
-                <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} />
+                <MessageFilesDisplay files={parts} messageID={messageId} sessionID={sessionId} onShowPopup={onShowPopup} />
                 {shouldRenderStandaloneActionsAfterContent && (
                     <div className={cn(isMobile ? INLINE_MESSAGE_ACTIONS_MOBILE_CLASS_NAME : INLINE_MESSAGE_ACTIONS_CLASS_NAME)} data-message-actions="true">
                         <div className={MESSAGE_ACTION_GROUP_CLASS} data-message-action-group="true">
@@ -2334,6 +2409,7 @@ const MessageBody = React.memo(({ isUser, ...props }: MessageBodyProps) => {
     if (isUser) {
         return (
             <UserMessageBody
+                sessionId={props.sessionId}
                 messageId={props.messageId}
                 parts={props.parts}
                 sourceParts={props.sourceParts}

@@ -283,15 +283,17 @@ describe("ticket 10 source contracts", () => {
     const replyBody = replyFn.slice(0, replyFn.indexOf("export async function respondToQuestion"))
     expect(replyBody.includes("postSessionPermissionReply")).toBe(true)
     expect(replyBody.includes("permission.reply(")).toBe(false)
-    expect(replyBody.includes("clearSessionPermissionsFromChildStores")).toBe(true)
+    // v2: pending-permission teardown is authoritative (SSE permission events
+    // clear the child-store set), not an optimistic local wipe after reply.
+    expect(replyBody.includes("clearSessionPermissionsFromChildStores")).toBe(false)
   })
 
   test("reject clears the whole session pending set, not only the replied id", () => {
+    // v2: the optimistic local wipe helper is gone; pending-permission
+    // teardown is authoritative through SSE permission events. Guard that the
+    // helper does not silently return.
     const actionsSource = readFileSync(join(here, "session-actions.ts"), "utf8")
-    const helper = actionsSource.slice(actionsSource.indexOf("function clearSessionPermissionsFromChildStores"))
-    const helperBody = helper.slice(0, helper.indexOf("function getRequestReplyClient"))
-    expect(helperBody.includes("delete next[sessionId]") || helperBody.includes("delete next[sessionID]")).toBe(true)
-    expect(helperBody.includes("request.id !== requestId")).toBe(false)
+    expect(actionsSource.includes("function clearSessionPermissionsFromChildStores")).toBe(false)
   })
 
   test("settings list/delete saved permissions; agents display last-match, not a V1 tool map", () => {

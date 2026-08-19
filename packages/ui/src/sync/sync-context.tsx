@@ -63,12 +63,14 @@ import {
   getRuntimeTransportIdentity,
   subscribeRuntimeEndpointChanged,
 } from "@/lib/runtime-switch"
-import { isTranscriptSseEventType } from "./transcript-repository"
+import { isTranscriptSseEventType, type TranscriptScope } from "./transcript-repository"
+import { listTranscriptEventBroadcastScopes } from "./transcript-event-broadcast"
 import {
   materializationStatusFromTranscriptData,
   messagesFromTranscriptData,
   resetObserveEnsureGate,
   scheduleEnsureTranscriptOnObserve,
+  useTranscriptHydrationState,
   useTranscriptMaterializationStatus,
   useTranscriptMessageCount,
   useTranscriptMessages,
@@ -76,7 +78,7 @@ import {
   useTranscriptPagination,
   useTranscriptParts,
 } from "./transcript-repository-observers"
-import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
+import { stripSessionDiffSnapshots } from "./sanitize"
 import { messagesVisibleWithRevert } from "./conversation-order"
 import {
   deferIdleTranscriptSettle,
@@ -88,7 +90,6 @@ import { syncDebug } from "./debug"
 import {
   getReconnectCandidateSessionIds,
   getReconnectMaterializationSessionIds,
-  getReconnectTranscriptInvalidationSessionIds,
   getStatusWatchdogCandidateSessionIds,
 } from "./reconnect-recovery"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -110,8 +111,6 @@ import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
 import { mergePartsForDisplay } from "./displayParts"
-import type { ReduceSessionMessagePageResult } from "./session-message-reducer"
-import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { openSessionFromToast } from "./session-opener"
 import { getPermissionToastKey, showPermissionNeededToast } from "./permission-toast"
@@ -477,7 +476,7 @@ export async function materializeSessionFromServer(
     const page = await fetchProductionTranscriptTransportPage({
       directory,
       sessionID,
-      limit: getInitialSessionTurnLimit?.() ?? 6,
+      limit: getInitialSessionTurnLimit(),
       signal: AbortSignal.timeout(30_000),
       purpose: "materialize",
     })
@@ -1069,6 +1068,8 @@ const findSessionInChildStores = (
       ?.filter((entry) => entry.scope.sessionID === sessionID)
       .map((entry) => entry.scope.directory) ?? []
     const unique = [...new Set(matches)]
+    // Unique inventory only. Multi-directory canonical is not a child-store
+    // routing answer; transcript SSE broadcasts separately.
     if (unique.length === 1) {
       const dir = unique[0]!
       setIndexedSessionDirectory(routingIndex, sessionID, dir)
@@ -1547,6 +1548,22 @@ export function resolveReconnectStatusOnly(input: {
   return input.isFirstConnect && !input.disconnectedBeforeFirstConnect
 }
 
+/**
+ * After the status snapshot (and viewed-body recovery), decide which extra
+ * reconnect steps still run. `statusOnly` still hydrates pending
+ * questions/permissions because bootstrap Phase 2 and WS-ready can drop
+ * `question.asked`. Full routing ingest stays reconnect-only.
+ */
+export function resolveReconnectFollowUpWork(options?: { statusOnly?: boolean }): {
+  resyncBlockingRequests: true
+  ingestRoutingIndex: boolean
+} {
+  return {
+    resyncBlockingRequests: true,
+    ingestRoutingIndex: !options?.statusOnly,
+  }
+}
+
 export async function resyncDirectoryAfterReconnect(
   directory: string,
   store: StoreApi<DirectoryStore>,
@@ -1563,10 +1580,13 @@ export async function resyncDirectoryAfterReconnect(
   // background idle→busy transitions are lost across reconnect.
   await resyncDirectorySessionStatuses(directory, store, candidateSessionIds)
 
-  // statusOnly suppresses extra reconnect work (blocking requests, full routing
-  // ingest) but must still run bounded authoritative recovery for the currently
-  // viewed session. Bootstrap does not load message bodies; without this path
-  // stale transcript remains indefinitely after first stream ready / recent boot.
+  // statusOnly suppresses extra reconnect work (full routing ingest) but must
+  // still run bounded authoritative recovery for the currently viewed session
+  // AND an authoritative pending question/permission list. Bootstrap Phase 2
+  // and WS-ready can drop `question.asked`; without this path the viewed
+  // session shows unclickable question chips and no QuestionCard. Bootstrap
+  // also does not load message bodies; without the viewed-body path a stale
+  // transcript remains indefinitely after first stream ready / recent boot.
   const refreshedCandidateSessionIds = getActiveSessionCandidateIds(directory, store.getState())
   const materializationSessionIds = getReconnectMaterializationSessionIds(refreshedCandidateSessionIds, {
     directory,
@@ -1574,7 +1594,6 @@ export async function resyncDirectoryAfterReconnect(
   })
   if (materializationSessionIds.length > 0) {
     const scopedClient = opencodeClient.getScopedSdkClient(directory)
-    const runtimeKey = getRuntimeKey()
     await Promise.all(materializationSessionIds.map(async (sessionId) => {
       const identityRevision = getLiveRevision(sessionId)
       syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
@@ -1683,11 +1702,103 @@ export async function resyncDirectoryAfterReconnect(
     }))
   }
 
-  if (options?.statusOnly) return
-
-  await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds)
+  const followUp = resolveReconnectFollowUpWork(options)
+  if (followUp.resyncBlockingRequests) {
+    await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds)
+  }
+  if (!followUp.ingestRoutingIndex) return
 
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
+}
+
+function listCanonicalScopesForTranscriptEvent(sessionID: string): TranscriptScope[] {
+  try {
+    const repository = getTranscriptRepository() as
+      | (ReturnType<typeof getTranscriptRepository> & {
+        getCacheBudget?: () => {
+          listCanonical: (filter?: {
+            transport?: string
+            generation?: number
+          }) => Array<{
+            scope: {
+              directory: string
+              sessionID: string
+              transport: string
+              generation: number
+            }
+          }>
+        }
+      })
+      | null
+    const transport = getRuntimeTransportIdentity()
+    const generation = getRuntimeGeneration()
+    return repository?.getCacheBudget?.().listCanonical({ transport, generation })
+      ?.filter((entry) => entry.scope.sessionID === sessionID)
+      .map((entry) => transcriptScope(entry.scope.directory, entry.scope.sessionID, {
+        transport: entry.scope.transport,
+        generation: entry.scope.generation,
+      })) ?? []
+  } catch {
+    return []
+  }
+}
+
+function resolveTranscriptSseSessionID(payload: Event): string | undefined {
+  const eventSessionID = getSessionIdFromPayload(payload) ?? undefined
+  if (eventSessionID) return eventSessionID
+  if (payload.type === "message.updated") {
+    return (payload.properties as { info?: { sessionID?: string } }).info?.sessionID ?? undefined
+  }
+  return undefined
+}
+
+function commitTranscriptSseEvent(
+  payload: Event,
+  transcriptSessionID: string,
+  resolvedDirectory: string,
+  eventMessageID: string | undefined,
+  childStores: ChildStoreManager,
+  routingIndex: EventRoutingIndex,
+): void {
+  const scopes = listTranscriptEventBroadcastScopes({
+    sessionID: transcriptSessionID,
+    resolvedDirectory,
+    transport: getRuntimeTransportIdentity(),
+    generation: getRuntimeGeneration(),
+    listCanonicalScopes: listCanonicalScopesForTranscriptEvent,
+  })
+  let anyChanged = false
+  for (const scope of scopes) {
+    const repoResult = applyTranscriptCommand(
+      scope,
+      { type: "sse-event", event: payload },
+    ) ?? { applied: false, changed: false }
+    if (repoResult.changed) {
+      anyChanged = true
+    }
+    const materializationResult = repoResult.materialization
+    if (materializationResult) {
+      const materializationSessionID = resolveMaterializationSessionID(
+        materializationResult.sessionID ?? transcriptSessionID,
+        materializationResult.messageID ?? eventMessageID,
+        scope.directory,
+        routingIndex,
+      )
+      if (materializationSessionID) {
+        enqueueSessionMaterialization(scope.directory, materializationSessionID, childStores, {
+          reason: materializationResult.reason,
+          messageID: materializationResult.messageID,
+          partID: materializationResult.partID,
+        })
+      }
+    }
+  }
+  if (anyChanged) {
+    syncDebug.dispatch.eventApplied(payload.type, transcriptSessionID, eventMessageID)
+  } else {
+    syncDebug.dispatch.eventNoChange(payload.type, transcriptSessionID, eventMessageID)
+  }
+  updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
 }
 
 /** Directory event dispatch. Exported as a minimal test seam for idle materialization. */
@@ -1741,6 +1852,20 @@ export function handleEvent(
 
   // Global events
   if (directory === "global" || !directory) {
+    if (isTranscriptSseEventType(payload.type)) {
+      const transcriptSessionID = resolveTranscriptSseSessionID(payload)
+      if (transcriptSessionID) {
+        commitTranscriptSseEvent(
+          payload,
+          transcriptSessionID,
+          directory || "global",
+          getMessageIdFromPayload(payload) ?? undefined,
+          childStores,
+          routingIndex,
+        )
+        return
+      }
+    }
     const recent = isRecentBoot()
     const result = reduceGlobalEvent(payload)
     if (!result) return
@@ -1791,6 +1916,20 @@ export function handleEvent(
   }
 
   if (!store) {
+    if (isTranscriptSseEventType(payload.type)) {
+      const transcriptSessionID = resolveTranscriptSseSessionID(payload)
+      if (transcriptSessionID) {
+        commitTranscriptSseEvent(
+          payload,
+          transcriptSessionID,
+          resolvedDirectory,
+          getMessageIdFromPayload(payload) ?? undefined,
+          childStores,
+          routingIndex,
+        )
+        return
+      }
+    }
     // Try as global event for unknown directories
     const result = reduceGlobalEvent(payload)
     if (result?.type === "refresh") {
@@ -1957,45 +2096,22 @@ export function handleEvent(
   // Ticket 03: transcript SSE events commit exclusively through
   // TranscriptRepository. Non-transcript events keep the draft+reducer path.
   if (isTranscriptSseEventType(payload.type)) {
-    const transcriptSessionID =
-      eventSessionID
-      ?? (payload.type === "message.updated"
-        ? ((payload.properties as { info?: { sessionID?: string } }).info?.sessionID ?? undefined)
-        : undefined)
+    const transcriptSessionID = resolveTranscriptSseSessionID(payload)
     if (!transcriptSessionID) {
       updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
       return
     }
 
     // Ticket 09: SSE transcript events write Query only (no store dual-write).
-    const repoResult = applyTranscriptCommand(
-      transcriptScope(resolvedDirectory, transcriptSessionID),
-      { type: "sse-event", event: payload },
-    ) ?? { applied: false, changed: false }
-    if (repoResult.changed) {
-      syncDebug.dispatch.eventApplied(payload.type, transcriptSessionID, eventMessageID)
-    } else {
-      syncDebug.dispatch.eventNoChange(payload.type, transcriptSessionID, eventMessageID)
-    }
-
-    const materializationResult = repoResult.materialization
-    if (materializationResult) {
-      const materializationSessionID = resolveMaterializationSessionID(
-        materializationResult.sessionID ?? transcriptSessionID,
-        materializationResult.messageID ?? eventMessageID,
-        resolvedDirectory,
-        routingIndex,
-      )
-      if (materializationSessionID) {
-        enqueueSessionMaterialization(resolvedDirectory, materializationSessionID, childStores, {
-          reason: materializationResult.reason,
-          messageID: materializationResult.messageID,
-          partID: materializationResult.partID,
-        })
-      }
-    }
-
-    updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
+    // Broadcast to every current-runtime canonical scope for this session.
+    commitTranscriptSseEvent(
+      payload,
+      transcriptSessionID,
+      resolvedDirectory,
+      eventMessageID,
+      childStores,
+      routingIndex,
+    )
     return
   }
 
@@ -2388,8 +2504,9 @@ export function SyncProvider(props: {
         const isFirstConnect = !pipelineHasConnectedRef.current
         pipelineHasConnectedRef.current = true
         // Always close the bootstrap-GET → WS-ready gap with an authoritative
-        // status snapshot. statusOnly still recovers the viewed session body;
-        // it only skips extra reconnect work (e.g. blocking requests). Only a
+        // status snapshot. statusOnly still recovers the viewed session body
+        // and hydrates pending questions/permissions; it only skips heavier
+        // reconnect work (full routing ingest). Only a
         // clean first connect qualifies — any disconnect is a real gap and
         // takes full reconnect semantics no matter how recent the boot is.
         const statusOnly = resolveReconnectStatusOnly({
@@ -3484,6 +3601,17 @@ export function useSessionTranscriptPagination(sessionID: string, directory?: st
   const targetDirectory = directory ?? system.directory
   const store = useDirectoryStore(targetDirectory)
   return useTranscriptPagination(sessionID, targetDirectory, store)
+}
+
+/**
+ * Read-only transcript hydration phase (Ticket 05).
+ * UI gates skeleton / input on `p0Satisfied`; it must not advance `phase`.
+ */
+export function useSessionTranscriptHydration(sessionID: string, directory?: string) {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  return useTranscriptHydrationState(sessionID, targetDirectory, store)
 }
 
 export function useSessionTextMessages(sessionID: string, directory?: string): SessionTextMessage[] {

@@ -18,8 +18,36 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('animateTailText={false}');
     });
 
-    test('renders each static tool call as its own row without consecutive merge', () => {
+    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; context tools collapse into Explored groups', () => {
+        // consecutive 2+ skill calls collapse into one SkillToolGroup
+        expect(progressiveGroupSource).toContain('if (isSkillGroupTool(toolName))');
+        expect(progressiveGroupSource).toContain('collectConsecutiveSkillTools');
+        expect(progressiveGroupSource).toContain("type: 'tool-skill-group'");
+        expect(progressiveGroupSource).toContain('if (grouped.items.length > 0)');
+        expect(progressiveGroupSource).toContain("case 'tool-skill-group':");
+        expect(progressiveGroupSource).toContain('<SkillToolGroup');
+        expect(messageBodySource).toContain('isSkillGroupTool');
+        expect(messageBodySource).toContain('SkillToolGroup');
+        expect(messageBodySource).toContain('collectConsecutiveSkillTools');
+        // other non-context static tools: one call per tool-static-group row
         expect(progressiveGroupSource).toContain("rows.push({ type: 'tool-static-group', toolName, activities: [activity] });");
+        // context tools (read/glob/grep/list): consecutive collapse via collectConsecutiveContextTools
+        expect(progressiveGroupSource).toContain('if (isContextGroupTool(toolName))');
+        expect(progressiveGroupSource).toContain('collectConsecutiveContextTools');
+        expect(progressiveGroupSource).toContain("type: 'tool-context-group'");
+        expect(progressiveGroupSource).toContain('hasContextExploreSuccessor');
+        expect(progressiveGroupSource).toContain('hasFollowingOtherType');
+        expect(progressiveGroupSource).toContain('case \'tool-context-group\':');
+        expect(progressiveGroupSource).toContain('<ContextToolGroup');
+        expect(progressiveGroupSource).toContain('isTurnLive={isActive}');
+        expect(progressiveGroupSource).toContain('hasFollowingOtherType={row.hasFollowingOtherType}');
+        // MessageBody flat path mirrors the same grouping
+        expect(messageBodySource).toContain('isContextGroupTool');
+        expect(messageBodySource).toContain('ContextToolGroup');
+        expect(messageBodySource).toContain('hasContextExploreSuccessor');
+        expect(messageBodySource).toContain('isTurnLive={effectiveStreamPhase !== \'completed\'}');
+        expect(messageBodySource).toContain('hasFollowingOtherType={hasContextExploreSuccessor');
+        // Do not revive multi-target chip merge
         expect(progressiveGroupSource).not.toContain('const activities = [activity];');
         expect(progressiveGroupSource).not.toContain('if (nextToolName !== toolName || !isStaticTool(nextToolName))');
         expect(progressiveGroupSource).not.toContain('i = nextIndex;');
@@ -32,16 +60,29 @@ describe('progressive activity presentation', () => {
     test('every collapsed activity state hides all detail rows', () => {
         expect(messageBodySource).toContain('const collapsedPreviewCount = 0;');
         expect(messageBodySource).not.toContain('collapsedPreviewCount = completionDisposition');
-    });
-
-    test('row mounting depends only on the disclosure, never on turn disposition', () => {
-        // Deriving mount state from disposition or streamPhase leaked live behavior
-        // into settled turns (an aborted turn never left the live branch) and made a
-        // one-frame disposition flap unmount every nested row. Structural stability
-        // is owned by the data layer instead: see sync/displayParts.ts.
         expect(progressiveGroupSource).toContain('const shouldRenderRows = !showHeader || isExpanded || previewCount > 0;');
         expect(progressiveGroupSource).not.toContain('isLiveActivity');
         expect(progressiveGroupSource).not.toContain('stickyOpenPartsRef');
+    });
+
+    test('uses the S1 lattice orb while activity is live and the stack icon when settled', () => {
+        expect(progressiveGroupSource).toContain('LatticeOrb');
+        expect(progressiveGroupSource).toContain('isActive && !isCompaction');
+        expect(progressiveGroupSource).toContain("activityIconName = isCompaction ? 'fold-vertical' : 'stack'");
+    });
+
+    test('static tool rows use the shared lifecycle and restore their mapped icon after settlement', () => {
+        expect(progressiveGroupSource).toContain('const isActive = primaryActivity ? isToolPartActive(primaryActivity.part) : true;');
+        expect(progressiveGroupSource).toContain("t('chat.assistantStatus.usingTool', { tool: displayName })");
+        expect(progressiveGroupSource).toContain(') : icon}');
+        expect(progressiveGroupSource).toContain("isMobile ? 'size-4' : 'size-3.5'");
+        expect(progressiveGroupSource).toContain('isMobile={isMobile}');
+    });
+
+    test('keeps lifecycle-unknown tool parts visible from their first frame', () => {
+        expect(messageBodySource).toContain('const isActiveTool = isToolPartActive;');
+        expect(messageBodySource).toContain('const isToolFinalized = isToolPartSettled;');
+        expect(messageBodySource).not.toContain('shouldShowTool');
     });
 
     test('localizes every activity state and exposes its expanded state', () => {
@@ -61,23 +102,37 @@ describe('progressive activity presentation', () => {
             expect(dictionarySource).toContain('chat.activity.active');
             expect(dictionarySource).toContain('chat.activity.compacting');
             expect(dictionarySource).toContain('chat.activity.compactionCompleted');
+            expect(dictionarySource).toContain('chat.assistantStatus.compacting');
             expect(dictionarySource).toContain('chat.activity.agentsWorking');
             expect(dictionarySource).toContain('chat.activity.agentsInvolved');
+            expect(dictionarySource).toContain('chat.contextGroup.exploring');
+            expect(dictionarySource).toContain('chat.contextGroup.explored');
+            expect(dictionarySource).toContain('chat.contextGroup.searchPlural');
+            expect(dictionarySource).toContain('chat.contextGroup.readPlural');
+            expect(dictionarySource).toContain('chat.contextGroup.listPlural');
+            expect(dictionarySource).toContain('chat.skillGroup.expandAria');
+            expect(dictionarySource).toContain('chat.skillGroup.collapseAria');
+            expect(dictionarySource).toContain('chat.skillGroup.summaryOverflow');
         }
         const simplifiedChinese = readFileSync(join(messageDictionaryDirectory, 'zh-CN.ts'), 'utf-8');
         const traditionalChinese = readFileSync(join(messageDictionaryDirectory, 'zh-TW.ts'), 'utf-8');
         expect(simplifiedChinese).toContain("'chat.activity.title': '处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.active': '正在处理'");
         expect(simplifiedChinese).toContain("'chat.activity.compacting': '正在压缩'");
+        expect(simplifiedChinese).toContain("'chat.assistantStatus.compacting': '正在压缩中'");
         expect(simplifiedChinese).toContain("'chat.activity.compactionCompleted': '已完成压缩'");
         expect(simplifiedChinese).toContain("'chat.activity.expandAria': '展开处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.collapseAria': '收起处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.completed': '已处理 {duration}'");
         expect(simplifiedChinese).toContain("'chat.activity.completedStatus': '已处理'");
-        expect(simplifiedChinese).toContain("'chat.activity.agentsWorking': '{count} 个 agent 处理中'");
-        expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 agent 参与'");
+        expect(simplifiedChinese).toContain("'chat.activity.agentsWorking': '{count} 个 Agent 处理中'");
+        expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 Agent 参与'");
+        expect(simplifiedChinese).toContain("'chat.contextGroup.explored': '探索'");
+        expect(simplifiedChinese).toContain("'chat.contextGroup.listPlural': '{count} 次列举'");
+        expect(simplifiedChinese).toContain("'chat.skillGroup.summaryOverflow': '{names} 等{count}个'");
         expect(traditionalChinese).toContain("'chat.activity.title': '處理詳情'");
         expect(traditionalChinese).toContain("'chat.activity.compacting': '正在壓縮'");
+        expect(traditionalChinese).toContain("'chat.assistantStatus.compacting': '正在壓縮中'");
         expect(traditionalChinese).toContain("'chat.activity.compactionCompleted': '已完成壓縮'");
         expect(traditionalChinese).toContain("'chat.activity.expandAria': '展開處理詳情'");
         expect(traditionalChinese).toContain("'chat.activity.collapseAria': '收起處理詳情'");
@@ -150,6 +205,8 @@ describe('progressive activity presentation', () => {
         expect(messageListSource).toContain("input.completionDisposition === 'normal' || input.completionDisposition === 'abnormal'");
         expect(messageListSource).toContain("if (input.completionDisposition === 'active')");
         expect(messageListSource).toContain('return input.isLastTurn && input.sessionIsWorking;');
+        expect(turnItemSource).toContain("const hideUserMessage = turn.activityPresentationKind === 'compaction'");
+        expect(turnItemSource).toContain('{hideUserMessage ? null : stickyUserHeader ? (');
         expect(turnItemSource).toContain('{showCompactionStatus ? (');
         expect(turnItemSource).toContain('parts={[]}');
         expect(turnItemSource).toContain('activityPresentationKind="compaction"');
@@ -187,7 +244,7 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('pushActivityHeader(`${messageId}:compaction-status`, [])');
         // Empty filtered segment parts still push the Activity chrome (no early
         // return) so mid-reconcile cannot unmount the live disclosure.
-        expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts)');
+        expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
         expect(progressiveGroupSource).toContain('// Header-only turns (e.g. completed compaction with foldable body text outside');
         expect(progressiveGroupSource).toContain('if (!showHeader && rows.length === 0)');
         expect(progressiveGroupSource).not.toContain('statusOnly');
@@ -239,6 +296,71 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('anchor.scrollContainer.scrollTop += delta');
         expect(progressiveGroupSource).toContain('window.requestAnimationFrame(() => {');
         expect(progressiveGroupSource.match(/onClick=\{handleToggle\}/g)).toHaveLength(2);
+    });
+
+    test('materializes slim activity messages once when the user expands the disclosure', () => {
+        expect(progressiveGroupSource).toContain("part.slim === true && (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file')");
+        expect(progressiveGroupSource).toContain('const materializationFlightsRef = React.useRef(new Map<string, Promise<void>>())');
+        expect(progressiveGroupSource).toContain('if (materializationFlightsRef.current.has(targetMessageId)) continue;');
+        expect(progressiveGroupSource).toContain('const flight = materializeTranscriptMessage(effectiveDirectory, targetSessionId, targetMessageId)');
+        expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
+        expect(progressiveGroupSource).toContain("if (current.status === 'ready') continue;");
+        expect(messageBodySource).toContain('materializationParts={materializationParts}');
+        expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
+    });
+
+    test('auto-materializes slim parts of completed groups without waiting for expansion', () => {
+        // Completed groups must hydrate their slim reasoning/tool parts in the
+        // background after mount (cold-start tails render slim bodies as
+        // truncated text otherwise). Active groups keep streaming via SSE.
+        expect(progressiveGroupSource).toContain('if (isActive) {\n            return;\n        }\n        requestMaterialization(false, true);');
+        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive\]\);/);
+    });
+
+    test('background auto-fill never retries failed materializations', () => {
+        // A host that keeps answering exact fetches with slim parts parks the
+        // message in `error`; auto-retrying re-fires one fetch per virtualizer
+        // remount (diagnostics trace: 104 materialize diffs in ~10s, slim/full
+        // counts unchanged). Only manual expand / retry retry errors.
+        expect(progressiveGroupSource).toContain('const requestMaterialization = useEvent((retryErrorsOnly = false, autoSkipFailed = false) => {');
+        expect(progressiveGroupSource).toContain("if (autoSkipFailed && current.status === 'error') continue;");
+        // User-driven expand keeps retrying transient errors.
+        expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
+        expect(progressiveGroupSource).toContain('requestMaterialization(true)');
+    });
+
+    test('sorted mode never treats a context-less assistant as the activity owner', () => {
+        // A missing turnGroupingContext is a degenerate projection frame; the
+        // owner fallback would inline every tool as flat rows and a multi-step
+        // turn of such frames paints the intermittent huge gap. Mid-turn
+        // assistants must fold away until a real context arrives.
+        expect(messageBodySource).toContain('const isActivityOwnerMessage = !isSortedRenderMode');
+        expect(messageBodySource).toContain(': (turnGroupingContext?.activityOwnerMessageId === messageId');
+        expect(messageBodySource).toContain('if (isSortedRenderMode && !isActivityOwnerMessage) {');
+    });
+
+    test('shows localized loading, error, retry, and empty-output states only while expanded', () => {
+        expect(progressiveGroupSource).toContain("requestedStatuses.includes('loading')");
+        expect(progressiveGroupSource).toContain("requestedStatuses.includes('error')");
+        expect(progressiveGroupSource).toContain("t('chat.activity.outputLoading')");
+        expect(progressiveGroupSource).toContain("t('chat.activity.outputLoadFailed')");
+        expect(progressiveGroupSource).toContain("t('chat.activity.outputRetry')");
+        expect(progressiveGroupSource).toContain("t('chat.toolOutputDialog.noOutputProduced')");
+        expect(progressiveGroupSource).toContain('isExpanded && (isMaterializationLoading || hasMaterializationError || showEmptyMaterialization)');
+        expect(progressiveGroupSource).toContain('requestMaterialization(true)');
+
+        for (const fileName of messageDictionaryFiles) {
+            const dictionarySource = readFileSync(join(messageDictionaryDirectory, fileName), 'utf-8');
+            expect(dictionarySource).toContain('chat.activity.outputLoading');
+            expect(dictionarySource).toContain('chat.activity.outputLoadFailed');
+            expect(dictionarySource).toContain('chat.activity.outputRetry');
+        }
+    });
+
+    test('keeps non-slim activity messages on the existing render path', () => {
+        expect(progressiveGroupSource).toContain('if (isSlimMaterializablePart(activity) && activity.messageId)');
+        expect(progressiveGroupSource).toContain("part.slim === true");
+        expect(progressiveGroupSource).not.toContain("part.type === 'text' || part.type === 'tool'");
     });
 
     test('keeps standalone task tools in chronological activity rows', () => {

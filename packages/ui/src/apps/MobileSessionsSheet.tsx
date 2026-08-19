@@ -15,6 +15,7 @@ import {
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { suppressMobileOverlayFocusRestore } from '@/lib/mobileOverlayFocusRestore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
@@ -40,6 +41,7 @@ import type { WorktreeMetadata } from '@/types/worktree';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { abortCurrentOperation } from '@/sync/session-actions';
+import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 
 import { MobileProjectEditSurface } from './MobileProjectEditSurface';
 import { MobileDeleteWorktreeDialog } from './MobileDeleteWorktreeDialog';
@@ -104,11 +106,11 @@ type LongPressHandlers = {
   onContextMenu: React.MouseEventHandler<HTMLButtonElement>;
 };
 
-// Left padding for session rows so the title's first letter aligns with its
-// parent label. Root/project-level sessions align with the project label;
-// worktree sessions sit one level deeper. SessionRow adds 16px (dot + gap) on top.
+// Left padding for session rows so the title's first letter aligns with the
+// project label. Worktree sessions share this indent with root sessions
+// instead of receiving an additional nested indent. SessionRow adds 16px
+// (dot + gap) on top.
 const PROJECT_SESSION_INDENT = 36;
-const WORKTREE_SESSION_INDENT = 52;
 // Extra left padding applied to each nested subsession level.
 const CHILD_INDENT_STEP = 18;
 
@@ -551,11 +553,15 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
 
   // Abort helpers retain stable event identities for prop passing.
   const handleStopSession = useEvent((sessionId: string) => {
+    promoteQueueHeadOnAbort(sessionId);
     void abortCurrentOperation(sessionId);
   });
 
   const handleStopSessions = useEvent((sessionIds: string[]) => {
-    void Promise.all(sessionIds.map((id) => abortCurrentOperation(id)));
+    void Promise.all(sessionIds.map((id) => {
+      promoteQueueHeadOnAbort(id);
+      return abortCurrentOperation(id);
+    }));
   });
 
   React.useEffect(() => {
@@ -974,6 +980,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   };
 
   const handleSelectSession = (session: Session) => {
+    // Switching sessions is navigation — the sheet's focus restore would
+    // otherwise raise the old conversation's composer keyboard.
+    suppressMobileOverlayFocusRestore();
     const directory = getSessionDirectory(session) || null;
     // Switching session switches the working directory (handled by
     // setCurrentSession) — also move the active project so the rest of the app
@@ -1749,7 +1758,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                                       </span>
                                     </button>
                                     {worktreeExpanded
-                                      ? renderBucketSessions(node, bucket, WORKTREE_SESSION_INDENT)
+                                      ? renderBucketSessions(node, bucket, PROJECT_SESSION_INDENT)
                                       : null}
                                   </div>
                                 );

@@ -17,6 +17,7 @@ Own filesystem API behavior for the web server runtime, including file operation
     - `GET /api/fs/raw`
     - `GET /api/fs/serve/:path(*)`
     - `POST /api/fs/write`
+    - `PUT /api/fs/prompt-attachments/:attachmentID` (binary prompt attachment; streams bytes into `<openchamberDataDir>/prompt-attachments/<sha256-prefix>/<sha256><ext>` and returns `{ path, size, mime, sha256 }`)
     - `POST /api/fs/delete`
     - `POST /api/fs/rename`
     - `POST /api/fs/reveal`

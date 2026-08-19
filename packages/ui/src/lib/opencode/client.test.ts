@@ -91,6 +91,7 @@ mock.module('@/lib/runtime-url', () => ({
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeApiBaseUrl: mock(() => ''),
   getRuntimeKey: mock(() => runtimeKey),
+  isRuntimeInstanceChange: mock(() => false),
 }));
 
 const runtimeFetchMock = mock((...args: unknown[]) => {
@@ -110,17 +111,40 @@ mock.module('@/lib/startupTrace', () => ({
   markStartupTrace: mock(() => undefined),
 }));
 
+const uploadPromptAttachmentCalls: Array<{ mime: string; filename?: string }> = [];
+const uploadPromptAttachmentBytesMock = mock(async (input: { mime: string; filename?: string }) => {
+  uploadPromptAttachmentCalls.push(input);
+  return {
+    path: '/data/openchamber/prompt-attachments/ab/uploaded.bin',
+    url: 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin',
+    mime: input.mime,
+    size: 4,
+    sha256: 'deadbeef',
+  };
+});
+
+mock.module('../prompt-attachment-upload', () => ({
+  MAX_PROMPT_ATTACHMENT_BYTES: 25 * 1024 * 1024,
+  toPromptAttachmentFileUrl: (filepath: string) => `file://${filepath}`,
+  pathFromPromptAttachmentFileUrl: (url: string) => url.replace(/^file:\/\//, ''),
+  needsPromptAttachmentUpload: (url: string) => url.startsWith('data:') || url.startsWith('blob:'),
+  blobFromDataUrl: (url: string, mime: string) => new Blob(['ok'], { type: mime || 'application/octet-stream' }),
+  uploadPromptAttachmentBytes: uploadPromptAttachmentBytesMock,
+}));
+
 const { opencodeClient } = await import(`./client?cache-test=${Date.now()}`);
 
 beforeEach(() => {
   healthFetchCalls.length = 0;
   healthFetchResults.length = 0;
+  uploadPromptAttachmentCalls.length = 0;
   agentSdkCalls.length = 0;
   sessionStatusSdkCalls.length = 0;
   sessionActiveSdkCalls.length = 0;
   sessionActiveResults.length = 0;
   sessionDiffSdkCalls.length = 0;
   sdkClientConfigs.length = 0;
+  uploadPromptAttachmentCalls.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
 });
@@ -315,6 +339,54 @@ describe('opencodeClient prompt retry behavior', () => {
 
     expect(healthFetchCalls.length).toBe(1);
     expect(error instanceof Error ? error.message : String(error)).toContain('Failed to send message (503)');
+  });
+
+  const readPromptRequestBody = (callIndex = 0): { text?: string; files?: Array<{ uri?: string; name?: string }> } => {
+    const init = (healthFetchCalls[callIndex]?.[1] ?? {}) as { body?: string };
+    return JSON.parse(init.body ?? '{}');
+  };
+
+  test('uploads inline data URLs before the prompt POST so the JSON body stays a file:// reference', async () => {
+    healthFetchResults.push(new Response(JSON.stringify({ id: 'inbox_1', sessionID: 'ses_1' }), { headers: { 'Content-Type': 'application/json' } }));
+
+    await opencodeClient.sendMessage({
+      id: 'ses_1',
+      providerID: 'anthropic-upload',
+      modelID: 'claude-sonnet',
+      text: 'see photo',
+      files: [{
+        type: 'file',
+        mime: 'image/png',
+        filename: 'photo.png',
+        url: 'data:image/png;base64,aGVsbA==',
+      }],
+    });
+
+    expect(uploadPromptAttachmentCalls).toHaveLength(1);
+    const body = readPromptRequestBody();
+    expect(body.files?.some((file) => file.uri === 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin' && file.name === 'photo.png')).toBe(true);
+    expect(body.files?.some((file) => file.uri?.startsWith('data:'))).toBe(false);
+  });
+
+  test('expands image citations to the uploaded host path in authored text', async () => {
+    healthFetchResults.push(new Response(JSON.stringify({ id: 'inbox_1', sessionID: 'ses_1' }), { headers: { 'Content-Type': 'application/json' } }));
+
+    await opencodeClient.sendMessage({
+      id: 'ses_1',
+      providerID: 'anthropic-upload',
+      modelID: 'claude-sonnet',
+      text: '[photo.png] what is this',
+      files: [{
+        type: 'file',
+        mime: 'image/png',
+        filename: 'photo.png',
+        url: 'data:image/png;base64,aGVsbA==',
+      }],
+    });
+
+    const body = readPromptRequestBody();
+    expect(body.text).toBe('[/data/openchamber/prompt-attachments/ab/uploaded.bin] what is this');
+    expect(body.files?.some((file) => file.uri === 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin')).toBe(true);
   });
 });
 

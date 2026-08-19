@@ -12,6 +12,7 @@ import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { writeRuntimeScopedItem } from '@/lib/runtimeScopedStorage';
+import { removeInstanceScopedItem, writeInstanceScopedItem } from '@/lib/instanceScopedStorage';
 import { projectSettingsBootstrapPatch } from '@/queries/settingsBootstrapParser';
 import { patchSettingsBootstrapSnapshot } from '@/queries/settingsBootstrapQueries';
 
@@ -62,26 +63,26 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
     );
   }
   if (settings.lastDirectory) {
-    localStorage.setItem('lastDirectory', settings.lastDirectory);
+    writeInstanceScopedItem('lastDirectory', settings.lastDirectory);
   }
   if (settings.homeDirectory) {
-    localStorage.setItem('homeDirectory', settings.homeDirectory);
+    writeInstanceScopedItem('homeDirectory', settings.homeDirectory);
     applyPersistedHomeDirectoryToWindow(settings.homeDirectory);
   }
   if (Array.isArray(settings.projects) && settings.projects.length > 0) {
-    localStorage.setItem('projects', JSON.stringify(settings.projects));
+    writeInstanceScopedItem('projects', JSON.stringify(settings.projects));
   } else {
-    localStorage.removeItem('projects');
+    removeInstanceScopedItem('projects');
   }
   if (settings.activeProjectId) {
-    localStorage.setItem('activeProjectId', settings.activeProjectId);
+    writeInstanceScopedItem('activeProjectId', settings.activeProjectId);
   } else {
-    localStorage.removeItem('activeProjectId');
+    removeInstanceScopedItem('activeProjectId');
   }
   if (Array.isArray(settings.pinnedDirectories) && settings.pinnedDirectories.length > 0) {
-    localStorage.setItem('pinnedDirectories', JSON.stringify(settings.pinnedDirectories));
+    writeInstanceScopedItem('pinnedDirectories', JSON.stringify(settings.pinnedDirectories));
   } else {
-    localStorage.removeItem('pinnedDirectories');
+    removeInstanceScopedItem('pinnedDirectories');
   }
 
   if (Array.isArray(settings.projects) && settings.projects.length > 0) {
@@ -90,9 +91,9 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
       .map((project) => project.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
     if (collapsed.length > 0) {
-      localStorage.setItem('oc.sessions.projectCollapse', JSON.stringify(collapsed));
+      writeInstanceScopedItem('oc.sessions.projectCollapse', JSON.stringify(collapsed));
     } else {
-      localStorage.removeItem('oc.sessions.projectCollapse');
+      removeInstanceScopedItem('oc.sessions.projectCollapse');
     }
   }
   if (typeof settings.gitmojiEnabled === 'boolean') {

@@ -90,10 +90,13 @@ type SessionSwipeStartInput = {
   withinHorizontalScroller: boolean;
   /** Native iOS owns touches that begin in its system back-gesture edge. */
   withinNativeBackEdge?: boolean;
+  /** Composer owns the touch: textarea focused or silhouette expanded — typing surface, never a session swipe. */
+  composerActive?: boolean;
 };
 
 /** Gesture ownership policy shared by the DOM hook and focused tests. */
 export const shouldStartSessionSwipe = (input: SessionSwipeStartInput): boolean => {
+  if (input.composerActive) return false;
   if (input.onCodeBlock || input.withinHorizontalScroller || input.withinNativeBackEdge) return false;
   return input.onExplicitSurface;
 };
@@ -239,11 +242,24 @@ export const useEdgeSwipeSessionSwitch = (
       }
       const touch = event.touches[0];
       const target = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (!target || !shouldStartSessionSwipe({
-        onExplicitSurface: target.closest(SESSION_SWIPE_SURFACE_SELECTOR) !== null,
+      if (!target) {
+        tracking = false;
+        return;
+      }
+      const surface = target.closest<HTMLElement>(SESSION_SWIPE_SURFACE_SELECTOR);
+      const composerActive = surface !== null
+        && (!surface.classList.contains('oc-mobile-composer-collapsed')
+          || surface.contains(document.activeElement));
+      if (composerActive) {
+        tracking = false;
+        return;
+      }
+      if (!shouldStartSessionSwipe({
+        onExplicitSurface: surface !== null,
         onCodeBlock: isCodeBlock(target),
         withinHorizontalScroller: hasScrollableAncestorInDirection(target, true),
         withinNativeBackEdge: isNativeIOSBackEdgeStart(touch.clientX),
+        composerActive,
       })) {
         tracking = false;
         return;

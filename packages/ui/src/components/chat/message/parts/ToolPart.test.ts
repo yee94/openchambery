@@ -25,6 +25,22 @@ const mobileChangesSurfaceSource = readFileSync(join(__dirname, '../../../../app
 const diffViewSource = readFileSync(join(__dirname, '../../../views/DiffView.tsx'), 'utf-8');
 const contextPanelSource = readFileSync(join(__dirname, '../../../layout/ContextPanel.tsx'), 'utf-8');
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
+const toolPresentationSource = readFileSync(join(__dirname, 'toolPresentation.tsx'), 'utf-8');
+
+describe('edit slim line counts', () => {
+    test('prefers metadata additions/deletions over parsing a dropped patch', () => {
+        expect(toolPartSource).toContain('const addedFromMeta = parseDiffCount(metadata?.additions);');
+        expect(toolPartSource).toContain('const removedFromMeta = parseDiffCount(metadata?.deletions);');
+    });
+});
+
+describe('editing tool icon size', () => {
+    test('keeps edit and write icons slightly smaller than the 14px tool row slot', () => {
+        expect(toolPresentationSource).toContain("const editIconClass = 'h-[13px] w-[13px] flex-shrink-0'");
+        expect(toolPresentationSource).toContain('<Icon name="pencil" className={editIconClass} />');
+        expect(toolPresentationSource).toContain('<Icon name="file-edit" className={editIconClass} />');
+    });
+});
 
 describe('mobile press feedback', () => {
     test('tool rows opt into soft press so full-width subagent/tool rows never use compact scale', () => {
@@ -69,6 +85,46 @@ describe('tool busy title chrome', () => {
         expect(toolPartSource).not.toContain('MinDurationShineText');
         expect(toolPartSource).toContain('taskBusy && \'animate-text-shimmer\'');
         expect(toolPartSource).toContain("normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number'");
+    });
+
+    test('every active expandable tool uses the shared loading orb and settled rows restore identity', () => {
+        expect(toolPartSource).toContain("import { LatticeOrb } from './LatticeOrb';");
+        expect(toolPartSource).toContain('const isFinalized = isToolPartSettled(part);');
+        expect(toolPartSource).toContain('{isTaskTool && taskRowChrome.showAvatar ? (');
+        expect(toolPartSource).toContain(') : effectiveActive ? (');
+        expect(toolPartSource).toContain("label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}");
+        expect(toolPartSource).toContain('getToolIcon(normalizedPartTool || part.tool)');
+    });
+
+    test('unassigned task rows stay on the loading orb until an agent is assigned', () => {
+        expect(toolPartSource).toContain('const isDelegatingTask = isTaskTool && taskRowChrome.isDelegating;');
+        expect(toolPartSource).toContain('resolveTaskRowChrome({');
+        expect(toolPartSource).toContain('isTaskTool,');
+        expect(toolPartSource).toContain("t('chat.assistantStatus.delegatingTask')");
+        const lifecycleBranch = toolPartSource.slice(
+            toolPartSource.indexOf('{isTaskTool && taskRowChrome.showAvatar ? ('),
+            toolPartSource.indexOf('getToolIcon(normalizedPartTool || part.tool)'),
+        );
+        expect(lifecycleBranch).toContain('<AgentAvatar');
+        expect(lifecycleBranch).toContain(') : effectiveActive ? (');
+        expect(lifecycleBranch).toContain('<LatticeOrb');
+        expect(lifecycleBranch.indexOf('<LatticeOrb')).toBeGreaterThan(lifecycleBranch.indexOf('<AgentAvatar'));
+    });
+
+    test('assigned task rows keep the agent name visible beside the avatar', () => {
+        expect(toolPartSource).toContain('const taskTitle = taskRowChrome.title;');
+        expect(toolPartSource).not.toContain('chat.assistantStatus.taskWorking');
+        expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap animate-text-shimmer')}");
+        expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap')}");
+        expect(toolPartSource).toContain('{taskTitle}');
+        expect(toolPartSource).not.toContain('flex items-center gap-2 min-w-0 flex-1');
+    });
+
+    test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {
+        expect(toolPartSource).toContain("className={cn('relative flex-shrink-0', isMobile ? 'size-4' : 'size-3.5')}");
+        expect(toolPartSource).toContain('isMobile={isMobile}');
+        expect(toolPartSource).toContain('className="ml-auto inline-flex size-3.5 flex-shrink-0 items-center justify-center');
+        expect(toolPartSource).not.toContain('group-hover/tool:opacity-0');
     });
 });
 
@@ -153,7 +209,11 @@ describe('apply_patch navigation', () => {
         expect(contextPanelSource).toContain('toolPatches={toolPatches}');
         expect(contextPanelSource).toContain('stackedDefaultCollapsedAll={!toolPatches}');
         expect(diffViewSource).toContain('const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(');
-        expect(diffViewSource).toContain('selectedToolTurnDiffs.length > 0 ? selectedToolTurnDiffs : lastTurnDiffs');
+        expect(diffViewSource).toContain('const usesToolPatches = selectedToolTurnDiffs.length > 0;');
+        expect(diffViewSource).toContain('if (usesToolPatches) return selectedToolTurnDiffs;');
+        expect(diffViewSource).toContain('return mergeTurnDiffSummariesWithFull(lastTurnDiffs, fetchedTurnFullDiffs);');
+        expect(diffViewSource).toContain('return lastTurnDiffs;');
+        expect(diffViewSource).toContain("if (activeDiffScope !== 'turn' || usesToolPatches)");
         expect(diffViewSource).toContain('stackedToolPatchesRef.current !== toolPatches');
     });
 

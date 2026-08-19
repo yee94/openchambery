@@ -117,8 +117,12 @@ export const createSessionIndexSyncRuntime = ({
 
   const fetchDirectory = async (task) => {
     const cached = readDirectory(task.directory);
+    // Empty snapshots are not incrementally eligible. A successful [] still
+    // stores lastSyncedAt as a worktree topology hint; using that watermark as
+    // start would hide older historical roots until the 24h full reconcile.
     const useIncremental = Boolean(
-      cached?.lastSyncedAt > 0
+      (cached?.sessions?.length ?? 0) > 0
+      && cached?.lastSyncedAt > 0
       && now() - cached.lastFullSyncedAt < FULL_RECONCILE_INTERVAL_MS
     );
     // Keep parity with @opencode-ai/sdk/v2 experimental.session.list. The

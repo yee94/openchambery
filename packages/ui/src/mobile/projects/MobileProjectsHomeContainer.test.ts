@@ -1,9 +1,14 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, test } from 'bun:test';
 
 import { applyProjectGitProbeResult } from './mobileProjectsHomeContainerState';
 
-const containerSource = readFileSync(new URL('./MobileProjectsHomeContainer.tsx', import.meta.url), 'utf8');
+const containerSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'MobileProjectsHomeContainer.tsx'),
+  'utf8',
+);
 
 const projectTarget = (id: string, isGitRepository = false) => ({
   kind: 'project' as const,
@@ -14,6 +19,16 @@ const projectTarget = (id: string, isGitRepository = false) => ({
     worktrees: [],
   },
   isGitRepository,
+});
+
+describe('MobileProjectsHomeContainer session actions', () => {
+  test('session sheet wires the shared transcript refresh path', () => {
+    expect(containerSource).toContain('onRefreshTranscript: handleRefreshTranscript');
+    expect(containerSource).toContain('sync.refreshSessionTranscript');
+    expect(containerSource).toContain("t('sessions.sidebar.session.menu.refreshTranscriptSuccess')");
+    expect(containerSource).toContain("t('sessions.sidebar.session.menu.refreshTranscriptFailed')");
+    expect(containerSource).not.toContain('ensureTranscriptInitial');
+  });
 });
 
 describe('MobileProjectsHomeContainer git probe', () => {

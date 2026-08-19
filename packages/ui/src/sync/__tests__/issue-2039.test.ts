@@ -55,6 +55,9 @@ const deferredStorage: Storage = {
 mock.module("@/stores/utils/safeStorage", () => ({
   createDeferredSafeJSONStorage: () => undefined,
   getDeferredSafeStorage: () => deferredStorage,
+  getSafeStorage: () => deferredStorage,
+  getSafeSessionStorage: () => deferredStorage,
+  resetSafeStorageForTests: () => undefined,
 }))
 
 mock.module("@/lib/opencode/client", () => ({
@@ -166,6 +169,7 @@ mock.module("@/lib/runtime-switch", () => ({
   getRuntimeTransportIdentity: () => "test-runtime",
   initializeRuntimeEndpoint: () => undefined,
   isRuntimeEndpointIdentityChange: () => false,
+  isRuntimeInstanceChange: () => false,
   subscribeRuntimeEndpointChanged: () => () => undefined,
   switchRuntimeEndpoint: () => undefined,
 }))
@@ -174,9 +178,73 @@ mock.module("@/lib/userSendAnimation", () => ({
   markPendingUserSendAnimation: () => undefined,
 }))
 
-mock.module("../sync-context", () => ({
-  setActiveSession: () => undefined,
-}))
+// session-ui-store's import graph reaches several sync-context hooks we do
+// not exercise here; satisfy every named export without enumerating call sites.
+mock.module("../sync-context", () => {
+  const noop = () => undefined
+  const record = { setActiveSession: noop } as Record<string, unknown>
+  for (const name of [
+    "buildSessionMessageRecordsSnapshot",
+    "buildSessionMessageRecordsSnapshotFromSource",
+    "dropCachedSessionMessageRecordsSnapshots",
+    "getCompensationViewedSessions",
+    "getSessionIdFromPayload",
+    "handleEvent",
+    "handleNormalizedOpenCodeHints",
+    "invalidateReconnectTranscriptCache",
+    "isLiveRevisionCurrent",
+    "materializeSessionFromServer",
+    "resolveGlobalSessionStatus",
+    "resolveReconnectFollowUpWork",
+    "resolveReconnectStatusOnly",
+    "resolveStrictDomainSessionID",
+    "resyncBlockingRequestsForDirectory",
+    "resyncDirectoryAfterReconnect",
+    "setContextPanelViewedSession",
+    "setExternallyViewedSession",
+    "shouldBootstrapDirectory",
+    "shouldTriggerDomainRecovery",
+    "shouldTriggerStaleResync",
+    "useAllLiveSessions",
+    "useAllSessionStatuses",
+    "useChildStoreManager",
+    "useCurrentSessionEntity",
+    "useDirectoryStore",
+    "useDirectorySync",
+    "useEnsureSessionMessages",
+    "useGlobalSessionStatus",
+    "useLiveSessionStatus",
+    "useParentSessionTarget",
+    "useScopedBlockingPermissions",
+    "useScopedBlockingQuestions",
+    "useScopedSessionStatusReader",
+    "useScopedSessionStatusRevision",
+    "useSession",
+    "useSessionDirectory",
+    "useSessionMaterializationStatus",
+    "useSessionMessageCount",
+    "useSessionMessageLoadState",
+    "useSessionMessageRecords",
+    "useSessionMessages",
+    "useSessionMessagesResolved",
+    "useSessionParts",
+    "useSessionPermissions",
+    "useSessionQuestions",
+    "useSessionStatus",
+    "useSessionStatusObservedAt",
+    "useSessionStatusSnapshotAt",
+    "useSessionTextMessages",
+    "useSessionTranscriptHydration",
+    "useSessionTranscriptPagination",
+    "useSessions",
+    "useSyncDirectory",
+    "useSyncSDK",
+    "useUserMessageHistory",
+  ]) {
+    record[name] = noop
+  }
+  return record
+})
 
 mock.module("../notification-store", () => ({
   markSessionViewed: () => undefined,
@@ -227,11 +295,18 @@ mock.module("../input-store", () => ({
 
 mock.module("../sync-refs", () => ({
   getDirectoryState: () => null,
+  getSyncConfig: () => undefined,
+  subscribeToSyncConfigChanges: () => () => undefined,
+  emitSyncConfigChanged: () => undefined,
   getSyncSessions: () => [],
+  getAllSyncSessions: () => [],
+  getAllSyncSessionMap: () => new Map(),
+  registerSessionDirectory: () => undefined,
+  resolveMaterializedSessionDirectory: () => null,
   getSyncMessages: () => [],
   getSyncParts: () => [],
-  getAllSyncSessions: () => [],
-  registerSessionDirectory: () => undefined,
+  getSyncSessionStatus: () => undefined,
+  getSyncSessionMaterializationStatus: () => undefined,
 }))
 
 mock.module("../session-actions", () => ({
@@ -262,6 +337,32 @@ mock.module("../session-actions", () => ({
   getSessionLastAssistantModel: mock(() => null),
   abortCurrentOperation: mock(async () => undefined),
   patchSessionMetadata: mock(async () => undefined),
+  // v2 additions reached through the session-ui-store import graph.
+  abortBusySessionForMessageEdit: mock(async () => undefined),
+  beginOptimisticSend: mock(async () => undefined),
+  cancelScheduledSessionDeletes: mock(() => undefined),
+  clearScheduledSessionDeletesForTests: mock(() => undefined),
+  classifySendFailure: mock(() => "retryable"),
+  commitStagedRevertBeforeSend: mock(async () => undefined),
+  deleteSessionInDirectory: mock(async () => true),
+  dismissOpenQuestionsForSession: mock(async () => undefined),
+  dismissPermission: mock(async () => undefined),
+  getSendFailureKind: mock(() => undefined),
+  isQuestionRequestNotFoundError: mock(() => false),
+  mirrorSessionIntoLiveStores: mock(() => undefined),
+  rejectQuestion: mock(async () => undefined),
+  releaseUnconfirmedQueueSend: mock(() => undefined),
+  resolveForkMessageId: mock(() => null),
+  respondToPermission: mock(async () => undefined),
+  respondToQuestion: mock(async () => undefined),
+  rollbackOptimisticSend: mock(() => undefined),
+  settleOptimisticSend: mock(async () => undefined),
+  settleSessionPromptAfterSend: mock(async () => undefined),
+  shouldSuppressForkCopyEvent: mock(() => false),
+  trackForkCopySessionCreated: mock(() => undefined),
+  unarchiveSession: mock(async () => true),
+  waitForConnectionOrThrow: mock(async () => undefined),
+  waitForSessionIdleForMessageEdit: mock(async () => undefined),
 }))
 
 const { materializeOpenDraftSession, useSessionUIStore } = await import("../session-ui-store")

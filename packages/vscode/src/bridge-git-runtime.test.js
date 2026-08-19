@@ -7,6 +7,10 @@ const gitService = {
   cherryPick: mock(),
   revertCommit: mock(),
   resetToCommit: mock(),
+  // bridge.ts also loads bridge-git-special-runtime, whose gitService
+  // surface must stay present when this file's module mock wins the registry.
+  getGitRangeFiles: mock(),
+  getGitRangeDiff: mock(),
 };
 
 mock.module('./gitService', () => gitService);

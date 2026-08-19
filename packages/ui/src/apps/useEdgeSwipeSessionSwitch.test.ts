@@ -65,6 +65,39 @@ describe('shouldStartSessionSwipe', () => {
       withinNativeBackEdge: true,
     })).toBe(false);
   });
+
+  test('rejects a focused or expanded Composer even on the explicit surface', () => {
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: false,
+      composerActive: true,
+    })).toBe(false);
+  });
+
+  test('keeps the previous surface policy when composerActive is omitted', () => {
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: false,
+    })).toBe(true);
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: true,
+      withinHorizontalScroller: false,
+    })).toBe(false);
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: true,
+    })).toBe(false);
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: false,
+      withinNativeBackEdge: true,
+    })).toBe(false);
+  });
 });
 
 describe('evaluateSwipeDirection', () => {

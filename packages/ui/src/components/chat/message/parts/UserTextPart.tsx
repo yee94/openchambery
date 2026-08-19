@@ -17,7 +17,7 @@ import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { getAllSyncSessionMap } from '@/sync/sync-refs';
 import { buildAgentMentionUrl, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import {
-    buildCitationIconsFromParts,
+    buildCitationHintsFromParts,
     buildMessageReferenceParts,
     type MessageTextPart,
 } from '@/lib/messages/references';
@@ -79,7 +79,10 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const isCollapsed = collapsibleUserMessages && !isExpanded;
     const textRef = React.useRef<HTMLDivElement>(null);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
-    const citationIcons = React.useMemo(() => buildCitationIconsFromParts(messageParts), [messageParts]);
+    const citationHints = React.useMemo(
+        () => buildCitationHintsFromParts(messageParts, textContent),
+        [messageParts, textContent],
+    );
     const sessionMentions = React.useMemo(() => {
         const byId = new Map<string, { sessionId: string; sessionLabel: string }>();
         // Authoritative: synthetic session-mention instructions kept on sourceParts.
@@ -192,14 +195,15 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const referenceParts = React.useMemo(() => {
         return buildMessageReferenceParts(textContent, {
             skillNames: new Set(skillByName.keys()),
-            citationIcons,
+            citationIcons: citationHints.icons,
+            citationDisplayNames: citationHints.displayNames,
             sessionMentions,
             agentNames: agentMention?.name
                 ? new Set([agentMention.name.toLowerCase(), agentMention.token.replace(/^@/, '').toLowerCase()])
                 : undefined,
             allowPathHeuristics: true,
         });
-    }, [agentMention, citationIcons, sessionMentions, skillByName, textContent]);
+    }, [agentMention, citationHints, sessionMentions, skillByName, textContent]);
 
     const processedMarkdownContent = React.useMemo(() => {
         return prepareUserMarkdownContent({

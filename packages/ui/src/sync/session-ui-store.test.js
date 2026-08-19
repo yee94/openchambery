@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -21,6 +21,21 @@ import { useInputStore } from './input-store';
 import { deriveNewSessionDraftID, newSessionDraftKey, sessionDraftKey } from './input-draft-types';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { queueScopeKey } from '@/stores/messageQueueStore';
+
+// v2 send confirmation runs after `opencodeClient.sendMessage` resolves: the
+// inbox probe and projection refetch go through the Host shallow proxy. Unit
+// tests stub that boundary so the mocked client send is the only IO.
+mock.module('./session-prompt-api', () => ({
+  fetchSessionInbox: async () => [{ id: 'msg' }],
+  postSessionPrompt: async () => ({ id: 'msg' }),
+  postIdleSessionPrompt: async () => ({ id: 'msg' }),
+  postSessionInterrupt: async () => undefined,
+}));
+mock.module('./session-projection-api', () => ({
+  fetchSessionProjectionPage: async () => ({ records: [], cursor: undefined, complete: true }),
+  normalizeSessionProjectionMessage: (sessionID, raw) => raw,
+  normalizeSessionProjectionPage: (page) => page,
+}));
 
 /**
  * Unit tests for session worktree routing through the authoritative store.

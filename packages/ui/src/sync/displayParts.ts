@@ -18,6 +18,57 @@ function getPartId(part: Part): string | undefined {
   return typeof id === "string" && id.length > 0 ? id : undefined
 }
 
+/**
+ * Whether the Host projected this part instead of sending it whole.
+ *
+ * First-packet turn pages carry tool/reasoning parts as summaries (identity and
+ * status, no output body) so a long tool-heavy turn does not have to serialize
+ * before anything paints. The Host stamps every projected part; an unstamped
+ * part is full by definition, so an older Host simply never triggers this path.
+ */
+export function isSlimPart(part: Part): boolean {
+  return (part as { slim?: unknown }).slim === true
+}
+
+/**
+ * Keep the full copy the UI already holds when a frame re-sends that part slim.
+ *
+ * Projected pages are not only sent for a first paint: recovery and materialize
+ * omit `before` too, so they read as first packets and arrive slim as well. A
+ * settled assistant takes incoming parts verbatim, so without this the summary
+ * would overwrite tool output the user already had.
+ */
+function preferFullOverSlim(previous: Part[] | undefined, incoming: Part[]): Part[] {
+  if (!previous || previous.length === 0) return incoming
+  if (!incoming.some((part) => isSlimPart(part))) return incoming
+
+  const fullById = new Map<string, Part>()
+  for (const part of previous) {
+    const id = getPartId(part)
+    if (id && !isSlimPart(part)) fullById.set(id, part)
+  }
+  if (fullById.size === 0) return incoming
+
+  let upgraded = false
+  const resolved = incoming.map((part) => {
+    if (!isSlimPart(part)) return part
+    const id = getPartId(part)
+    if (!id) return part
+    const full = fullById.get(id)
+    if (!full) return part
+    upgraded = true
+    return full
+  })
+  return upgraded ? resolved : incoming
+}
+
+/** Preserve the previous array reference when a merge reproduced it exactly. */
+function stabilize(merged: Part[], previous: Part[]): Part[] {
+  if (merged === previous) return previous
+  if (merged.length !== previous.length) return merged
+  return merged.every((part, index) => part === previous[index]) ? previous : merged
+}
+
 function getMessageRole(info: Message): string {
   const role = (info as { clientRole?: unknown; role?: unknown }).clientRole ?? info.role
   return typeof role === "string" ? role : ""
@@ -53,6 +104,11 @@ export function allowsAuthoritativeShrink(info: Message): boolean {
  * assistant is held until the turn settles. Aborts and errors stamp
  * `finish`/`error` on the message, which flips `allowsAuthoritativeShrink` and
  * releases the hold on the next commit.
+ *
+ * Completeness is held the same way, and unlike presence it is held even after
+ * the turn settles: a projected part never replaces the full part it summarizes.
+ * Detail only ever grows, so a live SSE part always outranks a projected page
+ * regardless of arrival order.
  */
 export function mergePartsForDisplay(
   previous: Part[] | undefined,
@@ -60,10 +116,12 @@ export function mergePartsForDisplay(
   info: Message,
 ): Part[] {
   if (!previous || previous.length === 0) return incoming
-  if (allowsAuthoritativeShrink(info)) return incoming
+
+  const resolved = preferFullOverSlim(previous, incoming)
+  if (allowsAuthoritativeShrink(info)) return stabilize(resolved, previous)
 
   const incomingIds = new Set<string>()
-  for (const part of incoming) {
+  for (const part of resolved) {
     const id = getPartId(part)
     if (id) incomingIds.add(id)
   }
@@ -97,10 +155,10 @@ export function mergePartsForDisplay(
     heldAfterId.set(lastRetainedId, [part])
   }
 
-  if (heldCount === 0) return incoming
+  if (heldCount === 0) return stabilize(resolved, previous)
 
   const merged: Part[] = [...heldAtHead]
-  for (const part of incoming) {
+  for (const part of resolved) {
     merged.push(part)
     const id = getPartId(part)
     if (!id) continue
@@ -111,9 +169,5 @@ export function mergePartsForDisplay(
   // Steady state while a page keeps lagging: the merge reproduces what the UI
   // already holds. Return the previous array so snapshot consumers keep their
   // reference and no turn projection rebuilds.
-  if (merged.length === previous.length && merged.every((part, index) => part === previous[index])) {
-    return previous
-  }
-
-  return merged
+  return stabilize(merged, previous)
 }

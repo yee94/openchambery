@@ -1,6 +1,7 @@
 import { ClientError, isPermissionNotFoundError, OpenCode } from "@opencode-ai/client";
 import type { FilesAPI } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
+import { readInstanceScopedItem } from "../instanceScopedStorage";
 import type {
   Agent,
   Config,
@@ -20,6 +21,9 @@ import type {
 import { mergeConfigDocuments, projectSession } from "./v2-types";
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
+import { convertHeicToJpegViaNative } from "../native-image-transcode";
+import { expandImageAttachmentCitations } from "@/components/chat/attachmentCitations";
+import { blobFromDataUrl, needsPromptAttachmentUpload, pathFromPromptAttachmentFileUrl, uploadPromptAttachmentBytes } from "../prompt-attachment-upload";
 
 /**
  * Tagged result of `OpencodeService.fetchPermission()`. The caller can
@@ -305,6 +309,24 @@ type FileInputLite = {
  * File normalization is injected so the instance method uses OpencodeService's
  * toNormalizedFilePartInput while tests can supply a passthrough.
  */
+const isImagePromptFile = (file: { mime?: string; filename?: string }): boolean => {
+  if (typeof file.mime === 'string' && file.mime.startsWith('image/')) return true;
+  return typeof file.filename === 'string' && /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|heic|heif|tiff?)$/i.test(file.filename);
+};
+
+const imageCitationPathsFromFiles = (files: readonly FilePartInput[]): Array<{ filename: string; path: string }> => {
+  const paths: Array<{ filename: string; path: string }> = [];
+  for (const file of files) {
+    if (!isImagePromptFile(file)) continue;
+    const filename = typeof file.filename === 'string' ? file.filename.trim() : '';
+    const url = typeof file.url === 'string' ? file.url : '';
+    if (!filename || !url.toLowerCase().startsWith('file://')) continue;
+    const path = pathFromPromptAttachmentFileUrl(url).trim();
+    if (path) paths.push({ filename, path });
+  }
+  return paths;
+};
+
 const _buildPromptParts = async (params: {
   text: string;
   prefaceText?: string;
@@ -318,11 +340,30 @@ const _buildPromptParts = async (params: {
   agentMentions?: Array<{ name: string; source?: { value: string; start: number; end: number } }>;
 }, normalizeFile: (file: FileInputLite) => Promise<FilePartInput>): Promise<Array<TextPartInput | FilePartInput | AgentPartInputLite>> => {
   const parts: Array<TextPartInput | FilePartInput | AgentPartInputLite> = [];
+  const normalizedFiles = params.files?.length
+    ? await Promise.all(params.files.map((file) => normalizeFile(file)))
+    : [];
+  const additionalNormalized = params.additionalParts?.length
+    ? await Promise.all(params.additionalParts.map(async (additional) => ({
+      text: additional.text,
+      synthetic: additional.synthetic,
+      files: additional.files?.length
+        ? await Promise.all(additional.files.map((file) => normalizeFile(file)))
+        : [],
+    })))
+    : [];
+  const expandText = (text: string): string => expandImageAttachmentCitations(
+    text,
+    imageCitationPathsFromFiles([
+      ...normalizedFiles,
+      ...additionalNormalized.flatMap((additional) => additional.files),
+    ]),
+  );
 
   if (params.prefaceText && params.prefaceText.trim()) {
     parts.push({
       type: 'text',
-      text: params.prefaceText,
+      text: expandText(params.prefaceText),
       synthetic: params.prefaceTextSynthetic !== false,
     });
   }
@@ -330,28 +371,20 @@ const _buildPromptParts = async (params: {
   if (params.text && params.text.trim()) {
     parts.push({
       type: 'text',
-      text: params.text,
+      text: expandText(params.text),
     });
   }
 
-  if (params.files && params.files.length > 0) {
-    for (const file of params.files) {
-      parts.push(await normalizeFile(file));
-    }
-  }
+  parts.push(...normalizedFiles);
 
-  if (params.additionalParts && params.additionalParts.length > 0) {
-    for (const additional of params.additionalParts) {
+  if (additionalNormalized.length > 0) {
+    for (const additional of additionalNormalized) {
       if (additional.text && additional.text.trim()) {
-        const tp: TextPartInput = { type: 'text', text: additional.text };
+        const tp: TextPartInput = { type: 'text', text: expandText(additional.text) };
         if (additional.synthetic) (tp as Record<string, unknown>).synthetic = true;
         parts.push(tp);
       }
-      if (additional.files && additional.files.length > 0) {
-        for (const file of additional.files) {
-          parts.push(await normalizeFile(file));
-        }
-      }
+      parts.push(...additional.files);
     }
   }
 
@@ -618,8 +651,8 @@ class OpencodeService {
 
     if (typeof window !== 'undefined') {
       try {
-        addCandidate(window.localStorage.getItem('lastDirectory'));
-        addCandidate(window.localStorage.getItem('homeDirectory'));
+        addCandidate(readInstanceScopedItem('lastDirectory'));
+        addCandidate(readInstanceScopedItem('homeDirectory'));
       } catch {
         // Access to storage failed (e.g. privacy mode)
       }
@@ -794,42 +827,32 @@ class OpencodeService {
    */
   private async convertHeicToJpeg(file: { mime: string; filename?: string; url: string }): Promise<{ mime: string; filename?: string; url: string }> {
     try {
-      // Dynamic import to avoid loading heic2any unless needed
-      const heic2any = (await import('heic2any')).default;
-      
-      // Extract base64 data from data URL
-      const commaIndex = file.url.indexOf(',');
-      if (commaIndex === -1) return file;
-      
-      const base64Data = file.url.substring(commaIndex + 1);
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const heicBlob = new Blob([bytes], { type: file.mime });
-      
-      // Convert to JPEG
-      const jpegBlob = await heic2any({
-        blob: heicBlob,
-        toType: 'image/jpeg',
-        quality: 0.9,
-      }) as Blob;
-      
-      // Convert back to data URL
+      const heicBlob = blobFromDataUrl(file.url, file.mime);
+      if (!heicBlob) return file;
+
+      // Native Capacitor transcode (iOS ImageIO / Android) first; null falls
+      // back to the heic2any WASM path below so web/desktop keep working.
+      const nativeJpegBlob = await convertHeicToJpegViaNative(heicBlob);
+      const jpegBlob = nativeJpegBlob
+        // Dynamic import to avoid loading heic2any unless needed
+        ?? (await ((await import('heic2any')).default)({
+          blob: heicBlob,
+          toType: 'image/jpeg',
+          quality: 0.9,
+        }) as Blob);
+
       const jpegDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(jpegBlob);
       });
-      
-      // Update filename extension
+
       let newFilename = file.filename;
       if (newFilename) {
         newFilename = newFilename.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
       }
-      
+
       return {
         mime: 'image/jpeg',
         filename: newFilename,
@@ -882,12 +905,28 @@ class OpencodeService {
 
   private async toNormalizedFilePartInput(file: FileInputLite): Promise<FilePartInput> {
     const normalized = await this.normalizeFilePart(file);
+    let url = normalized.url;
+    // Inline data/blob URLs must leave the prompt JSON before promptAsync /
+    // createWithPrompt. Upload the bytes first and keep only a host file://
+    // reference so the shared relay tunnel is not head-of-line blocked.
+    if (needsPromptAttachmentUpload(url)) {
+      const body = blobFromDataUrl(url, normalized.mime);
+      if (!body) {
+        throw new Error(`Failed to materialize attachment bytes for ${normalized.filename ?? 'file'}`);
+      }
+      const uploaded = await uploadPromptAttachmentBytes({
+        body,
+        mime: normalized.mime,
+        filename: normalized.filename,
+      });
+      url = uploaded.url;
+    }
     return {
       ...(file.id ? { id: file.id } : {}),
       type: 'file',
       mime: normalized.mime,
       filename: normalized.filename,
-      url: normalized.url,
+      url,
     };
   }
 

@@ -1,3 +1,5 @@
+import type { I18nKey } from '@/lib/i18n';
+
 export interface ToolMetadata {
   displayName: string;
   icon?: string;
@@ -224,8 +226,65 @@ function formatUnknownToolDisplayName(toolName: string): string {
     .replace(/^./, (char) => char.toUpperCase());
 }
 
+const BUILT_IN_TOOL_ALIASES: Record<string, string> = {
+  shell: 'bash',
+  cmd: 'bash',
+  terminal: 'bash',
+  structuredoutput: 'structuredoutput',
+};
+
+const BUILT_IN_TOOL_DISPLAY_KEYS = {
+  read: 'chat.tools.display.read',
+  write: 'chat.tools.display.write',
+  edit: 'chat.tools.display.edit',
+  multiedit: 'chat.tools.display.multiedit',
+  apply_patch: 'chat.tools.display.apply_patch',
+  bash: 'chat.tools.display.bash',
+  grep: 'chat.tools.display.grep',
+  glob: 'chat.tools.display.glob',
+  list: 'chat.tools.display.list',
+  task: 'chat.tools.display.task',
+  webfetch: 'chat.tools.display.webfetch',
+  websearch: 'chat.tools.display.websearch',
+  codesearch: 'chat.tools.display.codesearch',
+  todowrite: 'chat.tools.display.todowrite',
+  todoread: 'chat.tools.display.todoread',
+  skill: 'chat.tools.display.skill',
+  question: 'chat.tools.display.question',
+  lsp: 'chat.tools.display.lsp',
+  plan_enter: 'chat.tools.display.plan_enter',
+  plan_exit: 'chat.tools.display.plan_exit',
+  structuredoutput: 'chat.tools.display.structuredoutput',
+} as const satisfies Record<string, I18nKey>;
+
+type BuiltInToolDisplayId = keyof typeof BUILT_IN_TOOL_DISPLAY_KEYS;
+
+/** 规范化内置工具名：去序号、取点号末段，并把 shell 等别名归到 bash */
+export function canonicalizeBuiltInToolName(toolName: string): string {
+  const trimmed = toolName.trim().toLowerCase();
+  if (!trimmed) return '';
+
+  const withoutIndex = trimmed.replace(/:\d+$/, '');
+  const last = withoutIndex.includes('.')
+    ? (withoutIndex.split('.').filter(Boolean).pop() ?? withoutIndex)
+    : withoutIndex;
+  return BUILT_IN_TOOL_ALIASES[last] ?? last;
+}
+
+/** 内置工具展示名走 i18n；未知工具回退到元数据/格式化名 */
+export function resolveToolDisplayName(
+  toolName: string,
+  t: (key: I18nKey) => string,
+): string {
+  const id = canonicalizeBuiltInToolName(toolName);
+  if (id in BUILT_IN_TOOL_DISPLAY_KEYS) {
+    return t(BUILT_IN_TOOL_DISPLAY_KEYS[id as BuiltInToolDisplayId]);
+  }
+  return getToolMetadata(toolName).displayName;
+}
+
 export function getToolMetadata(toolName: string): ToolMetadata {
-  return TOOL_METADATA[toolName] || {
+  return TOOL_METADATA[toolName] || TOOL_METADATA[canonicalizeBuiltInToolName(toolName)] || {
     displayName: formatUnknownToolDisplayName(toolName),
     category: 'system',
     outputLanguage: 'text',

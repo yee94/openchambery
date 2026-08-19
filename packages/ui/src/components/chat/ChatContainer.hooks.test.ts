@@ -54,6 +54,14 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('sync.syncSession(currentSessionId, true)');
     });
 
+    test('uses repository P0 as the transcript and composer reveal gate', () => {
+        expect(source).toContain('useSessionTranscriptHydration');
+        expect(source).toContain('p0Satisfied: transcriptHydration.p0Satisfied');
+        expect(source).toContain('hasBusyShell: sessionIsWorking && hasTranscriptShell');
+        expect(source).toContain('hasImmediateShell: pendingUserMessages.length > 0 || historyPrefix.length > 0');
+        expect(source).toContain("if (sessionTranscriptGate === 'pass' && renderedViewportMessages.length > 0)");
+    });
+
     test('history pagination facts come only from the transcript repository projection', () => {
         // Ticket 02: ChatContainer reads pagination via useSessionTranscriptPagination
         // (repository getPagination) and never stitches facts from prefetch.

@@ -185,16 +185,17 @@ export const citationReferenceStrategy: MessageReferenceStrategy = {
                 cursor = end + 1;
                 continue;
             }
+            const label = context.citationDisplayNames?.get(key) ?? filename;
 
             pushSpan(spans, {
                 start,
                 end: end + 1,
                 kind: iconKind,
                 raw: text.slice(start, end + 1),
-                label: filename,
+                label,
                 payload: iconKind === 'image'
-                    ? { kind: 'image', filename }
-                    : { kind: 'attachment', filename },
+                    ? { kind: 'image', filename: label }
+                    : { kind: 'attachment', filename: label },
             });
             cursor = end + 1;
         }

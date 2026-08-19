@@ -3,11 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+const previousDataDir = process.env.OPENCHAMBER_DATA_DIR;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ui-auth-test-'));
 process.env.OPENCHAMBER_DATA_DIR = dataDir;
 
 afterAll(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
+  if (previousDataDir === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
+  else process.env.OPENCHAMBER_DATA_DIR = previousDataDir;
 });
 
 const loadCreateUiAuth = async () => {

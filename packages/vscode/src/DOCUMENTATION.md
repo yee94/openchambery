@@ -43,8 +43,16 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `session-turn-page-runtime.ts`
   - Pure turn-window aggregation over official OpenCode `session.messages` pages.
   - Exports `isUserAuthoredTurnBoundary`, `selectTurnRecords`,
-    `encodeHostCursor` / `decodeHostCursor`, and
+    `encodeHostCursor` / `decodeHostCursor`, `projectSlimParts`,
+    `SLIM_PARTS_PROJECTION`, and
     `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`.
+  - Turn-page `slim-v1` projection is Host-parity (first packet and prepend): tool / reasoning / file
+    summaries after `selectTurnRecords`. Slim tools keep short locator input
+    (path / pattern / query / command / `subagent_type` / `description` / skill `name` / `id`),
+    `metadata.sessionId`, skill `metadata.name`, and edit `additions`/`deletions`, and drop result bodies. Slim `file` parts keep identity, mime,
+    filename, and size metadata only — never `url` or base64. Clients must
+    hydrate the full message by `messageID` before rendering or editing an
+    attachment.
   - OpenCode pages are chronological (oldest → newest); older pages are prepended
     with info.id dedupe (no reverse). Missing `info.id` → explicit `upstream` error.
   - Client-facing `cursor` is an opaque Host token (`oc1.` + base64url JSON) with
@@ -69,8 +77,9 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     `/session/:id/message?limit=&before=&directory=` with **raw** OpenCode cursors
     only (Host tokens are decoded in the aggregator; never forwarded upstream),
     reads `x-next-cursor`, and returns unified
-    `{ records, cursor, complete, turnCount }` where `cursor` is an opaque Host
-    token when history remains.
+    `{ records, cursor, complete, turnCount, partsProjection }` where `cursor`
+    is an opaque Host token when history remains. `partsProjection` is
+    `slim-v1` on every turn-page response (first packet and prepend).
   - Maps `invalid_cursor` to a safe client error string; never logs message
     contents, tokens, or secrets.
   - Whole aggregation uses a 45s AbortController timeout (signal forwarded; cleared

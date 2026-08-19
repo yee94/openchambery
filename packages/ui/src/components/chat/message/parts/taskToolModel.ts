@@ -191,3 +191,35 @@ export const formatTaskStructuredOutputForMarkdown = (output: string): string =>
 export const prepareTaskOutputForDisplay = (output: string): string => {
     return formatTaskStructuredOutputForMarkdown(stripTaskMetadataFromOutput(output));
 };
+
+export type TaskRowChrome = {
+    isDelegating: boolean;
+    showAvatar: boolean;
+    title: string;
+};
+
+/** 委派中只属于尚未结算、且还没有子会话/Agent 名的 Task 窗口。普通 tool 永远用自己的 displayName。 */
+export const resolveTaskRowChrome = (input: {
+    isTaskTool: boolean;
+    isFinalized: boolean;
+    taskSessionId?: string;
+    taskAgentName?: string;
+    displayName: string;
+    delegatingLabel: string;
+    formatName: (name: string) => string;
+}): TaskRowChrome => {
+    if (!input.isTaskTool) {
+        return { isDelegating: false, showAvatar: false, title: input.displayName };
+    }
+    const agentLabel = input.taskAgentName ? input.formatName(input.taskAgentName) : undefined;
+    const isAssigned = Boolean(input.taskSessionId || agentLabel);
+    const isDelegating = !input.isFinalized && !isAssigned;
+    if (isDelegating) {
+        return { isDelegating: true, showAvatar: false, title: input.delegatingLabel };
+    }
+    return {
+        isDelegating: false,
+        showAvatar: isAssigned,
+        title: agentLabel ?? input.displayName,
+    };
+};

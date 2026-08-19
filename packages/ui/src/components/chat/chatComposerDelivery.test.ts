@@ -1,16 +1,24 @@
-import { expect, mock, test } from 'bun:test';
+import { beforeEach, expect, mock, test } from 'bun:test';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 
+let loadedSessions = new Map<string, { id: string; title: string }>();
 mock.module('@/sync/sync-refs', () => ({
     getSyncSessions: () => [{ id: 'ses_1', title: 'Prior work' }],
     getSyncMessages: () => [],
     getSyncParts: () => [],
+    getAllSyncSessionMap: () => loadedSessions,
     resolveMaterializedSessionDirectory: (_sessionId: string, directory?: string) => directory ?? null,
 }));
 
 const { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } = await import('./chatComposerDelivery');
 
 const agents = [{ name: 'worker', mode: 'subagent' }] as never;
+beforeEach(() => {
+    loadedSessions = new Map([
+        ['ses_1', { id: 'ses_1', title: 'Prior work' }],
+        ['ses_2', { id: 'ses_2', title: 'Effect 和 Cordis 的 DI 对比' }],
+    ]);
+});
 const citation = {
     id: 'citation',
     filename: 'pick.ts:1-2',
@@ -43,6 +51,44 @@ test('direct compiler resolves authored delivery references', () => {
         { type: 'skill', skillName: 'review' },
         { type: 'session', sessionId: 'ses_1' },
     ]);
+});
+
+test('pasted visible @title references deliver session semantics without touching text', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('参考 @Effect 和 Cordis 的 DI 对比 的结论，补一章节'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: '/project',
+        root: '/project',
+    });
+
+    expect(compiled.text).toBe('参考 @Effect 和 Cordis 的 DI 对比 的结论，补一章节');
+    expect(compiled.semantics).toEqual([{ type: 'session', sessionId: 'ses_2' }]);
+});
+
+test('pasted @title references dedupe against canonical session tokens', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('merge @session:ses_2 and @Effect 和 Cordis 的 DI 对比 notes'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: '/project',
+        root: '/project',
+    });
+
+    expect(compiled.semantics).toEqual([{ type: 'session', sessionId: 'ses_2' }]);
+});
+
+test('unrelated @words do not create session references', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('email the @team about @src/a.ts'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: '/project',
+        root: '/project',
+        confirmedFilePaths: ['src/a.ts'],
+    });
+
+    expect(compiled.semantics).toEqual([]);
 });
 
 test('manual and auto legacy delivery compile text-only queue content', () => {

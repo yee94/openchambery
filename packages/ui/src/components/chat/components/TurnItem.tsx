@@ -21,6 +21,9 @@ interface TurnItemProps {
 const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompactionStatus, onToggleActivity, stickyUserHeader = true, renderMessage }) => {
     const isMobile = useUIStore((state) => state.isMobile);
     const userMessageCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
+    // Compact is a session command, not a user-authored bubble. Keep the turn
+    // identity so the previous assistant stream does not remount.
+    const hideUserMessage = turn.activityPresentationKind === 'compaction';
 
     return (
         <section
@@ -30,7 +33,7 @@ const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompact
             data-turn-activity-expanded={activityExpanded}
             data-scroll-spy-id={turn.turnId}
         >
-            {stickyUserHeader ? (
+            {hideUserMessage ? null : stickyUserHeader ? (
                 <div className="sticky top-0 z-20 relative bg-[var(--surface-background)] [overflow-anchor:none]">
                     <div className="relative z-10">
                         {renderMessage(turn.userMessage, activityExpanded)}

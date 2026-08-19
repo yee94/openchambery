@@ -1,4 +1,5 @@
 import type { I18nKey } from '@/lib/i18n/store';
+import { isTranscriptDiagnosticsEnabled } from '@/sync/transcript-diagnostics-runtime';
 import type { SettingsPageSlug, SettingsRuntimeContext } from './metadata';
 import { getSettingsPageMeta } from './metadata';
 
@@ -182,11 +183,31 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isMobile && !ctx.isDesktop && !ctx.isVSCode,
   },
   {
+    id: 'about.diagnostics',
+    page: 'about',
+    titleKey: 'settings.openchamber.about.diagnostics.label',
+    keywords: ['diagnostics', 'logs', 'feat', 'transcript'],
+  },
+  {
+    id: 'about.export-diagnostics',
+    page: 'about',
+    titleKey: 'settings.openchamber.about.diagnostics.export',
+    keywords: ['diagnostics', 'logs', 'export', 'feat', 'transcript'],
+    isAvailable: () => isTranscriptDiagnosticsEnabled(),
+  },
+  {
     id: 'appearance.usage-reports',
     page: 'appearance',
     titleKey: 'settings.openchamber.visual.field.sendAnonymousUsageReports',
     descriptionKey: 'settings.openchamber.visual.field.sendAnonymousUsageReportsHint',
     keywords: ['telemetry', 'analytics'],
+  },
+  {
+    id: 'appearance.transcript-cache',
+    page: 'appearance',
+    titleKey: 'settings.openchamber.visual.transcriptCache.label',
+    descriptionKey: 'settings.openchamber.visual.transcriptCache.description',
+    keywords: ['cache', 'local data', 'conversation history', 'transcript', 'privacy'],
   },
   {
     id: 'chat.render-mode',
@@ -287,6 +308,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     titleKey: 'settings.openchamber.visual.field.showSplitAssistantMessageActions',
     descriptionKey: 'settings.openchamber.visual.field.showSplitAssistantMessageActionsTooltip',
     keywords: ['copy', 'read aloud'],
+    isAvailable: () => false,
   },
   {
     id: 'chat.assistant-tps',
@@ -306,6 +328,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'chat',
     titleKey: 'settings.openchamber.visual.field.showToolFileIcons',
     keywords: ['tools', 'files', 'icons'],
+    isAvailable: () => false,
   },
   {
     id: 'chat.tools-and-files',

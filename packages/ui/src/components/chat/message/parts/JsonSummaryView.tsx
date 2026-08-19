@@ -48,7 +48,7 @@ const JsonSummaryValue = React.memo(({
                     <span className="min-w-0 truncate font-medium">{summary}</span>
                 </summary>
                 <div className="relative ml-1 pl-3 pb-1">
-                    <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-0 top-0 w-px bg-[var(--tools-border)]" />
+                    <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-0 top-0 w-px bg-[var(--tools-border)] opacity-40" />
                     <div className="space-y-1">
                     {value.map((item, index) => <JsonSummaryValue key={index} value={item} depth={depth + 1} />)}
                     </div>
@@ -78,7 +78,7 @@ const JsonSummaryValue = React.memo(({
                     <span className="min-w-0 truncate font-medium">{summary ?? (label ? formatKey(label) : '{}')}</span>
                 </summary>
                 <div className="relative ml-1 pl-3 pb-1">
-                    <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-0 top-0 w-px bg-[var(--tools-border)]" />
+                    <span aria-hidden="true" className="pointer-events-none absolute bottom-1 left-0 top-0 w-px bg-[var(--tools-border)] opacity-40" />
                     {content}
                 </div>
             </details>

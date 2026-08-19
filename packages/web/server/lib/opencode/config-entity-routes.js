@@ -281,6 +281,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     };
   };
 
+  const readMutationBody = (req) => (
+    req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}
+  );
+
   const completeMcpMutation = async (res, action, name, applyChange) => {
     applyChange();
 
@@ -382,7 +386,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   app.post('/api/config/agents/:name', async (req, res) => {
     try {
       const agentName = req.params.name;
-      const { scope, ...config } = req.body;
+      const { scope, ...config } = readMutationBody(req);
       const { directory, error } = await resolveProjectDirectory(req);
       if (!directory) {
         return res.status(400).json({ error });
@@ -646,7 +650,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   app.post('/api/config/commands/:name', async (req, res) => {
     try {
       const commandName = req.params.name;
-      const { scope, ...config } = req.body;
+      const { scope, ...config } = readMutationBody(req);
       const { directory, error } = await resolveProjectDirectory(req);
       if (!directory) {
         return res.status(400).json({ error });

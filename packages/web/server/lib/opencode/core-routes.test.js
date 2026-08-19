@@ -3,17 +3,83 @@ import express from 'express';
 import request from 'supertest';
 import { Readable } from 'node:stream';
 import { createTunnelAuth } from './tunnel-auth.js';
-import { registerAuthAndAccessRoutes, registerCommonRequestMiddleware, registerServerStatusRoutes, registerSettingsUtilityRoutes } from './core-routes.js';
+import { hasPreviewProxyCredential, registerAuthAndAccessRoutes, registerCommonRequestMiddleware, registerServerStatusRoutes, registerSettingsUtilityRoutes } from './core-routes.js';
 import { registerSessionIndexRoutes } from '../session-index/routes.js';
 import { registerMessageQueueRoutes } from '../message-queue/routes.js';
+
+const createIsolatedApp = () => express();
+
+const createClientAuthDependencies = (options = {}) => {
+  const clients = [];
+  const requireAuth = vi.fn((_req, _res, next) => next());
+  const requireSessionAuth = vi.fn((_req, _res, next) => next());
+  const resolveAuthContext = vi.fn(options.resolveAuthContext || (async () => ({ type: 'session' })));
+  return {
+    express,
+    tunnelAuthController: {
+      classifyRequestScope: () => 'local',
+      getTunnelSessionFromRequest: () => null,
+      clearTunnelSessionCookie: () => {},
+      requireTunnelSession: (_req, _res, next) => next(),
+    },
+    uiAuthController: {
+      handleSessionStatus: (_req, res) => res.json({ authenticated: true }),
+      handleSessionCreate: (_req, res) => res.json({ authenticated: true }),
+      handlePasskeyStatus: (_req, res) => res.json({ enabled: false }),
+      handlePasskeyAuthenticationOptions: (_req, res) => res.json({}),
+      handlePasskeyAuthenticationVerify: (_req, res) => res.json({ authenticated: true }),
+      requireAuth,
+      requireSessionAuth,
+      resolveAuthContext,
+      handlePasskeyRegistrationOptions: (_req, res) => res.json({}),
+      handlePasskeyRegistrationVerify: (_req, res) => res.json({}),
+      handlePasskeyList: (_req, res) => res.json({ passkeys: [] }),
+      handlePasskeyRevoke: (_req, res) => res.json({ revoked: true }),
+      handleResetAuth: (_req, res) => res.json({ cleared: true }),
+    },
+    remoteClientAuthRuntime: {
+      listClients: async () => clients,
+      createClient: async ({ label, clientKind }) => {
+        const client = {
+          id: `client-${clients.length + 1}`,
+          label: label || 'Remote client',
+          createdAt: 'now',
+          lastUsedAt: null,
+          revokedAt: null,
+          clientKind: clientKind || null,
+        };
+        clients.push(client);
+        return { client, token: 'oc_client_secret' };
+      },
+      revokeClient: async (id) => {
+        const client = clients.find((entry) => entry.id === id);
+        if (!client) return { revoked: false };
+        client.revokedAt = 'revoked';
+        return { revoked: true, client };
+      },
+      purgeRevokedClients: async () => {
+        const before = clients.length;
+        for (let index = clients.length - 1; index >= 0; index -= 1) {
+          if (clients[index].revokedAt) clients.splice(index, 1);
+        }
+        return { purged: before - clients.length };
+      },
+    },
+    readSettingsFromDiskMigrated: async () => ({}),
+    normalizeTunnelSessionTtlMs: () => 1000,
+    testHooks: { clients, requireAuth, requireSessionAuth, resolveAuthContext },
+  };
+};
 
 describe('core-routes', () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it('retries OpenCode startup through the onboarding recovery route', async () => {
-    const app = express();
+    const app = createIsolatedApp();
     const retryOpenCodeStartup = vi.fn(async () => {});
 
     registerSettingsUtilityRoutes(app, {
@@ -30,8 +96,93 @@ describe('core-routes', () => {
     expect(retryOpenCodeStartup).toHaveBeenCalledTimes(1);
   });
 
+  it('requires API auth before retrying OpenCode when the access guard is mounted', async () => {
+    const app = createIsolatedApp();
+    const retryOpenCodeStartup = vi.fn(async () => {});
+    const requireAuth = vi.fn((_req, res) => res.status(401).json({ error: 'Unauthorized' }));
+
+    registerAuthAndAccessRoutes(app, {
+      express,
+      tunnelAuthController: {
+        classifyRequestScope: () => 'local',
+        requireTunnelSession: vi.fn(),
+        getTunnelSessionFromRequest: vi.fn(),
+        clearTunnelSessionCookie: vi.fn(),
+        exchangeBootstrapToken: vi.fn(),
+      },
+      uiAuthController: {
+        requireAuth,
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+      readSettingsFromDiskMigrated: vi.fn(async () => ({})),
+      normalizeTunnelSessionTtlMs: vi.fn(),
+    });
+    registerSettingsUtilityRoutes(app, {
+      readCustomThemesFromDisk: vi.fn(async () => []),
+      refreshOpenCodeAfterConfigChange: vi.fn(async () => {}),
+      retryOpenCodeStartup,
+      clientReloadDelayMs: 100,
+    });
+
+    await request(app)
+      .post('/api/opencode/retry')
+      .expect(401, { error: 'Unauthorized' });
+    expect(retryOpenCodeStartup).not.toHaveBeenCalled();
+  });
+
+  it('retries OpenCode after the mounted API auth guard admits the request', async () => {
+    const app = createIsolatedApp();
+    const retryOpenCodeStartup = vi.fn(async () => {});
+
+    registerAuthAndAccessRoutes(app, {
+      express,
+      tunnelAuthController: {
+        classifyRequestScope: () => 'local',
+        requireTunnelSession: vi.fn(),
+        getTunnelSessionFromRequest: vi.fn(),
+        clearTunnelSessionCookie: vi.fn(),
+        exchangeBootstrapToken: vi.fn(),
+      },
+      uiAuthController: {
+        requireAuth: (_req, _res, next) => next(),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+      readSettingsFromDiskMigrated: vi.fn(async () => ({})),
+      normalizeTunnelSessionTtlMs: vi.fn(),
+    });
+    registerSettingsUtilityRoutes(app, {
+      readCustomThemesFromDisk: vi.fn(async () => []),
+      refreshOpenCodeAfterConfigChange: vi.fn(async () => {}),
+      retryOpenCodeStartup,
+      clientReloadDelayMs: 100,
+    });
+
+    await request(app)
+      .post('/api/opencode/retry')
+      .expect(200, { success: true });
+    expect(retryOpenCodeStartup).toHaveBeenCalledTimes(1);
+  });
+
   it('reports an unavailable OpenCode retry as a service failure', async () => {
-    const app = express();
+    const app = createIsolatedApp();
     const error = new Error('OpenCode CLI could not be resolved');
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -1002,6 +1153,11 @@ describe('core-routes', () => {
       .expect(401, 'Authentication required');
 
     expect(requireAuth).toHaveBeenCalledTimes(1);
+
+    await request(app)
+      .get('/api/openchamber/transcript-cache/session?oc_preview_token=preview-secret')
+      .expect(401, 'Authentication required');
+    expect(requireAuth).toHaveBeenCalledTimes(2);
   });
 
   it('requires the managed bridge capability independently from UI auth', async () => {
@@ -1036,67 +1192,7 @@ describe('core-routes', () => {
 });
 
 describe('client auth routes', () => {
-  const createDependencies = (options = {}) => {
-    const clients = [];
-    const requireAuth = vi.fn((_req, _res, next) => next());
-    const requireSessionAuth = vi.fn((_req, _res, next) => next());
-    const resolveAuthContext = vi.fn(options.resolveAuthContext || (async () => ({ type: 'session' })));
-    return {
-      express,
-      tunnelAuthController: {
-        classifyRequestScope: () => 'local',
-        getTunnelSessionFromRequest: () => null,
-        clearTunnelSessionCookie: () => {},
-        requireTunnelSession: (_req, _res, next) => next(),
-      },
-      uiAuthController: {
-        handleSessionStatus: (_req, res) => res.json({ authenticated: true }),
-        handleSessionCreate: (_req, res) => res.json({ authenticated: true }),
-        handlePasskeyStatus: (_req, res) => res.json({ enabled: false }),
-        handlePasskeyAuthenticationOptions: (_req, res) => res.json({}),
-        handlePasskeyAuthenticationVerify: (_req, res) => res.json({ authenticated: true }),
-        requireAuth,
-        requireSessionAuth,
-        resolveAuthContext,
-        handlePasskeyRegistrationOptions: (_req, res) => res.json({}),
-        handlePasskeyRegistrationVerify: (_req, res) => res.json({}),
-        handlePasskeyList: (_req, res) => res.json({ passkeys: [] }),
-        handlePasskeyRevoke: (_req, res) => res.json({ revoked: true }),
-        handleResetAuth: (_req, res) => res.json({ cleared: true }),
-      },
-      remoteClientAuthRuntime: {
-        listClients: async () => clients,
-        createClient: async ({ label, clientKind }) => {
-          const client = {
-            id: `client-${clients.length + 1}`,
-            label: label || 'Remote client',
-            createdAt: 'now',
-            lastUsedAt: null,
-            revokedAt: null,
-            clientKind: clientKind || null,
-          };
-          clients.push(client);
-          return { client, token: 'oc_client_secret' };
-        },
-        revokeClient: async (id) => {
-          const client = clients.find((entry) => entry.id === id);
-          if (!client) return { revoked: false };
-          client.revokedAt = 'revoked';
-          return { revoked: true, client };
-        },
-        purgeRevokedClients: async () => {
-          const before = clients.length;
-          for (let index = clients.length - 1; index >= 0; index -= 1) {
-            if (clients[index].revokedAt) clients.splice(index, 1);
-          }
-          return { purged: before - clients.length };
-        },
-      },
-      readSettingsFromDiskMigrated: async () => ({}),
-      normalizeTunnelSessionTtlMs: () => 1000,
-      testHooks: { clients, requireAuth, requireSessionAuth, resolveAuthContext },
-    };
-  };
+  const createDependencies = createClientAuthDependencies;
 
   it('creates, lists, and revokes remote client tokens', async () => {
     const app = express();
@@ -1315,5 +1411,23 @@ describe('client auth routes', () => {
       headers: { host: '192.168.1.5:57123' },
       socket: { remoteAddress: '203.0.113.10' },
     })).toBe('unknown-public');
+  });
+});
+
+describe('hasPreviewProxyCredential', () => {
+  it('detects the preview-proxy token in the query or cookie on any path', () => {
+    expect(hasPreviewProxyCredential({
+      originalUrl: '/api/openchamber/transcript-cache/session?oc_preview_token=preview-secret',
+    })).toBe(true);
+    expect(hasPreviewProxyCredential({
+      url: '/api/openchamber/transcript-cache/session',
+      headers: { cookie: 'oc_preview_token=preview-secret' },
+    })).toBe(true);
+    expect(hasPreviewProxyCredential({
+      originalUrl: '/api/preview/proxy/abc123/',
+    })).toBe(false);
+    expect(hasPreviewProxyCredential({
+      originalUrl: '/api/openchamber/transcript-cache/session',
+    })).toBe(false);
   });
 });

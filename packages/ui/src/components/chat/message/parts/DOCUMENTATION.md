@@ -1,6 +1,6 @@
 # Chat Message Parts: Rendering Architecture
 
-Sorted compaction Activity uses localized Compacting / Compaction complete labels, a dedicated `fold-vertical` icon, and the same geometry, typography, info-token shimmer, and duration formatter as ordinary Activity. Before any assistant message arrives, `TurnItem` renders the standard Activity disclosure (`shouldShowCompactionStatus`): settled without assistants still shows; active Compacting only when the turn is last and the session is authoritatively working. The toggle stays available before foldable content arrives and preserves the user's state for the incoming summary body. Once assistants exist, `MessageBody` always mounts the Activity disclosure on the owner message (even with zero tool/reasoning segments). Summary body text is hidden while the turn is collapsed and restored when expanded — including while the summary is still streaming (`finish` not yet `stop`). Ordinary sorted turns still defer non-stop inline text so intermediate stream text does not paint outside Activity; expanded compaction is the exception because that stream *is* the foldable body. Reasoning projected into Activity continues to follow the disclosure expansion and `showReasoningTraces`. Header-only disclosures with empty activity rows still paint the chrome so the toggle stays available. Live mode keeps its current rendering.
+Sorted compaction Activity uses localized Compacting / Compaction complete labels, a dedicated `fold-vertical` icon, and the same geometry, typography, info-token shimmer, and duration formatter as ordinary Activity. `/compact` is hidden as a user bubble at view-layer parse time; the compact turn still owns Activity so the previous assistant stream does not remount. The bottom working hint uses `chat.assistantStatus.compacting` while that last user command is compact and the session is working, so leftover previous-turn tools cannot paint Editing file. Before any assistant message arrives, `TurnItem` renders the standard Activity disclosure (`shouldShowCompactionStatus`): settled without assistants still shows; active Compacting only when the turn is last and the session is authoritatively working. The toggle stays available before foldable content arrives and preserves the user's state for the incoming summary body. Once assistants exist, `MessageBody` always mounts the Activity disclosure on the owner message (even with zero tool/reasoning segments). Summary body text is hidden while the turn is collapsed and restored when expanded — including while the summary is still streaming (`finish` not yet `stop`). Ordinary sorted turns still defer non-stop inline text so intermediate stream text does not paint outside Activity; expanded compaction is the exception because that stream *is* the foldable body. Reasoning projected into Activity continues to follow the disclosure expansion and `showReasoningTraces`. Header-only disclosures with empty activity rows still paint the chrome so the toggle stays available. Live mode keeps its current rendering.
 
 This folder contains renderers for chat message parts (text, tools, reasoning, placeholders) and shared tool presentation helpers.
 
@@ -9,17 +9,25 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 ## High-level flow
 
 - Message parts are rendered from `MessageBody.tsx`.
-- There are two tool rendering paths:
-  - **Static grouped tools** -> `StaticToolRow` in `ProgressiveGroup.tsx`
-  - **Expandable tools** -> `ToolPart.tsx`
+- There are four tool rendering paths:
+  - **Context exploration tools** (`read` / `glob` / `grep` / `list`) -> consecutive runs collapse into `ContextToolGroup` ("Exploring" / "Explored N searches, N reads"), with each call as a `StaticToolRow` child when expanded
+  - **Skill tools** (`skill`) -> consecutive calls collapse into `SkillToolGroup` ("Load Skill" plus original names on one line, including a lone skill so later names can flip-animate)
+  - **Other static tools** -> single `StaticToolRow` in `ProgressiveGroup.tsx` (no consecutive merge)
+  - **Expandable tools** (including bash/shell) -> `ToolPart.tsx`
 - Shared tool icon mapping is centralized in `toolPresentation.tsx` (`getToolIcon`).
 
 ## Which file controls what
 
 - `ProgressiveGroup.tsx`
-  - Renders grouped Activity rows and grouped static tools.
+  - Renders grouped Activity rows, context-tool Explored groups, consecutive Skill groups, and single-call static tools.
   - Contains `StaticToolRow`.
   - Contains static tool short description logic (`getToolShortDescription`).
+  - Consecutive `read` / `glob` / `grep` / `list` collapse into `tool-context-group` rows
+    via `collectConsecutiveContextTools` + `isContextGroupTool` before standalone/expandable/static checks.
+  - Consecutive `skill` calls collapse into `tool-skill-group` rows via
+    `collectConsecutiveSkillTools` + `isSkillGroupTool`. A lone skill still uses the group header so adding the next name can flip-animate.
+  - Live Activity headers use S1 `LatticeOrb`; settled headers keep `stack` / `fold-vertical`.
+  - Collapsed Activity hides Explored / Thought rows with the rest of the timeline.
   - Nested row React keys and expand-state ids are the projected activity id
     (`resolveActivityPartId`, i.e. `part.id` for anything the server sent).
   - Row mounting depends **only** on the disclosure (`!showHeader || isExpanded ||
@@ -27,7 +35,30 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     a settled-turn branch keyed on "was live" never released for aborted turns, and a
     one-frame disposition flap unmounted every nested row. Structural stability against
     regressing store frames belongs to `@/sync/displayParts`, not to this component.
-  - If you want to change how `read/grep/perplexity/webfetch/...` look in compact/grouped mode, edit here.
+  - If you want to change how individual `read`/`skill` compact rows look inside or outside a group, edit `StaticToolRow` here.
+  - Every visible static call uses the shared tool lifecycle: a 14px desktop / 16px mobile `LatticeOrb` stays in the matching fixed leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Expanded context-group children use this same row.
+
+- `ContextToolGroup.tsx`
+  - Collapsible "Exploring" / "Explored" header for consecutive context tools.
+  - Receives `children` for the expanded list (do not import `StaticToolRow` here — that would cycle with `ProgressiveGroup`).
+  - Active state uses the 14px desktop / 16px mobile S1 `LatticeOrb` (same orb as streaming Thought in `ReasoningPart`) while any grouped call lacks settlement evidence, or while the turn is still live and no later non-explore part (final text / non-context tool) has appeared. Reasoning between explore calls does not settle the group. Individual child rows still use the shared per-call lifecycle.
+  - The fixed leading slot restores the Search icon after every grouped call settles; the disclosure chevron stays in the trailing slot across activity states.
+  - While Exploring, the whole count summary flips upward when the counts change. The 20px / 24px line box stays fixed (`min-h-0` so a flex item cannot grow with the moving layers). Nested `overflow: clip` keeps the `translateY` layers inside that box without creating an Android overlay scrollbar thumb.
+
+- `contextToolGrouping.ts`
+  - Grouping helpers: `collectConsecutiveContextTools`, `summarizeContextTools`, `isContextToolActive`, count keys for search/read/list summary copy.
+
+- `SkillToolGroup.tsx`
+  - Collapsible "Load Skill" header for consecutive skill tools.
+  - Summary shows original skill names on one line, comma-separated, at most three names.
+  - More than three names append the localized overflow (`{names} and {count} more` / `{names} 等{count}个`).
+  - While any grouped call is still active, the summary uses the same `FlipUpText` upward flip as Explored counts.
+  - Receives `children` for the expanded list (do not import `StaticToolRow` here — that would cycle with `ProgressiveGroup`).
+  - Active state uses the same 14px desktop / 16px mobile `LatticeOrb` while any grouped call lacks settlement evidence; the leading slot restores the Book icon after every grouped call settles.
+
+- `skillToolGrouping.ts`
+  - Grouping helpers: `collectConsecutiveSkillTools`, `getSkillNameFromToolPart`, `summarizeSkillNames`, visible-name limit.
+  - `getSkillNameFromToolPart` reads `metadata.name`, then `input.name`, then `input.id`, then `output.name`, so published OpenCode (`input.name`), completed metadata, and the unreleased `input.id` schema all display.
 
 - `../../lib/turns/resolveActivityPartId.ts`
   - Stable activity / tool row identity for keys and bash default-open expand state.
@@ -41,9 +72,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `ToolPart.tsx`
   - Renders expandable tool rows (bash/edit/write/question/task + fallback).
   - Controls expandable header title/description/diff stats/timer and expanded output body.
-  - Task tools (`task`) show `AgentAvatar` + subagent nickname (`input.subagent_type`) in the
-    leading icon column (same slot as the expand chevron). Idle = avatar; hover = chevron only when
-    Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
+  - Every visible expandable call shows the shared 14px desktop / 16px mobile `LatticeOrb` in a matching fixed leading slot while active and keeps its original tool title. Only an unassigned live Task uses the delegating label; after assignment the row keeps `AgentAvatar` plus the agent nickname. Settled rows never keep the delegating label. The row opens the child session when a session id is present.
+  - Expandable rows keep their chevron in the trailing slot, so hover and expansion preserve the lifecycle indicator. Task shows that chevron when Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
   - That setting defaults **off**: no vertical task-summary rail. Clicking the compact row always
     opens the sub-agent session (context panel / mobile session switch), including while the task
     is still loading — if the child session id is delayed, the click is queued until it arrives.
@@ -87,11 +117,14 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     - `isExpandableTool`
     - `isStaticTool`
     - `isStandaloneTool`
-    - `getStaticGroupToolName`
-  - If a tool should switch between static vs expandable, change it here.
+    - `isContextGroupTool` (`read` / `glob` / `grep` / `list`)
+    - `isSkillGroupTool` (`skill`)
+    - `isToolPartActive` / `isToolPartSettled` lifecycle evidence shared by flat rendering, static rows, context groups, skill groups, and expandable rows
+  - If a tool should switch between static vs expandable, or join Explored / Skill grouping, change it here.
 
 - `ReasoningPart.tsx`
   - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
+  - Streaming Thought uses S1 `LatticeOrb` as the active indicator (14px desktop / 16px mobile, matching Explored context groups).
 
 - `JustificationBlock.tsx`
   - Renders intermediate assistant text projected into Activity as ordinary assistant Markdown at its timeline position.
@@ -99,14 +132,17 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 ## Current important behavior
 
-- `read` and `skill` are **static navigation tools** and render via `StaticToolRow`. The whole row is the hit target (same as Edit/Write): single-path rows open that file anywhere on the row; multi-path rows keep per-path buttons so a secondary path stays precise. On dedicated mobile, clicks call `mobileActions.openFile` and open the same gesture `MobileResizableSheet` used by direct Edit/Write diffs (phone) or the right Files panel (iPad); desktop still uses context-panel `openContextFile`.
-- Consecutive calls to the same static tool collapse into one compact timeline row. Reasoning, justification, expandable or standalone tools, and a different static tool start a new row. Compact rows show up to three targets with responsive truncation and summarize the remaining targets as an accessible `+N` indicator.
+- `read` is both a **static navigation tool** (`StaticToolRow`) and a **context-group member**. Consecutive `read` / `glob` / `grep` / `list` collapse into one `ContextToolGroup` ("Exploring" from the first explore call until a later non-explore part appears or the turn is no longer live, otherwise "Explored" plus search/read/list counts). Expanded children are one `StaticToolRow` per call and keep the shared per-call loading lifecycle. Grouping is client-side on `part.tool` names — not an OpenCode API v1/v2 feature. Logic lives in `contextToolGrouping.ts` + `isContextGroupTool`; both Activity (`ProgressiveGroup.aggregateRows`) and the flat `MessageBody` loop apply it. In sorted mode those rows live inside Activity and collapse with the Processed disclosure.
+- A visible tool part stays in loading presentation until an explicit terminal status or valid end timing proves settlement. `completed`, `error`, `failed`, `timeout`, `cancelled`, and `aborted` restore the tool identity; `pending`, `started`, and `running` keep the 14px desktop / 16px mobile orb even when timing fields arrive early. Flat `MessageBody` rendering keeps lifecycle-unknown tool parts visible so this contract starts with the call row itself.
+- Consecutive `skill` calls collapse into one `SkillToolGroup` ("Load Skill" plus original names, max three, then localized overflow). A lone skill still uses this header so the next name can flip-animate. Skill is not a context-group tool and must not join Explored collapse.
+- For `read` / `skill` rows, the whole row is the hit target (same as Edit/Write). On dedicated mobile, clicks call `mobileActions.openFile` and open the same gesture `MobileResizableSheet` used by direct Edit/Write diffs (phone) or the right Files panel (iPad); desktop still uses context-panel `openContextFile`.
+- Do **not** revive multi-target chip merge (`+N` hidden targets on one static row). A lone non-skill static tool stays one call per row. Only context tools share an Explored header; consecutive skills share a Skill header.
 - Sorted Activity keeps Task tools at their original position as expandable rows. `MessageBody` suppresses every tool already projected into a sorted Activity segment, preventing a second flat Task row; live mode continues to render Task through its established standalone path.
 - Each sorted turn uses one Activity container with the same full-width clickable header DOM, layout, typography, spacing, mobile behavior, and ARIA disclosure contract while collapsed and expanded. Live-active presentation (latest turn while the session is working) always starts expanded for untouched turns regardless of `activityRenderMode`; settled turns use that setting for the untouched default (`summary` open, `collapsed` closed). The newest turn stays open until the projection confirms its final body (`turn.hasConfirmedFinalBody`: terminal stop with zero continuation tools, no error, plus model-produced text); confirmation of an untouched live turn then re-applies the setting so `collapsed` auto-folds. Every click reverses the current per-turn value, and touched values survive later setting and disposition changes. Before toggling, the header captures its viewport top; the next layout synchronously compensates `[data-scrollbar="chat"]` and performs one frame-level correction after virtualizer measurement, keeping the control under the pointer. Collapsed turns render only this header; expanded turns render the complete ordered detail timeline. Active headers apply `animate-text-shimmer` to localized Working text with `--oc-text-shimmer-base: var(--status-info)` and show the live duration. Normal and abnormal completed headers keep localized Processed text plus the authoritative duration across both disclosure states. An undefined completion disposition shows localized Processing details. Task inputs contribute their robustly parsed `subagent_type` to unbordered square avatars (up to two on mobile, three on desktop) separated by a small gap. Localized status text uses the authoritative total: active headers count running and pending Tasks, and completed headers count every participating Task. The disclosure header is a single-line full-width flex row: the left cluster (icon + status + duration) uses `flex-1` to absorb free space; the right trailer (agents when present + chevron) uses `ml-auto` so it stays on the trailing edge. Desktop keeps chip `px-2` so hover wash padding is symmetric; mobile only drops right padding (`pr-0` + slight chevron `-mr`) so the glyph has no dead trailing slot.
 - Tool titles (including Shell Command) render immediately at full opacity while running. Busy opacity shine (`MinDurationShineText`) is not used on tool headers; only Task tools keep `animate-text-shimmer` for active subagent work. Shell still shows a live duration ticker next to the title.
 - Tool rows render synchronously without entrance, fade, wipe, or tail-text animation. Shell completion can update tool output and row height without an animation-driven Activity flash.
 - `edit` / `multiedit` / `write` stay in `ToolPart` for title + path + diff-stats chrome and use **non-expandable file navigation**. Web/Desktop and dedicated mobile `edit` / `multiedit` clicks open the selected tool's single-file patch; `apply_patch` clicks open every renderable file patch from that tool invocation. The initial target scrolls to its first changed line, and the existing bounded stacked-diff policy limits how many large patches mount at once. Web/Desktop renderable-patch fallback opens the target file from the owning turn. Dedicated mobile uses the closable Motion sheet on phones and the right Changes panel on iPad; standard file Changes handles edit fallback, while apply-patch fallback presents every file from the owning turn. VS Code opens the primary file in its native diff editor. Patch records lacking a complete renderable file set open the owning turn's complete diff. No chevron / expanded diff body.
-- Every other tool, including search/fetch, OpenCode built-ins, custom tools, plugins, and MCP tools, is **expandable** and renders through `ToolPart`.
+- Every other tool, including web search/fetch, OpenCode built-ins, custom tools, plugins, and MCP tools, is **expandable** and renders through `ToolPart`. Context-group tools (`glob`/`grep`/`list`) are the exception: they join Explored grouping even though they are not static navigation tools.
 - Mobile expandable tools share one compact content boundary: the timeline shell keeps the common rail inset, content shells remove their extra horizontal padding, and scroll surfaces use zero padding. Todo keeps its list dividers and zero-padding list surface through the same shared layout rules. Mobile Shell input and highlighted output use a `1.25rem` line height with a tighter gap between the two blocks; desktop spacing remains unchanged.
 - `ToolPart` defers expanded content after a user toggle, preventing large tool input/output payloads from mounting during the initial chat render.
 - Virtualized history uses a `MarkdownHydrationProvider` per stable turn entry. The visible window is released as one batch ordered from bottom to top, so entering a session reaches its final layout in a single commit instead of remeasuring and re-anchoring the virtualizer once per turn. Only once the viewport is fully released does upward scrolling preload the nearest three mounted turns above it, one turn per commit.
@@ -163,7 +199,7 @@ Why: only navigation tools use the compact static path; all other tools need obs
 ## Quick map of files in this folder
 
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
-- Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRowChrome.ts`, `toolRenderUtils.ts`
+- Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `ContextToolGroup.tsx`, `SkillToolGroup.tsx`, `toolPresentation.tsx`, `toolRowChrome.ts`, `toolRenderUtils.ts`
 - Reasoning/justification: `ReasoningPart.tsx`, `JustificationBlock.tsx`
-- Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`, `BusyDots.tsx`
+- Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`, `BusyDots.tsx`, `LatticeOrb.tsx`
 - Utility renderers: `VirtualizedCodeBlock.tsx`

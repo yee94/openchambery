@@ -80,6 +80,8 @@ import { createSessionIndexService } from './lib/session-index/service.js';
 import { createSessionIndexSyncRuntime } from './lib/session-index/sync-runtime.js';
 import { resolveSessionIndexDbPath } from './lib/session-index/resolve-db-path.js';
 import { applySessionIndexEvent } from './lib/session-index/event-ingest.js';
+import { createTranscriptCacheService } from './lib/transcript-cache/service.js';
+import { resolveTranscriptCacheDbPath } from './lib/transcript-cache/resolve-db-path.js';
 import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
 import { resolveMessageQueueDbPath } from './lib/message-queue/resolve-db-path.js';
 import { createOpenChamberEventBroadcaster } from './lib/opencode/feature-routes-runtime.js';
@@ -1380,6 +1382,9 @@ async function main(options = {}) {
     dbPath: resolveSessionIndexDbPath({ sessionIndexDbPath }, OPENCHAMBER_DATA_DIR),
     getRuntimeConfig: () => getDesktopRuntimeConfig?.() ?? null,
   });
+  const transcriptCacheService = createTranscriptCacheService({
+    dbPath: resolveTranscriptCacheDbPath({ transcriptCacheDbPath: options.transcriptCacheDbPath }),
+  });
   const messageQueueDbPath = options.messageQueueDbPath !== undefined
     ? options.messageQueueDbPath
     : process.env.OPENCHAMBER_MESSAGE_QUEUE_DB_PATH;
@@ -1559,17 +1564,10 @@ async function main(options = {}) {
     // Stable server identity for client-side verification of learned addresses.
     // Lazily resolved: the relay service is constructed after these routes.
     getServerId: () => (relayServiceInstance ? relayServiceInstance.getServerId() : Promise.resolve(null)),
-    // The display name a paired device shows for THIS server. Devices name the
-    // connection by the issuing machine's hostname, not the per-device pairing
-    // label typed by the operator.
-    getServerLabel: () => {
-      try {
-        const name = os.hostname();
-        return typeof name === 'string' && name.trim().length > 0 ? name.trim() : 'OpenChamber';
-      } catch {
-        return 'OpenChamber';
-      }
-    },
+    // Fallback display name a paired device shows for THIS server when the
+    // pairing payload did not carry an operator-typed instance name. Hostname
+    // is not an instance identity — one machine can run several servers.
+    getServerLabel: () => 'OpenChamber',
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
     authorizeManagedOpenCodeBridgeRequest: managedCapabilitiesRuntime.authorizeManagedOpenCodeBridgeRequest,
@@ -1601,6 +1599,7 @@ async function main(options = {}) {
     setAutoAcceptSession,
     sessionIndexService,
     sessionIndexSyncRuntime,
+    transcriptCacheService,
   });
   uiAuthController = bootstrapResult.uiAuthController;
   realtimeProxyRuntime = attachRealtimeProxy({
@@ -1821,6 +1820,11 @@ async function main(options = {}) {
         sessionIndexService?.close();
       } catch {
         // The index is a local cache; a failed close must not block shutdown.
+      }
+      try {
+        transcriptCacheService?.close();
+      } catch {
+        // The transcript cache is a local acceleration store; a failed close must not block shutdown.
       }
       try {
         await messageQueueRuntime?.stop();

@@ -1,8 +1,11 @@
-import { describe, expect, test } from 'bun:test';
-
-const importSafeStorage = async () => {
-    return await import(`./safeStorage.ts?test=${Date.now()}-${Math.random()}`) as typeof import('./safeStorage');
-};
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+    createDeferredSafeJSONStorage,
+    getDeferredSafeStorage,
+    getSafeSessionStorage,
+    getSafeStorage,
+    resetSafeStorageForTests,
+} from './safeStorage';
 
 const createFakeStorage = (): Storage => {
     const store = new Map<string, string>();
@@ -22,8 +25,24 @@ const createFakeStorage = (): Storage => {
     } as Storage;
 };
 
+const restoreWindow = (previousWindow: PropertyDescriptor | undefined) => {
+    if (previousWindow) {
+        Object.defineProperty(globalThis, 'window', previousWindow);
+        return;
+    }
+    delete (globalThis as { window?: unknown }).window;
+};
+
 describe('safeStorage', () => {
-    test('falls back to memory when storage getters throw', async () => {
+    beforeEach(() => {
+        resetSafeStorageForTests();
+    });
+
+    afterEach(() => {
+        resetSafeStorageForTests();
+    });
+
+    test('falls back to memory when storage getters throw', () => {
         const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
         const throwingWindow = {};
 
@@ -46,7 +65,6 @@ describe('safeStorage', () => {
         });
 
         try {
-            const { getSafeSessionStorage, getSafeStorage } = await importSafeStorage();
             const storage = getSafeStorage();
             const sessionStorage = getSafeSessionStorage();
 
@@ -56,11 +74,7 @@ describe('safeStorage', () => {
             expect(storage.getItem('local-key')).toBe('local-value');
             expect(sessionStorage.getItem('session-key')).toBe('session-value');
         } finally {
-            if (previousWindow) {
-                Object.defineProperty(globalThis, 'window', previousWindow);
-            } else {
-                delete (globalThis as { window?: unknown }).window;
-            }
+            restoreWindow(previousWindow);
         }
     });
 
@@ -86,7 +100,6 @@ describe('safeStorage', () => {
                 return previousStringify(value, replacer, space);
             }) as typeof JSON.stringify;
 
-            const { createDeferredSafeJSONStorage } = await importSafeStorage();
             const storage = createDeferredSafeJSONStorage<{ value: string }>();
 
             expect(Boolean(storage)).toBe(true);
@@ -111,15 +124,11 @@ describe('safeStorage', () => {
             expect(storage.getItem('k')).toEqual({ state: { value: 'v2' } });
         } finally {
             JSON.stringify = previousStringify;
-            if (previousWindow) {
-                Object.defineProperty(globalThis, 'window', previousWindow);
-            } else {
-                delete (globalThis as { window?: unknown }).window;
-            }
+            restoreWindow(previousWindow);
         }
     });
 
-    test('flushes synchronously and preserves a failed write for the next flush', async () => {
+    test('flushes synchronously and preserves a failed write for the next flush', () => {
         const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
         const backingStorage = createFakeStorage();
         let fail = true;
@@ -130,7 +139,6 @@ describe('safeStorage', () => {
         };
         Object.defineProperty(globalThis, 'window', { configurable: true, value: fakeWindow });
         try {
-            const { createDeferredSafeJSONStorage } = await importSafeStorage();
             const storage = createDeferredSafeJSONStorage<{ value: string }>({ replacer: (_key, value) => {
                 if (fail) throw new Error('serialize');
                 return value;
@@ -143,12 +151,11 @@ describe('safeStorage', () => {
             expect(storage.flush()).toBe(true);
             expect(backingStorage.getItem('k')).toBe('{"state":{"value":"v"}}');
         } finally {
-            if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-            else delete (globalThis as { window?: unknown }).window;
+            restoreWindow(previousWindow);
         }
     });
 
-    test('defers direct storage writes and flushes on pagehide', async () => {
+    test('defers direct storage writes and flushes on pagehide', () => {
         const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
         const backingStorage = createFakeStorage();
         const listeners = new Map<string, Array<() => void>>();
@@ -166,7 +173,6 @@ describe('safeStorage', () => {
         });
 
         try {
-            const { getDeferredSafeStorage } = await importSafeStorage();
             const storage = getDeferredSafeStorage();
 
             storage.setItem('direct-k', 'direct-v');
@@ -180,11 +186,7 @@ describe('safeStorage', () => {
 
             expect(backingStorage.getItem('direct-k')).toBe('direct-v');
         } finally {
-            if (previousWindow) {
-                Object.defineProperty(globalThis, 'window', previousWindow);
-            } else {
-                delete (globalThis as { window?: unknown }).window;
-            }
+            restoreWindow(previousWindow);
         }
     });
 });

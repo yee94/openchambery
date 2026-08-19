@@ -14,6 +14,9 @@ const createRouteRegistry = () => {
       post(routePath, handler) {
         routes.set(`POST ${routePath}`, handler);
       },
+      put(routePath, handler) {
+        routes.set(`PUT ${routePath}`, handler);
+      },
     },
     getRoute(method, routePath) {
       return routes.get(`${method} ${routePath}`);
@@ -200,6 +203,28 @@ const registerRaw = (fsPromises) => {
   return getRoute('GET', '/api/fs/raw');
 };
 
+const registerPromptAttachment = (fsPromises, extras = {}) => {
+  const { app, getRoute } = createRouteRegistry();
+  registerFsRoutes(app, {
+    os: { homedir: () => '/home/user' },
+    path: path.posix,
+    fsPromises: {
+      realpath: async (targetPath) => targetPath,
+      ...fsPromises,
+    },
+    spawn: vi.fn(),
+    crypto: { randomUUID: () => 'job-0' },
+    normalizeDirectoryPath: (p) => p,
+    resolveProjectDirectory: async () => ({ directory: '/repo' }),
+    buildAugmentedPath: () => '/usr/bin',
+    resolveGitBinaryForSpawn: () => 'git',
+    openchamberUserConfigRoot: '/home/user/.config',
+    openchamberDataDir: '/data/openchamber',
+    ...extras,
+  });
+  return getRoute('PUT', '/api/fs/prompt-attachments/:attachmentID');
+};
+
 const registerMkdir = (fsPromises) => {
   const { app, getRoute } = createRouteRegistry();
   registerFsRoutes(app, {
@@ -293,6 +318,99 @@ describe('fs stat', () => {
     const res = await callStat(handler, { path: '/repo/source.unknown' });
 
     expect(res.body).toMatchObject({ isBinary: false });
+  });
+});
+
+describe('fs prompt attachments', () => {
+  it('stores binary bytes under the data-dir content-addressed path', async () => {
+    const fsPromises = {
+      mkdir: vi.fn(async () => undefined),
+      writeFile: vi.fn(async () => undefined),
+      rename: vi.fn(async () => undefined),
+      unlink: vi.fn(async () => undefined),
+    };
+    const handler = registerPromptAttachment(fsPromises);
+    const body = Buffer.from('hello-image');
+    const digest = 'a9a8fa077e26f69bcc4a7eeec6e1827a07ae07281952ae755766b9f06c8185e1';
+    const req = {
+      params: { attachmentID: 'att-1' },
+      headers: {
+        'content-length': String(body.length),
+        'x-openchamber-sha256': digest,
+        'x-openchamber-mime': 'image/png',
+        'x-openchamber-filename': 'photo.png',
+      },
+      async *[Symbol.asyncIterator]() {
+        yield body;
+      },
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.body).toEqual({
+      success: true,
+      path: `/data/openchamber/prompt-attachments/${digest.slice(0, 2)}/${digest}.png`,
+      size: body.length,
+      mime: 'image/png',
+      sha256: digest,
+    });
+    expect(fsPromises.mkdir).toHaveBeenCalledWith(
+      `/data/openchamber/prompt-attachments/${digest.slice(0, 2)}`,
+      { recursive: true, mode: 0o700 },
+    );
+    const tmp = fsPromises.writeFile.mock.calls[0][0];
+    expect(tmp).toMatch(new RegExp(`^/data/openchamber/prompt-attachments/${digest.slice(0, 2)}/${digest}\\.png\\.tmp-`));
+    expect(fsPromises.writeFile).toHaveBeenCalledWith(tmp, body, { mode: 0o600 });
+    expect(fsPromises.rename).toHaveBeenCalledWith(
+      tmp,
+      `/data/openchamber/prompt-attachments/${digest.slice(0, 2)}/${digest}.png`,
+    );
+  });
+
+  it('rejects digest mismatches without writing a durable file', async () => {
+    const fsPromises = {
+      mkdir: vi.fn(async () => undefined),
+      writeFile: vi.fn(async () => undefined),
+      rename: vi.fn(async () => undefined),
+      unlink: vi.fn(async () => undefined),
+    };
+    const handler = registerPromptAttachment(fsPromises);
+    const body = Buffer.from('hello-image');
+    const req = {
+      params: { attachmentID: 'att-1' },
+      headers: {
+        'content-length': String(body.length),
+        'x-openchamber-sha256': 'a'.repeat(64),
+        'x-openchamber-mime': 'image/png',
+      },
+      async *[Symbol.asyncIterator]() {
+        yield body;
+      },
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Attachment digest mismatch' });
+    expect(fsPromises.writeFile).not.toHaveBeenCalled();
+    expect(fsPromises.rename).not.toHaveBeenCalled();
+  });
+
+  it('reports unavailable storage when the data dir is missing', async () => {
+    const handler = registerPromptAttachment({}, { openchamberDataDir: '' });
+    const res = createMockResponse();
+    await handler({
+      params: { attachmentID: 'att-1' },
+      headers: {
+        'content-length': '1',
+        'x-openchamber-sha256': 'a'.repeat(64),
+        'x-openchamber-mime': 'image/png',
+      },
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from('x');
+      },
+    }, res);
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ error: 'Prompt attachment storage is unavailable' });
   });
 });
 

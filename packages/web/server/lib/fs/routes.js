@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createRealpathCache } from '../path-realpath-cache.js';
 import nodeFsPromises from 'node:fs/promises';
 import nodePath from 'node:path';
@@ -362,6 +363,58 @@ const runCommandInDirectory = ({ shell, shellFlag, command, resolvedCwd, spawn, 
   });
 };
 
+const MAX_PROMPT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const PROMPT_ATTACHMENT_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
+const PROMPT_ATTACHMENT_SHA256 = /^[a-f0-9]{64}$/;
+const PROMPT_ATTACHMENT_MIME = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i;
+
+const headerValue = (value) => {
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' ? value : undefined;
+};
+
+const promptAttachmentExtension = (mime, filename) => {
+  const fromName = typeof filename === 'string' ? nodePath.posix.extname(filename).toLowerCase() : '';
+  if (fromName && fromName.length <= 16 && /^\.[a-z0-9.]+$/i.test(fromName)) return fromName;
+  const lowerMime = typeof mime === 'string' ? mime.toLowerCase() : '';
+  if (lowerMime === 'image/jpeg') return '.jpg';
+  if (lowerMime === 'image/png') return '.png';
+  if (lowerMime === 'image/gif') return '.gif';
+  if (lowerMime === 'image/webp') return '.webp';
+  if (lowerMime === 'image/heic') return '.heic';
+  if (lowerMime === 'image/heif') return '.heif';
+  if (lowerMime === 'image/avif') return '.avif';
+  if (lowerMime === 'image/bmp') return '.bmp';
+  if (lowerMime === 'image/svg+xml') return '.svg';
+  return '.bin';
+};
+
+const collectRequestBytes = async (req, { expectedSize, maxBytes, signal } = {}) => {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    if (signal?.aborted) {
+      const error = new Error('Upload aborted');
+      error.code = 'PROMPT_ATTACHMENT_ABORTED';
+      throw error;
+    }
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += bytes.byteLength;
+    if (size > maxBytes) {
+      const error = new Error('Attachment too large');
+      error.code = 'PROMPT_ATTACHMENT_TOO_LARGE';
+      throw error;
+    }
+    chunks.push(bytes);
+  }
+  if (expectedSize !== undefined && size !== expectedSize) {
+    const error = new Error('Attachment size mismatch');
+    error.code = 'PROMPT_ATTACHMENT_SIZE_MISMATCH';
+    throw error;
+  }
+  return { buffer: Buffer.concat(chunks, size), size };
+};
+
 export const registerFsRoutes = (app, dependencies) => {
   const {
     os,
@@ -374,6 +427,7 @@ export const registerFsRoutes = (app, dependencies) => {
     buildAugmentedPath,
     resolveGitBinaryForSpawn,
     openchamberUserConfigRoot,
+    openchamberDataDir,
   } = dependencies;
   const realpathCache = createRealpathCache({
     realpath: fsPromises.realpath.bind(fsPromises),
@@ -1022,6 +1076,83 @@ export const registerFsRoutes = (app, dependencies) => {
       }
       console.error('Failed to write file:', error);
       return res.status(500).json({ error: (error && error.message) || 'Failed to write file' });
+    }
+  });
+
+  // Binary prompt attachments stay off the JSON prompt body so relay tunnels
+  // can stream the bytes in 64KB frames instead of blocking on a giant data URL.
+  app.put('/api/fs/prompt-attachments/:attachmentID', async (req, res) => {
+    const attachmentID = typeof req.params.attachmentID === 'string' ? req.params.attachmentID.trim() : '';
+    if (!PROMPT_ATTACHMENT_ID.test(attachmentID)) {
+      return res.status(400).json({ error: 'Attachment id is required' });
+    }
+    const dataDir = typeof openchamberDataDir === 'string' ? openchamberDataDir.trim() : '';
+    if (!dataDir) {
+      return res.status(503).json({ error: 'Prompt attachment storage is unavailable' });
+    }
+
+    const expectedSize = Number(headerValue(req.headers['x-openchamber-content-length']) ?? headerValue(req.headers['content-length']));
+    if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > MAX_PROMPT_ATTACHMENT_BYTES) {
+      return res.status(400).json({ error: 'Attachment size is required' });
+    }
+    const expectedSha256 = headerValue(req.headers['x-openchamber-sha256']);
+    if (typeof expectedSha256 !== 'string' || !PROMPT_ATTACHMENT_SHA256.test(expectedSha256)) {
+      return res.status(400).json({ error: 'Attachment digest is required' });
+    }
+    const mime = headerValue(req.headers['x-openchamber-mime']) || headerValue(req.headers['content-type']) || 'application/octet-stream';
+    const mimeType = mime.split(';', 1)[0]?.trim() || 'application/octet-stream';
+    if (!PROMPT_ATTACHMENT_MIME.test(mimeType)) {
+      return res.status(400).json({ error: 'Attachment MIME type is invalid' });
+    }
+    const filename = headerValue(req.headers['x-openchamber-filename']) || '';
+
+    const controller = new AbortController();
+    req.once?.('aborted', () => controller.abort());
+
+    let tmpPath;
+    try {
+      const { buffer, size } = await collectRequestBytes(req, {
+        expectedSize,
+        maxBytes: MAX_PROMPT_ATTACHMENT_BYTES,
+        signal: controller.signal,
+      });
+      const digest = createHash('sha256').update(buffer).digest('hex');
+      if (digest !== expectedSha256) {
+        return res.status(400).json({ error: 'Attachment digest mismatch' });
+      }
+
+      const storeRoot = path.resolve(dataDir, 'prompt-attachments');
+      const destinationDir = path.join(storeRoot, digest.slice(0, 2));
+      const destination = path.join(destinationDir, `${digest}${promptAttachmentExtension(mimeType, filename)}`);
+      await fsPromises.mkdir(destinationDir, { recursive: true, mode: 0o700 });
+      tmpPath = `${destination}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await fsPromises.writeFile(tmpPath, buffer, { mode: 0o600 });
+      try {
+        await fsPromises.rename(tmpPath, destination);
+      } catch (error) {
+        if (error && typeof error === 'object' && (error.code === 'EEXIST' || error.code === 'ENOTEMPTY')) {
+          await fsPromises.unlink(tmpPath).catch(() => {});
+          tmpPath = undefined;
+        } else {
+          throw error;
+        }
+      }
+      tmpPath = undefined;
+      return res.json({ success: true, path: destination, size, mime: mimeType, sha256: digest });
+    } catch (error) {
+      if (tmpPath) await fsPromises.unlink(tmpPath).catch(() => {});
+      const code = error && typeof error === 'object' ? error.code : undefined;
+      if (code === 'PROMPT_ATTACHMENT_TOO_LARGE') {
+        return res.status(413).json({ error: 'Attachment too large' });
+      }
+      if (code === 'PROMPT_ATTACHMENT_SIZE_MISMATCH') {
+        return res.status(400).json({ error: 'Attachment size mismatch' });
+      }
+      if (code === 'PROMPT_ATTACHMENT_ABORTED') {
+        return res.status(499).json({ error: 'Upload aborted' });
+      }
+      console.error('Failed to store prompt attachment:', error);
+      return res.status(500).json({ error: 'Failed to store prompt attachment' });
     }
   });
 

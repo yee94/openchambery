@@ -514,11 +514,6 @@ export function createTranscriptQueryCacheBudget(
   /** First observe/ensure timestamp per scope key (Oracle F4 minimum residency). */
   const firstSeenAt = new Map<string, number>()
 
-  const markSeen = (scope: TranscriptCacheScope, at?: number) => {
-    const key = transcriptCacheScopeKey(normalizeTranscriptCacheScope(scope))
-    if (!firstSeenAt.has(key)) firstSeenAt.set(key, at ?? now())
-  }
-
   /** Call after ensureInitial / first subscribe so residency starts now. */
   const noteScopeObserved = (scope: TranscriptCacheScope) => {
     const key = transcriptCacheScopeKey(normalizeTranscriptCacheScope(scope))

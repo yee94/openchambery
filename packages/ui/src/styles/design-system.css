@@ -436,16 +436,10 @@
     --agent-color-bg: var(--syntax-variable);
   }
 
-  /* Apply colors with opacity for badges */
+  /* Soft-fill badge: tinted background, no border. */
   .agent-badge {
     background: rgb(from var(--agent-color-bg) r g b / 0.1);
-    border: 1px solid rgb(from var(--agent-color) r g b / 0.2);
     color: var(--agent-color);
-  }
-
-  .agent-badge:hover {
-    background: rgb(from var(--agent-color-bg) r g b / 0.15);
-    border-color: rgb(from var(--agent-color) r g b / 0.3);
   }
 
   /* Agent dot indicator */

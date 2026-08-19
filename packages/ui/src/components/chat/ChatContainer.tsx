@@ -77,9 +77,9 @@ import {
     useSessionMessageLoadState,
     useSessionMessageRecords,
     useSessionMaterializationStatus,
+    useSessionTranscriptHydration,
     useSessionTranscriptPagination,
     useSyncDirectory,
-    useDirectorySync,
     useSessionStatus,
     useSessionStatusObservedAt,
     useSessionStatusSnapshotAt,
@@ -94,9 +94,17 @@ import { useSync } from '@/sync/use-sync';
 import {
     ensureTranscriptInitial,
     fetchTranscriptPreviousPage,
+    getTranscriptRepository,
     refreshTranscriptFromAuthority,
     retryTranscriptInitial,
+    transcriptScope,
 } from '@/sync/transcript-repository-runtime';
+import {
+    recordTranscriptDiagnostics,
+    recordTranscriptDiff,
+    snapshotTranscriptDiagnostics,
+    tryCaptureTranscriptCanonicalSnapshot,
+} from '@/sync/transcript-diagnostics-runtime';
 import {
     INITIAL_TRANSCRIPT_STALL_STATE,
     TRANSCRIPT_STALL_COOLDOWN_MS,
@@ -109,6 +117,7 @@ import {
 } from './transcriptStallWatchdog';
 
 import { usePlanDetection } from '@/hooks/usePlanDetection';
+import { useRecoverPendingQuestions } from '@/hooks/useRecoverPendingQuestions';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { BusyDots } from './message/parts/BusyDots';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
@@ -143,7 +152,6 @@ const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
 /** useEventListener attaches to window when target is null — pass a no-op getter instead. */
 const NO_EVENT_TARGET = () => undefined;
-const EMPTY_PREFETCH_SERVER_SNAPSHOT = () => undefined;
 const DEFAULT_RETRY_MESSAGE = 'Quota limit reached. Retrying automatically.';
 const MEBIBYTE = 1024 * 1024;
 const DEFAULT_SESSION_VIEW_ESTIMATED_BYTES = MEBIBYTE;
@@ -810,6 +818,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         currentSessionId ?? '',
         effectiveSessionDirectory,
     );
+    const transcriptHydration = useSessionTranscriptHydration(
+        currentSessionId ?? '',
+        effectiveSessionDirectory,
+    );
     const [retryingSessionHistoryId, setRetryingSessionHistoryId] = React.useState<string | null>(null);
     const isRetryingSessionHistory = Boolean(currentSessionId)
         && retryingSessionHistoryId === currentSessionId;
@@ -818,12 +830,60 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         const sessionId = currentSessionId;
         const directory = effectiveSessionDirectory;
         setRetryingSessionHistoryId(sessionId);
+        const refreshDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() => {
+            const repository = getTranscriptRepository();
+            if (!repository) throw new Error('unbound');
+            return repository.getTranscript(transcriptScope(directory, sessionId));
+        });
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+            kind: 'refresh',
+            sessionID: sessionId,
+            directory,
+            purpose: 'retry',
+            source: 'network',
+            request: sessionPrefetchInfo
+                ? {
+                    sessionID: sessionId,
+                    status: sessionPrefetchInfo.status === 'ready' ? 'ready' : sessionPrefetchInfo.status,
+                    error: sessionPrefetchInfo.error,
+                }
+                : undefined,
+            hydration: transcriptHydration,
+            error: sessionPrefetchInfo?.error,
+        }));
         void (async () => {
             try {
                 await retryTranscriptInitial(directory, sessionId);
                 await sync.ensureSessionRenderable(sessionId, { directory });
-            } catch {
-                // Settled failure returns to the load-error wall after retrying clears.
+                try {
+                    const refreshDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() => {
+                        const repository = getTranscriptRepository();
+                        if (!repository) throw new Error('unbound');
+                        return repository.getTranscript(transcriptScope(directory, sessionId));
+                    });
+                    if (refreshDiffBefore && refreshDiffAfter) {
+                        recordTranscriptDiff({
+                            trigger: 'user-refresh',
+                            sessionID: sessionId,
+                            directory,
+                            purpose: 'retry',
+                            before: refreshDiffBefore,
+                            after: refreshDiffAfter,
+                        });
+                    }
+                } catch {
+                    // Diagnostics must never affect retry.
+                }
+            } catch (error) {
+                recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+                    kind: 'request-error',
+                    sessionID: sessionId,
+                    directory,
+                    purpose: 'retry',
+                    source: 'network',
+                    hydration: transcriptHydration,
+                    error,
+                }));
             } finally {
                 setRetryingSessionHistoryId((current) => (current === sessionId ? null : current));
             }
@@ -879,6 +939,12 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             console.error('[ChatContainer] Failed to list session forms:', error);
         });
     }, [currentSessionId, effectiveSessionDirectory]);
+    useRecoverPendingQuestions(
+        currentSessionId,
+        effectiveSessionDirectory,
+        sessionMessages,
+        sessionQuestions.length,
+    );
 
     const sessionIsWorking = React.useMemo(() => {
         if (!currentSessionId || sessionPermissions.length > 0 || sessionQuestions.length > 0) {
@@ -1219,7 +1285,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     );
     paintedTranscriptRef.current = retainedTranscript.retained;
     const renderedViewportMessages = retainedTranscript.messages as SessionMessageRecord[];
-    const hasPaintedTranscript = retainedTranscript.retained !== null;
+    const paintedTranscriptSessionRef = React.useRef<string | null>(null);
+    const hasPaintedTranscript = paintedTranscriptSessionRef.current === currentSessionId;
     // The status line and the body are independent subscriptions, so the body
     // can freeze while the session keeps reporting work. Repair that state
     // instead of leaving the user with a transcript that silently drops their
@@ -1471,23 +1538,56 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // Cold transcript gate: prefer a stable skeleton over flashing the
     // "Unable to load this conversation" wall while imperative + reactive
     // pulls race on session switch (stale error or concurrent fail).
-    const sessionTranscriptGate = resolveChatSessionTranscriptGate({
-        hasTranscriptShell: hasChatTranscriptShell({
+    const hasTranscriptShell = hasChatTranscriptShell({
             transcriptMessageCount: sessionMessages.length,
             pendingUserCount: pendingUserMessages.length,
             historyPrefixCount: historyPrefix.length,
-        }),
+        });
+    const sessionTranscriptGate = resolveChatSessionTranscriptGate({
+        hasTranscriptShell,
+        p0Satisfied: transcriptHydration.p0Satisfied,
+        hasBusyShell: sessionIsWorking && hasTranscriptShell,
+        hasImmediateShell: pendingUserMessages.length > 0 || historyPrefix.length > 0,
         hasRenderableSessionSnapshot,
         prefetchStatus: sessionPrefetchInfo?.status,
         syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId, { directory: effectiveSessionDirectory })),
         userRetrying: isRetryingSessionHistory,
         hasPaintedTranscript,
     });
+    if (sessionTranscriptGate === 'pass' && renderedViewportMessages.length > 0) {
+        paintedTranscriptSessionRef.current = currentSessionId;
+    }
     const isSessionHydrating = Boolean(currentSessionId) && sessionTranscriptGate === 'hydrating';
     // Assistant-owned history is authoritative for prior bindings. Do not replace
     // a restorable transcript with the live-session load-failure wall.
     const hasSessionHistoryLoadError =
         Boolean(currentSessionId) && sessionTranscriptGate === 'load-error';
+
+    React.useEffect(() => {
+        if (!hasSessionHistoryLoadError || !currentSessionId) return;
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+            kind: 'request-error',
+            sessionID: currentSessionId,
+            directory: effectiveSessionDirectory,
+            purpose: 'load-failed',
+            source: 'network',
+            request: sessionPrefetchInfo
+                ? {
+                    sessionID: currentSessionId,
+                    status: sessionPrefetchInfo.status === 'ready' ? 'ready' : sessionPrefetchInfo.status,
+                    error: sessionPrefetchInfo.error,
+                }
+                : undefined,
+            hydration: transcriptHydration,
+            error: sessionPrefetchInfo?.error,
+        }));
+    }, [
+        currentSessionId,
+        effectiveSessionDirectory,
+        hasSessionHistoryLoadError,
+        sessionPrefetchInfo,
+        transcriptHydration,
+    ]);
 
     React.useEffect(() => {
         if (!active || !currentSessionId) return;

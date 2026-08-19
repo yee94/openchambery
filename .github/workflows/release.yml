@@ -548,8 +548,12 @@ jobs:
       release_tag: v${{ needs.create-release.outputs.version }}
       upload_github_release: true
       build_android: true
-      # Apple marketing versions cannot include -beta; skip iOS/TestFlight for beta tags.
-      build_ios: ${{ !contains(needs.create-release.outputs.version, '-beta') }}
+      # Beta still uploads iOS for Internal TestFlight. Prerelease marketing
+      # version strips the suffix in mobile-release.yml (1.16.134-beta.10 →
+      # 1.16.134). Do not attach prereleases to the existing external group
+      # or submit Beta App Review.
+      build_ios: true
+      publish_external_testflight: ${{ !contains(needs.create-release.outputs.version, '-') }}
     secrets: inherit
 
   publish-relay-docker-manual:

@@ -1,4 +1,5 @@
 import { registerSessionIndexRoutes } from '../session-index/routes.js';
+import { registerTranscriptCacheRoutes } from '../transcript-cache/routes.js';
 
 export const registerOpenChamberRoutes = (app, dependencies) => {
   const {
@@ -13,19 +14,20 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     getCachedZenModels,
     sessionIndexService,
     sessionIndexSyncRuntime,
+    transcriptCacheService,
   } = dependencies;
 
   registerSessionIndexRoutes(app, { sessionIndexService, sessionIndexSyncRuntime });
+  registerTranscriptCacheRoutes(app, { transcriptCacheService });
 
   app.get('/api/openchamber/update-check', async (req, res) => {
     try {
       const { checkForUpdates } = await import('../package-manager.js');
       const parseString = (value) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
       const parseReportUsage = (value) => {
-        if (typeof value !== 'string') return true;
+        if (typeof value !== 'string') return false;
         const normalized = value.trim().toLowerCase();
-        if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
-        return true;
+        return normalized === 'true' || normalized === '1' || normalized === 'yes';
       };
       const inferDeviceClass = (ua) => {
         const value = (ua || '').toLowerCase();

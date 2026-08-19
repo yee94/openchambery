@@ -38,6 +38,7 @@ import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeMana
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
+import { suppressMobileOverlayFocusRestore } from '@/lib/mobileOverlayFocusRestore';
 import { isIPadApp } from '@/lib/platform';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { MobileWindowMotion } from '@/components/ui/MobileWindowMotion';
@@ -972,6 +973,9 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   };
 
   const handleSessionClick = React.useCallback((session: SessionWithStatus) => {
+    // Switching sessions is navigation — suppress the overlay focus/keyboard
+    // restore that would otherwise raise the old conversation's composer.
+    suppressMobileOverlayFocusRestore();
     closeSessionPanel();
     const directory = sessionDirectory(session) || null;
     if (!isIPadApp()) {
@@ -1266,7 +1270,9 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         )}
 
         {expanded ? (
-          <div className={cn('pb-1', !isRoot && 'pl-4')}>
+          // Worktree sessions share the root list inset so titles align with
+          // surrounding project sessions instead of receiving a nested indent.
+          <div className="pb-1">
             {visibleSessions.map((session) => (
               <SessionItem
                 key={session.id}

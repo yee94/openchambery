@@ -4,6 +4,314 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-08-19
+
+### 核心：渐进式转录水合
+
+- **打开长会话不再等整份历史：** 首个数据包即渲染最后一条用户消息与最终回答（或进行中的 Activity 外壳），输入框立即可用，更早的历史在后台补齐，不跳动视口；完成水合的 slim reasoning/tool 片段在挂载后自动补齐。
+- **消息级转录缓存：** 转录按消息持久化到本地。重开会话时先按缓存瞬时绘制，再只做增量更新；冷启动不再走「降级 - 补拉」循环——有完整缓存的会话直接走热路径，首次上翻自愈为 exhausted，投影帧不再丢弃已加载的完整正文。
+- **切会话不再连续跳页：** 切换会话时首帧即完整渲染底部进入窗口（summary 6 条 / collapsed 12 条），且已水合状态按会话保留（最近 16 个），切回时历史行直接以正文渲染；滚动中的分批节流策略保持不变。
+- **表格/代码块首帧不抖动：** 表格容器、代码块卡片、mermaid、链接等装饰在同步首绘完成，首帧几何与最终形态一致；延迟渲染的占位骨架也同步归一化表格源码行高度。
+- **工具输出按需拉取：** 完整工具调用输出只在展开 Activity 时获取，首帧保持轻量。
+- **转录顺序正确性：** 缓存晚于网络页加载时，种子行按创建时间插入而非追加到尾部，不再出现旧回合渲染在新回合下方；缺失父消息不再阻塞整个会话加载。
+- **手动刷新改为对账而非重建：** 刷新按权威尾部对账——未确认的新消息存活、尾部以外的历史保留、已加载的完整片段不降级为精简摘要；结构共享可识别引用稳定的删除子集。刷新与直播流竞争时跳过删除，不做猜测。
+- **编辑/同步不丢不改：** 未确认的已发消息不被重连对账的精简副本覆盖；订阅确认后文本片段精确物化，编辑或重取后正文完整显示；进入已缓存会话时后台轻量权威尾部检查（30 秒窗口，SSE 活跃时跳过），多目录缓存的会话同时保持引用一致。
+- **转录诊断：** 新增 transcript-diff 诊断事件，在发送/编辑/删除/刷新、重连补偿、物化与整目录重置前后记录快照（仅含消息 ID、片段数量、精简/完整分布、乐观标记，不含正文与附件），可在「关于 → 客户端诊断」导出。
+
+### 会话与消息
+
+- **会话引用升级：** @-提及会话不再内联整份转录（渐进式水合下未打开的引用会序列化为空消息而丢内容）；现在携带稳定的会话 ID 与标题，并附可读的 SQLite 查询配方供接收方按 ID 回读。消息全局去重并兼容粘贴/复制文本、`@session:<id>` token。
+- **消息删除一致性：** 删除消息会应用到该会话的每个缓存作用域，而非仅当前目录。
+- **消息更新按字段合并：** 事件不再整条覆盖——agent / mode / providerID / modelID / variant / model 只在携带非空值时更新，`time` 双向合并；助手消息头部身份在快照对账与列表重挂载时保持稳定，不再闪回通用占位。
+- **/compact 显示修正：** 压缩回合不再渲染为用户气泡，压缩进度附着在持续助手 Activity 上，等待期间显示「正在压缩」状态提示。
+- **项目列表活动置顶修复：** 新会话 / 新消息触发的置顶同时推进手动拖拽顺序；跨端通过服务端 settings 的 projects 顺序对齐，任意一端拖拽/置顶都同步到其他端。
+- **侧边栏切换会话扩到跨项目：** 上一条 / 下一条快捷键按侧边栏可见项目顺序循环；折叠或「显示更多」隐藏的行不会被当作目标。
+
+### 附件与图片
+
+- **附件内联引用扩展：** 所有附件（本地文件、服务端文件、VS Code 文件与选区）在输入框都显示为 `[filename]` 内联引用卡片，图标按图片 / 附件区分。
+- **图片引用携带宿主路径：** 发送 `[image-1.png]` 时把持久化宿主文件路径写入面向 Agent 的消息，后续回合可读取同一张图；聊天卡片仍显示短文件名。
+- **上传走二进制流：** 附件字节先以二进制流上传，prompt JSON 只携带 `file://` 引用，不再用巨型 data URL 排队阻塞共享中继隧道。
+- **原生 HEIC 转码：** iOS / Android 照片转 JPEG 走原生 ImageIO，WKWebView 主线程不再运行 WASM 解码器；桌面/Web 保留 JS 回退。
+- **中继图片分块传输：** 图片按 512KB 批次跨原生桥传输（往返减少为 1/8），不再用超长展开；超过 1MB 的图片点击后才加载，已可见的不再额外滚动。
+- **桌面图片上传修复：** Electron 页面 CORS 允许列表补上上传响应头。
+- **移动端附件完整：** 附件按钮提供「照片 / 文件」——照片走系统 Photo Picker（多选），文件走文档选择器；文档附件在 iOS 可用 JSON 等非图片文件。
+
+### 移动端
+
+- **iOS 输入框展开动画重做：** pill 聚焦时不再同步提交整棵展开树——轮廓与键盘同拍翻转，其余控件下一帧挂载；展开/收起不再驱动布局属性的过渡动画（近 100ms 迟滞的根源），外形瞬时切换，圆弧缓动与 footer 淡入保留，键盘 FLIP 抬升不受影响。
+- **长按选词不误触侧滑：** 长按选择文本后拖动选区把手，不再被当作左右滑切换会话；聚焦中的输入框上同样禁用切换手势。
+- **聚焦恢复：** 会话面板 / 聊天输入浮层开关时恢复先前焦点，减少输入法状态丢失。
+- **会话刷新入口：** 项目首页与会话列表长按菜单新增「刷新转录」，带加载 spinner，忙碌时自动禁用。
+- **输入框显示修正：** 输入框上方渐变改用背景遮罩（iOS 显示一致），打开不再做压扁 / 缩放动画（曾导致 iOS 长文本不可滚动）。
+- **Android 保存文件修复：** saveFile 桥先暂存私有缓存再打开系统保存器，避免大数据导出触发 Binder `TransactionTooLargeException`；OEM DocumentsUI 使用 octet-stream 与标题，不再崩溃。
+
+### Agent 与工具呈现
+
+- **连续 Load Skill 合并：** 连续技能调用折叠为一组，显示前三个技能名（超出显示「以及 N 个」），新技能到达时摘要向上翻转。
+- **技能名不再为空：** 首帧精简页保留 name / id 定位串，行渲染读取 metadata.name / input.name / input.id，切换会话不再出现空白 Load Skill。
+- **后台补全收敛：** 物化请求不再自动重试失败消息（展开或重试仍可人工触发），减少高频投影扰动与「整屏乱占位」；sorted 模式下无上下文的助手消息保持折叠占位而非平铺工具。
+- **队列中止即时反馈：** 停止回合后下一条排队消息的提示气泡立即隐藏，并绘制为发送中的用户行，不再悬停在输入区等待真实提交。
+- **探索中 loading 更清晰：** 会话「探索中」点阵略放大（桌面 18px，不超过折叠外层 Activity 图标）并与标题/摘要垂直居中；移动端统一行盒，避免宽屏断点把图标顶偏。
+- **时间线引导线更轻：** 工具 / 思考 / JSON 摘要旁的引导线调淡，弱化在活动内容身后。
+
+### 设置与其他
+
+- **聊天设置：** 隐藏「内联助手操作」与「工具文件图标」设置项；「显示点文件」改名为「显示隐藏文件」。
+- **iOS TestFlight 内测恢复：** 发布流水线补回 aps-environment entitlement。
+- **会话历史恢复：** 曾返回空快照的项目会重新发现历史会话，不再等到 24 小时才恢复。
+
+## [1.17.0-beta.28] - 2026-08-19
+
+- **探索中 loading 更清晰：** 会话里「探索中」点阵指示器略放大（桌面 18px，不超过折叠外层 Activity 图标），并与标题/摘要同一行高垂直居中；移动端按 `isMobile` 统一行盒，避免宽屏断点把图标顶偏。
+- **侧边栏跨项目切换会话：** 项目来源的上一条/下一条快捷键不再锁死在当前展开项目内，会按侧边栏可见项目行顺序跨项目循环；折叠/「显示更多」隐藏的行仍不会被当作目标。
+
+## [1.17.0-beta.27] - 2026-08-19
+
+- **侧边栏项目顺序不跟手：** 项目列表默认按手动拖拽顺序渲染，但新会话 / 新消息触发的置顶只改了注册表顺序、没推进手动顺序——只要拖拽过一次，之后的「活动置顶」就永远失效。现在活动置顶同时推进两者：手动排序保留，有新活动的项目照样顶到最前。跨端顺序也统一了：桌面与移动端通过服务端 settings 的 projects 数组顺序对齐，任一端的拖拽或活动置顶都会同步到其他端渲染。
+- **长按选择文本误触发滑动切换：** 聊天正文里长按选中文本后拖动选区把手，不再被识别为左右滑切换会话的手势；宿主内存在展开选区时，该次触摸始终归文本选择所有。
+- **iOS TestFlight 内测恢复：** 发布流水线补回 `aps-environment` entitlement 声明，beta 构建可再次正常上传 TestFlight 内测（上一版 beta.26 的 iOS 上传因此失败，桌面 / 安卓产物不受影响）。
+
+## [1.17.0-beta.26] - 2026-08-19
+
+- **冷启动会话「先塌再胀」：** 有持久缓存的会话冷切入时不再每次重演降级-补拉循环。此前持久种子重建的转录边界始终为 unknown，冷进入永远被判为「无热缓存」而整页权威重拉；权威页又以 slim 摘要投影重放（其 part id 与缓存的 full 不一致），同 id 保护失效——324 个 full part 塌成 247 再靠几十次物化请求补回，下次冷启动全部重来。现在种子用最旧记录推导保守 has-more 边界直接走热路径（缓存恰好存全时首次上翻自愈为 exhausted），冷启动仍保一次权威校验；合并层同时补齐「投影帧不得丢弃已有 full part」的不变量（不按 id 匹配），全量快照仍权威替换、真实删除不受影响。
+- **移动端浮层焦点恢复：** 会话面板 / 聊天输入相关浮层打开与关闭时恢复先前焦点，减少输入法状态丢失。
+
+## [1.17.0-beta.25] - 2026-08-19
+
+- **表格/代码块渲染抖动：** 含 Markdown 表格（或代码块）的消息渲染时页面抖一下的问题已修复。此前首帧只做图片装饰——表格以默认可换行布局先画一版「高而窄」的形态，异步装饰帧再套上禁换行的横向滚动容器，单元格瞬间收成单行、行高骤变，虚拟列表测量到两次几何差后补偿滚动位置，看起来就是抖一下；代码块的卡片外壳同样晚一帧出现。现在完整装饰（表格容器 / 代码块卡片 / mermaid / 链接）在同步首绘即完成，首帧几何与最终形态一致。延迟渲染的占位骨架也同步归一化表格源码行（管道行按单行、分隔行按零高度估算），不再严重高估表格高度。
+
+## [1.17.0-beta.24] - 2026-08-19
+
+- **iOS 聚焦/收起输入框第二期：** pill → 卡片的展开不再对高度/内边距做过渡动画——布局属性逐帧动画会在键盘移动时重排整个聊天区，正是剩余约 100ms 迟滞的主要来源。外形现在瞬时切换，圆角缓动与 footer 淡入保留，手感依然柔和；键盘 FLIP 抬升不受影响。
+- **助手消息头身份稳定：** 恢复/对账页拉取的快照不再整条覆盖现有消息——agent / provider / model 等身份字段按字段合并，快照缺失的字段保留线上既有值（与 SSE `message.updated` 同一规则）；消息行重挂载（虚拟列表、嵌套会话导航）时通过最近已知身份缓存保持头部显示，不再闪回通用回退。
+- **转录诊断增强：** transcript-diff 诊断新增助手消息身份缺失计数与「身份先有后无」丢失检测（仅记录事实，不含值本身），导出后可直接定位身份丢失事件。
+
+## [1.17.0-beta.23] - 2026-08-19
+
+- **会话切换多次闪动：** 切换会话（iOS 尤其明显）时内容已可见、页面却连跳数次的问题已修复。此前切换瞬间首帧只渲染最新一条富文本，其余行先画占位骨架、再在随后 60-300ms 内逐批换成正文，这一高度抖动与贴底固定互相拉扯，即使转录数据零变化也会闪动。现在切入首帧即完整渲染底部进入窗口（summary 6 条 / collapsed 12 条），且已水合状态按会话保留（最近 16 个会话），再次切回时历史行直接以正文渲染；滚动过程中的分批节流策略保持不变。
+
+## [1.17.0-beta.22] - 2026-08-18
+
+- **iOS 聚焦/收起输入框卡顿：** 点按 pill 聚焦时不再同步提交整棵展开树——轮廓（pill → 卡片）与键盘同帧翻转，附件 / agent / 模型 / 发送等 footer 控件下一帧再挂载；键盘收起路径同理。展开与收起均与键盘动画同拍，不再先卡后跳。聚焦或已展开的输入框上也不再触发左右滑切换会话（收起且未聚焦的 pill 上仍可滑动切换）。
+- **会话元数据被事件清空：** transcript `message.updated` 事件现在按字段合并——agent / mode / providerID / modelID / variant / model 只在事件携带非空值时覆盖，局部更新不再把既有模型/agent 信息抹成空；`time` 字段双向合并保留已有时间戳。
+- **附件内联引用扩展：** 所有附件（本地文件 / 服务端文件 / VS Code 文件与选区）在输入框中均显示为 `[filename]` 内联引用卡片，不再仅限图片和代码选区；图标按图片 / 附件自动区分。
+- **移动端会话行「刷新转录」：** Projects 首页与会话列表的长按操作面板新增刷新转录条目，带加载 spinner，会话忙碌时自动禁用；相关文案迁移到共享的 sessions 菜单 key。
+
+## [1.17.0-beta.21] - 2026-08-18
+
+- **整理后显示的偶现大间距：** 中间过程折叠后出现整屏空白、且滚动或切换会话后才恢复的问题已修复。根因有二：其一，宿主始终以 slim 摘要回应精确补拉时，后台自动补全在每次虚拟列表重挂载时重试失败请求（诊断日志：约 10 秒内 104 次 materialize diff，slim/full 数量始终不变），高频投影扰动令部分中间消息丢失回合上下文；其二，sorted 模式下丢失上下文的助手消息会回退为 Activity 宿主，把工具行内联平铺成一整屏异常占位。现在后台补全不再自动重试失败消息（展开与重试按钮仍可手动重试），sorted 模式下无上下文的助手消息保持折叠占位，不再平铺工具。
+
+## [1.17.0-beta.20] - 2026-08-18
+
+- **Skill activity rows:** consecutive Load Skill calls now collapse into one group, like Explored. The header shows original skill names on a single line (up to three, then “and N more”), and the summary flips upward as more skills arrive.
+- **Empty skill names:** first-packet slim pages now keep skill `name` / `id` locators, and the row reads `metadata.name`, `input.name`, or `input.id`. Opening another conversation no longer shows blank “Load Skill” rows until a manual sync.
+- **Queue abort:** stopping a turn immediately hides the next queued chip and paints it as a sending user row, so the follow-up does not sit visible while the real POST still waits for the turn gate.
+
+## [1.17.0-beta.19] - 2026-08-18
+
+- **Activity timeline:** the vertical guide line beside tool, thinking, and JSON summary rows is now lighter so it recedes behind the activity content.
+
+## [1.17.0-beta.18] - 2026-08-18
+
+- **Out-of-order transcripts on open:** a session whose local cache loaded just after the network page no longer renders older turns below newer ones. The durable cache seed is skipped once the canonical transcript is already filled, and any seed rows that do land are inserted by their created time instead of being appended to the tail. A manual refresh could not repair the earlier misorder; the transcript is now ordered correctly from the first paint.
+
+## [1.17.0-beta.17] - 2026-08-18
+
+- **Compaction transcript:** `/compact` is no longer painted as a user bubble. The compact turn stays in place so the previous assistant stream does not remount, and Compacting / Compaction complete attach to the continuous assistant Activity.
+- **Compaction status hint:** while the last user command is compact and the session is still working, the bottom working hint now says Compacting instead of leftover previous-turn tool status such as Editing file.
+
+## [1.17.0-beta.16] - 2026-08-18
+
+- **Manual refresh no longer swallows messages:** refreshing a session transcript now reconciles against the fetched authority tail instead of rebuilding it from scratch. A just-sent message that the server has not confirmed yet survives the refresh, older history outside the tail page is kept in place, and already-loaded full parts are not downgraded to slim summaries. Server-deleted messages within the refreshed range are still removed, and a refresh that races live streaming skips deletions rather than guessing.
+- **Transcript deletion on the observer path:** structural sharing now recognizes reference-stable deletion subsets, so message removals are not silently restored by the query observer.
+
+## [1.17.0-beta.15] - 2026-08-18
+
+- **Swallowed sends:** an unconfirmed just-sent message is no longer overwritten when a reconnect reconcile delivers a slim server copy of it — the optimistic parts stay whole until full authoritative parts arrive. Editing (which removes old turns) is untouched by this protection.
+- **Edited text not updating:** slim text parts are now exact-materialized from the host record, so a message body that landed as a summary after an edit or refetch upgrades to the full authoritative text without a manual refresh. Cold-start revalidation keeps targeting only tool/reasoning/file parts, so no fetch storm.
+- **Enter-and-sync:** opening a session with a warm cache now runs a lightweight authority tail check in the background (30s per-session window, skipped while SSE is live, stale revisions merge conservatively) and merges the result without clearing the transcript, so turns that finished elsewhere appear on re-entry and failures keep what is on screen.
+- **Sync test harness:** new command-sequence replay tests pin the optimistic-row protection, slim text fill, and hot revalidate behavior at the repository merge boundary.
+
+## [1.17.0-beta.14] - 2026-08-18
+
+- **Transcript diagnostics:** new `transcript-diff` diagnostics event captures a canonical snapshot (message IDs, per-message part counts, slim/full distribution, optimistic markers) before and after every user send/edit/delete/refresh and every reconnect-compensation, materialize, and destructive-reset path, then derives the added/removed/downgraded/optimistic-lost diff. Snapshots carry no message text or attachment payloads; existing merge and compensation behavior is unchanged. Export via About → client diagnostics.
+- **Composer session mentions:** @-referenced sessions now ship a self-describing card with id, title, owning directory, and cached client messages, plus a verified read-only SQLite recipe the receiving assistant can use to look up the transcript itself. Empty `messages` arrays now signal a client cache miss (still retrievable) instead of masquerading as an empty session.
+- **Android save-file picker:** the Capacitor `OpenChamberMedia.saveFile` bridge now stages bytes in an app-private cache file before opening the system picker, avoiding Binder `TransactionTooLargeException` on large diagnostics exports, and uses `application/octet-stream` + `EXTRA_TITLE` so OEM DocumentsUI does not crash on confirm.
+
+## [1.17.0-beta.13] - 2026-08-18
+
+- **Session references:** @-mentioning a conversation no longer inlines its transcript into the prompt — under progressive hydration an unopened referenced session serialized as empty messages, silently dropping the reference content. The hidden part now carries only the stable session ID and display title plus an instruction to look the session up by ID when its content matters, references resolve from loaded session summaries without transcript reads, and pasted or copied `@<title>` text also delivers session semantics (deduped against `@session:<id>` tokens).
+- **Message removal consistency:** removing a message now applies across every cached transcript scope of the same session instead of only the resolved directory, keeping multi-directory session caches consistent after retries or edits.
+
+## [1.17.0-beta.12] - 2026-08-17
+
+- **Missing turns:** transcript updates now broadcast to every cached scope of the same session instead of only the directory the event arrived on, and an ambiguous multi-directory route no longer drops events. Opening an already-cached session also runs a throttled background reconcile check, so turns that finished elsewhere (or before a restart) appear without a manual refresh.
+
+## [1.17.0-beta.11] - 2026-08-17
+
+- **Android attachments:** tapping attach in the chat composer now offers Attach photos or Attach files. Photos open the Android system Photo Picker (gallery, multi-select) through a new native bridge; files keep the document picker. iOS, desktop, web, and VS Code keep their existing attach flows.
+- **Transcript hydration:** completed activity groups hydrate their slim reasoning/tool parts in the background after mount, so a cold-start tail no longer shows truncated bodies until manual expansion.
+
+## [1.17.0-beta.10] - 2026-08-17
+
+- **Session list recovery:** a project whose sidebar stayed empty after OpenCode once returned an empty session snapshot now rediscovers its historical sessions on the next sync, instead of waiting for the 24-hour full reconcile. Empty worktree directories keep their topology hint and normal projects keep incremental sync.
+
+## [1.17.0-beta.9] - 2026-08-17
+
+- **Image citations:** sending `[image-1.png]` now also writes the durable host file path into the agent-facing message, so a later turn can Read the same image. The chat chip still shows the short filename; relay/slim still omit the image bytes.
+
+## [1.17.0-beta.8] - 2026-08-17
+
+- **Transcript cache:** reopening the app after a session advanced elsewhere no longer pins stale message bodies from the local cache. Seeded tool/reasoning/file parts revalidate against the exact message record in the background after the first paint, so the latest content appears without a manual refresh.
+
+## [1.17.0-beta.7] - 2026-08-17
+
+- **Desktop image upload:** Electron can send prompt attachments again. The runtime CORS allowlist now includes the OpenChamber upload headers used from `openchamber-ui://app`.
+
+## [1.17.0-beta.6] - 2026-08-17
+
+- **Chat images:** slim first-paint images now upgrade in place from the exact message fetch. Assistant tool rows no longer appear as unnamed file attachments.
+- **Relay images:** large images wait for a per-image Load tap instead of covering the whole card; already-visible images start loading without another scroll.
+
+## [1.17.0-beta.5] - 2026-08-17
+
+- **Transcript load:** a missing parent message no longer blocks the whole conversation. Sessions that OpenCode can open now load in OpenChamber even if one assistant row points at a deleted user message.
+
+## [1.17.0-beta.4] - 2026-08-17
+
+- **Chat settings:** hide Inline Assistant Actions and Show Tool File Icons. Chinese labels now say 显示隐藏文件 / 顯示隱藏檔案 instead of 显示点文件.
+
+## [1.17.0-beta.3] - 2026-08-17
+
+- **Prompt attachment uploads:** inline image/file bytes are uploaded as a binary stream before the prompt is sent, and the prompt JSON only carries a host `file://` reference. Sending large attachments no longer head-of-line blocks the shared relay tunnel with a giant data URL.
+- **Native HEIC transcode:** iPhone photos convert to JPEG through native ImageIO on iOS (and the Android equivalent) instead of the heic2any WASM decoder in the WKWebView main thread; web/desktop keep the JS fallback.
+- **Relay image streaming:** image chunks cross the native asset bridge in 512KB batches (8× fewer bridge round-trips), base64 chunking no longer uses oversized spread calls, and images larger than 1MB over a relay connection load on tap instead of automatically.
+- **Attach documents on mobile:** the mobile attach button now opens the document picker, so JSON and other non-image files can be attached on iOS; photos stay reachable from the same picker's action sheet.
+
+## [1.17.0-beta.2] - 2026-08-16
+
+- **Mobile composer fade:** the fade above the input now uses a page-background mask instead of a `color-mix` gradient, so it renders on iOS WKWebView the same way it already did on Android.
+- **Mobile composer scroll:** opening the input no longer press-scales or scaleY-animates the card. That transform was leaving a long textarea intermittently unscrollable on iOS.
+
+## [1.17.0-beta.1] - 2026-08-16
+
+- **Progressive transcript hydration:** opening a long session no longer waits for the whole history. The last user message and final answer (or a live Activity shell) render from the first packet, the composer is usable immediately, and older history backfills in the background without jumping the view.
+- **Message-level transcript cache:** transcripts are now persisted per message on-device. Reopening a session paints from local cache instantly and then delta-updates only the messages that actually changed, instead of refetching the whole window.
+- **On-demand tool output:** full tool-call output is fetched only when you expand an Activity, keeping first paint small.
+- **Transcript diagnostics:** prerelease builds record transcript sync/load-failure facts locally and export them from About, so we can debug slow or failed loads without uploading message content.
+
+## [1.16.134] - 2026-08-16
+
+- **Exploration groups:** consecutive read, search, and directory tools collapse into a localized exploration group with live progress and expandable details. The grouped Exploring state lasts from the first exploration call until a later non-explore part appears, and the live count flip no longer spills out of the row or opens a mobile scrollbar (overflow-clipped so Android does not paint an overlay thumb).
+- **Tool loading:** every chat tool shows the shared loading state from first appearance until it settles, then restores its normal icon; running shell tools show the loading orb while settled rows keep the terminal icon.
+- **Delegated task rows:** assigned task rows keep the agent avatar and name across busy and idle states; only an unassigned live Task shows Delegating, while ordinary running tools keep their own titles. The agent badge chip on mobile is smaller, regular weight, and fill-only.
+- **Localized tool names:** built-in tools carry concise Chinese labels (apply_patch is "批量修改" so patch edits read apart from single-file edit), and reasoning/activity copy consistently uses "Agent" in Simplified and Traditional Chinese instead of 智能体 / 智能體.
+- **Transcript reliability:** a just-sent message and its follow-up could stop appearing while the status line kept moving; the message body now always subscribes and the option that could silence it has been removed. If a session still reports work while the visible transcript has not moved for 20 seconds and no local stream is running, the client refetches the authoritative tail itself; a failed refetch keeps the messages on screen and is logged.
+- **Provider recovery:** messages no longer get stuck after a failed provider load. Sending re-triggers a fresh provider refresh once before giving up, and an empty provider catalog is never cached as permanently fresh, so the model list is re-fetched on demand instead of being stranded forever.
+- **Session goals & questions:** when the agent asks a question, the goal pauses instead of staying on Evaluating and keeps waiting for your reply; a missed pending question is fetched again so its answer card returns instead of leaving unclickable chips.
+- **Mobile session layout:** worktree sessions share the project-level indent instead of sitting one extra level deeper; the composer status uses the same type size as collapsed Processed activity titles and stays on the stable copy 正在委派任务 while a Task runs; the lattice loading orb is slightly larger on phones.
+- **Diagnostics & privacy:** About export now saves a file via the system save picker (iOS Files / Android create-document) instead of copying to the clipboard. Anonymous usage reporting stays off unless the user turns it on, and prerelease builds record transcript sync/load-failure facts locally without ever including message bodies or tokens.
+- **Remote instances:** pairing names an instance instead of a device, and relay matches require the relay URL in addition to paired credentials.
+- **Dev server:** the bundled web dev build no longer pulls server or test files into the browser graph.
+- **Docs (zh-CN):** refreshed Chinese documentation and sidebar navigation for the included product guides.
+
+## [1.16.134-beta.21] - 2026-08-16
+
+- **Exploration groups:** the count flip uses overflow clipping that does not create a scroll box, so Android no longer paints a tiny overlay thumb on the row.
+
+## [1.16.134-beta.20] - 2026-08-16
+
+- **Exploration groups:** the count flip still moves upward, but compositor layers no longer poke out of the row and flash a mobile scrollbar.
+- **Mobile sessions:** expanded worktree lists no longer add a second indent under the project.
+
+## [1.16.134-beta.19] - 2026-08-16
+
+- **Status bar:** on mobile, the composer status uses the same type size as collapsed Processed activity titles.
+- **Mobile sessions:** worktree sessions now share the project-level indent instead of sitting one extra level deeper.
+
+## [1.16.134-beta.18] - 2026-08-16
+
+- **Status bar:** while a Task is running, the composer status stays on the stable Chinese copy 正在委派任务 instead of the subagent name.
+
+## [1.16.134-beta.17] - 2026-08-16
+
+- **Provider recovery:** messages no longer get stuck after a failed provider load. Sending re-triggers a fresh provider refresh once before giving up, and an empty provider catalog is never cached as permanently fresh, so the model list is re-fetched on demand instead of being stranded forever.
+
+## [1.16.134-beta.16] - 2026-08-16
+
+- **Exploration groups:** the count flip keeps its upward motion, but the row can no longer grow and open a mobile scrollbar.
+
+## [1.16.134-beta.15] - 2026-08-16
+
+- **Tool rows:** ordinary running tools keep their own titles. Only an unassigned live Task shows Delegating.
+
+## [1.16.134-beta.14] - 2026-08-16
+
+- **Agent naming:** reasoning and activity copy now consistently use "Agent" in Simplified and Traditional Chinese instead of 智能体 / 智能體 (including the task tool row). The existing code comment in ToolPart is left untouched.
+
+## [1.16.134-beta.13] - 2026-08-16
+
+- **Tool rows:** only an unassigned Task shows Delegating. Assigned tasks keep the agent name; other tools keep their normal titles and only swap in the loading orb.
+- **Mobile loading:** the lattice orb is slightly larger on phones, and the exploration count flip no longer opens a scrollbar.
+- **Remote instances:** pairing names an instance instead of a device, and relay matches require both server id and relay URL.
+
+## [1.16.134-beta.12] - 2026-08-16
+
+- **Session goals:** when the agent asks a question, the goal pauses instead of staying on Evaluating. The current turn keeps waiting for your answer; resume after you reply.
+- **Questions:** missed pending questions are fetched again so the answer card comes back, instead of leaving only unclickable chips in the transcript.
+- **Subagent rows:** assigned task rows keep the agent name instead of falling back to Delegating.
+- **Dev server:** bundled web dev no longer pulls server or test files into the browser graph.
+
+## [1.16.134-beta.11] - 2026-08-16
+
+- **iOS beta:** prerelease TestFlight marketing version again strips the suffix (`1.16.134-beta.10` → `1.16.134`) instead of pinning to `0.99.0`, so Apple can treat it as an update on the current 1.16.x train.
+
+## [1.16.134-beta.10] - 2026-08-16
+
+- **Diagnostics export:** About export now saves a file. Capacitor opens the system save picker (iOS Files / Android create-document) instead of copying to the clipboard.
+- **iOS beta:** prerelease TestFlight marketing version is now fixed at `0.99.0` instead of the stripped package version, so Apple version trains no longer go backwards when package versions jump.
+- **Usage reports:** anonymous usage reporting is off unless the user turns it on.
+
+## [1.16.134-beta.9] - 2026-08-16
+
+- **Diagnostics:** prerelease builds record transcript sync and load-failure facts locally. About can export the log; message bodies and tokens are never included.
+- **iOS beta:** prerelease IPAs now upload to Internal TestFlight. Apple marketing version drops the `-beta` suffix; external group and Beta App Review stay off.
+
+## [1.16.134-beta.8] - 2026-08-16
+
+- **Agent badge:** the message-header agent chip is smaller, regular weight, and fill-only (no border). On mobile the name matches the 10px avatar.
+
+## [1.16.134-beta.7] - 2026-08-16
+
+- **Subagent rows:** the agent name stays visible beside the avatar instead of collapsing away.
+- **Exploration groups:** the live count flip no longer spills out of the row and creates a scrollbar.
+
+## [1.16.134-beta.6] - 2026-08-16
+
+- **Subagent rows:** delegated task rows keep the agent avatar while work is in progress instead of switching to the shared loading orb.
+
+## [1.16.134-beta.5] - 2026-08-16
+
+- **Exploration groups:** the grouped Exploring state now lasts from the first search/read/list call until a later non-explore part appears, instead of stopping as soon as those calls settle.
+
+## [1.16.134-beta.4] - 2026-08-16
+
+- **Tool loading:** every chat tool shows the shared loading state from first appearance until it settles; settled rows restore their normal icons.
+- **Docs (zh-CN):** refreshed Chinese documentation and sidebar navigation for the included product guides.
+
+## [1.16.134-beta.3] - 2026-08-16
+
+- **Shell activity:** running shell/terminal tools show the shared loading orb; settled rows restore the terminal icon.
+- **Tool labels:** Chinese `apply_patch` label is now “批量修改” so patch edits read apart from single-file edit.
+- **Task chrome:** delegated task rows keep the agent avatar across busy and idle states (loading orb is shell-only).
+
+## [1.16.134-beta.2] - 2026-08-16
+
+- **Chat activity:** consecutive read, search, and directory tools now collapse into a localized exploration group with live progress and expandable details.
+- **Tool labels:** built-in tool names are localized, with concise Chinese labels for editing, writing, patches, and delegated tasks.
+- **Activity polish:** refined activity, exploration, and editing tool icon sizing and status presentation.
+
 ## [1.16.134-beta.1] - 2026-08-15
 
 - **Frozen transcript:** the message body and the session status line are separate subscriptions, so the body could stop updating while the header kept showing activity — a just-sent message and the reply that followed it would never appear. The body now always subscribes, and the option that could silence it has been removed outright.

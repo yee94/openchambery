@@ -84,7 +84,7 @@ function detectPlatform(): 'macos' | 'windows' | 'linux' | 'web' | 'android' | '
 }
 
 function mapRuntimeParams(runtime: ClientRuntime): URLSearchParams {
-  // Check if user has opted out of usage reporting (default: true/enabled from UI store)
+  // Check if user has opted in to usage reporting (default: false from UI store)
   const shouldReportUsage = useUIStore.getState().reportUsage;
   
   const params = new URLSearchParams({ reportUsage: shouldReportUsage ? 'true' : 'false' });

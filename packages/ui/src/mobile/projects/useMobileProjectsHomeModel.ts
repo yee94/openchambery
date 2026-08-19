@@ -437,7 +437,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const getBucketRootCount = (projectId: string, bucketKey: string): number =>
     bucketIndex.get(`${projectId}::${bucketKey}`)?.rootCount ?? 0;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- projectId kept for MobileProjectsHomeModel contract
+  // projectId is kept for the MobileProjectsHomeModel contract.
   const getBucketPageSize = (_projectId: string): number =>
     getMobileSessionDefaultVisibleCount();
 

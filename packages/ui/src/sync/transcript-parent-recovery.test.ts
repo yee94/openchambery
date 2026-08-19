@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test"
 import type { Message, Part } from '@/lib/opencode/v2-types'
 
 import {
+  fetchExactSessionMessageRecord,
   findMissingAssistantParentUserIDs,
   loadSessionMessage,
   MAX_ASSISTANT_TAIL_PARENT_LOADS,
   recoverAssistantTailBoundary,
+  transcriptExactMessageRuntimeKey,
 } from "./transcript-parent-recovery"
 
 const record = (id: string, role: "user" | "assistant", parentID?: string) => ({
@@ -52,6 +54,45 @@ describe("assistant-tail parent recovery", () => {
     ])
     expect(recovered.boundaryFound).toBe(true)
     expect(recovered.partial).toBe(false)
+  })
+
+  test("keeps the page when a missing parent 404s and newer user turns are already present", async () => {
+    const requested: string[] = []
+    const recovered = await recoverAssistantTailBoundary({
+      records: [
+        record("assistant-old", "assistant", "user-old"),
+        record("user-new", "user"),
+        record("assistant-new", "assistant", "user-new"),
+      ],
+      complete: false,
+      requestMessage: async (messageID) => {
+        requested.push(messageID)
+        throw new Error("session.message failed")
+      },
+    })
+
+    expect(requested).toEqual(["user-old"])
+    expect(recovered.records.map((item) => item.info.id)).toEqual([
+      "assistant-new",
+      "assistant-old",
+      "user-new",
+    ])
+    expect(recovered.boundaryFound).toBe(true)
+    expect(recovered.partial).toBe(false)
+  })
+
+  test("keeps an assistant-only tail when every parent request fails", async () => {
+    const recovered = await recoverAssistantTailBoundary({
+      records: [record("assistant", "assistant", "user-missing")],
+      complete: false,
+      requestMessage: async () => {
+        throw new Error("session.message failed")
+      },
+    })
+
+    expect(recovered.records.map((item) => item.info.id)).toEqual(["assistant"])
+    expect(recovered.boundaryFound).toBe(false)
+    expect(recovered.partial).toBe(true)
   })
 
   test("skips parent recovery when every assistant parent is already on the page", async () => {
@@ -111,6 +152,86 @@ describe("assistant-tail parent recovery", () => {
     }
     await expect(loadSessionMessage(input)).rejects.toThrow("not ready")
     expect(await loadSessionMessage(input)).toBe("recovered")
+    expect(calls).toBe(2)
+  })
+})
+
+describe("exact session.message helper", () => {
+  test("shares one request for the same transport + generation", async () => {
+    let calls = 0
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const request = () => fetchExactSessionMessageRecord({
+      transport: "runtime-a",
+      generation: 1,
+      directory: "/repo",
+      sessionID: "ses_1",
+      messageID: "msg_1",
+      request: async () => {
+        calls += 1
+        await gate
+        return { data: { info: { id: "msg_1" } as Message, parts: [] } }
+      },
+    })
+    const first = request()
+    const second = request()
+    release()
+    const [a, b] = await Promise.all([first, second])
+    expect(calls).toBe(1)
+    expect(a.info.id).toBe("msg_1")
+    expect(b.info.id).toBe("msg_1")
+  })
+
+  test("does not share flights across generations", async () => {
+    let calls = 0
+    await Promise.all([
+      fetchExactSessionMessageRecord({
+        transport: "runtime-a",
+        generation: 1,
+        directory: "/repo",
+        sessionID: "ses_1",
+        messageID: "msg_1",
+        request: async () => {
+          calls += 1
+          return { data: { info: { id: "msg_1" } as Message, parts: [] } }
+        },
+      }),
+      fetchExactSessionMessageRecord({
+        transport: "runtime-a",
+        generation: 2,
+        directory: "/repo",
+        sessionID: "ses_1",
+        messageID: "msg_1",
+        request: async () => {
+          calls += 1
+          return { data: { info: { id: "msg_1" } as Message, parts: [] } }
+        },
+      }),
+    ])
+    expect(calls).toBe(2)
+    expect(transcriptExactMessageRuntimeKey("runtime-a", 1)).not.toBe(
+      transcriptExactMessageRuntimeKey("runtime-a", 2),
+    )
+  })
+
+  test("rejects an error envelope so the flight can retry", async () => {
+    let calls = 0
+    const input = {
+      transport: "runtime-a",
+      generation: 1,
+      directory: "/repo",
+      sessionID: "ses_1",
+      messageID: "msg_err",
+      request: async () => {
+        calls += 1
+        if (calls === 1) return { error: { message: "unavailable" } }
+        return { data: { info: { id: "msg_err" } as Message, parts: [] } }
+      },
+    }
+    await expect(fetchExactSessionMessageRecord(input)).rejects.toThrow("session.message failed")
+    expect((await fetchExactSessionMessageRecord(input)).info.id).toBe("msg_err")
     expect(calls).toBe(2)
   })
 })

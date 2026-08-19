@@ -10,6 +10,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - On first launch in Capacitor, the app shows a connection screen for an existing OpenChamber server.
 - Connections are saved locally in the app and can be managed from Settings under `Switch instance`.
 - About reports the installed native client version separately from the connected instance's OpenChamber and OpenCode versions. Mobile update checks send the native client version to the instance.
+- Capacitor About export of the prerelease diagnostics log calls `OpenChamberMedia.saveFile`, which presents the system save picker (iOS `UIDocumentPickerViewController`, Android `ACTION_CREATE_DOCUMENT`). It does not copy to the clipboard or rely on `navigator.share`. Android stages the bytes in an app-private cache file and strips `dataBase64` from the Capacitor plugin call before opening the picker, so activity-pause persistence cannot hit Binder's `TransactionTooLargeException`. The picker uses `application/octet-stream` plus `EXTRA_TITLE` because OEM DocumentsUI can crash on confirm when the type is `application/json`.
 - Android update actions pass the APK URL to the configured system default browser, which owns the download and installation handoff.
 - The connection screen and `Switch instance` Settings page are Capacitor-only. Hosted `mobile.html` in a normal browser keeps the regular web behavior.
 - Password-protected OpenChamber servers can be unlocked from the mobile app. The app stores the issued client token with the saved connection.
@@ -30,6 +31,17 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **iOS:** `OpenChamberBridgeViewController` registers a `WKURLSchemeHandler` for `openchamber-asset` and the plugin instance. The handler sends response headers immediately (including `X-Content-Type-Options: nosniff`), then incrementally `didReceive` queued chunks. One reader per asset; a second `beginRead` is rejected.
 - **Android:** `MainActivity` registers the plugin; on load it installs a `BridgeWebViewClient` subclass that intercepts `openchamber-asset://` and returns a streaming `WebResourceResponse` backed by a thread-safe blocking `InputStream` (responses include `X-Content-Type-Options: nosniff`). One reader per asset; a second `openStream` is rejected.
 - **Limits (both platforms):** 120s idle TTL, 16 concurrent assets, 32 MiB per asset, 4 MiB unread queue backpressure (append waits up to 15s), cancel/finish/close and expiry free all queues. Native code never receives host paths, relay credentials, or tunnel keys — only opaque ids and bytes.
+
+## Native HEIC Transcode
+
+- `OpenChamberMedia.transcode({ data, mime, quality? })` converts HEIC/HEIF image bytes to JPEG on a background queue. Shared UI discovers the method through `convertHeicToJpegViaNative` (`packages/ui/src/lib/native-image-transcode.ts`) and falls back to JS when native is absent or rejects.
+- Input and output travel as Base64 JSON strings (Capacitor IPC). Default quality is `0.9` to match the existing JS converter. Non-image, non-HEIC, and decode failures reject with a readable message instead of crashing.
+- **iOS:** ImageIO (`CGImageSourceCreateWithData` → `CGImageDestinationAddImage` with `kCGImageDestinationLossyCompressionQuality`) on `com.openchamber.media.transcode`.
+- **Android:** `BitmapFactory.decodeByteArray` → `Bitmap.compress(JPEG)` on the existing media executor. Devices without a HEIF decoder reject so the JS fallback can run.
+
+## Native Photo Picker
+
+- `OpenChamberMedia.pickMedia({ limit? })` is Android-only. It opens the system Photo Picker (`ACTION_PICK_IMAGES`, falling back to `ACTION_GET_CONTENT` `image/*` on older devices) and returns absolute cache file paths. UI calls this only on Android Capacitor; iOS uses the WKWebView file picker. No extra permission declaration is required.
 
 ## Native Haptics Hot Path
 

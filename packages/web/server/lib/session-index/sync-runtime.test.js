@@ -194,4 +194,67 @@ describe('session index background sync runtime', () => {
       failedDirectories: expect.arrayContaining(['/repo/in-flight', '/repo/queued']),
     });
   });
+
+  it('omits start when recovering an empty cached directory', async () => {
+    const service = createService([{
+      directory: '/repo',
+      sessions: [],
+      cursor: null,
+      hasMore: false,
+      lastSyncedAt: 1000,
+      lastFullSyncedAt: 1000,
+    }]);
+    let requestedUrl;
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      fetchFn: async (url) => {
+        if (url.pathname === '/experimental/session') requestedUrl = url;
+        return new Response(JSON.stringify([session('ses_history', 10)]), { status: 200 });
+      },
+      now: () => 2000,
+    });
+
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+
+    expect(requestedUrl.searchParams.has('start')).toBe(false);
+    expect(service.replaceDirectory.mock.calls[0][0]).toMatchObject({
+      fullSync: true,
+      sessions: [expect.objectContaining({ id: 'ses_history' })],
+    });
+  });
+
+  it('keeps the directory topology row when an empty cached directory still returns empty', async () => {
+    const service = createService([{
+      directory: '/repo',
+      sessions: [],
+      cursor: null,
+      hasMore: false,
+      lastSyncedAt: 1000,
+      lastFullSyncedAt: 1000,
+    }]);
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      fetchFn: async () => new Response('[]', { status: 200 }),
+      now: () => 2000,
+    });
+
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+
+    expect(service.replaceDirectory).toHaveBeenCalledWith(expect.objectContaining({
+      directory: '/repo',
+      sessions: [],
+      fullSync: true,
+    }));
+    expect(runtime.snapshot().directories).toEqual([
+      expect.objectContaining({ directory: '/repo', sessions: [] }),
+    ]);
+  });
 });

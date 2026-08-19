@@ -206,6 +206,28 @@ Examples:
 
 These stores coordinate persistent project/session metadata across multiple views.
 
+`useProjectsStore.ts` caches the project registry, active project, and manual
+drag order in instance-scoped localStorage (`oc.inst.{runtimeKey}.*` via
+`instanceScopedStorage.ts`). `runtimeKey` is the stable paired-device /
+OpenChamber-host id, so two mobile relay instances that share the UI origin
+keep independent project lists and order. LAN⇄relay for the same device
+reuses the same bucket. Relay instances never fall back to the old
+API-URL or unscoped `projects` keys. `resetForRuntimeSwitch` reloads the
+new instance's list, active project, and manual order. The server settings
+`projects` array order is the cross-runtime order contract (mobile renders
+it directly): drag reorders and activity promotions are PUT to it, and
+`synchronizeFromSettings` rebases the local manual order onto the incoming
+server order whenever the project list changes, so every runtime renders
+the same order.
+
+`useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
+use the same instance-scoped persist helper and rehydrate when `runtimeKey`
+changes. Directory last/home caches, sidebar chrome (`oc.sessions.*`),
+session folders/pins, and settings mirrors in `persistence.ts` follow the
+same instance key. Theme/brand remain transport-scoped
+(`runtimeScopedStorage.ts`) because packaged multi-window shares an origin
+across different API hosts.
+
 `useWorktreeOrderStore.ts` persists worktree display order and pending write
 intent in runtime-scoped partitions. Server revision maps stay transient because
 the sync layer owns runtime reconciliation. Worktree order is shared across
@@ -246,8 +268,10 @@ the complete set.
 
 Electron cache refresh uses two timestamps per directory. Recent restarts query
 the Electron Web Server, which performs `session.list(start=lastSyncedAt)` and
-merges changed summaries into SQLite;
-`lastFullSyncedAt` enforces a periodic full newest-page reconciliation so
+merges changed summaries into SQLite when that directory already has cached
+root summaries. Empty cached directories omit `start` so a later refresh can
+rediscover historical roots older than `lastSyncedAt`;
+`lastFullSyncedAt` still enforces a periodic full newest-page reconciliation so
 offline deletes/archives cannot remain indefinitely.
 
 Directory session loads also wait on the runtime-keyed OpenCode readiness

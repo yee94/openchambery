@@ -1753,6 +1753,61 @@ input[aria-label="Terminal input"] {
   animation: oc-busy-pulse 1.2s ease-in-out infinite;
 }
 
+@keyframes oc-lattice-orb-swell {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+.oc-lattice-orb-dot {
+  opacity: 0.16;
+  animation: oc-lattice-orb-swell 2.4s ease-in-out infinite;
+}
+
+@keyframes oc-summary-flip-out {
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes oc-summary-flip-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.oc-summary-flip-viewport,
+.oc-summary-flip-stage {
+  /* clip does not create a scroll container; hidden does, and Android paints a thumb. */
+  overflow: clip;
+  scrollbar-width: none;
+  isolation: isolate;
+  contain: strict;
+  transform: translateZ(0);
+  -webkit-clip-path: inset(0);
+  clip-path: inset(0);
+  -webkit-mask-image: linear-gradient(#000 0 100%);
+  mask-image: linear-gradient(#000 0 100%);
+}
+
+.oc-summary-flip-out {
+  animation: oc-summary-flip-out 280ms ease-out forwards;
+}
+
+.oc-summary-flip-in {
+  animation: oc-summary-flip-in 280ms ease-out forwards;
+}
+
 /* Highlight sweep across live status / thinking labels (Delegating…, Thinking…). */
 @keyframes oc-text-shimmer {
   0% {
@@ -1935,8 +1990,24 @@ input[aria-label="Terminal input"] {
     background-image: none;
   }
 
-  .animate-busy-pulse {
+  .animate-busy-pulse,
+  .oc-lattice-orb-dot,
+  .oc-summary-flip-out,
+  .oc-summary-flip-in {
     animation: none;
+  }
+
+  .oc-summary-flip-out {
+    display: none;
+  }
+
+  .oc-summary-flip-in {
+    transform: none;
+    opacity: 1;
+  }
+
+  .oc-lattice-orb-dot[data-center="true"] {
+    opacity: 1;
   }
 
   .open-file-name-marquee-track {

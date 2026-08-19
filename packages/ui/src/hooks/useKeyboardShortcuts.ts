@@ -2,6 +2,7 @@ import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
+import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 import { useUIStore } from '@/stores/useUIStore';
 import { LEADER_KEY_TIMEOUT_MS, useLeaderKeyStore } from '@/stores/useLeaderKeyStore';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -1206,6 +1207,7 @@ export const useKeyboardShortcuts = () => {
           if (wiring) {
             void wiring.abort();
           } else {
+            if (sessionId) promoteQueueHeadOnAbort(sessionId);
             void abortCurrentOperation(sessionId ?? '');
           }
           return;

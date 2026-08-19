@@ -12,13 +12,21 @@ import type { Event } from '@/sync/types'
 import type { InfiniteData } from "@tanstack/react-query"
 
 import { applyTranscriptDirectoryEvent } from "./transcript-event-reducer"
+import { materializeSessionSnapshots } from "./materialization"
 import {
   reduceSessionMessagePage,
   type SessionMessageReducerState,
 } from "./session-message-reducer"
-import type { SessionMessagePagePurpose } from "./session-merge-strategy"
-import type { SessionHistoryBoundary, State } from "./types"
+import type {
+  SessionMergeStrategy,
+  SessionMessagePagePurpose,
+} from "./session-merge-strategy"
+import type { SessionHistoryBoundary } from "./types"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
+import {
+  compareTranscriptSortKey,
+  transcriptSortKeyOf,
+} from "./transcript-durable-store"
 import {
   isTranscriptSseEventType,
   type TranscriptCommandResult,
@@ -80,6 +88,20 @@ export type TranscriptMergeInput =
       readonly capturedLiveRevision?: number
       readonly liveRevision?: number
       readonly skipPartTypes?: ReadonlySet<string>
+    }
+  | {
+      /**
+       * Local continuity paint. Writes messages/parts without claiming a
+       * pagination contract: complete stays false and cursor stays null so
+       * `boundaryFromTranscriptData` remains `unknown`.
+       */
+      readonly type: "durable-seed"
+      readonly records: readonly {
+        readonly info: Message
+        readonly parts?: readonly Part[]
+      }[]
+      readonly skipPartTypes?: ReadonlySet<string>
+      readonly merge?: SessionMergeStrategy
     }
 
 export type TranscriptMergeResult = {
@@ -309,7 +331,7 @@ function rebuildFromReducedState(
   }
 
   // reconcile-page reuses the recovery layout path below (in-place upsert /
-  // append) after the reducer already preserved the history boundary.
+  // created-time insert) after the reducer already preserved the history boundary.
 
   if (purpose === "prepend") {
     const previousIDs = new Set<string>()
@@ -383,7 +405,10 @@ function rebuildFromReducedState(
     })
   }
 
-  // recovery / materialize: keep page layout, update messages in place, append new to tail.
+  // recovery / materialize / reconcile-page: keep page layout, update messages
+  // in place. Recovery/materialize append new rows to the tail. Reconcile
+  // continuation windows insert by (`time.created`, id) so a later older page
+  // cannot land after a newer gap page already merged in this round.
   const owned = new Map<string, number>()
   previous.pages.forEach((prevPage, index) => {
     for (const id of prevPage.messageOrder) {
@@ -405,7 +430,10 @@ function rebuildFromReducedState(
   const nextPages = previous.pages.map((prevPage, index) => {
     const bucket = pageBuckets[index] ?? []
     if (index === previous.pages.length - 1 && unowned.length > 0) {
-      return sharePageMessages(prevPage, [...bucket, ...unowned], nextPart, liveRevision)
+      const merged = purpose === "reconcile-page"
+        ? insertPageMessagesByCreated(bucket, unowned)
+        : [...bucket, ...unowned]
+      return sharePageMessages(prevPage, merged, nextPart, liveRevision)
     }
     return sharePageMessages(prevPage, bucket, nextPart, liveRevision)
   })
@@ -432,6 +460,25 @@ function rebuildFromReducedState(
   })
 }
 
+function insertPageMessagesByCreated(
+  existing: readonly Message[],
+  newcomers: readonly Message[],
+): Message[] {
+  const next = existing.slice()
+  for (const snapshot of newcomers) {
+    const key = transcriptSortKeyOf(snapshot)
+    let insertAt = next.length
+    for (let index = 0; index < next.length; index += 1) {
+      if (compareTranscriptSortKey(key, transcriptSortKeyOf(next[index]!)) < 0) {
+        insertAt = index
+        break
+      }
+    }
+    next.splice(insertAt, 0, snapshot)
+  }
+  return next
+}
+
 function sharePageMessages(
   previous: TranscriptPage,
   messages: readonly Message[],
@@ -452,20 +499,16 @@ function sharePageMessages(
     if (previous.messageOrder[index] !== message.id) orderChanged = true
 
     const prevMessage = previous.messagesByID[message.id]
-    // Prefer previous message object when content-equal by id identity path.
-    // SSE drafts may rebuild message shells; keep prev ref when same id and
-    // the draft object is a structural copy of the prior row.
-    if (prevMessage === message || (prevMessage && prevMessage.id === message.id && prevMessage === message)) {
-      messagesByID[message.id] = prevMessage ?? message
-    } else if (prevMessage && prevMessage.id === message.id && prevMessage === message) {
-      messagesByID[message.id] = prevMessage
-    } else if (prevMessage && message === prevMessage) {
-      messagesByID[message.id] = prevMessage
+    // Prefer the previous message object so unchanged rows keep their
+    // reference. SSE drafts may rebuild message shells, so identity equality
+    // is not enough — a structurally equivalent draft also keeps the prior ref.
+    if (prevMessage === message) {
+      messagesByID[message.id] = message
     } else if (prevMessage && sameMessageIdentity(prevMessage, message)) {
       messagesByID[message.id] = prevMessage
     } else {
       messagesByID[message.id] = message
-      if (prevMessage !== message) messagesChanged = true
+      messagesChanged = true
     }
 
     const nextParts = part[message.id]
@@ -551,6 +594,9 @@ function partPayloadEqual(left: Part, right: Part): boolean {
   if ((left as { output?: unknown }).output !== (right as { output?: unknown }).output) return false
   if ((left as { metadata?: unknown }).metadata !== (right as { metadata?: unknown }).metadata) return false
   if ((left as { time?: unknown }).time !== (right as { time?: unknown }).time) return false
+  // Slim file projections drop `url`; a later exact fill only changes url/slim.
+  if ((left as { url?: unknown }).url !== (right as { url?: unknown }).url) return false
+  if ((left as { slim?: unknown }).slim !== (right as { slim?: unknown }).slim) return false
   return true
 }
 
@@ -562,18 +608,6 @@ function partsArraysEqualByRefOrContent(
   if (left.length !== right.length) return false
   for (let i = 0; i < left.length; i += 1) {
     if (!partPayloadEqual(left[i], right[i])) return false
-  }
-  return true
-}
-
-function partsArraysEqual(
-  left: readonly Part[],
-  right: readonly Part[],
-): boolean {
-  if (left === right) return true
-  if (left.length !== right.length) return false
-  for (let i = 0; i < left.length; i += 1) {
-    if (left[i] !== right[i]) return false
   }
   return true
 }
@@ -835,6 +869,123 @@ function applyOptimisticRemove(
   }
 }
 
+/**
+ * First-paint local records. Empty canonical becomes a tail whose cursor is
+ * the oldest seeded message id, so pagination reads `has-more` — never
+ * `exhausted` — and a cold enter goes through the hot path instead of
+ * replaying a full authority initial (which would project slim summaries over
+ * durable full content on every cold start). A session whose durable cache
+ * happens to hold all history self-heals to `exhausted` on the first empty
+ * prepend. Existing pages keep their cursor/complete; only message/part
+ * bodies update. Unowned snapshots insert by (`time.created`, id) so a late
+ * seed cannot append older rows after a newer HTTP tail.
+ */
+function applyDurableSeed(
+  previous: SessionTranscriptData | undefined,
+  sessionID: string,
+  input: Extract<TranscriptMergeInput, { type: "durable-seed" }>,
+): TranscriptMergeResult {
+  if (input.records.length === 0) {
+    return { data: previous, result: { applied: false, changed: false } }
+  }
+
+  const flat = flattenTranscriptData(previous, sessionID)
+  const materialized = materializeSessionSnapshots(
+    { message: flat.message, part: flat.part },
+    sessionID,
+    input.records.map((record) => ({
+      info: record.info,
+      parts: record.parts ? [...record.parts] : [],
+    })),
+    {
+      skipPartTypes: input.skipPartTypes,
+      merge: input.merge,
+    },
+  )
+  if (!materialized.messagesChanged && !materialized.partsChanged) {
+    return {
+      data: previous,
+      result: {
+        applied: true,
+        changed: false,
+        boundary: boundaryFromTranscriptData(previous),
+      },
+    }
+  }
+
+  const liveRevision = previous?.pages[previous.pages.length - 1]?.sync.liveRevision ?? 0
+  const nextPart = materialized.part
+
+  if (!previous || previous.pages.length === 0) {
+    // Durable order is (`time.created`, id) ascending, so the first message is
+    // the oldest loaded record and a valid `before` cursor for older history.
+    const oldestSeededID = materialized.messages[0]?.id
+    const seededTurns = materialized.messages.filter((message) => message.role === "user").length
+    const tail = pageFromMessages(
+      "tail",
+      materialized.messages,
+      nextPart,
+      typeof oldestSeededID === "string" && oldestSeededID.length > 0 ? oldestSeededID : null,
+      false,
+      seededTurns,
+      liveRevision,
+    )
+    const data = freezeSessionTranscriptData({
+      pages: [tail],
+      pageParams: [null],
+    })
+    return {
+      data,
+      result: {
+        applied: true,
+        changed: true,
+        boundary: boundaryFromTranscriptData(data),
+      },
+    }
+  }
+
+  const owned = new Map<string, number>()
+  previous.pages.forEach((prevPage, index) => {
+    for (const id of prevPage.messageOrder) {
+      if (!owned.has(id)) owned.set(id, index)
+    }
+  })
+
+  const pageBuckets: Message[][] = previous.pages.map(() => [])
+  const unowned: Message[] = []
+  for (const message of materialized.messages) {
+    const pageIndex = owned.get(message.id)
+    if (pageIndex === undefined) unowned.push(message)
+    else pageBuckets[pageIndex]!.push(message)
+  }
+
+  const nextPages = previous.pages.map((prevPage, index) => {
+    const bucket = pageBuckets[index] ?? []
+    if (index === previous.pages.length - 1 && unowned.length > 0) {
+      return sharePageMessages(
+        prevPage,
+        insertPageMessagesByCreated(bucket, unowned),
+        nextPart,
+        liveRevision,
+      )
+    }
+    return sharePageMessages(prevPage, bucket, nextPart, liveRevision)
+  })
+
+  const data = freezeSessionTranscriptData({
+    pages: nextPages,
+    pageParams: [...previous.pageParams],
+  })
+  return {
+    data,
+    result: {
+      applied: true,
+      changed: true,
+      boundary: boundaryFromTranscriptData(data),
+    },
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public merge entry
 // ---------------------------------------------------------------------------
@@ -950,6 +1101,9 @@ export function mergeSessionTranscript(
       return applyOptimisticRemove(previous, input.messageID, liveRevision)
     }
 
+    case "durable-seed":
+      return applyDurableSeed(previous, sessionID, input)
+
     case "reset": {
       const cleared: SessionTranscriptData | undefined = undefined
       if (!input.page) {
@@ -1027,9 +1181,20 @@ export function shareSessionTranscriptData(
   if (newData.pages.length === oldData.pages.length) {
     const shared = shareEqualLength(oldData, newData)
     if (shared === oldData) return oldData
-    // Same page count but different content — typically a Query tail refetch.
-    // Re-merge through materialize so a lagging snapshot cannot clobber the
-    // live last turn SSE already admitted.
+    // Same page count but different content. A Query tail refetch must go
+    // through insert-only materialize so a lagging snapshot cannot drop a
+    // live last turn. Reconcile / recovery already wrote the authoritative
+    // conversation order into `newData`; re-merging that page as materialize
+    // would append an older continuation window past a newer gap page.
+    if (isAuthoritativeSupersetTranscript(oldData, newData)) {
+      return shared
+    }
+    // remove-message / message.removed keep remaining row refs. A lagging
+    // Host tail rebuilds those objects, so it still falls through to
+    // insert-only materialize and cannot drop live rows.
+    if (isAuthoritativeSubsetTranscript(oldData, newData)) {
+      return shared
+    }
     const incoming = newData.pages[newData.pages.length - 1]!
     return mergeIncomingTail(oldData, incoming, sessionID) ?? shared
   }
@@ -1052,6 +1217,67 @@ export function shareSessionTranscriptData(
       ?? freezeSessionTranscriptData(newData)
   }
   return freezeSessionTranscriptData(newData)
+}
+
+function collectTranscriptMessageIDs(data: SessionTranscriptData): Set<string> {
+  const ids = new Set<string>()
+  for (const page of data.pages) {
+    for (const id of page.messageOrder) ids.add(id)
+  }
+  return ids
+}
+
+/**
+ * True when `next` dropped ids but kept every remaining message/part by
+ * reference. That is the remove-message / message.removed writer contract —
+ * structuralSharing must not re-merge it as a lagging Host tail.
+ */
+function isAuthoritativeSubsetTranscript(
+  previous: SessionTranscriptData,
+  next: SessionTranscriptData,
+): boolean {
+  const previousIDs = collectTranscriptMessageIDs(previous)
+  const nextIDs = collectTranscriptMessageIDs(next)
+  if (nextIDs.size === 0 || nextIDs.size >= previousIDs.size) return false
+  for (const id of nextIDs) {
+    if (!previousIDs.has(id)) return false
+  }
+  const previousFlat = projectFlatFromTranscriptData(previous, "")
+  const nextFlat = projectFlatFromTranscriptData(next, "")
+  for (const id of nextIDs) {
+    if (previousFlat.messagesByID[id] !== nextFlat.messagesByID[id]) return false
+    if (previousFlat.partsByMessageID[id] !== nextFlat.partsByMessageID[id]) return false
+  }
+  return true
+}
+
+/**
+ * True when `next` already contains every prior id and added rows sit in
+ * (`time.created`, id) conversation order. That is the reconcile / recovery
+ * writer contract — structuralSharing must not rewrite it as a lagging tail.
+ */
+function isAuthoritativeSupersetTranscript(
+  previous: SessionTranscriptData,
+  next: SessionTranscriptData,
+): boolean {
+  const previousIDs = collectTranscriptMessageIDs(previous)
+  if (previousIDs.size === 0) return false
+  const nextIDs = collectTranscriptMessageIDs(next)
+  for (const id of previousIDs) {
+    if (!nextIDs.has(id)) return false
+  }
+  if (nextIDs.size <= previousIDs.size) return false
+
+  const nextFlat = projectFlatFromTranscriptData(next, "")
+  for (let index = 1; index < nextFlat.messageOrder.length; index += 1) {
+    const left = nextFlat.messagesByID[nextFlat.messageOrder[index - 1]!]
+    const right = nextFlat.messagesByID[nextFlat.messageOrder[index]!]
+    if (!left || !right) return false
+    if (compareTranscriptSortKey(transcriptSortKeyOf(left), transcriptSortKeyOf(right)) > 0) {
+      return false
+    }
+  }
+  return true
 }
 
 function shareEqualLength(
@@ -1096,7 +1322,7 @@ function shareEqualLength(
 /** Flatten InfiniteData into transcript projection fields. */
 export function projectFlatFromTranscriptData(
   data: SessionTranscriptData | undefined,
-  sessionID: string,
+  _sessionID: string,
 ): {
   messageOrder: readonly string[]
   messagesByID: Readonly<Record<string, Message>>

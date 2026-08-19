@@ -1152,7 +1152,7 @@ export const useUIStore = create<UIStore>()(
         mobileSessionPanelOpen: false,
         mobileSessionFilterProjectId: null,
         isExpandedInput: false,
-        reportUsage: true,
+        reportUsage: false,
         shortcutOverrides: {},
         fileEditorKeymap: 'default',
 

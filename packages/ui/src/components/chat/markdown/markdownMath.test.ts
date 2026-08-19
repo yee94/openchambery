@@ -20,7 +20,7 @@ const dollarParser = marked.use({
       return { type: 'dollarMath', raw: match.raw, text: match.text, display: match.display };
     },
     renderer(token: Tokens.Generic) {
-      const math = token as DollarMathToken;
+      const math = token as unknown as { text: string; raw: string; display: boolean };
       try {
         return katex.renderToString(math.text, { displayMode: math.display, throwOnError: false });
       } catch {

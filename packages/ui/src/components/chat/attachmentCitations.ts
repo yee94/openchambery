@@ -198,6 +198,42 @@ export const getAttachmentCitationIconPath = (filename: string): string => (
     filename.replace(/:\d+(?:-\d+)?$/, '')
 );
 
+const IMAGE_CITATION_EXTENSION = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|heic|heif|tiff?)$/i;
+
+const isAbsoluteCitationPath = (value: string): boolean => {
+    const trimmed = value.trim();
+    return trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\');
+};
+
+export interface ImageCitationPath {
+    filename: string;
+    path: string;
+}
+
+/**
+ * Expand `[image-1.png]` to `[/host/prompt-attachments/…/hash.png]` so later
+ * agents can Read the durable file. UI keeps showing the short filename.
+ */
+export const expandImageAttachmentCitations = (
+    text: string,
+    attachments: readonly ImageCitationPath[],
+): string => {
+    let expanded = text;
+    for (const attachment of attachments) {
+        const filename = attachment.filename.trim();
+        const path = attachment.path.trim();
+        if (!filename || !path || filename === path || isAbsoluteCitationPath(filename)) continue;
+        if (!IMAGE_CITATION_EXTENSION.test(filename) && !IMAGE_CITATION_EXTENSION.test(path)) continue;
+        const expandedToken = `[${path}]`;
+        expanded = expanded
+            .split(attachmentCitationDisplay(filename))
+            .join(expandedToken)
+            .split(`[${filename}]`)
+            .join(expandedToken);
+    }
+    return expanded;
+};
+
 export const expandCodeSelectionCitations = (
     text: string,
     attachments: CodeSelectionCitationCandidate[] | undefined,

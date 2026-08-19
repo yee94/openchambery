@@ -5,7 +5,9 @@ import {
   decodeHostCursor,
   encodeHostCursor,
   isUserAuthoredTurnBoundary,
+  projectSlimParts,
   selectTurnRecords,
+  SLIM_PARTS_PROJECTION,
 } from './service.js';
 
 const record = (id, role, parts = [{ type: 'text', text: 'hi' }], extra = {}) => ({
@@ -152,6 +154,402 @@ describe('host cursor codec', () => {
   });
 });
 
+describe('projectSlimParts', () => {
+  const toolPart = (id, output) => ({
+    id,
+    sessionID: 'ses_1',
+    messageID: 'msg_a1',
+    callID: `call_${id}`,
+    type: 'tool',
+    tool: 'bash',
+    state: {
+      status: 'completed',
+      title: 'ran bash',
+      time: { start: 1, end: 2 },
+      output,
+      metadata: { huge: 'x'.repeat(1000) },
+      input: { command: 'ls' },
+    },
+  });
+
+  it('drops tool output and metadata but keeps identity and status', () => {
+    const [record] = projectSlimParts([
+      { info: { id: 'msg_a1', role: 'assistant' }, parts: [toolPart('prt_1', 'x'.repeat(5000))] },
+    ]);
+    const part = record.parts[0];
+
+    expect(part).toEqual({
+      id: 'prt_1',
+      sessionID: 'ses_1',
+      messageID: 'msg_a1',
+      callID: 'call_prt_1',
+      tool: 'bash',
+      type: 'tool',
+      state: {
+        status: 'completed',
+        title: 'ran bash',
+        time: { start: 1, end: 2 },
+        input: { command: 'ls' },
+      },
+      slim: true,
+    });
+    expect(JSON.stringify(part)).not.toContain('xxxx');
+  });
+
+  it('keeps read/grep locators and drops write content', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [
+          {
+            id: 'prt_read',
+            sessionID: 'ses_1',
+            messageID: 'msg_a1',
+            callID: 'call_read',
+            type: 'tool',
+            tool: 'read',
+            state: {
+              status: 'completed',
+              title: 'read file',
+              input: { path: 'src/app.ts', offset: 1, content: 'SECRET BODY' },
+              output: 'file body',
+            },
+          },
+          {
+            id: 'prt_grep',
+            sessionID: 'ses_1',
+            messageID: 'msg_a1',
+            callID: 'call_grep',
+            type: 'tool',
+            tool: 'grep',
+            state: {
+              status: 'completed',
+              input: { pattern: 'TODO', path: 'packages/ui', include: '*.ts' },
+              output: 'many hits',
+            },
+          },
+        ],
+      },
+    ]);
+
+    expect(record.parts[0].state.input).toEqual({ path: 'src/app.ts', offset: 1 });
+    expect(record.parts[1].state.input).toEqual({
+      pattern: 'TODO',
+      path: 'packages/ui',
+      include: '*.ts',
+    });
+    expect(JSON.stringify(record.parts)).not.toContain('SECRET BODY');
+    expect(JSON.stringify(record.parts)).not.toContain('file body');
+  });
+
+  it('keeps edit line counts and drops the patch body', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_edit',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_edit',
+          type: 'tool',
+          tool: 'edit',
+          state: {
+            status: 'completed',
+            title: 'edit file',
+            input: { path: 'src/app.ts', oldString: 'foo', newString: 'bar' },
+            metadata: {
+              patch: '--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,2 +1,3 @@\n-foo\n+bar\n+baz\n',
+            },
+            output: 'applied',
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].state.input).toEqual({ path: 'src/app.ts' });
+    expect(record.parts[0].state.metadata).toEqual({ additions: 2, deletions: 1 });
+    expect(JSON.stringify(record.parts[0])).not.toContain('oldString');
+    expect(JSON.stringify(record.parts[0])).not.toContain('+bar');
+    expect(JSON.stringify(record.parts[0])).not.toContain('applied');
+  });
+
+  it('keeps per-file edit counts without file patches', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_multi',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_multi',
+          type: 'tool',
+          tool: 'multiedit',
+          state: {
+            status: 'completed',
+            metadata: {
+              files: [
+                { relativePath: 'a.ts', additions: 3, deletions: 1, patch: 'SECRET PATCH A' },
+                { filePath: 'b.ts', additions: 0, deletions: 2, patch: 'SECRET PATCH B' },
+              ],
+            },
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].state.metadata).toEqual({
+      files: [
+        { relativePath: 'a.ts', additions: 3, deletions: 1 },
+        { filePath: 'b.ts', additions: 0, deletions: 2 },
+      ],
+      additions: 3,
+      deletions: 3,
+    });
+    expect(JSON.stringify(record.parts[0])).not.toContain('SECRET PATCH');
+  });
+
+  it('keeps skill name and id locators and drops skill output', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_skill',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_skill',
+          type: 'tool',
+          tool: 'skill',
+          state: {
+            status: 'completed',
+            title: 'Load Skill',
+            input: { name: 'sync-state-invariants', id: 'sync-state-invariants' },
+            metadata: { name: 'sync-state-invariants', dir: '/tmp/skills/sync', huge: 'x'.repeat(200) },
+            output: '<skill_content name="sync-state-invariants">SECRET BODY</skill_content>',
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].state.input).toEqual({
+      name: 'sync-state-invariants',
+      id: 'sync-state-invariants',
+    });
+    expect(record.parts[0].state.metadata).toEqual({ name: 'sync-state-invariants' });
+    expect(JSON.stringify(record.parts[0])).not.toContain('SECRET BODY');
+    expect(JSON.stringify(record.parts[0])).not.toContain('/tmp/skills/sync');
+  });
+
+  it('keeps task agent name, description, and child session id', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_task',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_task',
+          type: 'tool',
+          tool: 'task',
+          metadata: { sessionId: 'ses_child_part' },
+          state: {
+            status: 'completed',
+            title: 'Goal 遇题自动暂停',
+            input: {
+              subagent_type: 'fixer',
+              description: 'fix the load wall',
+              prompt: 'A VERY LONG TASK PROMPT THAT MUST BE DROPPED',
+            },
+            metadata: { sessionId: 'ses_child', huge: 'x'.repeat(200) },
+            output: '<task_metadata>{"sessionId":"ses_from_output"}</task_metadata>',
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].metadata).toEqual({ sessionId: 'ses_child_part' });
+    expect(record.parts[0].state.input).toEqual({
+      subagent_type: 'fixer',
+      description: 'fix the load wall',
+    });
+    expect(record.parts[0].state.metadata).toEqual({ sessionId: 'ses_child' });
+    expect(JSON.stringify(record.parts[0])).not.toContain('VERY LONG TASK PROMPT');
+    expect(JSON.stringify(record.parts[0])).not.toContain('ses_from_output');
+  });
+
+  it('drops the reasoning body and keeps identity and timing', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_r',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          type: 'reasoning',
+          text: 'a long private trace',
+          time: { start: 1 },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0]).toEqual({
+      id: 'prt_r',
+      sessionID: 'ses_1',
+      messageID: 'msg_a1',
+      type: 'reasoning',
+      time: { start: 1 },
+      slim: true,
+    });
+  });
+
+  it('leaves assistant text and user rows untouched', () => {
+    const userRecord = user('msg_u1');
+    const assistantText = assistant('msg_a1', [{ id: 'prt_t', type: 'text', text: 'the answer' }]);
+    const records = [userRecord, assistantText];
+
+    // Nothing to project → same array and same record references.
+    expect(projectSlimParts(records)).toBe(records);
+  });
+
+  it('keeps the original reference for records it did not change', () => {
+    const untouched = assistant('msg_a1', [{ id: 'prt_t', type: 'text', text: 'hi' }]);
+    const projected = projectSlimParts([
+      untouched,
+      { info: { id: 'msg_a2', role: 'assistant' }, parts: [toolPart('prt_1', 'body')] },
+    ]);
+
+    expect(projected[0]).toBe(untouched);
+    expect(projected[1].parts[0].slim).toBe(true);
+  });
+
+  it('exposes a stable projection marker', () => {
+    expect(SLIM_PARTS_PROJECTION).toBe('slim-v1');
+  });
+
+  const pngDataUrl = (width, height) => {
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(width, 0);
+    ihdr.writeUInt32BE(height, 4);
+    ihdr[8] = 8;
+    ihdr[9] = 2;
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+      Buffer.from([0x00, 0x00, 0x00, 0x0D]),
+      Buffer.from('IHDR'),
+      ihdr,
+      Buffer.alloc(4),
+    ]);
+    return `data:image/png;base64,${png.toString('base64')}`;
+  };
+
+  const gifDataUrl = (width, height) => {
+    const gif = Buffer.alloc(10);
+    gif.write('GIF89a', 0, 'ascii');
+    gif.writeUInt16LE(width, 6);
+    gif.writeUInt16LE(height, 8);
+    return `data:image/gif;base64,${gif.toString('base64')}`;
+  };
+
+  const jpegDataUrl = (width, height) => {
+    const jpeg = Buffer.from([
+      0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+      (height >> 8) & 0xFF, height & 0xFF,
+      (width >> 8) & 0xFF, width & 0xFF,
+      0x01, 0x01, 0x11, 0x00, 0xFF, 0xD9,
+    ]);
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+  };
+
+  const filePart = (overrides = {}) => ({
+    id: 'prt_file',
+    sessionID: 'ses_1',
+    messageID: 'msg_u1',
+    type: 'file',
+    mime: 'image/png',
+    filename: 'shot.png',
+    url: pngDataUrl(12, 8),
+    ...overrides,
+  });
+
+  it('strips data-URL bodies from user and assistant file parts and keeps metadata', () => {
+    const url = pngDataUrl(12, 8);
+    const userRecord = user('msg_u1', [filePart({ url, size: 99 })]);
+    const assistantRecord = assistant('msg_a1', [filePart({
+      id: 'prt_afile',
+      messageID: 'msg_a1',
+      url,
+      metadata: { width: 64, height: 32 },
+    })]);
+
+    const [userProjected, assistantProjected] = projectSlimParts([userRecord, assistantRecord]);
+    const userFile = userProjected.parts[0];
+    const assistantFile = assistantProjected.parts[0];
+
+    expect(userFile).toEqual({
+      id: 'prt_file',
+      sessionID: 'ses_1',
+      messageID: 'msg_u1',
+      type: 'file',
+      mime: 'image/png',
+      filename: 'shot.png',
+      size: 99,
+      byteSize: Buffer.from(url.slice(url.indexOf(',') + 1), 'base64').length,
+      width: 12,
+      height: 8,
+      slim: true,
+    });
+    expect(JSON.stringify(userFile)).not.toContain('base64');
+    expect(JSON.stringify(userFile)).not.toContain(url);
+    expect(userFile.url).toBeUndefined();
+
+    expect(assistantFile.slim).toBe(true);
+    expect(assistantFile.url).toBeUndefined();
+    expect(assistantFile.width).toBe(64);
+    expect(assistantFile.height).toBe(32);
+    expect(assistantFile.byteSize).toBe(userFile.byteSize);
+  });
+
+  it('derives GIF/JPEG dimensions and omits unknown sizes', () => {
+    const gif = filePart({
+      id: 'prt_gif',
+      mime: 'image/gif',
+      filename: 'a.gif',
+      url: gifDataUrl(7, 5),
+    });
+    const jpeg = filePart({
+      id: 'prt_jpeg',
+      mime: 'image/jpeg',
+      filename: 'a.jpg',
+      url: jpegDataUrl(9, 4),
+    });
+    const text = filePart({
+      id: 'prt_txt',
+      mime: 'text/plain',
+      filename: 'note.txt',
+      url: 'data:text/plain;base64,eA==',
+    });
+    const remote = filePart({
+      id: 'prt_remote',
+      mime: 'image/png',
+      filename: 'remote.png',
+      url: 'file:///tmp/remote.png',
+    });
+
+    const [record] = projectSlimParts([
+      user('msg_u1', [gif, jpeg, text, remote]),
+    ]);
+
+    expect(record.parts[0]).toMatchObject({ width: 7, height: 5, slim: true });
+    expect(record.parts[1]).toMatchObject({ width: 9, height: 4, slim: true });
+    expect(record.parts[2].width).toBeUndefined();
+    expect(record.parts[2].height).toBeUndefined();
+    expect(record.parts[2].byteSize).toBe(1);
+    expect(record.parts[3].byteSize).toBeUndefined();
+    expect(record.parts[3].width).toBeUndefined();
+    expect(JSON.stringify(record.parts)).not.toContain('file:///');
+    expect(JSON.stringify(record.parts)).not.toContain('base64');
+  });
+});
+
 describe('createSessionTurnPageService', () => {
   /**
    * Upstream pages are chronological old→new within each page (OpenCode
@@ -163,6 +561,49 @@ describe('createSessionTurnPageService', () => {
     records,
     nextCursor,
     complete: nextCursor == null,
+  });
+
+  /**
+   * Serve one chronological timeline as upstream pages of `width`.
+   * Upstream hands back the latest slice first, then older slices by cursor,
+   * each slice chronological old→new.
+   */
+  const pagedFetch = (timeline, width) => {
+    const slices = [];
+    for (let end = timeline.length; end > 0; end -= width) {
+      slices.push(timeline.slice(Math.max(0, end - width), end));
+    }
+    const pages = new Map();
+    slices.forEach((slice, index) => {
+      const key = index === 0 ? undefined : `slice_${index}`;
+      const hasOlder = index + 1 < slices.length;
+      pages.set(key, pageResult(slice, hasOlder ? `slice_${index + 1}` : null));
+    });
+    return vi.fn(async ({ before }) => pages.get(before) ?? pageResult([], null));
+  };
+
+  it('returns the same page from narrow slices as from one wide slice', async () => {
+    // 6 authored turns, each user + assistant, oldest→newest.
+    const timeline = [];
+    for (let turn = 1; turn <= 6; turn += 1) {
+      timeline.push(user(`msg_u${turn}`), assistant(`msg_a${turn}`));
+    }
+
+    const wide = createSessionTurnPageService({ fetchPage: pagedFetch(timeline, 100) });
+    const narrowFetch = pagedFetch(timeline, 4);
+    const narrow = createSessionTurnPageService({ fetchPage: narrowFetch });
+
+    const args = { sessionID: 'ses_1', turns: 3, directory: '/repo' };
+    const wideResult = await wide.loadPage(args);
+    const narrowResult = await narrow.loadPage(args);
+
+    expect(narrowResult.ok).toBe(true);
+    expect(narrowResult.records.map((entry) => entry.info.id))
+      .toEqual(wideResult.records.map((entry) => entry.info.id));
+    expect(narrowResult.turnCount).toBe(wideResult.turnCount);
+    expect(narrowResult.complete).toBe(wideResult.complete);
+    // The narrow page genuinely exercised the extra-page path.
+    expect(narrowFetch.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('keeps paging with before until three authored user boundaries are collected', async () => {

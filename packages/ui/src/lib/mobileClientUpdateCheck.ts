@@ -86,7 +86,7 @@ function buildUpdateServicePayload(options: MobileClientUpdateCheckOptions) {
     channel: 'stable',
     currentVersion: options.currentVersion,
     instanceMode: 'remote',
-    reportUsage: options.reportUsage !== false,
+    reportUsage: options.reportUsage === true,
   };
 }
 

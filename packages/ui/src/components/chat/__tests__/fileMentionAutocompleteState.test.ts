@@ -147,23 +147,26 @@ describe('session mentions', () => {
         });
     });
 
-    test('builds bounded loaded-session context', () => {
+    test('builds session references with directory and cached messages', () => {
         const instruction = buildSessionMentionInstruction([
             {
                 id: 'ses_123',
                 title: 'Previous implementation',
+                directory: '/project',
                 messages: [{ role: 'user', text: 'Implement grouped mentions' }],
             },
         ]);
 
         expect(instruction).toContain('ses_123');
         expect(instruction).toContain('Implement grouped mentions');
+        expect(instruction).toContain('/project');
+        expect(instruction).toContain('sqlite3');
         expect(buildSessionMentionInstruction([], 100)).toBeNull();
         const boundedInstruction = buildSessionMentionInstruction([
-            { id: 'ses_123', title: 'Long', messages: [{ role: 'user', text: 'x'.repeat(500) }] },
-            { id: 'ses_456', title: 'Second', messages: [{ role: 'assistant', text: 'y'.repeat(500) }] },
-        ], 500);
-        expect((boundedInstruction?.length ?? 0) <= 500).toBe(true);
+            { id: 'ses_123', title: 'Long', directory: '/p', messages: [{ role: 'user', text: 'x'.repeat(5_000) }] },
+            { id: 'ses_456', title: 'Second', directory: '/p', messages: [{ role: 'assistant', text: 'y'.repeat(5_000) }] },
+        ], 4_000);
+        expect((boundedInstruction?.length ?? 0) <= 4_000).toBe(true);
         const payload = boundedInstruction?.slice((boundedInstruction.indexOf('\n') ?? -1) + 1) ?? '';
         const parsed = JSON.parse(payload) as SessionMentionContext[];
         expect(parsed.map((context) => context.id)).toEqual(['ses_123', 'ses_456']);

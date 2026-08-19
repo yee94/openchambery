@@ -136,7 +136,6 @@ const scanWithBundledAndroidScanner = async (plugin: BarcodeScannerPlugin): Prom
 
   let barcodeListener: ListenerHandle | undefined;
   let errorListener: ListenerHandle | undefined;
-  let removeCancel: (() => void) | undefined;
   let removeBack: (() => void) | undefined;
   let settled = false;
   let resolveResult: (result: QrScanResult) => void = () => undefined;
@@ -151,7 +150,7 @@ const scanWithBundledAndroidScanner = async (plugin: BarcodeScannerPlugin): Prom
   };
 
   setBundledScannerActive(true);
-  removeCancel = mountBundledScannerCancel(() => finish({ status: 'cancelled' }));
+  const removeCancel = mountBundledScannerCancel(() => finish({ status: 'cancelled' }));
 
   try {
     const { App } = await import('@capacitor/app');
@@ -188,7 +187,7 @@ const scanWithBundledAndroidScanner = async (plugin: BarcodeScannerPlugin): Prom
 
     return await result;
   } finally {
-    removeCancel?.();
+    removeCancel();
     removeBack?.();
     setBundledScannerActive(false);
     await Promise.allSettled([

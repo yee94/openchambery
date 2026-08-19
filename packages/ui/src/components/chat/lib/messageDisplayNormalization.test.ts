@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { Part } from '@/lib/opencode/v2-types';import { getNormalizedMessageForDisplay } from './messageDisplayNormalization'
+import type { Part } from '@/lib/opencode/v2-types';
+import {
+    getNormalizedMessageForDisplay,
+    isCompactionCommandMessage,
+    isCompactionCommandParts,
+} from './messageDisplayNormalization'
 import { buildMessageReferenceParts } from '@/lib/messages/references'
 import { buildSessionMentionInstruction, parseSessionMentionInstruction } from '@/composer/delivery'
 import { isSyntheticPart } from '@/lib/messages/synthetic'
@@ -15,11 +20,31 @@ function createText(id: string, text: string, synthetic?: boolean): Part {
     } as Part
 }
 
+describe('isCompactionCommandParts', () => {
+    test('detects raw compaction parts and exact /compact text', () => {
+        expect(isCompactionCommandParts([{ type: 'compaction' }])).toBe(true)
+        expect(isCompactionCommandParts([{ type: 'text', text: '/compact' }])).toBe(true)
+        expect(isCompactionCommandParts([{ type: 'text', text: '  /compact  ' }])).toBe(true)
+        expect(isCompactionCommandParts([{ type: 'text', text: '/compact please' }])).toBe(false)
+        expect(isCompactionCommandParts([{ type: 'text', text: 'hello' }])).toBe(false)
+        expect(isCompactionCommandParts(undefined)).toBe(false)
+    })
+
+    test('detects compaction from sourceParts when display parts are already normalized', () => {
+        expect(isCompactionCommandMessage({
+            info: { id: 'u1', role: 'user' } as never,
+            parts: [{ type: 'text', text: '/compact' } as Part],
+            sourceParts: [{ type: 'compaction' } as Part],
+        })).toBe(true)
+    })
+})
+
 describe('getNormalizedMessageForDisplay sourceParts', () => {
     test('keeps session-mention synthetics on sourceParts for decoration recovery', () => {
         const instruction = buildSessionMentionInstruction([{
             id: 'ses_1',
             title: 'MessageReferenceChip',
+            directory: '/project',
             messages: [{ role: 'user', text: 'hello' }],
         }])!
         const normalized = getNormalizedMessageForDisplay({

@@ -591,6 +591,81 @@ describe("mergeSessionTranscript", () => {
     expect((flat.partsByMessageID["msg_4"]?.[0] as { text?: string })?.text).toBe("just finished")
   })
 
+  test("shareSessionTranscriptData keeps a ref-stable remove-message subset", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "keep")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "gone")] },
+          { info: userMessage("msg_3"), parts: [textPart("p3", "msg_3", "keep")] },
+        ],
+        { complete: true, turnCount: 2 },
+      ),
+    }).data!
+    const removed = mergeSessionTranscript(live, SESSION, {
+      type: "optimistic-remove",
+      messageID: "msg_2",
+    }).data!
+
+    const shared = shareSessionTranscriptData(live, removed, SESSION)
+    const flat = projectFlatFromTranscriptData(shared, SESSION)
+    expect(flat.messageOrder).toEqual(["msg_1", "msg_3"])
+    expect(flat.messagesByID.msg_2).toBeUndefined()
+  })
+
+  test("shareSessionTranscriptData keeps reconcile created-time order on a same-length superset", () => {
+    const dated = (id: string, created: number, role: "user" | "assistant") => ({
+      ...(role === "user" ? userMessage(id) : assistantMessage(id)),
+      time: { created },
+    } as Message)
+    const initial = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: dated("msg_01", 1001, "user"), parts: [textPart("p01", "msg_01")] },
+          { info: dated("msg_02", 1002, "assistant"), parts: [textPart("p02", "msg_02")] },
+        ],
+        { cursor: "cur_older", complete: false, turnCount: 1 },
+      ),
+    }).data!
+    const newer = mergeSessionTranscript(initial, SESSION, {
+      type: "http-page",
+      purpose: "reconcile-page",
+      page: page(
+        [
+          { info: dated("msg_07", 1007, "user"), parts: [textPart("p07", "msg_07")] },
+          { info: dated("msg_08", 1008, "assistant"), parts: [textPart("p08", "msg_08")] },
+        ],
+        { complete: false, turnCount: 0 },
+      ),
+    }).data!
+    const ordered = mergeSessionTranscript(newer, SESSION, {
+      type: "http-page",
+      purpose: "reconcile-page",
+      page: page(
+        [
+          { info: dated("msg_03", 1003, "user"), parts: [textPart("p03", "msg_03")] },
+          { info: dated("msg_04", 1004, "assistant"), parts: [textPart("p04", "msg_04")] },
+        ],
+        { complete: false, turnCount: 0 },
+      ),
+    }).data!
+
+    const shared = shareSessionTranscriptData(newer, ordered, SESSION)
+    expect(projectFlatFromTranscriptData(shared, SESSION).messageOrder).toEqual([
+      "msg_01",
+      "msg_02",
+      "msg_03",
+      "msg_04",
+      "msg_07",
+      "msg_08",
+    ])
+    expect(shared?.pages[0]?.cursor).toBe("cur_older")
+  })
+
   test("shareSessionTranscriptData keeps a live last turn when Query collapses to one tail", () => {
     const tail = mergeSessionTranscript(undefined, SESSION, {
       type: "http-page",
@@ -634,5 +709,141 @@ describe("mergeSessionTranscript", () => {
     expect(flat.messageOrder).toContain("msg_13")
     expect((flat.partsByMessageID["msg_12"]?.[0] as { text?: string })?.text).toBe("just sent")
     expect((flat.partsByMessageID["msg_13"]?.[0] as { text?: string })?.text).toBe("just finished")
+  })
+
+  test("durable-seed derives a conservative has-more boundary from the oldest seeded record", () => {
+    const { data, result } = mergeSessionTranscript(undefined, SESSION, {
+      type: "durable-seed",
+      records: [
+        { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "cached")] },
+        {
+          info: { id: "msg_2", sessionID: SESSION, role: "assistant", time: { created: 2 }, finish: "stop" } as Message,
+          parts: [textPart("p2", "msg_2", "answer")],
+        },
+      ],
+    })
+    expect(result.applied).toBe(true)
+    expect(result.changed).toBe(true)
+    expect(data?.pages[0]?.messageOrder).toEqual(["msg_1", "msg_2"])
+    expect((data?.pages[0]?.partsByMessageID.msg_1?.[0] as { text?: string })?.text).toBe("cached")
+    expect(data?.pages[0]?.complete).toBe(false)
+    // Oldest seeded message id is the `before` cursor, so cold enters take the
+    // hot path instead of replaying a full authority initial every start.
+    expect(data?.pages[0]?.cursor).toBe("msg_1")
+    expect(boundaryFromTranscriptData(data)).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 1 })
+    expect(result.boundary).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 1 })
+  })
+
+  test("a projected initial page cannot drop or re-id durable-seeded full parts", () => {
+    const info = {
+      id: "msg_a",
+      sessionID: SESSION,
+      role: "assistant",
+      time: { created: 2 },
+      finish: "stop",
+    } as Message
+    const fullTool = { id: "p_tool_1", messageID: "msg_a", sessionID: SESSION, type: "tool", state: { status: "completed", output: "full output" } } as unknown as Part
+    const fullText = { id: "p_text_1", messageID: "msg_a", sessionID: SESSION, type: "text", text: "full body" } as Part
+    const seeded = mergeSessionTranscript(undefined, SESSION, {
+      type: "durable-seed",
+      records: [{ info, parts: [fullTool, fullText] }],
+    })
+    // Authority initial replays the turn as a projection: a re-id'd slim tool
+    // summary and no text part at all.
+    const reIdSlim = { id: "p_tool_2", messageID: "msg_a", sessionID: SESSION, type: "tool", state: { status: "completed" }, slim: true } as unknown as Part
+    const { data } = mergeSessionTranscript(seeded.data, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info, parts: [reIdSlim] }], { complete: false, turnCount: 1, cursor: "msg_0" }),
+    })
+    const parts = data?.pages[0]?.partsByMessageID.msg_a ?? []
+    const byID = new Map(parts.map((part) => [part.id, part]))
+    // The durable full tool and full text both survive the projected frame.
+    expect((byID.get("p_tool_1") as unknown as { state?: { output?: string } })?.state?.output).toBe("full output")
+    expect((byID.get("p_text_1") as { text?: string })?.text).toBe("full body")
+  })
+
+  test("a full (non-projected) initial page still replaces settled parts authoritatively", () => {
+    const info = {
+      id: "msg_a",
+      sessionID: SESSION,
+      role: "assistant",
+      time: { created: 2 },
+      finish: "stop",
+    } as Message
+    const fullTool = { id: "p_tool_1", messageID: "msg_a", sessionID: SESSION, type: "tool", state: { status: "completed", output: "stale output" } } as unknown as Part
+    const seeded = mergeSessionTranscript(undefined, SESSION, {
+      type: "durable-seed",
+      records: [{ info, parts: [fullTool] }],
+    })
+    const replaced = { id: "p_tool_1", messageID: "msg_a", sessionID: SESSION, type: "tool", state: { status: "completed", output: "server truth" } } as unknown as Part
+    const { data } = mergeSessionTranscript(seeded.data, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info, parts: [replaced] }], { complete: true, turnCount: 1 }),
+    })
+    const parts = data?.pages[0]?.partsByMessageID.msg_a ?? []
+    expect(parts).toHaveLength(1)
+    expect((parts[0] as unknown as { state?: { output?: string } })?.state?.output).toBe("server truth")
+  })
+
+  test("authority slim does not replace a durable-seeded full part", () => {
+    const info = {
+      id: "msg_a",
+      sessionID: SESSION,
+      role: "assistant",
+      time: { created: 2 },
+      finish: "stop",
+    } as Message
+    const full = { id: "p_a", messageID: "msg_a", sessionID: SESSION, type: "text", text: "full body" } as Part
+    const slim = { id: "p_a", messageID: "msg_a", sessionID: SESSION, type: "text", text: "summary", slim: true } as Part
+    const seeded = mergeSessionTranscript(undefined, SESSION, {
+      type: "durable-seed",
+      records: [{ info, parts: [full] }],
+    })
+    const { data } = mergeSessionTranscript(seeded.data, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info, parts: [slim] }], { complete: true, turnCount: 1 }),
+    })
+    const part = data?.pages[0]?.partsByMessageID.msg_a?.[0] as { text?: string; slim?: boolean } | undefined
+    expect(part?.text).toBe("full body")
+    expect(part?.slim).not.toBe(true)
+  })
+
+  test("durable-seed overlays a slim file part with the exact url fill", () => {
+    const info = {
+      id: "msg_u",
+      sessionID: SESSION,
+      role: "user",
+      time: { created: 1 },
+    } as Message
+    const slim = {
+      id: "p_file",
+      messageID: "msg_u",
+      sessionID: SESSION,
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      slim: true,
+    } as unknown as Part
+    const full = {
+      ...slim,
+      slim: false,
+      url: "data:image/png;base64,full",
+    } as unknown as Part
+    const paged = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info, parts: [slim] }], { complete: true, turnCount: 1 }),
+    })
+    const { data, result } = mergeSessionTranscript(paged.data, SESSION, {
+      type: "durable-seed",
+      records: [{ info, parts: [full] }],
+    })
+    expect(result.changed).toBe(true)
+    const part = data?.pages[0]?.partsByMessageID.msg_u?.[0] as { url?: string; slim?: boolean } | undefined
+    expect(part?.url).toBe("data:image/png;base64,full")
+    expect(part?.slim).not.toBe(true)
   })
 })

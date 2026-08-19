@@ -31,7 +31,6 @@ import {
   applyMarkdownCodeBlockWrapState,
   clearMarkdownImagePlaceholder,
   decorateMarkdown,
-  decorateMarkdownImages,
   setMarkdownImagePlaceholder,
   syncMarkdownCodeLineNumbers,
   type DecorateContext,
@@ -1391,6 +1390,11 @@ const useMorphdomMarkdown = ({
   // and completed mounts; completed mounts also reveal in this layout pass so
   // React can drop the placeholder before the browser paints. Async morphdom
   // still upgrades to the rich DOM afterward — never expose raw source.
+  // Decoration runs here too (full pass, same as the async commit): tables only
+  // reach their final nowrap geometry and code blocks only gain their card
+  // chrome through decorate, so deferring it reshapes the layout a frame later
+  // — a visible jump the virtualizer then compensates. All passes are
+  // idempotent, so the async re-decoration morphs equal structures.
   React.useLayoutEffect(() => {
     const container = containerRef.current;
     const target = container?.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
@@ -1405,7 +1409,7 @@ const useMorphdomMarkdown = ({
         // HTML body — the wrapper exists only for per-block reconciliation.
         block.style.display = 'contents';
         block.innerHTML = html;
-        decorateMarkdownImages(block, ctx);
+        decorateMarkdown(block, ctx);
         target.appendChild(block);
       }
       reconcileMarkdownImageResources(target);

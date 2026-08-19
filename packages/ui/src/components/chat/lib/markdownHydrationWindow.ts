@@ -32,9 +32,77 @@ export type MarkdownHydrationReleaseInput = MarkdownHydrationCandidatesInput & {
     visibleReleaseLimit?: number;
 };
 
-export const createInitialMarkdownHydratedKeys = (entryKeys: readonly string[]): Set<string> => {
-    const newestKey = entryKeys[entryKeys.length - 1];
-    return newestKey ? new Set([newestKey]) : new Set();
+/**
+ * Bottom-entering rows hydrate in the first commit. Mounting them as deferred
+ * skeletons and swapping rich Markdown in over later frames is the
+ * session-switch flicker this seed removes; scroll-time metering (below) is
+ * untouched and still governs everything past this initial window.
+ */
+const INITIAL_MARKDOWN_HYDRATION_SEED = 12;
+
+/**
+ * Hydrated keys survive a session switch by scope key, so re-entering a
+ * recently viewed transcript mounts every previously hydrated row rich
+ * immediately instead of replaying placeholder swaps. Mirrors the
+ * measurement-restore cache size (TIMELINE_CACHE_LIMIT).
+ */
+const MARKDOWN_HYDRATION_RESTORE_LIMIT = 16;
+
+const hydrationRestoreCache = new Map<string, ReadonlySet<string>>();
+
+/** Read-once-per-mount restore set. LRU-refreshed; undefined when unseen. */
+export const readMarkdownHydrationRestore = (scopeKey: string): ReadonlySet<string> | undefined => {
+    const restored = hydrationRestoreCache.get(scopeKey);
+    if (!restored) return undefined;
+    hydrationRestoreCache.delete(scopeKey);
+    hydrationRestoreCache.set(scopeKey, restored);
+    return restored;
+};
+
+/** Store the hydrated key set for the next mount of the same scope. */
+export const writeMarkdownHydrationRestore = (scopeKey: string, keys: ReadonlySet<string>): void => {
+    if (keys.size === 0) return;
+    hydrationRestoreCache.delete(scopeKey);
+    hydrationRestoreCache.set(scopeKey, keys);
+    while (hydrationRestoreCache.size > MARKDOWN_HYDRATION_RESTORE_LIMIT) {
+        const oldest = hydrationRestoreCache.keys().next().value;
+        if (typeof oldest !== 'string') break;
+        hydrationRestoreCache.delete(oldest);
+    }
+};
+
+/** Test helper: drop all restore state. */
+export const clearMarkdownHydrationRestoreCache = (): void => {
+    hydrationRestoreCache.clear();
+};
+
+export const createInitialMarkdownHydratedKeys = (
+    entryKeys: readonly string[],
+    options?: {
+        /** Rows from the bottom seeded rich on the first commit. */
+        seedCount?: number;
+        /** Previously hydrated keys (intersected with current entryKeys). */
+        restore?: ReadonlySet<string> | null;
+    },
+): Set<string> => {
+    const seedCount = Math.max(1, Math.floor(options?.seedCount ?? INITIAL_MARKDOWN_HYDRATION_SEED));
+    const seeded = new Set<string>();
+    for (
+        let index = Math.max(0, entryKeys.length - seedCount);
+        index < entryKeys.length;
+        index += 1
+    ) {
+        const key = entryKeys[index];
+        if (key) seeded.add(key);
+    }
+    const restore = options?.restore;
+    if (restore && restore.size > 0) {
+        const valid = new Set(entryKeys);
+        for (const key of restore) {
+            if (valid.has(key)) seeded.add(key);
+        }
+    }
+    return seeded;
 };
 
 /**

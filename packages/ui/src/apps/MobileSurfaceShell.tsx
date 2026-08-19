@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
+import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { cn } from '@/lib/utils';
 
 const SURFACE_ROOT_ID = 'mobile-surface-root';
@@ -151,7 +152,12 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
       window.clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
-      previousFocusRef.current?.focus?.({ preventScroll: true });
+      // A session switch closes the sheet as navigation — restoring the
+      // composer focus would raise the old conversation's keyboard over the
+      // new one (see lib/mobileOverlayFocusRestore).
+      if (!isMobileOverlayFocusRestoreSuppressed()) {
+        previousFocusRef.current?.focus?.({ preventScroll: true });
+      }
       previousFocusRef.current = null;
     };
   }, [open]);

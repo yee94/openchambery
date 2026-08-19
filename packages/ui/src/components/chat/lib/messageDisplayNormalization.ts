@@ -5,11 +5,41 @@ import { isSessionCompactionCard } from '@/sync/session-projection-api';
 import { normalizeParts } from '../message/partUtils';
 import type { ChatMessageEntry } from './turns/types';
 
+const getPartText = (part: unknown): string => {
+    const record = part as { text?: unknown; content?: unknown };
+    if (typeof record.text === 'string') {
+        return record.text;
+    }
+    if (typeof record.content === 'string') {
+        return record.content;
+    }
+    return '';
+};
+
+export const isCompactionCommandPart = (part: unknown): boolean => {
+    const type = (part as { type?: unknown } | null | undefined)?.type;
+    if (type === 'compaction') {
+        return !isSessionCompactionCard(part);
+    }
+    return type === 'text' && getPartText(part).trim() === '/compact';
+};
+
+export const isCompactionCommandParts = (parts: readonly unknown[] | undefined): boolean => {
+    if (!parts) {
+        return false;
+    }
+    return parts.some((part) => isCompactionCommandPart(part));
+};
+
 export const hasCompactionPart = (message: ChatMessageEntry): boolean => {
-    return message.parts.some((part) => {
-        const type = (part as { type?: unknown } | null | undefined)?.type;
-        return type === 'compaction' && !isSessionCompactionCard(part);
-    });
+    return isCompactionCommandParts(message.parts);
+};
+
+export const isCompactionCommandMessage = (message: ChatMessageEntry | undefined): boolean => {
+    if (!message) {
+        return false;
+    }
+    return isCompactionCommandParts(message.sourceParts) || isCompactionCommandParts(message.parts);
 };
 
 const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessageEntry => {
@@ -20,7 +50,7 @@ const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessa
     let changedParts = false;
     const nextParts = message.parts.map((part) => {
         const type = (part as { type?: unknown } | null | undefined)?.type;
-        if (type !== 'compaction') {
+        if (type !== 'compaction' || isSessionCompactionCard(part)) {
             return part;
         }
         changedParts = true;

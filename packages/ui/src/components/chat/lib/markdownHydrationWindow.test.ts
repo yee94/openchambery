@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+    clearMarkdownHydrationRestoreCache,
     createInitialMarkdownHydratedKeys,
     ensureNewestMarkdownKeyHydrated,
     getMarkdownHydrationBatch,
     pruneMarkdownHydratedKeys,
+    readMarkdownHydrationRestore,
+    writeMarkdownHydrationRestore,
     type MarkdownHydrationReleaseInput,
 } from './markdownHydrationWindow';
 
@@ -24,9 +27,52 @@ const settled = (
 });
 
 describe('markdown hydration window', () => {
-    test('starts with only the newest stable entry key hydrated', () => {
-        expect([...createInitialMarkdownHydratedKeys(keys(100))]).toEqual(['turn-99']);
+    test('seeds the bottom-entering window hydrated on the first commit', () => {
+        // Default seed window (12) covers the initial viewport + preload.
+        expect([...createInitialMarkdownHydratedKeys(keys(100))]).toEqual(
+            keys(12).map((_, index) => `turn-${88 + index}`),
+        );
+        // Caller-tuned window (summary mode passes 6).
+        expect([...createInitialMarkdownHydratedKeys(keys(100), { seedCount: 6 })]).toEqual([
+            'turn-94', 'turn-95', 'turn-96', 'turn-97', 'turn-98', 'turn-99',
+        ]);
+        // Short lists seed everything; empty lists seed nothing.
+        expect([...createInitialMarkdownHydratedKeys(keys(3))]).toEqual(['turn-0', 'turn-1', 'turn-2']);
         expect(createInitialMarkdownHydratedKeys([]).size).toBe(0);
+    });
+
+    test('restore adds previously hydrated keys beyond the seed window', () => {
+        const seeded = createInitialMarkdownHydratedKeys(keys(100), {
+            seedCount: 6,
+            restore: new Set(['turn-99', 'turn-40', 'turn-gone']),
+        });
+        expect(seeded.has('turn-99')).toBe(true);
+        expect(seeded.has('turn-40')).toBe(true);
+        // Keys no longer in entryKeys are dropped.
+        expect(seeded.has('turn-gone')).toBe(false);
+        // The seed window is still complete.
+        expect([...seeded].filter((key) => Number(key.slice(5)) >= 94)).toHaveLength(6);
+    });
+
+    test('hydration restore cache round-trips per scope and evicts past its limit', () => {
+        clearMarkdownHydrationRestoreCache();
+        writeMarkdownHydrationRestore('scope-a', new Set(['turn-1', 'turn-2']));
+        expect([...(readMarkdownHydrationRestore('scope-a') ?? [])]).toEqual(['turn-1', 'turn-2']);
+        // Empty sets are not stored.
+        writeMarkdownHydrationRestore('scope-empty', new Set());
+        expect(readMarkdownHydrationRestore('scope-empty')).toBeUndefined();
+        // LRU bound: 16 live entries, oldest evicted.
+        for (let index = 0; index < 16; index += 1) {
+            writeMarkdownHydrationRestore(`scope-${index}`, new Set([`turn-${index}`]));
+        }
+        // Refresh scope-0 so scope-1 becomes the oldest.
+        readMarkdownHydrationRestore('scope-0');
+        writeMarkdownHydrationRestore('scope-new', new Set(['turn-x']));
+        expect(readMarkdownHydrationRestore('scope-1')).toBeUndefined();
+        expect(readMarkdownHydrationRestore('scope-0')).toBeDefined();
+        expect(readMarkdownHydrationRestore('scope-new')).toBeDefined();
+        clearMarkdownHydrationRestoreCache();
+        expect(readMarkdownHydrationRestore('scope-new')).toBeUndefined();
     });
 
     test('keeps a newly completed newest entry hydrated without waiting for scroll', () => {
@@ -66,7 +112,8 @@ describe('markdown hydration window', () => {
 
     test('entering a populated viewport settles in a single release when under the visible budget', () => {
         const entryKeys = keys(100);
-        const hydrated = createInitialMarkdownHydratedKeys(entryKeys);
+        // seedCount 1 isolates the release metering from the mount-time seed.
+        const hydrated = createInitialMarkdownHydratedKeys(entryKeys, { seedCount: 1 });
         const read = () => getMarkdownHydrationBatch(settled({
             entryKeys,
             mountedIndexes: [94, 95, 96, 97, 98, 99],

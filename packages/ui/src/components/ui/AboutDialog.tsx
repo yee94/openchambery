@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import {
   Dialog,
   DialogContent,
@@ -7,10 +8,17 @@ import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { debugUtils } from '@/lib/debug';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { getDesktopAppVersion } from '@/lib/desktopNative';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import {
+  exportAndDownloadClientDiagnostics,
+  isTranscriptDiagnosticsEnabled,
+  setTranscriptDiagnosticsEnabled,
+} from '@/sync/transcript-diagnostics-runtime';
+import { SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
 
 interface AboutDialogProps {
   open: boolean;
@@ -29,6 +37,35 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
   const [copiedDiagnostics, setCopiedDiagnostics] = React.useState(false);
   const [diagnosticsReport, setDiagnosticsReport] = React.useState<string | null>(null);
   const [isPreparingDiagnostics, setIsPreparingDiagnostics] = React.useState(false);
+  const [exportingFeatLog, setExportingFeatLog] = React.useState(false);
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = React.useState(() => isTranscriptDiagnosticsEnabled());
+
+  const handleDiagnosticsEnabledChange = useEvent((enabled: boolean) => {
+    setTranscriptDiagnosticsEnabled(enabled);
+    setDiagnosticsEnabled(enabled);
+  });
+
+  const handleExportFeatLog = useEvent(async () => {
+    if (exportingFeatLog) return;
+    setExportingFeatLog(true);
+    try {
+      const { outcome, eventCount } = await exportAndDownloadClientDiagnostics();
+      if (outcome === 'cancelled') return;
+      if (outcome === 'failed') {
+        toast.error(t('settings.openchamber.about.diagnostics.toast.failed'));
+        return;
+      }
+      toast.success(
+        eventCount > 0
+          ? t('settings.openchamber.about.diagnostics.toast.exported')
+          : t('settings.openchamber.about.diagnostics.toast.empty'),
+      );
+    } catch {
+      toast.error(t('settings.openchamber.about.diagnostics.toast.failed'));
+    } finally {
+      setExportingFeatLog(false);
+    }
+  });
 
   const handleCopyDiagnostics = React.useCallback(async () => {
     if (!showDiagnostics) return;
@@ -156,6 +193,29 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
                 <p>{t('aboutDialog.openCodeVersionLabel', { version: openCodeVersion })}</p>
               )}
             </div>
+          </div>
+
+          <div className="flex w-full flex-col items-stretch gap-3 pt-2">
+            <SettingsToggleRow
+              itemId="about.diagnostics"
+              checked={diagnosticsEnabled}
+              onChange={handleDiagnosticsEnabledChange}
+              label={t('settings.openchamber.about.diagnostics.label')}
+              ariaLabel={t('settings.openchamber.about.diagnostics.label')}
+            />
+            {diagnosticsEnabled && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exportingFeatLog}
+              onClick={() => void handleExportFeatLog()}
+            >
+              {exportingFeatLog
+                ? t('settings.openchamber.about.diagnostics.exporting')
+                : t('settings.openchamber.about.diagnostics.export')}
+            </Button>
+            )}
           </div>
 
           {showDiagnostics && (

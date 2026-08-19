@@ -446,19 +446,42 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('hydrating');
   });
 
-  test('passes through when a transcript shell or ready empty snapshot exists', () => {
+  test('passes as soon as durable or authority hydration satisfies P0', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: true,
       hasRenderableSessionSnapshot: false,
-      prefetchStatus: 'error',
+      prefetchStatus: 'loading',
       syncLoading: false,
+      p0Satisfied: true,
     })).toBe('pass');
 
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: true,
+      hasRenderableSessionSnapshot: true,
+      prefetchStatus: 'ready',
+      syncLoading: false,
+      p0Satisfied: true,
+    })).toBe('pass');
+  });
+
+  test('keeps a live user-tail shell visible while the session is busy', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: true,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'loading',
+      syncLoading: true,
+      p0Satisfied: false,
+      hasBusyShell: true,
+    })).toBe('pass');
+  });
+
+  test('keeps the original safe gate for an ordinary empty session', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: false,
       hasRenderableSessionSnapshot: true,
       prefetchStatus: 'ready',
       syncLoading: false,
+      p0Satisfied: false,
     })).toBe('pass');
   });
 
@@ -491,6 +514,16 @@ describe('resolveChatSessionTranscriptGate', () => {
       prefetchStatus: 'error',
       syncLoading: false,
       hasPaintedTranscript: true,
+    })).toBe('pass');
+  });
+
+  test('a latched P0 result remains visible through a later fetch failure', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'error',
+      syncLoading: false,
+      p0Satisfied: true,
     })).toBe('pass');
   });
 });

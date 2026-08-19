@@ -262,6 +262,7 @@ mock.module('@/lib/runtime-switch', () => ({
   getRuntimeKey: () => runtimeIdentity,
   getRuntimeTransportIdentity: () => runtimeIdentity,
   isRuntimeEndpointIdentityChange: () => false,
+  isRuntimeInstanceChange: () => false,
   subscribeRuntimeEndpointChanged: () => () => undefined,
 }));
 
@@ -1746,16 +1747,20 @@ describe('useConfigStore provider persistence', () => {
     liveProviderId = 'recovered';
     liveAgents = [testAgent('build')];
 
-    // Ordinary ensure keeps the successful empty Infinity cache — no second network read.
+    // Provider catalog self-heals: a successful empty provider list is never
+    // permanently fresh (v1.16.134-beta.17 contract), so the ordinary ensure
+    // refetches. The raw agent catalog keeps staleTime: Infinity — an empty
+    // agent list stays cached until refreshMissingCatalogs force-refreshes.
     await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:staleEnsure' });
     await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:staleEnsure' });
-    expect(getProvidersCalls).toBe(providerCallsAfterEmpty);
+    expect(getProvidersCalls).toBe(providerCallsAfterEmpty + 1);
     expect(listAgentsCalls).toBe(agentCallsAfterEmpty);
-    expect(useConfigStore.getState().providers).toEqual([]);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['recovered']);
     expect(useConfigStore.getState().agents).toEqual([]);
 
     await useConfigStore.getState().refreshMissingCatalogs({ source: 'test:recovery' });
 
+    // Providers already recovered above — only the agent catalog is still empty.
     expect(getProvidersCalls).toBe(providerCallsAfterEmpty + 1);
     expect(listAgentsCalls).toBe(agentCallsAfterEmpty + 1);
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['recovered']);

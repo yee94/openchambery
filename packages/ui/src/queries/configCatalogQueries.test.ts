@@ -311,4 +311,13 @@ describe('configCatalogQueries', () => {
     expect(v2ModelCalls).toBe(1);
     expect(v2ConfigCalls).toBe(1);
   });
+
+  test('成功返回空 catalog 后，再次 ensure 会重新发起请求', async () => {
+    providerPayload = { schemaVersion: 1, providers: [], default: {}, partial: false };
+    await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
+    expect(providerCalls).toBe(1);
+
+    await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
+    expect(providerCalls).toBeGreaterThan(1);
+  });
 });

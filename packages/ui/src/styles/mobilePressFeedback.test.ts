@@ -24,6 +24,12 @@ describe('mobile press feedback scale policy', () => {
     expect(compactActiveBlock).toContain('scale: var(--oc-press-compact-scale)');
   });
 
+  test('composer surface does not press-scale or open with a transform', () => {
+    expect(mobileCss).not.toContain('[data-mobile-composer-surface="true"]:has(textarea:active)');
+    expect(mobileCss).not.toContain('oc-mobile-composer-expand');
+    expect(mobileCss).toContain('Composer surface must not press-scale');
+  });
+
   test('shared Button only opts icon-sized controls into compact press', () => {
     expect(buttonSource).toContain('COMPACT_PRESS_SIZES');
     expect(buttonSource).toContain('"icon"');

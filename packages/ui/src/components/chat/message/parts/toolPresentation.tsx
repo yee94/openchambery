@@ -3,13 +3,14 @@ import { Icon } from "@/components/icon/Icon";
 
 export const getToolIcon = (toolName: string) => {
     const iconClass = 'h-3.5 w-3.5 flex-shrink-0';
+    const editIconClass = 'h-[13px] w-[13px] flex-shrink-0';
     const tool = toolName.toLowerCase();
 
     if (tool === 'edit' || tool === 'multiedit' || tool === 'apply_patch' || tool === 'str_replace' || tool === 'str_replace_based_edit_tool') {
-        return <Icon name="pencil" className={iconClass} />;
+        return <Icon name="pencil" className={editIconClass} />;
     }
     if (tool === 'write' || tool === 'create' || tool === 'file_write') {
-        return <Icon name="file-edit" className={iconClass} />;
+        return <Icon name="file-edit" className={editIconClass} />;
     }
     if (tool === 'read' || tool === 'view' || tool === 'file_read' || tool === 'cat') {
         return <Icon name="file-text" className={iconClass} />;

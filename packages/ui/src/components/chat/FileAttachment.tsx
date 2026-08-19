@@ -1,5 +1,5 @@
 import React, { useRef, memo } from 'react';
-import { useEvent } from '@reactuses/core';
+import { useEvent, useIntersectionObserver, useIsomorphicLayoutEffect, useResizeObserver } from '@reactuses/core';
 import { useInputStore } from '@/sync/input-store';
 import type { AttachedFile } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -22,7 +22,14 @@ import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import { openImageSaveActions } from './imageSaveActionsBus';
-import { useResolvedImageSource } from './imageSource';
+import { useResolvedImageSource, useRuntimeTransportIdentity, imageRequiresManualLoadOverRelay, isRelayTransport } from './imageSource';
+import { Button } from '@/components/ui/button';
+import { useSessionParts } from '@/sync/sync-context';
+import { getLastFetchedSessionMessageParts } from '@/sync/transcript-parent-recovery';
+import {
+  getTranscriptMessageMaterializationState,
+  materializeTranscriptMessage,
+} from '@/sync/transcript-repository-runtime';
 
 import type { ToolPopupContent } from './message/types';
 
@@ -638,12 +645,17 @@ export const ActiveEditorFileSuggestion = memo(({
 ActiveEditorFileSuggestion.displayName = 'ActiveEditorFileSuggestion';
 
 interface FilePart {
+  id?: string;
+  messageID?: string;
+  sessionID?: string;
   type: string;
   mime?: string;
   url?: string;
   filename?: string;
   size?: number;
+  byteSize?: number;
   source?: Record<string, unknown>;
+  slim?: boolean;
 }
 
 const GITHUB_ISSUE_LINK_MIME = 'application/vnd.github.issue-link';
@@ -661,11 +673,16 @@ const getGitHubLinkKind = (file: FilePart): 'issue' | 'pr' | null => {
 
 interface MessageFilesDisplayProps {
   files: FilePart[];
+  messageID: string;
+  sessionID?: string;
   onShowPopup?: (content: ToolPopupContent) => void;
   compact?: boolean;
 }
 
-const filePartDedupeKey = (file: FilePart): string => {
+// eslint-disable-next-line react-refresh/only-export-components -- Stable identity contract is covered by focused tests.
+export const filePartDedupeKey = (file: FilePart): string => {
+  const partID = typeof file.id === 'string' ? file.id.trim() : '';
+  if (partID) return `part:${partID}`;
   const filename = typeof file.filename === 'string' ? file.filename.trim().toLowerCase() : '';
   const mime = typeof file.mime === 'string' ? file.mime.trim().toLowerCase() : '';
   // Image optimistic parts often keep a data: URL while the server echo uses a
@@ -674,6 +691,112 @@ const filePartDedupeKey = (file: FilePart): string => {
   const url = typeof file.url === 'string' ? file.url.trim() : '';
   if (url) return `url:${url}`;
   return `meta:${filename}|${mime}|${file.size ?? ''}`;
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
+export const dedupeMessageFileParts = (files: FilePart[]): FilePart[] => {
+  const indexes = new Map<string, number>();
+  const next: FilePart[] = [];
+  for (const file of files) {
+    if (
+      file.type !== 'file'
+      || !(file.mime || file.url)
+      || isCodeSelectionFilePart(file)
+    ) {
+      continue;
+    }
+    const key = filePartDedupeKey(file);
+    const existingIndex = indexes.get(key);
+    if (existingIndex === undefined) {
+      indexes.set(key, next.length);
+      next.push(file);
+      continue;
+    }
+    if (next[existingIndex]?.slim === true && file.slim !== true) {
+      next[existingIndex] = file;
+    }
+  }
+  return next;
+};
+
+/**
+ * Timeline entries keep first-paint parts. On-demand `session.message` fills
+ * land in Query; upgrade matching slim images in place. Never append extra
+ * live file parts — assistant tool rows would otherwise render as unnamed files.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
+export const resolveMessageDisplayFiles = (
+  propFiles: FilePart[],
+  liveParts: readonly { type?: string; id?: string; slim?: boolean; url?: string; filename?: string }[],
+): FilePart[] => {
+  const liveByID = new Map<string, FilePart>();
+  const liveByName = new Map<string, FilePart>();
+  for (const part of liveParts) {
+    if (part.type !== 'file' || part.slim === true || typeof part.url !== 'string' || !part.url) continue;
+    const live = part as FilePart;
+    if (typeof part.id === 'string' && part.id) liveByID.set(part.id, live);
+    if (typeof part.filename === 'string' && part.filename) liveByName.set(part.filename, live);
+  }
+  if (liveByID.size === 0 && liveByName.size === 0) return dedupeMessageFileParts(propFiles);
+  const upgraded = propFiles.map((file) => {
+    if (file.type !== 'file') return file;
+    if (typeof file.url === 'string' && file.url && file.slim !== true) return file;
+    if (file.id && liveByID.has(file.id)) return liveByID.get(file.id) ?? file;
+    if (file.filename && liveByName.has(file.filename)) return liveByName.get(file.filename) ?? file;
+    return file;
+  });
+  return dedupeMessageFileParts(upgraded);
+};
+
+/** Visible slim-image slot status. Query `ready` with a still-slim snapshot is not a failure. */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
+export const resolveSlimImageMaterializationStatus = (input: {
+  hasSlimImage: boolean;
+  flightActive: boolean;
+  failed: boolean;
+  repositoryStatus: 'idle' | 'loading' | 'ready' | 'error';
+}): 'idle' | 'loading' | 'ready' | 'error' => {
+  if (input.failed || input.repositoryStatus === 'error') return 'error';
+  if (input.flightActive || input.repositoryStatus === 'loading') return 'loading';
+  if (input.hasSlimImage && input.repositoryStatus === 'ready') return 'idle';
+  return input.repositoryStatus;
+};
+
+/** Image URLs that render without a runtime file-stream fetch (never relay-gated). */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
+export const isDirectImageUrl = (url: string): boolean => /^(?:data|blob|https?):/i.test(url);
+
+/** Best-known byte size of an image part: measured `byteSize` first, declared `size` second. */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
+export const filePartImageKnownBytes = (file: FilePart): number | undefined => {
+  for (const value of [file.byteSize, file.size]) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  }
+  return undefined;
+};
+
+/**
+ * A slim (url-less) oversized image defers whole-message materialization over
+ * the relay until the user taps load — the exact record fetch carries the
+ * inline data URL for every slim part of that message.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
+export const messageSlimImageManualLoadRequired = (transportIdentity: string, files: FilePart[]): boolean => (
+  files.some((file) => (
+    file.type === 'file'
+    && file.mime?.startsWith('image/') === true
+    && file.slim === true
+    && !file.url
+    && imageRequiresManualLoadOverRelay(transportIdentity, filePartImageKnownBytes(file))
+  ))
+);
+
+/** A full (url-carrying) image fetched through the runtime file stream is relay-gated by known size. */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
+export const filePartImageManualLoadRequired = (transportIdentity: string, file: FilePart): boolean => {
+  if (file.type !== 'file' || file.mime?.startsWith('image/') !== true) return false;
+  if (typeof file.url !== 'string' || !file.url || isDirectImageUrl(file.url)) return false;
+  return imageRequiresManualLoadOverRelay(transportIdentity, filePartImageKnownBytes(file));
 };
 
 const MessageImageThumbnail = ({ source, filename }: { source: string; filename: string }) => {
@@ -697,28 +820,103 @@ const MessageImageCard = ({
   filename,
   sizeText,
   onOpen,
+  materializationStatus = 'ready',
+  onRetry,
 }: {
-  source: string;
+  source?: string;
   filename: string;
   sizeText: string;
-  onOpen: () => void;
+  onOpen?: () => void;
+  materializationStatus?: 'idle' | 'loading' | 'ready' | 'error';
+  onRetry?: () => void;
 }) => {
+  const { t } = useI18n();
   const effectiveDirectory = useEffectiveDirectory() ?? '';
-  const displaySource = useResolvedImageSource(source, effectiveDirectory);
+  const displaySource = useResolvedImageSource(source ?? '', effectiveDirectory);
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="relative aspect-video rounded-lg border border-border/40 bg-muted/10 overflow-hidden group text-left"
-      aria-label={filename}
+    <div
+      className="relative aspect-video min-w-0 overflow-hidden rounded-lg border border-border/40 bg-muted/10"
+      data-message-image-slot="true"
     >
-      <img src={displaySource || undefined} alt={filename} className="h-full w-full object-cover" loading="lazy" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="absolute bottom-0 left-0 right-0 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
-        <p className="text-xs font-medium truncate">{filename}</p>
-        {sizeText && <p className="text-xs opacity-80">{sizeText}</p>}
-      </div>
-    </button>
+      {source ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="group absolute inset-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+          aria-label={filename}
+        >
+          <img src={displaySource || undefined} alt={filename} className="h-full w-full object-cover" loading="lazy" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="absolute bottom-0 left-0 right-0 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+            <p className="text-xs font-medium truncate">{filename}</p>
+            {sizeText && <p className="text-xs opacity-80">{sizeText}</p>}
+          </div>
+        </button>
+      ) : (
+        <div
+          className={cn(
+            'absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center typography-meta text-muted-foreground',
+            materializationStatus === 'error' && 'text-[var(--status-error)]',
+          )}
+          role={materializationStatus === 'error' ? 'alert' : 'status'}
+          aria-label={filename}
+        >
+          {materializationStatus === 'loading' ? (
+            <Icon name="loader-4" className="size-5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Icon name={materializationStatus === 'error' ? 'error-warning' : 'file-image'} className="size-5" aria-hidden="true" />
+          )}
+          <span>
+            {materializationStatus === 'loading'
+              ? t('chat.fileAttachment.image.loading')
+              : materializationStatus === 'error'
+                ? t('chat.fileAttachment.image.loadFailed')
+                : filename}
+          </span>
+          {materializationStatus === 'error' && onRetry ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
+              {t('chat.fileAttachment.image.retry')}
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MessageManualImageLoadGroup = ({
+  images,
+  onLoad,
+}: {
+  images: Array<{ key: string; filename: string; sizeText: string }>;
+  onLoad: (key: string) => void;
+}) => {
+  const { t } = useI18n();
+  const actionLabel = t('chat.fileAttachment.image.loadManually');
+
+  return (
+    <div className="col-span-full flex flex-col gap-1.5" data-manual-image-load-group="true">
+      {images.map((image) => (
+        <Button
+          key={image.key}
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => onLoad(image.key)}
+          aria-label={actionLabel}
+          className="group h-auto min-h-8 min-w-0 justify-start gap-2 whitespace-normal border border-border/30 bg-muted/60 px-2 py-1.5 text-left hover:bg-[var(--interactive-hover)]"
+          data-manual-image-load-item={image.key}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/40 bg-background/70 text-muted-foreground transition-colors group-hover:text-foreground">
+            <Icon name="file-image" className="size-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate typography-meta text-foreground">{image.filename}</span>
+            {image.sizeText && <span className="block text-xs leading-tight text-muted-foreground">{image.sizeText}</span>}
+          </span>
+        </Button>
+      ))}
+    </div>
   );
 };
 
@@ -729,29 +927,27 @@ const MessageImageRow = memo(({
 }: {
   imageFiles: FilePart[];
   resolveDisplayName: (file: FilePart) => string;
-  onImageClick: (index: number) => void;
+  onImageClick: (file: FilePart) => void;
 }) => {
   const { t } = useI18n();
   const [expanded, setExpanded] = React.useState(false);
   const [canExpand, setCanExpand] = React.useState(false);
   const rowRef = React.useRef<HTMLDivElement>(null);
 
-  React.useLayoutEffect(() => {
+  const measureRow = useEvent(() => {
     const el = rowRef.current;
     if (!el || imageFiles.length <= 1) {
       setCanExpand(false);
       return;
     }
-    const measure = () => {
-      const first = el.firstElementChild as HTMLElement | null;
-      const rowH = first?.offsetHeight ?? 40;
-      setCanExpand(el.scrollHeight > rowH + 4);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [imageFiles]);
+    const first = el.firstElementChild as HTMLElement | null;
+    const rowH = first?.offsetHeight ?? 40;
+    setCanExpand(el.scrollHeight > rowH + 4);
+  });
+  useIsomorphicLayoutEffect(() => {
+    measureRow();
+  }, [imageFiles.length]);
+  useResizeObserver(rowRef, measureRow);
 
   React.useEffect(() => {
     if (!canExpand && expanded) setExpanded(false);
@@ -766,14 +962,14 @@ const MessageImageRow = memo(({
           !expanded && 'max-h-10 overflow-hidden',
         )}
       >
-        {imageFiles.map((file, index) => {
+        {imageFiles.map((file) => {
           const filename = resolveDisplayName(file) || 'Image';
           return (
-            <Tooltip key={`img-${file.url || file.filename || index}`}>
+            <Tooltip key={`img-${filePartDedupeKey(file)}`}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => onImageClick(index)}
+                  onClick={() => onImageClick(file)}
                   className="relative h-9 w-9 flex-none overflow-hidden rounded-md bg-transparent transition-colors hover:bg-[var(--interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   aria-label={filename}
                 >
@@ -812,8 +1008,42 @@ const MessageImageRow = memo(({
 
 MessageImageRow.displayName = 'MessageImageRow';
 
-export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }: MessageFilesDisplayProps) => {
+const MESSAGE_IMAGE_VISIBILITY_OPTIONS = { threshold: 0.01 } as const;
+
+/** Stable empty gate set so ungated rows keep referential equality across renders. */
+const EMPTY_IMAGE_GATE_KEYS: ReadonlySet<string> = new Set<string>();
+
+export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPopup, compact = false }: MessageFilesDisplayProps) => {
   const { t } = useI18n();
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const resolvedSessionID = sessionID
+    || files.find((file) => typeof file.sessionID === 'string' && file.sessionID)?.sessionID
+    || '';
+  const liveParts = useSessionParts(messageID, effectiveDirectory, resolvedSessionID || undefined);
+  const [fetchedParts, setFetchedParts] = React.useState<readonly { type?: string; id?: string; slim?: boolean; url?: string; filename?: string }[]>(
+    () => getLastFetchedSessionMessageParts(messageID) ?? [],
+  );
+  const hydrationRootRef = React.useRef<HTMLDivElement>(null);
+  const autoRequestedRef = React.useRef(false);
+  const materializationFlightRef = React.useRef<Promise<void> | null>(null);
+  const materializationFailedRef = React.useRef(false);
+  const projectedImageSlotKeysRef = React.useRef(new Set<string>());
+  const hydrationScopeRef = React.useRef('');
+  const [, bumpMaterializationRevision] = React.useReducer((value: number) => value + 1, 0);
+  const hydrationScope = `${effectiveDirectory}\n${resolvedSessionID}\n${messageID}`;
+  if (hydrationScopeRef.current !== hydrationScope) {
+    hydrationScopeRef.current = hydrationScope;
+    autoRequestedRef.current = false;
+    materializationFlightRef.current = null;
+    materializationFailedRef.current = false;
+    projectedImageSlotKeysRef.current = new Set<string>();
+    setFetchedParts(getLastFetchedSessionMessageParts(messageID) ?? []);
+  }
+  for (const file of files) {
+    if (file.type === 'file' && file.slim === true && file.mime?.startsWith('image/')) {
+      projectedImageSlotKeysRef.current.add(filePartDedupeKey(file));
+    }
+  }
 
   const extractFilename = (path?: string): string => {
     if (!path) return 'Unnamed file';
@@ -825,13 +1055,16 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
     return filename || path;
   };
 
-  const resolveDisplayName = React.useCallback((file: FilePart): string => {
-    const isGitHubLink = getGitHubLinkKind(file) !== null;
-    if (isGitHubLink && typeof file.filename === 'string' && file.filename.trim().length > 0) {
-      return file.filename.trim();
-    }
-    return extractFilename(file.filename || file.url);
-  }, []);
+  const resolveDisplayName = React.useMemo(
+    () => (file: FilePart): string => {
+      const isGitHubLink = getGitHubLinkKind(file) !== null;
+      if (isGitHubLink && typeof file.filename === 'string' && file.filename.trim().length > 0) {
+        return file.filename.trim();
+      }
+      return extractFilename(file.filename || file.url) || t('chat.fileAttachment.fileFallback');
+    },
+    [t],
+  );
 
   const formatFileSize = (bytes?: number) => {
     if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '';
@@ -841,31 +1074,142 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
   };
 
   // Guard against optimistic+server part races that leave two file parts for one attachment.
-  const dedupedFileItems = React.useMemo(() => {
-    const seen = new Set<string>();
-    const next: FilePart[] = [];
-    for (const file of files) {
-      if (
-        file.type !== 'file'
-        || !(file.mime || file.url)
-        || isCodeSelectionFilePart(file)
-      ) {
-        continue;
-      }
-      const key = filePartDedupeKey(file);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      next.push(file);
-    }
-    return next;
-  }, [files]);
+  const dedupedFileItems = React.useMemo(
+    () => resolveMessageDisplayFiles(files, [...liveParts, ...fetchedParts]),
+    [fetchedParts, files, liveParts],
+  );
 
-  const imageFiles = dedupedFileItems.filter(f => f.mime?.startsWith('image/') && f.url);
+  const transportIdentity = useRuntimeTransportIdentity();
+  // Relay size gate: an oversized slim image defers whole-message materialization,
+  // and an oversized file-stream image defers its own byte fetch, until a tap.
+  const slimManualLoadRequired = React.useMemo(
+    () => messageSlimImageManualLoadRequired(transportIdentity, dedupedFileItems),
+    [dedupedFileItems, transportIdentity],
+  );
+  const [approvedImageLoad, setApprovedImageLoad] = React.useState<{ scope: string; keys: ReadonlySet<string> }>({
+    scope: '',
+    keys: EMPTY_IMAGE_GATE_KEYS,
+  });
+  const approvedImageKeys = approvedImageLoad.scope === hydrationScope
+    ? approvedImageLoad.keys
+    : EMPTY_IMAGE_GATE_KEYS;
+  const gatedImageKeys = React.useMemo(() => {
+    if (!isRelayTransport(transportIdentity)) return EMPTY_IMAGE_GATE_KEYS;
+    const keys = new Set<string>();
+    for (const file of dedupedFileItems) {
+      const key = filePartDedupeKey(file);
+      if (approvedImageKeys.has(key)) continue;
+      if (filePartImageManualLoadRequired(transportIdentity, file)) keys.add(key);
+    }
+    return keys;
+  }, [approvedImageKeys, dedupedFileItems, transportIdentity]);
+
+  const imageFiles = dedupedFileItems.filter(f => f.mime?.startsWith('image/'));
+  const fullImageFiles = imageFiles.filter((file) => Boolean(file.url));
+  const projectedImageFiles = imageFiles.filter((file) => projectedImageSlotKeysRef.current.has(filePartDedupeKey(file)));
+  const compactImageFiles = imageFiles.filter((file) => !projectedImageSlotKeysRef.current.has(filePartDedupeKey(file)) && Boolean(file.url));
   const otherFiles = dedupedFileItems.filter(f => !f.mime?.startsWith('image/'));
+  const hasSlimImage = imageFiles.some((file) => file.slim === true);
+  const slimImageLoadGateActive = slimManualLoadRequired
+    && imageFiles.some((file) => file.slim === true && !approvedImageKeys.has(filePartDedupeKey(file)));
+  const manualImageFiles = imageFiles.filter((file) => {
+    const key = filePartDedupeKey(file);
+    if (approvedImageKeys.has(key)) return false;
+    if (file.slim === true) return slimManualLoadRequired;
+    return gatedImageKeys.has(key);
+  });
+  const manualImageKeys = new Set(manualImageFiles.map(filePartDedupeKey));
+  const manualImageLoadItems = manualImageFiles.map((file) => ({
+    key: filePartDedupeKey(file),
+    filename: resolveDisplayName(file),
+    sizeText: formatFileSize(filePartImageKnownBytes(file)),
+  }));
+
+  const requestImageMaterialization = useEvent((retry = false) => {
+    if (!hasSlimImage || !effectiveDirectory || !resolvedSessionID || !messageID) return;
+    if (!retry && autoRequestedRef.current) return;
+    if (materializationFlightRef.current) return;
+
+    autoRequestedRef.current = true;
+    materializationFailedRef.current = false;
+    const flight = materializeTranscriptMessage(effectiveDirectory, resolvedSessionID, messageID)
+      .then(() => {
+        const parts = getLastFetchedSessionMessageParts(messageID);
+        if (parts && parts.length > 0) setFetchedParts(parts);
+      })
+      .catch(() => {
+        const parts = getLastFetchedSessionMessageParts(messageID);
+        if (parts && parts.length > 0) {
+          setFetchedParts(parts);
+          return;
+        }
+        materializationFailedRef.current = true;
+      })
+      .finally(() => {
+        materializationFlightRef.current = null;
+        bumpMaterializationRevision();
+      });
+    materializationFlightRef.current = flight;
+    bumpMaterializationRevision();
+  });
+
+  const approveManualImageLoad = useEvent((key: string) => {
+    setApprovedImageLoad((previous) => {
+      const keys = previous.scope === hydrationScope ? new Set(previous.keys) : new Set<string>();
+      keys.add(key);
+      return { scope: hydrationScope, keys };
+    });
+    if (hasSlimImage) requestImageMaterialization(true);
+  });
+
+  useIntersectionObserver(
+    hasSlimImage && !slimImageLoadGateActive ? hydrationRootRef : null,
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        requestImageMaterialization(false);
+      }
+    },
+    MESSAGE_IMAGE_VISIBILITY_OPTIONS,
+  );
+
+  React.useEffect(() => {
+    if (!hasSlimImage) return;
+    if (slimImageLoadGateActive) return;
+    const element = hydrationRootRef.current;
+    if (!element) return;
+    const root = element.closest('[data-scrollbar="chat"]');
+    if (!root || typeof IntersectionObserver === 'undefined') {
+      requestImageMaterialization(false);
+      return;
+    }
+    const er = element.getBoundingClientRect();
+    const rr = root.getBoundingClientRect();
+    if (er.bottom > rr.top && er.top < rr.bottom) {
+      requestImageMaterialization(false);
+    }
+  }, [effectiveDirectory, hasSlimImage, messageID, resolvedSessionID, slimImageLoadGateActive]); // eslint-disable-line react-hooks/exhaustive-deps -- semantic scope deps; useEvent identity never controls reruns.
+
+  const repositoryMaterializationStatus = hasSlimImage && effectiveDirectory && resolvedSessionID
+    ? getTranscriptMessageMaterializationState(effectiveDirectory, resolvedSessionID, messageID).status
+    : 'ready';
+  const hasDisplayableImage = dedupedFileItems.some((file) => (
+    file.mime?.startsWith('image/') === true
+    && typeof file.url === 'string'
+    && file.url.length > 0
+    && file.slim !== true
+  ));
+  const imageMaterializationStatus = hasDisplayableImage
+    ? 'ready'
+    : resolveSlimImageMaterializationStatus({
+      hasSlimImage,
+      flightActive: Boolean(materializationFlightRef.current),
+      failed: materializationFailedRef.current,
+      repositoryStatus: repositoryMaterializationStatus,
+    });
 
   const imageGallery = React.useMemo(
     () =>
-      imageFiles.flatMap((file) => {
+      fullImageFiles.flatMap((file) => {
         if (!file.url) return [];
         const filename = resolveDisplayName(file) || 'Image';
         return [{
@@ -875,14 +1219,15 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
           size: file.size,
         }];
       }),
-    [imageFiles, resolveDisplayName]
+    [fullImageFiles, resolveDisplayName]
   );
 
-  const handleImageClick = React.useCallback((index: number) => {
+  const handleImageClick = useEvent((targetFile: FilePart) => {
     if (!onShowPopup) {
       return;
     }
 
+    const index = fullImageFiles.findIndex((file) => filePartDedupeKey(file) === filePartDedupeKey(targetFile));
     const file = imageGallery[index];
     if (!file?.url) return;
 
@@ -907,16 +1252,16 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
         index,
       },
     });
-  }, [imageGallery, onShowPopup]);
+  });
 
   if (dedupedFileItems.length === 0) return null;
 
   if (compact) {
     return (
-      <div className="space-y-1.5 mt-1.5">
+      <div ref={hydrationRootRef} className="space-y-1.5 mt-1.5" data-message-files={messageID}>
         {otherFiles.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {otherFiles.map((file, index) => {
+            {otherFiles.map((file) => {
               const fileName = resolveDisplayName(file);
               const ext = fileName.split('.').pop() || '';
               const sizeText = formatFileSize(file.size);
@@ -926,7 +1271,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
                 || isDirectoryAttachmentPath(file.filename)
                 || isDirectoryAttachmentPath(file.url);
               return (
-                <Tooltip key={`file-${file.url || file.filename || index}`}>
+                <Tooltip key={`file-${filePartDedupeKey(file)}`}>
                   <TooltipTrigger asChild>
                     {githubLinkKind && file.url ? (
                       <button
@@ -967,9 +1312,32 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
           </div>
         )}
 
-        {imageFiles.length > 0 && (
+        {manualImageLoadItems.length > 0 ? (
+          <MessageManualImageLoadGroup images={manualImageLoadItems} onLoad={approveManualImageLoad} />
+        ) : null}
+
+        {projectedImageFiles.some((file) => !manualImageKeys.has(filePartDedupeKey(file))) ? (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {projectedImageFiles.filter((file) => !manualImageKeys.has(filePartDedupeKey(file))).map((file) => {
+              const fileName = resolveDisplayName(file);
+              return (
+                <MessageImageCard
+                  key={filePartDedupeKey(file)}
+                  source={file.url}
+                  filename={fileName}
+                  sizeText={formatFileSize(filePartImageKnownBytes(file))}
+                  materializationStatus={file.url ? 'ready' : imageMaterializationStatus}
+                  onRetry={() => requestImageMaterialization(true)}
+                  onOpen={file.url ? () => handleImageClick(file) : undefined}
+                />
+              );
+            })}
+          </div>
+        ) : null}
+
+        {compactImageFiles.some((file) => !manualImageKeys.has(filePartDedupeKey(file))) && (
           <MessageImageRow
-            imageFiles={imageFiles}
+            imageFiles={compactImageFiles.filter((file) => !manualImageKeys.has(filePartDedupeKey(file)))}
             resolveDisplayName={resolveDisplayName}
             onImageClick={handleImageClick}
           />
@@ -979,31 +1347,48 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
   }
 
   return (
-    <div className={cn(
+    <div ref={hydrationRootRef} data-message-files={messageID} className={cn(
       "grid gap-2",
       compact ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
     )}>
-      {dedupedFileItems.map((file, index) => {
+      {manualImageLoadItems.length > 0 ? (
+        <MessageManualImageLoadGroup images={manualImageLoadItems} onLoad={approveManualImageLoad} />
+      ) : null}
+      {dedupedFileItems.map((file) => {
         const fileName = resolveDisplayName(file);
         const isImage = file.mime?.startsWith('image/');
         const sizeText = formatFileSize(file.size);
         const githubLinkKind = getGitHubLinkKind(file);
 
+        if (manualImageKeys.has(filePartDedupeKey(file))) return null;
+
         if (isImage && file.url) {
           return (
             <MessageImageCard
-              key={file.url || `${fileName}-${index}`}
+              key={filePartDedupeKey(file)}
               source={file.url}
               filename={fileName}
               sizeText={sizeText}
-              onOpen={() => handleImageClick(imageGallery.findIndex((image) => image.url === file.url))}
+              onOpen={() => handleImageClick(file)}
+            />
+          );
+        }
+
+        if (isImage) {
+          return (
+            <MessageImageCard
+              key={filePartDedupeKey(file)}
+              filename={fileName}
+              sizeText={sizeText}
+              materializationStatus={imageMaterializationStatus}
+              onRetry={() => requestImageMaterialization(true)}
             />
           );
         }
 
         if (githubLinkKind && file.url) {
           return (
-            <Tooltip key={file.url || `${fileName}-${index}`}>
+            <Tooltip key={filePartDedupeKey(file)}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
@@ -1043,7 +1428,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
 
         if (isDrawio) {
           return (
-            <Tooltip key={file.url || `${fileName}-${index}`}>
+            <Tooltip key={filePartDedupeKey(file)}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
@@ -1071,7 +1456,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
         }
 
         return (
-          <Tooltip key={file.url || `${fileName}-${index}`}>
+          <Tooltip key={filePartDedupeKey(file)}>
             <TooltipTrigger asChild>
               <button
                 type="button"

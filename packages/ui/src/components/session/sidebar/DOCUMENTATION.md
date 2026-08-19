@@ -21,7 +21,7 @@
 - Project/worktree Show more first reveals already-fetched rows, then fetches the next 20-session page for its own directory at the local boundary.
 - The mobile session tree shows 20 root sessions by default for projects without worktrees. Projects with worktrees show 5 sessions per root/worktree bucket by default; Show more and Show fewer use that bucket's default page size. Collapsing and reopening a project or worktree preserves its revealed session count until Show fewer is selected or the sessions surface closes.
 - Mobile project, worktree, and session rows expose their matching sidebar actions through a touch-sized bottom action panel after a 500ms long press. Scrolling movement and pointer cancellation abort the gesture, and the triggering click is consumed. Dedicated mobile and the responsive Web sessions sheet share the same hold controller; Web session rows retain their desktop context menu, while project and worktree context menus open the touch action panel.
-- Project rows retain the persisted project-registry order while session and worktree data hydrates. A successfully sent message promotes its owning project to the top; ordinary activity and selection do not reorder the structural project tree.
+- Project rows retain the persisted project-registry order while session and worktree data hydrates. A successfully sent message promotes its owning project to the top, advancing both the registry order and the persisted manual order so the default manual sort keeps the promoted project first; ordinary activity and selection do not reorder the structural project tree. The promoted/dragged order is PUT to the server settings `projects` array, which is the cross-runtime order contract: settings sync rebases the local manual order onto the server order, so desktop, web, and mobile render the same project order.
 - The Projects section header no longer shows a global syncing accessory. While a
   project's session directories are fetching, that project's folder icon swaps to a
   spinner. The expanded body shows localized "Loading sessions…" only when there is
@@ -42,10 +42,13 @@
   the existing SDK-backed global session list; unsupported `null` must not be
   treated as an authoritative empty success that wipes the client seed.
 - Cached starts use OpenCode's `start` timestamp filter and merge only sessions
-  changed since the last successful sync. SQLite separately tracks the last
-  incremental and last full reconciliation times; a full newest-20 pass runs at
-  most once per 24 hours to remove sessions deleted or archived while the app
-  was closed.
+  changed since the last successful sync, and only when that directory already
+  has at least one cached root summary. An empty cached directory is not
+  incrementally eligible, so a later refresh can rediscover historical roots
+  whose `time.updated` is older than `lastSyncedAt`. SQLite separately tracks
+  the last incremental and last full reconciliation times; a full newest-20
+  pass also runs at most once per 24 hours to remove sessions deleted or
+  archived while the app was closed.
 - `SessionStartupCoordinator` owns that pass before `SessionSidebar` mounts its
   normal orchestration. Hydrate of the SQLite session-summary index starts
   immediately (does not wait for settings) so the last snapshot can fill the
@@ -127,7 +130,7 @@
 - Archived groups are collapsed by default and support bulk deletion at group/folder level.
 - Session rows support compact inline dates in minimal mode and simplified metadata in default mode.
 - Session-row visual selection is published through a narrow row-only Focus store before authoritative navigation. Focus includes the render scope (`recent` or `project`) plus session/project identity, so duplicate representations never both receive the Active background or satisfy the wrong paint barrier.
-- Previous/next-session navigation consumes ordered snapshots published from the rendered sidebar model. A Recent-origin focus cycles Recent items; a project-origin focus cycles only the logically visible rows inside its current expanded project. Rows hidden by project/group/folder collapse or the group's Show more boundary are excluded, while busy and retrying rows retained beyond that boundary remain keyboard targets. Shortcuts never cross into another project as a fallback.
+- Previous/next-session navigation consumes ordered snapshots published from the rendered sidebar model. A Recent-origin focus cycles Recent items; a project-origin focus cycles the logically visible project rows in sidebar order, including across projects. Rows hidden by project/group/folder collapse or the group's Show more boundary are excluded, while busy and retrying rows retained beyond that boundary remain keyboard targets.
 - Advancing through Recent with the next-session shortcut reveals all remaining rows in the bounded 8-session Recent set, exactly like Show more. Navigation wraps after the eighth row and never loads another remote Recent page.
 - Global Mod+1…9 navigation numbers the first nine logically visible session rows from top to bottom across Recent and the expanded project tree. Container headers never consume a number; duplicate Recent/Project representations remain distinct Focus rows. Holding the platform primary modifier for 500ms reveals compact shortcut chips only on those rows; each chip occupies only its intrinsic width and replaces row quick actions until release. Releasing the modifier, window blur, or page hide clears the hints immediately.
 - Every session navigation announces a monotonic intent revision. A later sidebar, keyboard, deep-link, or switcher intent invalidates an older pending sidebar commit, including ABA sequences such as A -> B -> A.
@@ -180,7 +183,7 @@
 - `hooks/useProjectSessionSelection.ts`: Resolves active/current project-session selection logic and session-directory context.
 - `hooks/useGroupOrdering.ts`: Applies persisted/custom group order with stable fallback ordering; archived groups are reorderable.
 - `hooks/useArchivedAutoFolders.ts`: Maintains archived auto-folder structure and assignment behavior.
-- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/pinned/group order/active session) to storage + desktop settings.
+- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/pinned/group order/active session) to instance-scoped storage (`oc.inst.{runtimeKey}.*`) + desktop settings. Project registry order and `projectSortOrder` are also instance-scoped so two mobile hosts do not share one list.
 - `hooks/useProjectRepoStatus.ts`: Tracks per-project git-repo state and root branch metadata.
 - `hooks/useProjectSessionLists.ts`: Reads live and archived project buckets from the shared ownership index.
 - `hooks/useSessionFolderCleanup.ts`: Cleans stale folder session IDs by reconciling known sessions/archived scopes.

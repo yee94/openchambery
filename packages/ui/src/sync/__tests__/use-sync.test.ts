@@ -20,11 +20,11 @@ describe("hasSessionMessageBoundary", () => {
 })
 
 describe("getReactiveSessionMessageRequestLimit", () => {
-  test("product limit is turns — floor is link-tier initial (local 6 when not on relay)", () => {
+  test("product limit is turns — floor is link-tier initial (local 3 when not on relay)", () => {
     // Default test env has no active relay → local tier.
     expect(getReactiveSessionMessageRequestLimit({
       recordedLimit: 0,
-    })).toBe(6)
+    })).toBe(3)
     expect(getReactiveSessionMessageRequestLimit({
       recordedLimit: 8,
       renderedMessageCount: 999,

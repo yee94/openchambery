@@ -56,10 +56,9 @@ const getCookieValue = (req, name) => {
   return '';
 };
 
-const hasPreviewProxyCredential = (req) => {
-  if (!getRequestPathname(req).startsWith('/api/preview/proxy/')) return false;
-  return Boolean(getQueryParam(req, 'oc_preview_token') || getCookieValue(req, 'oc_preview_token'));
-};
+export const hasPreviewProxyCredential = (req) => (
+  Boolean(getQueryParam(req, 'oc_preview_token') || getCookieValue(req, 'oc_preview_token'))
+);
 
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
@@ -403,8 +402,8 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     getDirectCandidateUrls = () => [],
     // Stable server identity for client-side verification of learned addresses.
     getServerId = async () => null,
-    // Display name a paired device shows for THIS server (issuing machine's
-    // hostname), distinct from the per-device pairing label typed by the operator.
+    // Fallback display name a paired device shows for THIS server when the
+    // pairing payload did not carry an operator-typed instance name.
     getServerLabel = () => 'OpenChamber',
     authorizeManagedOpenCodeBridgeRequest = () => false,
   } = dependencies;
@@ -637,7 +636,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     // preview proxy validates against the registered target id/TTL. Let those
     // requests reach that stricter check instead of failing the global UI auth
     // gate when the short-lived browser URL auth token expires.
-    if (hasPreviewProxyCredential(req)) {
+    if (getRequestPathname(req).startsWith('/api/preview/proxy/') && hasPreviewProxyCredential(req)) {
       return next();
     }
 
@@ -1123,7 +1122,14 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
         return res.status(413).json({ error: 'Content exceeds maximum size of 1048576 bytes' });
       }
       express.json({ limit: '1mb' })(req, res, next);
-    } else if (!(req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/)) && req.path.startsWith('/api/openchamber/message-queue')) {
+    } else if (
+      (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/))
+      || (req.method === 'PUT' && req.path.match(/^\/api\/fs\/prompt-attachments\/[^/]+\/?$/))
+    ) {
+      // Binary attachment uploads stream as the request body. Parsing JSON here
+      // would buffer the entire payload and block the relay tunnel.
+      next();
+    } else if (req.path.startsWith('/api/openchamber/message-queue')) {
       express.json({ limit: req.method === 'POST' && req.path === '/api/openchamber/message-queue/items' ? MESSAGE_QUEUE_ADMISSION_HTTP_MAX_BYTES : '1mb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/openchamber/session-index') ||

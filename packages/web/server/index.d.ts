@@ -18,6 +18,7 @@ export interface StartWebUiServerOptions {
   exitOnShutdown?: boolean;
   uiPassword?: string | null;
   sessionIndexDbPath?: string | null;
+  transcriptCacheDbPath?: string | null;
   messageQueueDbPath?: string | null;
   messageQueueAttachmentRoot?: string | null;
 }

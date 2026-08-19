@@ -13,7 +13,6 @@ import {
   getTranscriptRepository,
   purgeTranscriptSession,
   refreshTranscriptFromAuthority,
-  requireTranscriptRepository,
   transcriptScope,
 } from "./transcript-repository-runtime"
 import { stripSessionDiffSnapshots } from "./sanitize"
@@ -28,6 +27,12 @@ import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import {
+  SESSION_AUTHORITY_REVALIDATE_WINDOW_MS,
+  isSessionAuthorityRevalidateFresh,
+} from "./session-authority-revalidate"
+
+export { SESSION_AUTHORITY_REVALIDATE_WINDOW_MS }
+import {
   getHistorySessionTurnLimit,
   getInitialSessionTurnLimit,
   getMessageRefetchLimit,
@@ -37,7 +42,6 @@ import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projectio
 import { projectSession } from "./v2-runtime"
 
 const MAX_SEEN_DIRS = 30
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
 /** User refresh must not fight an in-flight SSE turn. */
 export function isUserTranscriptRefreshBlocked(
@@ -98,10 +102,6 @@ export function resolveSessionHistoryLoadPlan(
   if (meta.complete) return { kind: "exhausted" }
   if (!meta.cursor) return { kind: "recover-cursor" }
   return { kind: "prepend", before: meta.cursor }
-}
-
-function sortParts(parts: Part[]) {
-  return parts.filter((p) => !!p?.id).sort((a, b) => cmp(a.id, b.id))
 }
 
 function isHeavyConstrainedSessionCache(directory: string, sessionID: string): boolean {
@@ -188,15 +188,6 @@ export function useSync() {
   const keyFor = useCallback(
     (sessionID: string, targetDirectory = directory) => `${targetDirectory}\n${sessionID}`,
     [directory],
-  )
-
-  const getStoreForDirectory = useCallback(
-    (targetDirectory = directory) => (
-      targetDirectory === directory
-        ? store
-        : childStores.getChild(targetDirectory)
-    ),
-    [childStores, directory, store],
   )
 
   // Thin compatibility adapter from repository pagination + request state.
@@ -386,14 +377,15 @@ export function useSync() {
           const boundary = pagination?.boundary ?? { kind: "unknown" as const, loadedTurns: 0 }
           const hasSession = Binary.search(current.session, sessionID, (s) => s.id).found
           const request = repository?.getRequestState?.(scope)
-          // Reuse when we have a resolved transcript and known boundary (not unknown),
-          // unless forced or request is dirty/error.
+          // Reuse a resolved transcript with a known boundary unless forced,
+          // dirty/error, or the enter-and-sync window has elapsed.
           if (
             !force
             && hasTranscript
             && boundary.kind !== "unknown"
             && request?.status !== "error"
             && hasSession
+            && isSessionAuthorityRevalidateFresh(targetDirectory, sessionID)
           ) {
             seedSessionTodosFromHydratedTranscript({
               directory: targetDirectory,
@@ -521,7 +513,7 @@ export function useSync() {
   )
 
   /**
-   * User-triggered transcript refresh — fetch first, replace tail on success.
+   * User-triggered transcript refresh — fetch first, reconcile the tail on success.
    * Failure keeps the prior transcript. Busy/retry refuses so SSE keeps the live turn.
    */
   const refreshSessionTranscript = useCallback(

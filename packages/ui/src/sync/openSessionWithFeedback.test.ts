@@ -35,7 +35,7 @@ mock.module('@/lib/i18n/store', () => ({
     key: string,
     params?: Record<string, string | number>,
   ) => {
-    let template = dictionary[key] ?? key;
+    const template = dictionary[key] ?? key;
     if (!params) return template;
     return template.replace(/\{([^{}]+)\}/g, (_m, raw) => {
       const value = params[String(raw).trim()];

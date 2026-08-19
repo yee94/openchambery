@@ -233,7 +233,7 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).not.toContain('<ChatPromptTextarea');
     expect(chatInput).not.toContain('<ChatPromptFooter');
     expect(chatInput).toContain('inputHeader={composerInputHeader}');
-    expect(chatInput).toContain('attachmentContent={isMobile && !mobileComposerExpanded ? undefined : composerAttachmentContent}');
+    expect(chatInput).toContain('attachmentContent={isMobile && mobileComposerChrome !== \'full\' ? undefined : composerAttachmentContent}');
     expect(chatInput).toContain('footerContent={composerFooterContent}');
     expect(chatInput).not.toContain('<Textarea');
     expect(promptComposer).toContain('<Textarea');

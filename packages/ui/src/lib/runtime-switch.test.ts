@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getRuntimeApiBaseUrl, getRuntimeGeneration, getRuntimeTransportIdentity, isRuntimeEndpointIdentityChange, switchRuntimeEndpoint } from './runtime-switch';
+import { getRuntimeApiBaseUrl, getRuntimeGeneration, getRuntimeTransportIdentity, isRuntimeEndpointIdentityChange, isRuntimeInstanceChange, switchRuntimeEndpoint } from './runtime-switch';
 import { clearRuntimeUrlAuthToken, setRuntimeExtraHeaders } from './runtime-auth';
 
 describe('runtime endpoint switching', () => {
@@ -35,6 +35,23 @@ describe('runtime endpoint switching', () => {
       previousRuntimeKey: 'relay-a',
       transportIdentityChanged: true,
     })).toBe(true);
+  });
+
+  test('classifies instance changes by runtimeKey, not LAN⇄relay transport swaps', () => {
+    expect(isRuntimeInstanceChange({
+      apiBaseUrl: 'https://app.example',
+      previousApiBaseUrl: 'https://app.example',
+      runtimeKey: 'relay:server-b@wss://relay.example',
+      previousRuntimeKey: 'relay:server-a@wss://relay.example',
+      transportIdentityChanged: true,
+    })).toBe(true);
+    expect(isRuntimeInstanceChange({
+      apiBaseUrl: 'https://app.example',
+      previousApiBaseUrl: 'http://192.168.1.20:8787',
+      runtimeKey: 'relay:server-a@wss://relay.example',
+      previousRuntimeKey: 'relay:server-a@wss://relay.example',
+      transportIdentityChanged: true,
+    })).toBe(false);
   });
 
   test('does not broadcast or remint auth for an equivalent endpoint switch', async () => {

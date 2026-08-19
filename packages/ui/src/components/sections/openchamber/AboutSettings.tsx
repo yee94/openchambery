@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useShallow } from 'zustand/react/shallow';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
@@ -10,7 +11,12 @@ import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getMobileClientVersion } from '@/lib/mobileAppVersion';
-import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import {
+  exportAndDownloadClientDiagnostics,
+  isTranscriptDiagnosticsEnabled,
+  setTranscriptDiagnosticsEnabled,
+} from '@/sync/transcript-diagnostics-runtime';
+import { SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
 
 const GITHUB_URL = 'https://github.com/yee94/openchamber';
 const DISCORD_URL = 'https://discord.gg/ZYRSdnwwKA';
@@ -43,8 +49,37 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     restartToUpdate: s.restartToUpdate,
   })));
   const { isMobile } = useDeviceInfo();
+  const [exportingDiagnostics, setExportingDiagnostics] = React.useState(false);
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = React.useState(() => isTranscriptDiagnosticsEnabled());
+
+  const handleDiagnosticsEnabledChange = useEvent((enabled: boolean) => {
+    setTranscriptDiagnosticsEnabled(enabled);
+    setDiagnosticsEnabled(enabled);
+  });
 
   const currentVersion = clientVersion || t('settings.openchamber.about.state.unknown');
+
+  const handleExportDiagnostics = useEvent(async () => {
+    if (exportingDiagnostics) return;
+    setExportingDiagnostics(true);
+    try {
+      const { outcome, eventCount } = await exportAndDownloadClientDiagnostics();
+      if (outcome === 'cancelled') return;
+      if (outcome === 'failed') {
+        toast.error(t('settings.openchamber.about.diagnostics.toast.failed'));
+        return;
+      }
+      toast.success(
+        eventCount > 0
+          ? t('settings.openchamber.about.diagnostics.toast.exported')
+          : t('settings.openchamber.about.diagnostics.toast.empty'),
+      );
+    } catch {
+      toast.error(t('settings.openchamber.about.diagnostics.toast.failed'));
+    } finally {
+      setExportingDiagnostics(false);
+    }
+  });
 
   React.useEffect(() => {
     let cancelled = false;
@@ -192,6 +227,31 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
             </SettingsRow>
           )}
+          <SettingsToggleRow
+            itemId="about.diagnostics"
+            checked={diagnosticsEnabled}
+            onChange={handleDiagnosticsEnabledChange}
+            label={t('settings.openchamber.about.diagnostics.label')}
+            ariaLabel={t('settings.openchamber.about.diagnostics.label')}
+          />
+          {diagnosticsEnabled && (
+          <SettingsRow
+            itemId="about.export-diagnostics"
+            label={t('settings.openchamber.about.diagnostics.export')}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exportingDiagnostics}
+              onClick={() => void handleExportDiagnostics()}
+            >
+              {exportingDiagnostics
+                ? t('settings.openchamber.about.diagnostics.exporting')
+                : t('settings.openchamber.about.diagnostics.export')}
+            </Button>
+          </SettingsRow>
+          )}
         </SettingsGroup>
 
         <div className="flex flex-col items-center gap-3 text-center">
@@ -302,6 +362,32 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           <SettingsRow>
             <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
           </SettingsRow>
+        )}
+
+        <SettingsToggleRow
+          itemId="about.diagnostics"
+          checked={diagnosticsEnabled}
+          onChange={handleDiagnosticsEnabledChange}
+          label={t('settings.openchamber.about.diagnostics.label')}
+          ariaLabel={t('settings.openchamber.about.diagnostics.label')}
+        />
+        {diagnosticsEnabled && (
+        <SettingsRow
+          itemId="about.export-diagnostics"
+          label={t('settings.openchamber.about.diagnostics.export')}
+        >
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={exportingDiagnostics}
+            onClick={() => void handleExportDiagnostics()}
+          >
+            {exportingDiagnostics
+              ? t('settings.openchamber.about.diagnostics.exporting')
+              : t('settings.openchamber.about.diagnostics.export')}
+          </Button>
+        </SettingsRow>
         )}
 
         <SettingsRow controlClassName="flex-wrap">

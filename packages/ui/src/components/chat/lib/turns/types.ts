@@ -85,7 +85,8 @@ export type TurnCompletionDisposition = 'active' | 'normal' | 'abnormal';
 /**
  * Activity presentation semantics for a turn, derived only from the user message.
  * - default: ordinary user turn
- * - compaction: user message is a /compact (raw compaction part or normalized text)
+ * - compaction: user message is a /compact (raw compaction part or normalized text).
+ *   The compact command itself is view-hidden; Activity attaches to the assistant stream.
  */
 export type TurnActivityPresentationKind = 'default' | 'compaction';
 

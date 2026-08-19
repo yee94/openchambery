@@ -61,6 +61,8 @@ export interface MessageReferenceDetectContext {
     commandNames?: ReadonlySet<string>;
     /** Lowercased filename -> visual kind for `[filename]` citations. */
     citationIcons?: ReadonlyMap<string, 'image' | 'attachment'>;
+    /** Lowercased citation key -> compact label (`/abs/hash.png` → `image-1.png`). */
+    citationDisplayNames?: ReadonlyMap<string, string>;
     /** sessionId -> title used when materializing `@session:id`. */
     sessionTitles?: ReadonlyMap<string, string>;
     /** Exact visible Session mentions recovered from the message's semantic context. */

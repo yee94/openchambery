@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRelayTransport, needsRuntimeImageStream, resolveImageSource } from './imageSource';
+import {
+  RELAY_IMAGE_AUTO_LOAD_MAX_BYTES,
+  imageRequiresManualLoadOverRelay,
+  isRelayTransport,
+  needsRuntimeImageStream,
+  resolveImageSource,
+} from './imageSource';
 
 const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 const helperSource = readFileSync(join(sourceDirectory, 'imageSource.ts'), 'utf8');
@@ -84,6 +90,26 @@ describe('isRelayTransport', () => {
   });
 });
 
+describe('imageRequiresManualLoadOverRelay', () => {
+  test('gates only oversized known sizes on relay transport', () => {
+    const relay = 'relay:{"serverId":"srv_123"}';
+    const direct = 'direct:url:http://127.0.0.1:4096';
+
+    expect(imageRequiresManualLoadOverRelay(relay, RELAY_IMAGE_AUTO_LOAD_MAX_BYTES)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, RELAY_IMAGE_AUTO_LOAD_MAX_BYTES + 1)).toBe(true);
+    expect(imageRequiresManualLoadOverRelay(direct, RELAY_IMAGE_AUTO_LOAD_MAX_BYTES * 20)).toBe(false);
+  });
+
+  test('never gates unknown or invalid sizes', () => {
+    const relay = 'relay:{"serverId":"srv_123"}';
+    expect(imageRequiresManualLoadOverRelay(relay, undefined)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, 0)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, -5)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, Number.NaN)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, Number.POSITIVE_INFINITY)).toBe(false);
+  });
+});
+
 describe('needsRuntimeImageStream', () => {
   test('streams every runtime-file source, including local Electron file URLs', () => {
     expect(needsRuntimeImageStream(resolveImageSource('file:///tmp/photo.png', '/workspace'))).toBe(true);
@@ -129,7 +155,9 @@ describe('image source contracts', () => {
     // Auto-load from reconcile on first paint/commit, plus click/keyboard retry path.
     expect(rendererSource.match(/loadImage\(image, state\);/g)).toHaveLength(2);
     expect(rendererSource).toContain('state.controller || state.objectUrl');
-    expect(rendererSource).toContain('decorateMarkdownImages(block, ctx)');
+    // First paint runs the full decorate pass (images included) so the sync
+    // layout already matches the async commit's geometry.
+    expect(rendererSource).toContain('decorateMarkdown(block, ctx)');
     expect(decorateSource).toContain("image.setAttribute('data-md-image-source', source)");
     expect(decorateSource).toContain("spriteIcon('file-image', 'size-10')");
     expect(decorateSource).toContain("spriteIcon('download', 'size-3')");
@@ -194,7 +222,7 @@ describe('image source contracts', () => {
   });
 
   test('shares resolved display sources while popup payloads retain original URLs', () => {
-    expect(attachmentSource).toContain("import { useResolvedImageSource } from './imageSource'");
+    expect(attachmentSource).toContain("import { useResolvedImageSource,");
     expect(attachmentSource).toContain('source={file.url}');
     expect(attachmentSource).toContain('url: file.url');
     expect(dialogSource).toContain("import { useResolvedImageSource } from '../imageSource'");

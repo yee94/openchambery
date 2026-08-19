@@ -134,6 +134,34 @@ describe('buildSentMessageComposerRestoration', () => {
     expect(payload.snapshot.attachments[1]?.locator).toEqual({ kind: 'url', url: 'https://example.test/b.txt' })
     expect(payload.values.get(payload.snapshot.attachments[1]!.attachmentRefID)).toBe('https://example.test/b.txt')
   })
+
+  test('skips slim or url-less file parts so edit actions must materialize first', async () => {
+    const payload = await buildSentMessageComposerRestoration([
+      { type: 'text', text: 'pic' },
+      { type: 'file', mime: 'image/png', filename: 'shot.png', slim: true },
+      { type: 'file', mime: 'image/png', filename: 'empty.png' },
+    ])
+    expect(payload.snapshot.attachments).toEqual([])
+    expect(payload.values.size).toBe(0)
+  })
+
+  test('skips a slim file part even when it carries a preview url', async () => {
+    const preview = 'data:image/png;base64,eA=='
+    const slim = await buildSentMessageComposerRestoration([
+      { type: 'text', text: 'pic' },
+      { type: 'file', url: preview, mime: 'image/png', filename: 'shot.png', slim: true },
+    ], { createID: () => 'att-slim' })
+    expect(slim.snapshot.attachments).toEqual([])
+    expect(slim.values.size).toBe(0)
+
+    const full = await buildSentMessageComposerRestoration([
+      { type: 'text', text: 'pic' },
+      { type: 'file', url: preview, mime: 'image/png', filename: 'shot.png' },
+    ], { createID: () => 'att-full' })
+    expect(full.snapshot.attachments).toHaveLength(1)
+    expect(full.snapshot.attachments[0]?.locator.kind).toBe('blob')
+    expect(full.values.get(full.snapshot.attachments[0]!.attachmentRefID)).toBeInstanceOf(Blob)
+  })
 })
 
 describe('buildQueueComposerRestoration', () => {

@@ -5,14 +5,14 @@ import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
-import { getToolMetadata } from '@/lib/toolHelpers';
+import { resolveToolDisplayName } from '@/lib/toolHelpers';
 import type { ToolPart as ToolPartType, ToolState as ToolStateUnion } from '@/lib/opencode/v2-types';
 import { toolDisplayStyles } from '@/lib/typography';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessionMessageRecords, useEnsureSessionMessages, useSessionStatus, useSessionStatusObservedAt, useSessionStatusSnapshotAt } from '@/sync/sync-context';
+import { useSession, useSessionMessageRecords, useEnsureSessionMessages, useSessionStatus, useSessionStatusObservedAt, useSessionStatusSnapshotAt } from '@/sync/sync-context';
 import { useUIStore } from '@/stores/useUIStore';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
@@ -49,6 +49,7 @@ import {
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
     readTaskSessionIdFromRecord,
+    resolveTaskRowChrome,
     prepareTaskOutputForDisplay,
     type TaskToolSummaryEntry,
 } from './taskToolModel';
@@ -70,6 +71,8 @@ import {
 } from './toolExpandedLayout';
 import { navigateNestedSession, useSessionSurface } from '../../SessionSurfaceContext';
 import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
+import { LatticeOrb } from './LatticeOrb';
+import { isToolPartSettled } from './toolRenderUtils';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -78,15 +81,36 @@ const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 const TASK_SUMMARY_TEXT_CLASS = 'typography-micro !text-[length:calc(var(--text-meta)-0.0625rem)] !leading-5 tracking-normal';
 const TASK_SUMMARY_LIST_CLASS = 'flex w-full min-w-0 flex-col gap-1';
 
-/** 从 task input 解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
-const resolveTaskAgentName = (input: Record<string, unknown> | undefined): string | undefined => {
-    if (!input) return undefined;
-    // 优先官方 task 字段；兼容偶发的 agent / subagent 别名
-    const candidates = [input.subagent_type, input.agent, input.subagent];
-    for (const raw of candidates) {
-        if (typeof raw !== 'string') continue;
-        const trimmed = raw.trim();
-        if (trimmed.length > 0) return trimmed;
+const asTaskAgentSource = (value: unknown): Record<string, unknown> | undefined => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+    }
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{')) return undefined;
+    try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed as Record<string, unknown>;
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
+};
+
+/** 从 task input / metadata / 子会话解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
+const resolveTaskAgentName = (...sources: unknown[]): string | undefined => {
+    for (const source of sources) {
+        const record = asTaskAgentSource(source);
+        if (!record) continue;
+        // 优先官方 task 字段；兼容偶发的 agent / subagent 别名
+        const candidates = [record.subagent_type, record.subagentType, record.agent, record.subagent];
+        for (const raw of candidates) {
+            if (typeof raw !== 'string') continue;
+            const trimmed = raw.trim();
+            if (trimmed.length > 0) return trimmed;
+        }
     }
     return undefined;
 };
@@ -219,7 +243,6 @@ const GIT_REFRESH_MUTATING_TOOLS = new Set([
     'patch',
     'task',
 ]);
-
 /** Edit/write 类：不展开，点击在右侧打开改动行（与 Read 同属导航工具） */
 const FILE_NAV_TOOL_NAMES = new Set([
     'edit',
@@ -246,7 +269,29 @@ const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> =
     return <>{formatDuration(start, end, now)}</>;
 };
 
+const parseDiffCount = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.trunc(value));
+    }
+    if (typeof value === 'string') {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed)) {
+            return Math.max(0, parsed);
+        }
+    }
+    return null;
+};
+
 const parseDiffStats = (metadata?: Record<string, unknown>): { added: number; removed: number } | null => {
+    const addedFromMeta = parseDiffCount(metadata?.additions);
+    const removedFromMeta = parseDiffCount(metadata?.deletions);
+    if (addedFromMeta !== null || removedFromMeta !== null) {
+        const added = addedFromMeta ?? 0;
+        const removed = removedFromMeta ?? 0;
+        if (added === 0 && removed === 0) return null;
+        return { added, removed };
+    }
+
     const diffText = getPatchText((metadata as { patch?: unknown } | undefined)?.patch)
         ?? getPatchText(metadata?.diff);
     if (!diffText) return null;
@@ -1049,12 +1094,13 @@ const TaskSummaryEntryRow = React.memo(({
     animateTailText: boolean;
     showToolFileIcons: boolean;
 }) => {
+    const { t } = useI18n();
     const normalizedToolName = normalizeToolName(entry.tool);
     const toolName = normalizedToolName.length > 0 ? normalizedToolName : 'tool';
     const label = getTaskSummaryLabel(entry);
     const hasLabel = label.trim().length > 0;
     const status = entry.state?.status;
-    const displayName = getToolMetadata(toolName).displayName;
+    const displayName = resolveToolDisplayName(toolName, t);
 
     return (
         <div className={cn('flex gap-1.5 min-w-0 w-full py-px', isMobile ? 'items-start' : 'items-center')}>
@@ -1884,6 +1930,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const openContextDiff = useUIStore((s) => s.openContextDiff);
     const openContextToolDiff = useUIStore((s) => s.openContextToolDiff);
     const navigateToDiff = useUIStore((s) => s.navigateToDiff);
+    const { t } = useI18n();
     const effectiveDirectory = useEffectiveDirectory();
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
     const mobileActions = useMobileAppActions();
@@ -1899,7 +1946,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const isFileNavTool = isFileNavToolName(normalizedPartTool);
 
     const status = state?.status as string | undefined;
-    const isFinalized = status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled';
+    const isFinalized = isToolPartSettled(part);
     const isError = status === 'error' || status === 'failed';
 
     const [activeLatched, setActiveLatched] = React.useState<boolean>(!isFinalized);
@@ -2066,6 +2113,16 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return metadataSessionId;
         }
 
+        const stateSessionId = readTaskSessionIdFromRecord(stateWithData);
+        if (stateSessionId) {
+            return stateSessionId;
+        }
+
+        const inputSessionId = readTaskSessionIdFromRecord(input);
+        if (inputSessionId) {
+            return inputSessionId;
+        }
+
         const partLevelSessionId = readTaskSessionIdFromRecord(partMetadata);
         if (partLevelSessionId) {
             return partLevelSessionId;
@@ -2075,7 +2132,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return parsedTaskMetadata.sessionId;
         }
         return readTaskSessionIdFromOutput(taskOutputString);
-    }, [isTaskTool, metadata, parsedTaskMetadata.sessionId, partMetadata, taskOutputString]);
+    }, [input, isTaskTool, metadata, parsedTaskMetadata.sessionId, partMetadata, stateWithData, taskOutputString]);
 
     const taskSessionId = explicitTaskSessionId;
     const shouldObserveTaskStatus = isTaskTool && !isFinalized && activeLatched;
@@ -2137,6 +2194,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         statusSnapshotAt,
     });
     const effectiveActive = isActive && !suppressTaskLoading;
+    const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
     React.useEffect(() => {
         if (suppressTaskLoading) setActiveLatched(false);
     }, [suppressTaskLoading]);
@@ -2180,10 +2238,27 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
     const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
     const description = getToolDescription(normalizedPart, state, currentDirectory);
-    const displayName = getToolMetadata(normalizedPartTool || part.tool).displayName;
+    const displayName = resolveToolDisplayName(normalizedPartTool || part.tool, t);
+    const childTaskSessionInDirectory = useSession(isTaskTool ? taskSessionId : undefined, currentDirectory);
+    const childTaskSessionLive = useSession(isTaskTool ? taskSessionId : undefined);
+    const childTaskSession = childTaskSessionInDirectory ?? childTaskSessionLive;
     // Task 工具：用子 Agent 昵称替换通用 “Agent Task” 文案
-    const taskAgentName = isTaskTool ? resolveTaskAgentName(input) : undefined;
-    const taskTitle = taskAgentName ? formatAgentDisplayName(taskAgentName) : displayName;
+    const taskAgentName = isTaskTool
+        ? resolveTaskAgentName(input, metadata, partMetadata, childTaskSession)
+        : undefined;
+    const taskRowChrome = resolveTaskRowChrome({
+        isTaskTool,
+        isFinalized,
+        taskSessionId,
+        taskAgentName,
+        displayName,
+        delegatingLabel: t('chat.assistantStatus.delegatingTask'),
+        formatName: formatAgentDisplayName,
+    });
+    const isDelegatingTask = isTaskTool && taskRowChrome.isDelegating;
+    const taskTitle = taskRowChrome.title;
+    // 委派中的任务行：root 层暴露 data 属性，供测试与诊断用，不影响渲染
+    const delegatingDataAttr = isDelegatingTask ? { 'data-delegating': 'true' } : undefined;
     
     // Tool title/description — shown inline as context
     const justificationText = React.useMemo(() => {
@@ -2432,7 +2507,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
     const titleStyle = !isTaskTool && isError ? TOOL_ERROR_TITLE_STYLE : TOOL_NORMAL_TITLE_STYLE;
-    const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
     // Expanded bodies render synchronously with `isExpanded`. A deferred mount
     // (double rAF + startTransition) painted an empty fold for a frame whenever
     // `isExpanded` dipped false, and default-open rows must report their real
@@ -2459,6 +2533,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             )}
                 // Full-width tool / subagent rows use soft press (default); never compact.
                 data-mobile-press-feedback="soft"
+                {...delegatingDataAttr}
                 onClick={handleMainClick}
                 onKeyDown={handleMainKeyDown}
                 role="button"
@@ -2466,72 +2541,28 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             >
                 <div className={cn('flex gap-1.5', isMultiFileApplyPatch ? 'w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5' : 'items-center flex-shrink-0')}>
                     {}
-                    <div
-                        className={cn(
-                            'relative h-3.5 w-3.5 flex-shrink-0',
-                            !isFileNavTool && 'group/taskicon cursor-pointer'
-                        )}
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            if (isFileNavTool) {
-                                handleMainClick(event);
-                                return;
-                            }
-                            if (isTaskTool) {
-                                // 图标位：开启详情时箭头负责展开；否则与整行一样打开子会话
-                                if (showSubagentTaskDetails) {
-                                    onToggle(part.id);
-                                    return;
-                                }
-                                if (sessionSurface.capabilities.navigateNestedSession && !openTaskSession()) {
-                                    pendingOpenTaskSessionRef.current = true;
-                                }
-                                return;
-                            }
-                            onToggle(part.id);
-                        }}
-                    >
-                        {}
+                    <div className={cn('relative flex-shrink-0', isMobile ? 'size-4' : 'size-3.5')}>
                         <div
-                            className={cn(
-                                'absolute inset-0 flex items-center justify-center transition-opacity',
-                                // Task：头像常显；仅悬停图标位且开启详情时才换成箭头（勿用整行 group-hover）
-                                // Edit/Write：固定工具图标，不换箭头
-                                // 其它工具：展开或 hover 整行时让位给箭头
-                                isFileNavTool
-                                    ? undefined
-                                    : isTaskTool
-                                        ? (showSubagentTaskDetails ? 'group-hover/taskicon:opacity-0' : undefined)
-                                        : cn(isExpanded && 'opacity-0', !isExpanded && 'group-hover/tool:opacity-0')
-                            )}
-                            style={isTaskTool ? undefined : iconStyle}
+                            className="absolute inset-0 flex items-center justify-center"
+                            style={isTaskTool && taskRowChrome.showAvatar ? undefined : iconStyle}
                         >
-                            {isTaskTool ? (
+                            {isTaskTool && taskRowChrome.showAvatar ? (
                                 <AgentAvatar
                                     // 同一 agent 可并发多个 task；identicon/颜色按 task id 区分，label 仍用 agent 展示名
                                     name={part.id || taskAgentName || 'subagent'}
                                     size={14}
                                     label={taskTitle}
                                 />
+                            ) : effectiveActive ? (
+                                <LatticeOrb
+                                    isMobile={isMobile}
+                                    className="text-[var(--tools-icon)]"
+                                    label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}
+                                />
                             ) : (
                                 getToolIcon(normalizedPartTool || part.tool)
                             )}
                         </div>
-                        {}
-                        {!isFileNavTool ? (
-                            <div
-                                className={cn(
-                                    'absolute inset-0 transition-opacity flex items-center justify-center pointer-events-none',
-                                    isTaskTool
-                                        ? (showSubagentTaskDetails
-                                            ? 'opacity-0 group-hover/taskicon:opacity-100'
-                                            : 'opacity-0')
-                                        : cn(isExpanded && 'opacity-100', !isExpanded && 'opacity-0 group-hover/tool:opacity-100')
-                                )}
-                            >
-                                {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
-                            </div>
-                        ) : null}
                     </div>
                     {isMultiFileApplyPatch ? (
                         <>
@@ -2546,28 +2577,26 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         </>
                     ) : (
                         <>
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                                {taskBusy ? (
-                                    <span
-                                        className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0 animate-text-shimmer')}
-                                        style={{
-                                            color: 'var(--tools-title)',
-                                            ['--oc-text-shimmer-base' as string]: 'var(--tools-title)',
-                                        }}
-                                        title={taskTitle}
-                                    >
-                                        {taskTitle}
-                                    </span>
-                                ) : (
-                                    <span
-                                        className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0')}
-                                        style={titleStyle}
-                                        title={taskTitle}
-                                    >
-                                        {taskTitle}
-                                    </span>
-                                )}
-                            </div>
+                            {taskBusy ? (
+                                <span
+                                    className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap animate-text-shimmer')}
+                                    style={{
+                                        color: 'var(--tools-title)',
+                                        ['--oc-text-shimmer-base' as string]: 'var(--tools-title)',
+                                    }}
+                                    title={taskTitle}
+                                >
+                                    {taskTitle}
+                                </span>
+                            ) : (
+                                <span
+                                    className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap')}
+                                    style={titleStyle}
+                                    title={taskTitle}
+                                >
+                                    {taskTitle}
+                                </span>
+                            )}
                             {normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number' ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80', TOOL_ROW_DESCRIPTION_CLASS)}>
                                     <LiveDuration
@@ -2634,6 +2663,17 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         </div>
                     </div>
                 )}
+                {!isFileNavTool && (!isTaskTool || showSubagentTaskDetails) ? (
+                    <span
+                        className="ml-auto inline-flex size-3.5 flex-shrink-0 items-center justify-center text-muted-foreground opacity-70"
+                        onClick={isTaskTool ? (event) => {
+                            event.stopPropagation();
+                            onToggle(part.id);
+                        } : undefined}
+                    >
+                        <Icon name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3.5" />
+                    </span>
+                ) : null}
             </div>
 
             {}
@@ -2667,7 +2707,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         >
                             <span
                                 aria-hidden="true"
-                                className="pointer-events-none absolute left-0 top-px bottom-0 w-px"
+                                className="pointer-events-none absolute left-0 top-px bottom-0 w-px opacity-40"
                                 style={{ backgroundColor: 'var(--tools-border)' }}
                             />
                             <ToolExpandedContent
@@ -2739,7 +2779,7 @@ const ToolPart: React.FC<ToolPartProps> = (props) => {
     const { t } = useI18n();
     const deferHydration = useDeferredToolHydration();
     const toolName = normalizeToolName(props.part.tool) || 'tool';
-    const displayName = getToolMetadata(toolName).displayName;
+    const displayName = resolveToolDisplayName(toolName, t);
     const [isHydrated, setIsHydrated] = React.useState(() => (
         !deferHydration || hydratedHistoricalToolIds.get(props.part.id) === true
     ));

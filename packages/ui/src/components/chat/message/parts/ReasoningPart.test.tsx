@@ -1,9 +1,12 @@
 import React from 'react';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { I18nProvider } from '@/lib/i18n';
 import { ReasoningTimelineBlock } from './ReasoningPart';
+
+const reasoningPartSource = readFileSync(new URL('./ReasoningPart.tsx', import.meta.url), 'utf-8');
 
 // A reasoning text whose summary (first 120 chars) fits in the header but
 // whose expanded body content should only appear when the disclosure is open.
@@ -19,6 +22,11 @@ const LONG_JUSTIFICATION =
   'when multiple sessions have the same activity state.';
 
 describe('ReasoningTimelineBlock', () => {
+  test('uses the 16px mobile lattice orb while streaming', () => {
+    expect(reasoningPartSource).toContain('const isMobile = useUIStore((state) => state.isMobile);');
+    expect(reasoningPartSource).toContain('<LatticeOrb isMobile={isMobile} className="text-[var(--tools-icon)]" />');
+  });
+
   test('renders reasoning traces behind an accessible collapsed disclosure by default', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider>
@@ -37,6 +45,7 @@ describe('ReasoningTimelineBlock', () => {
     expect(markup).toContain('aria-label="Expand reasoning trace"');
     // Full-width reasoning rows stay on soft press, not the compact icon scale.
     expect(markup).toContain('data-mobile-press-feedback="soft"');
+    expect(markup).toContain('Thought');
 
     // Summary preview (beginning of text) is visible in the header
     expect(markup).toContain('First thought');

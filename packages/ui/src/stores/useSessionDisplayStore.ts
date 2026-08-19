@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createInstanceScopedJSONStorage } from '@/lib/instanceScopedStorage';
+import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 type SessionDisplayMode = 'default' | 'minimal';
 
@@ -22,6 +24,7 @@ export const useSessionDisplayStore = create<SessionDisplayStore>()(
     }),
     {
       name: 'session-display-mode',
+      storage: createInstanceScopedJSONStorage(),
       version: 4,
       // v0 shipped 'default' as the only/initial mode, so most existing users
       // have it persisted by accident rather than choice. Nudge everyone onto
@@ -49,5 +52,12 @@ export const useSessionDisplayStore = create<SessionDisplayStore>()(
     },
   ),
 );
+
+if (typeof window !== 'undefined') {
+  subscribeRuntimeEndpointChanged((detail) => {
+    if (!isRuntimeInstanceChange(detail)) return;
+    void useSessionDisplayStore.persist.rehydrate();
+  });
+}
 
 export type { ProjectSortOrder };

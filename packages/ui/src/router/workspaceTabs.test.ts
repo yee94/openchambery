@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { serializeAppPath } from '@/lib/router/serializeRoute';
 import type { AppRouteState } from '@/lib/router/serializeRoute';
-import { parseAppPath, SESSION_TOOL_TABS } from './pathContract';
+import { SESSION_TOOL_TABS } from './pathContract';
 import { routeStateFromPath } from '@/lib/router/parseRoute';
 
 const base = (over: Partial<AppRouteState> = {}): AppRouteState => ({
