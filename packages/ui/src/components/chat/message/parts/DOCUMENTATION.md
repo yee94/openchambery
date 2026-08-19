@@ -36,7 +36,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     one-frame disposition flap unmounted every nested row. Structural stability against
     regressing store frames belongs to `@/sync/displayParts`, not to this component.
   - If you want to change how individual `read`/`skill` compact rows look inside or outside a group, edit `StaticToolRow` here.
-  - Every visible static call uses the shared tool lifecycle: a 14px desktop / 16px mobile `LatticeOrb` stays in the matching fixed leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Expanded context-group children use this same row.
+  - Every visible static call uses the shared tool lifecycle: a 14px desktop / 16px mobile `LatticeOrb` stays in the matching fixed leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Its 3×3 grid optically spans 12px inside the 14px desktop box, aligning with the 13px settled icons while retaining a 1px edge. Expanded context-group children use this same row.
 
 - `ContextToolGroup.tsx`
   - Collapsible "Exploring" / "Explored" header for consecutive context tools.
@@ -85,6 +85,13 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - A successful session-status snapshot stops stale task loading when the child session is idle
     or when the task started before the snapshot request. Tasks created after that boundary wait
     for live status. The original tool part remains unchanged for history and diagnostics.
+  - Background subagent tasks settle the tool part immediately (tool success with a running hint
+    in metadata/output). While the resolved child session status is not `idle`, the settled row
+    keeps observing the child and stays in the busy shimmer state. Observation is one-shot
+    latched: once an authoritative idle newer than the task start is observed (live entry or
+    directory snapshot, same freshness guard as `shouldSuppressTaskLoading`), the row
+    unsubscribes and renders as an ordinary settled row. Completion itself is announced by the
+    synthetic `<subagent …>` notification message (see `MessageBody.tsx`).
   - Nested task-session navigation delegates to `SessionSurfaceContext`. In an
     ContextPanel transcript, the strict read-only panel surface accepts
     same-directory local navigation and preserves the primary session selection.
@@ -95,6 +102,10 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - `part.state.metadata.sessionId` is the only live identity contract between a Task and its child session.
   - A running Task may briefly have no `sessionId`; render it as waiting until the authoritative part update arrives. Never match parallel children by order, title, timestamp, or status.
   - Part-level metadata and output parsing exist only for older persisted records and never override state metadata.
+  - `readTaskStatusFromRecord` / `readTaskRunningFromOutput` detect the background-subagent
+    running hint (settled output that still says `status: running`).
+  - `parseSubagentNotification` parses the synthetic `<subagent sessionID state description>`
+    completion notification injected into the parent session; non-matching text returns undefined.
 
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).

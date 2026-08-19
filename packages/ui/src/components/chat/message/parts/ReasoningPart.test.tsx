@@ -1,12 +1,17 @@
 import React from 'react';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { I18nProvider } from '@/lib/i18n';
 import { ReasoningTimelineBlock } from './ReasoningPart';
 
-const reasoningPartSource = readFileSync(new URL('./ReasoningPart.tsx', import.meta.url), 'utf-8');
+const reasoningPartSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'ReasoningPart.tsx'),
+  'utf-8',
+);
 
 // A reasoning text whose summary (first 120 chars) fits in the header but
 // whose expanded body content should only appear when the disclosure is open.

@@ -50,7 +50,8 @@ mock.module("@/components/ui", () => ({
 
 import { INITIAL_STATE, type State } from "../types"
 import type { DirectoryStore } from "../child-store"
-import { resolveReconnectFollowUpWork, resyncBlockingRequestsForDirectory } from "../sync-context"
+
+const { resolveReconnectFollowUpWork, resyncBlockingRequestsForDirectory } = await import("../sync-context")
 
 function buildQuestion(overrides: Partial<QuestionRequest> = {}): QuestionRequest {
   return {

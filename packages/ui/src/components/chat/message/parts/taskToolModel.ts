@@ -85,6 +85,7 @@ export const normalizeTaskSummaryEntries = (value: unknown): TaskToolSummaryEntr
 
 export const parseTaskMetadataBlock = (output: string | undefined): {
     sessionId?: string;
+    status?: string;
     summaryEntries: TaskToolSummaryEntry[];
 } => {
     if (typeof output !== 'string' || output.trim().length === 0) return { summaryEntries: [] };
@@ -95,6 +96,7 @@ export const parseTaskMetadataBlock = (output: string | undefined): {
         const parsed = JSON.parse(blockMatch[1].trim()) as Record<string, unknown>;
         return {
             sessionId: normalizeSessionIdCandidate(parsed.sessionId) ?? normalizeSessionIdCandidate(parsed.sessionID),
+            status: normalizeSessionIdCandidate(parsed.status),
             summaryEntries: normalizeTaskSummaryEntries(parsed.summary ?? parsed.entries ?? parsed.tools ?? parsed.calls),
         };
     } catch {
@@ -112,6 +114,71 @@ export const readTaskSessionIdFromOutput = (output: string | undefined): string 
     const candidate = taskMatch?.[1] ?? sessionMatch?.[1];
     if (candidate) return normalizeSessionIdCandidate(candidate);
     return normalizeSessionIdCandidate(readTaskTagSessionIdFromOutput(output));
+};
+
+export const readTaskStatusFromRecord = (value: unknown): string | undefined => {
+    if (!value || typeof value !== 'object') return undefined;
+    const record = value as Record<string, unknown>;
+    return normalizeSessionIdCandidate(record.status);
+};
+
+const TASK_METADATA_RUNNING_PATTERN = /"status"\s*:\s*"running"/i;
+const TASK_OUTPUT_RUNNING_PATTERN = /\bstatus\s*[:=]\s*["'`]?running\b/i;
+
+/**
+ * Background subagent tasks settle the tool part immediately (tool success)
+ * while the child session keeps running. The running hint survives in the
+ * settled output (metadata JSON or plain text) and marks the row as live.
+ */
+export const readTaskRunningFromOutput = (output: string | undefined): boolean => {
+    if (typeof output !== 'string' || output.trim().length === 0) return false;
+    const blockMatch = output.match(/<task_metadata>\s*([\s\S]*?)\s*<\/task_metadata>/i);
+    if (blockMatch?.[1] && TASK_METADATA_RUNNING_PATTERN.test(blockMatch[1])) return true;
+    return TASK_OUTPUT_RUNNING_PATTERN.test(output);
+};
+
+export type SubagentNotificationState = 'completed' | 'error' | 'cancelled';
+
+export type SubagentNotification = {
+    sessionID: string;
+    state: SubagentNotificationState;
+    description?: string;
+    body: string;
+};
+
+const SUBAGENT_NOTIFICATION_PATTERN = /<subagent\s+([^>]*?)>([\s\S]*?)<\/subagent>/i;
+
+const readNotificationAttribute = (attributes: string, name: string): string | undefined => {
+    const match = attributes.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i'));
+    return normalizeSessionIdCandidate(match?.[1]);
+};
+
+const normalizeNotificationState = (value: string | undefined): SubagentNotificationState | undefined => {
+    if (value === 'completed' || value === 'error' || value === 'cancelled') return value;
+    return undefined;
+};
+
+/**
+ * Parse the completion notification OpenCode injects into the parent session
+ * when a background subagent finishes: `<subagent sessionID="..."
+ * state="completed|error|cancelled" description="...">body</subagent>`.
+ * Returns undefined for any other text so normal user content is untouched.
+ */
+export const parseSubagentNotification = (text: string | undefined): SubagentNotification | undefined => {
+    if (typeof text !== 'string' || text.trim().length === 0) return undefined;
+    const match = text.trim().match(SUBAGENT_NOTIFICATION_PATTERN);
+    if (!match) return undefined;
+
+    const sessionID = readNotificationAttribute(match[1], 'sessionID') ?? readNotificationAttribute(match[1], 'sessionId');
+    const state = normalizeNotificationState(readNotificationAttribute(match[1], 'state'));
+    if (!sessionID || !state) return undefined;
+
+    return {
+        sessionID,
+        state,
+        description: readNotificationAttribute(match[1], 'description'),
+        body: match[2].trim(),
+    };
 };
 
 const messageSummaryCache = new WeakMap<MessageRecord, TaskToolSummaryEntry[]>();

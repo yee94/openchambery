@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const sourceUrl = new URL('./MobileApp.tsx', import.meta.url);
+const sourcePath = join(dirname(fileURLToPath(import.meta.url)), 'MobileApp.tsx');
 
 test('keeps the active runtime after a transient mobile re-probe failure', async () => {
-  const source = await readFile(sourceUrl, 'utf8');
+  const source = await readFile(sourcePath, 'utf8');
   const unreachableBranchStart = source.indexOf("if (outcome === 'unreachable') {");
   const retryTimerEnd = source.indexOf('        }, 4000);', unreachableBranchStart);
   const unreachableBranch = source.slice(unreachableBranchStart, retryTimerEnd);

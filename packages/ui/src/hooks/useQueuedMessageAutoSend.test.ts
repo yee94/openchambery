@@ -6,7 +6,7 @@ mock.module('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => 
 mock.module('@/sync/session-actions', () => ({ getSendFailureKind: () => failure, fetchRecentSendConfirmationRecords: (...args: [_sessionID: string, _messageID: string, _directory: string, options?: { signal?: AbortSignal; timeoutMs?: number }]) => fetchRecords(...args) }));
 mock.module('@/stores/useConfigStore', () => ({ useConfigStore: { getState: () => ({ getVisibleAgents: () => [{ name: 'worker', mode: 'subagent' }] }) } }));
 mock.module('@/sync/sync-refs', () => ({ getSyncMessages: () => syncMessages, getSyncSessions: () => [], getAllSyncSessionMap: () => new Map() }));
-import { buildQueuedAutoSendPayload, dispatchQueuedMessage, getAutoReviewBlockedSessions, getQueueAbortBlockWakeAt, getQueuedAutoSendRetryDelayMs, getTrailingQueueTurnState, planQueueHead, planQueueScheduler, reconcileQueuedMessage, setQueuedMessageOwnershipGate } from './useQueuedMessageAutoSend';
+const { buildQueuedAutoSendPayload, dispatchQueuedMessage, getAutoReviewBlockedSessions, getQueueAbortBlockWakeAt, getQueuedAutoSendRetryDelayMs, getTrailingQueueTurnState, planQueueHead, planQueueScheduler, reconcileQueuedMessage, setQueuedMessageOwnershipGate } = await import('./useQueuedMessageAutoSend');
 const scope = (): Extract<QueueScope, { state: 'bound' }> => ({ state: 'bound', transportIdentity: runtimeIdentity, directory: '/project', sessionID: 'session-a' });
 const originalBeginQueueItemDispatch = useMessageQueueStore.getState().beginQueueItemDispatch;
 const reset = () => useMessageQueueStore.setState({ queuedMessages: {}, followUpBehavior: 'queue' });

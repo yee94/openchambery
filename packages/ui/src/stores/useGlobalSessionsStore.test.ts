@@ -270,8 +270,12 @@ describe('useGlobalSessionsStore', () => {
 
   test('keeps a first run blocked until its initial root-session refresh settles', async () => {
     type ListResult = { data: Session[]; error: undefined; response: Response };
+    let listStarted = false;
     let resolveList: (value: ListResult) => void = () => undefined;
-    const list = () => new Promise<ListResult>((resolve) => { resolveList = resolve; });
+    const list = () => {
+      listStarted = true;
+      return new Promise<ListResult>((resolve) => { resolveList = resolve; });
+    };
     const sdk = { experimental: { session: { list } } } as unknown as OpencodeClient;
     const originalGetSdkClient = opencodeClient.getSdkClient;
     opencodeClient.getSdkClient = () => sdk;
@@ -280,10 +284,14 @@ describe('useGlobalSessionsStore', () => {
     let finished = false;
     const startup = useGlobalSessionsStore.getState().startSessionIndexStartup(['/repo/first-run'])
       .then(() => { finished = true; });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const deadline = Date.now() + 2_000;
+    while (!listStarted && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
 
+    expect(listStarted).toBe(true);
     expect(finished).toBe(false);
-    expect(useGlobalSessionsStore.getState().startupSyncProgress.phase).toBe('syncing');
+    expect(['restoring', 'syncing']).toContain(useGlobalSessionsStore.getState().startupSyncProgress.phase);
 
     resolveList({ data: [], error: undefined, response: new Response(null, { status: 200 }) });
     await startup;

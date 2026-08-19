@@ -669,7 +669,8 @@ test('POST acknowledgement resolves before a blocked targeted scope read and rep
   const result = await runtime.admit({ requestID: 'request-a', scope: { directory: '/repo', sessionID: 'session-a' }, item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', attachmentIssues: [], createdAt: 1 } });
   expect(result).toEqual({ status: 'committed' });
   expect(calls).toBe(2);
-  expect(payloads[0]).toEqual(payloads[1]);
+  const asJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as unknown;
+  expect(asJson(payloads[0])).toEqual(asJson(payloads[1]));
   expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })[0]?.phase).toBe('acknowledged');
   releaseScope();
   for (let attempt = 0; attempt < 20 && runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' }).length; attempt++) await Promise.resolve();

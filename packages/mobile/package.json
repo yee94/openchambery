@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/mobile",
-  "version": "1.17.0",
+  "version": "1.17.1-beta.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -30,7 +30,7 @@
     "open:ios": "cap open ios",
     "open:android": "cap open android",
     "type-check": "tsc --noEmit",
-    "test": "node --test test/share-inbox-contract.test.mjs test/virtual-asset-bridge-contract.test.mjs test/virtual-asset-store-behavior.test.mjs test/media-save-file-contract.test.mjs",
+    "test": "vitest run",
     "lint": "eslint \"./**/*.{ts,tsx,js,mjs}\" --config ../../eslint.config.js --ignore-pattern dist --ignore-pattern ios --ignore-pattern android"
   },
   "dependencies": {

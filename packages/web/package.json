@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.17.0",
+  "version": "1.17.1-beta.1",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -19,7 +19,7 @@
     "build:watch": "vite build --watch",
     "type-check": "tsc --noEmit",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js",
-    "test": "node ../../scripts/ensure-node-better-sqlite3.mjs && vitest run --no-file-parallelism --exclude server/lib/relay/relay-server.e2e.test.ts && bun test --isolate server/lib/relay/relay-server.e2e.test.ts",
+    "test": "node ../../scripts/ensure-node-better-sqlite3.mjs && vitest run",
     "start": "node bin/cli.js serve"
   },
   "dependencies": {
@@ -101,7 +101,6 @@
     "typescript-eslint": "^8.39.1",
     "vite": "^8.2.0",
     "vite-plugin-pwa": "^1.3.0",
-    "vitest": "^4.1.10",
     "workbox-window": "^7.4.0",
     "zustand": "^5.0.8"
   },

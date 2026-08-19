@@ -77,13 +77,23 @@ describe('message queue server adapter', () => {
     configureRuntimeUrlResolver({ apiBaseUrl: 'http://127.0.0.1:57123' });
     responseImplementation = async () => new Response(JSON.stringify(snapshot));
     globalThis.fetch = (async (input, init) => {
-      const request = input instanceof Request ? input : new Request(input, init);
+      // Avoid `new Request(url, init)` — happy-dom rejects forbidden headers
+      // such as Content-Length that the upload path must send.
+      const url = new URL(
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url,
+      );
+      const method = String(init?.method ?? (input instanceof Request ? input.method : 'GET'));
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
       const call: FetchCall = {
-        url: new URL(request.url),
-        method: request.method,
+        url,
+        method,
         body: init?.body == null ? null : (typeof init.body === 'string' ? init.body : '[binary]'),
-        headers: request.headers,
-        signal: request.signal,
+        headers,
+        signal: init?.signal ?? (input instanceof Request ? input.signal : undefined),
       };
       fetchCalls.push(call);
       return responseImplementation(call);

@@ -1347,7 +1347,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         >
                             {isActive && !isCompaction ? (
                                 <LatticeOrb
-                                    size={isMobile ? 16 : 18}
+                                    isMobile={isMobile}
                                     label={activityStatusLabel}
                                 />
                             ) : (

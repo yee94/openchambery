@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const sourceUrl = new URL('./MobileApp.tsx', import.meta.url)
+const sourcePath = join(dirname(fileURLToPath(import.meta.url)), 'MobileApp.tsx')
 
 test('overflow refresh uses the authoritative user transcript path', async () => {
-  const source = await readFile(sourceUrl, 'utf8')
+  const source = await readFile(sourcePath, 'utf8')
 
   expect(source).toContain('useLiveSessionStatus(currentSessionId ?? \'\')')
   expect(source).not.toContain('useGlobalSessionStatus(currentSessionId')

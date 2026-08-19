@@ -68,6 +68,7 @@ describe('progressive activity presentation', () => {
     test('uses the S1 lattice orb while activity is live and the stack icon when settled', () => {
         expect(progressiveGroupSource).toContain('LatticeOrb');
         expect(progressiveGroupSource).toContain('isActive && !isCompaction');
+        expect(progressiveGroupSource).toContain('isMobile={isMobile}');
         expect(progressiveGroupSource).toContain("activityIconName = isCompaction ? 'fold-vertical' : 'stack'");
     });
 

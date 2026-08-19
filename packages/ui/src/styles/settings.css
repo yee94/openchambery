@@ -341,6 +341,12 @@
   --oc-settings-desktop-value-max-width: 24rem;
 }
 
+/* Agent mode chips (主 Agent / 子 Agent / 全部) need a wider value column on
+   desktop so the three options stay on one row. */
+.oc-settings-workspace-desktop .oc-settings-agents-mode-row {
+  --oc-settings-desktop-value-max-width: 18rem;
+}
+
 .oc-settings-workspace-desktop .oc-settings-split-row-copy {
   max-width: 24rem;
 }

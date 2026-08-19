@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import { adoptRelayTunnel, deactivateRelayTunnel } from "@/lib/relay/runtime-tunnel"
@@ -9,267 +9,11 @@ import {
   STREAM_STALE_MS,
 } from "./stream-liveness"
 import type { RelayTunnelClient } from "@/lib/relay/tunnel-client"
+import { create, type StoreApi } from "zustand"
+import { INITIAL_STATE } from "./types"
+import type { DirectoryStore } from "./child-store"
+import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
 
-// Mock SDK client that records permission.reply / question.reply calls
-const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
-const scopedClientDirectories: string[] = []
-const registeredSessionDirectories: Array<{ sessionID: string; directory: string }> = []
-let sessionRevertResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
-let sessionUnrevertResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
-let questionReplyError: unknown | null = null
-let questionRejectError: unknown | null = null
-let sessionShareResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
-let sessionUpdateResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
-let sessionMessagesResult: { data?: unknown; error?: unknown; response?: { status?: number } } = { data: [] }
-let sessionStatusResult: Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }> | null = {}
-let sessionDeleteMessageFailureID: string | null = null
-let sessionForkResult: import("@opencode-ai/sdk/v2/client").Session | null = null
-let clearAttachedFilesCalls = 0
-const globalUpsertedSessions: unknown[] = []
-let abortReject = false
-let abortResult: { data?: boolean; error?: unknown; response?: { status?: number } } = { data: true }
-const abortBlockEvents: Array<{ event: "begin" | "clear"; scope: Record<string, unknown>; token: string }> = []
-let abortBlockToken = 0
-let mobileSurfaceRuntime = false
-let vscodeRuntime = false
-const pendingSendTransitions: Array<{ state: 'mark' | 'clear'; sessionId: string; messageID: string }> = []
-
-mock.module("@/lib/runtimeSurface", () => ({
-  isMobileSurfaceRuntime: () => mobileSurfaceRuntime,
-}))
-
-mock.module("@/lib/desktop", () => ({
-  isVSCodeRuntime: () => vscodeRuntime,
-  isDesktopShell: () => false,
-  isDesktopLocalOriginActive: () => false,
-}))
-
-const hostTurnPageCalls: Array<Record<string, unknown>> = []
-let hostTurnPageBehavior: { cursor: string | null; complete: boolean; turnCount?: number; error?: string } = {
-  cursor: null,
-  complete: true,
-}
-mock.module("./session-turn-page-api", () => ({
-  SESSION_TURN_PAGE_TURNS: 3,
-  SESSION_TURN_PAGE_TIMEOUT_MS: 30_000,
-  raceWithSessionTurnPageTimeout: async <T>(operation: Promise<T>) => operation,
-  fetchHostSessionTurnPageForPurpose: mock(async (input: Record<string, unknown>) => {
-    hostTurnPageCalls.push(input)
-    replyCalls.push({ method: "host.session.turnPage", params: input })
-    if (hostTurnPageBehavior.error) throw new Error(hostTurnPageBehavior.error)
-    const records = Array.isArray(sessionMessagesResult.data) ? sessionMessagesResult.data : []
-    return {
-      records,
-      cursor: hostTurnPageBehavior.cursor,
-      complete: hostTurnPageBehavior.complete,
-      turnCount: hostTurnPageBehavior.turnCount ?? records.filter((record) => {
-        const info = (record as { info?: { role?: unknown; clientRole?: unknown } })?.info
-        return info?.role === "user" || info?.clientRole === "user"
-      }).length,
-    }
-  }),
-  fetchSessionTurnPage: mock(async () => ({
-    records: [],
-    cursor: null,
-    complete: true,
-    turnCount: 0,
-  })),
-}))
-
-const mockScopedClient = {
-  permission: {
-    reply: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "permission.reply", params })
-      return Promise.resolve({ data: true })
-    }),
-  },
-  question: {
-    reply: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "question.reply", params })
-      if (questionReplyError) {
-        return Promise.resolve({ error: questionReplyError, response: { status: 404 } })
-      }
-      return Promise.resolve({ data: true })
-    }),
-    reject: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "question.reject", params })
-      if (questionRejectError) {
-        return Promise.resolve({ error: questionRejectError, response: { status: 404 } })
-      }
-      return Promise.resolve({ data: true })
-    }),
-  },
-}
-
-const mockSdk = {
-  session: {
-    messages: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "session.messages", params })
-      return Promise.resolve(sessionMessagesResult)
-    }),
-    revert: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "session.revert", params })
-      return Promise.resolve(sessionRevertResult)
-    }),
-    unrevert: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "session.unrevert", params })
-      return Promise.resolve(sessionUnrevertResult)
-    }),
-    abort: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "session.abort", params })
-      if (abortReject) return Promise.reject(new Error("abort failed"))
-      return Promise.resolve(abortResult)
-    }),
-    updateSession: mock((sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
-      replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
-      return Promise.resolve(sessionUpdateResult.data as Session)
-    }),
-    update: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "session.update", params })
-      return Promise.resolve(sessionUpdateResult)
-    }),
-    share: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "session.share", params })
-      return Promise.resolve(sessionShareResult)
-    }),
-    unshare: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "session.unshare", params })
-      return Promise.resolve(sessionShareResult)
-    }),
-  },
-  permission: {
-    reply: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "permission.reply", params })
-      return Promise.resolve({ data: true })
-    }),
-  },
-  question: {
-    reply: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "question.reply", params })
-      if (questionReplyError) {
-        return Promise.resolve({ error: questionReplyError, response: { status: 404 } })
-      }
-      return Promise.resolve({ data: true })
-    }),
-    reject: mock((params: Record<string, unknown>) => {
-      replyCalls.push({ method: "question.reject", params })
-      if (questionRejectError) {
-        return Promise.resolve({ error: questionRejectError, response: { status: 404 } })
-      }
-      return Promise.resolve({ data: true })
-    }),
-  },
-}
-
-let sessionGetResult: Session | null = null
-let globalActiveSessions: Session[] = []
-let globalArchivedSessions: Session[] = []
-
-// Mock opencodeClient singleton
-mock.module("@/lib/opencode/client", () => ({
-  opencodeClient: {
-    getScopedSdkClient: (directory: string) => {
-      scopedClientDirectories.push(directory)
-      return mockScopedClient
-    },
-    getDirectory: () => "/test/project",
-    getSessionStatusForDirectory: mock((directory: string) => {
-      replyCalls.push({ method: "session.status", params: { directory } })
-      return Promise.resolve(sessionStatusResult)
-    }),
-    getSession: mock((sessionId: string, directory?: string | null) => {
-      replyCalls.push({ method: "session.get", params: { sessionID: sessionId, directory } })
-      if (!sessionGetResult) throw new Error("session.get result is unavailable")
-      return Promise.resolve(sessionGetResult)
-    }),
-    replyToPermission: mock((requestId: string, reply: string, options?: { directory?: string | null }) => {
-      replyCalls.push({ method: "permission.reply", params: { requestID: requestId, reply, directory: options?.directory } })
-      return Promise.resolve(true)
-    }),
-    replyToQuestion: mock((requestId: string, answers: string[] | string[][], directory?: string | null) => {
-      replyCalls.push({ method: "question.reply", params: { requestID: requestId, answers, directory } })
-      return Promise.resolve(true)
-    }),
-    revertSession: mock((sessionId: string, messageId: string, partId?: string, directory?: string | null) => {
-      replyCalls.push({
-        method: "session.revert",
-        params: { sessionID: sessionId, messageID: messageId, partID: partId, directory },
-      })
-      if (sessionRevertResult.error) {
-        const status = sessionRevertResult.response?.status
-        throw new Error(`session.revert failed${status ? ` (${status})` : ""}: rejected`)
-      }
-      return Promise.resolve(sessionRevertResult.data)
-    }),
-    deleteSessionMessage: mock((sessionId: string, messageId: string, directory?: string | null) => {
-      replyCalls.push({ method: "session.deleteMessage", params: { sessionID: sessionId, messageID: messageId, directory } })
-      if (sessionDeleteMessageFailureID === messageId) {
-        throw new Error("session.deleteMessage failed (500): rejected")
-      }
-      return Promise.resolve(true)
-    }),
-    updateSession: mock((sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
-      replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
-      return Promise.resolve(sessionUpdateResult.data)
-    }),
-    forkSession: mock((sessionId: string, messageId?: string, directory?: string | null) => {
-      replyCalls.push({ method: "session.fork", params: { sessionID: sessionId, messageID: messageId, directory } })
-      if (!sessionForkResult) throw new Error("session.fork result is unavailable")
-      return Promise.resolve(sessionForkResult)
-    }),
-  },
-}))
-
-// Mock useConfigStore — mutable so connection-grace send tests can force disconnect.
-const configStoreState = {
-  isConnected: true,
-  hasEverConnected: true,
-  probeConnection: async () => configStoreState.isConnected,
-}
-mock.module("@/stores/useConfigStore", () => ({
-  useConfigStore: {
-    getState: () => configStoreState,
-  },
-}))
-
-// Mock useSessionUIStore
-let uiCurrentSessionId: string | null = "session-a"
-let uiPendingSendMessageIDs = new Map<string, string>()
-const setCurrentSessionCalls: Array<{ sessionId: string; directory?: string | null }> = []
-mock.module("./session-ui-store", () => ({
-  useSessionUIStore: {
-    getState: () => ({
-      currentSessionId: uiCurrentSessionId,
-      pendingSendMessageIDs: uiPendingSendMessageIDs,
-      getDirectoryForSession: (sessionId: string) => {
-        if (sessionId === "session-a") return "/test/project"
-        if (sessionId === "session-b") return "/other/project"
-        return null
-      },
-      setCurrentSession: (sessionId: string, directory?: string | null) => {
-        setCurrentSessionCalls.push({ sessionId, directory })
-        uiCurrentSessionId = sessionId
-      },
-      beginQueueAbortBlock: (scope: Record<string, unknown>) => {
-        const token = `abort-${++abortBlockToken}`
-        abortBlockEvents.push({ event: "begin", scope, token })
-        return token
-      },
-      clearQueueAbortBlock: (scope: Record<string, unknown>, token: string) => {
-        abortBlockEvents.push({ event: "clear", scope, token })
-      },
-      markMessageSending: (sessionId: string, messageID: string) => {
-        pendingSendTransitions.push({ state: 'mark', sessionId, messageID })
-      },
-      clearMessageSending: (sessionId: string, messageID: string) => {
-        pendingSendTransitions.push({ state: 'clear', sessionId, messageID })
-      },
-    }),
-    setState: () => undefined,
-  },
-}))
-
-// Mock useInputStore
 type RestoredAttachment = { url: string; mimeType: string; filename: string }
 type DraftCommitCall = {
   key: { transportIdentity: string; owner: { kind: string; ownerID: string } }
@@ -278,91 +22,436 @@ type DraftCommitCall = {
   values?: ReadonlyMap<string, Blob | string>
 }
 
-const draftCommits: DraftCommitCall[] = []
-let draftRevisionByKey = new Map<string, number>()
-let draftCommitShouldFail = false
-let draftCommitFailAfter = 0
-let draftCommitCount = 0
+const mocks = vi.hoisted(() => {
+  const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
+  const scopedClientDirectories: string[] = []
+  const registeredSessionDirectories: Array<{ sessionID: string; directory: string }> = []
+  const globalUpsertedSessions: unknown[] = []
+  const abortBlockEvents: Array<{ event: "begin" | "clear"; scope: Record<string, unknown>; token: string }> = []
+  const pendingSendTransitions: Array<{ state: "mark" | "clear"; sessionId: string; messageID: string }> = []
+  const hostTurnPageCalls: Array<Record<string, unknown>> = []
+  const setCurrentSessionCalls: Array<{ sessionId: string; directory?: string | null }> = []
+  const draftCommits: DraftCommitCall[] = []
 
-const inputState = {
-  pendingInputText: "",
-  pendingInputMode: "normal" as const,
-  attachedFiles: [] as RestoredAttachment[],
-  drafts: {} as Record<string, { revision: number; text: string }>,
-  clearAttachedFiles: () => {
-    clearAttachedFilesCalls += 1
-    inputState.attachedFiles = []
-  },
-  setAttachedFiles: (attachments: RestoredAttachment[]) => {
-    inputState.attachedFiles = attachments
-  },
-  addRestoredAttachment: (attachment: RestoredAttachment) => {
-    inputState.attachedFiles = [...inputState.attachedFiles, attachment]
-  },
-  captureDraftRuntime: () => {
-    // Keep mock transport aligned with real getRuntimeTransportIdentity() used by sessionDraftKey.
-    try {
-      // Lazy require avoids circular import at mock setup time.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load for mock setup
-      const { getRuntimeTransportIdentity } = require("../lib/runtime-switch") as typeof import("../lib/runtime-switch")
-      return { transportIdentity: getRuntimeTransportIdentity(), generation: 1 }
-    } catch {
-      return { transportIdentity: "direct:url:default", generation: 1 }
-    }
-  },
-  getDraft: (key: { transportIdentity: string; owner: { kind: string; ownerID: string } }) => {
-    const id = JSON.stringify([key.transportIdentity, key.owner.kind, key.owner.ownerID])
-    const revision = draftRevisionByKey.get(id)
-    if (!revision) return undefined
-    return { version: 1, key, revision, text: inputState.drafts[id]?.text ?? "", attachments: [], syntheticParts: [], mentions: [] }
-  },
-  draftAttachmentViews: {} as Record<string, Record<string, never>>,
-  commitDraftSnapshot: async (request: DraftCommitCall) => {
-    draftCommitCount += 1
-    draftCommits.push(request)
-    if (draftCommitShouldFail && draftCommitCount > draftCommitFailAfter) {
-      return { status: "failed", durable: false, current: false, errors: [], cleanupErrors: [] }
-    }
-    const id = JSON.stringify([request.key.transportIdentity, request.key.owner.kind, request.key.owner.ownerID])
-    const existing = draftRevisionByKey.get(id)
-    if (request.expectedRevision === "absent" ? existing !== undefined : existing !== request.expectedRevision) {
-      return { status: "conflict", durable: false, current: true, errors: [], cleanupErrors: [] }
-    }
-    const revision = request.expectedRevision === "absent" ? 1 : request.expectedRevision + 1
-    draftRevisionByKey.set(id, revision)
-    inputState.drafts[id] = { revision, text: request.snapshot.text }
+  const state = {
+    sessionRevertResult: {} as { data?: unknown; error?: unknown; response?: { status?: number } },
+    sessionUnrevertResult: {} as { data?: unknown; error?: unknown; response?: { status?: number } },
+    questionReplyError: null as unknown | null,
+    questionRejectError: null as unknown | null,
+    sessionShareResult: {} as { data?: unknown; error?: unknown; response?: { status?: number } },
+    sessionUpdateResult: {} as { data?: unknown; error?: unknown; response?: { status?: number } },
+    sessionMessagesResult: { data: [] } as { data?: unknown; error?: unknown; response?: { status?: number } },
+    sessionStatusResult: {} as Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }> | null,
+    sessionDeleteMessageFailureID: null as string | null,
+    sessionForkResult: null as Session | null,
+    clearAttachedFilesCalls: 0,
+    abortReject: false,
+    abortResult: { data: true } as { data?: boolean; error?: unknown; response?: { status?: number } },
+    abortBlockToken: 0,
+    mobileSurfaceRuntime: false,
+    vscodeRuntime: false,
+    hostTurnPageBehavior: {
+      cursor: null,
+      complete: true,
+    } as { cursor: string | null; complete: boolean; turnCount?: number; error?: string },
+    sessionGetResult: null as Session | null,
+    globalActiveSessions: [] as Session[],
+    globalArchivedSessions: [] as Session[],
+    uiCurrentSessionId: "session-a" as string | null,
+    uiPendingSendMessageIDs: new Map<string, string>(),
+    draftRevisionByKey: new Map<string, number>(),
+    draftCommitShouldFail: false,
+    draftCommitFailAfter: 0,
+    draftCommitCount: 0,
+  }
+
+  const configStoreState = {
+    isConnected: true,
+    hasEverConnected: true,
+    probeConnection: async () => configStoreState.isConnected,
+  }
+
+  const mockScopedClient = {
+    permission: {
+      reply: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "permission.reply", params })
+        return Promise.resolve({ data: true })
+      }),
+    },
+    question: {
+      reply: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "question.reply", params })
+        if (state.questionReplyError) {
+          return Promise.resolve({ error: state.questionReplyError, response: { status: 404 } })
+        }
+        return Promise.resolve({ data: true })
+      }),
+      reject: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "question.reject", params })
+        if (state.questionRejectError) {
+          return Promise.resolve({ error: state.questionRejectError, response: { status: 404 } })
+        }
+        return Promise.resolve({ data: true })
+      }),
+    },
+  }
+
+  const mockSdk = {
+    session: {
+      messages: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.messages", params })
+        return Promise.resolve(state.sessionMessagesResult)
+      }),
+      revert: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.revert", params })
+        return Promise.resolve(state.sessionRevertResult)
+      }),
+      unrevert: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.unrevert", params })
+        return Promise.resolve(state.sessionUnrevertResult)
+      }),
+      abort: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.abort", params })
+        if (state.abortReject) return Promise.reject(new Error("abort failed"))
+        return Promise.resolve(state.abortResult)
+      }),
+      updateSession: vi.fn((sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
+        replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
+        return Promise.resolve(state.sessionUpdateResult.data as Session)
+      }),
+      update: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.update", params })
+        return Promise.resolve(state.sessionUpdateResult)
+      }),
+      share: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.share", params })
+        return Promise.resolve(state.sessionShareResult)
+      }),
+      unshare: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.unshare", params })
+        return Promise.resolve(state.sessionShareResult)
+      }),
+    },
+    permission: {
+      reply: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "permission.reply", params })
+        return Promise.resolve({ data: true })
+      }),
+    },
+    question: {
+      reply: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "question.reply", params })
+        if (state.questionReplyError) {
+          return Promise.resolve({ error: state.questionReplyError, response: { status: 404 } })
+        }
+        return Promise.resolve({ data: true })
+      }),
+      reject: vi.fn((params: Record<string, unknown>) => {
+        replyCalls.push({ method: "question.reject", params })
+        if (state.questionRejectError) {
+          return Promise.resolve({ error: state.questionRejectError, response: { status: 404 } })
+        }
+        return Promise.resolve({ data: true })
+      }),
+    },
+  }
+
+  const inputState = {
+    pendingInputText: "",
+    pendingInputMode: "normal" as const,
+    attachedFiles: [] as RestoredAttachment[],
+    drafts: {} as Record<string, { revision: number; text: string }>,
+    clearAttachedFiles: () => {
+      state.clearAttachedFilesCalls += 1
+      inputState.attachedFiles = []
+    },
+    setAttachedFiles: (attachments: RestoredAttachment[]) => {
+      inputState.attachedFiles = attachments
+    },
+    addRestoredAttachment: (attachment: RestoredAttachment) => {
+      inputState.attachedFiles = [...inputState.attachedFiles, attachment]
+    },
+    captureDraftRuntime: () => {
+      // Keep mock transport aligned with real getRuntimeTransportIdentity() used by sessionDraftKey.
+      try {
+        // Lazy require avoids circular import at mock setup time.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load for mock setup
+        const { getRuntimeTransportIdentity } = require("../lib/runtime-switch") as typeof import("../lib/runtime-switch")
+        return { transportIdentity: getRuntimeTransportIdentity(), generation: 1 }
+      } catch {
+        return { transportIdentity: "direct:url:default", generation: 1 }
+      }
+    },
+    getDraft: (key: { transportIdentity: string; owner: { kind: string; ownerID: string } }) => {
+      const id = JSON.stringify([key.transportIdentity, key.owner.kind, key.owner.ownerID])
+      const revision = state.draftRevisionByKey.get(id)
+      if (!revision) return undefined
+      return { version: 1, key, revision, text: inputState.drafts[id]?.text ?? "", attachments: [], syntheticParts: [], mentions: [] }
+    },
+    draftAttachmentViews: {} as Record<string, Record<string, never>>,
+    commitDraftSnapshot: async (request: DraftCommitCall) => {
+      state.draftCommitCount += 1
+      draftCommits.push(request)
+      if (state.draftCommitShouldFail && state.draftCommitCount > state.draftCommitFailAfter) {
+        return { status: "failed", durable: false, current: false, errors: [], cleanupErrors: [] }
+      }
+      const id = JSON.stringify([request.key.transportIdentity, request.key.owner.kind, request.key.owner.ownerID])
+      const existing = state.draftRevisionByKey.get(id)
+      if (request.expectedRevision === "absent" ? existing !== undefined : existing !== request.expectedRevision) {
+        return { status: "conflict", durable: false, current: true, errors: [], cleanupErrors: [] }
+      }
+      const revision = request.expectedRevision === "absent" ? 1 : request.expectedRevision + 1
+      state.draftRevisionByKey.set(id, revision)
+      inputState.drafts[id] = { revision, text: request.snapshot.text }
+      return {
+        status: "committed",
+        durable: true,
+        current: true,
+        record: { version: 1, key: request.key, revision, text: request.snapshot.text, attachments: request.snapshot.attachments ?? [], syntheticParts: [], mentions: [] },
+        errors: [],
+        cleanupErrors: [],
+      }
+    },
+    deleteDraftSnapshot: async (request: {
+      key: { transportIdentity: string; owner: { kind: string; ownerID: string } }
+      expectedRevision: number
+    }) => {
+      const id = JSON.stringify([request.key.transportIdentity, request.key.owner.kind, request.key.owner.ownerID])
+      const existing = state.draftRevisionByKey.get(id)
+      if (existing !== request.expectedRevision) {
+        return { status: "conflict", durable: false, current: true, errors: [], cleanupErrors: [] }
+      }
+      state.draftRevisionByKey.delete(id)
+      delete inputState.drafts[id]
+      return { status: "committed", durable: true, current: true, errors: [], cleanupErrors: [] }
+    },
+  }
+
+  return {
+    replyCalls,
+    scopedClientDirectories,
+    registeredSessionDirectories,
+    globalUpsertedSessions,
+    abortBlockEvents,
+    pendingSendTransitions,
+    hostTurnPageCalls,
+    setCurrentSessionCalls,
+    draftCommits,
+    configStoreState,
+    mockScopedClient,
+    mockSdk,
+    inputState,
+    get sessionRevertResult() { return state.sessionRevertResult },
+    set sessionRevertResult(value) { state.sessionRevertResult = value },
+    get sessionUnrevertResult() { return state.sessionUnrevertResult },
+    set sessionUnrevertResult(value) { state.sessionUnrevertResult = value },
+    get questionReplyError() { return state.questionReplyError },
+    set questionReplyError(value) { state.questionReplyError = value },
+    get questionRejectError() { return state.questionRejectError },
+    set questionRejectError(value) { state.questionRejectError = value },
+    get sessionShareResult() { return state.sessionShareResult },
+    set sessionShareResult(value) { state.sessionShareResult = value },
+    get sessionUpdateResult() { return state.sessionUpdateResult },
+    set sessionUpdateResult(value) { state.sessionUpdateResult = value },
+    get sessionMessagesResult() { return state.sessionMessagesResult },
+    set sessionMessagesResult(value) { state.sessionMessagesResult = value },
+    get sessionStatusResult() { return state.sessionStatusResult },
+    set sessionStatusResult(value) { state.sessionStatusResult = value },
+    get sessionDeleteMessageFailureID() { return state.sessionDeleteMessageFailureID },
+    set sessionDeleteMessageFailureID(value) { state.sessionDeleteMessageFailureID = value },
+    get sessionForkResult() { return state.sessionForkResult },
+    set sessionForkResult(value) { state.sessionForkResult = value },
+    get clearAttachedFilesCalls() { return state.clearAttachedFilesCalls },
+    set clearAttachedFilesCalls(value) { state.clearAttachedFilesCalls = value },
+    get abortReject() { return state.abortReject },
+    set abortReject(value) { state.abortReject = value },
+    get abortResult() { return state.abortResult },
+    set abortResult(value) { state.abortResult = value },
+    get abortBlockToken() { return state.abortBlockToken },
+    set abortBlockToken(value) { state.abortBlockToken = value },
+    get mobileSurfaceRuntime() { return state.mobileSurfaceRuntime },
+    set mobileSurfaceRuntime(value) { state.mobileSurfaceRuntime = value },
+    get vscodeRuntime() { return state.vscodeRuntime },
+    set vscodeRuntime(value) { state.vscodeRuntime = value },
+    get hostTurnPageBehavior() { return state.hostTurnPageBehavior },
+    set hostTurnPageBehavior(value) { state.hostTurnPageBehavior = value },
+    get sessionGetResult() { return state.sessionGetResult },
+    set sessionGetResult(value) { state.sessionGetResult = value },
+    get globalActiveSessions() { return state.globalActiveSessions },
+    set globalActiveSessions(value) { state.globalActiveSessions = value },
+    get globalArchivedSessions() { return state.globalArchivedSessions },
+    set globalArchivedSessions(value) { state.globalArchivedSessions = value },
+    get uiCurrentSessionId() { return state.uiCurrentSessionId },
+    set uiCurrentSessionId(value) { state.uiCurrentSessionId = value },
+    get uiPendingSendMessageIDs() { return state.uiPendingSendMessageIDs },
+    set uiPendingSendMessageIDs(value) { state.uiPendingSendMessageIDs = value },
+    get draftRevisionByKey() { return state.draftRevisionByKey },
+    set draftRevisionByKey(value) { state.draftRevisionByKey = value },
+    get draftCommitShouldFail() { return state.draftCommitShouldFail },
+    set draftCommitShouldFail(value) { state.draftCommitShouldFail = value },
+    get draftCommitFailAfter() { return state.draftCommitFailAfter },
+    set draftCommitFailAfter(value) { state.draftCommitFailAfter = value },
+    get draftCommitCount() { return state.draftCommitCount },
+    set draftCommitCount(value) { state.draftCommitCount = value },
+    state,
+  }
+})
+
+const {
+  replyCalls,
+  scopedClientDirectories,
+  registeredSessionDirectories,
+  globalUpsertedSessions,
+  abortBlockEvents,
+  pendingSendTransitions,
+  hostTurnPageCalls,
+  setCurrentSessionCalls,
+  draftCommits,
+  configStoreState,
+  mockScopedClient,
+  mockSdk,
+  inputState,
+} = mocks
+
+vi.mock("@/lib/runtimeSurface", () => ({
+  isMobileSurfaceRuntime: () => mocks.mobileSurfaceRuntime,
+}))
+
+vi.mock("@/lib/desktop", () => ({
+  isVSCodeRuntime: () => mocks.vscodeRuntime,
+  isDesktopShell: () => false,
+  isDesktopLocalOriginActive: () => false,
+}))
+
+vi.mock("./session-turn-page-api", () => ({
+  SESSION_TURN_PAGE_TURNS: 3,
+  SESSION_TURN_PAGE_TIMEOUT_MS: 30_000,
+  raceWithSessionTurnPageTimeout: async <T>(operation: Promise<T>) => operation,
+  fetchHostSessionTurnPageForPurpose: vi.fn(async (input: Record<string, unknown>) => {
+    mocks.hostTurnPageCalls.push(input)
+    mocks.replyCalls.push({ method: "host.session.turnPage", params: input })
+    if (mocks.hostTurnPageBehavior.error) throw new Error(mocks.hostTurnPageBehavior.error)
+    const records = Array.isArray(mocks.sessionMessagesResult.data) ? mocks.sessionMessagesResult.data : []
     return {
-      status: "committed",
-      durable: true,
-      current: true,
-      record: { version: 1, key: request.key, revision, text: request.snapshot.text, attachments: request.snapshot.attachments ?? [], syntheticParts: [], mentions: [] },
-      errors: [],
-      cleanupErrors: [],
+      records,
+      cursor: mocks.hostTurnPageBehavior.cursor,
+      complete: mocks.hostTurnPageBehavior.complete,
+      turnCount: mocks.hostTurnPageBehavior.turnCount ?? records.filter((record) => {
+        const info = (record as { info?: { role?: unknown; clientRole?: unknown } })?.info
+        return info?.role === "user" || info?.clientRole === "user"
+      }).length,
     }
-  },
-  deleteDraftSnapshot: async (request: {
-    key: { transportIdentity: string; owner: { kind: string; ownerID: string } }
-    expectedRevision: number
-  }) => {
-    const id = JSON.stringify([request.key.transportIdentity, request.key.owner.kind, request.key.owner.ownerID])
-    const existing = draftRevisionByKey.get(id)
-    if (existing !== request.expectedRevision) {
-      return { status: "conflict", durable: false, current: true, errors: [], cleanupErrors: [] }
-    }
-    draftRevisionByKey.delete(id)
-    delete inputState.drafts[id]
-    return { status: "committed", durable: true, current: true, errors: [], cleanupErrors: [] }
-  },
-}
+  }),
+  fetchSessionTurnPage: vi.fn(async () => ({
+    records: [],
+    cursor: null,
+    complete: true,
+    turnCount: 0,
+  })),
+}))
 
-mock.module("./input-store", () => ({
-  useInputStore: {
-    getState: () => inputState,
-    setState: (patch: Partial<typeof inputState>) => Object.assign(inputState, patch),
+vi.mock("@/lib/opencode/client", () => ({
+  opencodeClient: {
+    getScopedSdkClient: (directory: string) => {
+      mocks.scopedClientDirectories.push(directory)
+      return mocks.mockScopedClient
+    },
+    getDirectory: () => "/test/project",
+    setDirectory: vi.fn(),
+    getSessionStatusForDirectory: vi.fn((directory: string) => {
+      mocks.replyCalls.push({ method: "session.status", params: { directory } })
+      return Promise.resolve(mocks.sessionStatusResult)
+    }),
+    getSession: vi.fn((sessionId: string, directory?: string | null) => {
+      mocks.replyCalls.push({ method: "session.get", params: { sessionID: sessionId, directory } })
+      if (!mocks.sessionGetResult) throw new Error("session.get result is unavailable")
+      return Promise.resolve(mocks.sessionGetResult)
+    }),
+    replyToPermission: vi.fn((requestId: string, reply: string, options?: { directory?: string | null }) => {
+      mocks.replyCalls.push({ method: "permission.reply", params: { requestID: requestId, reply, directory: options?.directory } })
+      return Promise.resolve(true)
+    }),
+    replyToQuestion: vi.fn((requestId: string, answers: string[] | string[][], directory?: string | null) => {
+      mocks.replyCalls.push({ method: "question.reply", params: { requestID: requestId, answers, directory } })
+      return Promise.resolve(true)
+    }),
+    revertSession: vi.fn((sessionId: string, messageId: string, partId?: string, directory?: string | null) => {
+      mocks.replyCalls.push({
+        method: "session.revert",
+        params: { sessionID: sessionId, messageID: messageId, partID: partId, directory },
+      })
+      if (mocks.sessionRevertResult.error) {
+        const status = mocks.sessionRevertResult.response?.status
+        throw new Error(`session.revert failed${status ? ` (${status})` : ""}: rejected`)
+      }
+      return Promise.resolve(mocks.sessionRevertResult.data)
+    }),
+    deleteSessionMessage: vi.fn((sessionId: string, messageId: string, directory?: string | null) => {
+      mocks.replyCalls.push({ method: "session.deleteMessage", params: { sessionID: sessionId, messageID: messageId, directory } })
+      if (mocks.sessionDeleteMessageFailureID === messageId) {
+        throw new Error("session.deleteMessage failed (500): rejected")
+      }
+      return Promise.resolve(true)
+    }),
+    updateSession: vi.fn((sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
+      mocks.replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
+      return Promise.resolve(mocks.sessionUpdateResult.data)
+    }),
+    forkSession: vi.fn((sessionId: string, messageId?: string, directory?: string | null) => {
+      mocks.replyCalls.push({ method: "session.fork", params: { sessionID: sessionId, messageID: messageId, directory } })
+      if (!mocks.sessionForkResult) throw new Error("session.fork result is unavailable")
+      return Promise.resolve(mocks.sessionForkResult)
+    }),
   },
 }))
 
-mock.module("@/stores/useGlobalSessionsStore", () => ({
+vi.mock("@/stores/useConfigStore", () => ({
+  useConfigStore: {
+    getState: () => mocks.configStoreState,
+  },
+}))
+
+vi.mock("./session-ui-store", () => ({
+  useSessionUIStore: {
+    getState: () => ({
+      currentSessionId: mocks.uiCurrentSessionId,
+      pendingSendMessageIDs: mocks.uiPendingSendMessageIDs,
+      getDirectoryForSession: (sessionId: string) => {
+        if (sessionId === "session-a") return "/test/project"
+        if (sessionId === "session-b") return "/other/project"
+        return null
+      },
+      setCurrentSession: (sessionId: string, directory?: string | null) => {
+        mocks.setCurrentSessionCalls.push({ sessionId, directory })
+        mocks.uiCurrentSessionId = sessionId
+      },
+      beginQueueAbortBlock: (scope: Record<string, unknown>) => {
+        const token = `abort-${++mocks.abortBlockToken}`
+        mocks.abortBlockEvents.push({ event: "begin", scope, token })
+        return token
+      },
+      clearQueueAbortBlock: (scope: Record<string, unknown>, token: string) => {
+        mocks.abortBlockEvents.push({ event: "clear", scope, token })
+      },
+      markMessageSending: (sessionId: string, messageID: string) => {
+        mocks.pendingSendTransitions.push({ state: "mark", sessionId, messageID })
+      },
+      clearMessageSending: (sessionId: string, messageID: string) => {
+        mocks.pendingSendTransitions.push({ state: "clear", sessionId, messageID })
+      },
+    }),
+    setState: () => undefined,
+  },
+}))
+
+vi.mock("./input-store", () => ({
+  useInputStore: {
+    getState: () => mocks.inputState,
+    setState: (patch: Partial<typeof mocks.inputState>) => Object.assign(mocks.inputState, patch),
+  },
+}))
+
+vi.mock("@/stores/useGlobalSessionsStore", () => ({
   mergeSessionDirectoryMetadata: (incoming: Session, existing?: SessionWithDirectory | null): SessionWithDirectory => {
     if (!existing) return incoming as SessionWithDirectory
     const next = { ...(incoming as SessionWithDirectory) }
@@ -375,34 +464,29 @@ mock.module("@/stores/useGlobalSessionsStore", () => ({
   },
   useGlobalSessionsStore: {
     getState: () => ({
-      activeSessions: globalActiveSessions,
-      archivedSessions: globalArchivedSessions,
+      activeSessions: mocks.globalActiveSessions,
+      archivedSessions: mocks.globalArchivedSessions,
       upsertSession: (session: unknown) => {
-        globalUpsertedSessions.push(session)
+        mocks.globalUpsertedSessions.push(session)
       },
     }),
   },
 }))
 
-mock.module("./sync-refs", () => ({
+vi.mock("./sync-refs", () => ({
   registerSessionDirectory: (sessionID: string, directory: string) => {
-    registeredSessionDirectories.push({ sessionID, directory })
+    mocks.registeredSessionDirectories.push({ sessionID, directory })
   },
   getAllSyncSessionMap: () => new Map(),
 }))
 
-import { create, type StoreApi } from "zustand"
-import { INITIAL_STATE } from "./types"
-import type { DirectoryStore } from "./child-store"
-import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
-
-type OptimisticAddCall = { sessionID: string; directory?: string | null; message: Message; parts: Part[] }
-type OptimisticRemoveCall = { sessionID: string; directory?: string | null; messageID: string }
 type SessionWithDirectory = Session & {
   directory?: string | null
   project?: { worktree?: string | null }
 }
 
+type OptimisticAddCall = { sessionID: string; directory?: string | null; message: Message; parts: Part[] }
+type OptimisticRemoveCall = { sessionID: string; directory?: string | null; messageID: string }
 /** Test store: DirectoryStore + optional transcript maps for residual fixtures. */
 type TestDirectoryStore = DirectoryStore & {
   message: Record<string, Message[]>
@@ -448,21 +532,21 @@ function createChildStores(
 
 describe("fetchMessagesForSession startup race", () => {
   beforeEach(() => {
-    mobileSurfaceRuntime = false
-    vscodeRuntime = false
-    sessionStatusResult = {}
+    mocks.mobileSurfaceRuntime = false
+    mocks.vscodeRuntime = false
+    mocks.sessionStatusResult = {}
     configStoreState.isConnected = true
     configStoreState.hasEverConnected = true
     hostTurnPageCalls.length = 0
     replyCalls.length = 0
-    hostTurnPageBehavior = { cursor: null, complete: true }
-    uiCurrentSessionId = "session-a"
+    mocks.hostTurnPageBehavior = { cursor: null, complete: true }
+    mocks.uiCurrentSessionId = "session-a"
   })
 
   test("replays a selection fetch queued before sync action refs initialize", async () => {
     replyCalls.length = 0
     hostTurnPageCalls.length = 0
-    sessionMessagesResult = { data: [] }
+    mocks.sessionMessagesResult = { data: [] }
     const store = createStore({}, { session: [{ id: "startup-session", time: { created: 1 } } as Session] })
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
@@ -480,7 +564,7 @@ describe("fetchMessagesForSession startup race", () => {
   test("uses one Host turn-page request for concurrent session selection loads", async () => {
     replyCalls.length = 0
     hostTurnPageCalls.length = 0
-    sessionMessagesResult = { data: [] }
+    mocks.sessionMessagesResult = { data: [] }
     const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
@@ -511,8 +595,8 @@ describe("fetchMessagesForSession startup race", () => {
     for (const runtime of ["mobile", "web", "vscode"] as const) {
       replyCalls.length = 0
       hostTurnPageCalls.length = 0
-      mobileSurfaceRuntime = runtime === "mobile"
-      vscodeRuntime = runtime === "vscode"
+      mocks.mobileSurfaceRuntime = runtime === "mobile"
+      mocks.vscodeRuntime = runtime === "vscode"
       await fetchMessagesForSession(`session-${runtime}`, "/test/project")
 
       expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
@@ -541,7 +625,7 @@ describe("fetchMessagesForSession startup race", () => {
       sessionID: "session-busy",
       time: { created: 3 },
     } as Message
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: existingUser, parts: [{ id: "prt_1", type: "text", text: "old" } as Part] },
         { info: existingAssistant, parts: [{ id: "prt_2", type: "text", text: "reply" } as Part] },
@@ -606,13 +690,13 @@ describe("fetchMessagesForSession startup race", () => {
       text: "done",
       time: { start: 2, end: 3 },
     } as Part
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: existingUser, parts: [{ id: "prt_status_1", type: "text", text: "run" } as Part] },
         { info: completedAssistant, parts: [textPart] },
       ],
     }
-    sessionStatusResult = {}
+    mocks.sessionStatusResult = {}
     const busyStatus = { type: "busy" } as const
     const store = createStore({}, {
       session: [{ id: "session-status-reconcile", time: { created: 1 } } as Session],
@@ -749,7 +833,7 @@ describe("fetchMessagesForSession startup race", () => {
       text: "thinking half complete answer",
       time: { end: 99 },
     } as Part
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: existingUser, parts: [{ id: "prt_dr_user", type: "text", text: "go" } as Part] },
         { info: { ...existingAssistant, finish: "stop", time: { created: 2, completed: 3 } }, parts: [completeReasoning] },
@@ -887,15 +971,15 @@ describe("fetchMessagesForSession startup race", () => {
 
   test("a new/empty session's first complete page commits an exhausted boundary atomically", async () => {
     const sessionID = "session-new-boundary"
-    sessionMessagesResult = { data: [] }
-    hostTurnPageBehavior = { cursor: null, complete: true }
+    mocks.sessionMessagesResult = { data: [] }
+    mocks.hostTurnPageBehavior = { cursor: null, complete: true }
     const store = createStore({}, {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
     })
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-    uiCurrentSessionId = sessionID
+    mocks.uiCurrentSessionId = sessionID
 
     await fetchMessagesForSession(sessionID, "/test/project")
 
@@ -915,10 +999,10 @@ describe("fetchMessagesForSession startup race", () => {
       sessionID,
       time: { created: 1 },
     } as Message
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [{ info: existingUser, parts: [{ id: "prt_ub", type: "text", text: "hi" } as Part] }],
     }
-    hostTurnPageBehavior = { cursor: null, complete: true }
+    mocks.hostTurnPageBehavior = { cursor: null, complete: true }
     const store = createStore({}, {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
       message: { [sessionID]: [existingUser] },
@@ -930,7 +1014,7 @@ describe("fetchMessagesForSession startup race", () => {
     // Unknown boundary must still force an authoritative tail fetch (no prefetch cache).
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-    uiCurrentSessionId = sessionID
+    mocks.uiCurrentSessionId = sessionID
 
     await fetchMessagesForSession(sessionID, "/test/project")
 
@@ -961,7 +1045,7 @@ describe("fetchMessagesForSession startup race", () => {
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-    uiCurrentSessionId = sessionID
+    mocks.uiCurrentSessionId = sessionID
 
     await fetchMessagesForSession(sessionID, "/test/project")
 
@@ -976,17 +1060,17 @@ describe("fetchMessagesForSession startup race", () => {
       sessionID,
       time: { created: 1 },
     } as Message
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [{ info: existingUser, parts: [{ id: "prt_cb", type: "text", text: "hi" } as Part] }],
     }
-    hostTurnPageBehavior = { cursor: "msg_cb_user", complete: false }
+    mocks.hostTurnPageBehavior = { cursor: "msg_cb_user", complete: false }
     const store = createStore({}, {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
     })
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-    uiCurrentSessionId = sessionID
+    mocks.uiCurrentSessionId = sessionID
 
     await fetchMessagesForSession(sessionID, "/test/project")
 
@@ -1006,10 +1090,10 @@ describe("fetchMessagesForSession startup race", () => {
       time: { created: 1 },
     } as Message
     const existingPart = { id: "prt_bo", type: "text", text: "hi" } as Part
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [{ info: existingUser, parts: [existingPart] }],
     }
-    hostTurnPageBehavior = { cursor: null, complete: true }
+    mocks.hostTurnPageBehavior = { cursor: null, complete: true }
     const store = createStore({}, {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
       message: { [sessionID]: [existingUser] },
@@ -1021,7 +1105,7 @@ describe("fetchMessagesForSession startup race", () => {
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-    uiCurrentSessionId = sessionID
+    mocks.uiCurrentSessionId = sessionID
 
     const messagesBefore = store.getState().message
     const partsBefore = store.getState().part
@@ -1045,10 +1129,10 @@ describe("fetchMessagesForSession startup race", () => {
       sessionID,
       time: { created: 1 },
     } as Message
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [{ info: existingUser, parts: [{ id: "prt_sa", type: "text", text: "hi" } as Part] }],
     }
-    hostTurnPageBehavior = { cursor: null, complete: true }
+    mocks.hostTurnPageBehavior = { cursor: null, complete: true }
     const store = createStore({}, {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
     })
@@ -1056,7 +1140,7 @@ describe("fetchMessagesForSession startup race", () => {
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
     // The user switched to another session before the fetch starts/settles.
-    uiCurrentSessionId = "someone-else"
+    mocks.uiCurrentSessionId = "someone-else"
 
     await fetchMessagesForSession(sessionID, "/test/project")
 
@@ -1091,8 +1175,8 @@ describe("fetchMessagesForSession startup race", () => {
     // request error is not written to session-prefetch-cache.
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-    uiCurrentSessionId = sessionID
-    hostTurnPageBehavior = { cursor: null, complete: true, error: "host unreachable" }
+    mocks.uiCurrentSessionId = sessionID
+    mocks.hostTurnPageBehavior = { cursor: null, complete: true, error: "host unreachable" }
 
     await fetchMessagesForSession(sessionID, "/test/project")
 
@@ -1136,7 +1220,7 @@ describe("fetchMessagesForSession startup race", () => {
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-    uiCurrentSessionId = sessionID
+    mocks.uiCurrentSessionId = sessionID
 
     await fetchMessagesForSession(sessionID, "/test/project")
 
@@ -1152,9 +1236,9 @@ describe("abort queue dispatch block", () => {
   beforeEach(() => {
     replyCalls.length = 0
     abortBlockEvents.length = 0
-    abortBlockToken = 0
-    abortReject = false
-    abortResult = { data: true }
+    mocks.abortBlockToken = 0
+    mocks.abortReject = false
+    mocks.abortResult = { data: true }
   })
 
   test("creates the exact-scope block before the SDK abort and rolls back its token on failure", async () => {
@@ -1179,9 +1263,9 @@ describe("abort queue dispatch block", () => {
     expect(store.getState().session_status["session-a"]).toEqual({ type: "idle" })
     expect(typeof store.getState().session_status_observed_at["session-a"]).toBe("number")
 
-    abortReject = true
+    mocks.abortReject = true
     await abortCurrentOperation("session-a")
-    abortReject = false
+    mocks.abortReject = false
     const [begin, clear] = abortBlockEvents.slice(-2)
     expect(begin?.event).toBe("begin")
     expect(clear?.event).toBe("clear")
@@ -1204,7 +1288,7 @@ describe("abort queue dispatch block", () => {
       { error: { message: "abort rejected" }, response: { status: 500 } },
       { data: false },
     ]) {
-      abortResult = result
+      mocks.abortResult = result
       await abortCurrentOperation("session-a")
       const [begin, clear] = abortBlockEvents.slice(-2)
       expect(begin?.event).toBe("begin")
@@ -1242,15 +1326,15 @@ describe("resolveForkMessageId", () => {
 describe("forkSession input restoration", () => {
   beforeEach(() => {
     replyCalls.length = 0
-    clearAttachedFilesCalls = 0
+    mocks.clearAttachedFilesCalls = 0
     setCurrentSessionCalls.length = 0
-    uiCurrentSessionId = "session-a"
-    sessionMessagesResult = { data: [] }
-    sessionGetResult = null
-    globalActiveSessions = []
-    globalArchivedSessions = []
-    sessionForkResult = { id: "forked-session", title: "Source (fork #1)", time: { created: 2 } } as Session
-    sessionUpdateResult = { data: sessionForkResult }
+    mocks.uiCurrentSessionId = "session-a"
+    mocks.sessionMessagesResult = { data: [] }
+    mocks.sessionGetResult = null
+    mocks.globalActiveSessions = []
+    mocks.globalArchivedSessions = []
+    mocks.sessionForkResult = { id: "forked-session", title: "Source (fork #1)", time: { created: 2 } } as Session
+    mocks.sessionUpdateResult = { data: mocks.sessionForkResult }
     Object.assign(inputState, {
       pendingInputText: "existing draft",
       pendingInputMode: "normal" as const,
@@ -1268,7 +1352,7 @@ describe("forkSession input restoration", () => {
     await forkSession("session-a", 1)
 
     expect(replyCalls.find((call) => call.method === "session.fork")?.params.messageID).toBe(undefined)
-    expect(clearAttachedFilesCalls).toBe(0)
+    expect(mocks.clearAttachedFilesCalls).toBe(0)
     expect(inputState.attachedFiles).toEqual([{ url: "file:///existing.txt", mimeType: "text/plain", filename: "existing.txt" }])
     expect(inputState.pendingInputText).toBe("existing draft")
   })
@@ -1293,7 +1377,7 @@ describe("forkSession input restoration", () => {
 
     await forkSession("session-a", 2, "message-a")
 
-    expect(clearAttachedFilesCalls).toBe(1)
+    expect(mocks.clearAttachedFilesCalls).toBe(1)
     expect(inputState.attachedFiles).toEqual([{ url: "file:///fork.txt", mimeType: "text/plain", filename: "fork.txt" }])
     expect(inputState.pendingInputText).toBe("fork message")
     expect(inputState.pendingInputText).not.toContain("/fork")
@@ -1322,7 +1406,7 @@ describe("forkSession input restoration", () => {
     await forkSession("session-a", 2, "message-a")
 
     expect(replyCalls.find((call) => call.method === "session.fork")?.params.messageID).toBe("message-b")
-    expect(clearAttachedFilesCalls).toBe(0)
+    expect(mocks.clearAttachedFilesCalls).toBe(0)
     expect(inputState.pendingInputText).toBe("existing draft")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///existing.txt", mimeType: "text/plain", filename: "existing.txt" }])
   })
@@ -1334,7 +1418,7 @@ describe("forkSession input restoration", () => {
       directory: "/test/project",
       time: { created: 1 },
     } as Session & { directory?: string }
-    globalActiveSessions = [sourceSession]
+    mocks.globalActiveSessions = [sourceSession]
     // Messages already loaded (user is viewing the chat) but session row missing — cold start race.
     const sessionStore = createStore({}, {
       session: [],
@@ -1363,7 +1447,7 @@ describe("forkSession input restoration", () => {
 
   test("hydrates source session via session.get when global and child stores miss it", async () => {
     const sourceSession = { id: "session-a", title: "Fetched source", time: { created: 1 } } as Session
-    sessionGetResult = sourceSession
+    mocks.sessionGetResult = sourceSession
     const sessionStore = createStore({}, {
       session: [],
       session_status: { "session-a": { type: "idle" } },
@@ -1388,7 +1472,7 @@ describe("forkSession input restoration", () => {
   test("does not yank selection or restore composer when the user left the source session", async () => {
     const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
     const selectedMessage = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
-    uiCurrentSessionId = "session-b"
+    mocks.uiCurrentSessionId = "session-b"
     const sessionStore = createStore({}, {
       session: [sourceSession],
       message: { "session-a": [selectedMessage] },
@@ -1408,8 +1492,8 @@ describe("forkSession input restoration", () => {
 
     expect(completed).toBe(true)
     expect(setCurrentSessionCalls).toEqual([])
-    expect(uiCurrentSessionId).toBe("session-b")
-    expect(clearAttachedFilesCalls).toBe(0)
+    expect(mocks.uiCurrentSessionId).toBe("session-b")
+    expect(mocks.clearAttachedFilesCalls).toBe(0)
     expect(inputState.pendingInputText).toBe("existing draft")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///existing.txt", mimeType: "text/plain", filename: "existing.txt" }])
     expect(sessionStore.getState().session.some((session) => session.id === "forked-session")).toBe(true)
@@ -1420,7 +1504,7 @@ describe("shareSession live state", () => {
   beforeEach(() => {
     replyCalls.length = 0
     globalUpsertedSessions.length = 0
-    sessionShareResult = {}
+    mocks.sessionShareResult = {}
   })
 
   test("updates the directory live store after unsharing", async () => {
@@ -1432,7 +1516,7 @@ describe("shareSession live state", () => {
       ["/test/project", sessionStore],
       ["/other/project", otherStore],
     ])
-    sessionShareResult = { data: unsharedSession }
+    mocks.sessionShareResult = { data: unsharedSession }
 
     const { setActionRefs, unshareSession } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -1451,7 +1535,7 @@ describe("shareSession live state", () => {
     const sharedSession = { id: "session-a", time: { created: 1, updated: 2 }, share: { url: "https://share.example/a" } } as Session
     const sessionStore = createStore({}, { session: [unsharedSession] })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionShareResult = { data: sharedSession }
+    mocks.sessionShareResult = { data: sharedSession }
 
     const { setActionRefs, shareSession } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -1479,7 +1563,7 @@ describe("shareSession live state", () => {
     } as unknown as Session
     const sessionStore = createStore({}, { session: [sharedSession] })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionShareResult = { data: unsharedSession }
+    mocks.sessionShareResult = { data: unsharedSession }
 
     const { setActionRefs, unshareSession } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -1503,7 +1587,7 @@ describe("shareSession live state", () => {
     } as unknown as Session
     const sessionStore = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionShareResult = { data: sessionWithDiff }
+    mocks.sessionShareResult = { data: sessionWithDiff }
 
     const { setActionRefs, shareSession } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -1524,7 +1608,7 @@ describe("updateSessionTitle live state", () => {
   beforeEach(() => {
     replyCalls.length = 0
     globalUpsertedSessions.length = 0
-    sessionUpdateResult = {}
+    mocks.sessionUpdateResult = {}
   })
 
   test("updates the live directory store after renaming", async () => {
@@ -1532,7 +1616,7 @@ describe("updateSessionTitle live state", () => {
     const updatedSession = { id: "session-a", title: "New Title", time: { created: 1, updated: 2 } } as Session
     const sessionStore = createStore({}, { session: [oldSession] })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionUpdateResult = { data: updatedSession }
+    mocks.sessionUpdateResult = { data: updatedSession }
 
     const { setActionRefs, updateSessionTitle } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -1552,8 +1636,8 @@ describe("requestSessionSmartTitle", () => {
   beforeEach(() => {
     replyCalls.length = 0
     globalUpsertedSessions.length = 0
-    globalActiveSessions = []
-    sessionUpdateResult = {}
+    mocks.globalActiveSessions = []
+    mocks.sessionUpdateResult = {}
   })
 
   test("writes titleRefresh.requestedAt and mirrors the updated session", async () => {
@@ -1579,10 +1663,10 @@ describe("requestSessionSmartTitle", () => {
         },
       },
     } as unknown as Session
-    globalActiveSessions = [oldSession]
+    mocks.globalActiveSessions = [oldSession]
     const sessionStore = createStore({}, { session: [oldSession] })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionUpdateResult = { data: updatedSession }
+    mocks.sessionUpdateResult = { data: updatedSession }
 
     const { setActionRefs, requestSessionSmartTitle } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -1612,7 +1696,7 @@ describe("optimisticSend target directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
-    sessionMessagesResult = { data: [] }
+    mocks.sessionMessagesResult = { data: [] }
     configStoreState.isConnected = true
     configStoreState.hasEverConnected = true
     pendingSendTransitions.length = 0
@@ -2002,7 +2086,7 @@ describe("optimisticSend target directory", () => {
       modelID: "model",
       send: async (messageID) => {
         sentMessageID = messageID
-        sessionMessagesResult = {
+        mocks.sessionMessagesResult = {
           data: [{
             info: { id: messageID, role: "user", sessionID: "session-confirmed", time: { created: 1 } } as Message,
             parts: [{ id: "server-part", type: "text", text: "hello" } as Part],
@@ -2460,7 +2544,7 @@ describe("respondToPermission passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
-    sessionRevertResult = {}
+    mocks.sessionRevertResult = {}
   })
 
   test("passes directory from child store when permission is found", async () => {
@@ -2520,12 +2604,12 @@ describe("revertToMessage passes session directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
-    sessionRevertResult = {}
+    mocks.sessionRevertResult = {}
     draftCommits.length = 0
-    draftRevisionByKey = new Map()
-    draftCommitShouldFail = false
-    draftCommitFailAfter = 0
-    draftCommitCount = 0
+    mocks.draftRevisionByKey = new Map()
+    mocks.draftCommitShouldFail = false
+    mocks.draftCommitFailAfter = 0
+    mocks.draftCommitCount = 0
     Object.assign(inputState, {
       pendingInputText: "previous draft",
       pendingInputMode: "normal" as const,
@@ -2548,7 +2632,7 @@ describe("revertToMessage passes session directory", () => {
       ["/test/project", sessionStore],
       ["/current/project", currentStore],
     ])
-    sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
+    mocks.sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
 
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -2582,7 +2666,7 @@ describe("revertToMessage passes session directory", () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
     const sessionStore = createStore({}, { session: [session], message: { "session-a": [targetMessage] }, part: { "msg_2": [{ id: "text", messageID: "msg_2", type: "text", text: "assistant draft" } as Part, { id: "file", messageID: "msg_2", type: "file", url: "https://files.example/a", mime: "text/plain", filename: "a.txt" } as Part] } })
-    sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
+    mocks.sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", sessionStore]]), () => "/current/project")
     const { getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
@@ -2604,11 +2688,11 @@ describe("revertToMessage passes session directory", () => {
       part: { "msg_2": [targetPart] },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionRevertResult = { error: { message: "rejected" }, response: { status: 500 } }
+    mocks.sessionRevertResult = { error: { message: "rejected" }, response: { status: 500 } }
     const { getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
     const transportIdentity = getRuntimeTransportIdentity()
     const draftKeyId = JSON.stringify([transportIdentity, "session", "session-a"])
-    draftRevisionByKey.set(draftKeyId, 2)
+    mocks.draftRevisionByKey.set(draftKeyId, 2)
     inputState.drafts[draftKeyId] = { revision: 2, text: "previous draft" }
     inputState.captureDraftRuntime = () => ({ transportIdentity, generation: 1 })
 
@@ -2634,14 +2718,14 @@ describe("revertToMessage passes session directory", () => {
 describe("message edit staging", () => {
   beforeEach(() => {
     replyCalls.length = 0
-    sessionDeleteMessageFailureID = null
-    sessionMessagesResult = { data: [] }
-    uiPendingSendMessageIDs = new Map()
+    mocks.sessionDeleteMessageFailureID = null
+    mocks.sessionMessagesResult = { data: [] }
+    mocks.uiPendingSendMessageIDs = new Map()
     draftCommits.length = 0
-    draftRevisionByKey = new Map()
-    draftCommitShouldFail = false
-    draftCommitFailAfter = 0
-    draftCommitCount = 0
+    mocks.draftRevisionByKey = new Map()
+    mocks.draftCommitShouldFail = false
+    mocks.draftCommitFailAfter = 0
+    mocks.draftCommitCount = 0
     Object.assign(inputState, {
       pendingInputText: "previous draft",
       pendingInputMode: "normal" as const,
@@ -2760,7 +2844,7 @@ describe("message edit staging", () => {
       },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: targetMessage, parts: [] },
         { info: assistantMessage, parts: [] },
@@ -2796,8 +2880,8 @@ describe("message edit staging", () => {
       },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionDeleteMessageFailureID = "msg_3"
-    sessionMessagesResult = {
+    mocks.sessionDeleteMessageFailureID = "msg_3"
+    mocks.sessionMessagesResult = {
       data: [
         { info: targetMessage, parts: [] },
         { info: laterMessage, parts: [] },
@@ -2835,7 +2919,7 @@ describe("message edit staging", () => {
     expect(draftCommits).toHaveLength(1)
     expect(draftCommits[0]?.key.owner).toEqual({ kind: "surface", ownerID: "assistant:a" })
     expect(draftCommits[0]?.snapshot.text).toBe("surface edit")
-    expect(draftRevisionByKey.has(JSON.stringify([primaryKey.transportIdentity, "session", "session-a"]))).toBe(false)
+    expect(mocks.draftRevisionByKey.has(JSON.stringify([primaryKey.transportIdentity, "session", "session-a"]))).toBe(false)
   })
 
   test("returns an opaque rollback handle that restores prior absence via CAS", async () => {
@@ -2852,23 +2936,23 @@ describe("message edit staging", () => {
     const id = JSON.stringify([key.transportIdentity, "session", "session-a"])
 
     const handle = await stageMessageEdit("session-a", "msg_2")
-    expect(draftRevisionByKey.get(id)).toBe(1)
+    expect(mocks.draftRevisionByKey.get(id)).toBe(1)
     expect(typeof handle.rollback).toBe("function")
     // Handle must not expose DraftRecord / attachment internals.
     expect(Object.keys(handle).sort()).toEqual(["rollback"])
 
     const rolled = await handle.rollback()
     expect(rolled.status).toBe("rolled-back")
-    expect(draftRevisionByKey.has(id)).toBe(false)
+    expect(mocks.draftRevisionByKey.has(id)).toBe(false)
 
     // Conflict: user continued editing after stage — keep newer revision.
     const handle2 = await stageMessageEdit("session-a", "msg_2")
-    const revision = draftRevisionByKey.get(id)!
-    draftRevisionByKey.set(id, revision + 1)
+    const revision = mocks.draftRevisionByKey.get(id)!
+    mocks.draftRevisionByKey.set(id, revision + 1)
     inputState.drafts[id] = { revision: revision + 1, text: "user continued" }
     const conflict = await handle2.rollback()
     expect(conflict.status).toBe("conflict")
-    expect(draftRevisionByKey.get(id)).toBe(revision + 1)
+    expect(mocks.draftRevisionByKey.get(id)).toBe(revision + 1)
     expect(inputState.drafts[id]?.text).toBe("user continued")
   })
 
@@ -2891,7 +2975,7 @@ describe("message edit staging", () => {
       ["/assistant/workspace", sessionStore],
       ["/current/project", wrongStore],
     ])
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message, parts: [] },
         { info: { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message, parts: [] },
@@ -2922,7 +3006,7 @@ describe("message edit staging", () => {
       },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: olderUser, parts: [] },
         { info: olderReply, parts: [] },
@@ -2954,8 +3038,8 @@ describe("message edit staging", () => {
       part: {},
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    uiPendingSendMessageIDs = new Map([["session-a", "msg_9"]])
-    sessionMessagesResult = {
+    mocks.uiPendingSendMessageIDs = new Map([["session-a", "msg_9"]])
+    mocks.sessionMessagesResult = {
       data: [
         { info: targetMessage, parts: [] },
         { info: targetReply, parts: [] },
@@ -2986,13 +3070,13 @@ describe("message edit staging", () => {
       part: {},
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: targetMessage, parts: [] },
         { info: targetReply, parts: [] },
       ],
     }
-    mockSdk.session.abort = mock(async (params: Record<string, unknown>) => {
+    mockSdk.session.abort = vi.fn(async (params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.abort", params })
       setTimeout(() => {
         sessionStore.setState({
@@ -3029,7 +3113,7 @@ describe("message edit staging", () => {
       part: {},
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: targetReply, parts: [] },
         { info: targetMessage, parts: [] },
@@ -3060,7 +3144,7 @@ describe("message edit staging", () => {
       part: {},
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [{ info: targetReply, parts: [] }],
     }
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
@@ -3082,7 +3166,7 @@ describe("message edit staging", () => {
       part: {},
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionMessagesResult = {
+    mocks.sessionMessagesResult = {
       data: [
         { info: unloadedOlder, parts: [] },
         { info: targetMessage, parts: [] },
@@ -3113,8 +3197,8 @@ describe("message edit staging", () => {
       part: {},
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    uiPendingSendMessageIDs = new Map([["session-a", "msg_0"]])
-    sessionMessagesResult = {
+    mocks.uiPendingSendMessageIDs = new Map([["session-a", "msg_0"]])
+    mocks.sessionMessagesResult = {
       data: [
         { info: targetMessage, parts: [] },
         { info: targetReply, parts: [] },
@@ -3163,7 +3247,7 @@ describe("message edit staging", () => {
     const dirB = "/other/project"
     const sessionStore = createStore({}, { session: [session] })
     const childStores = createChildStores([[dirA, sessionStore]])
-    sessionMessagesResult = { data: page.records }
+    mocks.sessionMessagesResult = { data: page.records }
 
     const transport = getRuntimeTransportIdentity()
     const generation = getRuntimeGeneration()
@@ -3242,14 +3326,14 @@ describe("session history mutation serial coordinator", () => {
 
   beforeEach(() => {
     replyCalls.length = 0
-    sessionRevertResult = {}
-    sessionUnrevertResult = {}
-    sessionMessagesResult = { data: [] }
+    mocks.sessionRevertResult = {}
+    mocks.sessionUnrevertResult = {}
+    mocks.sessionMessagesResult = { data: [] }
     draftCommits.length = 0
-    draftRevisionByKey = new Map()
-    draftCommitShouldFail = false
-    draftCommitFailAfter = 0
-    draftCommitCount = 0
+    mocks.draftRevisionByKey = new Map()
+    mocks.draftCommitShouldFail = false
+    mocks.draftCommitFailAfter = 0
+    mocks.draftCommitCount = 0
     Object.assign(inputState, {
       pendingInputText: "",
       pendingInputMode: "normal" as const,
@@ -3461,7 +3545,7 @@ describe("session history mutation serial coordinator", () => {
 
     // Patch SDK unrevert path used by unrevertSession.
     const originalUnrevert = mockSdk.session.unrevert
-    mockSdk.session.unrevert = mock(async (params: Record<string, unknown>) => {
+    mockSdk.session.unrevert = vi.fn(async (params: Record<string, unknown>) => {
       order.push("unrevert-start")
       replyCalls.push({ method: "session.unrevert", params })
       await unrevertGate
@@ -3500,7 +3584,7 @@ describe("dismissPermission passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
-    questionReplyError = null
+    mocks.questionReplyError = null
   })
 
   test("passes directory and reply=reject", async () => {
@@ -3532,7 +3616,7 @@ describe("respondToQuestion passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
-    questionReplyError = null
+    mocks.questionReplyError = null
   })
 
   test("passes directory to question.reply", async () => {
@@ -3563,7 +3647,7 @@ describe("respondToQuestion passes directory", () => {
     }
     const store = createStore({}, { question: { "session-a": [question] } })
     const childStores = createChildStores([["/test/project", store]])
-    questionReplyError = Object.assign(new Error("question.reply failed (404): QuestionNotFoundError"), { status: 404 })
+    mocks.questionReplyError = Object.assign(new Error("question.reply failed (404): QuestionNotFoundError"), { status: 404 })
 
     const { setActionRefs, respondToQuestion } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
@@ -3584,7 +3668,7 @@ describe("rejectQuestion passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
-    questionReplyError = null
+    mocks.questionReplyError = null
   })
 
   test("passes directory to question.reject", async () => {
@@ -3649,7 +3733,7 @@ describe("ensureSentUserMessagePresence", () => {
     })
     const childStores = createChildStores([["/test/project", store]])
     let calls = 0
-    const messagesMock = mock(() => {
+    const messagesMock = vi.fn(() => {
       calls += 1
       return Promise.resolve({ data: [userRecord(messageID)] })
     })
@@ -3674,7 +3758,7 @@ describe("ensureSentUserMessagePresence", () => {
     const store = createStore({})
     const childStores = createChildStores([["/test/project", store]])
     let calls = 0
-    const messagesMock = mock(() => {
+    const messagesMock = vi.fn(() => {
       calls += 1
       return Promise.resolve({ data: [userRecord(messageID)] })
     })
@@ -3707,7 +3791,7 @@ describe("ensureSentUserMessagePresence", () => {
       message: { "session-a": [{ id: messageID, role: "user", sessionID: "session-a" } as unknown as Message] },
     })
     const childStores = createChildStores([["/test/project", store]])
-    sessionMessagesResult = { data: [userRecord(messageID)] }
+    mocks.sessionMessagesResult = { data: [userRecord(messageID)] }
     const { setActionRefs, ensureSentUserMessagePresence, combinedSendConfirmationOptions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
     combinedSendConfirmationOptions.recovery = { attempts: 1, retryDelayMs: 0 }
@@ -3732,7 +3816,7 @@ describe("ensureSentUserMessagePresence", () => {
       part: { msg_prior: [{ id: "prt_prior", type: "text", text: "keep me" } as unknown as Part] },
     })
     const childStores = createChildStores([["/test/project", store]])
-    sessionMessagesResult = { data: [] }
+    mocks.sessionMessagesResult = { data: [] }
     const { setActionRefs, ensureSentUserMessagePresence, combinedSendConfirmationOptions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
     combinedSendConfirmationOptions.recovery = { attempts: 1, retryDelayMs: 0 }
@@ -3755,7 +3839,7 @@ describe("ensureSentUserMessagePresence", () => {
     const store = createStore({})
     const childStores = createChildStores([["/test/project", store]])
     let calls = 0
-    const messagesMock = mock(() => {
+    const messagesMock = vi.fn(() => {
       calls += 1
       return Promise.resolve({ data: [userRecord(messageID)] })
     })
@@ -3782,7 +3866,7 @@ describe("dismissOpenQuestionsForSession", () => {
   beforeEach(() => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
-    questionReplyError = null
+    mocks.questionReplyError = null
   })
 
   test("returns false and rejects nothing when no questions are pending", async () => {
@@ -3836,7 +3920,7 @@ describe("dismissOpenQuestionsForSession", () => {
       question: { "session-a": [staleQuestion] },
     })
     const childStores = createChildStores([["/test/project", store]])
-    questionRejectError = Object.assign(new Error("question.reject failed (404): QuestionNotFoundError"), { status: 404 })
+    mocks.questionRejectError = Object.assign(new Error("question.reject failed (404): QuestionNotFoundError"), { status: 404 })
 
     const { setActionRefs, dismissOpenQuestionsForSession } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
@@ -3865,11 +3949,11 @@ describe("composer restoration file-part materialize", () => {
   beforeEach(() => {
     replyCalls.length = 0
     draftCommits.length = 0
-    draftRevisionByKey = new Map()
-    draftCommitShouldFail = false
-    draftCommitFailAfter = 0
-    draftCommitCount = 0
-    sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
+    mocks.draftRevisionByKey = new Map()
+    mocks.draftCommitShouldFail = false
+    mocks.draftCommitFailAfter = 0
+    mocks.draftCommitCount = 0
+    mocks.sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
     Object.assign(inputState, {
       ...previousDraft,
       drafts: {},

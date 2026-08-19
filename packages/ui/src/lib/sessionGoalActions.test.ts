@@ -1,12 +1,14 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { beforeEach, describe, expect, test, vi } from "vitest"
 
-const abortCalls: string[] = []
-let currentGoal: Record<string, unknown> | null = null
-const writes: Array<Record<string, unknown> | null> = []
+const mocks = vi.hoisted(() => ({
+  abortCalls: [] as string[],
+  writes: [] as Array<Record<string, unknown> | null>,
+  currentGoal: null as Record<string, unknown> | null,
+}))
 
-mock.module("@/sync/session-actions", () => ({
+vi.mock("@/sync/session-actions", () => ({
   abortCurrentOperation: (sessionId: string) => {
-    abortCalls.push(sessionId)
+    mocks.abortCalls.push(sessionId)
   },
   patchSessionMetadata: async (
     _sessionId: string,
@@ -14,29 +16,33 @@ mock.module("@/sync/session-actions", () => ({
     updater: (metadata: Record<string, unknown>) => Record<string, unknown>,
   ) => {
     const next = updater({
-      openchamber: currentGoal ? { goal: currentGoal } : {},
+      openchamber: mocks.currentGoal ? { goal: mocks.currentGoal } : {},
     })
     const namespace = next.openchamber as { goal?: Record<string, unknown> } | undefined
-    currentGoal = namespace?.goal ?? null
-    writes.push(currentGoal)
+    mocks.currentGoal = namespace?.goal ?? null
+    mocks.writes.push(mocks.currentGoal)
     return {}
   },
 }))
 
-mock.module("@/lib/smallModel", () => ({
+vi.mock("@/sync/queue-abort-optimistic", () => ({
+  promoteQueueHeadOnAbort: () => undefined,
+}))
+
+vi.mock("@/lib/smallModel", () => ({
   distillGoalObjective: async () => null,
 }))
 
-mock.module("@/lib/i18n", () => ({
+vi.mock("@/lib/i18n", () => ({
   formatMessage: () => "",
   useI18nStore: { getState: () => ({ dictionary: {} }) },
 }))
 
-mock.module("@/components/ui", () => ({
+vi.mock("@/components/ui", () => ({
   toast: { error: () => undefined },
 }))
 
-mock.module("@/lib/runtime-fetch", () => ({
+vi.mock("@/lib/runtime-fetch", () => ({
   runtimeFetch: async () => ({ ok: true, json: async () => ({}) }),
 }))
 
@@ -52,44 +58,44 @@ const activeGoal = {
 
 describe("pauseSessionGoalForQuestion", () => {
   beforeEach(() => {
-    abortCalls.length = 0
-    writes.length = 0
-    currentGoal = { ...activeGoal }
+    mocks.abortCalls.length = 0
+    mocks.writes.length = 0
+    mocks.currentGoal = { ...activeGoal }
   })
 
   test("pauses an active goal without aborting the current turn", async () => {
     await pauseSessionGoalForQuestion("ses_a", "/repo")
-    expect(currentGoal?.status).toBe("paused")
-    expect(currentGoal?.statusReason).toBe("paused for question")
-    expect(abortCalls).toEqual([])
+    expect(mocks.currentGoal?.status).toBe("paused")
+    expect(mocks.currentGoal?.statusReason).toBe("paused for question")
+    expect(mocks.abortCalls).toEqual([])
   })
 
   test("is a no-op when there is no goal", async () => {
-    currentGoal = null
+    mocks.currentGoal = null
     await pauseSessionGoalForQuestion("ses_a", "/repo")
-    expect(currentGoal).toBeNull()
-    expect(abortCalls).toEqual([])
+    expect(mocks.currentGoal).toBeNull()
+    expect(mocks.abortCalls).toEqual([])
   })
 
   test("is a no-op when the goal is already paused", async () => {
-    currentGoal = { ...activeGoal, status: "paused", statusReason: "marked by user" }
+    mocks.currentGoal = { ...activeGoal, status: "paused", statusReason: "marked by user" }
     await pauseSessionGoalForQuestion("ses_a", "/repo")
-    expect(currentGoal?.status).toBe("paused")
-    expect(currentGoal?.statusReason).toBe("marked by user")
-    expect(abortCalls).toEqual([])
+    expect(mocks.currentGoal?.status).toBe("paused")
+    expect(mocks.currentGoal?.statusReason).toBe("marked by user")
+    expect(mocks.abortCalls).toEqual([])
   })
 })
 
 describe("setSessionGoalStatus", () => {
   beforeEach(() => {
-    abortCalls.length = 0
-    writes.length = 0
-    currentGoal = { ...activeGoal }
+    mocks.abortCalls.length = 0
+    mocks.writes.length = 0
+    mocks.currentGoal = { ...activeGoal }
   })
 
   test("manual pause still aborts the current operation", async () => {
     await setSessionGoalStatus("ses_a", "/repo", "paused")
-    expect(abortCalls).toEqual(["ses_a"])
-    expect(currentGoal?.status).toBe("paused")
+    expect(mocks.abortCalls).toEqual(["ses_a"])
+    expect(mocks.currentGoal?.status).toBe("paused")
   })
 })

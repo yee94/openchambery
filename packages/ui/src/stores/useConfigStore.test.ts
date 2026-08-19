@@ -1746,12 +1746,13 @@ describe('useConfigStore provider persistence', () => {
     liveProviderId = 'recovered';
     liveAgents = [testAgent('build')];
 
-    // Ordinary ensure keeps the successful empty Infinity cache — no second network read.
+    // Empty provider catalogs use staleTime 0, so ordinary ensure refetches.
+    // Empty agent catalogs still use staleTime Infinity until force-refresh.
     await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:staleEnsure' });
     await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:staleEnsure' });
-    expect(getProvidersCalls).toBe(providerCallsAfterEmpty);
+    expect(getProvidersCalls).toBe(providerCallsAfterEmpty + 1);
     expect(listAgentsCalls).toBe(agentCallsAfterEmpty);
-    expect(useConfigStore.getState().providers).toEqual([]);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['recovered']);
     expect(useConfigStore.getState().agents).toEqual([]);
 
     await useConfigStore.getState().refreshMissingCatalogs({ source: 'test:recovery' });

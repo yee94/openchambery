@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   clampMobileBackProgress,
@@ -24,6 +26,8 @@ import {
   expectMobileSessionMirror,
   resetMobileSessionMirror,
 } from './useMobileNavigationStore';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const route = (id: string, onBack: () => boolean | void, layer: 'root' | 'overlay' = 'root') => ({
   id,
@@ -273,7 +277,7 @@ describe('mobile session mirror acknowledgment', () => {
 
 describe('MobileTabsRoot secondary enter', () => {
   test('does not wire push WAAPI enter animations', async () => {
-    const source = await readFile(new URL('./MobileTabsRoot.tsx', import.meta.url), 'utf8');
+    const source = await readFile(join(here, 'MobileTabsRoot.tsx'), 'utf8');
     expect(source).not.toContain('MobilePushPresentationController');
     expect(source).not.toContain('pushPresentation.start');
     expect(source).not.toContain('pushPresentationRef');
@@ -288,8 +292,8 @@ describe('MobileTabsRoot secondary enter', () => {
   // Short Projects lists must paint the shared page canvas full-height; never
   // leave a plain --background band under the last card.
   test('uses shared page-canvas background token', async () => {
-    const source = await readFile(new URL('./MobileTabsRoot.tsx', import.meta.url), 'utf8');
-    const styles = await readFile(new URL('../styles/mobile.css', import.meta.url), 'utf8');
+    const source = await readFile(join(here, 'MobileTabsRoot.tsx'), 'utf8');
+    const styles = await readFile(join(here, '../styles/mobile.css'), 'utf8');
     expect(source).toContain('bg-[var(--oc-mobile-page-background)]');
     expect(styles).toContain('--oc-mobile-page-background: color-mix(');
     expect(styles).toContain('.oc-mobile-floating-shell.overflow-hidden');
@@ -427,9 +431,9 @@ test('settlement cancels its fill-forwards animation before a route reuses the s
 });
 
 test('all three nested transcript entries route through the native phone stack helper', async () => {
-  const [messageBody, toolPart] = await Promise.all([
-    readFile(new URL('../components/chat/message/MessageBody.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../components/chat/message/parts/ToolPart.tsx', import.meta.url), 'utf8'),
+    const [messageBody, toolPart] = await Promise.all([
+    readFile(join(here, '../components/chat/message/MessageBody.tsx'), 'utf8'),
+    readFile(join(here, '../components/chat/message/parts/ToolPart.tsx'), 'utf8'),
   ]);
   expect(messageBody.match(/pushPhoneNestedSession\(/g)).toHaveLength(1);
   expect(toolPart.match(/pushPhoneNestedSession\(/g)).toHaveLength(2);

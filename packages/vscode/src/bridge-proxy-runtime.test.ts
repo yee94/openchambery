@@ -1,4 +1,4 @@
-import { describe, test } from 'node:test';
+import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import type { BridgeContext } from './bridge';
 import { handleProxyBridgeMessage } from './bridge-proxy-runtime';

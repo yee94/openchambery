@@ -2,7 +2,7 @@
   "name": "openchamber",
   "displayName": "OpenChamber",
   "description": "%extension.description%",
-  "version": "1.17.0",
+  "version": "1.17.1-beta.1",
   "publisher": "fedaykindev",
   "private": true,
   "repository": {
@@ -229,6 +229,7 @@
     "watch:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch --sourcemap --main-fields=module,main",
     "watch:webview": "vite build --watch",
     "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.webview.json",
+    "test": "vitest run",
     "lint": "bun x eslint --ext .ts,.tsx src webview",
     "package": "vsce package --no-dependencies"
   },

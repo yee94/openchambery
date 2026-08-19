@@ -3,10 +3,10 @@ import { cn } from '@/lib/utils';
 
 const STAGE_SIZE = 28;
 const GRID_SIZE = 3;
-const GRID_OFFSET = 8;
-const PITCH = 6;
+const GRID_OFFSET = 4;
+const PITCH = 10;
 const MID = 1;
-const DOT_SIZE = 2.5;
+const DOT_SIZE = 4;
 
 export const LatticeOrb: React.FC<{
     size?: number;

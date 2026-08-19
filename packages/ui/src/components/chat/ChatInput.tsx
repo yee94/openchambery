@@ -4948,8 +4948,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         );
         const next = `${message.slice(0, selectionStart)}${insertion}${message.slice(selectionEnd)}`;
         replaceWithConfirmedFileMentions(next, uniquePaths);
-        toast.success(t('chat.chatInput.toast.addedFileMentions', { count: uniquePaths.length }));
-    }, [message, replaceWithConfirmedFileMentions, t]);
+    }, [message, replaceWithConfirmedFileMentions]);
 
     const handlePaste = React.useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
         const pastedFilePaths = collectFilePathsFromTransfer(e.clipboardData);

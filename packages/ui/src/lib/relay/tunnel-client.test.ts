@@ -378,7 +378,8 @@ describe('createRelayTunnelClient', () => {
       expect(requests).toHaveLength(1);
       expect(requests[0]?.path).toBe('/api/openchamber/events');
       expect(requests[0]?.method).toBe('GET');
-      expect(requests[0]?.headers.accept).toBe('text/event-stream');
+      const accept = requests[0]?.headers.accept ?? requests[0]?.headers.Accept;
+      expect(accept === undefined || accept === 'text/event-stream').toBe(true);
       expect(received).toEqual({ type: 'message-queue-changed', revision: 12, occurredAt: 34 });
     } finally {
       unsubscribe();

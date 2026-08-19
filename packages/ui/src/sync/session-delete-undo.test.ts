@@ -1,31 +1,37 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 
-const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
-let deleteSessionResult: boolean | Error = true
-let updateSessionImpl: (sessionId: string, changes: Record<string, unknown>, directory?: string | null) => Promise<Session>
+const mocks = vi.hoisted(() => {
+  const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
+  const globalState = {
+    activeSessions: [] as Session[],
+    archivedSessions: [] as Session[],
+    pendingDeletionIds: new Set<string>(),
+  }
+  const uiState = {
+    currentSessionId: null as string | null,
+    setCurrentSessionCalls: [] as Array<{ id: string | null; directory: string | null | undefined }>,
+  }
+  const state = {
+    deleteSessionResult: true as boolean | Error,
+    updateSessionImpl: (async (sessionId: string, _changes: Record<string, unknown>, _directory?: string | null) => {
+      return { id: sessionId } as Session
+    }) as (sessionId: string, changes: Record<string, unknown>, directory?: string | null) => Promise<Session>,
+  }
 
-const globalState = {
-  activeSessions: [] as Session[],
-  archivedSessions: [] as Session[],
-  pendingDeletionIds: new Set<string>(),
-}
+  const upsertGlobalSession = (session: Session): void => {
+    if (globalState.pendingDeletionIds.has(session.id)) return
+    const isArchived = Boolean(session.time?.archived)
+    globalState.activeSessions = isArchived
+      ? globalState.activeSessions.filter((item) => item.id !== session.id)
+      : [session, ...globalState.activeSessions.filter((item) => item.id !== session.id)]
+    globalState.archivedSessions = isArchived
+      ? [session, ...globalState.archivedSessions.filter((item) => item.id !== session.id)]
+      : globalState.archivedSessions.filter((item) => item.id !== session.id)
+  }
 
-function upsertGlobalSession(session: Session): void {
-  if (globalState.pendingDeletionIds.has(session.id)) return
-  const isArchived = Boolean(session.time?.archived)
-  globalState.activeSessions = isArchived
-    ? globalState.activeSessions.filter((item) => item.id !== session.id)
-    : [session, ...globalState.activeSessions.filter((item) => item.id !== session.id)]
-  globalState.archivedSessions = isArchived
-    ? [session, ...globalState.archivedSessions.filter((item) => item.id !== session.id)]
-    : globalState.archivedSessions.filter((item) => item.id !== session.id)
-}
-
-const uiState = {
-  currentSessionId: null as string | null,
-  setCurrentSessionCalls: [] as Array<{ id: string | null; directory: string | null | undefined }>,
-}
+  return { replyCalls, globalState, uiState, state, upsertGlobalSession }
+})
 
 function makeSession(id: string, options?: { archived?: number; directory?: string }): Session {
   return {
@@ -43,25 +49,26 @@ function makeSession(id: string, options?: { archived?: number; directory?: stri
   } as Session
 }
 
-mock.module("@/lib/opencode/client", () => ({
+vi.mock("@/lib/opencode/client", () => ({
   opencodeClient: {
+    setDirectory: vi.fn(),
     getDirectory: () => "/test/project",
-    getSession: mock(async () => {
+    getSession: vi.fn(async () => {
       throw new Error("not used")
     }),
-    deleteSession: mock(async (sessionId: string, directory?: string | null) => {
-      replyCalls.push({ method: "session.delete", params: { sessionID: sessionId, directory } })
-      if (deleteSessionResult instanceof Error) throw deleteSessionResult
-      return deleteSessionResult
+    deleteSession: vi.fn(async (sessionId: string, directory?: string | null) => {
+      mocks.replyCalls.push({ method: "session.delete", params: { sessionID: sessionId, directory } })
+      if (mocks.state.deleteSessionResult instanceof Error) throw mocks.state.deleteSessionResult
+      return mocks.state.deleteSessionResult
     }),
-    updateSession: mock(async (sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
-      replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
-      return updateSessionImpl(sessionId, changes, directory)
+    updateSession: vi.fn(async (sessionId: string, changes: Record<string, unknown>, directory?: string | null) => {
+      mocks.replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
+      return mocks.state.updateSessionImpl(sessionId, changes, directory)
     }),
   },
 }))
 
-mock.module("@/stores/useConfigStore", () => ({
+vi.mock("@/stores/useConfigStore", () => ({
   useConfigStore: {
     getState: () => ({
       isConnected: true,
@@ -71,18 +78,18 @@ mock.module("@/stores/useConfigStore", () => ({
   },
 }))
 
-mock.module("./session-ui-store", () => ({
+vi.mock("./session-ui-store", () => ({
   useSessionUIStore: {
     getState: () => ({
-      currentSessionId: uiState.currentSessionId,
+      currentSessionId: mocks.uiState.currentSessionId,
       getDirectoryForSession: (sessionId: string) => {
-        const hit = [...globalState.activeSessions, ...globalState.archivedSessions]
+        const hit = [...mocks.globalState.activeSessions, ...mocks.globalState.archivedSessions]
           .find((session) => session.id === sessionId)
         return (hit as Session & { directory?: string } | undefined)?.directory ?? "/test/project"
       },
       setCurrentSession: (id: string | null, directoryHint?: string | null) => {
-        uiState.currentSessionId = id
-        uiState.setCurrentSessionCalls.push({ id, directory: directoryHint })
+        mocks.uiState.currentSessionId = id
+        mocks.uiState.setCurrentSessionCalls.push({ id, directory: directoryHint })
       },
       setWorktreeMetadata: () => undefined,
       getWorktreeMetadata: () => null,
@@ -91,36 +98,36 @@ mock.module("./session-ui-store", () => ({
   },
 }))
 
-mock.module("./input-store", () => ({
+vi.mock("./input-store", () => ({
   useInputStore: {
     getState: () => ({}),
     setState: () => undefined,
   },
 }))
 
-mock.module("@/stores/useGlobalSessionsStore", () => ({
+vi.mock("@/stores/useGlobalSessionsStore", () => ({
   mergeSessionDirectoryMetadata: (incoming: Session) => incoming,
   useGlobalSessionsStore: {
     getState: () => ({
-      activeSessions: globalState.activeSessions,
-      archivedSessions: globalState.archivedSessions,
-      pendingDeletionIds: globalState.pendingDeletionIds,
-      upsertSession: upsertGlobalSession,
+      activeSessions: mocks.globalState.activeSessions,
+      archivedSessions: mocks.globalState.archivedSessions,
+      pendingDeletionIds: mocks.globalState.pendingDeletionIds,
+      upsertSession: mocks.upsertGlobalSession,
       markSessionsPendingDeletion: (ids: Iterable<string>) => {
-        for (const id of ids) globalState.pendingDeletionIds.add(id)
+        for (const id of ids) mocks.globalState.pendingDeletionIds.add(id)
       },
       clearSessionsPendingDeletion: (ids: Iterable<string>) => {
-        for (const id of ids) globalState.pendingDeletionIds.delete(id)
+        for (const id of ids) mocks.globalState.pendingDeletionIds.delete(id)
       },
       removeSessions: (ids: Iterable<string>) => {
         const idSet = new Set(ids)
-        globalState.activeSessions = globalState.activeSessions.filter((session) => !idSet.has(session.id))
-        globalState.archivedSessions = globalState.archivedSessions.filter((session) => !idSet.has(session.id))
+        mocks.globalState.activeSessions = mocks.globalState.activeSessions.filter((session) => !idSet.has(session.id))
+        mocks.globalState.archivedSessions = mocks.globalState.archivedSessions.filter((session) => !idSet.has(session.id))
       },
       archiveSessions: (ids: Iterable<string>, archivedAt = Date.now()) => {
         const idSet = new Set(ids)
         const moved: Session[] = []
-        globalState.activeSessions = globalState.activeSessions.filter((session) => {
+        mocks.globalState.activeSessions = mocks.globalState.activeSessions.filter((session) => {
           if (!idSet.has(session.id)) return true
           moved.push({
             ...session,
@@ -128,13 +135,13 @@ mock.module("@/stores/useGlobalSessionsStore", () => ({
           })
           return false
         })
-        globalState.archivedSessions = [...moved, ...globalState.archivedSessions]
+        mocks.globalState.archivedSessions = [...moved, ...mocks.globalState.archivedSessions]
       },
     }),
   },
 }))
 
-mock.module("./sync-refs", () => ({
+vi.mock("./sync-refs", () => ({
   getAllSyncSessionMap: () => new Map(),
   registerSessionDirectory: () => undefined,
 }))
@@ -148,9 +155,9 @@ const {
 
 describe("session delete undo window", () => {
   beforeEach(() => {
-    replyCalls.length = 0
-    deleteSessionResult = true
-    updateSessionImpl = async (sessionId, changes) => {
+    mocks.replyCalls.length = 0
+    mocks.state.deleteSessionResult = true
+    mocks.state.updateSessionImpl = async (sessionId, changes) => {
       const base = makeSession(sessionId, { archived: 100 })
       const timePatch = (changes.time as { archived?: number } | undefined) ?? {}
       return {
@@ -161,12 +168,12 @@ describe("session delete undo window", () => {
         },
       }
     }
-    globalState.activeSessions = [makeSession("ses_1"), makeSession("ses_2")]
-    globalState.archivedSessions = []
-    uiState.currentSessionId = "ses_1"
-    uiState.setCurrentSessionCalls = []
+    mocks.globalState.activeSessions = [makeSession("ses_1"), makeSession("ses_2")]
+    mocks.globalState.archivedSessions = []
+    mocks.uiState.currentSessionId = "ses_1"
+    mocks.uiState.setCurrentSessionCalls = []
     clearScheduledSessionDeletesForTests()
-    globalState.pendingDeletionIds.clear()
+    mocks.globalState.pendingDeletionIds.clear()
   })
 
   afterEach(() => {
@@ -192,65 +199,65 @@ describe("session delete undo window", () => {
 
     expect(batchId).toBeTruthy()
     expect(scheduledIds).toEqual(["ses_1"])
-    expect(globalState.activeSessions.map((session) => session.id)).toEqual(["ses_2"])
-    expect(uiState.currentSessionId).toBeNull()
-    expect(replyCalls.some((call) => call.method === "session.delete")).toBe(false)
+    expect(mocks.globalState.activeSessions.map((session) => session.id)).toEqual(["ses_2"])
+    expect(mocks.uiState.currentSessionId).toBeNull()
+    expect(mocks.replyCalls.some((call) => call.method === "session.delete")).toBe(false)
 
     const result = await settled
     expect(result).toEqual({ deletedIds: ["ses_1"], failedIds: [] })
-    expect(replyCalls.some((call) => call.method === "session.delete")).toBe(true)
+    expect(mocks.replyCalls.some((call) => call.method === "session.delete")).toBe(true)
   })
 
   test("cancelScheduledSessionDeletes restores local state without deleting", async () => {
     const { batchId } = scheduleSessionDeletes(["ses_1"], { delayMs: 50 })
-    expect(globalState.activeSessions.map((session) => session.id)).toEqual(["ses_2"])
+    expect(mocks.globalState.activeSessions.map((session) => session.id)).toEqual(["ses_2"])
 
     const cancelled = cancelScheduledSessionDeletes(batchId)
     expect(cancelled).toBe(true)
-    expect(globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_1", "ses_2"])
-    expect(globalState.pendingDeletionIds).toEqual(new Set())
-    expect(uiState.setCurrentSessionCalls.some((call) => call.id === "ses_1")).toBe(true)
+    expect(mocks.globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_1", "ses_2"])
+    expect(mocks.globalState.pendingDeletionIds).toEqual(new Set())
+    expect(mocks.uiState.setCurrentSessionCalls.some((call) => call.id === "ses_1")).toBe(true)
 
     await new Promise((resolve) => setTimeout(resolve, 80))
-    expect(replyCalls.some((call) => call.method === "session.delete")).toBe(false)
+    expect(mocks.replyCalls.some((call) => call.method === "session.delete")).toBe(false)
   })
 
   test("keeps a server upsert hidden during the undo window", () => {
     const { batchId } = scheduleSessionDeletes(["ses_1"], { delayMs: 50 })
-    upsertGlobalSession(makeSession("ses_1"))
+    mocks.upsertGlobalSession(makeSession("ses_1"))
 
-    expect(globalState.activeSessions.map((session) => session.id)).toEqual(["ses_2"])
-    expect(globalState.pendingDeletionIds).toEqual(new Set(["ses_1"]))
+    expect(mocks.globalState.activeSessions.map((session) => session.id)).toEqual(["ses_2"])
+    expect(mocks.globalState.pendingDeletionIds).toEqual(new Set(["ses_1"]))
 
     cancelScheduledSessionDeletes(batchId)
-    expect(globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_1", "ses_2"])
-    expect(globalState.pendingDeletionIds).toEqual(new Set())
+    expect(mocks.globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_1", "ses_2"])
+    expect(mocks.globalState.pendingDeletionIds).toEqual(new Set())
   })
 
   test("restores a failed delayed delete and clears its pending state", async () => {
-    deleteSessionResult = new Error("delete failed")
+    mocks.state.deleteSessionResult = new Error("delete failed")
     const settled = new Promise<{ deletedIds: string[]; failedIds: string[] }>((resolve) => {
       scheduleSessionDeletes(["ses_1"], { delayMs: 5, onSettled: resolve })
     })
 
     expect(await settled).toEqual({ deletedIds: [], failedIds: ["ses_1"] })
-    expect(globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_1", "ses_2"])
-    expect(globalState.pendingDeletionIds).toEqual(new Set())
+    expect(mocks.globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_1", "ses_2"])
+    expect(mocks.globalState.pendingDeletionIds).toEqual(new Set())
   })
 
   test("unarchiveSession clears archived timestamp via updateSession(0)", async () => {
     const archived = makeSession("ses_arch", { archived: 1234 })
-    globalState.activeSessions = []
-    globalState.archivedSessions = [archived]
+    mocks.globalState.activeSessions = []
+    mocks.globalState.archivedSessions = [archived]
 
     const ok = await unarchiveSession("ses_arch")
     expect(ok).toBe(true)
 
-    const updateCall = replyCalls.find((call) => call.method === "session.update")
+    const updateCall = mocks.replyCalls.find((call) => call.method === "session.update")
     expect(updateCall?.params.sessionID).toBe("ses_arch")
     expect(updateCall?.params.time).toEqual({ archived: 0 })
-    expect(globalState.archivedSessions).toEqual([])
-    expect(globalState.activeSessions[0]?.id).toBe("ses_arch")
-    expect(globalState.activeSessions[0]?.time?.archived).toEqual(undefined)
+    expect(mocks.globalState.archivedSessions).toEqual([])
+    expect(mocks.globalState.activeSessions[0]?.id).toBe("ses_arch")
+    expect(mocks.globalState.activeSessions[0]?.time?.archived).toEqual(undefined)
   })
 })
