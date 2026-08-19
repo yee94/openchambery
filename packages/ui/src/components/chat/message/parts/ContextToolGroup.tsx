@@ -71,6 +71,8 @@ export const ContextToolGroup: React.FC<{
     const title = isActive
         ? t('chat.contextGroup.exploring')
         : t('chat.contextGroup.explored');
+    // Use isMobile (not sm:) so hosted/Capacitor mobile keeps one line box for icon + text.
+    const rowLineClass = isMobile ? 'h-5' : 'h-6';
 
     return (
         <div data-component="context-tool-group" className={getToolRowBlockClass(isMobile)}>
@@ -86,18 +88,35 @@ export const ContextToolGroup: React.FC<{
                 onKeyDown={handleKeyDown}
             >
                 <span
-                    className={cn('flex flex-none items-center justify-center', isMobile ? 'size-4' : 'size-3.5')}
+                    className={cn(
+                        // Same line box as title/summary; center orb on both desktop and mobile.
+                        'inline-flex flex-none items-center justify-center self-center',
+                        rowLineClass,
+                        // Active orb matches ProgressiveGroup collapsed header (≤ 18 desktop / 16 mobile).
+                        isActive
+                            ? isMobile
+                                ? 'w-4'
+                                : 'w-[18px]'
+                            : isMobile
+                              ? 'w-4'
+                              : 'w-3.5',
+                    )}
                     style={{ color: 'var(--tools-icon)' }}
                 >
                     {isActive ? (
-                        <LatticeOrb isMobile={isMobile} label={t('chat.contextGroup.exploring')} />
+                        <LatticeOrb
+                            size={isMobile ? 16 : 18}
+                            label={t('chat.contextGroup.exploring')}
+                            className="block"
+                        />
                     ) : (
-                        <Icon name="search" className="h-[13px] w-[13px]" />
+                        <Icon name="search" className="block h-[13px] w-[13px]" />
                     )}
                 </span>
                 <span
                     className={cn(
-                        'typography-meta flex-none font-medium',
+                        'typography-meta inline-flex flex-none items-center self-center font-medium',
+                        rowLineClass,
                         TOOL_ROW_TEXT_CLASS,
                         isActive && 'animate-text-shimmer',
                     )}
@@ -110,15 +129,23 @@ export const ContextToolGroup: React.FC<{
                 </span>
                 {summary ? (
                     <span
-                        className={cn('typography-meta h-5 min-h-0 w-0 min-w-0 max-w-full flex-1 overflow-clip sm:h-6', TOOL_ROW_TEXT_CLASS)}
+                        className={cn(
+                            'typography-meta inline-flex min-h-0 w-0 min-w-0 max-w-full flex-1 items-center self-center overflow-clip',
+                            rowLineClass,
+                            TOOL_ROW_TEXT_CLASS,
+                        )}
                         style={{ color: 'var(--tools-description)' }}
                     >
-                        <FlipUpText text={summary} active={isActive} />
+                        <FlipUpText
+                            text={summary}
+                            active={isActive}
+                            className={isMobile ? '!h-5 sm:!h-5' : '!h-6 sm:!h-6'}
+                        />
                     </span>
                 ) : null}
                 <Icon
                     name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
-                    className="ml-auto size-3.5 flex-none text-muted-foreground opacity-70"
+                    className="ml-auto size-3.5 flex-none self-center text-muted-foreground opacity-70"
                 />
             </div>
 

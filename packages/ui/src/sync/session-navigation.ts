@@ -251,22 +251,6 @@ const findCurrentNavigationTargetIndex = (
   return targets.findIndex((target) => target.sessionId === rootSessionId);
 };
 
-const getProjectNavigationTargetsForFocus = (
-  targets: readonly SessionNavigationTarget[],
-  rootSessionId: string | null,
-  focus: SessionFocusIdentity | null,
-): readonly SessionNavigationTarget[] => {
-  const projectId = focus?.projectId
-    ?? (rootSessionId
-      ? targets.find((target) => target.sessionId === rootSessionId)?.projectId ?? null
-      : null);
-  if (!projectId) {
-    return [];
-  }
-
-  return targets.filter((target) => target.projectId === projectId);
-};
-
 const cycleNavigationTargets = (
   targets: readonly SessionNavigationTarget[],
   direction: -1 | 1,
@@ -289,8 +273,8 @@ const cycleNavigationTargets = (
 /**
  * Resolve the next target from the focus surface the user last interacted with.
  * Recent focus stays within the published Recent rows. Project focus cycles
- * only the logically visible rows in its current expanded project. Hidden
- * rows and other projects are never used as shortcut fallbacks.
+ * the logically visible project rows in sidebar order, including across
+ * projects. Hidden rows are never used as shortcut fallbacks.
  */
 export const resolveAdjacentNavigationTarget = (
   direction: -1 | 1,
@@ -307,12 +291,7 @@ export const resolveAdjacentNavigationTarget = (
     return null;
   }
 
-  const projectTargets = getProjectNavigationTargetsForFocus(
-    snapshot.project,
-    rootSessionId,
-    currentFocus,
-  );
-  const scopedTargets = requestedScope === 'pinned' ? snapshot.pinned : projectTargets;
+  const scopedTargets = requestedScope === 'pinned' ? snapshot.pinned : snapshot.project;
   const scopedTarget = cycleNavigationTargets(
     scopedTargets,
     direction,
@@ -325,7 +304,7 @@ export const resolveAdjacentNavigationTarget = (
 
   if (requestedScope === 'pinned') {
     return cycleNavigationTargets(
-      projectTargets,
+      snapshot.project,
       direction,
       rootSessionId,
       currentFocus,
