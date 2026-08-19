@@ -71,6 +71,6 @@ The web server combines these utilities with `bun-pty` or `node-pty` to drive fu
 5. Verify `/api/terminal/input-ws` is rejected with `404 Not Found` and `/api/terminal/:sessionId/stream` still works as a fallback path.
 
 ### Automated verification
-- Run `bun test packages/web/server/lib/terminal/terminal-ws-protocol.test.js`
-- Run `bun test packages/web/server/lib/terminal/output-replay-buffer.test.js`
+- Run `vitest run packages/web/server/lib/terminal/terminal-ws-protocol.test.js`
+- Run `vitest run packages/web/server/lib/terminal/output-replay-buffer.test.js`
 - Run `bun run type-check`, `bun run lint`, and `bun run build` before finalizing changes.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 
 test('prompts for the first macOS quit request', () => {

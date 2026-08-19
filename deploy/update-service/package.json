@@ -9,6 +9,6 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "release-manifest": "node scripts/write-release-manifest.mjs",
-    "test": "node --test"
+    "test": "vitest run"
   }
 }

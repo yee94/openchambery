@@ -21,6 +21,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 
@@ -620,7 +621,10 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
     // whole streaming subtree on any empty frame, which no pure unit test can
     // observe. Keep the JSX unconditional so the fiber, its useSessionParts
     // subscription and its DOM survive.
-    const source = readFileSync(fileURLToPath(new URL('./MessageList.tsx', import.meta.url)), 'utf8');
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'MessageList.tsx'),
+      'utf8',
+    );
     expect(source).not.toContain('hasTrailingStreamingEntries ? (');
     expect(source).toContain('<StreamingTailContent');
   });

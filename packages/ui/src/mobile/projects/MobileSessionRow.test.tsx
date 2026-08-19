@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 
@@ -12,7 +14,10 @@ import {
 } from './mobileSessionIndicator';
 
 const noop = () => undefined;
-const mobileStyles = readFileSync(new URL('../../styles/mobile.css', import.meta.url), 'utf8');
+const mobileStyles = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../../styles/mobile.css'),
+  'utf8',
+);
 
 describe('Mobile project group chrome', () => {
   test('uses shared mobile border tokens with a quieter dark treatment', () => {

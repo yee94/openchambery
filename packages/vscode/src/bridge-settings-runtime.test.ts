@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { describe, test } from 'vitest';
 import { formatSettingsResponse } from './settings-visible-runtime';
 
 describe('VS Code visible settings projection', () => {

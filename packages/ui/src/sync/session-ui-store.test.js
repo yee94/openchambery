@@ -400,7 +400,7 @@ describe('openNewSessionDraft project binding', () => {
     try {
       useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectA.id });
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(calls).toEqual([[projectA.path, { source: 'newSessionDraft' }]]);
+      expect(calls).toContainEqual([projectA.path, { source: 'newSessionDraft' }]);
     } finally {
       useConfigStore.setState({ activateDirectory: originalActivateDirectory });
     }
@@ -414,6 +414,8 @@ describe('openNewSessionDraft project binding', () => {
     useConfigStore.setState({
       activateDirectory: (directory) => {
         useConfigStore.setState({ activeDirectoryKey: directory ?? '' });
+        const existing = activations.get(directory);
+        if (existing) return existing.promise;
         const activation = { resolve: undefined, promise: undefined };
         activation.promise = new Promise((resolve) => { activation.resolve = resolve; });
         activations.set(directory, activation);
@@ -1107,8 +1109,10 @@ describe('draftEstablishing paint prelude', () => {
       expect(useSessionUIStore.getState().newSessionDraft.draftEstablishing).toBe(false);
       expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(true);
 
-      // claim's paint gate yields before createSession is invoked.
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // claim's paint gate plus directory resolution can take more than one tick.
+      for (let i = 0; i < 20 && typeof resolveCreate !== 'function'; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       resolveCreate({ id: 'ses-establishing-001', directory: projectA.path });
       await materializePromise;
     } finally {

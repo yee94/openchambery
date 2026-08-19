@@ -65,7 +65,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - Preserve the global reconnect order `replay events → ready`. Reversing it races HTTP compensation against buffered history merge.
 
 ## Testing
-- Run `bun test packages/web/server/lib/event-stream/protocol.test.js`
-- Run `bun test packages/web/server/lib/event-stream/upstream-reader.test.js`
-- Run `bun test packages/web/server/lib/event-stream/runtime.test.js`
+- Run `vitest run packages/web/server/lib/event-stream/protocol.test.js`
+- Run `vitest run packages/web/server/lib/event-stream/upstream-reader.test.js`
+- Run `vitest run packages/web/server/lib/event-stream/runtime.test.js`
 - Run repo validation before finalizing: `bun run type-check`, `bun run lint`, `bun run build`

@@ -63,7 +63,7 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('aria-expanded="false"');
         expect(markup).toContain('Exploring');
         expect(markup).toContain('1 search, 3 reads');
-        expect(markup).toContain('typography-meta h-5 min-h-0 w-0 min-w-0 max-w-full flex-1 overflow-clip sm:h-6');
+        expect(markup).toContain('typography-meta inline-flex min-h-0 w-0 min-w-0 max-w-full flex-1 items-center');
         expect(markup).toContain('oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6');
     });
 
@@ -75,7 +75,7 @@ describe('ContextToolGroup', () => {
             </I18nProvider>,
         );
 
-        expect(markup).toContain('flex flex-none items-center justify-center size-4');
+        expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-5 w-4');
         expect(markup).toContain('width:16px;height:16px');
         expect(markup).toContain('min-h-0 min-w-0 items-center gap-1.5 overflow-clip');
     });

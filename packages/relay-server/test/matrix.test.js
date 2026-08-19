@@ -267,10 +267,11 @@ it('reaps a missing pong at the close deadline and decreases socket count', asyn
 
 it.skipIf(Boolean(process.versions.bun))('bounds raw TCP sockets, observes excess close, and releases the listener on stop', async () => {
   const relay = await start({ maxRawSockets: 1, maxRawSocketsPerIp: 1, handshakeMs: 1_000 }); const port = relay.address().port;
-  const first = net.connect(port, '127.0.0.1'); await once(first, 'connect'); expect(relay.getSnapshot().rawSockets).toBeLessThanOrEqual(1);
-  const excess = net.connect(port, '127.0.0.1'); await once(excess, 'connect'); await once(excess, 'close'); expect(relay.getSnapshot().rawSockets).toBeLessThanOrEqual(1);
+  const ignoreReset = (socket) => { socket.on('error', () => {}); return socket; };
+  const first = ignoreReset(net.connect(port, '127.0.0.1')); await once(first, 'connect'); expect(relay.getSnapshot().rawSockets).toBeLessThanOrEqual(1);
+  const excess = ignoreReset(net.connect(port, '127.0.0.1')); await once(excess, 'connect'); await once(excess, 'close'); expect(relay.getSnapshot().rawSockets).toBeLessThanOrEqual(1);
   first.destroy(); await once(first, 'close'); await eventually(() => relay.getSnapshot().rawSockets === 0);
-  const third = net.connect(port, '127.0.0.1'); await once(third, 'connect'); expect(third.readyState).toBe('open'); expect(relay.getSnapshot().rawSockets).toBeLessThanOrEqual(1);
+  const third = ignoreReset(net.connect(port, '127.0.0.1')); await once(third, 'connect'); expect(third.readyState).toBe('open'); expect(relay.getSnapshot().rawSockets).toBeLessThanOrEqual(1);
   await relay.stop(); expect(relay.getSnapshot().rawSockets).toBe(0);
   const replacement = http.createServer(); await new Promise((resolve) => replacement.listen(port, '127.0.0.1', resolve)); await new Promise((resolve) => replacement.close(resolve));
 });

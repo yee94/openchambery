@@ -85,6 +85,13 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - A successful session-status snapshot stops stale task loading when the child session is idle
     or when the task started before the snapshot request. Tasks created after that boundary wait
     for live status. The original tool part remains unchanged for history and diagnostics.
+  - Background subagent tasks settle the tool part immediately (tool success with a running hint
+    in metadata/output). While the resolved child session status is not `idle`, the settled row
+    keeps observing the child and stays in the busy shimmer state. Observation is one-shot
+    latched: once an authoritative idle newer than the task start is observed (live entry or
+    directory snapshot, same freshness guard as `shouldSuppressTaskLoading`), the row
+    unsubscribes and renders as an ordinary settled row. Completion itself is announced by the
+    synthetic `<subagent …>` notification message (see `MessageBody.tsx`).
   - Nested task-session navigation delegates to `SessionSurfaceContext`. In an
     ContextPanel transcript, the strict read-only panel surface accepts
     same-directory local navigation and preserves the primary session selection.
@@ -95,6 +102,10 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - `part.state.metadata.sessionId` is the only live identity contract between a Task and its child session.
   - A running Task may briefly have no `sessionId`; render it as waiting until the authoritative part update arrives. Never match parallel children by order, title, timestamp, or status.
   - Part-level metadata and output parsing exist only for older persisted records and never override state metadata.
+  - `readTaskStatusFromRecord` / `readTaskRunningFromOutput` detect the background-subagent
+    running hint (settled output that still says `status: running`).
+  - `parseSubagentNotification` parses the synthetic `<subagent sessionID state description>`
+    completion notification injected into the parent session; non-matching text returns undefined.
 
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).

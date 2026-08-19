@@ -1,14 +1,73 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { beforeEach, describe, expect, test, vi } from "vitest"
 import { togglePermissionAutoAccept } from "../../components/chat/permissionAutoAccept"
 
-const storage = new Map<string, string>()
-const createSessionCalls: Array<{ title?: string; directory: string | null; parentID: string | null; metadata?: unknown }> = []
-const permissionAutoAcceptCalls: Array<[string, boolean]> = []
-const finalizeDraftOwnership = mock(async () => ({ status: "committed" as const, current: true, durable: true }))
+const {
+  storage,
+  createSessionCalls,
+  permissionAutoAcceptCalls,
+  finalizeDraftOwnership,
+  deferredStorage,
+  sessionActionsMock,
+} = vi.hoisted(() => {
+  const storage = new Map<string, string>()
+  const createSessionCalls: Array<{ title?: string; directory: string | null; parentID: string | null; metadata?: unknown }> = []
+  const deferredStorage: Storage = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      storage.set(key, value)
+    },
+    removeItem: (key: string) => {
+      storage.delete(key)
+    },
+    clear: () => {
+      storage.clear()
+    },
+    key: (index: number) => Array.from(storage.keys())[index] ?? null,
+    get length() {
+      return storage.size
+    },
+  }
+  return {
+    storage,
+    createSessionCalls,
+    permissionAutoAcceptCalls: [] as Array<[string, boolean]>,
+    finalizeDraftOwnership: vi.fn(async () => ({ status: "committed" as const, current: true, durable: true })),
+    deferredStorage,
+    sessionActionsMock: {
+      createSession: vi.fn(async (title: string | undefined, directory: string | null, parentID: string | null, metadata?: unknown) => {
+        createSessionCalls.push({ title, directory, parentID, metadata })
+        return { id: "ses_issue_2039", directory }
+      }),
+      deleteSession: vi.fn(async () => true),
+      archiveSession: vi.fn(async () => true),
+      updateSessionTitle: vi.fn(async () => undefined),
+      requestSessionSmartTitle: vi.fn(async () => undefined),
+      shareSession: vi.fn(async () => undefined),
+      unshareSession: vi.fn(async () => undefined),
+      optimisticSend: vi.fn(async () => undefined),
+      optimisticInsertUserMessage: vi.fn(() => undefined),
+      refetchSessionMessages: vi.fn(async () => undefined),
+      revertToMessage: vi.fn(async () => undefined),
+      stageMessageEdit: vi.fn(() => undefined),
+      commitMessageEdit: vi.fn(async () => undefined),
+      unrevertSession: vi.fn(async () => undefined),
+      forkSession: vi.fn(async () => undefined),
+      forkFromMessage: vi.fn(async () => undefined),
+      fetchMessagesForSession: vi.fn(async () => undefined),
+      fetchRecentSendConfirmationRecords: vi.fn(async () => []),
+      materializeConfirmedSendRecords: vi.fn(async () => undefined),
+      ensureSentUserMessagePresence: vi.fn(async () => "present"),
+      dirStoreForDirectory: vi.fn(() => undefined),
+      getSessionLastAssistantModel: vi.fn(() => null),
+      abortCurrentOperation: vi.fn(async () => undefined),
+      patchSessionMetadata: vi.fn(async () => undefined),
+    },
+  }
+})
 
 const getMockCalls = (fn: unknown): unknown[][] => ((fn as { mock?: { calls: unknown[][] } }).mock?.calls ?? [])
 
-mock.module("zustand", () => ({
+vi.mock("zustand", () => ({
   create: () => (initializer: (set: (patch: unknown | ((state: unknown) => unknown)) => void, get: () => unknown) => Record<string, unknown>) => {
     let state: Record<string, unknown>
     const get = () => state
@@ -35,24 +94,7 @@ mock.module("zustand", () => ({
   },
 }))
 
-const deferredStorage: Storage = {
-  getItem: (key: string) => storage.get(key) ?? null,
-  setItem: (key: string, value: string) => {
-    storage.set(key, value)
-  },
-  removeItem: (key: string) => {
-    storage.delete(key)
-  },
-  clear: () => {
-    storage.clear()
-  },
-  key: (index: number) => Array.from(storage.keys())[index] ?? null,
-  get length() {
-    return storage.size
-  },
-}
-
-mock.module("@/stores/utils/safeStorage", () => ({
+vi.mock("@/stores/utils/safeStorage", () => ({
   createDeferredSafeJSONStorage: () => undefined,
   getDeferredSafeStorage: () => deferredStorage,
   getSafeStorage: () => deferredStorage,
@@ -60,35 +102,35 @@ mock.module("@/stores/utils/safeStorage", () => ({
   resetSafeStorageForTests: () => undefined,
 }))
 
-mock.module("@/lib/opencode/client", () => ({
+vi.mock("@/lib/opencode/client", () => ({
   opencodeClient: {
     getDirectory: () => null,
-    setDirectory: mock(() => undefined),
+    setDirectory: vi.fn(() => undefined),
   },
 }))
 
-mock.module("@/stores/permissionStore", () => ({
+vi.mock("@/stores/permissionStore", () => ({
   usePermissionStore: {
     getState: () => ({
-      setSessionAutoAccept: mock(async (sessionId: string, enabled: boolean) => {
+      setSessionAutoAccept: vi.fn(async (sessionId: string, enabled: boolean) => {
         permissionAutoAcceptCalls.push([sessionId, enabled])
       }),
     }),
   },
 }))
 
-mock.module("@/stores/useConfigStore", () => ({
+vi.mock("@/stores/useConfigStore", () => ({
   useConfigStore: {
     getState: () => ({
       currentAgentName: "agent-default",
       agents: [],
-      activateDirectory: mock(async () => undefined),
-      applyDefaultModelAgentSelection: mock(() => undefined),
+      activateDirectory: vi.fn(async () => undefined),
+      applyDefaultModelAgentSelection: vi.fn(() => undefined),
     }),
   },
 }))
 
-mock.module("@/stores/useProjectsStore", () => ({
+vi.mock("@/stores/useProjectsStore", () => ({
   useProjectsStore: {
     getState: () => ({
       projects: [],
@@ -98,40 +140,40 @@ mock.module("@/stores/useProjectsStore", () => ({
   },
 }))
 
-mock.module("@/stores/useDirectoryStore", () => ({
+vi.mock("@/stores/useDirectoryStore", () => ({
   useDirectoryStore: {
     getState: () => ({
       currentDirectory: null,
-      setDirectory: mock(() => undefined),
+      setDirectory: vi.fn(() => undefined),
     }),
   },
 }))
 
-mock.module("@/stores/useGlobalSessionsStore", () => ({
+vi.mock("@/stores/useGlobalSessionsStore", () => ({
   useGlobalSessionsStore: {
     getState: () => ({
       activeSessions: [],
       archivedSessions: [],
-      upsertSession: mock(() => undefined),
+      upsertSession: vi.fn(() => undefined),
     }),
   },
   resolveGlobalSessionDirectory: () => null,
 }))
 
-mock.module("@/stores/useSessionFoldersStore", () => ({
+vi.mock("@/stores/useSessionFoldersStore", () => ({
   useSessionFoldersStore: {
     getState: () => ({
-      addSessionToFolder: mock(() => undefined),
+      addSessionToFolder: vi.fn(() => undefined),
     }),
   },
 }))
 
-mock.module("@/queries/commandQueries", () => ({
+vi.mock("@/queries/commandQueries", () => ({
   commandQueryOptions: () => ({ queryKey: ["test-runtime", "commands", null] }),
   readCommandsSnapshot: () => [],
 }))
 
-mock.module("@/stores/useSkillsStore", () => ({
+vi.mock("@/stores/useSkillsStore", () => ({
   useSkillsStore: {
     getState: () => ({
       skills: [],
@@ -139,7 +181,7 @@ mock.module("@/stores/useSkillsStore", () => ({
   },
 }))
 
-mock.module("@/components/ui", () => ({
+vi.mock("@/components/ui", () => ({
   toast: {
     error: () => undefined,
     info: () => undefined,
@@ -147,7 +189,7 @@ mock.module("@/components/ui", () => ({
   },
 }))
 
-mock.module("../selection-store", () => ({
+vi.mock("../selection-store", () => ({
   useSelectionStore: {
     getState: () => ({
       saveSessionModelSelection: () => undefined,
@@ -162,7 +204,7 @@ mock.module("../selection-store", () => ({
   },
 }))
 
-mock.module("@/lib/runtime-switch", () => ({
+vi.mock("@/lib/runtime-switch", () => ({
   getRuntimeApiBaseUrl: () => "",
   getRuntimeGeneration: () => 0,
   getRuntimeKey: () => "test-runtime",
@@ -173,27 +215,27 @@ mock.module("@/lib/runtime-switch", () => ({
   switchRuntimeEndpoint: () => undefined,
 }))
 
-mock.module("@/lib/userSendAnimation", () => ({
+vi.mock("@/lib/userSendAnimation", () => ({
   markPendingUserSendAnimation: () => undefined,
 }))
 
-mock.module("../sync-context", () => ({
+vi.mock("../sync-context", () => ({
   setActiveSession: () => undefined,
 }))
 
-mock.module("../notification-store", () => ({
+vi.mock("../notification-store", () => ({
   markSessionViewed: () => undefined,
 }))
 
-mock.module("../session-navigation", () => ({
+vi.mock("../session-navigation", () => ({
   setSessionOpener: () => undefined,
 }))
 
-mock.module("../session-worktree-contract", () => ({
+vi.mock("../session-worktree-contract", () => ({
   getAttachedSessionDirectory: () => null,
 }))
 
-mock.module("../session-worktree-store", () => ({
+vi.mock("../session-worktree-store", () => ({
   useSessionWorktreeStore: {
     getState: () => ({
       getAttachment: () => undefined,
@@ -203,18 +245,18 @@ mock.module("../session-worktree-store", () => ({
   },
 }))
 
-mock.module("../viewport-store", () => ({
+vi.mock("../viewport-store", () => ({
   getViewportSessionMemory: () => null,
   viewportSessionKey: (sessionId: string) => sessionId,
   useViewportStore: {
     getState: () => ({
-      updateViewportAnchor: mock(() => undefined),
+      updateViewportAnchor: vi.fn(() => undefined),
     }),
     setState: () => undefined,
   },
 }))
 
-mock.module("../input-store", () => ({
+vi.mock("../input-store", () => ({
   useInputStore: {
     getState: () => ({
       clearAttachedFiles: () => undefined,
@@ -228,7 +270,7 @@ mock.module("../input-store", () => ({
   },
 }))
 
-mock.module("../sync-refs", () => ({
+vi.mock("../sync-refs", () => ({
   getDirectoryState: () => null,
   getSyncSessions: () => [],
   getSyncMessages: () => [],
@@ -237,44 +279,17 @@ mock.module("../sync-refs", () => ({
   registerSessionDirectory: () => undefined,
 }))
 
-mock.module("../session-actions", () => ({
-  createSession: mock(async (title: string | undefined, directory: string | null, parentID: string | null, metadata?: unknown) => {
-    createSessionCalls.push({ title, directory, parentID, metadata })
-    return { id: "ses_issue_2039", directory }
-  }),
-  deleteSession: mock(async () => true),
-  archiveSession: mock(async () => true),
-  updateSessionTitle: mock(async () => undefined),
-  requestSessionSmartTitle: mock(async () => undefined),
-  shareSession: mock(async () => undefined),
-  unshareSession: mock(async () => undefined),
-  optimisticSend: mock(async () => undefined),
-  optimisticInsertUserMessage: mock(() => undefined),
-  refetchSessionMessages: mock(async () => undefined),
-  revertToMessage: mock(async () => undefined),
-  stageMessageEdit: mock(() => undefined),
-  commitMessageEdit: mock(async () => undefined),
-  unrevertSession: mock(async () => undefined),
-  forkSession: mock(async () => undefined),
-  forkFromMessage: mock(async () => undefined),
-  fetchMessagesForSession: mock(async () => undefined),
-  fetchRecentSendConfirmationRecords: mock(async () => []),
-  materializeConfirmedSendRecords: mock(async () => undefined),
-  ensureSentUserMessagePresence: mock(async () => "present"),
-  dirStoreForDirectory: mock(() => undefined),
-  getSessionLastAssistantModel: mock(() => null),
-  abortCurrentOperation: mock(async () => undefined),
-  patchSessionMetadata: mock(async () => undefined),
-}))
+vi.mock("../session-actions", () => sessionActionsMock)
+vi.mock("@/sync/session-actions", () => sessionActionsMock)
 
 const { materializeOpenDraftSession, useSessionUIStore } = await import("../session-ui-store")
 
 describe("issue 2039 draft auto-accept", () => {
   test("toggles draft state before a session exists", () => {
-    const setDraftPermissionAutoAcceptEnabled = mock(() => undefined)
-    const setSessionAutoAccept = mock(async () => undefined)
-    const onOpenSessionFirst = mock(() => undefined)
-    const onToggleFailed = mock(() => undefined)
+    const setDraftPermissionAutoAcceptEnabled = vi.fn(() => undefined)
+    const setSessionAutoAccept = vi.fn(async () => undefined)
+    const onOpenSessionFirst = vi.fn(() => undefined)
+    const onToggleFailed = vi.fn(() => undefined)
 
     togglePermissionAutoAccept({
       permissionScopeSessionId: null,
@@ -295,10 +310,10 @@ describe("issue 2039 draft auto-accept", () => {
   })
 
   test("guards the toggle when no draft is open", () => {
-    const setDraftPermissionAutoAcceptEnabled = mock(() => undefined)
-    const setSessionAutoAccept = mock(async () => undefined)
-    const onOpenSessionFirst = mock(() => undefined)
-    const onToggleFailed = mock(() => undefined)
+    const setDraftPermissionAutoAcceptEnabled = vi.fn(() => undefined)
+    const setSessionAutoAccept = vi.fn(async () => undefined)
+    const onOpenSessionFirst = vi.fn(() => undefined)
+    const onToggleFailed = vi.fn(() => undefined)
 
     togglePermissionAutoAccept({
       permissionScopeSessionId: null,
@@ -321,7 +336,7 @@ describe("issue 2039 draft auto-accept", () => {
     storage.clear()
     createSessionCalls.length = 0
     permissionAutoAcceptCalls.length = 0
-    getMockCalls(finalizeDraftOwnership).length = 0
+    finalizeDraftOwnership.mockClear()
 
     useSessionUIStore.setState({
       currentSessionId: null,

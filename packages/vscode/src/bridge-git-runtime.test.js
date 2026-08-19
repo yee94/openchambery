@@ -1,15 +1,15 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const gitService = {
-  stageGitFiles: mock(),
-  unstageGitFiles: mock(),
-  checkoutCommit: mock(),
-  cherryPick: mock(),
-  revertCommit: mock(),
-  resetToCommit: mock(),
-};
+const gitService = vi.hoisted(() => ({
+  stageGitFiles: vi.fn(),
+  unstageGitFiles: vi.fn(),
+  checkoutCommit: vi.fn(),
+  cherryPick: vi.fn(),
+  revertCommit: vi.fn(),
+  resetToCommit: vi.fn(),
+}));
 
-mock.module('./gitService', () => gitService);
+vi.mock('./gitService', () => gitService);
 
 const { handleStandardGitBridgeMessage } = await import('./bridge-git-runtime');
 

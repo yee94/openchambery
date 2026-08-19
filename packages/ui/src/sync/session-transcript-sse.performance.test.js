@@ -169,6 +169,7 @@ describe("Ticket 10 — high-frequency SSE narrow observers", () => {
 
   test(
     "message.part.delta storm updates only target message/parts refs (operation counts)",
+    { timeout: 60_000 },
     () => {
       const repo = createQueryTranscriptRepository({
         client,
@@ -341,6 +342,5 @@ describe("Ticket 10 — high-frequency SSE narrow observers", () => {
 
       repo.destroy()
     },
-    { timeout: 60_000 },
   )
 })

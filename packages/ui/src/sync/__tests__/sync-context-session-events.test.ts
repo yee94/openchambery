@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { beforeEach, describe, expect, test, vi } from "vitest"
 import type { Event, Session } from "@opencode-ai/sdk/v2/client"
 
-let currentSessions: Session[] = []
-const upsertedSessions: Session[] = []
+const { currentSessions, upsertedSessions } = vi.hoisted(() => ({
+  currentSessions: [] as Session[],
+  upsertedSessions: [] as Session[],
+}))
 
-mock.module("@/stores/useGlobalSessionsStore", () => ({
+vi.mock("@/stores/useGlobalSessionsStore", () => ({
   useGlobalSessionsStore: {
     getState: () => ({
       activeSessions: currentSessions,
@@ -15,6 +17,19 @@ mock.module("@/stores/useGlobalSessionsStore", () => ({
     }),
   },
 }))
+
+vi.mock("../../stores/useGlobalSessionsStore", () => ({
+  useGlobalSessionsStore: {
+    getState: () => ({
+      activeSessions: currentSessions,
+      archivedSessions: [] as Session[],
+      upsertSession: (session: Session) => {
+        upsertedSessions.push(session)
+      },
+    }),
+  },
+}))
+
 import { applySessionEventToGlobalSessions } from "../session-event-router"
 import { getSessionIdFromPayload } from "../sync-context"
 
@@ -33,12 +48,12 @@ const buildEvent = (session: Session): Event => ({
 
 describe("applySessionEventToGlobalSessions", () => {
   beforeEach(() => {
-    currentSessions = []
+    currentSessions.length = 0
     upsertedSessions.length = 0
   })
 
   test("skips stale global session.updated echoes after a newer rename", () => {
-    currentSessions = [buildSession("New Title", { created: 1, updated: 20 })]
+    currentSessions.push(buildSession("New Title", { created: 1, updated: 20 }))
 
     applySessionEventToGlobalSessions(buildEvent(buildSession("Old Title", { created: 1, updated: 10 })))
 
@@ -46,7 +61,7 @@ describe("applySessionEventToGlobalSessions", () => {
   })
 
   test("skips time-only session updates and renderer-side index writes", () => {
-    currentSessions = [buildSession("Same Title", { created: 1, updated: 10 })]
+    currentSessions.push(buildSession("Same Title", { created: 1, updated: 10 }))
 
     applySessionEventToGlobalSessions(buildEvent(buildSession("Same Title", { created: 1, updated: 20 })))
 
@@ -54,7 +69,7 @@ describe("applySessionEventToGlobalSessions", () => {
   })
 
   test("applies visible session updates", () => {
-    currentSessions = [buildSession("Old Title", { created: 1, updated: 10 })]
+    currentSessions.push(buildSession("Old Title", { created: 1, updated: 10 }))
 
     applySessionEventToGlobalSessions(buildEvent(buildSession("New Title", { created: 1, updated: 20 })))
 

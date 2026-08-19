@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { spawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
+import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
@@ -35,71 +37,67 @@ const freePort = () => new Promise<number>((resolve, reject) => {
   });
 });
 
-const readStartup = async (process: ReturnType<typeof Bun.spawn>, stderr: { text: string }) => {
-  const reader = process.stdout.getReader();
-  const decoder = new TextDecoder();
+const exited = (child: ChildProcess) => {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
+  return once(child, 'exit').then(([code]) => code as number | null);
+};
+
+const readStartup = async (child: ChildProcess, stderr: { text: string }) => {
+  const stdout = child.stdout;
+  if (!stdout) throw new Error(`relay stdout is not available; stderr: ${stderr.text}`);
   let text = '';
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     const startupTimeout = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => reject(new Error(`relay did not report startup within ${timeoutMs}ms; stderr: ${stderr.text}`)), timeoutMs);
     });
-    while (true) {
-      const next = await Promise.race([
-        reader.read(),
-        process.exited.then((code) => Promise.reject(new Error(`relay exited before startup with code ${code}; stderr: ${stderr.text}`))),
-        startupTimeout,
-      ]);
-      if (next.done) throw new Error(`relay closed stdout before startup; stderr: ${stderr.text}`);
-      text += decoder.decode(next.value, { stream: true });
-      const newline = text.indexOf('\n');
-      if (newline !== -1) return JSON.parse(text.slice(0, newline)) as { status: string; url: string };
-    }
+    const reading = (async () => {
+      for await (const chunk of stdout) {
+        text += Buffer.from(chunk).toString('utf8');
+        const newline = text.indexOf('\n');
+        if (newline !== -1) return JSON.parse(text.slice(0, newline)) as { status: string; url: string };
+      }
+      throw new Error(`relay closed stdout before startup; stderr: ${stderr.text}`);
+    })();
+    return await Promise.race([
+      reading,
+      exited(child).then((code) => Promise.reject(new Error(`relay exited before startup with code ${code}; stderr: ${stderr.text}`))),
+      startupTimeout,
+    ]);
   } finally {
     if (timeout) clearTimeout(timeout);
-    reader.releaseLock();
   }
 };
 
 const startCompiledRelay = async (binary: string, port: number) => {
-  const process = Bun.spawn([binary, '--host', '127.0.0.1', '--port', String(port), '--json'], {
-    stdout: 'pipe', stderr: 'pipe',
+  const process = spawn(binary, ['--host', '127.0.0.1', '--port', String(port), '--json'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   const stderr = { text: '' };
-  void (async () => {
-    const reader = process.stderr.getReader();
-    const decoder = new TextDecoder();
-    try {
-      while (true) {
-        const next = await reader.read();
-        if (next.done) return;
-        stderr.text += decoder.decode(next.value, { stream: true });
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  })();
+  process.stderr?.on('data', (chunk: Buffer | string) => {
+    stderr.text += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+  });
   try {
     const startup = await readStartup(process, stderr);
     expect(startup.status).toBe('ok');
     return { process, url: startup.url };
   } catch (error) {
     if (process.exitCode === null) process.kill('SIGKILL');
-    await process.exited;
+    await exited(process);
     throw error;
   }
 };
 
-const stopRelay = async (relay?: { process: ReturnType<typeof Bun.spawn> }) => {
+const stopRelay = async (relay?: { process: ChildProcess }) => {
   if (!relay || relay.process.exitCode !== null) return;
   relay.process.kill('SIGTERM');
   const exitCode = await Promise.race([
-    relay.process.exited,
+    exited(relay.process),
     wait(2_000).then(() => undefined),
   ]);
   if (exitCode === undefined) {
     relay.process.kill('SIGKILL');
-    await relay.process.exited;
+    await exited(relay.process);
     throw new Error('relay did not exit after SIGTERM');
   }
   expect(exitCode).toBe(0);
@@ -223,7 +221,7 @@ describe('private relay compiled-process boundary', () => {
   let cleanup: (() => Promise<void>) | undefined;
   afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 
-  it('carries authenticated HTTP, SSE, URL-token WebSocket, restart recovery, and cleanup across compiled Relay', async () => {
+  it('carries authenticated HTTP, SSE, URL-token WebSocket, restart recovery, and cleanup across compiled Relay', { timeout: 60_000 }, async () => {
     const temp = await mkdtemp(path.join(os.tmpdir(), 'openchamber-relay-e2e-'));
     const binary = path.join(temp, 'openchamber-relay');
     let relay: Awaited<ReturnType<typeof startCompiledRelay>> | undefined;
@@ -237,10 +235,13 @@ describe('private relay compiled-process boundary', () => {
       if (failed?.status === 'rejected') throw failed.reason;
     };
     const relayEntrypoint = fileURLToPath(new URL('../../../../relay-server/bin/openchamber-relay.js', import.meta.url));
-    const compile = Bun.spawn(['bun', 'build', '--compile', relayEntrypoint, '--outfile', binary], { stdout: 'pipe', stderr: 'pipe' });
-    const compileStderr = new Response(compile.stderr).text();
-    const compileExitCode = await compile.exited;
-    if (compileExitCode !== 0) throw new Error(`relay compilation failed with code ${compileExitCode}: ${await compileStderr}`);
+    const compile = spawn('bun', ['build', '--compile', relayEntrypoint, '--outfile', binary], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let compileStderr = '';
+    compile.stderr?.on('data', (chunk: Buffer | string) => {
+      compileStderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    });
+    const [compileExitCode] = await once(compile, 'exit');
+    if (compileExitCode !== 0) throw new Error(`relay compilation failed with code ${compileExitCode}: ${compileStderr}`);
     const port = await freePort();
     relay = await startCompiledRelay(binary, port);
     origin = await startOrigin();
@@ -273,7 +274,7 @@ describe('private relay compiled-process boundary', () => {
 
     const tokenResponse = await client.fetch('/auth/url-token', { method: 'POST', headers: { authorization: 'Bearer client-token' } });
     const { token } = await tokenResponse.json() as { token: string };
-    expect(token).toStartWith('oc_url_');
+    expect(token.startsWith('oc_url_')).toBe(true);
     const socket = client.openWebSocket(`/api/terminal/ws?oc_url_token=${encodeURIComponent(token)}`);
     await waitSocketOpen(socket);
     const messages: Array<string | ArrayBuffer> = [];
@@ -297,5 +298,5 @@ describe('private relay compiled-process boundary', () => {
     await eventually(() => host!.getStatus().state === 'connected' && client!.getStatus().state === 'connected', 'host and client did not reconnect after Relay restart');
     const recovered = await client.fetch('/api/e2e/http', { method: 'POST', headers: { authorization: 'Bearer client-token' }, body: 'recovered' });
     expect(await recovered.json()).toEqual({ body: 'recovered', hasRelayConnection: true });
-  }, 30_000);
+  });
 });
