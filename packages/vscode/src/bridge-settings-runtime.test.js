@@ -30,7 +30,6 @@ describe('VS Code provider catalog SDK access', () => {
       context: {
         globalState: {
           get: () => ({
-            managedRemoteTunnelToken: 'TUNNEL_SENTINEL',
             summaryCustomAPIToken: 'SUMMARY_SENTINEL',
           }),
         },
@@ -38,10 +37,8 @@ describe('VS Code provider catalog SDK access', () => {
     });
 
     expect(settings).toMatchObject({
-      hasManagedRemoteTunnelToken: true,
       hasSummaryCustomAPIToken: true,
     });
-    expect(settings).not.toHaveProperty('managedRemoteTunnelToken');
     expect(settings).not.toHaveProperty('summaryCustomAPIToken');
   });
 

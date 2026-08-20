@@ -26,7 +26,7 @@ Command modules implement user-facing commands and preserve output contracts acr
 
 - `commands-status.js`
   - Implements `openchamber status`.
-  - Formats discovered instances and tunnel readiness/status for human, quiet, and JSON output.
+  - Formats discovered instances for human, quiet, and JSON output.
 
 - `commands-logs.js`
   - Implements `openchamber logs`.
@@ -47,11 +47,6 @@ Command modules implement user-facing commands and preserve output contracts acr
   - Implements `openchamber update`.
   - Loads the package-manager helper, performs update flow, and coordinates restart behavior after updates.
 
-- `commands-tunnel.js`
-  - Implements `openchamber tunnel` and its subcommands: `profile`, `providers`, `ready`, `doctor`, `status`, `start`, `stop`, and `completion`.
-  - Owns tunnel-specific command flow, interactive prompt decisions, managed-local/managed-remote startup, QR display rules, tunnel start/stop API calls, and tunnel profile command handling.
-  - Receives `serveCommand` and `stopCommand` by dependency injection. Do not reach back into `cli.js` command globals from this module.
-
 ## Shared Helper Modules
 
 These modules hold reusable, non-presentational logic for commands.
@@ -60,19 +55,19 @@ These modules hold reusable, non-presentational logic for commands.
   - Argument parsing, defaults, help text, completion script generation, and typo suggestions.
 
 - `cli-errors.js`
-  - CLI exit codes and typed tunnel CLI errors.
+  - CLI exit codes and typed CLI errors.
 
 - `cli-paths.js`
-  - Data, run, log, settings, tunnel profile, and managed-local config paths.
+  - Data, run, log, and settings paths.
 
 - `cli-process.js`
   - PID files, instance registry files, process identity checks, runtime metadata checks, and process termination helpers.
 
 - `cli-lifecycle.js`
-  - Instance discovery, live health probing, attachability checks, provider discovery, and status aggregation used by lifecycle/status/tunnel commands.
+  - Instance discovery, live health probing, attachability checks, and status aggregation used by lifecycle/status commands.
 
 - `cli-http.js`
-  - HTTP helpers for health checks, shutdown requests, JSON API calls, tunnel provider fetches, and system info fetches.
+  - HTTP helpers for health checks, shutdown requests, JSON API calls, and system info fetches.
 
 - `cli-network.js`
   - Host resolution, URL building, LAN detection, unsafe browser port validation, and UI password/network exposure checks.
@@ -88,15 +83,6 @@ These modules hold reusable, non-presentational logic for commands.
 
 - `cli-startup.js`
   - Native startup service detection, install/uninstall/status helpers, and platform-specific startup command execution.
-
-- `cli-tunnel-profiles.js`
-  - Tunnel profile normalization, token resolution/redaction, profile storage, migration, file-permission warnings, and managed-remote pair persistence.
-
-- `cli-tunnel-utils.js`
-  - Tunnel-specific command string builders, TTL parsing/formatting, and replay command helpers.
-
-- `cli-tunnel-capabilities.js`
-  - Built-in tunnel provider capability fallbacks used when a live server cannot provide tunnel metadata.
 
 ## Placement Rules
 

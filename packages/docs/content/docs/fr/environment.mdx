@@ -15,7 +15,7 @@ Adresse d’écoute du serveur web OpenChamber. Utilisez `0.0.0.0` pour autorise
 
 ### `OPENCHAMBER_UI_PASSWORD`
 
-Mot de passe pour l’UI navigateur. Utilisez-le lorsque vous écoutez hors de localhost, utilisez des tunnels ou passez derrière un reverse proxy.
+Mot de passe pour l’UI navigateur. Utilisez-le lorsque vous écoutez hors de localhost, utilisez des ou passez derrière un reverse proxy.
 
 ### `OPENCHAMBER_API_ONLY`
 
@@ -109,7 +109,7 @@ Autre exécutable Git de remplacement. Préférez `OPENCHAMBER_GIT_BINARY` pour 
 
 Durée de vie, en millisecondes, du cache de lecture des fichiers adossés à Git. Définissez `0` pour désactiver ce cache pendant le débogage.
 
-## Voix et tunnels
+## Voix
 
 ### `OPENAI_API_KEY`
 
@@ -118,10 +118,6 @@ Clé API utilisée par les fonctionnalités vocales d’OpenChamber qui appellen
 ### `OPENCHAMBER_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
 
 Autorise les URL de base compatibles OpenAI distantes pour les fonctionnalités vocales lorsqu’elle vaut `true` ou `1`.
-
-### `NGROK_AUTHTOKEN`
-
-Token d’authentification ngrok utilisé par les commandes de tunnel OpenChamber. Vous pouvez aussi configurer ngrok avec `ngrok config add-authtoken <token>`.
 
 ## Helpers runtime
 

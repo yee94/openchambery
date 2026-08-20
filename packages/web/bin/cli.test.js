@@ -10,11 +10,6 @@ import { pathToFileURL } from 'url';
 import { isModuleCliExecution, normalizeCliEntryPath } from './cli-entry.js';
 import { requestJson } from './lib/cli-http.js';
 import { inspectTunnelAttachability } from './lib/cli-lifecycle.js';
-import { DEFAULT_TUNNEL_PROVIDER_CAPABILITIES } from './lib/cli-tunnel-capabilities.js';
-import {
-  TUNNEL_PROVIDER_CLOUDFLARE,
-  TUNNEL_PROVIDER_NGROK,
-} from '../server/lib/tunnels/types.js';
 import {
   assertAuthenticatedNetworkExposure,
   commands,
@@ -22,7 +17,6 @@ import {
   discoverLifecycleInstances,
   discoverRunningInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
-  ensureTunnelProfilesMigrated,
   getInstanceFilePath,
   getPidFilePath,
   isOpenchamberCmdline,
@@ -178,13 +172,6 @@ function spawnOpenChamberLikeHungServer(port) {
 }
 
 describe('cli args', () => {
-  it('loads fallback tunnel provider capabilities for CLI startup', () => {
-    expect(DEFAULT_TUNNEL_PROVIDER_CAPABILITIES.map((provider) => provider.provider)).toEqual([
-      TUNNEL_PROVIDER_CLOUDFLARE,
-      TUNNEL_PROVIDER_NGROK,
-    ]);
-  });
-
   it('accepts legacy daemon flags as no-ops', () => {
     expect(parseArgs(['serve', '--daemon']).removedFlagErrors).toEqual([]);
     expect(parseArgs(['serve', '-d']).removedFlagErrors).toEqual([]);
@@ -229,17 +216,6 @@ describe('cli args', () => {
     expect(parsed.options.port).toBe(3002);
   });
 
-  it('parses tunnel auto-start server options', () => {
-    const parsed = parseArgs(['tunnel', 'start', '--port', '3002', '--api-only', '--lan', '--ui-password', 'secret']);
-
-    expect(parsed.command).toBe('tunnel');
-    expect(parsed.subcommand).toBe('start');
-    expect(parsed.options.port).toBe(3002);
-    expect(parsed.options.apiOnly).toBe(true);
-    expect(parsed.options.host).toBe('0.0.0.0');
-    expect(parsed.options.uiPassword).toBe('secret');
-  });
-
   it('maps --lan to wildcard bind host', () => {
     const parsed = parseArgs(['serve', '--lan', '--port', '3002']);
 
@@ -251,13 +227,6 @@ describe('cli args', () => {
     const parsed = parseArgs(['serve', '--hostname', '0.0.0.0']);
 
     expect(parsed.options.host).toBe('0.0.0.0');
-  });
-
-  it('keeps --hostname for tunnel commands', () => {
-    const parsed = parseArgs(['tunnel', 'start', '--hostname', 'app.example.com']);
-
-    expect(parsed.options.hostname).toBe('app.example.com');
-    expect(parsed.options.host).toBeUndefined();
   });
 });
 
@@ -322,51 +291,6 @@ describe('serve host resolution', () => {
   });
 });
 
-describe('compatibility exports', () => {
-  it('allows tunnel profile migration before command options are initialized', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const store = ensureTunnelProfilesMigrated();
-
-      expect(store).toEqual({ version: 1, profiles: [] });
-    });
-  });
-
-  it('includes ngrok in fallback tunnel providers when no server is reachable', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const output = await captureStdout(async () => {
-        await commands.tunnel({ json: true }, 'providers');
-      });
-
-      const body = JSON.parse(output);
-      expect(body.source).toBe('fallback');
-      expect(body.providers.map((entry) => entry.provider)).toContain('ngrok');
-    });
-  });
-
-  it('supports ngrok quick dry-run with an explicit port', async () => {
-    await withTempOpenChamberDataDir(async () => {
-      const output = await captureStdout(async () => {
-        await commands.tunnel({
-          json: true,
-          dryRun: true,
-          explicitPort: true,
-          port: 3003,
-          provider: 'ngrok',
-          mode: 'quick',
-        }, 'start');
-      });
-
-      const body = JSON.parse(output);
-      expect(body).toEqual(expect.objectContaining({
-        ok: true,
-        dryRun: true,
-        provider: 'ngrok',
-        mode: 'quick',
-      }));
-    });
-  });
-});
-
 describe('CLI HTTP helpers', () => {
   it('retries UI-authenticated API requests with the stored instance password', async () => {
     await withTempOpenChamberDataDir(async () => {
@@ -395,17 +319,16 @@ describe('CLI HTTP helpers', () => {
       };
 
       try {
-        const { response, body } = await requestJson(port, '/api/openchamber/tunnel/start', {
-          method: 'POST',
-          body: JSON.stringify({ provider: 'ngrok', mode: 'quick' }),
+        const { response, body } = await requestJson(port, '/api/openchamber/relay/status', {
+          method: 'GET',
         });
 
         expect(response.ok).toBe(true);
         expect(body).toEqual({ ok: true });
         expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
-          '/api/openchamber/tunnel/start',
+          '/api/openchamber/relay/status',
           '/auth/session',
-          '/api/openchamber/tunnel/start',
+          '/api/openchamber/relay/status',
         ]);
       } finally {
         globalThis.fetch = originalFetch;

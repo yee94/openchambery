@@ -1665,6 +1665,7 @@ export const dict: Record<I18nKey, string> = {
   "helpDialog.item.zoomReset": "Redefinir zoom",
   "helpDialog.item.switchSession": "Alternar sessão",
   "helpDialog.item.toggleServicesMenu": "Mostrar ou ocultar menu de serviços",
+  "helpDialog.item.openUsage": "Ver uso",
   "helpDialog.item.cycleServicesTab": "Alternar aba de serviços",
   "helpDialog.item.openSettings": "Abrir configurações",
   "helpDialog.section.leaderChords": "Tecla líder (Ctrl+X)",

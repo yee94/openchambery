@@ -15,7 +15,7 @@ Bind address for the OpenChamber web server. Use `0.0.0.0` to allow access from 
 
 ### `OPENCHAMBER_UI_PASSWORD`
 
-Password for the browser UI. Use this when binding outside localhost, using tunnels, or running behind a reverse proxy.
+Password for the browser UI. Use this when binding outside localhost or running behind a reverse proxy.
 
 ### `OPENCHAMBER_API_ONLY`
 
@@ -109,7 +109,7 @@ Alternative Git executable override. Prefer `OPENCHAMBER_GIT_BINARY` for OpenCha
 
 Time-to-live, in milliseconds, for cached Git-backed file reads. Set `0` to disable this cache while debugging.
 
-## Voice and tunnels
+## Voice
 
 ### `OPENAI_API_KEY`
 
@@ -118,10 +118,6 @@ API key used by OpenChamber voice features that call OpenAI-compatible services.
 ### `OPENCHAMBER_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
 
 Allows remote OpenAI-compatible base URLs for voice features when set to `true` or `1`.
-
-### `NGROK_AUTHTOKEN`
-
-ngrok auth token used by OpenChamber tunnel commands. You can also configure ngrok with `ngrok config add-authtoken <token>`.
 
 ## Runtime helpers
 

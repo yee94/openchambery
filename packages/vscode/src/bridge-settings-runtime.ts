@@ -421,8 +421,6 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   // downgrades the extension.
   await writeSharedSettingsToDisk(persistable);
   const settingsForGlobalState = { ...persistable };
-  delete settingsForGlobalState.managedRemoteTunnelToken;
-  delete settingsForGlobalState.managedRemoteTunnelPresetTokens;
   delete settingsForGlobalState.summaryCustomAPIToken;
   delete settingsForGlobalState.desktopUiPassword;
   await ctx?.context?.globalState.update(SETTINGS_KEY, settingsForGlobalState);

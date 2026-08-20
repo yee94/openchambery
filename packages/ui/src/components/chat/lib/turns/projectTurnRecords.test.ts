@@ -521,6 +521,51 @@ describe('projectTurnRecords', () => {
         expect(turn?.summary.text).toBe('only summary');
     });
 
+    test('projects slim or empty reasoning into activity so collapsed body cannot pad a blank gap', () => {
+        // First-packet slim reasoning has identity/timing and no body. Leaving it
+        // out of activity lets MessageBody wrap a null ReasoningPart in py-1.5
+        // for every slim trace — hundreds of empty shells between the Activity
+        // header and the final answer. Fold them with the disclosure instead.
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 10,
+            finish: 'stop',
+            parts: [
+                { id: 'r-slim', type: 'reasoning', slim: true, time: { start: 2 } } as unknown as Part,
+                { id: 'r-empty', type: 'reasoning', text: '   ' } as unknown as Part,
+                {
+                    id: 'tool_read',
+                    type: 'tool',
+                    tool: 'read',
+                    metadata: { providerExecuted: true },
+                    state: { status: 'completed' },
+                } as unknown as Part,
+                { id: 'summary', type: 'text', text: 'final answer' } as Part,
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant], {
+            showTextJustificationActivity: true,
+        });
+
+        const turn = projection.turns[0];
+        expect(turn?.activityParts.map((part) => part.id)).toEqual([
+            'r-slim',
+            'r-empty',
+            'tool_read',
+        ]);
+        expect(turn?.activityParts.map((part) => part.kind)).toEqual([
+            'reasoning',
+            'reasoning',
+            'tool',
+        ]);
+        expect(turn?.summary.text).toBe('final answer');
+    });
+
     test('single activity segment anchors to the earliest assistant message with activity', () => {
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant1 = createMessageEntry({

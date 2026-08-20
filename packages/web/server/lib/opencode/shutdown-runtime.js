@@ -27,8 +27,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getServer,
     getUiAuthController,
     setUiAuthController,
-    getActiveTunnelController,
-    setActiveTunnelController,
     tunnelAuthController,
     closeFeatureRoutes,
   } = dependencies;
@@ -135,13 +133,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       setUiAuthController(null);
     }
 
-    const activeTunnelController = getActiveTunnelController();
-    if (activeTunnelController) {
-      console.log('Stopping active tunnel...');
-      activeTunnelController.stop();
-      setActiveTunnelController(null);
-      tunnelAuthController.clearActiveTunnel();
-    }
+    tunnelAuthController?.clearActiveTunnel?.();
 
     console.log('Graceful shutdown complete');
     if (exitProcess) {

@@ -25,6 +25,7 @@ import {
   desktopOpenNewWindowAtUrl,
   desktopOpenNewWindowForHost,
   getDesktopHostApiUrl,
+  isVisibleDesktopHost,
   locationMatchesHost,
   normalizeHostUrl,
   probeRelayDesktopHost,
@@ -359,6 +360,14 @@ export function DesktopHostSwitcherDialog({
     }));
     return [local, ...normalizedRemote];
   }, [configHosts, localOrigin]);
+  const sshInstanceIds = React.useMemo(
+    () => new Set(Object.keys(sshHostIds)),
+    [sshHostIds],
+  );
+  const visibleHosts = React.useMemo(
+    () => allHosts.filter((host) => host.id === LOCAL_HOST_ID || isVisibleDesktopHost(host, sshInstanceIds)),
+    [allHosts, sshInstanceIds],
+  );
 
   React.useEffect(() => {
     return subscribeRuntimeEndpointChanged(() => setRuntimeEndpointEpoch((epoch) => epoch + 1));
@@ -486,8 +495,8 @@ export function DesktopHostSwitcherDialog({
 
   React.useEffect(() => {
     if (!open) return;
-    void probeAll(allHosts);
-  }, [open, allHosts, probeAll]);
+    void probeAll(visibleHosts);
+  }, [open, visibleHosts, probeAll]);
 
   React.useEffect(() => {
     if (!open || !isDesktopShell()) {
@@ -813,7 +822,7 @@ export function DesktopHostSwitcherDialog({
                 'hover:text-foreground hover:bg-interactive-hover',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
               )}
-              onClick={() => void probeAll(allHosts)}
+              onClick={() => void probeAll(visibleHosts)}
               disabled={!desktopAvailable || isLoading || isProbing}
               aria-label={t('desktopHostSwitcher.actions.refreshInstancesAria')}
             >
@@ -846,7 +855,7 @@ export function DesktopHostSwitcherDialog({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => void probeAll(allHosts)}
+              onClick={() => void probeAll(visibleHosts)}
               disabled={!desktopAvailable || isLoading || isProbing}
             >
               <Icon name="refresh" className={cn('h-4 w-4', isProbing && 'animate-spin')} />
@@ -869,7 +878,7 @@ export function DesktopHostSwitcherDialog({
             {isLoading ? (
               <div className="px-2 py-2 text-muted-foreground text-sm">{t('desktopHostSwitcher.state.loading')}</div>
             ) : (
-              allHosts.map((host) => {
+              visibleHosts.map((host) => {
                 const isLocal = host.id === LOCAL_HOST_ID;
                 const isSsh = Boolean(sshHostIds[host.id]);
                 const isActive = host.id === current.id;

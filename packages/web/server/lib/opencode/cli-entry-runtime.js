@@ -4,8 +4,6 @@ export const runCliEntryIfMain = (dependencies) => {
     currentFilename,
     parseServeCliOptions,
     defaultPort,
-    cloudflareProvider,
-    managedLocalMode,
     setExitOnShutdown,
     startServer,
   } = dependencies;
@@ -19,20 +17,12 @@ export const runCliEntryIfMain = (dependencies) => {
     argv: process.argv.slice(2),
     env: process.env,
     defaultPort,
-    cloudflareProvider,
-    managedLocalMode,
   });
 
   setExitOnShutdown(true);
   startServer({
     port: cliOptions.port,
     host: cliOptions.host,
-    tryCfTunnel: cliOptions.tryCfTunnel,
-    tunnelProvider: cliOptions.tunnelProvider,
-    tunnelMode: cliOptions.tunnelMode,
-    tunnelConfigPath: cliOptions.tunnelConfigPath,
-    tunnelToken: cliOptions.tunnelToken,
-    tunnelHostname: cliOptions.tunnelHostname,
     attachSignals: true,
     exitOnShutdown: true,
     uiPassword: cliOptions.uiPassword,

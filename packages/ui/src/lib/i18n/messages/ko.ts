@@ -1689,6 +1689,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.zoomReset': '확대/축소 초기화',
   'helpDialog.item.switchSession': '세션 전환',
   'helpDialog.item.toggleServicesMenu': '서비스 메뉴 전환',
+  'helpDialog.item.openUsage': '사용량 보기',
   'helpDialog.item.cycleServicesTab': '서비스 탭 순환',
   'helpDialog.item.openSettings': '설정 열기',
   'helpDialog.section.leaderChords': '리더 키 (Ctrl+X)',

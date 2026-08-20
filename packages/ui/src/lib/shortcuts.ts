@@ -356,6 +356,13 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     customizable: true,
   },
   {
+    id: 'open_usage',
+    defaultCombo: 'mod+shift+c',
+    label: 'Open usage',
+    description: 'Open the usage panel',
+    customizable: true,
+  },
+  {
     id: 'cycle_services_tab',
     defaultCombo: 'mod+alt+shift+s',
     label: 'Cycle services tab',

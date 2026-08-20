@@ -2474,6 +2474,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.togglePlanContextPanel': 'Przełącz panel kontekstu planu',
   'helpDialog.item.toggleRightSidebar': 'Przełącz panel recenzji',
   'helpDialog.item.toggleServicesMenu': 'Przełącz menu usług',
+  'helpDialog.item.openUsage': 'Wyświetl użycie',
   'helpDialog.item.toggleSessionSidebar': 'Przełącz panel sesji',
   'helpDialog.item.toggleTerminal': 'Przełącz terminal',
   'helpDialog.item.newTerminalTab': 'Nowa karta terminala (gdy terminal ma fokus)',

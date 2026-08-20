@@ -1485,6 +1485,7 @@ export const dict = {
   'helpDialog.item.zoomReset': 'Réinitialiser le zoom',
   'helpDialog.item.switchSession': 'Changer de session',
   'helpDialog.item.toggleServicesMenu': 'Basculer le menu des services',
+  'helpDialog.item.openUsage': 'Afficher l\'utilisation',
   'helpDialog.item.cycleServicesTab': 'Onglet Services de vélo',
   'helpDialog.item.openSettings': 'Ouvrir les paramètres',
   'helpDialog.section.leaderChords': 'Touche leader (Ctrl+X)',

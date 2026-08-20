@@ -15,7 +15,7 @@ OpenChamber Web サーバーのバインドアドレスです。他のマシン�
 
 ### `OPENCHAMBER_UI_PASSWORD`
 
-ブラウザ UI のパスワードです。localhost 以外にバインドする場合、トンネルを使う場合、またはリバースプロキシの背後で実行する場合に使います。
+ブラウザ UI のパスワードです。localhost 以外にバインドする場合、またはリバースプロキシの背後で実行する場合に使います。
 
 ### `OPENCHAMBER_API_ONLY`
 
@@ -109,7 +109,7 @@ OpenChamber の Git 機能で使う Git 実行ファイルです。
 
 Git に基づくファイル読み取りキャッシュの有効期間（ミリ秒）です。デバッグ中にこのキャッシュを無効化するには `0` を設定します。
 
-## 音声とトンネル
+## 音声
 
 ### `OPENAI_API_KEY`
 
@@ -118,10 +118,6 @@ OpenAI 互換サービスを呼び出す OpenChamber の音声機能で使う AP
 ### `OPENCHAMBER_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
 
 `true` または `1` に設定すると、音声機能でリモートの OpenAI 互換 base URL を許可します。
-
-### `NGROK_AUTHTOKEN`
-
-OpenChamber のトンネルコマンドで使う ngrok 認証トークンです。`ngrok config add-authtoken <token>` で ngrok 側に設定することもできます。
 
 ## ランタイムヘルパー
 

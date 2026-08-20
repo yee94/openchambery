@@ -430,7 +430,6 @@ const shouldHideMainWindowToTray = (browserWindow) => {
 };
 
 const quitRisk = {
-  hasActiveTunnel: false,
   hasRunningScheduledTasks: false,
   hasEnabledScheduledTasks: false,
   runningScheduledTasksCount: 0,
@@ -438,15 +437,11 @@ const quitRisk = {
 };
 
 const shouldRequireQuitConfirmation = () =>
-  quitRisk.hasActiveTunnel
-  || quitRisk.hasRunningScheduledTasks
+  quitRisk.hasRunningScheduledTasks
   || quitRisk.hasEnabledScheduledTasks;
 
 const quitConfirmationMessage = () => {
   const reasons = [];
-  if (quitRisk.hasActiveTunnel) {
-    reasons.push('an active tunnel');
-  }
   if (quitRisk.runningScheduledTasksCount > 0) {
     reasons.push(`${quitRisk.runningScheduledTasksCount} running schedule${quitRisk.runningScheduledTasksCount === 1 ? '' : 's'}`);
   }
@@ -579,7 +574,6 @@ const refreshQuitRiskFlags = async () => {
         quitRisk.hasEnabledScheduledTasks = Boolean(scheduled.hasEnabledScheduledTasks) || quitRisk.enabledScheduledTasksCount > 0;
         quitRisk.hasRunningScheduledTasks = Boolean(scheduled.hasRunningScheduledTasks) || quitRisk.runningScheduledTasksCount > 0;
       }
-      quitRisk.hasActiveTunnel = Boolean(status?.tunnel?.active);
       return;
     } catch {
     }
@@ -589,7 +583,6 @@ const refreshQuitRiskFlags = async () => {
   if (!base) return;
 
   const scheduledUrl = `${base}/api/openchamber/scheduled-tasks/status`;
-  const tunnelUrl = `${base}/api/openchamber/tunnel/status`;
 
   const fetchJson = async (url) => {
     try {
@@ -601,7 +594,7 @@ const refreshQuitRiskFlags = async () => {
     }
   };
 
-  const [scheduled, tunnel] = await Promise.all([fetchJson(scheduledUrl), fetchJson(tunnelUrl)]);
+  const scheduled = await fetchJson(scheduledUrl);
 
   if (scheduled && typeof scheduled === 'object') {
     const enabledCount = Number(scheduled.enabledScheduledTasksCount ?? 0);
@@ -610,10 +603,6 @@ const refreshQuitRiskFlags = async () => {
     quitRisk.runningScheduledTasksCount = Number.isFinite(runningCount) ? runningCount : 0;
     quitRisk.hasEnabledScheduledTasks = Boolean(scheduled.hasEnabledScheduledTasks) || quitRisk.enabledScheduledTasksCount > 0;
     quitRisk.hasRunningScheduledTasks = Boolean(scheduled.hasRunningScheduledTasks) || quitRisk.runningScheduledTasksCount > 0;
-  }
-
-  if (tunnel && typeof tunnel === 'object') {
-    quitRisk.hasActiveTunnel = Boolean(tunnel.active);
   }
 };
 
@@ -836,15 +825,16 @@ const buildStoredHostEntry = (entry) => {
 
   const relay = sanitizeHostRelayForStorage(entry?.relay);
   const relayField = relay ? { relay } : {};
+  const sourceField = entry?.source === 'connect-link' ? { source: 'connect-link' } : {};
   const directUrl = sanitizeHostUrlForStorage(entry?.url);
   const apiUrl = directUrl ? (sanitizeHostUrlForStorage(entry?.apiUrl) || directUrl) : null;
 
   if (directUrl) {
-    return { id, label: labelRaw || directUrl, url: directUrl, apiUrl, ...tokenField, ...headerFields, ...relayField };
+    return { id, label: labelRaw || directUrl, url: directUrl, apiUrl, ...tokenField, ...headerFields, ...relayField, ...sourceField };
   }
   if (relay) {
     const url = `relay://${relay.serverId}`;
-    return { id, label: labelRaw || url, url, ...tokenField, ...headerFields, relay };
+    return { id, label: labelRaw || url, url, ...tokenField, ...headerFields, relay, ...sourceField };
   }
   return null;
 };

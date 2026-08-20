@@ -17,6 +17,7 @@ import { SkillToolGroup } from './SkillToolGroup';
 import { collectConsecutiveContextTools, hasContextExploreSuccessor } from './contextToolGrouping';
 import { collectConsecutiveSkillTools, getSkillNameFromToolPart } from './skillToolGrouping';
 import { LatticeOrb } from './LatticeOrb';
+import { extractTextContent } from '../partUtils';
 import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isStandaloneTool, isStaticTool, isToolPartActive } from './toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -545,6 +546,10 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
         const activity = parts[i];
 
         if (activity.kind === 'reasoning') {
+            if (!extractTextContent(activity.part).trim()) {
+                i++;
+                continue;
+            }
             rows.push({ type: 'reasoning', activity });
             i++;
             continue;

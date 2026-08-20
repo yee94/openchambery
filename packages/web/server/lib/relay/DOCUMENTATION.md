@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The private relay lets an OpenChamber client (mobile app, browser, or another desktop) reach a user's OpenChamber instance through OpenChamber-hosted infrastructure when the instance is not directly reachable (behind NAT, no public URL, no tunnel). The instance dials **outbound** to the relay; nothing needs to be exposed inbound.
+The private relay lets an OpenChamber client (mobile app, browser, or another desktop) reach a user's OpenChamber instance through OpenChamber-hosted infrastructure when the instance is not directly reachable (behind NAT or without a public URL). The instance dials **outbound** to the relay; nothing needs to be exposed inbound.
 
 Traffic is **end-to-end encrypted between the two endpoints** (client and host instance). The relay infrastructure forwards opaque ciphertext and cannot read application traffic — it is an untrusted transport, not a trusted middlebox.
 

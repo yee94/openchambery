@@ -2005,6 +2005,10 @@ const AssistantMessageBody = React.memo(({
                     i += 1;
                     continue;
                 }
+                if (!extractTextContent(part).trim()) {
+                    i += 1;
+                    continue;
+                }
                 if (showReasoningTraces) {
                     if (!collapsibleThinkingBlocks) {
                         // Non-collapsible mode: render thinking blocks as plain text inline.

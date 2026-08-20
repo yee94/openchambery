@@ -34,10 +34,4 @@ export declare function parseArgs(argv?: string[]): {
   port: number;
   host?: string;
   uiPassword: string | null;
-  tryCfTunnel: boolean;
-  tunnelProvider?: string;
-  tunnelMode?: string;
-  tunnelConfigPath?: string | null;
-  tunnelToken?: string;
-  tunnelHostname?: string;
 };

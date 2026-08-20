@@ -411,20 +411,6 @@
           }
         },
         {
-          "label": "Tunnels",
-          "link": "/tunnels/",
-          "translations": {
-            "uk": "Тунелі",
-            "zh-CN": "隧道",
-            "es": "Túneles",
-            "pt-BR": "Túneis",
-            "ko": "터널",
-            "pl": "Tunele",
-            "fr": "Tunnels",
-            "ja": "トンネル"
-          }
-        },
-        {
           "label": "Reverse Proxy",
           "link": "/reverse-proxy/",
           "translations": {
@@ -578,20 +564,6 @@
             "pl": "Przeglądarka na pulpicie",
             "fr": "Navigateur desktop",
             "ja": "デスクトップブラウザ"
-          }
-        },
-        {
-          "label": "Desktop Tunnels",
-          "link": "/desktop-tunnels/",
-          "translations": {
-            "uk": "Десктопні тунелі",
-            "zh-CN": "桌面端隧道",
-            "es": "Túneles de escritorio",
-            "pt-BR": "Túneis no desktop",
-            "ko": "데스크톱 터널",
-            "pl": "Tunele w aplikacji desktopowej",
-            "fr": "Tunnels desktop",
-            "ja": "デスクトップトンネル"
           }
         },
         {

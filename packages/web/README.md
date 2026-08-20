@@ -29,14 +29,6 @@ openchamber startup enable           # Start at login as a native service
 OPENCHAMBER_UI_PASSWORD=secret openchamber startup enable # Save service password env
 openchamber startup status           # Show startup service status
 openchamber startup disable          # Remove startup service
-openchamber tunnel help              # Tunnel lifecycle commands
-openchamber tunnel providers         # Show provider capabilities
-openchamber tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --token <token>
-openchamber tunnel start --profile prod-main
-openchamber tunnel start --provider cloudflare --mode quick --qr
-openchamber tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
-openchamber tunnel status --all      # Show tunnel state across instances
-openchamber tunnel stop --port 3000  # Stop tunnel only (server stays running)
 openchamber connect-url --port 3000  # Add this server to OpenChamber Desktop
 openchamber connect-url --server http://host:3000 --qr
 openchamber connect-url --port 3000 --qr
@@ -79,13 +71,6 @@ OPENCHAMBER_RELAY_URL=wss://relay.example.com/ws openchamber
 The **Add a device** dialog defaults to `wss://relay.openchamber.dev/ws` and lets the operator enter a custom `ws://` or `wss://` Relay endpoint for that pairing. The Host persists and switches to the selected endpoint before creating the QR code; `OPENCHAMBER_RELAY_URL` remains authoritative when set. The creating client remembers the last effective endpoint locally.
 
 Saved pairing candidates retain their endpoint snapshot, including the Relay URL. Mobile and Desktop clients reconnect through that saved endpoint until a new pairing flow replaces it. See [OpenChamber Relay Server](https://github.com/yee94/openchamber/tree/main/packages/relay-server#readme) for bundle builds, reverse-proxy configuration, security, operations, and systemd guidance.
-
-### Tunnel behavior notes
-
-- One active tunnel per running OpenChamber instance (port).
-- Starting a different tunnel mode/provider on the same instance replaces the active tunnel.
-- Replacing or stopping a tunnel revokes existing connect links and invalidates remote tunnel sessions.
-- Connect links are one-time tokens; generating a new link revokes the previous unused link.
 
 ### Connect other OpenChamber apps
 
@@ -157,29 +142,8 @@ OPENCHAMBER_OPENCODE_HOSTNAME=0.0.0.0 openchamber --port 3000
 ```yaml
 environment:
   UI_PASSWORD: your_secure_password
-  OPENCHAMBER_TUNNEL_MODE: quick # quick | managed-remote | managed-local
-  OPENCHAMBER_TUNNEL_PROVIDER: cloudflare
   OPENCHAMBER_UPDATE_API_URL: https://updates.example.com/v1/update/check # Primary compatible update-check service; Vercel and GitHub Releases provide fallback
 ```
-
-For `managed-remote` mode, also set:
-
-```yaml
-environment:
-  OPENCHAMBER_TUNNEL_MODE: managed-remote
-  OPENCHAMBER_TUNNEL_HOSTNAME: app.example.com
-  OPENCHAMBER_TUNNEL_TOKEN: <token>
-```
-
-For `managed-local` mode, you can set:
-
-```yaml
-environment:
-  OPENCHAMBER_TUNNEL_MODE: managed-local
-  OPENCHAMBER_TUNNEL_CONFIG: /home/openchamber/.cloudflared/config.yml
-```
-
-Managed-local path note: `OPENCHAMBER_TUNNEL_CONFIG` must use a container path under `/home/openchamber/...`. If the config file references `credentials-file`, ensure that JSON path is also mounted and reachable inside the container.
 
 **Data directory:** mount `data/` for persistent storage. Ensure permissions:
 ```bash
@@ -256,14 +220,14 @@ systemctl --user enable --now opencode openchamber
 
 ## What makes the web version special
 
-- **Remote access** - Cloudflare tunnel with QR onboarding. Scan from your phone, start coding.
+- **Remote access** - LAN pairing and private relay with QR onboarding. Scan from your phone, start coding.
 - **Mobile-first PWA** - optimized chat controls, keyboard-safe layouts, drag-to-reorder projects
 - **Background notifications** - know when your agent finishes, even from another tab
 - **Self-update** - update and restart from the UI, server settings stay intact
 - **Cross-tab tracking** - session activity stays in sync across browser tabs
 
-- Cloudflare tunnel access with quick, managed-remote, and managed-local modes
-- One-scan onboarding with tunnel QR + password URL helpers
+- LAN pairing and private relay for reaching a host that is not publicly exposed
+- One-scan onboarding with pairing QR links
 - Mobile-first experience: optimized chat controls, keyboard-safe layouts, and attachment-friendly UI
 - Background notifications plus reliable cross-tab session activity tracking
 - Built-in self-update + restart flow that keeps your server settings intact

@@ -37,6 +37,11 @@ export type DesktopHostRelay = {
   hostEncPubJwk: JsonWebKey;
 };
 
+/** Hosts created by redeeming an Import connection / pairing link. */
+export const DESKTOP_HOST_SOURCE_CONNECT_LINK = 'connect-link' as const;
+
+export type DesktopHostSource = typeof DESKTOP_HOST_SOURCE_CONNECT_LINK;
+
 export type DesktopHost = {
   id: string;
   label: string;
@@ -50,6 +55,26 @@ export type DesktopHost = {
   requestHeaders?: Record<string, string>;
   /** When set, this host is reached over the private relay tunnel. */
   relay?: DesktopHostRelay;
+  /** Provenance for display filtering. Absent on legacy manually-added hosts. */
+  source?: DesktopHostSource;
+};
+
+/**
+ * Whether a persisted desktop host should appear in Settings / the host switcher.
+ * Hidden hosts stay on disk; this is display-only.
+ *
+ * A host is visible when any of these authoritative facts hold:
+ * 1. it was imported via a connect/pairing link (`source === 'connect-link'`)
+ * 2. its id matches a desktop SSH instance (SSH connect writes back the same id)
+ * 3. it carries a relay descriptor (pairing-produced)
+ */
+export const isVisibleDesktopHost = (
+  host: DesktopHost,
+  sshInstanceIds: ReadonlySet<string>,
+): boolean => {
+  if (host.source === DESKTOP_HOST_SOURCE_CONNECT_LINK) return true;
+  if (host.relay) return true;
+  return sshInstanceIds.has(host.id);
 };
 
 /** Display-only pseudo-URL for a relay host (never fetched). */
@@ -205,6 +230,9 @@ const parseHost = (value: unknown): DesktopHost | null => {
   const clientToken = readString(value, 'clientToken') || readString(value, 'client_token');
   const requestHeaders = sanitizeRequestHeaders(value.requestHeaders);
   const relay = parseHostRelay(value.relay);
+  const source = readString(value, 'source') === DESKTOP_HOST_SOURCE_CONNECT_LINK
+    ? DESKTOP_HOST_SOURCE_CONNECT_LINK
+    : undefined;
   if (!id || !label || !url) return null;
   return {
     id,
@@ -214,6 +242,7 @@ const parseHost = (value: unknown): DesktopHost | null => {
     ...(clientToken ? { clientToken } : {}),
     ...(requestHeaders ? { requestHeaders } : {}),
     ...(relay ? { relay } : {}),
+    ...(source ? { source } : {}),
   };
 };
 

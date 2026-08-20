@@ -15,7 +15,7 @@ Endereço onde o servidor web do OpenChamber escuta. Use `0.0.0.0` para permitir
 
 ### `OPENCHAMBER_UI_PASSWORD`
 
-Senha da interface no navegador. Use quando expor fora do localhost, por túnel ou por proxy reverso.
+Senha da interface no navegador. Use quando expor fora do localhost ou por proxy reverso.
 
 ### `OPENCHAMBER_API_ONLY`
 
@@ -109,7 +109,7 @@ Override alternativo para o executável do Git. Para configuração específica 
 
 TTL, em milissegundos, para leituras de arquivos em cache baseadas em Git. Use `0` para desativar o cache durante depuração.
 
-## Voz e túneis
+## Voz
 
 ### `OPENAI_API_KEY`
 
@@ -118,10 +118,6 @@ API key usada por recursos de voz do OpenChamber que chamam serviços compatíve
 ### `OPENCHAMBER_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
 
 Permite base URLs remotas compatíveis com OpenAI para recursos de voz quando definido como `true` ou `1`.
-
-### `NGROK_AUTHTOKEN`
-
-Token de autenticação do ngrok usado pelos comandos de túnel do OpenChamber. Você também pode configurar com `ngrok config add-authtoken <token>`.
 
 ## Auxiliares de runtime
 

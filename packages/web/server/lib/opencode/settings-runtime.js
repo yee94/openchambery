@@ -39,11 +39,6 @@ export const createSettingsRuntime = (deps) => {
     normalizeStringArray,
     formatSettingsResponse,
     resolveDirectoryCandidate,
-    normalizeManagedRemoteTunnelHostname,
-    normalizeManagedRemoteTunnelPresets,
-    normalizeManagedRemoteTunnelPresetTokens,
-    syncManagedRemoteTunnelConfigWithPresets,
-    upsertManagedRemoteTunnelToken,
   } = deps;
 
   let persistSettingsLock = Promise.resolve();
@@ -725,67 +720,6 @@ export const createSettingsRuntime = (deps) => {
     return { settings: changed ? next : settings, changed };
   };
 
-  const migrateSettingsFromLegacyNamedTunnelKeys = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
-    const next = { ...settings };
-    let changed = false;
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelHostname')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelHostname')) {
-      next.managedRemoteTunnelHostname = normalizeManagedRemoteTunnelHostname(next.namedTunnelHostname);
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelToken')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelToken')) {
-      if (next.namedTunnelToken === null) {
-        next.managedRemoteTunnelToken = null;
-      } else if (typeof next.namedTunnelToken === 'string') {
-        next.managedRemoteTunnelToken = next.namedTunnelToken.trim();
-      }
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelPresets')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelPresets')) {
-      next.managedRemoteTunnelPresets = normalizeManagedRemoteTunnelPresets(next.namedTunnelPresets);
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelPresetTokens')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelPresetTokens')) {
-      next.managedRemoteTunnelPresetTokens = normalizeManagedRemoteTunnelPresetTokens(next.namedTunnelPresetTokens);
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelSelectedPresetId')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelSelectedPresetId')) {
-      const selectedPresetId = typeof next.namedTunnelSelectedPresetId === 'string'
-        ? next.namedTunnelSelectedPresetId.trim()
-        : '';
-      if (selectedPresetId) {
-        next.managedRemoteTunnelSelectedPresetId = selectedPresetId;
-      }
-      changed = true;
-    }
-
-    const legacyKeys = [
-      'namedTunnelHostname',
-      'namedTunnelToken',
-      'namedTunnelPresets',
-      'namedTunnelPresetTokens',
-      'namedTunnelSelectedPresetId',
-    ];
-    for (const key of legacyKeys) {
-      if (Object.prototype.hasOwnProperty.call(next, key)) {
-        delete next[key];
-        changed = true;
-      }
-    }
-
-    return { settings: changed ? next : settings, changed };
-  };
-
   // `approvedDirectories` was a write-only registry: every project path and
   // visited directory was appended forever, but nothing ever read it. Strip
   // the stale key from persisted settings on upgrade.
@@ -839,21 +773,20 @@ export const createSettingsRuntime = (deps) => {
     const migration2 = await migrateSettingsFromLegacyThemePreferences(migration1.settings);
     const migration3 = await migrateSettingsFromLegacyCollapsedProjects(migration2.settings);
     const migration4 = await migrateSettingsNotificationDefaults(migration3.settings);
-    const migration5 = await migrateSettingsFromLegacyNamedTunnelKeys(migration4.settings);
-    const migration6 = normalizeSettingsPaths(migration5.settings);
-    const migration7 = await migrateSettingsToDeterministicProjectIds(migration6.settings);
-    const migration8 = migrateSettingsRemoveApprovedDirectories(migration7.settings);
-    const migration9 = migrateSettingsCompactChatDefaults(migration8.settings);
-    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed || migration9.changed) {
-      await writeSettingsToDisk(migration9.settings);
+    const migration5 = normalizeSettingsPaths(migration4.settings);
+    const migration6 = await migrateSettingsToDeterministicProjectIds(migration5.settings);
+    const migration7 = migrateSettingsRemoveApprovedDirectories(migration6.settings);
+    const migration8 = migrateSettingsCompactChatDefaults(migration7.settings);
+    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed) {
+      await writeSettingsToDisk(migration8.settings);
     }
-    return migration9.settings;
+    return migration8.settings;
   };
 
   const persistSettings = async (changes) => {
     persistSettingsLock = persistSettingsLock.then(async () => {
       // Log field names only — changes can carry credentials (UI password,
-      // client tokens, tunnel tokens) that must never reach the log file.
+      // client tokens) that must never reach the log file.
       console.log('[persistSettings] Updating fields:', Object.keys(changes || {}).join(', ') || '(none)');
       const current = await readSettingsFromDisk();
       const sanitized = sanitizeSettingsUpdate(changes);
@@ -898,32 +831,6 @@ export const createSettingsRuntime = (deps) => {
       } else if (next.activeProjectId) {
         console.log(`[persistSettings] No projects found, clearing activeProjectId ${next.activeProjectId}`);
         next = { ...next, activeProjectId: undefined };
-      }
-
-      if (Object.prototype.hasOwnProperty.call(sanitized, 'managedRemoteTunnelPresets')) {
-        await syncManagedRemoteTunnelConfigWithPresets(next.managedRemoteTunnelPresets);
-      }
-
-      if (Object.prototype.hasOwnProperty.call(sanitized, 'managedRemoteTunnelPresetTokens') && sanitized.managedRemoteTunnelPresetTokens) {
-        const presetsById = new Map((next.managedRemoteTunnelPresets || []).map((entry) => [entry.id, entry]));
-        const updates = Object.entries(sanitized.managedRemoteTunnelPresetTokens)
-          .map(([presetId, token]) => {
-            const preset = presetsById.get(presetId);
-            if (!preset || typeof token !== 'string' || token.trim().length === 0) {
-              return null;
-            }
-            return {
-              id: preset.id,
-              name: preset.name,
-              hostname: preset.hostname,
-              token: token.trim(),
-            };
-          })
-          .filter(Boolean);
-
-        for (const update of updates) {
-          await upsertManagedRemoteTunnelToken(update);
-        }
       }
 
       await writeSettingsToDisk(next);

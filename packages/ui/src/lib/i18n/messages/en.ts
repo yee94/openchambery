@@ -1689,6 +1689,7 @@ export const dict = {
   'helpDialog.item.zoomReset': 'Reset Zoom',
   'helpDialog.item.switchSession': 'Switch Session',
   'helpDialog.item.toggleServicesMenu': 'Toggle Services Menu',
+  'helpDialog.item.openUsage': 'Open Usage',
   'helpDialog.item.cycleServicesTab': 'Cycle Services Tab',
   'helpDialog.item.openSettings': 'Open Settings',
   'helpDialog.item.leaderOpenModel': 'Open model selector',

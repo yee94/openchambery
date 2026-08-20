@@ -1683,6 +1683,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.zoomReset': 'ズームをリセット',
   'helpDialog.item.switchSession': 'セッションを切り替え',
   'helpDialog.item.toggleServicesMenu': 'サービスの切り替え',
+  'helpDialog.item.openUsage': '使用量を表示',
   'helpDialog.item.cycleServicesTab': 'サービス変数の切り替え',
   'helpDialog.item.openSettings': '設定を開く',
   'helpDialog.section.leaderChords': 'リーダーキー（Ctrl+X）',

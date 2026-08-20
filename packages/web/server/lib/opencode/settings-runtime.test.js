@@ -21,11 +21,6 @@ const createRuntime = async () => {
     normalizeStringArray: (values) => Array.isArray(values) ? values.filter((value) => typeof value === 'string') : [],
     formatSettingsResponse: (settings) => settings,
     resolveDirectoryCandidate: (value) => value,
-    normalizeManagedRemoteTunnelHostname: (value) => value,
-    normalizeManagedRemoteTunnelPresets: (value) => value,
-    normalizeManagedRemoteTunnelPresetTokens: (value) => value,
-    syncManagedRemoteTunnelConfigWithPresets: async () => {},
-    upsertManagedRemoteTunnelToken: async () => {},
   });
 
   return {
@@ -218,11 +213,6 @@ describe('settings runtime', () => {
       normalizeStringArray: (values) => Array.isArray(values) ? values.filter((value) => typeof value === 'string') : [],
       formatSettingsResponse: (settings) => settings,
       resolveDirectoryCandidate: (value) => value,
-      normalizeManagedRemoteTunnelHostname: (value) => value,
-      normalizeManagedRemoteTunnelPresets: (value) => value,
-      normalizeManagedRemoteTunnelPresetTokens: (value) => value,
-      syncManagedRemoteTunnelConfigWithPresets: async () => {},
-      upsertManagedRemoteTunnelToken: async () => {},
     });
 
     try {

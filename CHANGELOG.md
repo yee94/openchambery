@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.8] - 2026-08-20
+
+- **移除 Cloudflare/ngrok 公网隧道：** 服务端 provider、CLI `tunnel` 命令、设置页 Tunnel 面板与文档站整套移除；远程访问统一收敛到配对链接、LAN 直连与 Private Relay，旧 `--tunnel` 标志改为报错并提示迁移；Relay 与 SSH 端口转发不受影响。
+- **远程实例设置合并：** 设置里的「其他 OpenChamber 服务器」并入「远程实例」，添加方式收敛为「导入连接」与「添加 SSH」两种，列表混排并以「链接 / SSH」徽章区分来源；旧手动添加的服务器不再展示（数据保留，不删除），Docker 镜像与安全文档同步去掉 cloudflared。
+
 ## [1.17.1-beta.7] - 2026-08-20
 
 - **npm 包改到 `@openchambery`：** `@openchambery/web` 与 `@openchambery/relay-server` 随 GitHub Release 发布；安装脚本、CLI 更新和 SSH 远程预装都改用新包名。

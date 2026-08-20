@@ -32,7 +32,7 @@ Electron starts the OpenChamber backend in-process, never as a sidecar. Developm
 
 Shared contracts must define intentional behavior for every applicable runtime: web, desktop, VS Code, hosted mobile, and Capacitor mobile.
 
-Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH/tunnel management. The desktop runtime imports `@openchambery/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
+Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH management. The desktop runtime imports `@openchambery/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
 
 Release artifacts and repository links use `yee94/openchamber`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, Vercel `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`).
 
@@ -111,7 +111,7 @@ Project skills live under `.agents/skills/*/SKILL.md`. Before editing, load ever
 | Any source, dependency, export, build-config, generated-asset, package-contract, or module-ownership change | `openchamber-change-discipline` |
 | CLI commands, prompts, terminal output, non-TTY, `--quiet`, or `--json` behavior | `clack-cli-patterns` |
 | Shared UI data access, React Hooks, `@tanstack/react-query`, query keys/cache/invalidation, `@reactuses/core`, browser Hooks, OpenCode SDK, `RuntimeAPIs`, runtime fetch/auth/URLs, bridges/proxies, runtime switching, or server API routes | `ui-api-decoupling` |
-| Electron main/preload, IPC, native UI, updater, deep links, SSH/tunnels, packaging, or child processes | `desktop-shell` |
+| Electron main/preload, IPC, native UI, updater, deep links, SSH, packaging, or child processes | `desktop-shell` |
 | Session sync, bootstrap/reconnect, reducers, polling, optimistic state, queues, live status, reconciliation, or directory-scoped caches | `sync-state-invariants` |
 | Render/store/event hot paths, large lists, caching/indexing, high CPU/memory, lag, jank, freezes, or performance regressions | `performance-engineering` |
 | WebSocket, SSE, streaming transport, runtime transport internals, or private relay | `relay-transport` |

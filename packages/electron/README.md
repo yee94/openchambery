@@ -203,7 +203,6 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 - Desktop host switcher and deep-link imports.
 - Local and remote instance handling.
 - SSH host import, connections, logs, and port forwarding.
-- Tunnel lifecycle integration through the web server runtime.
 - Auto-update checks, downloads, and restart/apply flow.
 
 ## IPC Pattern

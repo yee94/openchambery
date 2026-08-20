@@ -1,9 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import { DEFAULT_PORT } from './cli-args.js';
 import { getRunDir, readDesktopLocalPortFromSettings } from './cli-paths.js';
-import { resolveApiHost, buildLocalUrl } from './cli-network.js';
-import { fetchTunnelProvidersFromPort, fetchSystemInfoFromPort, isServerHealthReady } from './cli-http.js';
+import { resolveApiHost } from './cli-network.js';
+import { fetchSystemInfoFromPort, isServerHealthReady } from './cli-http.js';
 import { isPortAvailable } from './cli-ports.js';
 import {
   getPidFilePath,
@@ -15,8 +14,6 @@ import {
   getOpenchamberProcessState,
   hasOpenchamberRuntimeInfo,
 } from './cli-process.js';
-import { DEFAULT_TUNNEL_PROVIDER_CAPABILITIES } from './cli-tunnel-capabilities.js';
-
 function createLivePortInstance(port, info, host) {
   if (!hasOpenchamberRuntimeInfo(info)) return null;
   return {
@@ -85,79 +82,6 @@ async function fetchSystemInfoFromPortCandidates(port, fetchImpl, hosts, expecte
     }
   }
   return { info: null, host: null };
-}
-
-async function resolveDoctorPortStatuses(options = {}) {
-  const runningEntries = await discoverRunningInstances();
-  const desktopEntry = await discoverDesktopInstance();
-  const statuses = [];
-
-  if (options.explicitPort) {
-    const requestedPort = options.port;
-    const runningMatch = runningEntries.find((entry) => entry.port === requestedPort);
-    if (runningMatch) {
-      statuses.push({
-        port: requestedPort,
-        available: true,
-        status: 'success',
-        line: `port ${requestedPort} available for tunneling`,
-        detail: 'Double-check this same port is configured in your provider dashboard/config.',
-      });
-      return { statuses, availableEntries: [runningMatch] };
-    }
-
-    if (desktopEntry && desktopEntry.port === requestedPort) {
-      statuses.push({
-        port: requestedPort,
-        available: false,
-        status: 'warning',
-        line: `port ${requestedPort} not available (desktop runtime)`,
-        detail: 'Use a CLI instance port from `openchamber serve` for tunneling.',
-      });
-      return { statuses, availableEntries: [] };
-    }
-
-    statuses.push({
-      port: requestedPort,
-      available: false,
-      status: 'error',
-      line: `port ${requestedPort} not available (no running instance)`,
-      detail: `Start one with \`openchamber serve --port ${requestedPort}\`.`,
-    });
-    return { statuses, availableEntries: [] };
-  }
-
-  for (const entry of runningEntries) {
-    statuses.push({
-      port: entry.port,
-      available: true,
-      status: 'success',
-      line: `port ${entry.port} available for tunneling`,
-      detail: 'Double-check this same port is configured in your provider dashboard/config.',
-    });
-  }
-
-  if (desktopEntry && !runningEntries.some((entry) => entry.port === desktopEntry.port)) {
-    statuses.push({
-      port: desktopEntry.port,
-      available: false,
-      status: 'warning',
-      line: `port ${desktopEntry.port} not available (desktop runtime)`,
-      detail: 'Use a CLI instance port from `openchamber serve` for tunneling.',
-    });
-  }
-
-  if (runningEntries.length === 0) {
-    statuses.push({
-      port: null,
-      available: false,
-      status: 'warning',
-      line: 'no CLI ports available for tunneling',
-      detail: 'Start one with `openchamber serve`.',
-    });
-  }
-
-  return { statuses, availableEntries: runningEntries };
 }
 
 async function discoverRunningInstances(options = {}) {
@@ -376,39 +300,7 @@ async function discoverDesktopInstance(fetchImpl = globalThis.fetch) {
   };
 }
 
-async function resolveTunnelProviders(options = {}, deps = {}) {
-  const readPorts = typeof deps.readPorts === 'function'
-    ? deps.readPorts
-    : async () => (await discoverRunningInstances()).map((entry) => entry.port);
-  const fetchImpl = typeof deps.fetchImpl === 'function' ? deps.fetchImpl : globalThis.fetch;
-
-  const candidatePorts = [];
-  if (Number.isFinite(options.port) && options.port > 0) {
-    candidatePorts.push(options.port);
-  }
-
-  const discoveredPorts = await Promise.resolve(readPorts());
-  if (Array.isArray(discoveredPorts)) {
-    candidatePorts.push(...discoveredPorts);
-  }
-
-  if (!candidatePorts.includes(DEFAULT_PORT)) {
-    candidatePorts.push(DEFAULT_PORT);
-  }
-
-  for (const port of candidatePorts) {
-    const providers = await fetchTunnelProvidersFromPort(port, fetchImpl);
-    if (providers) {
-      return { providers, source: `api:${port}` };
-    }
-  }
-
-  return { providers: DEFAULT_TUNNEL_PROVIDER_CAPABILITIES, source: 'fallback' };
-}
-
-
 export {
-  resolveDoctorPortStatuses,
   discoverRunningInstances,
   discoverOpenChamberInstanceOnPort,
   discoverLifecycleInstances,
@@ -417,5 +309,4 @@ export {
   isDesktopRuntimeForPort,
   inspectTunnelAttachability,
   discoverDesktopInstance,
-  resolveTunnelProviders,
 };

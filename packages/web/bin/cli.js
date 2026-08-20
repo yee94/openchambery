@@ -11,20 +11,10 @@ import {
   assertAuthenticatedNetworkExposure,
 } from './lib/cli-network.js';
 import {
-  maskToken,
-  resolveToken,
-  redactProfileForOutput,
-  redactProfilesForOutput,
-  warnIfUnsafeFilePermissions,
-  ensureTunnelProfilesMigrated as ensureTunnelProfilesMigratedBase,
-} from './lib/cli-tunnel-profiles.js';
-import {
   parseArgs,
   showHelp,
   showStartupHelp,
   showConnectUrlHelp,
-  showTunnelHelp,
-  generateCompletionScript,
   findClosestMatch,
 } from './lib/cli-args.js';
 import { readDesktopLocalPortFromSettings } from './lib/cli-paths.js';
@@ -36,17 +26,13 @@ import { createUpdateCommand } from './lib/commands-update.js';
 import { createConnectUrlCommand } from './lib/commands-connect-url.js';
 import { createLifecycleCommands } from './lib/commands-lifecycle.js';
 import { createServeCommand } from './lib/commands-serve.js';
-import { createTunnelCommand, isValidTunnelDoctorResponse, shouldDisplayTunnelQr } from './lib/commands-tunnel.js';
 import {
-  resolveDoctorPortStatuses,
   discoverRunningInstances,
   discoverOpenChamberInstanceOnPort,
   discoverLifecycleInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
-  resolveTunnelProviders,
 } from './lib/cli-lifecycle.js';
 import {
-  fetchTunnelProvidersFromPort,
   fetchSystemInfoFromPort,
 } from './lib/cli-http.js';
 import {
@@ -60,7 +46,6 @@ import {
 import {
   intro as clackIntro, outro as clackOutro, cancel as clackCancel,
   isJsonMode,
-  isQuietMode,
   printJson,
   logStatus,
 } from './cli-output.js';
@@ -70,23 +55,9 @@ const __dirname = path.dirname(__filename);
 
 const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 
-let onCancelCleanup = null;
 let activeCommandOptions = null;
 let foregroundServerActive = false;
 let foregroundShutdown = null;
-
-function setCancelCleanup(handler) {
-  onCancelCleanup = typeof handler === 'function' ? handler : null;
-}
-
-function shouldWarnForTunnelProfileFile() {
-  if (!activeCommandOptions) return false;
-  return !isJsonMode(activeCommandOptions) && !isQuietMode(activeCommandOptions);
-}
-
-function ensureTunnelProfilesMigrated() {
-  return ensureTunnelProfilesMigratedBase({ shouldWarn: shouldWarnForTunnelProfileFile() });
-}
 
 const HAS_PLAIN_FLAG = process.argv.includes('--plain');
 const STYLE_ENABLED = process.stdout.isTTY && process.env.NO_COLOR !== '1' && !HAS_PLAIN_FLAG;
@@ -163,14 +134,6 @@ commands.serve = createServeCommand({
   commands.restart = lifecycleCommands.restart;
 }
 
-commands.tunnel = createTunnelCommand({
-  serveCommand: commands.serve.bind(commands),
-  stopCommand: commands.stop.bind(commands),
-  setCancelCleanup,
-  boldText,
-  ensureTunnelProfilesMigrated,
-});
-
 commands['connect-url'] = createConnectUrlCommand({
   serveCommand: commands.serve.bind(commands),
 });
@@ -183,7 +146,7 @@ commands.update = createUpdateCommand({
 
 async function main() {
   const parsed = parseArgs();
-  const { command, subcommand, tunnelAction, startupAction, options, removedFlagErrors, helpRequested, versionRequested } = parsed;
+  const { command, startupAction, options, removedFlagErrors, helpRequested, versionRequested } = parsed;
   activeCommandOptions = options;
 
   if (versionRequested) {
@@ -213,9 +176,7 @@ async function main() {
   }
 
   if (helpRequested) {
-    if (command === 'tunnel') {
-      showTunnelHelp();
-    } else if (command === 'startup') {
+    if (command === 'startup') {
       showStartupHelp();
     } else if (command === 'connect-url') {
       showConnectUrlHelp();
@@ -225,18 +186,13 @@ async function main() {
     return;
   }
 
-  if (command === 'tunnel') {
-    await commands.tunnel(options, subcommand, tunnelAction);
-    return;
-  }
-
   if (command === 'startup') {
     await commands.startup(options, startupAction);
     return;
   }
 
   if (!commands[command]) {
-    const knownCommands = ['serve', 'stop', 'restart', 'status', 'tunnel', 'startup', 'logs', 'update'];
+    const knownCommands = ['serve', 'stop', 'restart', 'status', 'startup', 'logs', 'connect-url', 'update'];
     const suggestion = findClosestMatch(command, knownCommands);
     const hint = suggestion ? ` Did you mean '${suggestion}'?` : '';
     if (isJsonMode(options)) {
@@ -274,14 +230,6 @@ if (isCliExecution) {
     isHandlingSigint = true;
     (async () => {
       clackCancel('Operation cancelled.');
-      if (onCancelCleanup) {
-        try {
-          await onCancelCleanup();
-        } catch {
-        } finally {
-          setCancelCleanup(null);
-        }
-      }
       process.exit(130);
     })();
   });
@@ -341,8 +289,6 @@ export {
   assertAuthenticatedNetworkExposure,
   resolveServeHost,
   hasUiPasswordConfigured,
-  shouldDisplayTunnelQr,
-  isValidTunnelDoctorResponse,
   readDesktopLocalPortFromSettings,
   getPidFilePath,
   getInstanceFilePath,
@@ -350,21 +296,12 @@ export {
   isOpenchamberProcessRunning,
   isOpenchamberCmdline,
   getOpenchamberProcessState,
-  resolveTunnelProviders,
-  fetchTunnelProvidersFromPort,
   fetchSystemInfoFromPort,
   discoverRunningInstances,
   discoverOpenChamberInstanceOnPort,
   discoverLifecycleInstances,
   discoverUnconfirmedRegistryInstanceOnPort,
-  ensureTunnelProfilesMigrated,
-  resolveToken,
-  redactProfileForOutput,
-  redactProfilesForOutput,
-  maskToken,
   findClosestMatch,
-  generateCompletionScript,
   TunnelCliError,
   EXIT_CODE,
-  warnIfUnsafeFilePermissions,
 };

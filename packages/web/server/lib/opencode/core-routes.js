@@ -1000,8 +1000,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   app.get('/connect', async (req, res) => {
     try {
       const token = typeof req.query?.t === 'string' ? req.query.t : '';
-      const settings = await readSettingsFromDiskMigrated();
-      const tunnelSessionTtlMs = normalizeTunnelSessionTtlMs(settings?.tunnelSessionTtlMs);
+      const tunnelSessionTtlMs = normalizeTunnelSessionTtlMs();
 
       const exchange = tunnelAuthController.exchangeBootstrapToken({
         req,
@@ -1164,8 +1163,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/goals') ||
       req.path.startsWith('/api/text') ||
       req.path.startsWith('/api/voice') ||
-      req.path.startsWith('/api/tts') ||
-      req.path.startsWith('/api/openchamber/tunnel')
+      req.path.startsWith('/api/tts')
     ) {
       express.json({ limit: '50mb' })(req, res, next);
     } else if (req.path.startsWith('/api')) {

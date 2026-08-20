@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { desktopHostProbe, desktopHostsGet, desktopHostsSet, redactSensitiveUrl, resolveDesktopHostUrl } from './desktopHosts';
+import {
+  DESKTOP_HOST_SOURCE_CONNECT_LINK,
+  desktopHostProbe,
+  desktopHostsGet,
+  desktopHostsSet,
+  isVisibleDesktopHost,
+  redactSensitiveUrl,
+  resolveDesktopHostUrl,
+  type DesktopHost,
+} from './desktopHosts';
 
 const withDesktopBridge = async <T>(handler: (cmd: string, args: Record<string, unknown>) => unknown | Promise<unknown>, run: () => Promise<T>): Promise<T> => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -107,6 +116,34 @@ describe('desktop host runtime headers', () => {
     });
   });
 
+  test('parses connect-link source and ignores unknown source values', async () => {
+    await withDesktopBridge(async (cmd) => {
+      expect(cmd).toBe('desktop_hosts_get');
+      return {
+        hosts: [
+          {
+            id: 'imported',
+            label: 'Imported',
+            url: 'https://imported.example',
+            source: 'connect-link',
+          },
+          {
+            id: 'legacy',
+            label: 'Legacy',
+            url: 'https://legacy.example',
+            source: 'manual',
+          },
+        ],
+        defaultHostId: 'imported',
+        initialHostChoiceCompleted: true,
+      };
+    }, async () => {
+      const config = await desktopHostsGet();
+      expect(config.hosts[0]?.source).toBe(DESKTOP_HOST_SOURCE_CONNECT_LINK);
+      expect(config.hosts[1]?.source).toBeUndefined();
+    });
+  });
+
   test('passes request headers through host save and probe IPC calls', async () => {
     const calls: Array<{ cmd: string; args: Record<string, unknown> }> = [];
     await withDesktopBridge(async (cmd, args) => {
@@ -140,5 +177,36 @@ describe('desktop host runtime headers', () => {
         requestHeaders: { 'CF-Access-Client-Id': 'client-id' },
       },
     });
+  });
+});
+
+describe('isVisibleDesktopHost', () => {
+  const host = (overrides: Partial<DesktopHost> = {}): DesktopHost => ({
+    id: 'host-1',
+    label: 'Host',
+    url: 'https://host.example',
+    ...overrides,
+  });
+
+  test('shows imported connect-link hosts', () => {
+    expect(isVisibleDesktopHost(host({ source: DESKTOP_HOST_SOURCE_CONNECT_LINK }), new Set())).toBe(true);
+  });
+
+  test('shows hosts whose id matches a desktop SSH instance', () => {
+    expect(isVisibleDesktopHost(host({ id: 'ssh-1' }), new Set(['ssh-1']))).toBe(true);
+  });
+
+  test('shows hosts that carry a relay descriptor', () => {
+    expect(isVisibleDesktopHost(host({
+      relay: {
+        relayUrl: 'wss://relay.example/ws',
+        serverId: 'server-1',
+        hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+      },
+    }), new Set())).toBe(true);
+  });
+
+  test('hides legacy manually added hosts without deleting them', () => {
+    expect(isVisibleDesktopHost(host(), new Set(['other-ssh']))).toBe(false);
   });
 });

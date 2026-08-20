@@ -8,8 +8,6 @@ describe('VS Code visible settings projection', () => {
     const settings = formatSettingsResponse({
       defaultModel: 'openai/gpt-5',
       messageStreamTransport: 'sse',
-      managedRemoteTunnelToken: credentialSentinel,
-      managedRemoteTunnelPresetTokens: { primary: credentialSentinel },
       summaryCustomAPIToken: credentialSentinel,
       desktopUiPassword: credentialSentinel,
       unknownPersistedSetting: credentialSentinel,
@@ -18,7 +16,6 @@ describe('VS Code visible settings projection', () => {
     assert.deepEqual(settings, {
       defaultModel: 'openai/gpt-5',
       messageStreamTransport: 'sse',
-      hasManagedRemoteTunnelToken: true,
       hasSummaryCustomAPIToken: true,
       themeVariant: 'dark',
       lastDirectory: '/workspace',

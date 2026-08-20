@@ -48,11 +48,12 @@ import {
   desktopHostsGet,
   desktopHostsSet,
   desktopInstallIdGet,
+  DESKTOP_HOST_SOURCE_CONNECT_LINK,
   getDesktopHostApiUrl,
+  isVisibleDesktopHost,
   normalizeHostUrl,
   probeRelayDesktopHost,
   redactSensitiveUrl,
-  resolveDesktopHostUrl,
   relayHostDisplayUrl,
   type DesktopHost,
   type DesktopHostRelay,
@@ -77,6 +78,8 @@ import {
   readPairingRelayUrlPreference,
   writePairingRelayUrlPreference,
 } from '@/lib/pairingRelayPreference';
+
+const SELF_HOSTED_RELAY_DOCS_URL = 'https://github.com/yee94/openchamber/tree/main/packages/relay-server';
 
 const randomPort = (): number => {
   return Math.floor(20000 + Math.random() * 30000);
@@ -291,34 +294,6 @@ const formatLogLine = (line: string): string => {
   return `[${iso}] [${level}] ${message}`;
 };
 
-type HeaderDraft = {
-  id: string;
-  name: string;
-  value: string;
-};
-
-const createHeaderDraft = (name = '', value = ''): HeaderDraft => ({
-  id: createUuid(),
-  name,
-  value,
-});
-
-const isReservedRequestHeaderName = (name: string): boolean => name.trim().toLowerCase() === 'authorization';
-
-const buildRequestHeaders = (headers: HeaderDraft[]): Record<string, string> | undefined => {
-  const next: Record<string, string> = {};
-  for (const header of headers) {
-    const name = header.name.trim();
-    const value = header.value.trim();
-    if (name && value && !isReservedRequestHeaderName(name)) next[name] = value;
-  }
-  return Object.keys(next).length > 0 ? next : undefined;
-};
-
-const readRequestHeaderDrafts = (headers: Record<string, string> | undefined): HeaderDraft[] => {
-  return Object.entries(headers || {}).map(([name, value]) => createHeaderDraft(name, value));
-};
-
 const getRuntimePort = (): number | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -482,19 +457,9 @@ export const RemoteInstancesPage: React.FC = () => {
   // Bumps when the active runtime endpoint changes so "Current" badges re-render.
   const [directRuntimeEpoch, setDirectRuntimeEpoch] = React.useState(0);
   const hostSwitchPending = useDesktopHostSwitchPending();
-  const [directLabel, setDirectLabel] = React.useState('');
-  const [directUrl, setDirectUrl] = React.useState('');
-  const [directToken, setDirectToken] = React.useState('');
-  const [directHeaders, setDirectHeaders] = React.useState<HeaderDraft[]>([]);
   const [directConnectLink, setDirectConnectLink] = React.useState('');
   const [directError, setDirectError] = React.useState<string | null>(null);
-  const [directAddDialogOpen, setDirectAddDialogOpen] = React.useState(false);
   const [directImportDialogOpen, setDirectImportDialogOpen] = React.useState(false);
-  const [directEditingId, setDirectEditingId] = React.useState<string | null>(null);
-  const [directEditLabel, setDirectEditLabel] = React.useState('');
-  const [directEditUrl, setDirectEditUrl] = React.useState('');
-  const [directEditToken, setDirectEditToken] = React.useState('');
-  const [directEditHeaders, setDirectEditHeaders] = React.useState<HeaderDraft[]>([]);
   const [remoteClients, setRemoteClients] = React.useState<RemoteClientRecord[]>([]);
   const [pendingPairings, setPendingPairings] = React.useState<PendingPairingRecord[]>([]);
   const [remoteClientsLoading, setRemoteClientsLoading] = React.useState(false);
@@ -559,32 +524,14 @@ export const RemoteInstancesPage: React.FC = () => {
     }
   }, [directDefaultHostId]);
 
-  const handleAddDirectHost = React.useCallback(async () => {
-    const resolved = resolveDesktopHostUrl(directUrl);
-    if (!resolved) {
-      setDirectError(t('desktopHostSwitcher.error.invalidUrl'));
-      return;
-    }
-    const url = resolved.persistedUrl;
-    const id = createUuid();
-    const host: DesktopHost = {
-      id,
-      label: directLabel.trim() || redactSensitiveUrl(url),
-      url,
-      apiUrl: url,
-      ...(directToken.trim() ? { clientToken: directToken.trim() } : {}),
-      ...(buildRequestHeaders(directHeaders) ? { requestHeaders: buildRequestHeaders(directHeaders) } : {}),
-    };
-    await persistDirectHosts([host, ...directHosts], directDefaultHostId);
-    setDirectLabel('');
-    setDirectUrl('');
-    setDirectToken('');
-    setDirectHeaders([]);
-    setDirectAddDialogOpen(false);
-    if (resolved.redeemUrl) {
-      navigateToUrl(resolved.redeemUrl);
-    }
-  }, [directDefaultHostId, directHeaders, directHosts, directLabel, directToken, directUrl, persistDirectHosts, t]);
+  const sshInstanceIds = React.useMemo(
+    () => new Set(instances.map((instance) => instance.id)),
+    [instances],
+  );
+  const visibleDirectHosts = React.useMemo(
+    () => directHosts.filter((host) => isVisibleDesktopHost(host, sshInstanceIds)),
+    [directHosts, sshInstanceIds],
+  );
 
   const importDirectConnectLink = React.useCallback(async () => {
     const payload = parsePairingConnectionPayload(directConnectLink);
@@ -724,6 +671,7 @@ export const RemoteInstancesPage: React.FC = () => {
       url,
       apiUrl: directUrl || undefined,
       clientToken: token,
+      source: DESKTOP_HOST_SOURCE_CONNECT_LINK,
       ...(relay ? { relay } : {}),
     };
     // One host per instance: match by relay serverId + relayUrl when the link
@@ -752,44 +700,7 @@ export const RemoteInstancesPage: React.FC = () => {
     const nextHosts = directHosts.filter((host) => host.id !== id);
     const nextDefault = directDefaultHostId === id ? 'local' : directDefaultHostId;
     await persistDirectHosts(nextHosts, nextDefault);
-    if (directEditingId === id) {
-      setDirectEditingId(null);
-    }
-  }, [directDefaultHostId, directEditingId, directHosts, persistDirectHosts]);
-
-  const beginEditDirectHost = React.useCallback((host: DesktopHost) => {
-    setDirectEditingId(host.id);
-    setDirectEditLabel(host.label);
-    setDirectEditUrl(host.apiUrl || host.url);
-    setDirectEditToken(host.clientToken || '');
-    setDirectEditHeaders(readRequestHeaderDrafts(host.requestHeaders));
-    setDirectError(null);
-  }, []);
-
-  const saveDirectHostEdit = React.useCallback(async () => {
-    if (!directEditingId) return;
-    const resolved = resolveDesktopHostUrl(directEditUrl);
-    if (!resolved) {
-      setDirectError(t('desktopHostSwitcher.error.invalidUrl'));
-      return;
-    }
-    const url = resolved.persistedUrl;
-    const nextHosts = directHosts.map((host) => host.id === directEditingId
-      ? {
-        ...host,
-        label: directEditLabel.trim() || redactSensitiveUrl(url),
-        url,
-        apiUrl: url,
-        clientToken: directEditToken.trim() || undefined,
-        requestHeaders: buildRequestHeaders(directEditHeaders),
-      }
-      : host);
-    await persistDirectHosts(nextHosts, directDefaultHostId);
-    setDirectEditingId(null);
-    if (resolved.redeemUrl) {
-      navigateToUrl(resolved.redeemUrl);
-    }
-  }, [directDefaultHostId, directEditHeaders, directEditLabel, directEditToken, directEditUrl, directEditingId, directHosts, persistDirectHosts, t]);
+  }, [directDefaultHostId, directHosts, persistDirectHosts]);
 
   const createSshInstanceFromDialog = React.useCallback(async () => {
     const command = sshCommandDraft.trim();
@@ -839,9 +750,9 @@ export const RemoteInstancesPage: React.FC = () => {
   // Connected/Unreachable status like the host switcher does. One pass per
   // list identity — no polling; the row set changes rarely.
   React.useEffect(() => {
-    if (!showInstanceManagement || directHosts.length === 0) return;
+    if (!showInstanceManagement || visibleDirectHosts.length === 0) return;
     let cancelled = false;
-    void Promise.all(directHosts.map(async (host) => {
+    void Promise.all(visibleDirectHosts.map(async (host) => {
       const relayProbe = async (): Promise<DesktopHostProbeSnapshot> => {
         const result = await probeRelayDesktopHost(host.relay!).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
         return result.status === 'ok'
@@ -871,7 +782,7 @@ export const RemoteInstancesPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [directHosts, showInstanceManagement]);
+  }, [visibleDirectHosts, showInstanceManagement]);
 
   const loadRemoteClients = React.useCallback(async (options?: { silent?: boolean }) => {
     if (!clientAuth) return;
@@ -1607,54 +1518,51 @@ export const RemoteInstancesPage: React.FC = () => {
           </RemoteSettingsSection>
         ) : null}
 
-        {/* Importing a pairing link is the flagship path; add-by-address is
-            the manual fallback. The token-storage note lives in the add
-            dialog next to the token field it describes. */}
         {showInstanceManagement ? <RemoteSettingsSection
-          itemId="remote-instances.direct-hosts"
-          label={t('settings.remoteInstances.direct.title')}
-          description={t('settings.remoteInstances.direct.description')}
+          itemId="remote-instances.instances"
+          label={t('settings.remoteInstances.sidebar.title')}
+          description={t('settings.remoteInstances.sidebar.description')}
           action={(
             <div className="flex shrink-0 items-center gap-2 pt-0.5">
               <Button type="button" size="xs" className="!font-normal" onClick={() => setDirectImportDialogOpen(true)} disabled={directSaving}>
                 {t('settings.remoteInstances.direct.import.action')}
               </Button>
-              <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={() => setDirectAddDialogOpen(true)} disabled={directSaving}>
+              <Button type="button" size="xs" className="!font-normal" onClick={() => setSshAddDialogOpen(true)}>
                 <Icon name="add" className="h-3.5 w-3.5" />
-                {t('settings.remoteInstances.direct.actions.add')}
+                {t('settings.remoteInstances.sidebar.actions.addSshInstance')}
               </Button>
             </div>
           )}
         >
-          <div className="space-y-4">
-            <div className="space-y-1">
-              {directLoading ? (
-                <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.state.loading')}</p>
-              ) : directHosts.length === 0 ? (
-                <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.state.empty')}</p>
-              ) : directHosts.map((host) => {
-                // directRuntimeEpoch keeps isActive fresh after an in-page switch.
-                void directRuntimeEpoch;
-                const probe = directHostStatus[host.id];
-                const statusKey: I18nKey = !probe
-                  ? 'desktopHostSwitcher.status.checking'
-                  : probe.status === 'ok'
-                    ? 'desktopHostSwitcher.status.connected'
-                    : probe.status === 'auth'
-                      ? 'desktopHostSwitcher.status.authRequired'
-                      : probe.status === 'update-recommended'
-                        ? 'desktopHostSwitcher.status.updateRecommended'
-                        : probe.status === 'incompatible'
-                          ? 'desktopHostSwitcher.status.incompatible'
-                          : probe.status === 'wrong-service'
-                            ? 'desktopHostSwitcher.status.wrongService'
-                            : 'desktopHostSwitcher.status.unreachable';
-                const isOnline = probe?.status === 'ok';
-                const isActive = isDesktopHostActive(host);
-                const switchBlocked = isActive || hostSwitchPending || directSaving;
-                return (
-                <div key={host.id} className="py-1.5">
-                  <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            {directLoading || isLoading ? (
+              <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.state.loading')}</p>
+            ) : visibleDirectHosts.length === 0 && instances.length === 0 ? (
+              <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.sidebar.empty')}</p>
+            ) : (
+              <>
+                {visibleDirectHosts.map((host) => {
+                  // directRuntimeEpoch keeps isActive fresh after an in-page switch.
+                  void directRuntimeEpoch;
+                  const probe = directHostStatus[host.id];
+                  const statusKey: I18nKey = !probe
+                    ? 'desktopHostSwitcher.status.checking'
+                    : probe.status === 'ok'
+                      ? 'desktopHostSwitcher.status.connected'
+                      : probe.status === 'auth'
+                        ? 'desktopHostSwitcher.status.authRequired'
+                        : probe.status === 'update-recommended'
+                          ? 'desktopHostSwitcher.status.updateRecommended'
+                          : probe.status === 'incompatible'
+                            ? 'desktopHostSwitcher.status.incompatible'
+                            : probe.status === 'wrong-service'
+                              ? 'desktopHostSwitcher.status.wrongService'
+                              : 'desktopHostSwitcher.status.unreachable';
+                  const isOnline = probe?.status === 'ok';
+                  const isActive = isDesktopHostActive(host);
+                  const switchBlocked = isActive || hostSwitchPending || directSaving;
+                  return (
+                    <div key={`link:${host.id}`} className="flex items-center justify-between gap-3 py-1.5">
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
                           <span className={cn(
@@ -1662,6 +1570,9 @@ export const RemoteInstancesPage: React.FC = () => {
                             !probe ? 'bg-muted-foreground/30 animate-pulse' : isOnline || isActive ? 'bg-[var(--status-success)]' : 'bg-[var(--status-error)]',
                           )} />
                           <p className="typography-ui-label text-foreground truncate">{redactSensitiveUrl(host.label)}</p>
+                          <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
+                            {t('settings.remoteInstances.channel.link')}
+                          </span>
                           {isActive ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.current')}</span> : null}
                           {directDefaultHostId === host.id ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.default')}</span> : null}
                           <span className={cn('typography-micro shrink-0', isOnline || isActive ? 'text-[var(--status-success)]' : 'text-muted-foreground')}>
@@ -1691,107 +1602,66 @@ export const RemoteInstancesPage: React.FC = () => {
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void setDefaultDirectHost(host.id)} disabled={directSaving || directDefaultHostId === host.id} aria-label={t('desktopHostSwitcher.actions.setAsDefaultAria')}>
                           {directDefaultHostId === host.id ? <Icon name="star-fill" className="h-3.5 w-3.5" /> : <Icon name="star" className="h-3.5 w-3.5" />}
                         </Button>
-                        {/* The edit form is URL/token-centric; relay-ONLY hosts have
-                            nothing it can edit and are re-imported via a fresh pairing
-                            link instead. Multi-transport hosts keep their relay leg
-                            through the edit (object spread preserves it). */}
-                        {host.relay && !host.apiUrl ? null : (
-                          <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => beginEditDirectHost(host)} disabled={directSaving || hostSwitchPending}>
-                            <Icon name="pencil" className="h-3.5 w-3.5" />
-                            {t('desktopHostSwitcher.actions.edit')}
-                          </Button>
-                        )}
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void handleRemoveDirectHost(host.id)} disabled={directSaving || hostSwitchPending}>
                           <Icon name="delete-bin" className="h-3.5 w-3.5" />
                           {t('settings.common.actions.delete')}
                         </Button>
                       </div>
-                  </div>
-                </div>
-                );
-              })}
-            </div>
-
+                    </div>
+                  );
+                })}
+                {instances.map((instance) => {
+                  const instanceStatus = statusesById[instance.id];
+                  const title = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
+                  const phase = instanceStatus?.phase;
+                  const ready = phase === 'ready';
+                  return (
+                    <div key={`ssh:${instance.id}`} className="flex items-center justify-between gap-3 py-1.5">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${phaseDotClass(phase)}`} />
+                          <p className="typography-ui-label text-foreground truncate">{title}</p>
+                          <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
+                            {t('settings.remoteInstances.channel.ssh')}
+                          </span>
+                        </div>
+                        <p className="typography-micro text-muted-foreground truncate">
+                          {t(phaseLabelKey(phase))}{instanceStatus?.localUrl ? ` · ${instanceStatus.localUrl}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => {
+                          const op = ready ? disconnect(instance.id) : connect(instance.id);
+                          void op.catch((err) => toast.error(ready ? t('settings.remoteInstances.sidebar.toast.disconnectFailed') : t('settings.remoteInstances.sidebar.toast.connectFailed'), {
+                            description: err instanceof Error ? err.message : String(err),
+                          }));
+                        }}>
+                          {ready ? <Icon name="stop" className="h-3.5 w-3.5" /> : <Icon name="plug-2" className="h-3.5 w-3.5" />}
+                          {ready ? t('settings.remoteInstances.sidebar.actions.disconnect') : t('settings.remoteInstances.sidebar.actions.connect')}
+                        </Button>
+                        <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => setSelectedId(instance.id)}>
+                          <Icon name="pencil" className="h-3.5 w-3.5" />
+                          {t('desktopHostSwitcher.actions.edit')}
+                        </Button>
+                        <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => {
+                          const ok = window.confirm(t('settings.remoteInstances.page.confirm.removeInstance'));
+                          if (!ok) return;
+                          void removeInstance(instance.id).catch((err) => toast.error(t('settings.remoteInstances.page.toast.removeInstanceFailed'), {
+                            description: err instanceof Error ? err.message : String(err),
+                          }));
+                        }}>
+                          <Icon name="delete-bin" className="h-3.5 w-3.5" />
+                          {t('settings.common.actions.delete')}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
             {directError ? <p className="typography-meta text-[var(--status-error)]">{directError}</p> : null}
           </div>
         </RemoteSettingsSection> : null}
-
-        {showInstanceManagement ? <Dialog open={directAddDialogOpen} onOpenChange={setDirectAddDialogOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{t('settings.remoteInstances.direct.actions.add')}</DialogTitle>
-              <DialogDescription>{t('settings.remoteInstances.direct.addDialog.description')}</DialogDescription>
-            </DialogHeader>
-            <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void handleAddDirectHost(); }}>
-              <Input className="h-8" value={directLabel} onChange={(event) => setDirectLabel(event.target.value)} placeholder={t('settings.remoteInstances.direct.field.labelPlaceholder')} disabled={directSaving} />
-              <Input className="h-8" value={directUrl} onChange={(event) => setDirectUrl(event.target.value)} placeholder={t('settings.remoteInstances.direct.field.urlPlaceholder')} disabled={directSaving} autoFocus />
-              <div className="space-y-1">
-                <Input className="h-8" value={directToken} onChange={(event) => setDirectToken(event.target.value)} placeholder={t('settings.remoteInstances.direct.field.tokenPlaceholder')} type="password" disabled={directSaving} />
-                <p className="px-1 typography-micro text-muted-foreground">{t('settings.remoteInstances.direct.note')}</p>
-              </div>
-              <div className="space-y-2">
-                <div>
-                  <p className="typography-ui-label text-foreground">{t('settings.remoteInstances.direct.headers.title')}</p>
-                  <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.headers.description')}</p>
-                </div>
-                {directHeaders.map((header) => (
-                  <div key={header.id} className="flex w-full gap-2">
-                    <Input className="h-8 font-mono text-xs" value={header.name} onChange={(event) => setDirectHeaders((headers) => headers.map((item) => item.id === header.id ? { ...item, name: event.target.value } : item))} placeholder={t('settings.remoteInstances.direct.headers.field.namePlaceholder')} disabled={directSaving} />
-                    <Input className="h-8 font-mono text-xs" value={header.value} onChange={(event) => setDirectHeaders((headers) => headers.map((item) => item.id === header.id ? { ...item, value: event.target.value } : item))} placeholder={t('settings.remoteInstances.direct.headers.field.valuePlaceholder')} type="password" disabled={directSaving} />
-                    <button type="button" onClick={() => setDirectHeaders((headers) => headers.filter((item) => item.id !== header.id))} className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--status-error-background)] hover:text-[var(--status-error)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]" aria-label={t('settings.remoteInstances.direct.headers.removeAria')} disabled={directSaving}>
-                      <Icon name="close" className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-                <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => setDirectHeaders((headers) => [...headers, createHeaderDraft()])} disabled={directSaving}>
-                  <Icon name="add" className="h-3.5 w-3.5" />
-                  {t('settings.remoteInstances.direct.headers.actions.add')}
-                </Button>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={() => setDirectAddDialogOpen(false)} disabled={directSaving}>{t('settings.common.actions.cancel')}</Button>
-                <Button type="submit" size="xs" className="!font-normal" disabled={directSaving || !directUrl.trim()}>{t('settings.remoteInstances.direct.actions.add')}</Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog> : null}
-
-        {showInstanceManagement ? <Dialog open={Boolean(directEditingId)} onOpenChange={(open) => { if (!open) setDirectEditingId(null); }}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{t('desktopHostSwitcher.actions.edit')}</DialogTitle>
-              <DialogDescription>{t('settings.remoteInstances.direct.description')}</DialogDescription>
-            </DialogHeader>
-            <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void saveDirectHostEdit(); }}>
-              <Input className="h-8" value={directEditLabel} onChange={(event) => setDirectEditLabel(event.target.value)} placeholder={t('settings.remoteInstances.direct.field.labelPlaceholder')} disabled={directSaving} />
-              <Input className="h-8" value={directEditUrl} onChange={(event) => setDirectEditUrl(event.target.value)} placeholder={t('settings.remoteInstances.direct.field.urlPlaceholder')} disabled={directSaving} autoFocus />
-              <Input className="h-8" value={directEditToken} onChange={(event) => setDirectEditToken(event.target.value)} placeholder={t('settings.remoteInstances.direct.field.tokenPlaceholder')} type="password" disabled={directSaving} />
-              <div className="space-y-2">
-                <div>
-                  <p className="typography-ui-label text-foreground">{t('settings.remoteInstances.direct.headers.title')}</p>
-                  <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.headers.description')}</p>
-                </div>
-                {directEditHeaders.map((header) => (
-                  <div key={header.id} className="flex w-full gap-2">
-                    <Input className="h-8 font-mono text-xs" value={header.name} onChange={(event) => setDirectEditHeaders((headers) => headers.map((item) => item.id === header.id ? { ...item, name: event.target.value } : item))} placeholder={t('settings.remoteInstances.direct.headers.field.namePlaceholder')} disabled={directSaving} />
-                    <Input className="h-8 font-mono text-xs" value={header.value} onChange={(event) => setDirectEditHeaders((headers) => headers.map((item) => item.id === header.id ? { ...item, value: event.target.value } : item))} placeholder={t('settings.remoteInstances.direct.headers.field.valuePlaceholder')} type="password" disabled={directSaving} />
-                    <button type="button" onClick={() => setDirectEditHeaders((headers) => headers.filter((item) => item.id !== header.id))} className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--status-error-background)] hover:text-[var(--status-error)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]" aria-label={t('settings.remoteInstances.direct.headers.removeAria')} disabled={directSaving}>
-                      <Icon name="close" className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-                <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => setDirectEditHeaders((headers) => [...headers, createHeaderDraft()])} disabled={directSaving}>
-                  <Icon name="add" className="h-3.5 w-3.5" />
-                  {t('settings.remoteInstances.direct.headers.actions.add')}
-                </Button>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={() => setDirectEditingId(null)} disabled={directSaving}>{t('settings.common.actions.cancel')}</Button>
-                <Button type="submit" size="xs" className="!font-normal" disabled={directSaving}>{t('settings.common.actions.saveChanges')}</Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog> : null}
 
         {showInstanceManagement ? <Dialog open={directImportDialogOpen} onOpenChange={setDirectImportDialogOpen}>
           <DialogContent className="sm:max-w-lg">
@@ -1905,7 +1775,24 @@ export const RemoteInstancesPage: React.FC = () => {
                       <span id="add-device-relay-url-hint" className="block typography-meta text-muted-foreground">
                         {transportOptions?.relayUrlLocked
                           ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint')
-                          : t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
+                          : (
+                            <>
+                              {t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
+                              {' '}
+                              <a
+                                href={SELF_HOSTED_RELAY_DOCS_URL}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline underline-offset-2 hover:text-foreground"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  void openExternalUrl(SELF_HOSTED_RELAY_DOCS_URL);
+                                }}
+                              >
+                                {t('settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink')}
+                              </a>
+                            </>
+                          )}
                       </span>
                       {addDeviceRelayUrlError ? (
                         <span
@@ -1949,68 +1836,6 @@ export const RemoteInstancesPage: React.FC = () => {
             )}
           </DialogContent>
         </Dialog>
-
-        {showInstanceManagement ? <RemoteSettingsSection
-          label={t('settings.remoteInstances.sidebar.title')}
-          description={t('settings.remoteInstances.sidebar.total', { count: instances.length })}
-          action={(
-              <Button type="button" size="xs" className="!font-normal" onClick={() => setSshAddDialogOpen(true)}>
-                <Icon name="add" className="h-3.5 w-3.5" />
-                {t('settings.remoteInstances.sidebar.actions.addSshInstance')}
-              </Button>
-          )}
-        >
-          <div className="space-y-1">
-            {isLoading ? (
-              <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.import.loading')}</p>
-            ) : instances.length === 0 ? (
-              <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.import.noneFound')}</p>
-            ) : instances.map((instance) => {
-              const instanceStatus = statusesById[instance.id];
-              const title = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
-              const phase = instanceStatus?.phase;
-              const ready = phase === 'ready';
-              return (
-                <div key={instance.id} className="flex items-center justify-between gap-3 py-1.5">
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full ${phaseDotClass(phase)}`} />
-                      <p className="typography-ui-label text-foreground truncate">{title}</p>
-                    </div>
-                    <p className="typography-micro text-muted-foreground truncate">
-                      {t(phaseLabelKey(phase))}{instanceStatus?.localUrl ? ` · ${instanceStatus.localUrl}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => {
-                      const op = ready ? disconnect(instance.id) : connect(instance.id);
-                      void op.catch((err) => toast.error(ready ? t('settings.remoteInstances.sidebar.toast.disconnectFailed') : t('settings.remoteInstances.sidebar.toast.connectFailed'), {
-                        description: err instanceof Error ? err.message : String(err),
-                      }));
-                    }}>
-                      {ready ? <Icon name="stop" className="h-3.5 w-3.5" /> : <Icon name="plug-2" className="h-3.5 w-3.5" />}
-                      {ready ? t('settings.remoteInstances.sidebar.actions.disconnect') : t('settings.remoteInstances.sidebar.actions.connect')}
-                    </Button>
-                    <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => setSelectedId(instance.id)}>
-                      <Icon name="pencil" className="h-3.5 w-3.5" />
-                      {t('desktopHostSwitcher.actions.edit')}
-                    </Button>
-                    <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => {
-                      const ok = window.confirm(t('settings.remoteInstances.page.confirm.removeInstance'));
-                      if (!ok) return;
-                      void removeInstance(instance.id).catch((err) => toast.error(t('settings.remoteInstances.page.toast.removeInstanceFailed'), {
-                        description: err instanceof Error ? err.message : String(err),
-                      }));
-                    }}>
-                      <Icon name="delete-bin" className="h-3.5 w-3.5" />
-                      {t('settings.common.actions.delete')}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </RemoteSettingsSection> : null}
 
         {showInstanceManagement ? <Dialog open={sshAddDialogOpen} onOpenChange={setSshAddDialogOpen}>
           <DialogContent className="sm:max-w-lg">

@@ -1,6 +1,6 @@
 ---
 title: Remote Access
-description: Fix tunnels, remote instances, and reaching OpenChamber from another device.
+description: Fix remote instances, pairing, and reaching OpenChamber from another device.
 ---
 
 # Remote Access
@@ -21,14 +21,6 @@ When you can't reach OpenChamber from your phone or another machine, the fix dep
 
 See [Connect a Device](/connect-devices/) and [Private Relay](/private-relay/) for how these connections work.
 
-## Tunnel link doesn't work
-
-- run `openchamber tunnel status --all`
-- restart the tunnel from the same instance and port
-- regenerate the connect link if the previous one was already used
-
-See [Tunnels](/tunnels/) for the full setup.
-
 ## Remote instance won't connect (desktop)
 
 When a [remote instance](/remote-instances/) stalls, OpenChamber names the step that failed:
@@ -43,5 +35,5 @@ If you put OpenChamber behind a reverse proxy and it loads oddly or won't connec
 
 ## Related
 
-- [Connect a Device](/connect-devices/) · [Private Relay](/private-relay/) · [Tunnels](/tunnels/) · [Remote Instances](/remote-instances/) · [Reverse Proxy](/reverse-proxy/)
+- [Connect a Device](/connect-devices/) · [Private Relay](/private-relay/) · [Remote Instances](/remote-instances/) · [Reverse Proxy](/reverse-proxy/)
 - [Security](/security/) — protect the UI before exposing it

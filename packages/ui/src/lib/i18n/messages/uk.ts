@@ -1665,6 +1665,7 @@ export const dict: Record<I18nKey, string> = {
   "helpDialog.item.zoomReset": "Скинути масштаб",
   "helpDialog.item.switchSession": "Перемкнути сеанс",
   "helpDialog.item.toggleServicesMenu": "Перемкнути меню сервісів",
+  "helpDialog.item.openUsage": "Переглянути використання",
   "helpDialog.item.cycleServicesTab": "Перемкнути вкладку сервісів",
   "helpDialog.item.openSettings": "Відкрити налаштування",
   "helpDialog.section.leaderChords": "Клавіша лідера (Ctrl+X)",

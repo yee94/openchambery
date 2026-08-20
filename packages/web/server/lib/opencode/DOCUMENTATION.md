@@ -24,13 +24,13 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/cli-options.js`: CLI/environment option parsing for server startup arguments.
 - `packages/web/server/lib/opencode/core-routes.js`: server status/system routes, auth/access guard routes, and settings utility route registration.
 - `packages/web/server/lib/opencode/shutdown-runtime.js`: graceful shutdown orchestration runtime for watcher/session/terminal/process/server teardown.
-- `packages/web/server/lib/opencode/server-startup-runtime.js`: server listen/startup tunnel flow and process/signal handler orchestration runtime.
+- `packages/web/server/lib/opencode/server-startup-runtime.js`: server listen/startup flow and process/signal handler orchestration runtime.
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/conversations/`: combined create-session-and-prompt orchestration (OpenChamber-owned, registered before generic proxy).
 - `packages/web/server/lib/session-turn-pages/`: turn-window session message pagination (`GET /api/openchamber/sessions/:sessionID/messages`) and anchor reconcile (`GET .../messages/reconcile`); loops official OpenCode `session.messages` for turn pages and head→anchor gap recovery with continuation/budgets/`resetRequired`; registered before generic proxy. See `session-turn-pages/DOCUMENTATION.md`.
 - `packages/web/server/lib/opencode/opencode-resolution-runtime.js`: OpenCode binary resolution snapshot runtime for settings routes and diagnostics.
-- `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
+- `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: active loopback-port wiring shared by pairing/LAN URLs and the private relay host.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
 - `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update, models metadata, session-index, and transcript-cache route registration.
@@ -40,7 +40,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/skill-routes.js`: route registration for skill config CRUD, supporting files, and skills catalog scan/install flows.
 - `packages/web/server/lib/opencode/settings-runtime.js`: Settings persistence runtime (disk IO, migrations, normalization, project validation, and persisted update serialization).
 - `packages/web/server/lib/opencode/settings-helpers.js`: Settings payload sanitization/format helpers runtime for response shaping and persisted merge prep.
-- `packages/web/server/lib/opencode/settings-normalization-runtime.js`: path/settings/tunnel normalization and sanitization helpers runtime used by settings/routes/config wiring.
+- `packages/web/server/lib/opencode/settings-normalization-runtime.js`: path/settings normalization and sanitization helpers runtime used by settings/routes/config wiring.
 - `packages/web/server/lib/opencode/theme-runtime.js`: custom theme JSON validation and theme directory loading runtime for settings utility routes.
 - `packages/web/server/lib/opencode/proxy.js`: OpenCode API/SSE forwarding and readiness-gate route registration.
 - `packages/web/server/lib/opencode/instance-recovery-runtime.js`: directory-instance health recovery before turn admission (`prompt_async` / `command` / `shell`). When OpenCode's per-directory instance is poisoned (MCP probe returns 503 empty while HTTP still accepts prompts that immediately abort as `MessageAbortedError`), dispose the instance so the next admission recreates a healthy one.
@@ -202,16 +202,12 @@ This module provides OpenCode server integration utilities for the web server ru
   - `projectBootstrapSettingsResponse(response)`: projects a formatted settings response into the schema-versioned bootstrap allowlist. General strings are bounded to 512 characters, STT URLs to 4096, language to 64, and custom response-style instructions to 200000.
 
 ## Public exports (settings-normalization-runtime.js)
-- `createSettingsNormalizationRuntime(dependencies)`: creates normalization/sanitization runtime for shared settings and tunnel helper logic.
+- `createSettingsNormalizationRuntime(dependencies)`: creates normalization/sanitization runtime for shared settings helper logic.
 - Returned API:
   - `normalizeDirectoryPath(value)`
   - `normalizePathForPersistence(value)`
   - `normalizeSettingsPaths(input)`
-  - `normalizeTunnelBootstrapTtlMs(value)`
   - `normalizeTunnelSessionTtlMs(value)`
-  - `normalizeManagedRemoteTunnelHostname(value)`
-  - `normalizeManagedRemoteTunnelPresets(value)`
-  - `normalizeManagedRemoteTunnelPresetTokens(value)`
   - `isUnsafeSkillRelativePath(value)`
   - `sanitizeTypographySizesPartial(input)`
   - `normalizeStringArray(input)`
@@ -318,7 +314,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - `gracefulShutdown(options?)`: accepts `forceCloseConnections: true` for runtimes that close remaining HTTP connections after initiating server close.
 
 ## Public exports (server-startup-runtime.js)
-- `createServerStartupRuntime(dependencies)`: creates runtime for server bind/startup tunnel and process handler wiring.
+- `createServerStartupRuntime(dependencies)`: creates runtime for server bind/listen and process handler wiring.
 - Returned API:
   - `resolveBindHost(host)`
   - `startListeningAndMaybeTunnel(options)`
@@ -340,7 +336,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - `getOpenCodeResolutionSnapshot(settings)`: returns configured/resolved OpenCode binary details plus effective managed-launch fields (`launchBinary`, `launchArgs`, `launchWrapperType`) when applicable.
 
 ## Public exports (tunnel-wiring-runtime.js)
-- `createTunnelWiringRuntime(dependencies)`: creates runtime for tunnel service construction and tunnel route registration.
+- `createTunnelWiringRuntime()`: creates runtime for tracking the active loopback listen port used by pairing/LAN URLs and the private relay host.
 - Returned API:
   - `initialize(app, initialPort)`
 

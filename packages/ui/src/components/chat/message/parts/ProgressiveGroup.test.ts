@@ -334,6 +334,20 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('requestMaterialization(true)');
     });
 
+    test('collapsed sorted body does not wrap empty or slim reasoning in tool-row padding', () => {
+        // Slim reasoning has no text, so ReasoningPart returns null. Wrapping
+        // that null in getToolRowBlockClass still paints py-1.5 per part and a
+        // long turn (hundreds of slim traces) becomes a screen of blank space
+        // between the Activity header and the final body. Expand/collapse
+        // remounts after materialize and the gap disappears.
+        expect(messageBodySource).toContain('if (part.type === \'reasoning\')');
+        expect(messageBodySource).toContain('const activity = activityByPart.get(part);');
+        expect(messageBodySource).toContain('if (activity?.kind === \'reasoning\')');
+        expect(messageBodySource).toContain('if (!extractTextContent(part).trim())');
+        expect(progressiveGroupSource).toContain("if (activity.kind === 'reasoning')");
+        expect(progressiveGroupSource).toContain('if (!extractTextContent(activity.part).trim())');
+    });
+
     test('sorted mode never treats a context-less assistant as the activity owner', () => {
         // A missing turnGroupingContext is a degenerate projection frame; the
         // owner fallback would inline every tool as flat rows and a multi-step

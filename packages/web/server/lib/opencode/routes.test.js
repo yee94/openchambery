@@ -68,7 +68,6 @@ describe('settings route', () => {
       responseStylePreset: 'concise',
       responseStyleCustomInstructions: 'Keep it brief.',
       summaryCustomAPIToken: 'response-secret-sentinel',
-      managedRemoteTunnelToken: 'tunnel-secret-sentinel',
       themeId: 'default',
     };
     const formatSettingsResponse = vi.fn(() => formatted);

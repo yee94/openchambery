@@ -1657,6 +1657,7 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.item.zoomReset': '重設縮放',
   'helpDialog.item.switchSession': '切換會話',
   'helpDialog.item.toggleServicesMenu': '切換服務選單',
+  'helpDialog.item.openUsage': '查看用量',
   'helpDialog.item.cycleServicesTab': '循環服務標籤',
   'helpDialog.item.openSettings': '開啟設定',
   'helpDialog.section.leaderChords': '前導鍵（Ctrl+X）',
