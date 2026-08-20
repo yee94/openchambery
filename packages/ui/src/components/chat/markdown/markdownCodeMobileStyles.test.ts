@@ -69,9 +69,20 @@ describe('mobile Markdown code block layout', () => {
     );
   });
 
-  test('keeps the aria-hidden line-number gutter visible on Android mobile-pointer surfaces', () => {
-    expect(mobileCss).not.toMatch(
+  test('hides the line-number gutter only for iOS WebKit mobile-pointer and iOS Capacitor surfaces', () => {
+    const iosGutterRule = mobileCss.match(
+      /@supports\s*\(-webkit-touch-callout:\s*none\)\s*\{\s*:root\.mobile-pointer:not\(\.desktop-runtime\)[^{]*\[data-md-code-line-numbers\],\s*:root\.oc-capacitor-app:not\(\.oc-platform-android\)[^{]*\[data-md-code-line-numbers\]\s*\{[^}]*display:\s*none;?\s*\}\s*\}/s,
+    );
+
+    expect(iosGutterRule).not.toBeNull();
+    const cssWithoutIOSGutterRule = iosGutterRule
+      ? mobileCss.replace(iosGutterRule[0], '')
+      : mobileCss;
+    expect(cssWithoutIOSGutterRule).not.toMatch(
       /\[data-md-code-line-numbers\](?:\[aria-hidden=["']true["']\])?\s*\{[^}]*display:\s*none/s,
+    );
+    expect(mobileCss).not.toMatch(
+      /:root\.oc-capacitor-app\.oc-platform-android[^{]*\[data-md-code-line-numbers\][^{]*\{[^}]*display:\s*none/s,
     );
   });
 });

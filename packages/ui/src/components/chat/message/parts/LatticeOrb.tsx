@@ -13,8 +13,8 @@ export const LatticeOrb: React.FC<{
     isMobile?: boolean;
     className?: string;
     label?: string;
-}> = ({ size, className, label = '' }) => {
-    const resolvedSize = size ?? 14;
+}> = ({ size, isMobile = false, className, label = '' }) => {
+    const resolvedSize = size ?? (isMobile ? 12 : 14);
     const cells = Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => {
         const x = index % GRID_SIZE;
         const y = Math.floor(index / GRID_SIZE);
@@ -28,7 +28,7 @@ export const LatticeOrb: React.FC<{
 
     return (
         <span
-            className={cn('relative inline-block flex-none', className)}
+            className={cn('relative block flex-none overflow-hidden', className)}
             style={{ width: resolvedSize, height: resolvedSize }}
             role={label ? 'img' : undefined}
             aria-label={label || undefined}

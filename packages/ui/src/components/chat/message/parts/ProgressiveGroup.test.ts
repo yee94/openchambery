@@ -278,7 +278,9 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('flex-nowrap');
         expect(progressiveGroupSource).toContain('flex-1');
         expect(progressiveGroupSource).toContain('ml-auto');
-        expect(progressiveGroupSource).toContain("isMobile ? 'typography-meta h-4' : 'typography-ui-label h-5 font-semibold'");
+        expect(progressiveGroupSource).toContain("'inline-flex flex-none items-center justify-center'");
+        expect(progressiveGroupSource).toContain("isMobile ? 'h-5 w-4' : 'h-6 w-3.5'");
+        expect(progressiveGroupSource).toContain("isMobile ? 'typography-meta h-5' : 'typography-ui-label h-5 font-semibold'");
         expect(progressiveGroupSource).toContain('displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3)');
         // Status/duration left (flex-1), agents+chevron trailer right (ml-auto).
         // Mobile pr-0 flushes chevron; desktop keeps chip px-2 for symmetric hover wash.

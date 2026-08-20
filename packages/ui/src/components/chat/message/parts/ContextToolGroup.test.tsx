@@ -38,8 +38,9 @@ describe('LatticeOrb', () => {
         const mobileMarkup = renderToStaticMarkup(<LatticeOrb isMobile label="Exploring" />);
 
         expect(desktopMarkup).toContain('aria-label="Exploring"');
+        expect(desktopMarkup).toContain('relative block flex-none overflow-hidden');
         expect(desktopMarkup).toContain('width:14px;height:14px');
-        expect(mobileMarkup).toContain('width:14px;height:14px');
+        expect(mobileMarkup).toContain('width:12px;height:12px');
         expect(desktopMarkup.match(/oc-lattice-orb-dot/g)).toHaveLength(9);
         expect(desktopMarkup).toContain('data-center="true"');
         expect(desktopMarkup).toContain('left:4px;top:4px;width:4px;height:4px');
@@ -71,7 +72,7 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6');
     });
 
-    test('centers a 14px orb in the 16px leading slot on mobile', () => {
+    test('centers a 12px orb in the 16px leading slot on mobile', () => {
         const activities = [contextActivity('grep-1', 'grep', 'running')];
         const markup = renderToStaticMarkup(
             <I18nProvider>
@@ -80,7 +81,7 @@ describe('ContextToolGroup', () => {
         );
 
         expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-5 w-4');
-        expect(markup).toContain('width:14px;height:14px');
+        expect(markup).toContain('width:12px;height:12px');
         expect(markup).toContain('min-h-0 min-w-0 items-center gap-1.5 overflow-clip');
     });
 

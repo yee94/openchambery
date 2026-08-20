@@ -2019,6 +2019,17 @@ button.oc-mobile-worktree-label-trigger:active,
     }
   }
 
+  @supports (-webkit-touch-callout: none) {
+    :root.mobile-pointer:not(.desktop-runtime):not(.oc-platform-android)
+      .markdown-content
+      [data-md-code-line-numbers],
+    :root.oc-capacitor-app:not(.oc-platform-android)
+      .markdown-content
+      [data-md-code-line-numbers] {
+      display: none;
+    }
+  }
+
   /*
    * Generic `.overflow-hidden { overflow-x: hidden !important }` above would
    * crush table scroll surfaces. Re-assert horizontal pan for markdown tables

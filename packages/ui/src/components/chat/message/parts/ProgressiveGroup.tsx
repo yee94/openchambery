@@ -1349,8 +1349,8 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                     )}>
                         <span
                             className={cn(
-                                'inline-flex flex-shrink-0 items-center',
-                                isMobile ? 'h-5' : 'h-6',
+                                'inline-flex flex-none items-center justify-center',
+                                isMobile ? 'h-5 w-4' : 'h-6 w-3.5',
                             )}
                             style={{ color: 'var(--tools-icon)' }}
                         >
@@ -1358,6 +1358,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                 <LatticeOrb
                                     isMobile={isMobile}
                                     label={activityStatusLabel}
+                                    className="block"
                                 />
                             ) : (
                                 <Icon name={activityIconName} className="h-[14px] w-[14px]" />
@@ -1366,7 +1367,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <span className={cn(
                             'inline-flex flex-shrink-0 items-center',
                             // Mobile matches tool-row body (meta); desktop keeps label emphasis.
-                            isMobile ? 'typography-meta h-4' : 'typography-ui-label h-5 font-semibold',
+                            isMobile ? 'typography-meta h-5' : 'typography-ui-label h-5 font-semibold',
                             isActive
                                 ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
                                 : 'text-foreground/85',

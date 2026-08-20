@@ -27,9 +27,9 @@ const LONG_JUSTIFICATION =
   'when multiple sessions have the same activity state.';
 
 describe('ReasoningTimelineBlock', () => {
-  test('uses the shared 14px lattice orb while streaming on mobile', () => {
+  test('uses the 12px lattice orb while streaming on mobile', () => {
     expect(reasoningPartSource).toContain('const isMobile = useUIStore((state) => state.isMobile);');
-    expect(reasoningPartSource).toContain('<LatticeOrb isMobile={isMobile} className="text-[var(--tools-icon)]" />');
+    expect(reasoningPartSource).toContain('<LatticeOrb isMobile={isMobile} className="block text-[var(--tools-icon)]" />');
   });
 
   test('renders reasoning traces behind an accessible collapsed disclosure by default', () => {
