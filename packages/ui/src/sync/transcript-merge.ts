@@ -9,7 +9,10 @@
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { InfiniteData } from "@tanstack/react-query"
 
-import { applyTranscriptDirectoryEvent } from "./transcript-event-reducer"
+import {
+  applyTranscriptDirectoryEvent,
+  type TranscriptEventDraft,
+} from "./transcript-event-reducer"
 import { materializeSessionSnapshots } from "./materialization"
 import {
   reduceSessionMessagePage,
@@ -66,6 +69,15 @@ export type TranscriptMergeInput =
   | {
       readonly type: "sse-event"
       readonly event: Event
+    }
+  | {
+      /**
+       * Apply N transcript SSE events in order on one draft, then rebuild once.
+       * Preserves per-event reducer order (no coalesce); empty / non-transcript
+       * events are skipped without aborting the batch.
+       */
+      readonly type: "sse-event-batch"
+      readonly events: readonly Event[]
     }
   | {
       readonly type: "optimistic-add"
@@ -631,40 +643,14 @@ function extractEventMessageID(event: Event): string | undefined {
   return undefined
 }
 
-function applySseToTranscriptData(
+function rebuildTranscriptAfterSseDraft(
   previous: SessionTranscriptData | undefined,
   sessionID: string,
-  event: Event,
+  draft: TranscriptEventDraft,
+  previousBoundary: ReturnType<typeof boundaryFromTranscriptData>,
   liveRevision: number,
-): TranscriptMergeResult {
-  if (!isTranscriptSseEventType(event.type)) {
-    return {
-      data: previous,
-      result: { applied: false, changed: false },
-    }
-  }
-
-  const flat = flattenTranscriptData(previous, sessionID)
-  const previousBoundary = boundaryFromTranscriptData(previous)
-  const draft = {
-    message: { ...flat.message, [sessionID]: [...(flat.message[sessionID] ?? [])] },
-    part: { ...flat.part },
-  }
-
-  // Clone part arrays so applyTranscriptDirectoryEvent can mutate safely.
-  for (const [key, parts] of Object.entries(draft.part)) {
-    draft.part[key] = parts ? [...parts] : parts
-  }
-
-  const applyResult = applyTranscriptDirectoryEvent(draft, event)
-  const changed = typeof applyResult === "boolean" ? applyResult : applyResult.changed
-  if (!changed) {
-    return {
-      data: previous,
-      result: { applied: true, changed: false },
-    }
-  }
-
+  targetMessageIDs: ReadonlySet<string>,
+): SessionTranscriptData {
   const nextMessages = draft.message[sessionID] ?? []
   const nextPart = draft.part as Record<string, Part[]>
   const data = rebuildFromReducedState(
@@ -712,11 +698,10 @@ function applySseToTranscriptData(
     })
     // When draft message is a new object for an unchanged row, still prefer prev
     // if event did not target that message id.
-    const eventMessageID = extractEventMessageID(event)
     const stableMessages = resolvedMessages.map((message) => {
       const prev = previousMessagesByID.get(message.id)
       if (!prev) return message
-      if (eventMessageID && message.id === eventMessageID) return message
+      if (targetMessageIDs.has(message.id)) return message
       return prev
     })
 
@@ -733,7 +718,7 @@ function applySseToTranscriptData(
           break
         }
       }
-      if (prevParts && (!eventMessageID || message.id !== eventMessageID)) {
+      if (prevParts && !targetMessageIDs.has(message.id)) {
         // Always prefer previous frozen ref for non-targeted messages.
         stablePart[message.id] = prevParts as Part[]
       } else if (
@@ -760,18 +745,244 @@ function applySseToTranscriptData(
           : (buckets[index] ?? [])
       return sharePageMessages(page, bucket, stablePart, liveRevision)
     })
+    return freezeSessionTranscriptData({
+      pages,
+      pageParams: [...previous.pageParams],
+    })
+  }
+
+  return data
+}
+
+function cloneTranscriptSseDraft(
+  previous: SessionTranscriptData | undefined,
+  sessionID: string,
+): {
+  draft: TranscriptEventDraft
+  previousBoundary: ReturnType<typeof boundaryFromTranscriptData>
+} {
+  const flat = flattenTranscriptData(previous, sessionID)
+  const previousBoundary = boundaryFromTranscriptData(previous)
+  const draft: TranscriptEventDraft = {
+    message: { ...flat.message, [sessionID]: [...(flat.message[sessionID] ?? [])] },
+    part: { ...flat.part },
+  }
+
+  // Clone part arrays so applyTranscriptDirectoryEvent can mutate safely.
+  for (const [key, parts] of Object.entries(draft.part)) {
+    if (parts) draft.part[key] = [...parts]
+  }
+
+  return { draft, previousBoundary }
+}
+
+function applySseToTranscriptData(
+  previous: SessionTranscriptData | undefined,
+  sessionID: string,
+  event: Event,
+  liveRevision: number,
+): TranscriptMergeResult {
+  if (!isTranscriptSseEventType(event.type)) {
     return {
-      data: freezeSessionTranscriptData({
-        pages,
-        pageParams: [...previous.pageParams],
-      }),
-      result: { applied: true, changed: true },
+      data: previous,
+      result: { applied: false, changed: false },
     }
   }
 
+  const { draft, previousBoundary } = cloneTranscriptSseDraft(previous, sessionID)
+
+  const applyResult = applyTranscriptDirectoryEvent(draft, event)
+  const changed = typeof applyResult === "boolean" ? applyResult : applyResult.changed
+  if (!changed) {
+    return {
+      data: previous,
+      result: { applied: true, changed: false },
+    }
+  }
+
+  const eventMessageID = extractEventMessageID(event)
+  const targetMessageIDs = new Set<string>()
+  if (eventMessageID) targetMessageIDs.add(eventMessageID)
+
   return {
-    data,
+    data: rebuildTranscriptAfterSseDraft(
+      previous,
+      sessionID,
+      draft,
+      previousBoundary,
+      liveRevision,
+      targetMessageIDs,
+    ),
     result: { applied: true, changed: true },
+  }
+}
+
+function collectPreviousPartsByMessageID(
+  previous: SessionTranscriptData | undefined,
+): Map<string, readonly Part[]> {
+  const map = new Map<string, readonly Part[]>()
+  if (!previous) return map
+  for (const page of previous.pages) {
+    for (const [messageID, parts] of Object.entries(page.partsByMessageID)) {
+      if (!map.has(messageID) && parts) map.set(messageID, parts)
+    }
+  }
+  return map
+}
+
+function collectPreviousMessagesByID(
+  previous: SessionTranscriptData | undefined,
+): Map<string, Message> {
+  const map = new Map<string, Message>()
+  if (!previous) return map
+  for (const page of previous.pages) {
+    for (const [messageID, message] of Object.entries(page.messagesByID)) {
+      if (!map.has(messageID) && message) map.set(messageID, message)
+    }
+  }
+  return map
+}
+
+function messageOrderIDs(messages: readonly Message[] | undefined): string[] {
+  if (!messages) return []
+  return messages.map((message) => message.id).filter((id): id is string => typeof id === "string")
+}
+
+/**
+ * Batch SSE merge: one flatten/clone, ordered reducer applies, one rebuild.
+ * liveRevision counts content-meaningful changes only (matches sequential
+ * apply + sharePageMessages collapse of payload-equal churn such as duplicate
+ * part.updated that only stamps __dedupeNextDeltaFields).
+ */
+function applySseEventsToTranscriptData(
+  previous: SessionTranscriptData | undefined,
+  sessionID: string,
+  events: readonly Event[],
+  startLiveRevision: number,
+): TranscriptMergeResult {
+  if (events.length === 0) {
+    return {
+      data: previous,
+      result: { applied: false, changed: false },
+    }
+  }
+
+  const { draft, previousBoundary } = cloneTranscriptSseDraft(previous, sessionID)
+  let anyApplied = false
+  let meaningfulChangeCount = 0
+  let firstMaterialization: TranscriptCommandResult["materialization"]
+  const targetMessageIDs = new Set<string>()
+
+  // Last content-committed snapshot (mirrors sequential freeze/share collapse).
+  const committedParts = collectPreviousPartsByMessageID(previous)
+  const committedMessages = collectPreviousMessagesByID(previous)
+  let committedOrder = messageOrderIDs(draft.message[sessionID])
+
+  for (const event of events) {
+    if (!isTranscriptSseEventType(event.type)) continue
+    anyApplied = true
+    const applyResult = applyTranscriptDirectoryEvent(draft, event)
+    const changed = typeof applyResult === "boolean" ? applyResult : applyResult.changed
+    const materialization = typeof applyResult === "boolean" ? undefined : applyResult.materialization
+    if (materialization && !firstMaterialization) {
+      firstMaterialization = materialization
+    }
+    if (!changed) continue
+
+    const eventMessageID = extractEventMessageID(event)
+    const nextOrder = messageOrderIDs(draft.message[sessionID])
+    const orderChanged =
+      nextOrder.length !== committedOrder.length
+      || nextOrder.some((id, index) => id !== committedOrder[index])
+
+    let contentChanged = orderChanged
+    if (eventMessageID) {
+      const draftParts = draft.part[eventMessageID]
+      const committed = committedParts.get(eventMessageID)
+      if (draftParts && committed && partsArraysEqualByRefOrContent(committed, draftParts)) {
+        // Payload-equal churn (e.g. duplicate snapshot only adding dedupe meta):
+        // restore committed parts so final freeze matches sequential share.
+        draft.part[eventMessageID] = [...committed]
+      } else if (draftParts) {
+        contentChanged = true
+        committedParts.set(eventMessageID, draftParts)
+      } else if (committed) {
+        contentChanged = true
+        committedParts.delete(eventMessageID)
+      }
+
+      const draftMessage = draft.message[sessionID]?.find((item) => item.id === eventMessageID)
+      const committedMessage = committedMessages.get(eventMessageID)
+      if (draftMessage && committedMessage && committedMessage === draftMessage) {
+        // same ref
+      } else if (draftMessage && committedMessage && sameMessageIdentity(committedMessage, draftMessage)) {
+        // Prefer committed message shell when identity-stable.
+        const list = draft.message[sessionID]
+        if (list) {
+          const index = list.findIndex((item) => item.id === eventMessageID)
+          if (index >= 0) list[index] = committedMessage
+        }
+      } else if (draftMessage) {
+        contentChanged = true
+        committedMessages.set(eventMessageID, draftMessage)
+      } else if (committedMessage) {
+        contentChanged = true
+        committedMessages.delete(eventMessageID)
+      }
+    } else {
+      contentChanged = true
+    }
+
+    if (orderChanged) {
+      committedOrder = nextOrder
+      // Refresh committed message map for order-only admissions.
+      for (const message of draft.message[sessionID] ?? []) {
+        if (message?.id && !committedMessages.has(message.id)) {
+          committedMessages.set(message.id, message)
+        }
+      }
+    }
+
+    if (!contentChanged) continue
+    meaningfulChangeCount += 1
+    if (eventMessageID) targetMessageIDs.add(eventMessageID)
+  }
+
+  if (!anyApplied) {
+    return {
+      data: previous,
+      result: { applied: false, changed: false },
+    }
+  }
+
+  if (meaningfulChangeCount === 0) {
+    return {
+      data: previous,
+      result: {
+        applied: true,
+        // Sequential share may collapse payload-equal reducer churn to the
+        // previous page; batch reports changed:false when nothing content-new.
+        changed: false,
+        ...(firstMaterialization ? { materialization: firstMaterialization } : {}),
+      },
+    }
+  }
+
+  const liveRevision = startLiveRevision + meaningfulChangeCount
+  return {
+    data: rebuildTranscriptAfterSseDraft(
+      previous,
+      sessionID,
+      draft,
+      previousBoundary,
+      liveRevision,
+      targetMessageIDs,
+    ),
+    result: {
+      applied: true,
+      changed: true,
+      ...(firstMaterialization ? { materialization: firstMaterialization } : {}),
+    },
   }
 }
 
@@ -1069,6 +1280,17 @@ export function mergeSessionTranscript(
         sessionID,
         input.event,
         liveRevision + 1,
+      )
+    }
+
+    case "sse-event-batch": {
+      const liveRevision =
+        previous?.pages[previous.pages.length - 1]?.sync.liveRevision ?? 0
+      return applySseEventsToTranscriptData(
+        previous,
+        sessionID,
+        input.events,
+        liveRevision,
       )
     }
 

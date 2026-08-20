@@ -1753,6 +1753,109 @@ function resolveTranscriptSseSessionID(payload: Event): string | undefined {
   return undefined
 }
 
+type TranscriptSseBatchScopeGroup = {
+  scope: TranscriptScope
+  events: Event[]
+  transcriptSessionID: string
+  eventMessageIDs: Array<string | undefined>
+  childStores: ChildStoreManager
+  routingIndex: EventRoutingIndex
+}
+
+type TranscriptSseBatch = {
+  byScope: Map<string, TranscriptSseBatchScopeGroup>
+  routing: Array<{
+    routingIndex: EventRoutingIndex
+    resolvedDirectory: string
+    payload: Event
+  }>
+  debug: Array<{
+    payloadType: string
+    transcriptSessionID: string
+    eventMessageID: string | undefined
+    changed: boolean
+  }>
+}
+
+let transcriptSseBatch: TranscriptSseBatch | null = null
+let transcriptSseBatchDepth = 0
+
+function transcriptSseBatchScopeKey(scope: TranscriptScope): string {
+  return `${scope.directory}\0${scope.sessionID}\0${scope.transport ?? ""}\0${scope.generation ?? ""}`
+}
+
+function beginTranscriptSseBatch(): void {
+  if (transcriptSseBatchDepth === 0) {
+    transcriptSseBatch = {
+      byScope: new Map(),
+      routing: [],
+      debug: [],
+    }
+  }
+  transcriptSseBatchDepth += 1
+}
+
+function flushTranscriptSseBatch(): void {
+  if (transcriptSseBatchDepth === 0) return
+  transcriptSseBatchDepth -= 1
+  if (transcriptSseBatchDepth > 0) return
+
+  const batch = transcriptSseBatch
+  transcriptSseBatch = null
+  if (!batch) return
+
+  try {
+    for (const group of batch.byScope.values()) {
+      const repoResult = applyTranscriptCommand(
+        group.scope,
+        { type: "sse-event-batch", events: group.events },
+      ) ?? { applied: false, changed: false }
+
+      if (repoResult.changed) {
+        for (const entry of batch.debug) {
+          if (entry.transcriptSessionID === group.transcriptSessionID) {
+            entry.changed = true
+          }
+        }
+      }
+
+      const materializationResult = repoResult.materialization
+      if (materializationResult) {
+        const fallbackMessageID = group.eventMessageIDs.find((id) => typeof id === "string")
+        const materializationSessionID = resolveMaterializationSessionID(
+          materializationResult.sessionID ?? group.transcriptSessionID,
+          materializationResult.messageID ?? fallbackMessageID,
+          group.scope.directory,
+          group.routingIndex,
+        )
+        if (materializationSessionID) {
+          enqueueSessionMaterialization(group.scope.directory, materializationSessionID, group.childStores, {
+            reason: materializationResult.reason,
+            messageID: materializationResult.messageID,
+            partID: materializationResult.partID,
+          })
+        }
+      }
+    }
+
+    for (const entry of batch.debug) {
+      if (entry.changed) {
+        syncDebug.dispatch.eventApplied(entry.payloadType, entry.transcriptSessionID, entry.eventMessageID)
+      } else {
+        syncDebug.dispatch.eventNoChange(entry.payloadType, entry.transcriptSessionID, entry.eventMessageID)
+      }
+    }
+
+    for (const item of batch.routing) {
+      updateRoutingIndexFromEvent(item.routingIndex, item.resolvedDirectory, item.payload)
+    }
+  } finally {
+    // Ensure a failed flush cannot leave a stale batch for the next frame.
+    transcriptSseBatch = null
+    transcriptSseBatchDepth = 0
+  }
+}
+
 function commitTranscriptSseEvent(
   payload: Event,
   transcriptSessionID: string,
@@ -1768,6 +1871,36 @@ function commitTranscriptSseEvent(
     generation: getRuntimeGeneration(),
     listCanonicalScopes: listCanonicalScopesForTranscriptEvent,
   })
+
+  // When a flush-frame batch is active, accumulate per scope and apply once on flush.
+  if (transcriptSseBatch) {
+    for (const scope of scopes) {
+      const key = transcriptSseBatchScopeKey(scope)
+      let group = transcriptSseBatch.byScope.get(key)
+      if (!group) {
+        group = {
+          scope,
+          events: [],
+          transcriptSessionID,
+          eventMessageIDs: [],
+          childStores,
+          routingIndex,
+        }
+        transcriptSseBatch.byScope.set(key, group)
+      }
+      group.events.push(payload)
+      group.eventMessageIDs.push(eventMessageID)
+    }
+    transcriptSseBatch.debug.push({
+      payloadType: payload.type,
+      transcriptSessionID,
+      eventMessageID,
+      changed: false,
+    })
+    transcriptSseBatch.routing.push({ routingIndex, resolvedDirectory, payload })
+    return
+  }
+
   let anyChanged = false
   for (const scope of scopes) {
     const repoResult = applyTranscriptCommand(
@@ -2430,6 +2563,12 @@ export function SyncProvider(props: {
       transport: messageStreamTransport,
       routeDirectory: (directory, payload) => {
         return resolveDirectoryFromRoutingIndex(routingIndex, directory, payload, childStores)
+      },
+      onFlushStart: () => {
+        beginTranscriptSseBatch()
+      },
+      onFlushEnd: () => {
+        flushTranscriptSseBatch()
       },
       onNormalizedEvent: (directory, normalized) => {
         handleNormalizedOpenCodeHints(directory, normalized, childStores)

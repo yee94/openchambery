@@ -88,6 +88,12 @@ export type EventPipelineInput = {
   onEvent: (directory: string, payload: Event) => void
   routeDirectory?: (directory: string, payload: Event) => string
   /**
+   * Optional hooks around a non-empty per-directory flush frame.
+   * Used by transcript SSE batching so one rebuild covers the whole frame.
+   */
+  onFlushStart?: () => void
+  onFlushEnd?: () => void
+  /**
    * Optional hook for current-event domain hints (admission, activity, terminal)
    * after normalization and before the legacy Event reducer path.
    */
@@ -364,6 +370,8 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   const {
     sdk,
     onEvent,
+    onFlushStart,
+    onFlushEnd,
     onNormalizedEvent,
     onReconnect,
     onCompensation,
@@ -445,8 +453,13 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
     d.last = Date.now()
     syncDebug.pipeline.flush(events.length)
-    for (const payload of events) {
-      onEvent(directory, payload)
+    onFlushStart?.()
+    try {
+      for (const payload of events) {
+        onEvent(directory, payload)
+      }
+    } finally {
+      onFlushEnd?.()
     }
 
     d.buffer.length = 0

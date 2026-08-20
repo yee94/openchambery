@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.17.1-beta.8] - 2026-08-20
+## [1.17.1-beta.9] - 2026-08-20
+
+- **多会话流式卡顿修复（SSE 批量合并）：** 同一刷新帧内同一会话的多个 transcript SSE 事件（`message.part.updated` / `message.updated` 等）现在只做一次全量 flatten/rebuild/freeze 与一次订阅通知，此前每个事件各付一次整棵 transcript 重建成本，多会话并发流式时（约 11 事件/秒 × 6 会话）主线程被打满导致界面死卡；批内事件按顺序应用、保留中间快照与去重语义，不违反 part.updated 保序契约；同帧内 payload 相同的冗余事件折叠后不再触发重建。
 
 - **移除 Cloudflare/ngrok 公网隧道：** 服务端 provider、CLI `tunnel` 命令、设置页 Tunnel 面板与文档站整套移除；远程访问统一收敛到配对链接、LAN 直连与 Private Relay，旧 `--tunnel` 标志改为报错并提示迁移；Relay 与 SSH 端口转发不受影响。
 - **远程实例设置合并：** 设置里的「其他 OpenChamber 服务器」并入「远程实例」，添加方式收敛为「导入连接」与「添加 SSH」两种，列表混排并以「链接 / SSH」徽章区分来源；旧手动添加的服务器不再展示（数据保留，不删除），Docker 镜像与安全文档同步去掉 cloudflared。

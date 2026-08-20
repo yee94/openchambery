@@ -342,6 +342,8 @@ export function diagnosticsKindForCommand(command: TranscriptCommand): Transcrip
       return "http-page"
     case "sse-event":
       return command.event.type === "message.part.delta" ? null : "sse-event"
+    case "sse-event-batch":
+      return "sse-event"
     case "reset":
       return "reset"
     case "materialize-snapshots":
@@ -360,6 +362,7 @@ export function commandPurpose(command: TranscriptCommand): string | undefined {
 
 export function commandSseType(command: TranscriptCommand): string | undefined {
   if (command.type === "sse-event") return command.event.type
+  if (command.type === "sse-event-batch") return "sse-event-batch"
   return undefined
 }
 
@@ -368,6 +371,7 @@ export function diagnosticsSourceForCommand(command: TranscriptCommand): Transcr
     case "http-page":
       return "network"
     case "sse-event":
+    case "sse-event-batch":
       return "sse"
     case "materialize-snapshots":
       return "durable-cache"

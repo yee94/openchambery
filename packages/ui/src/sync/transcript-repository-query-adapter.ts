@@ -721,17 +721,20 @@ export function createQueryTranscriptRepository(
     ) {
       return
     }
-    if (command.type === "sse-event") {
-      const action = transcriptDurableSseAction(command.event)
-      if (action.action === "remove") {
-        void durableQueue.removeMessage(durableScope, action.messageID)
-        return
-      }
-      if (action.action === "skip") return
+    if (command.type === "sse-event" || command.type === "sse-event-batch") {
+      const events = command.type === "sse-event" ? [command.event] : command.events
       const transcript = toTranscriptData(readData(scope), identity.sessionID)
-      const info = transcript.messagesByID[action.messageID]
-      if (!info) return
-      persistSettledRecord(identity, info, transcript.partsByMessageID[action.messageID])
+      for (const event of events) {
+        const action = transcriptDurableSseAction(event)
+        if (action.action === "remove") {
+          void durableQueue.removeMessage(durableScope, action.messageID)
+          continue
+        }
+        if (action.action === "skip") continue
+        const info = transcript.messagesByID[action.messageID]
+        if (!info) continue
+        persistSettledRecord(identity, info, transcript.partsByMessageID[action.messageID])
+      }
       return
     }
     if (command.type === "http-page" || command.type === "materialize-snapshots") {
@@ -1262,6 +1265,17 @@ export function createQueryTranscriptRepository(
             queryKey,
             identity.sessionID,
             { type: "sse-event", event: command.event },
+          )
+          if (merge.result.applied) seededAuthorityPending.delete(scopeKey(identity))
+          if (merge.result.changed) notify(scope)
+          return merge.result
+        }
+        case "sse-event-batch": {
+          const merge = applySessionTranscriptMerge(
+            client,
+            queryKey,
+            identity.sessionID,
+            { type: "sse-event-batch", events: command.events },
           )
           if (merge.result.applied) seededAuthorityPending.delete(scopeKey(identity))
           if (merge.result.changed) notify(scope)

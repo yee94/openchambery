@@ -296,6 +296,15 @@ export type TranscriptSseEventCommand = {
   readonly event: Event
 }
 
+/**
+ * Same semantics as `sse-event`, but applies N events in order with one merge
+ * rebuild (ordered reducer steps; no delivery-layer coalesce).
+ */
+export type TranscriptSseEventBatchCommand = {
+  readonly type: "sse-event-batch"
+  readonly events: readonly Event[]
+}
+
 export type TranscriptOptimisticAddCommand = {
   readonly type: "optimistic-add"
   readonly message: Message
@@ -350,6 +359,7 @@ export type TranscriptRemoveMessageCommand = {
 export type TranscriptCommand =
   | TranscriptHttpPageCommand
   | TranscriptSseEventCommand
+  | TranscriptSseEventBatchCommand
   | TranscriptOptimisticAddCommand
   | TranscriptOptimisticConfirmCommand
   | TranscriptOptimisticRemoveCommand

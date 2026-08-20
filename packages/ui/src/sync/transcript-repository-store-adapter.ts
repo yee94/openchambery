@@ -244,12 +244,11 @@ function applyHttpPage(
   }
 }
 
-function applySseEvent(
+function applySseEventsOnStore(
   store: TranscriptStoreSurface,
-  command: Extract<TranscriptCommand, { type: "sse-event" }>,
+  events: readonly Event[],
 ): TranscriptCommandResult {
-  const event = command.event
-  if (!isTranscriptSseEventType(event.type)) {
+  if (events.length === 0) {
     return { applied: false, changed: false }
   }
 
@@ -260,15 +259,31 @@ function applySseEvent(
     part: { ...(current.part ?? {}) },
   }
 
-  const result = applyTranscriptDirectoryEvent(draft, event as Event)
-  const changed = typeof result === "boolean" ? result : result.changed
-  const materialization = typeof result === "boolean" ? undefined : result.materialization
+  let anyApplied = false
+  let anyChanged = false
+  let firstMaterialization: TranscriptCommandResult["materialization"]
 
-  if (!changed) {
+  for (const event of events) {
+    if (!isTranscriptSseEventType(event.type)) continue
+    anyApplied = true
+    const result = applyTranscriptDirectoryEvent(draft, event as Event)
+    const changed = typeof result === "boolean" ? result : result.changed
+    const materialization = typeof result === "boolean" ? undefined : result.materialization
+    if (materialization && !firstMaterialization) {
+      firstMaterialization = materialization
+    }
+    if (changed) anyChanged = true
+  }
+
+  if (!anyApplied) {
+    return { applied: false, changed: false }
+  }
+
+  if (!anyChanged) {
     return {
       applied: true,
       changed: false,
-      ...(materialization ? { materialization } : {}),
+      ...(firstMaterialization ? { materialization: firstMaterialization } : {}),
     }
   }
 
@@ -280,8 +295,22 @@ function applySseEvent(
   return {
     applied: true,
     changed: true,
-    ...(materialization ? { materialization } : {}),
+    ...(firstMaterialization ? { materialization: firstMaterialization } : {}),
   }
+}
+
+function applySseEvent(
+  store: TranscriptStoreSurface,
+  command: Extract<TranscriptCommand, { type: "sse-event" }>,
+): TranscriptCommandResult {
+  return applySseEventsOnStore(store, [command.event])
+}
+
+function applySseEventBatch(
+  store: TranscriptStoreSurface,
+  command: Extract<TranscriptCommand, { type: "sse-event-batch" }>,
+): TranscriptCommandResult {
+  return applySseEventsOnStore(store, command.events)
 }
 
 function applyMaterializeSnapshots(
@@ -680,6 +709,8 @@ export function createStoreTranscriptRepository(
           return applyHttpPage(store, sessionID, command)
         case "sse-event":
           return applySseEvent(store, command)
+        case "sse-event-batch":
+          return applySseEventBatch(store, command)
         case "optimistic-add":
           return applyOptimisticAdd(store, sessionID, command, deps, directory)
         case "optimistic-confirm":
