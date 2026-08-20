@@ -759,14 +759,28 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     }, [currentModelId, currentProviderId, providers, selectionAdapter, selectionCatalog?.variants, selectionCatalog?.variantsReady]);
 
     const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string) => {
-        if (selectionAdapter) {
-            const variantOptions = resolveChatInputSelectionVariantOptions(selectionAdapter.selection, selectionAdapter.catalog, providerId, modelId);
-            const selectedVariant = selectionAdapter.selection.variant;
-            return selectedVariant && variantOptions.includes(selectedVariant) ? selectedVariant : undefined;
-        }
-        const variantOptions = getModelVariantOptions(providerId, modelId);
+        const adapterOptions = selectionAdapter
+            ? resolveChatInputSelectionVariantOptions(selectionAdapter.selection, selectionAdapter.catalog, providerId, modelId)
+            : [];
+        // Adapter catalog.variants is current-model-only; other models still
+        // resolve keys from the provider list so remembered variants survive a pick.
+        const variantOptions = adapterOptions.length > 0
+            ? adapterOptions
+            : getModelVariantOptions(providerId, modelId);
         if (variantOptions.length === 0) {
             return undefined;
+        }
+
+        if (selectionAdapter) {
+            const selectedVariant = selectionAdapter.selection.variant;
+            if (
+                selectionAdapter.selection.providerID === providerId
+                && selectionAdapter.selection.modelID === modelId
+                && selectedVariant
+                && variantOptions.includes(selectedVariant)
+            ) {
+                return selectedVariant;
+            }
         }
 
         const effectiveAgentName = uiAgentName || currentAgentName;
@@ -1385,11 +1399,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         if (selectionAdapter) {
             if (isCompact) closeMobilePanel();
+            const nextVariant = options?.applyVariant
+                ? options.variant
+                : resolveModelVariantSelection(providerId, modelId);
             void selectionAdapter.onChange({
                 providerID: providerId,
                 modelID: modelId,
                 agent: options?.agentName ?? selectionAdapter.selection.agent,
-                variant: options?.applyVariant ? options.variant : undefined,
+                variant: nextVariant,
             }).then(() => {
                 addRecentModel(providerId, modelId);
                 closeModelMenu();

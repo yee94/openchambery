@@ -4,6 +4,7 @@ import {
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
+  shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 
 const createElement = (tag: string, className = ''): HTMLElement => {
@@ -57,6 +58,22 @@ describe('composerKeyboardLift', () => {
 
     expect(isComposerKeyboardTarget(textarea)).toBe(false);
     expect(isComposerKeyboardTarget(null)).toBe(false);
+    expect(shouldReserveChatScrollInset(textarea)).toBe(true);
+    expect(shouldReserveChatScrollInset(null)).toBe(false);
+  });
+
+  test('reserves chat scroll inset only for non-composer text fields', () => {
+    const composer = createElement('form', 'oc-mobile-composer');
+    const composerTextarea = createElement('textarea');
+    const questionInput = createElement('input');
+    const questionContentEditable = createElement('div') as HTMLElement & { isContentEditable: boolean };
+    Object.defineProperty(questionContentEditable, 'isContentEditable', { value: true });
+    composer.appendChild(composerTextarea);
+
+    expect(shouldReserveChatScrollInset(questionInput)).toBe(true);
+    expect(shouldReserveChatScrollInset(questionContentEditable)).toBe(true);
+    expect(shouldReserveChatScrollInset(composerTextarea)).toBe(false);
+    expect(shouldReserveChatScrollInset(createElement('button'))).toBe(false);
   });
 
   test('focus transfer stays armed only inside the composer', () => {
@@ -71,7 +88,7 @@ describe('composerKeyboardLift', () => {
     expect(isComposerKeyboardFocusTransfer(null)).toBe(false);
   });
 
-  test('uses native IME height as cache only while a composer lift is armed', () => {
+  test('routes native IME state to composer lift, cache, or field inset', () => {
     const composer = createElement('form', 'oc-mobile-composer');
     const textarea = createElement('textarea');
     const outside = createElement('input');
@@ -80,6 +97,7 @@ describe('composerKeyboardLift', () => {
     expect(getAndroidComposerImeStateAction(false, textarea)).toBe('open');
     expect(getAndroidComposerImeStateAction(true, textarea)).toBe('cache');
     expect(getAndroidComposerImeStateAction(true, outside)).toBe('cache');
-    expect(getAndroidComposerImeStateAction(false, outside)).toBe('ignore');
+    expect(getAndroidComposerImeStateAction(false, outside)).toBe('field');
+    expect(getAndroidComposerImeStateAction(false, createElement('button'))).toBe('ignore');
   });
 });

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.5] - 2026-08-20
+
+- **移动端 Question 输入不再被键盘挡住：** 自定义回答聚焦后，聊天区给键盘留出滚动空间，输入框（空间足够时连同底部操作）滚到键盘上方；底部 composer 不会跟着抬起。
+- **主输入框 variant 记忆：** 历史消息没带 variant 时回退到会话记忆，而不是当成显式默认；换模型时保留当前/已记住的 variant，避免被写成空。
+
 ## [1.17.1-beta.4] - 2026-08-20
 
 - **iOS 代码块空白修复：** iOS WebKit 隐藏 Markdown 代码行号栏，避免空行测量异常将代码块撑出大段空白；Android 保留行号显示。

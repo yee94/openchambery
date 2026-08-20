@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Radio } from '@/components/ui/radio';
 import { Icon } from "@/components/icon/Icon";
@@ -43,6 +44,63 @@ const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
   const [height, setHeight] = React.useState(QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT);
   const [isScrollable, setIsScrollable] = React.useState(false);
 
+  const scrollIntoKeyboardViewport = useEvent(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || document.activeElement !== textarea) return;
+
+    const scroller = textarea.closest<HTMLElement>('.chat-scroll');
+    if (!scroller) {
+      textarea.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportBottom = viewport
+      ? viewport.offsetTop + viewport.height
+      : document.documentElement.clientHeight;
+    const keyboardInset = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--oc-kb-scroll-inset'),
+    ) || 0;
+    const visibleTop = Math.max(scrollerRect.top, viewportTop);
+    // chat-scroll already ends above the composer. Subtract the IME inset from
+    // the visual viewport, not from the scroller bottom, or the field sits a
+    // composer-height too high and the footer is more likely to stay covered.
+    const visibleBottom = Math.min(scrollerRect.bottom, viewportBottom - keyboardInset);
+    const availableHeight = Math.max(0, visibleBottom - visibleTop);
+    const card = textarea.closest<HTMLElement>('[data-question-card]');
+    const cardRect = card?.getBoundingClientRect();
+    const target = card && cardRect && cardRect.height <= availableHeight ? card : textarea;
+    const targetRect = target.getBoundingClientRect();
+    const gap = 12;
+
+    if (targetRect.bottom > visibleBottom - gap) {
+      scroller.scrollTop += targetRect.bottom - visibleBottom + gap;
+    } else if (targetRect.top < visibleTop + gap) {
+      scroller.scrollTop += targetRect.top - visibleTop - gap;
+    }
+  });
+
+  const handleFocus = useEvent(() => {
+    requestAnimationFrame(scrollIntoKeyboardViewport);
+  });
+
+  React.useEffect(() => {
+    const reveal = () => requestAnimationFrame(scrollIntoKeyboardViewport);
+    reveal();
+    window.addEventListener('oc:keyboard-settled', reveal);
+    window.addEventListener('resize', reveal);
+    window.visualViewport?.addEventListener('resize', reveal);
+    window.visualViewport?.addEventListener('scroll', reveal);
+    return () => {
+      window.removeEventListener('oc:keyboard-settled', reveal);
+      window.removeEventListener('resize', reveal);
+      window.visualViewport?.removeEventListener('resize', reveal);
+      window.visualViewport?.removeEventListener('scroll', reveal);
+    };
+  }, []);
+
   React.useEffect(() => {
     setLocalValue(value);
   }, [value]);
@@ -77,6 +135,7 @@ const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
       disabled={disabled}
       rows={2}
       onKeyDown={onKeyDown}
+      onFocus={handleFocus}
       style={{ height }}
       className={cn(
         'w-full bg-transparent border border-border/30 focus:border-primary rounded px-2 py-1 outline-none typography-meta text-foreground placeholder:text-muted-foreground/50 transition-colors resize-none',
@@ -325,7 +384,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   return (
     <div className="group w-full pt-0 pb-2">
       <div className="chat-column">
-        <div className="-mt-1 border border-border/30 rounded-xl bg-muted/10">
+        <div data-question-card className="-mt-1 border border-border/30 rounded-xl bg-muted/10">
           {/* Header */}
           <div className="px-2 py-1.5 border-b border-border/20">
             <div className="flex items-center gap-2">

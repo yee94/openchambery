@@ -76,6 +76,7 @@ import {
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
+  shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 import { MobileChangesSurface } from './MobileChangesSurface';
 import { MobileFilesSurface } from './MobileFilesSurface';
@@ -416,6 +417,7 @@ const useNativeMobileChrome = (): void => {
         const SHOW_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
         const HIDE_EASING = 'cubic-bezier(0.4, 0, 1, 1)';
         let androidTimer: number | null = null;
+        let composerLiftArmed = false;
 
         const isTextField = isTextFieldLike;
 
@@ -471,6 +473,21 @@ const useNativeMobileChrome = (): void => {
           return slide;
         };
 
+        const reserveFieldScrollInset = (height: number) => {
+          measureSafeBottom();
+          const resolvedHeight = Math.max(0, Math.round(height));
+          keyboardOpen = true;
+          composerLiftArmed = false;
+          armedImeHeight = resolvedHeight;
+          root.classList.remove('oc-keyboard-open', 'oc-kb-animating');
+          setInset(resolvedHeight);
+          setVar('--oc-kb-layout', 0);
+          setVar('--oc-kb-scroll-inset', getAndroidSlide(resolvedHeight));
+          clearAndroidTimer();
+          clearKbMovers();
+          dispatchKb('oc:keyboard-settled', { open: true });
+        };
+
         const markOpen = (
           anchor?: EventTarget | null,
           source: 'intent' | 'focus' | 'ime' = 'focus',
@@ -491,6 +508,10 @@ const useNativeMobileChrome = (): void => {
             const slide = getAndroidSlide(activeImeHeight);
             const movers = getKbMovers(source === 'focus' ? anchor : undefined);
             if (movers.length === 0) return;
+            composerLiftArmed = true;
+            root.classList.add('oc-keyboard-open');
+            setInset(0);
+            setVar('--oc-kb-scroll-inset', 0);
             const alreadyPositioned = movers.every(
               ({ el, factor }) => el.style.transform === getAndroidTransform(slide, factor),
             );
@@ -506,6 +527,7 @@ const useNativeMobileChrome = (): void => {
             return;
           }
           keyboardOpen = true;
+          composerLiftArmed = true;
           root.classList.add('oc-keyboard-open');
           setInset(0);
           setVar('--oc-kb-layout', 0);
@@ -531,7 +553,9 @@ const useNativeMobileChrome = (): void => {
             return;
           }
           const activeImeHeight = armedImeHeight || imeHeight;
+          const hadComposerLift = composerLiftArmed;
           keyboardOpen = false;
+          composerLiftArmed = false;
           armedImeHeight = 0;
           if (blur && isTextField(document.activeElement)) {
             (document.activeElement as HTMLElement).blur();
@@ -542,6 +566,12 @@ const useNativeMobileChrome = (): void => {
           setVar('--oc-kb-scroll-inset', 0);
           dispatchKb('oc:keyboard-intent', { open: false });
           const slide = getAndroidSlide(activeImeHeight);
+          if (!hadComposerLift) {
+            clearAndroidTimer();
+            clearKbMovers();
+            dispatchKb('oc:keyboard-settled', { open: false });
+            return;
+          }
           // Start the transform first so the same frame collapses chrome + lift.
           liftMovers(0, HIDE_MS, HIDE_EASING);
           dispatchKb('oc:keyboard-anim', {
@@ -559,12 +589,15 @@ const useNativeMobileChrome = (): void => {
           }, HIDE_MS + 20);
         };
 
-        // ChatInput intent runs before focus (pre-IME). focusin only lifts when
-        // the focused field is the bottom composer — never question / other inputs.
+        // ChatInput intent runs before focus (pre-IME). focusin lifts only the
+        // bottom composer; other text fields reserve chat scroll room.
         const handleFocusIn = (event: FocusEvent) => {
           if (!isTextField(event.target)) return;
-          if (!isComposerKeyboardTarget(event.target)) return;
-          markOpen(event.target, 'focus');
+          if (isComposerKeyboardTarget(event.target)) {
+            markOpen(event.target, 'focus');
+            return;
+          }
+          reserveFieldScrollInset(armedImeHeight || imeHeight);
         };
         const handleFocusOut = (event: FocusEvent) => {
           if (!isTextField(event.target)) return;
@@ -573,6 +606,11 @@ const useNativeMobileChrome = (): void => {
           // Stay open only when focus remains inside the bottom composer; moving
           // to a question card (or any other field) must drop the lift.
           if (isComposerKeyboardFocusTransfer(event.relatedTarget)) return;
+          if (shouldReserveChatScrollInset(event.relatedTarget)) {
+            dispatchKb('oc:keyboard-intent', { open: false });
+            reserveFieldScrollInset(armedImeHeight || imeHeight);
+            return;
+          }
           // Prefer the earliest close signal. A zero-timeout waits a full task and
           // lets the system IME finish before the composer starts dropping.
           markClosed(false);
@@ -589,8 +627,8 @@ const useNativeMobileChrome = (): void => {
           const detail = nativeEvent.detail ?? nativeEvent;
           if (detail?.open === true) {
             const measured = Math.max(0, Math.round(detail.height ?? 0));
-            const action = getAndroidComposerImeStateAction(keyboardOpen, document.activeElement);
-            if (measured > 0 && action !== 'ignore') {
+            const action = getAndroidComposerImeStateAction(composerLiftArmed, document.activeElement);
+            if (measured > 0 && (action === 'open' || action === 'cache')) {
               // A model-picker search field can have a different IME silhouette
               // from the composer. Keep the cache scoped to composer-owned opens.
               persistHeight(measured);
@@ -600,6 +638,7 @@ const useNativeMobileChrome = (): void => {
             // a focus/intent lift is armed, this event only refreshes next-open
             // cache data and leaves its transform untouched.
             if (action === 'open') markOpen(document.activeElement, 'ime');
+            if (action === 'field') reserveFieldScrollInset(measured || imeHeight);
           }
           if (detail?.open === false) markClosed(true);
         };
@@ -705,10 +744,12 @@ const useNativeMobileChrome = (): void => {
         root.classList.add('oc-keyboard-open');
         setInset(keyboardHeight);
         if (!liftComposer) {
-          // Question / other fields: keep IME chrome signals, do not raise the
-          // bottom composer or shrink the shell under the keyboard.
+          // Question / other fields: keep the overlay and chat scroll insets
+          // without raising the bottom composer or shrinking the shell.
           setVar('--oc-kb-layout', 0);
-          setVar('--oc-kb-scroll-inset', 0);
+          measureSafeBottom();
+          setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
+          root.classList.remove('oc-keyboard-open');
           clearKbMovers();
           layoutApplied = false;
           dispatchKb('oc:keyboard-settled', { open: true });
@@ -795,26 +836,28 @@ const useNativeMobileChrome = (): void => {
         if (!isTextInput(event.target)) return;
         // Drop composer lift when focus leaves the bottom composer (question
         // cards and other fields must not keep the shell raised).
-        if (isComposerKeyboardFocusTransfer(event.relatedTarget)) return;
+        if (isComposerKeyboardFocusTransfer(event.relatedTarget)) {
+          setVar('--oc-kb-scroll-inset', 0);
+          return;
+        }
         window.setTimeout(() => {
           if (!keyboardOpen) return;
           if (isComposerKeyboardTarget(document.activeElement)) return;
           // IME may still be open for a non-composer field — only reverse the
           // composer/shell lift; blur is for true keyboard dismissal paths.
           if (isTextInput(document.activeElement)) {
-            if (!layoutApplied && !root.classList.contains('oc-kb-animating')) return;
             // Soft reverse: clear layout without blurring the new field.
             clearSettle();
-            keyboardOpen = false;
             root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold', 'oc-kb-hide');
-            setInset(0);
+            setInset(keyboardHeight);
             setVar('--oc-kb-layout', 0);
-            setVar('--oc-kb-scroll-inset', 0);
+            measureSafeBottom();
+            setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
             layoutApplied = false;
             clearKbMovers();
             // Let ChatInput collapse expanded chrome; do not blur the new field.
             dispatchKb('oc:keyboard-intent', { open: false });
-            dispatchKb('oc:keyboard-settled', { open: false });
+            dispatchKb('oc:keyboard-settled', { open: true });
             return;
           }
           runHide();
