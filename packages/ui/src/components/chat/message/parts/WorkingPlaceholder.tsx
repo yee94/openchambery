@@ -1,7 +1,8 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { useI18n } from '@/lib/i18n';
-import { BusyDots } from './BusyDots';
+import { formatGoalDuration } from '@/lib/sessionGoalMetadata';
+import { MorphOrb } from './MorphOrb';
 
 interface WorkingPlaceholderProps {
   isWorking: boolean;
@@ -10,6 +11,7 @@ interface WorkingPlaceholderProps {
   isGenericStatus?: boolean;
   isWaitingForPermission?: boolean;
   retryInfo?: { attempt?: number; next?: number } | null;
+  turnStartedAt?: number;
   agentName?: string;
 }
 
@@ -35,6 +37,7 @@ export function WorkingPlaceholder({
   isGenericStatus,
   isWaitingForPermission,
   retryInfo,
+  turnStartedAt,
 }: WorkingPlaceholderProps) {
   const { locale, t } = useI18n();
   const [displayedText, setDisplayedText] = React.useState<string | null>(null);
@@ -51,6 +54,16 @@ export function WorkingPlaceholder({
 
   // Countdown state for retry mode
   const [retryCountdown, setRetryCountdown] = React.useState<number | null>(null);
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    if (!isWorking || typeof turnStartedAt !== 'number' || retryInfo) {
+      return undefined;
+    }
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, [isWorking, turnStartedAt, retryInfo]);
 
   React.useEffect(() => {
     const rawNext = retryInfo?.next;
@@ -180,14 +193,18 @@ export function WorkingPlaceholder({
 
     return (
       <div
-        className="flex h-full items-center text-muted-foreground pl-0.5"
+        className="flex h-full items-center text-muted-foreground"
         role="status"
         aria-live="polite"
-        aria-label={`${retryText}...`}
+        aria-label={retryText}
       >
-        <span className={isMobile ? "typography-meta !text-[length:var(--text-meta)]" : "typography-ui-header"}>
-          <span className="animate-text-shimmer">{retryText}</span>
-          <BusyDots />
+        <span className={`flex min-w-0 items-center ${isMobile ? "gap-1 typography-meta !text-[length:var(--text-meta)]" : "gap-1.5 typography-ui-header"}`}>
+          <span className={`inline-flex flex-none items-center justify-center ${isMobile ? 'h-5 w-4' : 'h-6 w-3.5'}`}>
+            <MorphOrb isMobile={isMobile} />
+          </span>
+          <span className="animate-text-shimmer min-w-0 truncate whitespace-nowrap">
+            {retryText}
+          </span>
         </span>
       </div>
     );
@@ -198,20 +215,30 @@ export function WorkingPlaceholder({
   }
 
   const label = displayedText;
+  const elapsed = typeof turnStartedAt === 'number'
+    ? formatGoalDuration(Math.max(0, now - turnStartedAt))
+    : null;
 
   return (
     <div
-      className={
-        'flex h-full items-center text-muted-foreground pl-0.5'
-      }
+      className="flex h-full items-center text-muted-foreground"
       role="status"
       aria-live={displayedPermission ? 'assertive' : 'polite'}
       aria-label={label}
       data-waiting={displayedPermission ? 'true' : undefined}
     >
-      <span className={isMobile ? "typography-meta !text-[length:var(--text-meta)]" : "typography-ui-header"}>
-        <span className="animate-text-shimmer">{label}</span>
-        <BusyDots />
+      <span className={`flex min-w-0 items-center ${isMobile ? "gap-1 typography-meta !text-[length:var(--text-meta)]" : "gap-1.5 typography-ui-header"}`}>
+        <span className={`inline-flex flex-none items-center justify-center ${isMobile ? 'h-5 w-4' : 'h-6 w-3.5'}`}>
+          <MorphOrb isMobile={isMobile} />
+        </span>
+        <span className="animate-text-shimmer min-w-0 truncate whitespace-nowrap">
+          {label}
+        </span>
+        {elapsed ? (
+          <span className="typography-meta shrink-0 font-light text-muted-foreground/70 tabular-nums" aria-hidden="true">
+            {elapsed}
+          </span>
+        ) : null}
       </span>
     </div>
   );

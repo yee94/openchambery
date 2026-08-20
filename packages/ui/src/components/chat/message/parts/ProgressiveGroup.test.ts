@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
+const formatActivityDurationSource = readFileSync(join(__dirname, 'formatActivityDuration.ts'), 'utf-8');
 const messageBodySource = readFileSync(join(__dirname, '../MessageBody.tsx'), 'utf-8');
 const messageListSource = readFileSync(join(__dirname, '../../MessageList.tsx'), 'utf-8');
 const turnItemSource = readFileSync(join(__dirname, '../../components/TurnItem.tsx'), 'utf-8');
@@ -151,15 +152,19 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('startedAt={turnGroupingContext.userMessageCreatedAt}');
         expect(messageBodySource).toContain('const durationMs = turnGroupingContext?.durationMs;');
         expect(messageBodySource).not.toContain('formatTurnDuration(messageCompletedAt - userCreatedAt)');
-        expect(progressiveGroupSource).toContain('useDurationTickerNow(isActive, 250)');
-        expect(progressiveGroupSource).toContain('tickerNow - startedAt');
+        // Live elapsed is owned by WorkingPlaceholder only; activity header
+        // shows duration after the turn settles (no in-flight ticker).
+        expect(progressiveGroupSource).not.toContain('useDurationTickerNow');
+        expect(progressiveGroupSource).not.toContain('tickerNow - startedAt');
+        expect(progressiveGroupSource).not.toContain('activeDuration');
         expect(progressiveGroupSource).toContain('formatActivityDuration(durationMs)');
+        expect(progressiveGroupSource).toContain("import { formatActivityDuration } from './formatActivityDuration'");
     });
 
     test('uses one full-width disclosure with identical title geometry in both states', () => {
         const activityStatusSource = progressiveGroupSource.slice(
             progressiveGroupSource.indexOf('const activityStatusLabel = completionDisposition === undefined'),
-            progressiveGroupSource.indexOf('const activityDuration'),
+            progressiveGroupSource.indexOf('const taskAvatarSeeds'),
         );
         const ariaExpandedIndex = progressiveGroupSource.indexOf('aria-expanded={isExpanded}');
         const activityHeaderSource = progressiveGroupSource.slice(
@@ -173,7 +178,7 @@ describe('progressive activity presentation', () => {
         expect(activityStatusSource).toContain("? t(isCompaction ? 'chat.activity.compactionCompleted' : 'chat.activity.completedStatus')");
         expect(activityStatusSource).not.toContain('isExpanded');
         expect(activityStatusSource).not.toContain("t('chat.activity.completed', { duration: completedDuration })");
-        expect(progressiveGroupSource).toContain('const activityDuration = isActive ? activeDuration : completedDuration;');
+        expect(progressiveGroupSource).toContain('const activityDuration = !isActive');
         expect(activityHeaderSource).toContain('{activityStatusLabel}');
         expect(activityHeaderSource).toContain('className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>');
         expect(activityHeaderSource.match(/typography-meta shrink-0 tabular-nums text-muted-foreground/g)).toHaveLength(1);
@@ -187,7 +192,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}");
         expect(progressiveGroupSource).toContain("name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}");
         expect(progressiveGroupSource).not.toContain("displayedTaskAvatarSeeds.length === 0 && 'ml-auto'");
-        expect(progressiveGroupSource).toContain("return `${minutes}m ${seconds}s`;");
+        expect(formatActivityDurationSource).toContain("return `${minutes}m ${seconds}s`;");
     });
 
     test('shimmers only the active title with the info status token', () => {

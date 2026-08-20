@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.10] - 2026-08-20
+
+- **状态行动画升级（M3 点阵）：** 会话运行状态的动态文案改为 aicss.dev Orbs M3「Unfolding」八点旋转点阵动画（`MorphOrb`），按 28px stage 缩放到桌面 14 / 移动 12，几何填满约 86% 组件盒；动态文案为单一 shimmer 动画，不再叠加独立闪烁省略号。
+- **状态行动态计时（多端一致）：** 状态行显示本轮已进行时长（如 `1m20s`），计时起点取服务端下发的最新 user message `time.created`，web / 桌面 / VS Code / 移动端消费同一事件流，显示一致；时长复用 goal 格式化（`1m20s` 无空格样式）。运行中可折叠活动头不再显示实时计时，避免与状态行双计时不一致；完成后的活动头仍显示权威总时长。
+- **状态行与工具行文字对齐：** 状态行与 abort 状态改用与 tool-row / ProgressiveGroup 相同的固定图标槽（桌面 14px / 移动 16px）与响应式间距，文字起始轴与消息内活动行对齐。
+
 ## [1.17.1-beta.9] - 2026-08-20
 
 - **多会话流式卡顿修复（SSE 批量合并）：** 同一刷新帧内同一会话的多个 transcript SSE 事件（`message.part.updated` / `message.updated` 等）现在只做一次全量 flatten/rebuild/freeze 与一次订阅通知，此前每个事件各付一次整棵 transcript 重建成本，多会话并发流式时（约 11 事件/秒 × 6 会话）主线程被打满导致界面死卡；批内事件按顺序应用、保留中间快照与去重语义，不违反 part.updated 保序契约；同帧内 payload 相同的冗余事件折叠后不再触发重建。

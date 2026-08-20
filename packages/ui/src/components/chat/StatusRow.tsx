@@ -1,5 +1,7 @@
 import React from "react";
+import { useEvent } from '@reactuses/core';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import type { State as DirectorySyncState } from '@/sync/types';
 import { cn } from "@/lib/utils";
 import { useDirectorySync } from "@/sync/sync-context";
 import type { Todo } from "@opencode-ai/sdk/v2/client";
@@ -40,6 +42,7 @@ interface StatusRowProps {
   wasAborted?: boolean;
   abortActive?: boolean;
   retryInfo?: { attempt?: number; next?: number } | null;
+  turnStartedAt?: number;
   // Abort status display
   showAbortStatus?: boolean;
   /** First Esc armed: show "press Esc again to abort" until window expires. */
@@ -58,6 +61,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   wasAborted,
   abortActive,
   retryInfo,
+  turnStartedAt,
   showAbortStatus,
   showAbortPrompt = false,
   showAssistantStatus = true,
@@ -70,21 +74,21 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const sessionSurface = useSessionSurface();
   const primarySessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentSessionId = sessionSurface.sessionId ?? primarySessionId;
+  const liveTodosSelector = React.useMemo(() => (
+    state: DirectorySyncState
+  ) => {
+    if (!showTodos || !currentSessionId) return EMPTY_TODOS;
+    return state.todo[currentSessionId] ?? EMPTY_TODOS;
+  }, [currentSessionId, showTodos]);
   const liveTodos = useDirectorySync(
-    React.useCallback(
-      (state) => {
-        if (!showTodos || !currentSessionId) return EMPTY_TODOS;
-        return state.todo[currentSessionId] ?? EMPTY_TODOS;
-      },
-      [currentSessionId, showTodos],
-    ),
+    liveTodosSelector,
     sessionSurface.directory ?? undefined,
   );
+  const persistedTodosSelector = React.useMemo(() => (
+    state: ReturnType<typeof useTodosPersistStore.getState>
+  ) => (showTodos && currentSessionId ? state.sessions[currentSessionId]?.todos : undefined), [currentSessionId, showTodos]);
   const persistedSessionTodos = useTodosPersistStore(
-    React.useCallback(
-      (state) => (showTodos && currentSessionId ? state.sessions[currentSessionId]?.todos : undefined),
-      [currentSessionId, showTodos],
-    ),
+    persistedTodosSelector,
   );
   const todos: TodoItem[] = React.useMemo(() => {
     if (!currentSessionId) return EMPTY_TODOS;
@@ -166,7 +170,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isExpanded]);
 
-  const toggleExpanded = () => setIsExpanded((prev) => !prev);
+  const toggleExpanded = useEvent(() => setIsExpanded((prev) => !prev));
   const todoSummaryLabel = t('chat.statusRow.summary.activeLeft', {
     active: statusSummary.active,
     left: statusSummary.left,
@@ -218,22 +222,26 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         <div className={cn("flex-1 flex items-center min-w-0 gap-2", !hasLeftAccessory && "overflow-x-hidden")}>
           {hasAbortPrompt ? (
             <div
-              className="flex min-w-0 items-center text-muted-foreground pl-0.5"
+              className="flex min-w-0 items-center text-muted-foreground"
               role="status"
               aria-live="polite"
               aria-label={t('chat.statusRow.abortPrompt')}
             >
-              <span className="flex min-w-0 items-center gap-1.5 typography-ui-label">
-                <Icon name="error-warning" className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className={cn("flex min-w-0 items-center typography-ui-label", isMobile ? "gap-1" : "gap-1.5")}>
+                <span className={cn("inline-flex flex-none items-center justify-center", isMobile ? "h-5 w-4" : "h-6 w-3.5")}>
+                  <Icon name="error-warning" className="size-3.5" aria-hidden="true" />
+                </span>
                 <span className="animate-text-shimmer truncate whitespace-nowrap">
                   {t('chat.statusRow.abortPrompt')}
                 </span>
               </span>
             </div>
           ) : showAssistantStatus && showAbortStatus ? (
-            <div className="flex h-full items-center text-[var(--status-error)] pl-0.5">
-              <span className="flex items-center gap-1.5 typography-ui-label">
-                <Icon name="close-circle" aria-hidden="true"/>
+            <div className="flex h-full items-center text-[var(--status-error)]">
+              <span className={cn("flex items-center typography-ui-label", isMobile ? "gap-1" : "gap-1.5")}>
+                <span className={cn("inline-flex flex-none items-center justify-center", isMobile ? "h-5 w-4" : "h-6 w-3.5")}>
+                  <Icon name="close-circle" className="size-3.5" aria-hidden="true" />
+                </span>
                 {t('chat.statusRow.aborted')}
               </span>
             </div>
@@ -246,6 +254,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
               isGenericStatus={isGenericStatus}
               isWaitingForPermission={isWaitingForPermission}
               retryInfo={retryInfo}
+              turnStartedAt={turnStartedAt}
               agentName={agentName}
             />
           ) : leftAccessory ? (

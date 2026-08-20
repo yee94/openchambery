@@ -34,7 +34,7 @@ import { useSessionSurface } from '../../SessionSurfaceContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
 import { AgentAvatar } from '../../AgentAvatar';
-import { useDurationTickerNow } from './useDurationTicker';
+import { formatActivityDuration } from './formatActivityDuration';
 import { Button } from '@/components/ui/button';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import {
@@ -140,15 +140,7 @@ const ExternalLinkFavicon: React.FC<{ href: string }> = ({ href }) => {
  */
 const sortPartsByTime = (parts: TurnActivityPart[]): TurnActivityPart[] => parts;
 
-const formatActivityDuration = (durationMs: number): string => {
-    const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
-    if (totalSeconds < 60) {
-        return `${totalSeconds}s`;
-    }
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}m ${seconds}s`;
-};
+
 
 /**
  * Extract a short filename from a tool part's input (for aggregation display).
@@ -980,7 +972,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     completionDisposition,
     activityPresentationKind = 'default',
     durationMs,
-    startedAt,
     onToggle,
     isMobile,
     expandedTools,
@@ -1007,14 +998,10 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         scrollContainer: HTMLElement | null;
     } | null>(null);
     const isActive = completionDisposition === 'active';
-    const tickerNow = useDurationTickerNow(isActive, 250);
-    const activeDuration = isActive
-        && typeof startedAt === 'number'
-        && Number.isFinite(startedAt)
-        && startedAt > 0
-        ? formatActivityDuration(Math.max(0, tickerNow - startedAt))
-        : null;
-    const completedDuration = !isActive
+    // Live elapsed lives only on WorkingPlaceholder (status row). The foldable
+    // activity header shows duration only after the turn settles — avoids two
+    // counters racing with different tick/round rules while work is in flight.
+    const activityDuration = !isActive
         && (completionDisposition === 'normal' || completionDisposition === 'abnormal')
         && typeof durationMs === 'number'
         && Number.isFinite(durationMs)
@@ -1031,7 +1018,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             : isCompleted
                 ? t(isCompaction ? 'chat.activity.compactionCompleted' : 'chat.activity.completedStatus')
                 : t('chat.activity.title');
-    const activityDuration = isActive ? activeDuration : completedDuration;
     const taskAvatarSeeds = React.useMemo(() => getTaskAvatarSeeds(parts), [parts]);
     const displayedTaskAvatarSeeds = isActive ? taskAvatarSeeds.active : taskAvatarSeeds.all;
     // Cap avatars so the collapsed header stays one line (text is already short).
