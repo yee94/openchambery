@@ -1241,6 +1241,11 @@ async function main(options = {}) {
   const getDesktopRuntimeConfig = typeof options.getDesktopRuntimeConfig === 'function'
     ? options.getDesktopRuntimeConfig
     : null;
+  // Electron injects live SSH local-forward ports; non-desktop defaults to empty
+  // so relay target-port routing never falls back to an unvalidated port.
+  const getSshRoutingTable = typeof options.getSshRoutingTable === 'function'
+    ? options.getSshRoutingTable
+    : () => [];
   const sessionIndexDbPath = options.sessionIndexDbPath !== undefined
     ? options.sessionIndexDbPath
     : process.env.OPENCHAMBER_SESSION_INDEX_DB_PATH;
@@ -1465,6 +1470,8 @@ async function main(options = {}) {
     sessionIndexService,
     sessionIndexSyncRuntime,
     transcriptCacheService,
+    getSshRoutingTable,
+    getPairingSession: (id) => clientPairingRuntime.getPairingSession(id),
   });
   uiAuthController = bootstrapResult.uiAuthController;
   realtimeProxyRuntime = attachRealtimeProxy({
@@ -1488,6 +1495,7 @@ async function main(options = {}) {
     readSettingsStrict: readSettingsFromDiskStrict,
     remoteClientAuthRuntime,
     getLocalPort: () => tunnelRuntimeContext.getActivePort(),
+    getSshRoutingTable,
     // One relay host per machine: every instance sharing this data dir shares
     // the relay identity (serverId), so concurrent hosts evict each other at
     // the relay worker and devices land on a random local instance.

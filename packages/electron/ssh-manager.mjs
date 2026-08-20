@@ -138,7 +138,38 @@ const hasDisallowedOOption = (value) => {
   return ['controlmaster', 'controlpath', 'controlpersist', 'batchmode', 'proxycommand'].some((prefix) => lower.startsWith(prefix));
 };
 
-const parseSshCommand = (raw) => {
+/**
+ * scp-style user@host:port → { destination, port }. Strict: exactly one colon,
+ * right side pure digits, no brackets (IPv6 / [::1]:22 left alone for -p).
+ * @param {string} destination
+ * @returns {{ destination: string, port: string } | null}
+ */
+export const splitScpStyleHostPort = (destination) => {
+  if (typeof destination !== 'string') return null;
+  const value = destination.trim();
+  if (!value || value.includes('[') || value.includes(']')) return null;
+  const parts = value.split(':');
+  if (parts.length !== 2) return null;
+  const hostPart = parts[0];
+  const portPart = parts[1];
+  if (!hostPart || !/^\d+$/.test(portPart)) return null;
+  return { destination: hostPart, port: portPart };
+};
+
+/** True when args already carry an explicit -p / -P port flag (token or glued). */
+export const argsHaveExplicitPortFlag = (args) => {
+  if (!Array.isArray(args)) return false;
+  for (const token of args) {
+    if (typeof token !== 'string') continue;
+    if (token === '-p' || token === '-P') return true;
+    if ((token.startsWith('-p') || token.startsWith('-P')) && token.length > 2 && /^\d+$/.test(token.slice(2))) {
+      return true;
+    }
+  }
+  return false;
+};
+
+export const parseSshCommand = (raw) => {
   const tokens = splitShellWords(raw);
   if (tokens.length === 0) {
     throw new Error('SSH command is empty');
@@ -159,16 +190,17 @@ const parseSshCommand = (raw) => {
   let destination = null;
   for (let index = 0; index < tokens.length;) {
     const token = tokens[index];
-    if (destination) {
-      throw new Error(`SSH command has unsupported trailing argument: ${token}`);
-    }
 
     if (!token.startsWith('-')) {
+      if (destination) {
+        throw new Error(`SSH command has unsupported trailing argument: ${token}`);
+      }
       destination = token.trim();
       index += 1;
       continue;
     }
 
+    // Flags may appear before or after the destination (e.g. `ssh host -p 22`).
     if (isDisallowedPrimaryFlag(token)) {
       throw new Error(`SSH option ${token} is not allowed`);
     }
@@ -216,7 +248,62 @@ const parseSshCommand = (raw) => {
     throw new Error('SSH command must include destination');
   }
 
+  // OpenSSH does not accept scp-style user@host:port as a destination; rewrite
+  // to destination + -p so DNS does not treat "host:port" as a hostname.
+  const scpStyle = splitScpStyleHostPort(destination);
+  if (scpStyle) {
+    if (argsHaveExplicitPortFlag(args)) {
+      throw new Error(
+        'SSH command cannot combine host:port destination with an explicit -p flag; use one form only (e.g. user@host:36000 or -p 36000 user@host)',
+      );
+    }
+    destination = scpStyle.destination;
+    args.push('-p', scpStyle.port);
+  }
+
   return { destination, args };
+};
+
+const MASTER_STDERR_TAIL_MAX_CHARS = 500;
+const MASTER_STDERR_TAIL_MAX_LINES = 5;
+
+/**
+ * Collect a short, UI-safe tail of a child process stderr stream.
+ * @param {import('node:child_process').ChildProcess} child
+ * @param {{ maxChars?: number, maxLines?: number }} [options]
+ */
+export const attachProcessStderrTail = (child, options = {}) => {
+  const maxChars = Number.isFinite(options.maxChars) ? options.maxChars : MASTER_STDERR_TAIL_MAX_CHARS;
+  const maxLines = Number.isFinite(options.maxLines) ? options.maxLines : MASTER_STDERR_TAIL_MAX_LINES;
+  let buffer = '';
+  const onData = (chunk) => {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk ?? '');
+    // Drop NULs; keep a bounded rolling buffer (2× so the final tail is complete).
+    buffer = `${buffer}${text}`.replace(/\0/g, '');
+    const keep = Math.max(maxChars * 2, 1024);
+    if (buffer.length > keep) buffer = buffer.slice(-keep);
+  };
+  if (child?.stderr && typeof child.stderr.on === 'function') {
+    child.stderr.on('data', onData);
+  }
+  return {
+    getTail: () => {
+      const text = buffer.replace(/\s+/g, ' ').trim();
+      if (!text) return '';
+      const lines = buffer.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const joined = (lines.length > 0 ? lines.slice(-maxLines) : [text]).join(' ').replace(/\s+/g, ' ').trim();
+      if (joined.length <= maxChars) return joined;
+      return joined.slice(-maxChars);
+    },
+  };
+};
+
+/** @param {string} [stderrTail] */
+export const formatMasterExitError = (stderrTail) => {
+  const tail = typeof stderrTail === 'string' ? stderrTail.trim() : '';
+  return tail
+    ? `SSH master process exited before ready: ${tail}`
+    : 'SSH master process exited before ready';
 };
 
 const runOutput = async (command, args, options = {}) => {
@@ -653,6 +740,17 @@ export class ElectronSshManager {
     return normalized;
   }
 
+  sanitizeLanForward(lanForward) {
+    if (!lanForward || typeof lanForward !== 'object') return undefined;
+    const localPort = Number.isFinite(lanForward.localPort) && Number(lanForward.localPort) > 0
+      ? Number(lanForward.localPort)
+      : undefined;
+    return {
+      enabled: lanForward.enabled === true,
+      ...(localPort ? { localPort } : {}),
+    };
+  }
+
   sanitizeInstance(instance) {
     const id = typeof instance?.id === 'string' ? instance.id.trim() : '';
     const sshCommand = typeof instance?.sshCommand === 'string' ? instance.sshCommand.trim() : '';
@@ -670,6 +768,7 @@ export class ElectronSshManager {
           .map((forward) => this.sanitizeForward(forward))
           .filter((forward) => forward && !seen.has(forward.id) && seen.add(forward.id))
       : [];
+    const lanForward = this.sanitizeLanForward(instance?.lanForward);
 
     return {
       id,
@@ -697,6 +796,9 @@ export class ElectronSshManager {
         ...(this.sanitizeStoredSecret(instance?.auth?.openchamberPassword) ? { openchamberPassword: this.sanitizeStoredSecret(instance.auth.openchamberPassword) } : {}),
       },
       portForwards,
+      // Optional LAN bind (0.0.0.0) for direct LAN access to the remote instance.
+      // Absent / enabled:false = off. localPort is sticky across reconnects.
+      ...(lanForward ? { lanForward } : {}),
     };
   }
 
@@ -791,6 +893,28 @@ export class ElectronSshManager {
     await writeJsonRoot(this.settingsFilePath, root);
   }
 
+  /**
+   * Persist sticky LAN-forward port (and enabled flag) on desktopSshInstances.
+   * Atomic via writeJsonRoot (tmp + rename), same as persistLocalPort.
+   */
+  async persistLanForward(instanceId, { enabled, localPort } = {}) {
+    const root = readJsonRoot(this.settingsFilePath);
+    const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
+    for (const instance of instances) {
+      if (instance?.id !== instanceId) continue;
+      const previous = instance.lanForward && typeof instance.lanForward === 'object' ? instance.lanForward : {};
+      const nextPort = Number.isFinite(localPort) && Number(localPort) > 0
+        ? Number(localPort)
+        : (Number.isFinite(previous.localPort) && Number(previous.localPort) > 0 ? Number(previous.localPort) : undefined);
+      instance.lanForward = {
+        enabled: enabled === true || (enabled === undefined && previous.enabled === true),
+        ...(nextPort ? { localPort: nextPort } : {}),
+      };
+    }
+    root.desktopSshInstances = instances;
+    await writeJsonRoot(this.settingsFilePath, root);
+  }
+
   async resolveSshConfig(parsed) {
     const { code, stdout, stderr } = await runOutput('ssh', buildSshArgs(parsed, ['-G']));
     if (code !== 0) {
@@ -838,12 +962,20 @@ export class ElectronSshManager {
         ...(sshPassword ? { OPENCHAMBER_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
       },
     });
+    // Capture stderr while waiting for ControlMaster so early exits surface
+    // ssh's own diagnostic (e.g. DNS failure) instead of a bare exit message.
+    const stderrTail = attachProcessStderrTail(child);
+    child.__openchamberStderrTail = stderrTail;
     return child;
   }
 
   async waitForMasterReady(parsed, controlPath, timeoutSec, master) {
     const deadline = Date.now() + (timeoutSec * 1000);
     let pollMs = 250;
+    const readStderrTail = () => {
+      const getter = master?.__openchamberStderrTail?.getTail;
+      return typeof getter === 'function' ? getter() : '';
+    };
     while (Date.now() < deadline) {
       const { code } = await runOutput('ssh', buildSshArgs(parsed, [
         '-o', 'ControlMaster=no',
@@ -854,7 +986,7 @@ export class ElectronSshManager {
 
       const exited = master.exitCode;
       if (typeof exited === 'number') {
-        throw new Error('SSH master process exited before ready');
+        throw new Error(formatMasterExitError(readStderrTail()));
       }
       await new Promise((resolve) => setTimeout(resolve, pollMs));
       pollMs = Math.min(pollMs * 2, 2000);
@@ -888,17 +1020,20 @@ export class ElectronSshManager {
   async installOpenChamberManaged(parsed, controlPath, version, preferred) {
     const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
     const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
+    // npm refuses to overwrite an existing global bin (EEXIST) when a previous
+    // install left the bin file behind; --force makes the reinstall idempotent.
+    const npmInstall = `npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version} --force`;
     const commands = [];
 
     if (preferred === 'bun') {
       if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
-      if (hasNpm) commands.push(`npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasNpm) commands.push(npmInstall);
     } else if (preferred === 'npm') {
-      if (hasNpm) commands.push(`npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasNpm) commands.push(npmInstall);
       if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
     } else {
       if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
-      if (hasNpm) commands.push(`npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasNpm) commands.push(npmInstall);
     }
 
     if (commands.length === 0) {
@@ -1008,6 +1143,79 @@ export class ElectronSshManager {
     const { code, stdout, stderr } = await runOutput('ssh', buildSshArgs(parsed, args));
     if (code !== 0) {
       throw new Error((stderr || stdout || `Failed to configure extra SSH forward ${forward.id}`).trim());
+    }
+  }
+
+  /**
+   * Ensure a LAN-facing local forward (0.0.0.0:<port> → 127.0.0.1:<remotePort>)
+   * on the live ControlMaster. Sticky port is persisted when first allocated.
+   * @param {string} id
+   * @returns {Promise<{ localPort: number }>}
+   */
+  async ensureLanForward(id) {
+    const trimmed = String(id || '').trim();
+    if (!trimmed || trimmed === LOCAL_HOST_ID) {
+      throw new Error('SSH instance id is required');
+    }
+    const session = this.sessions.get(trimmed);
+    const phase = this.statuses.get(trimmed)?.phase;
+    if (!session || phase !== 'ready') {
+      throw new Error('SSH instance is not ready');
+    }
+    const remotePort = Number(session.remotePort);
+    if (!Number.isFinite(remotePort) || remotePort <= 0) {
+      throw new Error('SSH instance remote port is unavailable');
+    }
+
+    let lanPort = Number(session.instance?.lanForward?.localPort);
+    if (!Number.isFinite(lanPort) || lanPort <= 0) {
+      const mainPort = Number(session.localPort);
+      lanPort = await pickUnusedLocalPort();
+      // Avoid colliding with the loopback main forward when the OS reuses a port.
+      if (Number.isFinite(mainPort) && lanPort === mainPort) {
+        lanPort = await pickUnusedLocalPort();
+      }
+      await this.persistLanForward(trimmed, { enabled: true, localPort: lanPort });
+      session.instance = {
+        ...session.instance,
+        lanForward: { enabled: true, localPort: lanPort },
+      };
+      this.appendLogWithLevel(trimmed, 'INFO', `Allocated LAN forward port ${lanPort}`);
+    }
+
+    await this.spawnExtraForward(session.parsed, session.controlPath, {
+      id: 'lan-forward',
+      type: 'local',
+      localHost: '0.0.0.0',
+      localPort: lanPort,
+      remoteHost: '127.0.0.1',
+      remotePort,
+    });
+    this.appendLogWithLevel(trimmed, 'INFO', `LAN forward ready on 0.0.0.0:${lanPort} → 127.0.0.1:${remotePort}`);
+    return { localPort: lanPort };
+  }
+
+  /** Best-effort rebuild on reconnect; never throws into the main connect path. */
+  async rebuildLanForwardIfConfigured(id, session) {
+    const lan = session?.instance?.lanForward;
+    const lanPort = Number(lan?.localPort);
+    if (lan?.enabled !== true || !Number.isFinite(lanPort) || lanPort <= 0) return;
+    try {
+      await this.spawnExtraForward(session.parsed, session.controlPath, {
+        id: 'lan-forward',
+        type: 'local',
+        localHost: '0.0.0.0',
+        localPort: lanPort,
+        remoteHost: '127.0.0.1',
+        remotePort: session.remotePort,
+      });
+      this.appendLogWithLevel(id, 'INFO', `LAN forward restored on 0.0.0.0:${lanPort}`);
+    } catch (error) {
+      this.appendLogWithLevel(
+        id,
+        'WARN',
+        `LAN forward restore failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -1162,7 +1370,7 @@ export class ElectronSshManager {
       await this.persistLocalPort(id, localPort);
     }
 
-    this.sessions.set(id, {
+    const session = {
       instance,
       parsed,
       sessionDir,
@@ -1174,7 +1382,8 @@ export class ElectronSshManager {
       masterDetached: false,
       mainForward,
       mainForwardDetached,
-    });
+    };
+    this.sessions.set(id, session);
 
     this.clearRetryAttempt(id);
     this.setStatus(
@@ -1188,6 +1397,9 @@ export class ElectronSshManager {
       0,
       false,
     );
+    // Sticky LAN forward: rebuild only when explicitly enabled with a saved port.
+    // Failure must not block the main ready path (same class as extra portForwards).
+    await this.rebuildLanForwardIfConfigured(id, session);
     this.spawnMonitor(id);
   }
 
@@ -1309,6 +1521,22 @@ export class ElectronSshManager {
     return this.readInstances().instances
       .map((instance) => this.statusSnapshotForInstance(instance.id))
       .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  /**
+   * Live SSH local-forward ports for relay target routing.
+   * Only ready sessions with a finite localPort are included (memory-authoritative).
+   * @returns {{ id: string, localPort: number }[]}
+   */
+  getRoutingTable() {
+    const table = [];
+    for (const [id, session] of this.sessions) {
+      if (this.statuses.get(id)?.phase !== 'ready') continue;
+      const localPort = Number(session?.localPort);
+      if (!Number.isFinite(localPort)) continue;
+      table.push({ id, localPort });
+    }
+    return table;
   }
 
   async shutdownAll() {

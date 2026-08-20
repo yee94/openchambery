@@ -1194,6 +1194,8 @@ export interface ClientAuthAPI {
     // to this endpoint before returning the candidate. Deployments pinned by
     // OPENCHAMBER_RELAY_URL keep using the pinned value.
     relayUrl?: string;
+    /** Bind mobile ssh-host-token mint to this desktop SSH instance after redeem. */
+    sshHostId?: string;
   }): Promise<PairingSessionCreateResult>;
   purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;

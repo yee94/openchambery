@@ -448,7 +448,9 @@ export function DesktopHostSwitcherDialog({
       const results = await Promise.all(
         hosts.map(async (h) => {
           const probeRelayLeg = async (): Promise<HostStatus> => {
-            const res = await probeRelayDesktopHost(h.relay!).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+            const res = await probeRelayDesktopHost(h.relay!, {
+              sshTarget: h.sshTarget,
+            }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
             return { status: res.status, latencyMs: res.latencyMs, ...(res.status === 'ok' ? { via: 'relay' as const } : {}) };
           };
           // Relay-only host: no HTTP address — probe through the E2EE tunnel.
@@ -528,6 +530,19 @@ export function DesktopHostSwitcherDialog({
     const origin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(host.url) || '');
     const apiOrigin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(getDesktopHostApiUrl(host)) || '');
     const relayOnly = Boolean(host.relay) && !host.apiUrl && host.id !== LOCAL_HOST_ID;
+    // SSH host listed by the paired desktop: keep the active relay, retarget via
+    // host token + x-openchamber-target-port (mobile/browser over relay).
+    if (host.viaSshRelay && currentTransportIsRelay) {
+      if (hostSwitchPending) return;
+      if (getRuntimeKey() === runtimeKeyForHost(host)) {
+        onHostSwitched?.();
+        return;
+      }
+      const result = await switchDesktopHostInstance({ host });
+      setStatusById((prev) => ({ ...prev, [host.id]: result.status }));
+      if (result.ok) onHostSwitched?.();
+      return;
+    }
     if (!origin && !relayOnly) return;
 
     if (isElectronShell()) {

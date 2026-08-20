@@ -104,6 +104,29 @@ describe('connection payload helpers', () => {
     expect(parsed?.candidates[0]).toEqual({ type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk });
   });
 
+  test('round-trips optional sshHostId and ignores it when absent', () => {
+    const withSsh = buildPairingConnectionPayload({
+      pairingId: 'pair_ssh',
+      secret: 'one-time-secret',
+      label: 'Desktop · SSH Box',
+      sshHostId: 'ssh-1',
+      candidates: [
+        { type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv_abc', hostEncPubJwk },
+      ],
+    });
+    const parsed = parsePairingConnectionPayload(encodePairingConnectionPayload(withSsh));
+    expect(parsed?.sshHostId).toBe('ssh-1');
+    expect(parsed?.label).toBe('Desktop · SSH Box');
+
+    const withoutSsh = buildPairingConnectionPayload({
+      pairingId: 'pair_plain',
+      secret: 'one-time-secret',
+      candidates: [{ type: 'lan', url: 'http://192.168.1.20:4096' }],
+    });
+    const plain = parsePairingConnectionPayload(encodePairingConnectionPayload(withoutSsh));
+    expect(plain?.sshHostId).toBeUndefined();
+  });
+
   test('rejects invalid v2 pairing payloads', () => {
     expect(parsePairingConnectionPayload('openchamber://connect?v=1&server=https://runtime.example&token=t')).toBeNull();
     expect(parsePairingConnectionPayload('openchamber://connect?v=2&p=not-json')).toBeNull();

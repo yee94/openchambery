@@ -104,6 +104,48 @@ Relay mode plugs into the existing client transport layer rather than a parallel
 
 Catalog loaders (`loadProviders` / `loadAgents`) and assistant Query keys gate writes/caches on the **transport fingerprint**, not `runtimeKey`. On endpoint reset and same-device transport switch, `runtimeEndpointReset.ts` must set `useConfigStore.catalogTransportIdentity` to `getRuntimeTransportIdentity()`. Writing `detail.runtimeKey` there silently discards provider/agent catalog refreshes under Relay, which then hides capability-gated surfaces such as Assistants.
 
+## SSH host routing
+
+Mobile (and other relay clients) can reach a desktop's **SSH-forwarded remote OpenChamber instances** through the same private-relay tunnel that already reaches the desktop's local loopback origin. Routing is host-side only: the client selects a target local-forward port; the tunnel dispatcher dials that port on `127.0.0.1` when — and only when — it is present in the live SSH routing table.
+
+### Header contract
+
+- Header name: `x-openchamber-target-port`
+- Value: decimal port number string (e.g. `"41234"`)
+- HTTP: carried on the tunneled request headers
+- WebSocket: optional `headers` field on the `WsOpen` payload (same header name/value)
+- The dispatcher **strips** this header before forwarding to loopback (it is routing metadata, not an upstream header)
+
+### Resolution rules (`resolveTargetPort` in `tunnel-host.js`)
+
+| Condition | Result |
+|---|---|
+| Header absent | Dial `getLocalPort()` (desktop local origin) — unchanged default behavior |
+| Header present and `localPort` is in `getSshRoutingTable()` | Dial that port |
+| Header present but port missing/invalid/not in table | **Do not** fall back to the default port |
+
+HTTP miss → synthetic **503** with body `{ error: 'ssh-host-unreachable', …, source: 'relay-tunnel-host' }`.  
+WS miss → stream abort with reason `ssh-host-unreachable`.
+
+### Routing table (authoritative in memory)
+
+- Electron injects `getSshRoutingTable: () => sshManager.getRoutingTable()` into `startWebUiServer`.
+- Table entries are `{ id, localPort }` for SSH sessions whose status phase is **`ready`** and whose `localPort` is finite.
+- Degraded / connecting / disconnected sessions are absent. Settings.json is **not** the allowlist for dialing — only the live table is.
+- Non-desktop runtimes default to `() => []`.
+
+### Companion HTTP APIs (authenticated `/api` gate)
+
+- `GET /api/openchamber/desktop-hosts` → `{ hosts: [{ id, label, localPort, reachable }] }` for configured SSH instances. `reachable` is true iff the host id is in the routing table. **Never returns `clientToken`.**
+- `POST /api/openchamber/ssh-host-token` body `{ hostId }` → `{ token }` from `settings.json` `desktopHosts[].clientToken` for SSH instance hosts only. Missing / non-SSH / no token → **404**. Response includes `Cache-Control: no-store`.
+
+### Security invariants (do not regress)
+
+- Path allowlists (`isAllowedHttpPath` / `ALLOWED_WS_PATHS`) are **not** relaxed for SSH targets.
+- The dispatcher **never injects credentials**; the client still authenticates with its own bearer / `oc_url_token` against the target instance.
+- Port legitimacy is solely the in-memory routing table, not client-supplied trust and not settings alone.
+- List endpoints must not leak `clientToken`; token mint is a separate authenticated POST.
+
 ## Design invariants (do not regress)
 
 - The relay never sees plaintext application traffic; it sees only routing metadata (routing id, connection identifiers, timestamps, coarse counts).
@@ -112,5 +154,6 @@ Catalog loaders (`loadProviders` / `loadAgents`) and assistant Query keys gate w
 - The host dispatcher never injects credentials; the server authenticates each tunneled request.
 - The tunnel is transparent to the app: adding relay support to a feature should not require the feature to know the relay exists — it goes through the shared runtime transport helpers.
 - The two implementations stay byte-compatible and the wire format is versioned/negotiated so mixed client/host app versions degrade gracefully rather than break.
+- SSH target-port routing never falls back to the default local port on a routing-table miss (see "SSH host routing").
 
 For the operational rules that keep future changes (new WebSocket endpoints, transport refactors, terminal/voice porting) from breaking this, load the `relay-transport` skill.

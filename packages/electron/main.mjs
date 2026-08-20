@@ -1546,6 +1546,8 @@ const spawnLocalServer = async () => {
       apiBaseUrl: state.apiBaseUrl || state.sidecarUrl || '',
       requestHeaders: sanitizeRuntimeRequestHeaders(state.requestHeaders || {}),
     }),
+    // Live SSH local-forward ports for relay x-openchamber-target-port routing.
+    getSshRoutingTable: () => sshManager.getRoutingTable(),
     sessionIndexDbPath: path.join(app.getPath('userData'), 'session-index.sqlite'),
     messageQueueDbPath: path.join(app.getPath('userData'), 'message-queue.sqlite'),
     transcriptCacheDbPath: path.join(app.getPath('userData'), 'transcript-cache.sqlite'),
@@ -4775,6 +4777,13 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_ssh_logs_clear':
       sshManager.clearLogsForInstance(String(args.id || '').trim());
       return null;
+
+    // Local renderer only: open/rebuild 0.0.0.0 LAN forward on a ready SSH session.
+    // Not in the remote IPC allowlist (privileged local ControlMaster mutation).
+    case 'desktop_ssh_ensure_lan_forward': {
+      const id = String(args.id || '').trim();
+      return await sshManager.ensureLanForward(id);
+    }
 
     // Local renderer only: remote host pages must not control local shell menu language.
     case 'desktop_set_menu_locale': {

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.12] - 2026-08-21
+
+### 远程实例（SSH + Private Relay 打通）
+
+- **手机经 Relay 访问 SSH 远程实例：** Relay 隧道分发器支持按请求头 `x-openchamber-target-port` 在已就绪的 SSH 会话端口间路由（HTTP 与 WebSocket），未命中路由表返回 503 不回退桌面数据；读取/缓存按目标端口隔离。
+- **PC 端为 SSH 实例生成配对二维码：** 「添加设备」弹窗新增目标实例 tab（本机 + 已连接 SSH 实例），SSH 实例行新增「手机连接」按钮直接预选；多台手机可各自配对同一 SSH 实例（多对多）。
+- **手机扫码直达 SSH 实例：** 扫码后存为一条普通连接（带 SSH 徽章，副标题注明「经桌面中继 · 需桌面在线」），连接时自动现查路由端口，SSH 重连换端口无需重新配对；SSH 不可达时降级存为桌面连接并提示。
+- **另一台电脑导入 SSH 连接：** 桌面端「导入连接链接」支持带 SSH 目标的配对链接，存为带 `sshTarget` 的 relay host；启动恢复与切换同样走目标端口路由。
+- **凭据链修复：** SSH 目标连接统一携带 `desktopClientToken`（现查端口用桌面凭据、业务请求用 SSH 实例凭据），修复此前现查端口会被 401 拒绝的问题。
+- **token 下发绑定配对会话：** `POST /api/openchamber/ssh-host-token` 支持 `pairingId` 校验（仅已兑换且目标匹配的配对可换取 token），无绑定的旧调用放行并标记弃用。
+- **LAN 直连转发原语：** SSH 实例支持 `0.0.0.0` 固定端口转发（`lanForward` 配置 + `desktop_ssh_ensure_lan_forward`），SSH 重连自动重建（UI 开关与二维码 LAN 候选后续版本接入）。
+
+### SSH 连接可靠性
+
+- **scp 风格地址支持：** `ssh root@host:36000` 形式自动拆分为 `-p 36000`；与显式 `-p` 冲突时报错，IPv6 裸地址不受影响；`-p` 写在目标之后（`ssh host -p 22`）也被接受。
+- **远程安装幂等：** npm 全局安装追加 `--force`，修复残留 bin 链接导致的 EEXIST 安装失败（CLI `openchamber update` 同步修复）。
+- **SSH 失败可诊断：** ControlMaster 提前退出时错误信息附带 stderr 尾部，不再只有一句 "exited before ready"。
+
 ## [1.17.1] - 2026-08-20
 
 ### 性能与可靠性

@@ -68,6 +68,7 @@ const envRelayUrlOverride = () => {
  *   readSettingsFromDiskMigrated: () => Promise<object>,
  *   writeSettingsToDisk: (settings: object) => Promise<void>,
  *   getLocalPort: () => number,
+ *   getSshRoutingTable?: () => { id: string, localPort: number }[],
  *   logger?: Pick<Console, 'warn'>,
  *   canHostRelay?: () => boolean,
  * }} deps
@@ -80,6 +81,8 @@ export const createRelayService = ({
   // regeneration — see identity.js/signing-key.js.
   readSettingsStrict,
   getLocalPort,
+  // Live SSH local-forward ports (Electron). Empty outside desktop.
+  getSshRoutingTable = () => [],
   // Returns true when any paired device or pending pairing session uses the
   // relay transport. The relay lifecycle is driven purely by this demand.
   hasRelayDemand = async () => false,
@@ -207,6 +210,7 @@ export const createRelayService = ({
       relayUrl,
       identity,
       getLocalPort,
+      getSshRoutingTable,
       logger,
       onStatus: (next) => {
         status = next;

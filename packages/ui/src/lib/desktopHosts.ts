@@ -1,5 +1,6 @@
 import { hasDesktopInvoke, invokeDesktop } from '@/lib/desktop';
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 type DesktopInvoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 
@@ -42,10 +43,20 @@ export const DESKTOP_HOST_SOURCE_CONNECT_LINK = 'connect-link' as const;
 
 export type DesktopHostSource = typeof DESKTOP_HOST_SOURCE_CONNECT_LINK;
 
+/**
+ * Imported SSH remote reached through another desktop's relay tunnel.
+ * `clientToken` on the host is the SSH instance token (runtime APIs).
+ * `desktopClientToken` authorizes desktop-side routes like ssh-host-token.
+ */
+export type DesktopHostSshTarget = {
+  hostId: string;
+  desktopClientToken: string;
+};
+
 export type DesktopHost = {
   id: string;
   label: string;
-  /** Legacy/UI URL. During migration this may equal apiUrl. For relay hosts this is a display-only `relay://<serverId>` pseudo-URL. */
+  /** Legacy/UI URL. During migration this may equal apiUrl. For relay hosts this is a display-only `relay://<serverId>` pseudo-URL. Empty for SSH hosts listed via relay (no direct URL on the phone). */
   url: string;
   /** API endpoint used by packaged Electron UI for this instance. Absent for relay-only hosts. */
   apiUrl?: string;
@@ -55,6 +66,18 @@ export type DesktopHost = {
   requestHeaders?: Record<string, string>;
   /** When set, this host is reached over the private relay tunnel. */
   relay?: DesktopHostRelay;
+  /**
+   * SSH remote instance exposed by the paired desktop over the active relay.
+   * Mobile/browser clients keep the relay transport and route with
+   * `x-openchamber-target-port` = localPort.
+   */
+  viaSshRelay?: { localPort: number };
+  /**
+   * PC-B / imported SSH pairing: route via the paired desktop's relay with
+   * target-port. Runtime APIs use `clientToken` (SSH); desktop mint uses
+   * `sshTarget.desktopClientToken`.
+   */
+  sshTarget?: DesktopHostSshTarget;
   /** Provenance for display filtering. Absent on legacy manually-added hosts. */
   source?: DesktopHostSource;
 };
@@ -74,6 +97,8 @@ export const isVisibleDesktopHost = (
 ): boolean => {
   if (host.source === DESKTOP_HOST_SOURCE_CONNECT_LINK) return true;
   if (host.relay) return true;
+  if (host.viaSshRelay) return true;
+  if (host.sshTarget) return true;
   return sshInstanceIds.has(host.id);
 };
 
@@ -221,6 +246,24 @@ const readNumber = (obj: Record<string, unknown>, key: string): number | null =>
   return typeof val === 'number' && Number.isFinite(val) ? val : null;
 };
 
+const parseViaSshRelay = (value: unknown): DesktopHost['viaSshRelay'] | null => {
+  if (!isRecord(value)) return null;
+  const localPort = readNumber(value, 'localPort') ?? readNumber(value, 'local_port');
+  if (localPort === null || !Number.isInteger(localPort) || localPort < 1 || localPort > 65535) {
+    return null;
+  }
+  return { localPort };
+};
+
+const parseSshTarget = (value: unknown): DesktopHostSshTarget | null => {
+  if (!isRecord(value)) return null;
+  const hostId = readString(value, 'hostId') || readString(value, 'host_id');
+  const desktopClientToken = readString(value, 'desktopClientToken')
+    || readString(value, 'desktop_client_token');
+  if (!hostId?.trim() || !desktopClientToken?.trim()) return null;
+  return { hostId: hostId.trim(), desktopClientToken: desktopClientToken.trim() };
+};
+
 const parseHost = (value: unknown): DesktopHost | null => {
   if (!isRecord(value)) return null;
   const id = readString(value, 'id');
@@ -230,20 +273,49 @@ const parseHost = (value: unknown): DesktopHost | null => {
   const clientToken = readString(value, 'clientToken') || readString(value, 'client_token');
   const requestHeaders = sanitizeRequestHeaders(value.requestHeaders);
   const relay = parseHostRelay(value.relay);
+  const viaSshRelay = parseViaSshRelay(value.viaSshRelay ?? value.via_ssh_relay);
+  const sshTarget = parseSshTarget(value.sshTarget ?? value.ssh_target);
   const source = readString(value, 'source') === DESKTOP_HOST_SOURCE_CONNECT_LINK
     ? DESKTOP_HOST_SOURCE_CONNECT_LINK
     : undefined;
-  if (!id || !label || !url) return null;
+  // SSH-via-relay / imported SSH hosts may omit a direct URL.
+  if (!id || !label || (!url && !viaSshRelay && !(sshTarget && relay))) return null;
   return {
     id,
     label,
-    url,
+    url: url || '',
     ...(apiUrl ? { apiUrl } : {}),
     ...(clientToken ? { clientToken } : {}),
     ...(requestHeaders ? { requestHeaders } : {}),
     ...(relay ? { relay } : {}),
+    ...(viaSshRelay ? { viaSshRelay } : {}),
+    ...(sshTarget ? { sshTarget } : {}),
     ...(source ? { source } : {}),
   };
+};
+
+const parseDesktopHostsApiResponse = (raw: unknown): DesktopHost[] => {
+  if (!isRecord(raw)) return [];
+  const hostsRaw = raw.hosts;
+  if (!Array.isArray(hostsRaw)) return [];
+  const hosts: DesktopHost[] = [];
+  for (const entry of hostsRaw) {
+    if (!isRecord(entry)) continue;
+    const id = readString(entry, 'id');
+    const label = readString(entry, 'label');
+    const localPort = readNumber(entry, 'localPort') ?? readNumber(entry, 'local_port');
+    if (!id || !label || localPort === null || !Number.isInteger(localPort) || localPort < 1 || localPort > 65535) {
+      continue;
+    }
+    hosts.push({
+      id,
+      label,
+      url: '',
+      apiUrl: '',
+      viaSshRelay: { localPort },
+    });
+  }
+  return hosts;
 };
 
 export const getDesktopHostApiUrl = (host: DesktopHost): string => {
@@ -258,7 +330,19 @@ const getInvoke = (): DesktopInvoke | null => {
 export const desktopHostsGet = async (): Promise<DesktopHostsConfig> => {
   const invoke = getInvoke();
   if (!invoke) {
-    return { hosts: [], defaultHostId: 'local', initialHostChoiceCompleted: false };
+    // Phone / browser: list SSH hosts exposed by the paired desktop over the
+    // active runtime (typically a relay tunnel). Failure must not look like
+    // an authoritative empty catalog.
+    const response = await runtimeFetch('/api/openchamber/desktop-hosts');
+    if (!response.ok) {
+      throw new Error(`desktop-hosts failed: ${response.status}`);
+    }
+    const raw: unknown = await response.json().catch(() => null);
+    return {
+      hosts: parseDesktopHostsApiResponse(raw),
+      defaultHostId: null,
+      initialHostChoiceCompleted: false,
+    };
   }
 
   const raw = await invoke('desktop_hosts_get');
@@ -281,6 +365,81 @@ export const desktopHostsGet = async (): Promise<DesktopHostsConfig> => {
   const localOrigin = readString(raw, 'localOrigin') || readString(raw, 'local_origin');
 
   return { hosts, defaultHostId, initialHostChoiceCompleted, localOrigin };
+};
+
+export type SshHostTokenResult = {
+  token: string;
+  localPort: number | null;
+  reachable: boolean;
+};
+
+export type SshHostTokenFetch = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
+
+/**
+ * Mint / refresh an SSH host token (+ live localPort) on the paired desktop.
+ * `pairingId` binds the mint to a redeemed pairing session (mobile QR path).
+ * Omit pairingId for legacy reconnect probes.
+ */
+export const requestSshHostToken = async (
+  hostId: string,
+  options?: {
+    pairingId?: string;
+    /** Override transport (e.g. a live redeem tunnel before runtime switch). */
+    fetch?: SshHostTokenFetch;
+    headers?: Record<string, string>;
+  },
+): Promise<SshHostTokenResult> => {
+  const id = hostId.trim();
+  if (!id) {
+    throw new Error('ssh-host-token requires hostId');
+  }
+  const doFetch = options?.fetch ?? ((path: string, init?: RequestInit) => runtimeFetch(path, init));
+  const response = await doFetch('/api/openchamber/ssh-host-token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(options?.headers || {}),
+    },
+    body: JSON.stringify({
+      hostId: id,
+      ...(options?.pairingId?.trim() ? { pairingId: options.pairingId.trim() } : {}),
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`ssh-host-token failed: ${response.status}`);
+  }
+  const raw: unknown = await response.json().catch(() => null);
+  if (!isRecord(raw)) {
+    throw new Error('ssh-host-token missing token');
+  }
+  const token = typeof raw.token === 'string' ? raw.token.trim() : '';
+  if (!token) {
+    throw new Error('ssh-host-token missing token');
+  }
+  const localPortRaw = raw.localPort ?? raw.local_port;
+  const localPort = typeof localPortRaw === 'number' && Number.isFinite(localPortRaw)
+    ? Math.round(localPortRaw)
+    : null;
+  const reachable = raw.reachable === true
+    && localPort !== null
+    && Number.isInteger(localPort)
+    && localPort >= 1
+    && localPort <= 65535;
+  return {
+    token,
+    localPort: reachable ? localPort : (localPort !== null && Number.isInteger(localPort) ? localPort : null),
+    reachable,
+  };
+};
+
+/** @deprecated Prefer requestSshHostToken — kept for callers that only need the token string. */
+export const fetchSshHostToken = async (hostId: string): Promise<string> => {
+  const result = await requestSshHostToken(hostId);
+  return result.token;
 };
 
 export const desktopHostsSet = async (config: DesktopHostsConfigInput): Promise<void> => {
@@ -321,20 +480,34 @@ export const desktopInstallIdGet = async (): Promise<string> => {
 
 const RELAY_PROBE_TIMEOUT_MS = 8_000;
 
+export type ProbeRelayDesktopHostResult = HostProbeResult & {
+  tunnel?: ReturnType<typeof createRelayTunnelClient>;
+  /** Live SSH localPort when probing an imported sshTarget host. */
+  localPort?: number;
+  /** Fresh SSH client token when the mint returned one. */
+  sshToken?: string;
+};
+
 /**
  * Reachability check for a relay host: open a throwaway E2EE tunnel and hit
  * /health. Relay hosts have no HTTP address for `desktopHostProbe`. Hard
  * timeout: a ghost relay registration (relay lost the host, host doesn't know)
  * leaves the tunnel in `connecting` forever — the probe must report
  * unreachable instead of hanging every status/switch flow with it.
+ *
+ * With `sshTarget`, mint live localPort via ssh-host-token (desktop bearer) and
+ * probe /health with x-openchamber-target-port so status reflects the SSH host.
  */
 export const probeRelayDesktopHost = async (
   relay: DesktopHostRelay,
   // With `keepTunnel`, an 'ok' probe RETURNS its live tunnel (the caller owns
   // it — typically adopting it as the runtime tunnel, skipping a second
   // WebSocket connect + E2EE handshake); every other outcome closes it.
-  options?: { keepTunnel?: boolean },
-): Promise<HostProbeResult & { tunnel?: ReturnType<typeof createRelayTunnelClient> }> => {
+  options?: {
+    keepTunnel?: boolean;
+    sshTarget?: DesktopHostSshTarget | null;
+  },
+): Promise<ProbeRelayDesktopHostResult> => {
   const tunnel = createRelayTunnelClient({
     relayUrl: relay.relayUrl,
     serverId: relay.serverId,
@@ -343,8 +516,25 @@ export const probeRelayDesktopHost = async (
   const startedAt = Date.now();
   let keep = false;
   try {
+    let targetPortHeader: Record<string, string> | undefined;
+    let localPort: number | undefined;
+    let sshToken: string | undefined;
+    const sshTarget = options?.sshTarget;
+    if (sshTarget?.hostId && sshTarget.desktopClientToken) {
+      const minted = await requestSshHostToken(sshTarget.hostId, {
+        fetch: (path, init) => tunnel.fetch(path, init),
+        headers: { Authorization: `Bearer ${sshTarget.desktopClientToken}` },
+      }).catch(() => null);
+      if (!minted?.reachable || typeof minted.localPort !== 'number') {
+        return { status: 'unreachable', latencyMs: 0 };
+      }
+      localPort = minted.localPort;
+      sshToken = minted.token;
+      targetPortHeader = { 'x-openchamber-target-port': String(minted.localPort) };
+    }
+
     const response = await Promise.race([
-      tunnel.fetch('/health'),
+      tunnel.fetch('/health', targetPortHeader ? { headers: targetPortHeader } : undefined),
       new Promise<null>((resolve) => {
         const timer = window.setTimeout(() => resolve(null), RELAY_PROBE_TIMEOUT_MS);
         if (typeof timer !== 'number' && typeof (timer as { unref?: () => void }).unref === 'function') {
@@ -354,7 +544,13 @@ export const probeRelayDesktopHost = async (
     ]);
     if (!response?.ok) return { status: 'unreachable', latencyMs: 0 };
     keep = options?.keepTunnel === true;
-    return { status: 'ok', latencyMs: Math.max(0, Date.now() - startedAt), ...(keep ? { tunnel } : {}) };
+    return {
+      status: 'ok',
+      latencyMs: Math.max(0, Date.now() - startedAt),
+      ...(keep ? { tunnel } : {}),
+      ...(localPort !== undefined ? { localPort } : {}),
+      ...(sshToken ? { sshToken } : {}),
+    };
   } catch {
     return { status: 'unreachable', latencyMs: 0 };
   } finally {

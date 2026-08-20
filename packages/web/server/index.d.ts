@@ -21,6 +21,8 @@ export interface StartWebUiServerOptions {
   transcriptCacheDbPath?: string | null;
   messageQueueDbPath?: string | null;
   messageQueueAttachmentRoot?: string | null;
+  /** Live SSH local-forward ports for relay target-port routing (Electron). */
+  getSshRoutingTable?: () => { id: string; localPort: number }[];
 }
 
 export declare function startWebUiServer(

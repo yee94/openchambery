@@ -669,7 +669,9 @@ export function getUpdateCommand(pm = detectPackageManager()) {
     case 'bun':
       return `${pmCommand} add -g ${PACKAGE_NAME}@latest`;
     default:
-      return `${pmCommand} install -g ${PACKAGE_NAME}@latest`;
+      // --force: npm refuses to overwrite an existing global bin (EEXIST) when
+      // a previous install left the bin file behind.
+      return `${pmCommand} install -g ${PACKAGE_NAME}@latest --force`;
   }
 }
 

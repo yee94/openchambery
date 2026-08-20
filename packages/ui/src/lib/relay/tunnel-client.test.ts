@@ -36,7 +36,7 @@ const textDecoder = new TextDecoder();
 
 const isWsOpenPayload = (
   value: unknown,
-): value is { path: string; query: string; protocols?: string[] } =>
+): value is { path: string; query: string; protocols?: string[]; headers?: Record<string, string> } =>
   typeof value === 'object' && value !== null && typeof (value as { path?: unknown }).path === 'string';
 
 const isHttpRequestPayload = (
@@ -410,6 +410,30 @@ describe('createRelayTunnelClient', () => {
     socket.close(1000, 'done');
     await closed;
     expect(socket.readyState).toBe(WS_CLOSED);
+  });
+
+  test('forwards optional headers on tunneled WebSocket open', async () => {
+    const opens: Array<{ path: string; query: string; headers?: Record<string, string> }> = [];
+    const { client } = await setupClient({
+      recordFrame: (frame) => {
+        if (frame.frameType !== TunnelFrameType.WsOpen) return;
+        const open = decodeJsonPayload(frame.payload, isWsOpenPayload);
+        opens.push({ path: open.path, query: open.query, ...(open.headers ? { headers: open.headers } : {}) });
+      },
+    });
+    track(client);
+    const socket = client.openWebSocket('/api/event/ws?t=1', undefined, {
+      'x-openchamber-target-port': '18765',
+    });
+    await new Promise<void>((resolve) => {
+      socket.onopen = () => resolve();
+    });
+    expect(opens).toEqual([{
+      path: '/api/event/ws',
+      query: 't=1',
+      headers: { 'x-openchamber-target-port': '18765' },
+    }]);
+    socket.close(1000, 'done');
   });
 
   test('fails open streams on reconnect and recovers on retry', async () => {

@@ -78,6 +78,17 @@ describe('static navigation hit targets', () => {
         expect(filesSurfaceSource).toContain('URL.revokeObjectURL(objectUrl)');
         expect(filesSurfaceSource).toContain('const imageSrc = relayImageKey ? relayImageSrc');
     });
+
+    test('mobile and desktop file image previews open the shared ToolOutputDialog viewer', () => {
+        const filesSurfaceSource = readFileSync(join(__dirname, '../../../../apps/MobileFilesSurface.tsx'), 'utf-8');
+        const filesViewSource = readFileSync(join(__dirname, '../../../../components/views/FilesView.tsx'), 'utf-8');
+        expect(filesSurfaceSource).toContain("import('@/components/chat/message/ToolOutputDialog')");
+        expect(filesSurfaceSource).toContain('openImagePreview');
+        expect(filesSurfaceSource).toContain("tool: 'image-preview'");
+        expect(filesViewSource).toContain("import('@/components/chat/message/ToolOutputDialog')");
+        expect(filesViewSource).toContain('openSelectedImagePreview');
+        expect(filesViewSource).toContain('renderImagePreview');
+    });
 });
 
 describe('tool busy title chrome', () => {
