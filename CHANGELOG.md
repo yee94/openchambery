@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.7] - 2026-08-20
+
+- **npm 包改到 `@openchambery`：** `@openchambery/web` 与 `@openchambery/relay-server` 随 GitHub Release 发布；安装脚本、CLI 更新和 SSH 远程预装都改用新包名。
+
 ## [1.17.1-beta.6] - 2026-08-20
 
 - **程序化替换不再遗留失联附件：** 粘贴文本压缩、图片引用插入、文件路径提及等程序化替换选区的路径，现在与手输一样会检测引用被替换掉的附件并自动移除；失联判定统一收敛到附件引用模块，附件组件同步简化。
