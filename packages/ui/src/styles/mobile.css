@@ -2791,19 +2791,16 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 /* Expand/collapse silhouette swap. Same DOM node; the height/padding change
-   is instant (see transition below — animating layout properties reflowed
-   the whole chat every frame under the moving keyboard and read as a laggy
-   open). The soft feel comes from the corner-radius ease plus the footer
-   fade-in. IMPORTANT: overflow stays visible when expanded so slash-command /
-   @-mention / skill autocomplete (absolute bottom-full) is not clipped. */
+   is instant (animating layout properties reflowed the whole chat every
+   frame under the moving keyboard and read as a laggy open). Soft feel
+   comes from the footer fade-in. Radius stays 1.5rem in both states —
+   collapsed height already clamps it into a pill, so do not interpolate
+   9999px (iOS WKWebView leaves dirty corners). IMPORTANT: overflow stays
+   visible when expanded so slash-command / @-mention / skill autocomplete
+   (absolute bottom-full) is not clipped. */
 .oc-mobile-composer-surface {
   overflow: visible;
   transform-origin: bottom center;
-  /* Height/padding swap instantly on expand/collapse: layout properties
-     must not animate — every frame reflows the whole chat under the moving
-     keyboard. Only the corner radius eases (paint-only, ~free); the footer
-     keeps its fade-in animation below. */
-  transition: border-radius 200ms cubic-bezier(0.32, 0.72, 0, 1);
   min-height: 2.75rem;
   max-height: min(70vh, 22rem);
 }
@@ -2846,10 +2843,6 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-mobile-composer-surface {
-    transition: none;
-  }
-
   .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
     [data-chat-input-footer="true"] {
     animation: none;

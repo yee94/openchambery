@@ -1,5 +1,5 @@
 import React, { useRef, memo } from 'react';
-import { useEvent, useIntersectionObserver, useIsomorphicLayoutEffect, useResizeObserver } from '@reactuses/core';
+import { useEvent, useIntersectionObserver } from '@reactuses/core';
 import { useInputStore } from '@/sync/input-store';
 import type { AttachedFile } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -799,21 +799,10 @@ export const filePartImageManualLoadRequired = (transportIdentity: string, file:
   return imageRequiresManualLoadOverRelay(transportIdentity, filePartImageKnownBytes(file));
 };
 
-const MessageImageThumbnail = ({ source, filename }: { source: string; filename: string }) => {
-  const effectiveDirectory = useEffectiveDirectory() ?? '';
-  const displaySource = useResolvedImageSource(source, effectiveDirectory);
-  return (
-    <img
-      src={displaySource || undefined}
-      alt={filename}
-      className="h-full w-full object-cover"
-      loading="lazy"
-      onError={(event) => {
-        event.currentTarget.style.visibility = 'hidden';
-      }}
-    />
-  );
-};
+const getMessageImageGridClassName = (imageCount: number) => cn(
+  'grid gap-2',
+  imageCount === 1 ? 'grid-cols-1 max-w-56' : 'grid-cols-2',
+);
 
 const MessageImageCard = ({
   source,
@@ -835,7 +824,7 @@ const MessageImageCard = ({
   const displaySource = useResolvedImageSource(source ?? '', effectiveDirectory);
   return (
     <div
-      className="relative aspect-video min-w-0 overflow-hidden rounded-lg border border-border/40 bg-muted/10"
+      className="relative aspect-square min-w-0 overflow-hidden rounded-lg border border-border/40 bg-muted/10"
       data-message-image-slot="true"
     >
       {source ? (
@@ -919,94 +908,6 @@ const MessageManualImageLoadGroup = ({
     </div>
   );
 };
-
-const MessageImageRow = memo(({
-  imageFiles,
-  resolveDisplayName,
-  onImageClick,
-}: {
-  imageFiles: FilePart[];
-  resolveDisplayName: (file: FilePart) => string;
-  onImageClick: (file: FilePart) => void;
-}) => {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = React.useState(false);
-  const [canExpand, setCanExpand] = React.useState(false);
-  const rowRef = React.useRef<HTMLDivElement>(null);
-
-  const measureRow = useEvent(() => {
-    const el = rowRef.current;
-    if (!el || imageFiles.length <= 1) {
-      setCanExpand(false);
-      return;
-    }
-    const first = el.firstElementChild as HTMLElement | null;
-    const rowH = first?.offsetHeight ?? 40;
-    setCanExpand(el.scrollHeight > rowH + 4);
-  });
-  useIsomorphicLayoutEffect(() => {
-    measureRow();
-  }, [imageFiles.length]);
-  useResizeObserver(rowRef, measureRow);
-
-  React.useEffect(() => {
-    if (!canExpand && expanded) setExpanded(false);
-  }, [canExpand, expanded]);
-
-  return (
-    <div className="mt-0.5 flex min-w-0 items-start gap-0.5">
-      <div
-        ref={rowRef}
-        className={cn(
-          'flex min-w-0 flex-1 flex-wrap items-center gap-1',
-          !expanded && 'max-h-10 overflow-hidden',
-        )}
-      >
-        {imageFiles.map((file) => {
-          const filename = resolveDisplayName(file) || 'Image';
-          return (
-            <Tooltip key={`img-${filePartDedupeKey(file)}`}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => onImageClick(file)}
-                  className="relative h-9 w-9 flex-none overflow-hidden rounded-md bg-transparent transition-colors hover:bg-[var(--interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  aria-label={filename}
-                >
-                  {file.url ? (
-                    <MessageImageThumbnail source={file.url} filename={filename} />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                      <Icon name="file-image" className="h-4 w-4" />
-                    </div>
-                  )}
-                  <span className="sr-only">{filename}</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={6} className="typography-meta px-2 py-1">
-                {filename}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </div>
-      {(canExpand || expanded) ? (
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          aria-label={expanded ? t('chat.fileAttachment.actions.collapseImages') : t('chat.fileAttachment.actions.expandImages')}
-          title={expanded ? t('chat.fileAttachment.actions.collapseImages') : t('chat.fileAttachment.actions.expandImages')}
-          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--interactive-hover)] hover:text-foreground"
-        >
-          <Icon name={expanded ? 'arrow-up-s' : 'arrow-down-s'} className="h-3.5 w-3.5" />
-        </button>
-      ) : null}
-    </div>
-  );
-});
-
-MessageImageRow.displayName = 'MessageImageRow';
 
 const MESSAGE_IMAGE_VISIBILITY_OPTIONS = { threshold: 0.01 } as const;
 
@@ -1106,8 +1007,6 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
 
   const imageFiles = dedupedFileItems.filter(f => f.mime?.startsWith('image/'));
   const fullImageFiles = imageFiles.filter((file) => Boolean(file.url));
-  const projectedImageFiles = imageFiles.filter((file) => projectedImageSlotKeysRef.current.has(filePartDedupeKey(file)));
-  const compactImageFiles = imageFiles.filter((file) => !projectedImageSlotKeysRef.current.has(filePartDedupeKey(file)) && Boolean(file.url));
   const otherFiles = dedupedFileItems.filter(f => !f.mime?.startsWith('image/'));
   const hasSlimImage = imageFiles.some((file) => file.slim === true);
   const slimImageLoadGateActive = slimManualLoadRequired
@@ -1119,6 +1018,11 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
     return gatedImageKeys.has(key);
   });
   const manualImageKeys = new Set(manualImageFiles.map(filePartDedupeKey));
+  const compactGridImageFiles = imageFiles.filter((file) => {
+    const key = filePartDedupeKey(file);
+    return !manualImageKeys.has(key)
+      && (projectedImageSlotKeysRef.current.has(key) || Boolean(file.url));
+  });
   const manualImageLoadItems = manualImageFiles.map((file) => ({
     key: filePartDedupeKey(file),
     filename: resolveDisplayName(file),
@@ -1316,9 +1220,9 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
           <MessageManualImageLoadGroup images={manualImageLoadItems} onLoad={approveManualImageLoad} />
         ) : null}
 
-        {projectedImageFiles.some((file) => !manualImageKeys.has(filePartDedupeKey(file))) ? (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {projectedImageFiles.filter((file) => !manualImageKeys.has(filePartDedupeKey(file))).map((file) => {
+        {compactGridImageFiles.length > 0 ? (
+          <div className={getMessageImageGridClassName(compactGridImageFiles.length)}>
+            {compactGridImageFiles.map((file) => {
               const fileName = resolveDisplayName(file);
               return (
                 <MessageImageCard
@@ -1334,14 +1238,6 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
             })}
           </div>
         ) : null}
-
-        {compactImageFiles.some((file) => !manualImageKeys.has(filePartDedupeKey(file))) && (
-          <MessageImageRow
-            imageFiles={compactImageFiles.filter((file) => !manualImageKeys.has(filePartDedupeKey(file)))}
-            resolveDisplayName={resolveDisplayName}
-            onImageClick={handleImageClick}
-          />
-        )}
       </div>
     );
   }
@@ -1521,16 +1417,9 @@ interface ImageGalleryProps {
 const ImageGallery = memo(({ urls, caption, onShowPopup }: ImageGalleryProps) => {
   if (urls.length === 0) return null;
 
-  const getGridCols = () => {
-    if (urls.length === 1) return 'grid-cols-1';
-    if (urls.length === 2) return 'grid-cols-2';
-    if (urls.length <= 4) return 'grid-cols-2';
-    return 'grid-cols-3';
-  };
-
   return (
     <div className="space-y-2">
-      <div className={cn("grid gap-2", getGridCols())}>
+      <div className={getMessageImageGridClassName(urls.length)}>
         {urls.map((url, index) => (
           <button
             key={url}

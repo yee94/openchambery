@@ -134,6 +134,7 @@ import { highlightFencedCode } from './composerCodeHighlight';
 import {
     assignImageAttachmentFilenames,
     buildAttachmentCitationText,
+    collectDetachedAttachmentFilenames,
     findAttachmentCitationRanges,
     isInlineAttachmentCitation,
     resolveAttachmentCitationDeletion,
@@ -197,7 +198,6 @@ import { useComposerController } from '@/composer/use-composer-controller';
 import { buildComposerSemanticParts, dedupeDeliveryAttachments, ensureSessionMentionTranscripts } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import {
-    attachmentCitationDisplay,
     COMPOSER_TRIGGER_ICON_SLOT,
     composerTriggerIconDisplay,
     composerTriggerIconVisual,
@@ -4809,6 +4809,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         commitBrowserTextChange(nextValue, cursorPosition, cursorPosition, inputSource, text);
     }, [commitBrowserTextChange, message]);
 
+    // Programmatic paste paths (pasted-text compaction, image citations, file
+    // path mentions) replace the selection without a browser change event, so
+    // orphaned attachments are reconciled against the resulting text here.
+    const detachAttachmentsMissingCitations = useEvent((previousText: string, nextText: string) => {
+        const detached = new Set(collectDetachedAttachmentFilenames(
+            attachedFiles.map((file) => file.filename),
+            previousText,
+            nextText,
+        ));
+        if (detached.size === 0) return;
+        for (const file of attachedFiles) {
+            if (detached.has(file.filename)) {
+                surfaceResources.removeAttachment(file.id);
+            }
+        }
+    });
+
     // Store removeDraftAttachment clears inline citations in the same revision.
     const handleAttachedFileRemove = React.useCallback((file: AttachedFile) => {
         void surfaceResources.removeAttachment(file.id);
@@ -4883,14 +4900,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
 
         const value = e.target.value;
-        for (const file of attachedFiles) {
-            const citations = [attachmentCitationDisplay(file.filename), `[${file.filename}]`];
-            const wasPresent = citations.some((citation) => messageRef.current.includes(citation));
-            const stillPresent = citations.some((citation) => value.includes(citation));
-            if (wasPresent && !stillPresent) {
-                surfaceResources.removeAttachment(file.id);
-            }
-        }
+        detachAttachmentsMissingCitations(messageRef.current, value);
         const cursorPosition = e.target.selectionStart ?? value.length;
         const pastedInsertedText = nativeInputEvent?.inputType?.startsWith('insertFromPaste')
             ? getInsertedTextFromChange(messageRef.current, value)
@@ -4947,8 +4957,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             message.slice(selectionEnd),
         );
         const next = `${message.slice(0, selectionStart)}${insertion}${message.slice(selectionEnd)}`;
+        detachAttachmentsMissingCitations(message, next);
         replaceWithConfirmedFileMentions(next, uniquePaths);
-    }, [message, replaceWithConfirmedFileMentions]);
+    }, [message, replaceWithConfirmedFileMentions, detachAttachmentsMissingCitations]);
 
     const handlePaste = React.useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
         const pastedFilePaths = collectFilePathsFromTransfer(e.clipboardData);
@@ -5014,6 +5025,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (imageFiles.length === 0) {
             if (inputMode === 'normal' && canCompactPastedText(getDocument(), pastedText)) {
                 e.preventDefault();
+                const textBeforeReplacement = getDocument().text;
                 const textarea = textareaRef.current;
                 const selectionStart = textarea?.selectionStart ?? message.length;
                 const selectionEnd = textarea?.selectionEnd ?? message.length;
@@ -5039,6 +5051,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     adjustTextareaHeight();
                 });
                 updateAutocompleteState(next.document.text, caret);
+                detachAttachmentsMissingCitations(textBeforeReplacement, next.document.text);
                 return;
             }
             if (pastedText.includes('@')) {
@@ -5064,6 +5077,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             ],
         );
         const citationText = buildAttachmentCitationText(assignedFilenames);
+        const textBeforeReplacement = getDocument().text;
         const textarea = textareaRef.current;
         const selectionStart = textarea?.selectionStart ?? message.length;
         const selectionEnd = textarea?.selectionEnd ?? message.length;
@@ -5097,8 +5111,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const nextText = `${inserted.document.text.slice(0, pasteCaret)}${citationText}${inserted.document.text.slice(pasteCaret)}`;
             // paste chip already left a trailing boundary space; citation follows immediately
             commitBrowserTextChange(nextText, pasteCaret + citationText.length, pasteCaret + citationText.length, getFileMentionInputSourceForInsertedText(nextText), citationText);
+            detachAttachmentsMissingCitations(textBeforeReplacement, nextText);
         } else {
             insertTextAtSelection(insertionText, getFileMentionInputSourceForInsertedText(insertionText));
+            // Mirror insertTextAtSelection's splice to know the resulting text.
+            detachAttachmentsMissingCitations(textBeforeReplacement, `${message.slice(0, selectionStart)}${insertionText}${message.slice(selectionEnd)}`);
         }
 
         for (let index = 0; index < imageFiles.length; index += 1) {
@@ -5114,7 +5131,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 pendingPastedAttachmentFilenamesRef.current.delete(filename);
             }
         }
-    }, [surfaceResources, addDroppedPathsAsMentions, attachedFiles, adjustTextareaHeight, currentSessionId, getDocument, inputMode, insertReference, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, t, updateAutocompleteState, commitBrowserTextChange, applyProgrammaticEdit]);
+    }, [surfaceResources, addDroppedPathsAsMentions, attachedFiles, adjustTextareaHeight, currentSessionId, getDocument, inputMode, insertReference, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, t, updateAutocompleteState, commitBrowserTextChange, applyProgrammaticEdit, detachAttachmentsMissingCitations]);
 
     /**
      * Copy/cut emit semantic plain text (no reserved icon em-spaces) so pasting
@@ -7323,9 +7340,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobile && 'oc-mobile-composer-surface',
                     )}
                     style={{
-                        // Radius is transitioned in CSS (~200ms); keep both states
-                        // as inline values so the browser can interpolate them.
-                        borderRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
+                        // Same radius collapsed and expanded. Collapsed height
+                        // (2.75rem) is < 2×1.5rem, so CSS clamps this into a
+                        // pill without swapping 9999px — that interpolation
+                        // leaves dirty corners on iOS WKWebView.
+                        borderRadius: chatInputRadius,
                         // Solid elevated surface for the floating input card.
                         backgroundColor: currentTheme?.colors?.surface?.subtle,
                     }}
@@ -7371,8 +7390,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         maxHeight: isMobile && !mobileComposerExpanded
                             ? '100%'
                             : (!isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : undefined),
-                        borderTopLeftRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
-                        borderTopRightRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
+                        borderTopLeftRadius: chatInputRadius,
+                        borderTopRightRadius: chatInputRadius,
                     }}
                     footerClassName={cn(
                         // Keep footer chrome (and the floating follow-up send control)
@@ -7384,8 +7403,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobile ? 'flex items-center gap-x-1.5' : cn('flex items-center justify-between', footerGapClass),
                     )}
                     footerStyle={{
-                        borderBottomLeftRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
-                        borderBottomRightRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
+                        borderBottomLeftRadius: chatInputRadius,
+                        borderBottomRightRadius: chatInputRadius,
                     }}
                     footerContent={composerFooterContent}
                     placeholder={currentSessionId || newSessionDraftOpen

@@ -9,7 +9,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, 'FileAttachment.tsx'), 'utf8');
 const manualImageGroupSource = source.slice(
   source.indexOf('const MessageManualImageLoadGroup'),
-  source.indexOf('const MessageImageRow'),
+  source.indexOf('const MESSAGE_IMAGE_VISIBILITY_OPTIONS'),
+);
+const compactDisplaySource = source.slice(
+  source.indexOf('if (compact) {'),
+  source.indexOf('MessageFilesDisplay.displayName'),
 );
 const messageBodySource = readFileSync(join(here, 'message/MessageBody.tsx'), 'utf8');
 const messageDirectory = join(here, '../../lib/i18n/messages');
@@ -123,12 +127,20 @@ describe('slim transcript image attachments', () => {
     expect(source).toContain('resolveMessageDisplayFiles(files, [...liveParts, ...fetchedParts])');
   });
 
-  test('keeps a visible aspect-video slot for a slim image without a URL', () => {
+  test('keeps a visible square slot for a slim image without a URL', () => {
     expect(source).toContain("const imageFiles = dedupedFileItems.filter(f => f.mime?.startsWith('image/'));");
-    expect(source).toContain('relative aspect-video min-w-0 overflow-hidden');
+    expect(source).toContain('relative aspect-square min-w-0 overflow-hidden');
     expect(source).toContain('data-message-image-slot="true"');
     expect(source).toContain("materializationStatus === 'loading'");
     expect(source).toContain("materializationStatus === 'error'");
+  });
+
+  test('uses a responsive square photo grid for compact message images', () => {
+    expect(source).toContain("imageCount === 1 ? 'grid-cols-1 max-w-56' : 'grid-cols-2'");
+    expect(compactDisplaySource).toContain('getMessageImageGridClassName(compactGridImageFiles.length)');
+    expect(compactDisplaySource).toContain('<MessageImageCard');
+    expect(compactDisplaySource).not.toContain('MessageImageRow');
+    expect(compactDisplaySource).not.toContain('h-9 w-9');
   });
 
   test('materializes once on visibility and supports explicit retry after failure', () => {
