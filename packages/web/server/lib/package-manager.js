@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PACKAGE_NAME = '@openchamber/web';
+const PACKAGE_NAME = '@openchambery/web';
 const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
 const CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/openchamber/main/CHANGELOG.md';

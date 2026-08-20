@@ -1,5 +1,5 @@
 {
-  "name": "@openchamber/relay-server",
+  "name": "@openchambery/relay-server",
   "version": "1.17.1-beta.6",
   "description": "Self-hosted private relay server for OpenChamber",
   "private": false,

@@ -8,7 +8,7 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
-`main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
+`main.mjs` imports `@openchambery/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
@@ -164,7 +164,7 @@ The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. 
 
 1. Run `bun run version:bump -- <version>` and update the matching `CHANGELOG.md` section.
 2. Set `CSC_LINK`, `CSC_KEY_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY_BASE64`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID` for signed and notarized macOS desktop builds.
-3. Configure `NPM_TOKEN` only when publishing to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
+3. Configure `NPM_TOKEN` so the release workflow can publish `@openchambery/web` and `@openchambery/relay-server` to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
 4. For a desktop-only release, manually dispatch the workflow with scope `desktop` (the default). Pushing tag `v<version>` retains the full-release behavior.
 
 The workflow creates the GitHub Release and uploads the desktop artifacts. macOS, Windows, and writable Linux AppImage installs use in-app automatic updates. Formal releases also upload Android artifacts and send iOS builds to TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
@@ -282,7 +282,7 @@ Development builds use a separate user data directory named `OpenChamber Dev`, s
 
 - Keep desktop-specific code in this package. Do not move OpenCode feature backend logic into Electron.
 - Use hidden Windows process launches for background helpers. Avoid visible console flashes.
-- Keep `@openchamber/web`, `bun-pty`, `node-pty`, and native modules external in `bundle-main.mjs`; bundling them can break Electron startup.
+- Keep `@openchambery/web`, `bun-pty`, `node-pty`, and native modules external in `bundle-main.mjs`; bundling them can break Electron startup.
 - Rebuild native modules after dependency or Electron version changes.
 - Test both HMR dev mode and bundled UI mode when changing startup, preload, routing, or packaged asset behavior.
 

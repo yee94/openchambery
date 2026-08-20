@@ -22,7 +22,7 @@ import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 import { getMenuLabels, normalizeMenuLocale } from './menu-i18n.mjs';
-import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
+import { mintOutsideFileGrant } from '@openchambery/web/server/lib/fs/routes.js';
 import {
   UI_PROTOCOL,
   isPackagedUiUrl,
@@ -1449,7 +1449,7 @@ const loadShellEnv = () => {
 };
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
-import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
+import { pathLooksUserConfigured, mergePathValues } from '@openchambery/web/server/lib/opencode/path-utils.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
@@ -1538,7 +1538,7 @@ const spawnLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
-  const { startWebUiServer } = await import('@openchamber/web/server/index.js');
+  const { startWebUiServer } = await import('@openchambery/web/server/index.js');
 
   const handle = await startWebUiServer({
     port: chosenPort,

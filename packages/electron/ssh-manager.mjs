@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
 const LOCAL_HOST_ID = 'local';
 const DEFAULT_CONNECTION_TIMEOUT_SEC = 60;
 const DEFAULT_LOCAL_BIND_HOST = '127.0.0.1';
@@ -890,14 +891,14 @@ export class ElectronSshManager {
     const commands = [];
 
     if (preferred === 'bun') {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasNpm) commands.push(`npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
     } else if (preferred === 'npm') {
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
+      if (hasNpm) commands.push(`npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
     } else {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasNpm) commands.push(`npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
     }
 
     if (commands.length === 0) {
