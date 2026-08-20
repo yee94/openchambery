@@ -28,7 +28,8 @@ export const LatticeOrb: React.FC<{
 
     return (
         <span
-            className={cn('relative block flex-none overflow-hidden', className)}
+            // overflow-clip: mobile.css turns .overflow-hidden into a scrollport.
+            className={cn('relative block flex-none overflow-clip', className)}
             style={{ width: resolvedSize, height: resolvedSize }}
             role={label ? 'img' : undefined}
             aria-label={label || undefined}

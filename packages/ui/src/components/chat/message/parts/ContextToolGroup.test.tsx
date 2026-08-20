@@ -38,7 +38,7 @@ describe('LatticeOrb', () => {
         const mobileMarkup = renderToStaticMarkup(<LatticeOrb isMobile label="Exploring" />);
 
         expect(desktopMarkup).toContain('aria-label="Exploring"');
-        expect(desktopMarkup).toContain('relative block flex-none overflow-hidden');
+        expect(desktopMarkup).toContain('relative block flex-none overflow-clip');
         expect(desktopMarkup).toContain('width:14px;height:14px');
         expect(mobileMarkup).toContain('width:12px;height:12px');
         expect(desktopMarkup.match(/oc-lattice-orb-dot/g)).toHaveLength(9);

@@ -1335,7 +1335,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                     >
                     <span className={cn(
                         // flex-1 absorbs free space so the trailer is pushed to the row end.
-                        'inline-flex min-w-0 flex-1 items-center overflow-hidden',
+                        // overflow-clip (not overflow-hidden): mobile.css rewrites
+                        // .overflow-hidden → overflow-y:auto and shows an Android scrollbar.
+                        'inline-flex min-w-0 flex-1 items-center overflow-clip',
                         isMobile ? 'gap-x-1' : 'gap-x-1.5',
                     )}>
                         <span

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.11] - 2026-08-20
+
+- **Android 活动头滚动条修复：** Activity 标题行与 LatticeOrb 改用 `overflow-clip`，避免 mobile.css 把 `overflow-hidden` 改写成可滚动区域后在 Android 上露出竖向滚动条。
+
 ## [1.17.1-beta.10] - 2026-08-20
 
 - **状态行动画升级（M3 点阵）：** 会话运行状态的动态文案改为 aicss.dev Orbs M3「Unfolding」八点旋转点阵动画（`MorphOrb`），按 28px stage 缩放到桌面 14 / 移动 12，几何填满约 86% 组件盒；动态文案为单一 shimmer 动画，不再叠加独立闪烁省略号。

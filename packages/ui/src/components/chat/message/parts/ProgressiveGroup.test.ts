@@ -185,7 +185,7 @@ describe('progressive activity presentation', () => {
         expect(activityHeaderSource).not.toContain('{activeDuration}');
         expect(activityHeaderSource).not.toContain('{completedDuration}');
         expect(progressiveGroupSource).toContain("'group/tool flex w-full min-w-0 flex-nowrap items-center text-left'");
-        expect(progressiveGroupSource).toContain("'inline-flex min-w-0 flex-1 items-center overflow-hidden'");
+        expect(progressiveGroupSource).toContain("'inline-flex min-w-0 flex-1 items-center overflow-clip'");
         expect(progressiveGroupSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end'");
         expect(progressiveGroupSource).toContain("isMobile && 'pr-0'");
         expect(progressiveGroupSource.match(/aria-expanded=\{isExpanded\}/g)).toHaveLength(1);
