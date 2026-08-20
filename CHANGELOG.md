@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.13] - 2026-08-21
+
+- **beta.12 完整重发：** beta.12 的 npm 包已发布，但桌面/移动构建产物因发布过程中 tag 修正未产出；本版本重新执行完整发布，内容与 beta.12 相同（详见下方 beta.12 变更记录）。
+
 ## [1.17.1-beta.12] - 2026-08-21
 
 ### 远程实例（SSH + Private Relay 打通）
