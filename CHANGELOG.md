@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.16] - 2026-08-21
+
+### 聊天
+
+- **消息头思考强度更安静：** 非默认思考深度（如 Xhigh）比模型名小一号，并与模型名、Agent 徽章基线对齐。
+
 ## [1.17.1-beta.15] - 2026-08-21
 
 ### 诊断

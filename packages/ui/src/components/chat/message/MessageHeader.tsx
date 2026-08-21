@@ -52,10 +52,10 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                             </div>
                         )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-baseline gap-2">
                         <h3
                             className={cn(
-                                'inline-flex min-w-0 items-center gap-1.5 font-semibold typography-ui-header tracking-tight leading-none',
+                                'inline-flex min-w-0 items-baseline gap-1.5 font-semibold typography-ui-header tracking-tight leading-none',
                                 isUser ? 'text-primary' : 'text-foreground'
                             )}
                         >
