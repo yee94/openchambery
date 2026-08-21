@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.1] - 2026-08-21
+
+### SSH 远程实例
+
+- **全新远程机自动初始化：** 托管 SSH 会话现在会在命令级别发现 Node.js 22+、补全 bun / npm 全局 bin 路径，并自动安装与桌面端固定 OpenCode CLI 版本一致的 OpenCode。
+- **原生数据库绑定自动修复：** OpenChamber 检测到 `better-sqlite3` 与选定 Node ABI 不匹配时会重建绑定，覆盖新开发机默认 Node / 编译工具链不兼容导致的启动失败。
+
 ## [1.18.0] - 2026-08-21
 
 ### 移动端

@@ -285,6 +285,22 @@ const readAppMetadata = () => {
 
 const APP_METADATA = readAppMetadata();
 const APP_VERSION = APP_METADATA.version;
+const readPinnedOpenCodeCliVersion = () => {
+  const candidates = [
+    path.resolve(__dirname, '..', '..', 'package.json'),
+    path.join(__dirname, '..', 'web', 'package.json'),
+    path.join(app.getAppPath?.() || '', 'node_modules', '@openchambery', 'web', 'package.json'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const version = JSON.parse(fs.readFileSync(candidate, 'utf8')).dependencies?.['@opencode-ai/sdk'];
+      if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) return version;
+    } catch {
+    }
+  }
+  return null;
+};
+const OPENCODE_CLI_VERSION = readPinnedOpenCodeCliVersion();
 
 const DEFAULT_DESKTOP_PORT = 57123;
 const LOOPBACK_BIND_HOST = '127.0.0.1';
@@ -616,6 +632,7 @@ const settingsFilePath = () => {
 const sshManager = new ElectronSshManager({
   settingsFilePath: settingsFilePath(),
   appVersion: APP_VERSION,
+  opencodeCliVersion: OPENCODE_CLI_VERSION,
   emit: (event, detail) => emitToAllWindows(event, detail),
 });
 

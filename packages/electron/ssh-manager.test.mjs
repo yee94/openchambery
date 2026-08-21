@@ -9,6 +9,7 @@ import {
   ElectronSshManager,
   attachProcessStderrTail,
   buildManagedServeEnvPrefix,
+  buildRemoteManagedRuntimePrefix,
   buildRemoteSyncPrepareScript,
   buildRemoteSyncProbeScript,
   createEphemeralUiPassword,
@@ -173,6 +174,16 @@ describe('ElectronSshManager', () => {
       `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='${password}'`,
     );
     expect(() => buildManagedServeEnvPrefix('')).toThrow(/requires a UI password/i);
+  });
+
+  test('managed remote runtime selects Node 22+ and keeps PATH setup session-scoped', () => {
+    const script = buildRemoteManagedRuntimePrefix();
+    expect(script).toContain('/codev/opt/nodejs/*/bin/node');
+    expect(script).toContain('[ "$major" -ge 22 ]');
+    expect(script).toContain('$HOME/.bun/bin');
+    expect(script).toContain('$HOME/.opencode/bin');
+    expect(script).not.toContain('.profile');
+    expect(script).not.toContain('.bashrc');
   });
 
   test('mintSshHostToken issues and stores a token using the in-memory session password', async () => {

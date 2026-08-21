@@ -7,6 +7,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 
 const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
+const OPENCODE_NPM_PACKAGE = 'opencode-ai';
+export const REMOTE_NODE_MIN_MAJOR = 22;
 const LOCAL_HOST_ID = 'local';
 const DEFAULT_CONNECTION_TIMEOUT_SEC = 60;
 const DEFAULT_LOCAL_BIND_HOST = '127.0.0.1';
@@ -375,6 +377,38 @@ export const buildManagedServeEnvPrefix = (uiPassword) => {
   }
   return `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD=${shellQuote(password)}`;
 };
+
+/**
+ * Sets a PATH for one remote command only. It never edits shell startup files.
+ * A fresh DevCloud host can ship several Node versions while its login PATH
+ * still selects Node 18; choose the highest usable Node 22+ binary instead.
+ */
+export const buildRemoteManagedRuntimePrefix = () => `
+prepend_path() { [ -d "$1" ] || return 0; case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac; }
+prepend_path "$HOME/.bun/bin"
+prepend_path "$HOME/.opencode/bin"
+prepend_path "$HOME/.local/bin"
+prepend_path "$HOME/.npm/node_modules/bin"
+best_node_bin=""
+best_node_version=""
+consider_node() {
+  candidate="$1"
+  [ -x "$candidate" ] || return 0
+  version="$("$candidate" -p 'process.versions.node' 2>/dev/null || true)"
+  major="\${version%%.*}"
+  case "$major" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$major" -ge ${REMOTE_NODE_MIN_MAJOR} ] || return 0
+  if [ -z "$best_node_version" ] || [ "$(printf '%s\\n%s\\n' "$best_node_version" "$version" | sort -V | tail -n 1)" = "$version" ]; then
+    best_node_bin="$candidate"
+    best_node_version="$version"
+  fi
+}
+if command -v node >/dev/null 2>&1; then consider_node "$(command -v node)"; fi
+for candidate in /codev/opt/nodejs/*/bin/node /opt/codev/nodejs/*/bin/node "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.fnm/node-versions/*/installation/bin/node "$HOME"/.local/share/fnm/node-versions/*/installation/bin/node; do consider_node "$candidate"; done
+if [ -n "$best_node_bin" ]; then prepend_path "$(dirname "$best_node_bin")"; fi
+if command -v npm >/dev/null 2>&1; then npm_prefix="$(npm prefix -g 2>/dev/null || true)"; [ -n "$npm_prefix" ] && prepend_path "$npm_prefix/bin"; fi
+export PATH
+`;
 
 const hasGlobWildcard = (value) => /[*?]/.test(value);
 
@@ -917,6 +951,7 @@ export class ElectronSshManager {
   constructor(options) {
     this.settingsFilePath = options.settingsFilePath;
     this.appVersion = options.appVersion;
+    this.opencodeCliVersion = options.opencodeCliVersion;
     this.emit = options.emit;
     this.logs = new Map();
     this.statuses = new Map();
@@ -1454,7 +1489,7 @@ export class ElectronSshManager {
 
   async remoteCommandExists(parsed, controlPath, commandName) {
     try {
-      const output = await runRemoteCommand(parsed, controlPath, `command -v ${commandName} >/dev/null 2>&1 && echo yes || echo no`);
+      const output = await this.runManagedRemoteCommand(parsed, controlPath, `command -v ${commandName} >/dev/null 2>&1 && echo yes || echo no`);
       return output.trim() === 'yes';
     } catch {
       return false;
@@ -1463,7 +1498,78 @@ export class ElectronSshManager {
 
   async currentRemoteOpenChamberVersion(parsed, controlPath) {
     try {
-      const output = await runRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
+      const output = await this.runManagedRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
+      return parseVersionToken(output);
+    } catch {
+      return null;
+    }
+  }
+
+  async runManagedRemoteCommand(parsed, controlPath, script) {
+    return await runRemoteCommand(parsed, controlPath, `${buildRemoteManagedRuntimePrefix()}\n${script}`);
+  }
+
+  async ensureManagedNodeRuntime(parsed, controlPath) {
+    const output = await this.runManagedRemoteCommand(parsed, controlPath, "node -p 'process.versions.node' 2>/dev/null || true");
+    const major = Number.parseInt(output.trim().split('.')[0], 10);
+    if (!Number.isInteger(major) || major < REMOTE_NODE_MIN_MAJOR) {
+      throw new Error(`Managed SSH remote requires Node.js ${REMOTE_NODE_MIN_MAJOR}+; no supported Node runtime was found on the remote host`);
+    }
+  }
+
+  async ensureRemoteOpenCodeCli(parsed, controlPath, preferred) {
+    const installedVersion = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
+    if (installedVersion && (!this.opencodeCliVersion || installedVersion === this.opencodeCliVersion)) return;
+
+    const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
+    const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
+    const packageSpec = this.opencodeCliVersion ? `${OPENCODE_NPM_PACKAGE}@${this.opencodeCliVersion}` : OPENCODE_NPM_PACKAGE;
+    const commands = [];
+    if (preferred === 'npm') {
+      if (hasNpm) commands.push(`npm install -g ${packageSpec} --force`);
+      if (hasBun) commands.push(`bun add -g ${packageSpec}`);
+    } else {
+      if (hasBun) commands.push(`bun add -g ${packageSpec}`);
+      if (hasNpm) commands.push(`npm install -g ${packageSpec} --force`);
+    }
+    if (commands.length === 0) {
+      throw new Error('Remote host has neither bun nor npm available to install OpenCode CLI');
+    }
+
+    let lastError = null;
+    for (const command of commands) {
+      try {
+        await this.runManagedRemoteCommand(parsed, controlPath, command);
+        const installed = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
+        if (installed && (!this.opencodeCliVersion || installed === this.opencodeCliVersion)) return;
+        lastError = new Error('OpenCode CLI installation completed but the expected executable version is unavailable');
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Failed to install OpenCode CLI on remote host');
+  }
+
+  async ensureRemoteOpenChamberNativeBinding(parsed, controlPath) {
+    const script = `
+openchamber_bin="$(command -v openchamber)"
+openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
+openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
+if (cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()") >/dev/null 2>&1; then exit 0; fi
+if [ -x /usr/bin/python3.8 ]; then export PYTHON=/usr/bin/python3.8; fi
+if [ -x /opt/rh/gcc-toolset-12/root/usr/bin/gcc ] && [ -x /opt/rh/gcc-toolset-12/root/usr/bin/g++ ]; then
+  export CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc
+  export CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++
+fi
+(cd "$openchamber_root" && npm rebuild better-sqlite3 --foreground-scripts)
+(cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()")
+`;
+    await this.runManagedRemoteCommand(parsed, controlPath, script);
+  }
+
+  async currentRemoteOpenCodeVersion(parsed, controlPath) {
+    try {
+      const output = await this.runManagedRemoteCommand(parsed, controlPath, 'opencode --version 2>/dev/null || true');
       return parseVersionToken(output);
     } catch {
       return null;
@@ -1496,8 +1602,9 @@ export class ElectronSshManager {
     let lastError = null;
     for (const command of commands) {
       try {
-        await runRemoteCommand(parsed, controlPath, command);
-        return;
+        await this.runManagedRemoteCommand(parsed, controlPath, command);
+        if (await this.currentRemoteOpenChamberVersion(parsed, controlPath)) return;
+        lastError = new Error('OpenChamber installation completed but the executable is unavailable');
       } catch (error) {
         lastError = error;
       }
@@ -1549,7 +1656,7 @@ export class ElectronSshManager {
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
     const uiPassword = this.configuredOpenChamberPassword(instance) || createEphemeralUiPassword();
     const envPrefix = buildManagedServeEnvPrefix(uiPassword);
-    const output = await runRemoteCommand(parsed, controlPath, `${envPrefix} openchamber serve --hostname 127.0.0.1 --port ${desiredPort}`);
+    const output = await this.runManagedRemoteCommand(parsed, controlPath, `${envPrefix} openchamber serve --hostname 127.0.0.1 --port ${desiredPort}`);
     const port = output.split(/\s+/).map((token) => Number.parseInt(token, 10)).find((value) => Number.isFinite(value));
     return { port: port || desiredPort, uiPassword };
   }
@@ -1837,6 +1944,7 @@ export class ElectronSshManager {
     }
 
     this.setStatus(instance.id, 'remote_probe', 'Checking remote OpenChamber installation');
+    await this.ensureManagedNodeRuntime(parsed, controlPath);
     const installedVersion = await this.currentRemoteOpenChamberVersion(parsed, controlPath);
     if (!installedVersion) {
       this.setStatus(instance.id, 'installing', 'Installing OpenChamber on remote host');
@@ -1845,6 +1953,8 @@ export class ElectronSshManager {
       this.setStatus(instance.id, 'updating', `Updating remote OpenChamber from ${installedVersion} to ${this.appVersion}`);
       await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
     }
+    await this.ensureRemoteOpenChamberNativeBinding(parsed, controlPath);
+    await this.ensureRemoteOpenCodeCli(parsed, controlPath, instance.remoteOpenchamber.installMethod);
 
     this.setStatus(instance.id, 'server_detecting', 'Detecting managed OpenChamber server');
     let remotePort = instance.remoteOpenchamber.preferredPort || null;
