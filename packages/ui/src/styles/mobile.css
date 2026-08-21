@@ -2788,7 +2788,8 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 }
 
-/* The viewport permanently reserves the latest expanded silhouette. The surface
+/* The viewport reserves the latest expanded silhouette while expanded or
+   animating. The surface
    moves inside that mask with compositor-only translateY; textarea autosize may
    snap the reserved height between interactions and never animates it. Keyboard
    lift owns the outer .oc-mobile-composer transform, so the two motions compose
@@ -2806,6 +2807,12 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-composer-motion-active,
 .oc-mobile-composer-motion-collapsed {
   overflow: hidden;
+}
+
+.oc-mobile-composer-motion-collapsed {
+  /* Collapsed idle wraps the compact pill: reserving the expanded stage height
+     here leaves a dead gap between the transcript and the composer. */
+  height: auto;
 }
 
 .oc-mobile-composer-surface {
