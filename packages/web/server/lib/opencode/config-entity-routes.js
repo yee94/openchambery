@@ -132,6 +132,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     resolveOptionalProjectDirectory,
     refreshOpenCodeAfterConfigChange,
     clientReloadDelayMs,
+    waitForOpenCodeReady,
     getAgentSources,
     getAgentConfig,
     createAgent,
@@ -164,10 +165,19 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       if (!directory) {
         return res.status(400).json({ error });
       }
+      // Gate on managed-OpenCode readiness like the generic proxy: without this
+      // the SDK hits an upstream that is still starting (or a stale orphan from
+      // a nodemon restart) and gets HTML/401 back, surfacing as a spurious 502.
+      if (typeof waitForOpenCodeReady === 'function') {
+        await waitForOpenCodeReady(20_000, 200);
+      }
       const client = createOpenCodeClient({
         baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
         headers: getOpenCodeAuthHeaders(),
-        fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
+        // Forward the full init: the SDK carries Authorization in init.headers.
+        // Dropping init (the old `(request) => fetch(request, { signal })` shape)
+        // silently stripped auth and produced spurious upstream 401s.
+        fetch: (request, init) => fetch(request, { ...init, signal: AbortSignal.timeout(8_000) }),
       });
       const location = { directory };
       const [providersResult, modelsResult, defaultResult] = await Promise.all([
@@ -190,8 +200,8 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(502).json({ error: 'Provider catalog is unavailable' });
       }
       return res.json(catalog.value);
-    } catch {
-      console.error('Provider catalog request failed');
+    } catch (catalogError) {
+      console.error('Provider catalog request failed', catalogError?.reason ? `(${catalogError.reason})` : catalogError?.message ?? catalogError);
       return res.status(502).json({ error: 'Provider catalog is unavailable' });
     }
   });

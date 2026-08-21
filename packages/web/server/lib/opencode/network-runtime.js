@@ -89,8 +89,15 @@ export const createOpenCodeNetworkRuntime = (deps) => {
       throw new Error('OpenCode port is not available');
     }
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    // v2 protocol mounts every route under `/api` (`@opencode-ai/protocol`).
+    // Callers pass unprefixed API paths (`/session`, `/event`, …); the bare
+    // upstream path falls through to the v2 Web UI HTML fallback. `/` stays the
+    // upstream origin for SDK base URLs, and already-prefixed paths are kept.
+    const apiPath = normalizedPath === '/' || normalizedPath.startsWith('/api')
+      ? normalizedPath
+      : `/api${normalizedPath}`;
     const prefix = normalizeApiPrefix(prefixOverride !== undefined ? prefixOverride : '');
-    const fullPath = `${prefix}${normalizedPath}`;
+    const fullPath = `${prefix}${apiPath}`;
     const base = state.openCodeBaseUrl ?? `http://${resolveConnectHostname()}:${state.openCodePort}`;
     return `${base}${fullPath}`;
   };

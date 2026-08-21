@@ -168,7 +168,7 @@ import {
     type ComposerSendPhase,
 } from '@/sync/composer-send-manager';
 import { drainEstablishingFollowUps } from '@/sync/composer-send-drain';
-import { updateInboxOverlayDelivery, useSessionInboxOverlayStore } from '@/sync/session-inbox-overlay';
+import { updateInboxOverlayDelivery, useSessionInboxOverlayStore, toChip as toInboxChip, EMPTY_INBOX_CHIPS } from '@/sync/session-inbox-overlay';
 import { cancelUnpromotedInboxItem, queueSessionInbox, steerSessionInbox } from '@/sync/session-prompt-api';
 import { canPromoteInboxItem, useSessionCompactionBarrierStore } from '@/sync/session-compaction-api';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
@@ -2343,21 +2343,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const establishingPendingItems = useComposerSendStore(
         React.useMemo(() => selectEstablishingPendingItems(establishingDraftID), [establishingDraftID]),
     );
-    const inboxOverlayChips = useSessionInboxOverlayStore(
-        React.useCallback((state) => {
-            if (!currentSessionId) return [];
-            return state.list(currentSessionId).map((item) => ({
-                kind: 'session-inbox' as const,
-                requestID: item.requestID,
-                queueItemID: item.id,
-                operationID: item.id,
-                messageID: item.id,
-                content: item.payload.text,
-                createdAt: item.timeCreated,
-                delivery: item.delivery,
-                attachmentCount: Array.isArray(item.payload.files) ? item.payload.files.length : 0,
-            }));
-        }, [currentSessionId]),
+    // useSyncExternalStore requires a stable snapshot. Subscribe to the store's
+    // own array reference and derive chips with useMemo; a `.map()` inside the
+    // selector mints a fresh array per read and trips "Maximum update depth".
+    const inboxOverlayItems = useSessionInboxOverlayStore(
+        React.useCallback((state) => (
+            currentSessionId ? state.bySession[currentSessionId] : undefined
+        ), [currentSessionId]),
+    );
+    const inboxOverlayChips = React.useMemo(
+        () => (inboxOverlayItems ? inboxOverlayItems.map(toInboxChip) : EMPTY_INBOX_CHIPS),
+        [inboxOverlayItems],
     );
     const composerPendingItems = React.useMemo(
         () => [...establishingPendingItems, ...inboxOverlayChips],

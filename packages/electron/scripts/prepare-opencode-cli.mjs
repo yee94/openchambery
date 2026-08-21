@@ -1,11 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
 import {
   PINNED_OPENCODE2_VERSION,
-  artifactForOpenCode2,
+  bundledOpenCode2BinaryName,
+  npmPackageForOpenCode2,
+  parseOpenCode2VersionOutput,
 } from './opencode2-bundle-contract.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,7 +51,7 @@ const readBinaryVersion = (binaryPath) => {
     windowsHide: true,
   });
   if (result.status !== 0) return null;
-  return (result.stdout || '').trim().split(/\s+/)[0] || null;
+  return parseOpenCode2VersionOutput(result.stdout) || null;
 };
 
 const ensureExecutable = (filePath) => {
@@ -66,6 +69,47 @@ const download = async (url, destination) => {
   const temp = `${destination}.tmp`;
   fs.writeFileSync(temp, Buffer.from(await response.arrayBuffer()));
   fs.renameSync(temp, destination);
+};
+
+// 读取 npm registry 配置，优先用户/项目 .npmrc 指定的镜像。
+const resolveNpmRegistry = () => {
+  const candidates = [
+    process.env.NPM_CONFIG_REGISTRY,
+    path.join(process.cwd(), '.npmrc'),
+    path.join(electronRoot, '.npmrc'),
+    path.join(os.homedir(), '.npmrc'),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      if (!candidate.endsWith('.npmrc')) {
+        if (/^https?:\/\//.test(candidate)) return candidate.replace(/\/+$/, '');
+        continue;
+      }
+      if (!fs.existsSync(candidate)) continue;
+      const match = fs.readFileSync(candidate, 'utf8').match(/^\s*registry\s*=\s*(\S+)\s*$/m);
+      if (match) return match[1].replace(/\/+$/, '');
+    } catch {
+      // Ignore unreadable npmrc candidates and fall back to the default registry.
+    }
+  }
+  return 'https://registry.npmjs.org';
+};
+
+const downloadNpmTarball = async (packageName, version, destination) => {
+  const registry = resolveNpmRegistry();
+  // scoped 包的 metadata URL 需要编码 `/`
+  const encodedName = encodeURIComponent(packageName);
+  const response = await fetch(`${registry}/${encodedName}/${version}`);
+  if (!response.ok) {
+    throw new Error(`Failed to resolve ${packageName}@${version} on ${registry}: ${response.status} ${response.statusText}`);
+  }
+  const metadata = await response.json();
+  const tarball = metadata?.dist?.tarball;
+  if (typeof tarball !== 'string' || !/^https?:\/\//.test(tarball)) {
+    throw new Error(`No tarball found for ${packageName}@${version} on ${registry}`);
+  }
+  // dist.tarball 由 registry 返回，跟随 registry 本身（镜像场景无需改写）。
+  await download(tarball, destination);
 };
 
 const extractArchive = (archivePath, destination) => {
@@ -87,7 +131,7 @@ const extractArchive = (archivePath, destination) => {
     run('unzip', ['-q', archivePath, '-d', destination]);
     return;
   }
-  if (archivePath.endsWith('.tar.gz')) {
+  if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
     run('tar', ['-xzf', archivePath, '-C', destination]);
     return;
   }
@@ -112,8 +156,8 @@ const findBinary = (root, binaryName) => {
 const main = async () => {
   const version = readPinnedOpenCode2Version();
   const targetArchitecture = resolveTargetArchitecture();
-  const artifact = artifactForOpenCode2(process.platform, targetArchitecture);
-  const outputBinary = outputBinaryPath(artifact.binary);
+  const binaryName = bundledOpenCode2BinaryName(process.platform);
+  const outputBinary = outputBinaryPath(binaryName);
   const existingVersion = readBinaryVersion(outputBinary);
   if (existingVersion === version) {
     console.log(`[electron] bundled opencode2 already prepared: ${outputBinary} (${version})`);
@@ -121,20 +165,22 @@ const main = async () => {
   }
 
   const cacheDir = path.join(cacheRoot, version, `${process.platform}-${targetArchitecture.opencode}`);
-  const archivePath = path.join(cacheDir, artifact.name);
-  const url = `https://github.com/anomalyco/opencode/releases/download/v${version}/${artifact.name}`;
+  const archivePath = path.join(cacheDir, 'opencode2-cli.tgz');
+  // opencode2 v2 只发 npm 平台包（@opencode-ai/cli-<os>-<arch>[-baseline]），
+  // 上游没有对应的 GitHub release 二进制。
+  const packageName = npmPackageForOpenCode2(process.platform, targetArchitecture);
   if (!fs.existsSync(archivePath)) {
-    console.log(`[electron] downloading opencode2 ${version}: ${artifact.name}`);
-    await download(url, archivePath);
+    console.log(`[electron] downloading opencode2 ${version}: ${packageName}`);
+    await downloadNpmTarball(packageName, version, archivePath);
   } else {
     console.log(`[electron] using cached opencode2 archive: ${archivePath}`);
   }
 
   const extractDir = path.join(cacheDir, 'extract');
   extractArchive(archivePath, extractDir);
-  const extractedBinary = findBinary(extractDir, artifact.binary);
+  const extractedBinary = findBinary(extractDir, binaryName);
   if (!extractedBinary) {
-    throw new Error(`Archive ${archivePath} did not contain ${artifact.binary}`);
+    throw new Error(`Archive ${archivePath} did not contain ${binaryName}`);
   }
 
   fs.mkdirSync(outputDir, { recursive: true });

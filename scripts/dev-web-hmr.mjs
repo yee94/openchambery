@@ -137,10 +137,27 @@ if (forceViteOptimize) {
 
 mkdirSync(hmrSessionIndexDir, { recursive: true });
 
-const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
+// Keep the dev runtime on the pinned opencode2 version. PATH resolution can
+// pick up a newer global `~/.bun/bin/opencode2` whose v2 API surface has
+// drifted from the pinned `@opencode-ai/client` SDK (e.g. question → form),
+// producing 404/UnsupportedContentType noise during bootstrap.
+const stagedPinnedBinary = path.join(repoRoot, 'packages', 'electron', 'resources', 'opencode-cli', 'opencode2');
+const apiEnv = {
   OPENCHAMBER_PORT: backendPort,
   OPENCHAMBER_SESSION_INDEX_DB_PATH: hmrSessionIndexDbPath,
-});
+};
+if (
+  !process.env.OPENCODE_BINARY
+  && !process.env.OPENCODE_PATH
+  && !process.env.OPENCHAMBER_OPENCODE_PATH
+  && !process.env.OPENCHAMBER_OPENCODE_BIN
+  && existsSync(stagedPinnedBinary)
+) {
+  apiEnv.OPENCODE_BINARY = stagedPinnedBinary;
+  console.log(`[dev:web:hmr] Using pinned opencode2 for dev runtime: ${stagedPinnedBinary}`);
+}
+
+const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], apiEnv);
 
 const viteArgs = ['x', 'vite', '--host', hmrHost, '--port', uiPort, '--strictPort'];
 if (forceViteOptimize) {

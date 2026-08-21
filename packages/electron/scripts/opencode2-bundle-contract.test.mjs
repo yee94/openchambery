@@ -9,6 +9,8 @@ import {
   PINNED_OPENCODE2_VERSION,
   artifactForOpenCode2,
   bundledOpenCode2BinaryName,
+  npmPackageForOpenCode2,
+  parseOpenCode2VersionOutput,
 } from './opencode2-bundle-contract.mjs';
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -35,4 +37,23 @@ test('prepare and verify scripts no longer pull 1.18.x or name the binary openco
   assert.match(prepare, /opencode2/);
   assert.match(verify, /opencode2/);
   assert.doesNotMatch(prepare, /binary:\s*'opencode'/);
+});
+
+test('npm platform package names map from GitHub artifact variants', () => {
+  assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'arm64' }), '@opencode-ai/cli-darwin-arm64');
+  assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'x64' }), '@opencode-ai/cli-darwin-x64-baseline');
+  assert.equal(npmPackageForOpenCode2('win32', { opencode: 'x64' }), '@opencode-ai/cli-windows-x64-baseline');
+  assert.equal(npmPackageForOpenCode2('linux', { opencode: 'arm64' }), '@opencode-ai/cli-linux-arm64');
+  assert.throws(() => npmPackageForOpenCode2('freebsd', { opencode: 'x64' }));
+});
+
+test('parseOpenCode2VersionOutput handles v2 and 1.x output formats', () => {
+  // v2: 首个 token 是二进制名，版本带 v 前缀。
+  assert.equal(parseOpenCode2VersionOutput('opencode2 v0.0.0-next-17444\n'), '0.0.0-next-17444');
+  assert.equal(parseOpenCode2VersionOutput('opencode2 v1.2.3-beta.1'), '1.2.3-beta.1');
+  // 1.x: 首 token 即版本号。
+  assert.equal(parseOpenCode2VersionOutput('1.18.18\n'), '1.18.18');
+  assert.equal(parseOpenCode2VersionOutput(''), '');
+  assert.equal(parseOpenCode2VersionOutput(null), '');
+  assert.equal(parseOpenCode2VersionOutput('opencode2'), '');
 });

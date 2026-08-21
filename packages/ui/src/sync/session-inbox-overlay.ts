@@ -48,6 +48,12 @@ const toChip = (item: SessionInboxOverlayItem): SessionInboxChip => ({
   attachmentCount: Array.isArray(item.payload.files) ? item.payload.files.length : 0,
 })
 
+export { toChip }
+
+/** Stable empty snapshots — selectors must never mint a fresh `[]` per read. */
+export const EMPTY_INBOX_OVERLAY_ITEMS: SessionInboxOverlayItem[] = []
+export const EMPTY_INBOX_CHIPS: SessionInboxChip[] = []
+
 const writeSession = (
   bySession: Record<string, SessionInboxOverlayItem[]>,
   sessionID: string,
@@ -124,7 +130,7 @@ export const useSessionInboxOverlayStore = create<SessionInboxOverlayState>((set
     })
   },
   list(sessionID) {
-    return get().bySession[sessionID] ?? []
+    return get().bySession[sessionID] ?? EMPTY_INBOX_OVERLAY_ITEMS
   },
 }))
 
@@ -160,6 +166,6 @@ export function isSessionInboxChip(value: unknown): value is SessionInboxChip {
 }
 
 export function selectInboxOverlayChips(sessionID: string | null | undefined): SessionInboxChip[] {
-  if (!sessionID) return []
+  if (!sessionID) return EMPTY_INBOX_CHIPS
   return useSessionInboxOverlayStore.getState().list(sessionID).map(toChip)
 }

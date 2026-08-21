@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   PINNED_OPENCODE2_VERSION,
   bundledOpenCode2BinaryName,
+  parseOpenCode2VersionOutput,
 } from './opencode2-bundle-contract.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ const runVersion = (binaryPath) => {
     const stdout = result.stdout ? `\n${result.stdout.trim()}` : '';
     throw new Error(`Failed to run bundled opencode2: ${binaryPath}${stderr}${stdout}`);
   }
-  return (result.stdout || '').trim().split(/\s+/)[0] || '';
+  return parseOpenCode2VersionOutput(result.stdout);
 };
 
 const assertBinary = (binaryPath, expectedVersion) => {

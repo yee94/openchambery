@@ -39,7 +39,7 @@ describe('OpenCode proxy SSE forwarding', () => {
     let seenAuthorization = null;
 
     const upstream = express();
-    upstream.get('/global/event', (req, res) => {
+    upstream.get('/api/global/event', (req, res) => {
       seenAuthorization = req.headers.authorization ?? null;
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
       res.setHeader('Cache-Control', 'private, max-age=0');
@@ -84,7 +84,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('returns 504 when the upstream SSE response headers exceed the connection timeout', async () => {
     const upstream = express();
-    upstream.get('/global/event', (_req, _res) => {});
+    upstream.get('/api/global/event', (_req, _res) => {});
     upstreamServer = await listen(upstream);
     const upstreamPort = upstreamServer.address().port;
 
@@ -109,7 +109,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('ends an established SSE response when upstream remains idle', async () => {
     const upstream = express();
-    upstream.get('/global/event', (_req, res) => {
+    upstream.get('/api/global/event', (_req, res) => {
       res.setHeader('Content-Type', 'text/event-stream');
       res.flushHeaders();
     });
@@ -137,7 +137,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('holds a request through OpenCode warmup and succeeds once ready (no 503/backoff)', async () => {
     const upstream = express();
-    upstream.get('/config/providers', (_req, res) => {
+    upstream.get('/api/config/providers', (_req, res) => {
       res.json({ ok: true });
     });
     upstreamServer = await listen(upstream);
@@ -200,7 +200,7 @@ describe('OpenCode proxy SSE forwarding', () => {
   it('does not forward session messages while V1 migration stays running past the ready grace', async () => {
     let upstreamHits = 0;
     const upstream = express();
-    upstream.get('/session/ses_1/message', (_req, res) => {
+    upstream.get('/api/session/ses_1/message', (_req, res) => {
       upstreamHits += 1;
       res.json([]);
     });
@@ -280,7 +280,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('routes generic API requests through external OpenCode base URL', async () => {
     const upstream = express();
-    upstream.get('/config/providers', (_req, res) => {
+    upstream.get('/api/config/providers', (_req, res) => {
       res.json({ ok: true, source: 'external-host' });
     });
     upstreamServer = await listen(upstream);
@@ -315,7 +315,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('replays parsed urlencoded bodies to generic API proxy requests', async () => {
     const upstream = express();
-    upstream.post('/form', express.urlencoded({ extended: true }), (req, res) => {
+    upstream.post('/api/form', express.urlencoded({ extended: true }), (req, res) => {
       res.json({ body: req.body });
     });
     upstreamServer = await listen(upstream);
@@ -355,7 +355,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('replays parsed JSON bodies to generic API proxy requests', async () => {
     const upstream = express();
-    upstream.post('/session/abc/prompt_async', express.json(), (req, res) => {
+    upstream.post('/api/session/abc/prompt_async', express.json(), (req, res) => {
       res.json({
         body: req.body,
         authorization: req.headers.authorization,
@@ -406,7 +406,7 @@ describe('OpenCode proxy SSE forwarding', () => {
     let seenAuth = null;
 
     const upstream = express();
-    upstream.get('/experimental/session', (req, res) => {
+    upstream.get('/api/experimental/session', (req, res) => {
       seenQuery = req.query;
       seenAuth = req.headers.authorization ?? null;
       res.setHeader('X-Next-Cursor', '123');
@@ -510,7 +510,7 @@ describe('OpenCode proxy SSE forwarding', () => {
     let seenListQuery = null;
 
     const upstream = express();
-    upstream.get('/session', (req, res) => {
+    upstream.get('/api/session', (req, res) => {
       seenListQuery = req.query;
       res.json([
         {
@@ -529,7 +529,7 @@ describe('OpenCode proxy SSE forwarding', () => {
         },
       ]);
     });
-    upstream.get('/session/abc', (_req, res) => {
+    upstream.get('/api/session/abc', (_req, res) => {
       res.json({
         id: 'abc',
         directory: '/repo/app',
@@ -596,7 +596,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('forwards unparsed SDK JSON bodies to generic API proxy requests', async () => {
     const upstream = express();
-    upstream.post('/session/abc/revert', express.json(), (req, res) => {
+    upstream.post('/api/session/abc/revert', express.json(), (req, res) => {
       res.json({
         body: req.body,
         contentLength: req.headers['content-length'],
@@ -641,7 +641,7 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('uses the long proxy timeout budget for slow upstream responses', async () => {
     const upstream = express();
-    upstream.get('/slow', (_req, _res) => {
+    upstream.get('/api/slow', (_req, _res) => {
       // Leave the response open so the proxy timeout path is exercised.
     });
     upstreamServer = await listen(upstream);

@@ -238,6 +238,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveOptionalProjectDirectory,
       refreshOpenCodeAfterConfigChange,
       clientReloadDelayMs,
+      waitForOpenCodeReady,
       getAgentSources,
       getAgentConfig,
       createAgent,

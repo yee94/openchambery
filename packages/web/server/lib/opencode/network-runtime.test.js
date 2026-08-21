@@ -94,7 +94,7 @@ describe('OpenCode network runtime', () => {
   it('builds managed OpenCode URLs against IPv4 loopback by default', () => {
     const runtime = createRuntime();
 
-    expect(runtime.buildOpenCodeUrl('/provider')).toBe('http://127.0.0.1:4096/provider');
+    expect(runtime.buildOpenCodeUrl('/provider')).toBe('http://127.0.0.1:4096/api/provider');
   });
 
   it('keeps external OpenCode base URLs authoritative', () => {
@@ -102,13 +102,20 @@ describe('OpenCode network runtime', () => {
       state: { openCodeBaseUrl: 'http://remote.example:4096' },
     });
 
-    expect(runtime.buildOpenCodeUrl('/provider')).toBe('http://remote.example:4096/provider');
+    expect(runtime.buildOpenCodeUrl('/provider')).toBe('http://remote.example:4096/api/provider');
+  });
+
+  it('keeps SDK base URLs (/) and already-prefixed paths untouched', () => {
+    const runtime = createRuntime();
+
+    expect(runtime.buildOpenCodeUrl('/')).toBe('http://127.0.0.1:4096/');
+    expect(runtime.buildOpenCodeUrl('/api/health')).toBe('http://127.0.0.1:4096/api/health');
   });
 
   it('normalizes wildcard and IPv6 OpenCode bind hosts for local connects', () => {
     expect(createRuntime({ configuredOpenCodeHostname: '0.0.0.0' }).buildOpenCodeUrl('/provider'))
-      .toBe('http://127.0.0.1:4096/provider');
+      .toBe('http://127.0.0.1:4096/api/provider');
     expect(createRuntime({ configuredOpenCodeHostname: '::1' }).buildOpenCodeUrl('/provider'))
-      .toBe('http://[::1]:4096/provider');
+      .toBe('http://[::1]:4096/api/provider');
   });
 });

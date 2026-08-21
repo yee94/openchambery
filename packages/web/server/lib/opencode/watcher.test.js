@@ -74,7 +74,7 @@ describe('createOpenCodeWatcherRuntime', () => {
 
     expect(fetchCalls).toEqual([
       {
-        url: 'http://127.0.0.1:4096/global/event',
+        url: 'http://127.0.0.1:4096/event',
         headers: {
           Accept: 'text/event-stream',
           'Cache-Control': 'no-cache',

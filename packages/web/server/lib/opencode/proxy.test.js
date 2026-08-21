@@ -5,7 +5,20 @@ import {
   isInteractiveSessionRequest,
   normalizeForwardedDirectoryHeaders,
   resolveSessionTurnAdmissionRequest,
+  toUpstreamOpenCodeApiPath,
 } from './proxy.js';
+
+describe('toUpstreamOpenCodeApiPath', () => {
+  it('keeps v2 /api paths and restores the prefix Express strips at the /api mount', () => {
+    expect(toUpstreamOpenCodeApiPath('/api/agent')).toBe('/api/agent');
+    expect(toUpstreamOpenCodeApiPath('/api/session?directory=/repo')).toBe('/api/session?directory=/repo');
+    expect(toUpstreamOpenCodeApiPath('/api')).toBe('/api');
+    expect(toUpstreamOpenCodeApiPath('/agent')).toBe('/api/agent');
+    expect(toUpstreamOpenCodeApiPath('/session/ses_1/message')).toBe('/api/session/ses_1/message');
+    expect(toUpstreamOpenCodeApiPath('/')).toBe('/api');
+    expect(toUpstreamOpenCodeApiPath('')).toBe('/api');
+  });
+});
 
 describe('createDirectoryQueryCanonicalizer', () => {
   it('canonicalizes directory query params and preserves other params', async () => {

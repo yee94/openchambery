@@ -26,7 +26,7 @@ Electron owns the in-process server handle. Normal quit, relaunch, vibrancy rela
 | `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers |
 | `scripts/electron-dev.mjs` | Desktop dev launcher with Vite HMR support |
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
-| `scripts/prepare-opencode-cli.mjs` | Downloads and stages the pinned OpenCode CLI into `resources/opencode-cli` |
+| `scripts/prepare-opencode-cli.mjs` | Downloads the pinned OpenCode CLI from npm platform packages (`@opencode-ai/cli-<os>-<arch>`) and stages it into `resources/opencode-cli` |
 | `scripts/bundle-main.mjs` | Bundles Electron main code into `dist-bundle/main.mjs` for packaging |
 | `scripts/rebuild-native.mjs` | Rebuilds native modules against the Electron runtime |
 | `scripts/package.mjs` | Runs `electron-builder`, with unsigned Windows builds when signing env is missing |
@@ -64,7 +64,7 @@ bun run electron:build
 That runs, in order:
 
 1. `build:web-assets` to build the web UI and copy it into `packages/electron/resources/web-dist`.
-2. `prepare:opencode-cli` to download/cache the pinned OpenCode CLI and copy it into `packages/electron/resources/opencode-cli`.
+2. `prepare:opencode-cli` to download/cache the pinned OpenCode CLI from npm platform packages and copy it into `packages/electron/resources/opencode-cli`.
 3. `bundle:main` to create `packages/electron/dist-bundle/main.mjs`.
 4. `rebuild:native` to rebuild native modules for Electron.
 5. `package.mjs` to run `electron-builder`.
@@ -154,7 +154,7 @@ The package supports macOS, Windows, and Linux desktop features. Linux AppImage 
 
 ## Bundled OpenCode CLI
 
-Packaged Desktop builds include the official OpenCode CLI that matches the pinned `@opencode-ai/sdk` version in the root `package.json`. `prepare:opencode-cli` downloads the platform-specific release artifact, caches it under `packages/electron/.cache/opencode-cli`, stages `opencode` or `opencode.exe` into `resources/opencode-cli`, and verifies `opencode --version` before packaging. Re-running the step is fast when the staged binary already matches the pinned version.
+Packaged Desktop builds include the official OpenCode CLI that matches the pinned version in `packages/web/server/lib/opencode/opencode2-pin.js`. `prepare:opencode-cli` downloads the platform-specific npm package (`@opencode-ai/cli-<os>-<arch>`, the v2 distribution channel — v2 has no GitHub release binaries), caches the tarball under `packages/electron/.cache/opencode-cli`, stages `opencode2` or `opencode2.exe` into `resources/opencode-cli`, and verifies `opencode2 --version` before packaging. Re-running the step is fast when the staged binary already matches the pinned version.
 
 ## Releases and automatic updates
 

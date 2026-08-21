@@ -148,6 +148,8 @@ import { shouldEnsureChatSessionRenderable } from './chatSessionMaterialization'
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
 const EMPTY_PENDING_USER_MESSAGES: readonly PendingUserMessagePresentation[] = [];
+// Stable empty snapshot for the zustand form selector (see sessionForms below).
+const EMPTY_SESSION_FORMS: import('@/sync/session-form-api').SessionFormInfo[] = [];
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
 /** useEventListener attaches to window when target is null — pass a no-op getter instead. */
@@ -927,8 +929,12 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // the directory.
     const sessionPermissions = useScopedBlockingPermissions(currentSessionId, effectiveSessionDirectory);
     const sessionQuestions = useScopedBlockingQuestions(currentSessionId, effectiveSessionDirectory);
+    // useSyncExternalStore requires a stable snapshot. When the store has no
+    // forms entry for this session yet, `?? []` would mint a fresh empty array
+    // per read, trip React's "getSnapshot should be cached" loop, and crash
+    // the chat container with "Maximum update depth exceeded".
     const sessionForms = useSessionFormStore(
-        (state) => (currentSessionId ? state.forms[currentSessionId] ?? [] : []),
+        (state) => (currentSessionId ? state.forms[currentSessionId] ?? EMPTY_SESSION_FORMS : EMPTY_SESSION_FORMS),
     );
     React.useEffect(() => {
         if (!currentSessionId) return;

@@ -3132,6 +3132,19 @@ export function useParentSessionTarget(sessionID: string | null, directory?: str
 export function useSession(sessionID?: string | null, directory?: string) {
   const { childStores } = useSyncSystem()
   const getSnapshot = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const w = window as { __snapCalls?: number; __snapChanges?: number; __prevSnap?: unknown; __lastNotifyAt?: number; __selfDriven?: number };
+      w.__snapCalls = (w.__snapCalls ?? 0) + 1;
+      const result0 = directory
+        ? childStores.getChild(directory)?.getState().session.find((session) => session.id === sessionID)
+        : findLiveSession(getLiveStates(childStores), sessionID);
+      if (w.__prevSnap !== undefined && !Object.is(w.__prevSnap, result0)) {
+        w.__snapChanges = (w.__snapChanges ?? 0) + 1;
+        if ((performance.now() - (w.__lastNotifyAt ?? 0)) > 100) w.__selfDriven = (w.__selfDriven ?? 0) + 1;
+      }
+      w.__prevSnap = result0;
+      return result0;
+    }
     if (directory) {
       return childStores.getChild(directory)?.getState().session.find((session) => session.id === sessionID)
     }
@@ -3139,6 +3152,15 @@ export function useSession(sessionID?: string | null, directory?: string) {
   }, [childStores, directory, sessionID])
 
   const subscribe = useCallback((notify: () => void) => {
+    if (typeof window !== 'undefined') {
+      const w = window as { __notifySubs?: number; __notifyCalls?: number };
+      w.__notifySubs = (w.__notifySubs ?? 0) + 1;
+      const wrappedNotify = () => { w.__notifyCalls = (w.__notifyCalls ?? 0) + 1; notify(); };
+      if (directory) {
+        return childStores.ensureChild(directory).subscribe(wrappedNotify)
+      }
+      return childStores.subscribeAllSelected((state) => state.session, wrappedNotify)
+    }
     if (directory) {
       return childStores.ensureChild(directory).subscribe(notify)
     }

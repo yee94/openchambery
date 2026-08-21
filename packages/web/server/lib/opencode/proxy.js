@@ -12,6 +12,20 @@ import {
   isDirectoryTurnAdmissionPath,
 } from './instance-recovery-runtime.js';
 
+/**
+ * v2 protocol mounts every JSON/SSE route under `/api`
+ * (`@opencode-ai/protocol` groups). Host traffic is already `/api/*`.
+ * Express `app.use('/api', …)` strips that prefix from `req.url`; put it back
+ * before talking to opencode2. Passing a root `/session` path to v2 returns
+ * the bundled Web UI HTML (`text/html`) and the SDK throws UnsupportedContentType.
+ */
+export const toUpstreamOpenCodeApiPath = (requestUrl) => {
+  const raw = typeof requestUrl === 'string' ? requestUrl : '';
+  if (!raw || raw === '/') return '/api';
+  if (raw.startsWith('/api/') || raw === '/api' || raw.startsWith('/api?')) return raw;
+  return raw.startsWith('/') ? `/api${raw}` : `/api/${raw}`;
+};
+
 export const createDirectoryQueryCanonicalizer = ({ realpath, ...cacheOptions } = {}) => {
   const realpathCache = createRealpathCache({ fallbackOnError: true, realpath, ...cacheOptions });
 
@@ -403,7 +417,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl.length > 0
         ? req.originalUrl
         : (typeof req.url === 'string' ? req.url : '');
-      const upstreamPath = requestUrl.startsWith('/api') ? requestUrl.slice(4) || '/' : requestUrl;
+      const upstreamPath = toUpstreamOpenCodeApiPath(requestUrl);
       const headers = normalizeForwardedDirectoryHeaders(
         collectForwardProxyHeaders(req.headers, getOpenCodeAuthHeaders())
       );
@@ -578,8 +592,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl.length > 0
       ? req.originalUrl
       : (typeof req.url === 'string' ? req.url : '');
-    const upstreamPathRaw = requestUrl.startsWith('/api') ? requestUrl.slice(4) || '/' : requestUrl;
-    return canonicalizeDirectoryQuery(upstreamPathRaw);
+    return canonicalizeDirectoryQuery(toUpstreamOpenCodeApiPath(requestUrl));
   };
 
   const forwardSanitizedSessionListRequest = async (req, res, next, logLabel) => {
@@ -803,7 +816,9 @@ export const registerOpenCodeProxy = (app, deps) => {
   const apiProxy = createProxyMiddleware({
     target: resolveProxyTarget(),
     changeOrigin: true,
-    pathRewrite: { '^/api': '' },
+    // Express already stripped the `/api` mount. Restore it so v2 receives
+    // `/api/agent` rather than `/agent` (which serves the Web UI HTML).
+    pathRewrite: (pathValue) => toUpstreamOpenCodeApiPath(pathValue),
     timeout: PROXY_REQUEST_TIMEOUT_MS,
     proxyTimeout: PROXY_REQUEST_TIMEOUT_MS,
     // Dynamic target — port can change after restart
