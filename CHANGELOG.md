@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.6] - 2026-08-22
+
+### 聊天
+
+- **修复收起态输入框上方的空白：** beta.5 的展开动画视口在收起后仍保留展开态高度占位，胶囊输入框与会话列表之间出现一条空白；现在收起闲置时视口回落为胶囊自然高度，展开 / 收起动画本身不变（仍是纯 transform，不牵动列表布局）。
+
 ## [1.18.2-beta.5] - 2026-08-22
 
 ### 聊天
