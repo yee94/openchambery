@@ -51,8 +51,7 @@ const resolveApiBase = (host) => {
 
 /**
  * Direct-host TargetExecutor over OpenChamber HTTP config-sync routes.
- * putTar streams the request body when given AsyncIterable/Readable; Buffers
- * are sent as a single body (current callers).
+ * putTar sends Buffer | Uint8Array as a single request body.
  */
 export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
   const base = resolveApiBase(host);
@@ -76,15 +75,11 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
     return payload;
   };
 
-  const bodyFromPayload = async (payload) => {
+  const bodyFromPayload = (payload) => {
     if (Buffer.isBuffer(payload) || payload instanceof Uint8Array) {
       return payload;
     }
-    const chunks = [];
-    for await (const chunk of payload) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks);
+    throw new Error('putTar payload must be Buffer or Uint8Array');
   };
 
   return {
@@ -107,7 +102,7 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
     },
 
     async putTar({ kind, payload, syncRunId }) {
-      const body = await bodyFromPayload(payload);
+      const body = bodyFromPayload(payload);
       const response = await fetchImpl(
         `${base}/api/openchamber/config-sync/put/${encodeURIComponent(kind)}?syncRunId=${encodeURIComponent(syncRunId)}`,
         {
@@ -193,6 +188,8 @@ export const createDirectConfigSyncController = ({
         }
         return {
           plan,
+          // Pull preview: key stays `remoteExisting` for wizard shape compatibility,
+          // but the values are paths that already exist locally (destination).
           remoteExisting: localExisting,
           remoteAgentsRootExists: (() => {
             try { return fs.statSync(path.join(home, '.agents')).isDirectory(); } catch { return false; }

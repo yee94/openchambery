@@ -3,9 +3,8 @@ import { spawn } from 'node:child_process';
 /**
  * Collect stdout from a local `tar …` into a Buffer.
  *
- * Current callers buffer the entire archive in memory (SSH stdin putTar).
- * The TargetExecutor.putTar contract accepts Buffer | AsyncIterable | Readable
- * so a later relay transport can stream without changing the executor signature.
+ * Callers buffer the entire archive in memory; TargetExecutor.putTar accepts
+ * Buffer | Uint8Array only.
  *
  * @param {string[]} tarArgs
  * @param {{ windowsHide?: boolean }} [spawnOptions]

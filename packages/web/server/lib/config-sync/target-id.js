@@ -12,7 +12,11 @@ export const syncTargetIdForDirectHost = (hostId) => {
   return `host:${id}`;
 };
 
-/** @param {string} serverId relay host signing-key fingerprint */
+/**
+ * @param {string} serverId relay host signing-key fingerprint
+ * Mirrored in packages/ui/src/lib/relay/relay-config-sync.ts (browser bundle cannot
+ * import this server module); keep both sides in sync when changing the prefix.
+ */
 export const syncTargetIdForRelayServer = (serverId) => {
   const id = String(serverId || '').trim();
   if (!id) throw new Error('Relay serverId is required');

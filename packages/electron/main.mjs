@@ -20,6 +20,7 @@ import {
   syncTargetIdForRelayServer,
 } from './sync-run-store.mjs';
 import {
+  OPENCODE_CONFIG_SYNC_ALLOWLIST,
   collectLocalTarBuffer,
   extractTarGzBuffer,
   finalizeLocalSyncDestination,
@@ -4812,6 +4813,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
             includeAuthFile: true,
             ...(syncOptions.selections ? { selections: syncOptions.selections } : {}),
           }),
+          selectionShape: {
+            fileGroups: OPENCODE_CONFIG_SYNC_ALLOWLIST.fileGroups.length,
+            singleFiles: OPENCODE_CONFIG_SYNC_ALLOWLIST.singleFiles.length,
+            directories: OPENCODE_CONFIG_SYNC_ALLOWLIST.directories.length,
+          },
         };
       }
       const id = String(args.id || '').trim();
@@ -4884,9 +4890,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         )
         : null;
       return {
-        configTar: configTar ? [...configTar] : null,
-        agentsTar: agentsTar ? [...agentsTar] : null,
-        authTar: authTar ? [...authTar] : null,
+        configTar,
+        agentsTar,
+        authTar,
       };
     }
 
@@ -4897,8 +4903,8 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!plan || !syncRunId) throw new Error('plan and syncRunId are required');
       const home = os.homedir();
       const toBuffer = (value) => {
-        if (!Array.isArray(value) || value.length === 0) return null;
-        return Buffer.from(value);
+        if (!(value instanceof Uint8Array) || value.byteLength === 0) return null;
+        return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
       };
       await prepareLocalSyncDestination(home, plan, { syncRunId });
       const configTar = toBuffer(args.configTar);

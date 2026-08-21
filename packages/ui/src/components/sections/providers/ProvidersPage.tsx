@@ -1094,14 +1094,14 @@ export const ProvidersPage: React.FC = () => {
                     <div key={modelId} className="py-1.5">
                       <div
                         className={cn(
-                          "flex items-center gap-3",
+                          "flex flex-wrap items-center gap-x-3 gap-y-1.5 md:flex-nowrap md:gap-3",
                           isHidden && 'opacity-50',
                         )}
                       >
-                      <span className="typography-meta font-medium text-foreground truncate flex-1 min-w-0">
+                      <span className="typography-meta font-medium text-foreground truncate w-full min-w-0 md:w-auto md:flex-1">
                         {modelName}
                       </span>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex w-full flex-wrap items-center gap-2 flex-shrink-0 md:w-auto md:flex-nowrap">
                         {(contextTokens || outputTokens) && (
                           <span className="typography-micro text-muted-foreground flex-shrink-0 bg-[var(--surface-muted)] px-1.5 py-0.5 rounded">
                             {contextTokens ? `${contextTokens} ${t('settings.providers.page.models.tokenBadge.context')}` : ''}
@@ -1126,7 +1126,7 @@ export const ProvidersPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => toggleHiddenModel(selectedProvider.id, modelId)}
-                          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-[var(--interactive-hover)]/50"
+                          className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-[var(--interactive-hover)]/50 md:ml-0"
                           title={isHidden ? t('settings.providers.page.models.actions.showModelInSelectors') : t('settings.providers.page.models.actions.hideModelFromSelectors')}
                           aria-label={isHidden ? t('settings.providers.page.models.actions.showModel') : t('settings.providers.page.models.actions.hideModel')}
                         >

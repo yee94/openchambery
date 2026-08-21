@@ -43,6 +43,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { PendingPairingRecord, RemoteClientRecord } from '@/lib/api/types';
 import { buildPairingConnectionPayload, encodePairingConnectionPayload, parsePairingConnectionPayload, type PairingEndpointCandidate } from '@/lib/connectionPayload';
 import {
+  buildDefaultSyncSelections,
   desktopSshCredentialSyncGet,
   desktopSshCredentialSyncGrant,
   desktopSshCredentialSyncRevoke,
@@ -135,13 +136,50 @@ type SyncConfigDialogProps = {
 type SyncWizardStep = 1 | 2 | 3;
 type SyncDialogPhase = 'scanning-local' | 'comparing-remote' | 'review' | 'applying' | 'error';
 
-const DEFAULT_SYNC_SELECTIONS: DesktopSshConfigSyncSelections = {
-  fileGroups: [true, true, true],
-  singleFiles: [true, true],
-  directories: [true, true, true, true, true, true, true],
+type SyncSelectionShape = {
+  fileGroups: number;
+  singleFiles: number;
+  directories: number;
+};
+
+/** Placeholder until local scan returns allowlist `selectionShape`. Never guess lengths. */
+const EMPTY_SYNC_SELECTIONS: DesktopSshConfigSyncSelections = {
+  fileGroups: [],
+  singleFiles: [],
+  directories: [],
   agentsRoot: true,
   authFile: false,
 };
+
+const readSelectionShape = (plan: DesktopSshConfigSyncPlan): SyncSelectionShape | null => {
+  const raw = (plan as DesktopSshConfigSyncPlan & {
+    selectionShape?: Partial<SyncSelectionShape> | null;
+  }).selectionShape;
+  if (!raw || typeof raw !== 'object') return null;
+  const fileGroups = typeof raw.fileGroups === 'number' ? raw.fileGroups : null;
+  const singleFiles = typeof raw.singleFiles === 'number' ? raw.singleFiles : null;
+  const directories = typeof raw.directories === 'number' ? raw.directories : null;
+  if (
+    fileGroups === null
+    || singleFiles === null
+    || directories === null
+    || fileGroups < 0
+    || singleFiles < 0
+    || directories < 0
+  ) {
+    return null;
+  }
+  return { fileGroups, singleFiles, directories };
+};
+
+const selectionsMatchShape = (
+  selections: DesktopSshConfigSyncSelections,
+  shape: SyncSelectionShape,
+): boolean => (
+  selections.fileGroups.length === shape.fileGroups
+  && selections.singleFiles.length === shape.singleFiles
+  && selections.directories.length === shape.directories
+);
 
 const SYNC_STEP_KEYS: I18nKey[] = [
   'settings.remoteInstances.page.sync.step.scanLocal',
@@ -161,26 +199,29 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const [step, setStep] = React.useState<SyncWizardStep>(1);
   const [phase, setPhase] = React.useState<SyncDialogPhase>('scanning-local');
   const [direction, setDirection] = React.useState<DesktopSshConfigSyncDirection>('push');
-  const [selections, setSelections] = React.useState<DesktopSshConfigSyncSelections>(DEFAULT_SYNC_SELECTIONS);
+  const [selections, setSelections] = React.useState<DesktopSshConfigSyncSelections>(EMPTY_SYNC_SELECTIONS);
+  const [selectionShape, setSelectionShape] = React.useState<SyncSelectionShape | null>(null);
   const [localPlan, setLocalPlan] = React.useState<DesktopSshConfigSyncPlan | null>(null);
   const [preview, setPreview] = React.useState<DesktopSshConfigSyncPreview | null>(null);
   const [credentialAuthorized, setCredentialAuthorized] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [errorStep, setErrorStep] = React.useState<1 | 2 | null>(null);
   // Snapshot frozen at preview time so apply cannot drift from the reviewed plan.
-  const confirmedSelectionsRef = React.useRef<DesktopSshConfigSyncSelections>(DEFAULT_SYNC_SELECTIONS);
+  const confirmedSelectionsRef = React.useRef<DesktopSshConfigSyncSelections>(EMPTY_SYNC_SELECTIONS);
+  const scopeReady = selectionShape != null && selectionsMatchShape(selections, selectionShape);
 
   const resetState = useEvent(() => {
     setStep(1);
     setPhase('scanning-local');
     setDirection('push');
-    setSelections(DEFAULT_SYNC_SELECTIONS);
+    setSelections(EMPTY_SYNC_SELECTIONS);
+    setSelectionShape(null);
     setLocalPlan(null);
     setPreview(null);
     setCredentialAuthorized(false);
     setErrorMessage(null);
     setErrorStep(null);
-    confirmedSelectionsRef.current = DEFAULT_SYNC_SELECTIONS;
+    confirmedSelectionsRef.current = EMPTY_SYNC_SELECTIONS;
   });
 
   const runCompareRemote = useEvent(async (
@@ -247,33 +288,60 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     setPreview(null);
 
     try {
-      if (instanceId) {
-        const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
-          ? relayHost.relay.serverId
-          : instanceId;
-        const grant = await desktopSshCredentialSyncGet(grantId, { targetKind });
-        const authorized = grant?.authorized === true;
-        setCredentialAuthorized(authorized);
-        if (!authorized && nextSelections.authFile) {
-          nextSelections = { ...nextSelections, authFile: false };
-          setSelections(nextSelections);
-        }
-      }
-      const plan = await desktopSshSyncOpencodeConfigLocalScan({
-        targetKind,
-        direction: nextDirection,
-        selections: nextSelections,
-      });
+      const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
+        ? relayHost.relay.serverId
+        : instanceId;
+      const grant = await desktopSshCredentialSyncGet(grantId, { targetKind });
+      const authorized = grant?.authorized === true;
+      setCredentialAuthorized(authorized);
+
+      // Omit selections until shape is known so the scan can return selectionShape
+      // without a guessed allowlist length. Reuse matching selections on later passes.
+      const canReuseSelections = selectionShape != null
+        && selectionsMatchShape(nextSelections, selectionShape);
+      const plan = await desktopSshSyncOpencodeConfigLocalScan(
+        canReuseSelections
+          ? {
+            targetKind,
+            direction: nextDirection,
+            selections: nextSelections,
+          }
+          : {
+            targetKind,
+            direction: nextDirection,
+          },
+      );
       if (!plan) {
         // Null means no desktop bridge or an unrecognized IPC payload. Show the
         // failure in the foreground; never close the dialog silently.
+        setSelectionShape(null);
         setErrorMessage(t('settings.remoteInstances.page.sync.state.unavailable'));
         setErrorStep(1);
         setPhase('error');
         return;
       }
+
+      const shape = readSelectionShape(plan);
+      if (!shape) {
+        // Do not guess allowlist lengths; disable scope until the wizard is reopened.
+        setSelectionShape(null);
+        setSelections(EMPTY_SYNC_SELECTIONS);
+        setErrorMessage(t('settings.remoteInstances.page.sync.state.unavailable'));
+        setErrorStep(1);
+        setPhase('error');
+        return;
+      }
+
+      setSelectionShape(shape);
+      let resolvedSelections = canReuseSelections
+        ? nextSelections
+        : buildDefaultSyncSelections(shape, { includeAuthFile: false });
+      if (!authorized && resolvedSelections.authFile) {
+        resolvedSelections = { ...resolvedSelections, authFile: false };
+      }
+      setSelections(resolvedSelections);
       setLocalPlan(plan);
-      await runCompareRemote(nextDirection, nextSelections);
+      await runCompareRemote(nextDirection, resolvedSelections);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(1);
@@ -285,7 +353,8 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     if (!open || !instanceId) {
       return;
     }
-    void runScanLocal('push', DEFAULT_SYNC_SELECTIONS);
+    // Mount/open scan seeds selectionShape; defaults come from buildDefaultSyncSelections.
+    void runScanLocal('push');
   }, [open, instanceId]);
 
   React.useEffect(() => {
@@ -407,6 +476,13 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
 
         <div className="space-y-2 rounded-lg border border-border/60 p-2">
           <div className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.sync.scope.title')}</div>
+          {!scopeReady ? (
+            <div className="typography-micro text-muted-foreground">
+              {phase === 'scanning-local' || phase === 'comparing-remote'
+                ? t('settings.remoteInstances.page.sync.step.scanLocal')
+                : t('settings.remoteInstances.page.sync.state.unavailable')}
+            </div>
+          ) : null}
           {([
             { key: 'config', label: 'config.json / opencode.json(c)', index: 0, kind: 'fileGroups' as const },
             { key: 'oh-slim', label: 'oh-my-opencode-slim.json(c)', index: 1, kind: 'fileGroups' as const },
@@ -417,15 +493,18 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
             { key: 'commands', label: 'commands/', index: 1, kind: 'directories' as const },
             { key: 'skills', label: 'skills/', index: 2, kind: 'directories' as const },
             { key: 'plugins', label: 'plugins/', index: 5, kind: 'directories' as const },
-          ]).map((item) => {
+          ]).filter((item) => (
+            selectionShape != null && item.index < selectionShape[item.kind]
+          )).map((item) => {
             const checked = selections[item.kind][item.index] !== false;
             return (
               <label key={item.key} className="flex items-center gap-2 typography-meta">
                 <Checkbox
                   checked={checked}
-                  disabled={isApplying}
+                  disabled={isApplying || !scopeReady}
                   ariaLabel={item.label}
                   onChange={(nextChecked) => {
+                    if (!scopeReady) return;
                     const list = [...selections[item.kind]];
                     list[item.index] = nextChecked;
                     const next = { ...selections, [item.kind]: list };
@@ -440,9 +519,10 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
               checked={selections.agentsRoot}
-              disabled={isApplying}
+              disabled={isApplying || !scopeReady}
               ariaLabel={t('settings.remoteInstances.page.sync.section.agentsRoot')}
               onChange={(checked) => {
+                if (!scopeReady) return;
                 const next = { ...selections, agentsRoot: checked };
                 setSelections(next);
                 if (phase === 'review') void runCompareRemote(direction, next);
@@ -453,10 +533,10 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
               checked={selections.authFile}
-              disabled={isApplying || !credentialAuthorized}
+              disabled={isApplying || !scopeReady || !credentialAuthorized}
               ariaLabel={t('settings.remoteInstances.page.sync.section.authFile')}
               onChange={(checked) => {
-                if (!credentialAuthorized) return;
+                if (!scopeReady || !credentialAuthorized) return;
                 const next = { ...selections, authFile: checked };
                 setSelections(next);
                 if (phase === 'review') void runCompareRemote(direction, next);

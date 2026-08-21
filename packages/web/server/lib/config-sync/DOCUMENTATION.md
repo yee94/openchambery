@@ -15,7 +15,7 @@ Own the direction-agnostic OpenCode config sync contract: allowlist planning on 
 | `selections.js` | Default/normalize/filter whitelist selections |
 | `scripts.js` | Probe / inventory / generational prepare / finalize / remote tar scripts |
 | `local-backup.js` | Local (pull destination) generational backup + tar extract |
-| `tar.js` | `collectLocalTarBuffer` (buffered today; streaming reserved by putTar payload type) |
+| `tar.js` | `collectLocalTarBuffer` (buffered) |
 | `engine.js` | `applyConfigSyncPlan` orchestration for **push** (prepare → putTar* → finalize) |
 | `credential-auth.js` | Credential grant enforcement helpers |
 | `target-id.js` | `ssh:<instanceId>` namespace helper |
@@ -24,7 +24,7 @@ Own the direction-agnostic OpenCode config sync contract: allowlist planning on 
 
 - **SyncTarget**: `{ id, kind, capabilities: { posixShell, tarExtract, authFileWrite } }`
 - **TargetExecutor**: `{ probe(plan), prepare(plan, { syncRunId }), putTar({ kind, payload }), finalize(plan, { syncRunId }) }`
-  - `payload`: `Buffer | Uint8Array | AsyncIterable<Uint8Array> | Readable` — SSH currently buffers; relay may stream later.
+  - `payload`: `Buffer | Uint8Array` — all executors currently buffer; reintroduce streaming only when a transport needs it.
 - **Plan** (source-computed): `{ direction: 'push' | 'pull', syncRunId?, sourceTargetId?, targetId?, files, directories, agentsRoot, authFile, deletes, totalBytes, selections? }`
 - **Selections**: `{ fileGroups: boolean[], singleFiles: boolean[], directories: boolean[], agentsRoot: boolean, authFile: boolean }`
   - Preview and apply must share one selections snapshot so the confirmed scope cannot drift.

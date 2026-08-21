@@ -14,6 +14,7 @@ import {
 } from '@/lib/relay/tunnel-client';
 import type { DesktopHost, DesktopHostRelay } from '@/lib/desktopHosts';
 import {
+  buildDefaultSyncSelections,
   desktopSshCredentialSyncGet,
   desktopSshSyncOpencodeConfigLocalScan,
   type DesktopSshConfigSyncDirection,
@@ -21,12 +22,15 @@ import {
   type DesktopSshConfigSyncPlan,
   type DesktopSshConfigSyncPreview,
   type DesktopSshConfigSyncResult,
+  type DesktopSshConfigSyncSelectionShape,
   type DesktopSshConfigSyncSelections,
 } from '@/lib/desktopSsh';
 import { hasDesktopInvoke, invokeDesktop } from '@/lib/desktop';
 
+/** Mirrors `RELAY_IDENTITY_CHANGED_CODE` in packages/web/server/lib/config-sync/contract.js. */
 export const RELAY_IDENTITY_CHANGED_CODE = 'relay_identity_changed';
 
+/** Mirrors `RelayIdentityChangedError` in packages/web/server/lib/config-sync/contract.js. */
 export class RelayIdentityChangedError extends Error {
   readonly code = RELAY_IDENTITY_CHANGED_CODE;
   readonly expectedServerId: string;
@@ -54,8 +58,24 @@ type SyncRunAppendRecord = {
   error?: string;
 };
 
+type RemoteInventory = {
+  files?: DesktopSshConfigSyncPlan['files'];
+  directories?: DesktopSshConfigSyncPlan['directories'];
+  agentsRoot?: DesktopSshConfigSyncPlan['agentsRoot'];
+  authFile?: DesktopSshConfigSyncPlan['authFile'];
+};
+
+type ProbeResult = {
+  remoteExisting: string[];
+  remoteAgentsRootExists: boolean;
+  remoteAuthFileExists: boolean;
+  inventory?: unknown;
+  inboundCredentialAuthorized?: boolean;
+};
+
 const inflightByTarget = new Map<string, string>();
 
+/** Mirrors `syncTargetIdForRelayServer` in packages/web/server/lib/config-sync/target-id.js. */
 const syncTargetIdForRelayServer = (serverId: string): string => {
   const id = serverId.trim();
   if (!id) throw new Error('Relay serverId is required');
@@ -100,15 +120,105 @@ const assertRelayIdentity = async (
   }
 };
 
+const assertCredentialAuthorized = (
+  plan: DesktopSshConfigSyncPlan,
+  credentialAuthorized: boolean,
+  targetId: string,
+): void => {
+  if (!plan.authFile || credentialAuthorized) return;
+  const error = new Error(`Credential sync is not authorized for ${targetId}`);
+  (error as Error & { code?: string }).code = 'credential_sync_unauthorized';
+  throw error;
+};
+
+const emptyResult = (plan: DesktopSshConfigSyncPlan): DesktopSshConfigSyncResult & { plan: DesktopSshConfigSyncPlan } => ({
+  ok: true as const,
+  files: 0,
+  directories: 0,
+  deletes: plan.deletes.length,
+  totalBytes: 0,
+  agentsRoot: null,
+  authFile: null,
+  plan,
+});
+
+const requireSelectionShape = (
+  localPlan: DesktopSshConfigSyncPlan | null,
+): DesktopSshConfigSyncSelectionShape => {
+  const shape = localPlan?.selectionShape;
+  if (!shape) {
+    throw new Error('Local sync inventory missing selectionShape (update the OpenChamber desktop app)');
+  }
+  return shape;
+};
+
+const mergeSelections = (
+  shape: DesktopSshConfigSyncSelectionShape,
+  options: DesktopSshConfigSyncOptions,
+  credentialAuthorized: boolean,
+): DesktopSshConfigSyncSelections => {
+  const defaults = buildDefaultSyncSelections(shape, { includeAuthFile: false });
+  const provided = options.selections;
+  return {
+    fileGroups: provided?.fileGroups ?? defaults.fileGroups,
+    singleFiles: provided?.singleFiles ?? defaults.singleFiles,
+    directories: provided?.directories ?? defaults.directories,
+    agentsRoot: provided?.agentsRoot !== false,
+    authFile: credentialAuthorized && provided?.authFile === true,
+  };
+};
+
+const buildPullPlan = (
+  probe: ProbeResult,
+  localPlan: DesktopSshConfigSyncPlan | null,
+  selections: DesktopSshConfigSyncSelections,
+  credentialAuthorized: boolean,
+  targetId: string,
+): DesktopSshConfigSyncPlan => {
+  const inventory = (probe.inventory && typeof probe.inventory === 'object')
+    ? probe.inventory as RemoteInventory
+    : null;
+  const plan: DesktopSshConfigSyncPlan = {
+    direction: 'pull',
+    files: inventory?.files ?? localPlan?.files ?? [],
+    directories: inventory?.directories ?? localPlan?.directories ?? [],
+    agentsRoot: selections.agentsRoot ? (inventory?.agentsRoot ?? null) : null,
+    authFile: selections.authFile ? (inventory?.authFile ?? null) : null,
+    deletes: localPlan?.deletes ?? [],
+    totalBytes: localPlan?.totalBytes ?? 0,
+    selections,
+  };
+  assertCredentialAuthorized(plan, credentialAuthorized, targetId);
+  return plan;
+};
+
+const buildPushPlan = (
+  localPlan: DesktopSshConfigSyncPlan,
+  selections: DesktopSshConfigSyncSelections,
+  credentialAuthorized: boolean,
+  targetId: string,
+): DesktopSshConfigSyncPlan => {
+  const plan: DesktopSshConfigSyncPlan = {
+    ...localPlan,
+    direction: 'push',
+    authFile: selections.authFile ? localPlan.authFile : null,
+    agentsRoot: selections.agentsRoot ? localPlan.agentsRoot : null,
+    selections,
+  };
+  assertCredentialAuthorized(plan, credentialAuthorized, targetId);
+  return plan;
+};
+
+const planHasPayload = (plan: DesktopSshConfigSyncPlan): boolean => (
+  plan.files.length > 0
+  || plan.directories.length > 0
+  || Boolean(plan.agentsRoot)
+  || Boolean(plan.authFile)
+);
+
 type RelayExecutor = {
   tunnel: RelayTunnelClient;
-  probe: (plan: object) => Promise<{
-    remoteExisting: string[];
-    remoteAgentsRootExists: boolean;
-    remoteAuthFileExists: boolean;
-    inventory?: unknown;
-    inboundCredentialAuthorized?: boolean;
-  }>;
+  probe: (plan: object) => Promise<ProbeResult>;
   prepare: (plan: object, syncRunId: string) => Promise<void>;
   putTar: (kind: 'config' | 'agents' | 'auth', payload: Uint8Array, syncRunId: string) => Promise<void>;
   download: (kind: 'config' | 'agents' | 'auth') => Promise<Uint8Array>;
@@ -279,6 +389,30 @@ export type RelayConfigSyncHooks = {
 };
 
 /**
+ * Shape-first local scan: discover allowlist cardinality, then build selections,
+ * then (when needed) re-scan with those selections applied.
+ */
+const resolveAuthSelectionsAndScan = async (
+  serverId: string,
+  direction: DesktopSshConfigSyncDirection,
+  options: DesktopSshConfigSyncOptions,
+) => {
+  const grant = await desktopSshCredentialSyncGet(serverId, { targetKind: 'relay' });
+  const credentialAuthorized = grant?.authorized === true;
+  const shapeScan = await desktopSshSyncOpencodeConfigLocalScan({ direction, targetKind: 'relay' });
+  const selectionShape = requireSelectionShape(shapeScan);
+  const selections = mergeSelections(selectionShape, options, credentialAuthorized);
+  // Push needs the filtered inventory; pull can reuse the shape scan for deletes/totalBytes.
+  const localPlan = direction === 'push'
+    ? await desktopSshSyncOpencodeConfigLocalScan({ direction, selections, targetKind: 'relay' })
+    : shapeScan;
+  if (direction === 'push' && !localPlan) {
+    throw new Error('Local sync inventory unavailable');
+  }
+  return { credentialAuthorized, selectionShape, selections, localPlan };
+};
+
+/**
  * Preview relay config sync. Opens a throwaway tunnel (or uses hooks) and never
  * writes on either side.
  */
@@ -290,81 +424,30 @@ export const previewRelayConfigSync = async (
   const relay = host.relay;
   const targetId = syncTargetIdForRelayServer(relay.serverId);
   const direction: DesktopSshConfigSyncDirection = options.direction === 'pull' ? 'pull' : 'push';
-  const grant = await desktopSshCredentialSyncGet(relay.serverId, { targetKind: 'relay' });
-  const credentialAuthorized = grant?.authorized === true;
-  const selections: DesktopSshConfigSyncSelections = {
-    fileGroups: options.selections?.fileGroups ?? [true, true, true],
-    singleFiles: options.selections?.singleFiles ?? [true, true],
-    directories: options.selections?.directories ?? [true, true, true, true, true, true, true],
-    agentsRoot: options.selections?.agentsRoot !== false,
-    authFile: credentialAuthorized && options.selections?.authFile === true,
-  };
 
   return runExclusive(targetId, 'preview', direction, async () => {
     await assertRelayIdentity(relay.serverId, hooks.refreshCandidates);
+    const { credentialAuthorized, selectionShape, selections, localPlan } = await resolveAuthSelectionsAndScan(
+      relay.serverId,
+      direction,
+      options,
+    );
     const executor = createRelayHttpExecutor(relay, host);
     try {
       if (direction === 'pull') {
         const probe = await executor.probe({});
-        // Pull plan is computed on the remote inventory via the server response;
-        // local scan still seeds allowlist shape for the wizard.
-        const localPlan = await desktopSshSyncOpencodeConfigLocalScan({
-          direction: 'pull',
-          selections,
-          targetKind: 'relay',
-        });
-        const inventory = (probe.inventory && typeof probe.inventory === 'object')
-          ? probe.inventory as {
-            files?: DesktopSshConfigSyncPlan['files'];
-            directories?: DesktopSshConfigSyncPlan['directories'];
-            agentsRoot?: DesktopSshConfigSyncPlan['agentsRoot'];
-            authFile?: DesktopSshConfigSyncPlan['authFile'];
-          }
-          : null;
-        const plan: DesktopSshConfigSyncPlan = {
-          direction: 'pull',
-          files: inventory?.files ?? localPlan?.files ?? [],
-          directories: inventory?.directories ?? localPlan?.directories ?? [],
-          agentsRoot: selections.agentsRoot ? (inventory?.agentsRoot ?? null) : null,
-          authFile: selections.authFile ? (inventory?.authFile ?? null) : null,
-          deletes: localPlan?.deletes ?? [],
-          totalBytes: localPlan?.totalBytes ?? 0,
-          selections,
-        };
-        if (plan.authFile && !credentialAuthorized) {
-          const error = new Error(`Credential sync is not authorized for ${targetId}`);
-          (error as Error & { code?: string }).code = 'credential_sync_unauthorized';
-          throw error;
-        }
+        const plan = buildPullPlan(probe, localPlan, selections, credentialAuthorized, targetId);
         return {
           plan,
           remoteExisting: probe.remoteExisting,
           remoteAgentsRootExists: probe.remoteAgentsRootExists,
           remoteAuthFileExists: probe.remoteAuthFileExists,
           credentialAuthorized,
+          selectionShape,
         };
       }
 
-      const localPlan = await desktopSshSyncOpencodeConfigLocalScan({
-        direction: 'push',
-        selections,
-        targetKind: 'relay',
-      });
-      if (!localPlan) {
-        throw new Error('Local sync inventory unavailable');
-      }
-      const plan: DesktopSshConfigSyncPlan = {
-        ...localPlan,
-        direction: 'push',
-        authFile: selections.authFile ? localPlan.authFile : null,
-        agentsRoot: selections.agentsRoot ? localPlan.agentsRoot : null,
-        selections,
-      };
-      if (plan.authFile && !credentialAuthorized) {
-        const error = new Error(`Credential sync is not authorized for ${targetId}`);
-        (error as Error & { code?: string }).code = 'credential_sync_unauthorized';
-        throw error;
-      }
+      const plan = buildPushPlan(localPlan!, selections, credentialAuthorized, targetId);
       const probe = await executor.probe(plan);
       return {
         plan,
@@ -372,6 +455,7 @@ export const previewRelayConfigSync = async (
         remoteAgentsRootExists: probe.remoteAgentsRootExists,
         remoteAuthFileExists: probe.remoteAuthFileExists,
         credentialAuthorized,
+        selectionShape: localPlan?.selectionShape ?? selectionShape,
       };
     } finally {
       executor.close();
@@ -391,75 +475,23 @@ export const applyRelayConfigSync = async (
   const relay = host.relay;
   const targetId = syncTargetIdForRelayServer(relay.serverId);
   const direction: DesktopSshConfigSyncDirection = options.direction === 'pull' ? 'pull' : 'push';
-  const grant = await desktopSshCredentialSyncGet(relay.serverId, { targetKind: 'relay' });
-  const credentialAuthorized = grant?.authorized === true;
-  const selections = options.selections ?? {
-    fileGroups: [true, true, true],
-    singleFiles: [true, true],
-    directories: [true, true, true, true, true, true, true],
-    agentsRoot: true,
-    authFile: false,
-  };
-  if (!credentialAuthorized) {
-    selections.authFile = false;
-  }
 
   return runExclusive(targetId, 'apply', direction, async ({ syncRunId }) => {
     await assertRelayIdentity(relay.serverId, hooks.refreshCandidates);
+    const { credentialAuthorized, selections, localPlan } = await resolveAuthSelectionsAndScan(
+      relay.serverId,
+      direction,
+      options,
+    );
     const executor = createRelayHttpExecutor(relay, host);
     try {
-      // Apply is executed by Electron for SSH/direct; for relay we drive the HTTP
-      // protocol here and let the remote receiver mutate. Pull downloads are
-      // applied locally through a dedicated Electron helper when available.
       if (direction === 'pull') {
-        // Pull apply: probe inventory over the tunnel, download tars, then hand
-        // bytes to Electron for local extract (main owns local-backup helpers).
-        // Do NOT call previewRelayConfigSync here — it would re-enter the mutex.
+        // Probe + download over the tunnel, then Electron extracts locally.
+        // Do NOT call previewRelayConfigSync — that would re-enter the mutex.
         const probe = await executor.probe({});
-        const localPlan = await desktopSshSyncOpencodeConfigLocalScan({
-          direction: 'pull',
-          selections,
-          targetKind: 'relay',
-        });
-        const inventory = (probe.inventory && typeof probe.inventory === 'object')
-          ? probe.inventory as {
-            files?: DesktopSshConfigSyncPlan['files'];
-            directories?: DesktopSshConfigSyncPlan['directories'];
-            agentsRoot?: DesktopSshConfigSyncPlan['agentsRoot'];
-            authFile?: DesktopSshConfigSyncPlan['authFile'];
-          }
-          : null;
-        const plan: DesktopSshConfigSyncPlan = {
-          direction: 'pull',
-          files: inventory?.files ?? localPlan?.files ?? [],
-          directories: inventory?.directories ?? localPlan?.directories ?? [],
-          agentsRoot: selections.agentsRoot ? (inventory?.agentsRoot ?? null) : null,
-          authFile: selections.authFile ? (inventory?.authFile ?? null) : null,
-          deletes: localPlan?.deletes ?? [],
-          totalBytes: localPlan?.totalBytes ?? 0,
-          selections,
-        };
-        if (plan.authFile && !credentialAuthorized) {
-          const error = new Error(`Credential sync is not authorized for ${targetId}`);
-          (error as Error & { code?: string }).code = 'credential_sync_unauthorized';
-          throw error;
-        }
-        const hasPayload = plan.files.length > 0
-          || plan.directories.length > 0
-          || Boolean(plan.agentsRoot)
-          || Boolean(plan.authFile);
-        if (!hasPayload) {
-          return {
-            ok: true as const,
-            files: 0,
-            directories: 0,
-            deletes: plan.deletes.length,
-            totalBytes: 0,
-            agentsRoot: null,
-            authFile: null,
-            plan,
-          };
-        }
+        const plan = buildPullPlan(probe, localPlan, selections, credentialAuthorized, targetId);
+        if (!planHasPayload(plan)) return emptyResult(plan);
+
         const configTar = (plan.files.length > 0 || plan.directories.length > 0)
           ? await executor.download('config')
           : null;
@@ -468,77 +500,42 @@ export const applyRelayConfigSync = async (
         if (!hasDesktopInvoke()) {
           throw new Error('Relay pull apply requires the OpenChamber desktop app');
         }
+        // Structured-clone Uint8Array directly (desktop_relay_sync_apply_local contract).
         const applied = await invokeDesktop('desktop_relay_sync_apply_local', {
           syncRunId,
           plan,
-          configTar: configTar ? Array.from(configTar) : null,
-          agentsTar: agentsTar ? Array.from(agentsTar) : null,
-          authTar: authTar ? Array.from(authTar) : null,
+          configTar,
+          agentsTar,
+          authTar,
         }) as DesktopSshConfigSyncResult | null;
-        if (!applied?.ok) {
-          throw new Error('Relay pull local apply failed');
-        }
+        if (!applied?.ok) throw new Error('Relay pull local apply failed');
         return { ...applied, plan };
       }
 
-      const localPlan = await desktopSshSyncOpencodeConfigLocalScan({
-        direction: 'push',
-        selections,
-        targetKind: 'relay',
-      });
-      if (!localPlan) throw new Error('Local sync inventory unavailable');
-      const plan: DesktopSshConfigSyncPlan = {
-        ...localPlan,
-        direction: 'push',
-        authFile: selections.authFile ? localPlan.authFile : null,
-        agentsRoot: selections.agentsRoot ? localPlan.agentsRoot : null,
-        selections,
-      };
-      if (plan.authFile && !credentialAuthorized) {
-        const error = new Error(`Credential sync is not authorized for ${targetId}`);
-        (error as Error & { code?: string }).code = 'credential_sync_unauthorized';
-        throw error;
-      }
-      const hasPayload = plan.files.length > 0
-        || plan.directories.length > 0
-        || Boolean(plan.agentsRoot)
-        || Boolean(plan.authFile);
-      if (!hasPayload) {
-        return {
-          ok: true as const,
-          files: 0,
-          directories: 0,
-          deletes: plan.deletes.length,
-          totalBytes: 0,
-          agentsRoot: null,
-          authFile: null,
-          plan,
-        };
-      }
-
-      // Collect local tars in Electron, then stream put over the tunnel.
+      const plan = buildPushPlan(localPlan!, selections, credentialAuthorized, targetId);
+      if (!planHasPayload(plan)) return emptyResult(plan);
       if (!hasDesktopInvoke()) {
         throw new Error('Relay push apply requires the OpenChamber desktop app');
       }
-      const packed = await invokeDesktop('desktop_relay_sync_pack_local', {
-        plan,
-      }) as {
-        configTar?: number[] | null;
-        agentsTar?: number[] | null;
-        authTar?: number[] | null;
+
+      // Structured-clone Uint8Array directly (desktop_relay_sync_pack_local contract).
+      const packed = await invokeDesktop('desktop_relay_sync_pack_local', { plan }) as {
+        configTar?: Uint8Array | null;
+        agentsTar?: Uint8Array | null;
+        authTar?: Uint8Array | null;
       } | null;
       if (!packed) throw new Error('Relay push local pack failed');
 
       await executor.prepare(plan, syncRunId);
       try {
-        if (packed.configTar?.length) {
-          await executor.putTar('config', Uint8Array.from(packed.configTar), syncRunId);
+        if (packed.configTar && packed.configTar.byteLength > 0) {
+          await executor.putTar('config', packed.configTar, syncRunId);
         }
-        if (packed.agentsTar?.length) {
-          await executor.putTar('agents', Uint8Array.from(packed.agentsTar), syncRunId);
+        if (packed.agentsTar && packed.agentsTar.byteLength > 0) {
+          await executor.putTar('agents', packed.agentsTar, syncRunId);
         }
-        if (packed.authTar?.length) {
-          await executor.putTar('auth', Uint8Array.from(packed.authTar), syncRunId);
+        if (packed.authTar && packed.authTar.byteLength > 0) {
+          await executor.putTar('auth', packed.authTar, syncRunId);
         }
         await executor.finalize(syncRunId);
       } catch (error) {

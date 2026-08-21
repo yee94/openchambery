@@ -18,8 +18,6 @@ export {
   MANAGED_SSH_SYNC_CAPABILITIES,
   DIRECT_HOST_SYNC_CAPABILITIES,
   RELAY_HOST_SYNC_CAPABILITIES,
-  RELAY_IDENTITY_CHANGED_CODE,
-  RelayIdentityChangedError,
   createSshSyncTarget,
   createDirectHostSyncTarget,
   createRelayHostSyncTarget,

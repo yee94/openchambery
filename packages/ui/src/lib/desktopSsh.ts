@@ -442,6 +442,33 @@ export type DesktopSshConfigSyncSelections = {
   authFile: boolean;
 };
 
+/** Allowlist cardinality from the desktop local-scan IPC (drives default selection arrays). */
+export type DesktopSshConfigSyncSelectionShape = {
+  fileGroups: number;
+  singleFiles: number;
+  directories: number;
+};
+
+/**
+ * Build an all-selected whitelist snapshot from a scan-reported shape.
+ * `authFile` stays opt-in via includeAuthFile (credential grant gate).
+ */
+export const buildDefaultSyncSelections = (
+  shape: DesktopSshConfigSyncSelectionShape,
+  options?: { includeAuthFile?: boolean },
+): DesktopSshConfigSyncSelections => {
+  const fileGroups = Math.max(0, Math.trunc(Number(shape.fileGroups) || 0));
+  const singleFiles = Math.max(0, Math.trunc(Number(shape.singleFiles) || 0));
+  const directories = Math.max(0, Math.trunc(Number(shape.directories) || 0));
+  return {
+    fileGroups: Array.from({ length: fileGroups }, () => true),
+    singleFiles: Array.from({ length: singleFiles }, () => true),
+    directories: Array.from({ length: directories }, () => true),
+    agentsRoot: true,
+    authFile: options?.includeAuthFile === true,
+  };
+};
+
 export type DesktopSshConfigSyncPlan = {
   direction?: DesktopSshConfigSyncDirection;
   files: { path: string; bytes: number }[];
@@ -452,6 +479,8 @@ export type DesktopSshConfigSyncPlan = {
   deletes: string[];
   totalBytes: number;
   selections?: DesktopSshConfigSyncSelections;
+  /** Present on local-scan responses from desktop main (allowlist shape). */
+  selectionShape?: DesktopSshConfigSyncSelectionShape;
 };
 
 export type DesktopSshConfigSyncPreview = {
@@ -460,6 +489,7 @@ export type DesktopSshConfigSyncPreview = {
   remoteAgentsRootExists: boolean;
   remoteAuthFileExists: boolean;
   credentialAuthorized?: boolean;
+  selectionShape?: DesktopSshConfigSyncSelectionShape;
 };
 
 export type DesktopSshConfigSyncTargetKind = 'ssh' | 'direct' | 'relay';
@@ -575,6 +605,7 @@ const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null =>
         authFile: selectionsRaw.authFile === true,
       }
     : undefined;
+  const selectionShape = parseSelectionShape(value.selectionShape ?? value.selection_shape);
 
   return {
     files,
@@ -585,13 +616,27 @@ const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null =>
     totalBytes,
     ...(direction ? { direction } : {}),
     ...(selections ? { selections } : {}),
+    ...(selectionShape ? { selectionShape } : {}),
   };
+};
+
+const parseSelectionShape = (value: unknown): DesktopSshConfigSyncSelectionShape | null => {
+  if (!isRecord(value)) return null;
+  const fileGroups = readNumber(value, 'fileGroups') ?? readNumber(value, 'file_groups');
+  const singleFiles = readNumber(value, 'singleFiles') ?? readNumber(value, 'single_files');
+  const directories = readNumber(value, 'directories');
+  if (fileGroups === null || singleFiles === null || directories === null) return null;
+  if (fileGroups < 0 || singleFiles < 0 || directories < 0) return null;
+  return { fileGroups, singleFiles, directories };
 };
 
 const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | null => {
   if (!isRecord(value)) return null;
   const plan = parseConfigSyncPlan(value.plan);
   if (!plan) return null;
+  const selectionShape = parseSelectionShape(value.selectionShape ?? value.selection_shape)
+    ?? plan.selectionShape
+    ?? null;
   return {
     plan,
     remoteExisting: asStringArray(value.remoteExisting ?? value.remote_existing),
@@ -606,6 +651,7 @@ const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | n
     ...(typeof value.credentialAuthorized === 'boolean'
       ? { credentialAuthorized: value.credentialAuthorized }
       : {}),
+    ...(selectionShape ? { selectionShape } : {}),
   };
 };
 
@@ -646,7 +692,13 @@ export const desktopSshSyncOpencodeConfigLocalScan = async (
     ...(options.selections ? { selections: options.selections } : {}),
   });
   if (!isRecord(raw)) return null;
-  return parseConfigSyncPlan(raw.plan);
+  const plan = parseConfigSyncPlan(raw.plan);
+  if (!plan) return null;
+  // Prefer top-level IPC selectionShape (desktop main contract); fall back to plan field.
+  const selectionShape = parseSelectionShape(raw.selectionShape ?? raw.selection_shape)
+    ?? plan.selectionShape
+    ?? null;
+  return selectionShape ? { ...plan, selectionShape } : plan;
 };
 
 export const desktopSshSyncOpencodeConfigPreview = async (

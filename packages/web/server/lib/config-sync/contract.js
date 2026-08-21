@@ -24,9 +24,9 @@ import {
  *   remoteAuthFileExists: boolean,
  * }} SyncProbeResult
  *
- * Payload for putTar. Buffer is the current SSH path; AsyncIterable/Readable
- * is reserved for relay streaming (ticket later) — executors may buffer today.
- * @typedef {Buffer | Uint8Array | AsyncIterable<Uint8Array> | import('node:stream').Readable} SyncTarPayload
+ * Payload for putTar. Callers always hand a fully buffered archive
+ * (SSH stdin and direct/relay HTTP bodies alike).
+ * @typedef {Buffer | Uint8Array} SyncTarPayload
  *
  * @typedef {{
  *   probe: (plan: object) => Promise<SyncProbeResult>,
@@ -63,21 +63,6 @@ export const RELAY_HOST_SYNC_CAPABILITIES = Object.freeze({
   authFileWrite: true,
   ocHttp: true,
 });
-
-export const RELAY_IDENTITY_CHANGED_CODE = 'relay_identity_changed';
-
-export class RelayIdentityChangedError extends Error {
-  /**
-   * @param {{ expectedServerId: string, actualServerId?: string }} details
-   */
-  constructor(details) {
-    super(`Relay identity changed (expected ${details.expectedServerId}, got ${details.actualServerId || 'unknown'})`);
-    this.name = 'RelayIdentityChangedError';
-    this.code = RELAY_IDENTITY_CHANGED_CODE;
-    this.expectedServerId = details.expectedServerId;
-    this.actualServerId = details.actualServerId;
-  }
-}
 
 /**
  * Build a namespaced SyncTarget for an SSH instance.
