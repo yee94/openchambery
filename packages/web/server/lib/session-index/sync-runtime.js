@@ -117,21 +117,14 @@ export const createSessionIndexSyncRuntime = ({
 
   const fetchDirectory = async (task) => {
     const cached = readDirectory(task.directory);
-    // Empty snapshots are not incrementally eligible. A successful [] still
-    // stores lastSyncedAt as a worktree topology hint; using that watermark as
-    // start would hide older historical roots until the 24h full reconcile.
-    const useIncremental = Boolean(
-      (cached?.sessions?.length ?? 0) > 0
-      && cached?.lastSyncedAt > 0
-      && now() - cached.lastFullSyncedAt < FULL_RECONCILE_INTERVAL_MS
-    );
-    // Keep parity with @opencode-ai/sdk/v2 experimental.session.list. The
-    // regular /session endpoint has different pagination semantics.
-    const url = new URL(buildOpenCodeUrl('/experimental/session'));
+    // v2 `session.list` (`GET /api/session`) exposes cursor pagination only —
+    // no timestamp-incremental (`start`) or `roots` filter. Sync therefore
+    // always fetches a fresh full page and lets replaceDirectory reconcile.
+    // Empty snapshots still store lastSyncedAt as a worktree topology hint.
+    const useIncremental = false;
+    const url = new URL(buildOpenCodeUrl('/session'));
     url.searchParams.set('directory', task.directory);
-    url.searchParams.set('roots', 'true');
     url.searchParams.set('limit', String(SESSION_LIMIT));
-    if (useIncremental) url.searchParams.set('start', String(cached.lastSyncedAt));
 
     const controller = new AbortController();
     currentController = controller;
@@ -148,7 +141,10 @@ export const createSessionIndexSyncRuntime = ({
         error.status = response.status;
         throw error;
       }
-      const sessions = await response.json();
+      const payload = await response.json();
+      // v2 responds `{ data: Session[], cursor }`; tolerate a bare array for
+      // non-v2 test doubles.
+      const sessions = Array.isArray(payload) ? payload : payload?.data;
       if (!Array.isArray(sessions)) throw new Error('Invalid OpenCode session list payload');
       const nextSessions = useIncremental
         ? mergeIncrementalSessions(cached?.sessions, sessions)

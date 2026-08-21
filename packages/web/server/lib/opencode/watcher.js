@@ -65,7 +65,8 @@ export const createOpenCodeWatcherRuntime = (deps) => {
 
     reader = createUpstreamSseReader({
       signal,
-      buildUrl: () => buildOpenCodeUrl('/global/event', ''),
+      // v2 serves the event stream at `/api/event`; `/api/global/event` is gone.
+      buildUrl: () => buildOpenCodeUrl('/event', ''),
       getHeaders: getOpenCodeAuthHeaders,
       fetchImpl,
       stallTimeoutMs: upstreamStallTimeoutMs,

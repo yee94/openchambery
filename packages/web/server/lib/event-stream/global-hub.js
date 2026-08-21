@@ -127,7 +127,8 @@ export function createGlobalMessageStreamHub({
       buildUrl: () => {
         buildUrlFailed = false;
         try {
-          return new URL(buildOpenCodeUrl('/global/event', ''));
+          // v2 serves the event stream at `/api/event`; `/api/global/event` is gone.
+          return new URL(buildOpenCodeUrl('/event', ''));
         } catch {
           buildUrlFailed = true;
           throw new Error('OpenCode service unavailable');

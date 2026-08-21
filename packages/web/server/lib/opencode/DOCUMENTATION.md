@@ -388,7 +388,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
 - Owns:
   - SSE forwarders: `GET /api/global/event`, `GET /api/event`
   - Session message forwarder: `POST /api/session/:sessionId/message`
-  - Generic `/api/*` forwarding with hop-by-hop header filtering
+  - Generic `/api/*` forwarding with hop-by-hop header filtering. v2 upstream routes live under `/api` (`@opencode-ai/protocol`); the proxy restores that prefix after Express strips the `/api` mount. Forwarding `/agent` (v1 root) hits the v2 Web UI HTML fallback.
   - Windows `/session` merge fallback path behavior
   - OpenCode readiness gate for proxied `/api` requests: process warmup still uses `OPEN_CODE_READY_GRACE_MS`; `state.v1Migration.admitTranscript !== true` holds with no grace until the gate admits or the client cancels, so a `running` migration past 12s cannot `next()` an empty session list through as success
 

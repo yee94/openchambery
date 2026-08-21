@@ -68,7 +68,7 @@ describe('session index background sync runtime', () => {
 
     expect(maxActive).toBe(1);
     expect(fetchFn).toHaveBeenCalledTimes(4);
-    expect(fetchFn.mock.calls[0][0].pathname).toBe('/experimental/session');
+    expect(fetchFn.mock.calls[0][0].pathname).toBe('/session');
     expect(service.replaceDirectory).toHaveBeenCalledTimes(2);
     expect(service.replaceChildSessions).toHaveBeenCalledTimes(2);
     expect(runtime.snapshot().sync).toMatchObject({ completed: 2, total: 2, failedDirectories: [] });
@@ -89,7 +89,7 @@ describe('session index background sync runtime', () => {
     await expect(changed).resolves.toMatchObject({ revision: initialRevision + 1 });
   });
 
-  it('uses the persisted watermark for a true incremental merge', async () => {
+  it('v2 session.list has no incremental start — always fetches a full page', async () => {
     const service = createService([{
       directory: '/repo',
       sessions: [session('ses_old', 10)],
@@ -105,7 +105,7 @@ describe('session index background sync runtime', () => {
       getOpenCodeAuthHeaders: () => ({}),
       waitForOpenCodeReady: async () => true,
       fetchFn: async (url) => {
-        if (url.pathname === '/experimental/session') requestedUrl = url;
+        if (url.pathname === '/session') requestedUrl = url;
         return new Response(JSON.stringify([session('ses_new', 20)]), { status: 200 });
       },
       now: () => 2000,
@@ -114,10 +114,11 @@ describe('session index background sync runtime', () => {
     runtime.enqueue(['/repo']);
     await waitUntil(() => isFullyIdle(runtime));
 
-    expect(requestedUrl.searchParams.get('start')).toBe('1000');
+    expect(requestedUrl.searchParams.get('start')).toBeNull();
+    expect(requestedUrl.searchParams.get('roots')).toBeNull();
     expect(service.replaceDirectory.mock.calls[0][0]).toMatchObject({
-      fullSync: false,
-      sessions: [expect.objectContaining({ id: 'ses_new' }), expect.objectContaining({ id: 'ses_old' })],
+      fullSync: true,
+      sessions: [expect.objectContaining({ id: 'ses_new' })],
     });
   });
 
@@ -195,7 +196,7 @@ describe('session index background sync runtime', () => {
     });
   });
 
-  it('omits start when recovering an empty cached directory', async () => {
+  it('recovers an empty cached directory with a full page', async () => {
     const service = createService([{
       directory: '/repo',
       sessions: [],
@@ -211,7 +212,7 @@ describe('session index background sync runtime', () => {
       getOpenCodeAuthHeaders: () => ({}),
       waitForOpenCodeReady: async () => true,
       fetchFn: async (url) => {
-        if (url.pathname === '/experimental/session') requestedUrl = url;
+        if (url.pathname === '/session') requestedUrl = url;
         return new Response(JSON.stringify([session('ses_history', 10)]), { status: 200 });
       },
       now: () => 2000,

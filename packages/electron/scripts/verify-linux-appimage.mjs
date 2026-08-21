@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeTargetArchitecture } from './target-architecture.mjs';
-import { PINNED_OPENCODE2_VERSION, bundledOpenCode2BinaryName } from './opencode2-bundle-contract.mjs';
+import { PINNED_OPENCODE2_VERSION, bundledOpenCode2BinaryName, parseOpenCode2VersionOutput } from './opencode2-bundle-contract.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronRoot = path.resolve(__dirname, '..');
@@ -72,7 +72,7 @@ const defaultCliVersion = (binaryPath) => {
     timeout: 15000,
   });
   if (result.status !== 0) throw new Error(`Failed to run packaged OpenCode CLI: ${binaryPath}`);
-  return (result.stdout || '').trim().split(/\s+/)[0] || '';
+  return parseOpenCode2VersionOutput(result.stdout);
 };
 
 export const verifyExtractedPayload = ({
