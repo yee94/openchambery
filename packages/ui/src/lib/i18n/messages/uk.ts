@@ -93,7 +93,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.instances.status.connectedRelay": "Підключено · Relay",
   "mobile.instances.status.connectedSshRelay": "Підключено · SSH через relay",
   "mobile.instances.sshBadge": "SSH",
-  "mobile.instances.sshViaDesktop": "Через стільницю до {host} · стільниця має бути онлайн",
+  "mobile.instances.sshViaDesktop": "Через стільницю до SSH",
   "mobile.connect.error.sshNotConnected": "Цей SSH-екземпляр зараз не підключено.",
   "mobile.connect.ssh.fallbackDesktop": "SSH-екземпляр недоступний — підключено до стільниці.",
   "mobile.instances.saveEdit": "Зберегти зміни",

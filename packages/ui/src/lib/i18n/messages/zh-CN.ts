@@ -92,7 +92,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.status.connectedRelay': '已连接 · 中继',
   'mobile.instances.status.connectedSshRelay': '已连接 · SSH 经中继',
   'mobile.instances.sshBadge': 'SSH',
-  'mobile.instances.sshViaDesktop': '经桌面中继到 {host} · 需桌面在线',
+  'mobile.instances.sshViaDesktop': '经桌面端中继至 SSH',
   'mobile.connect.error.sshNotConnected': '该 SSH 实例当前未连接。',
   'mobile.connect.ssh.fallbackDesktop': 'SSH 实例不可用 — 已改为连接桌面。',
   'mobile.instances.saveEdit': '保存更改',

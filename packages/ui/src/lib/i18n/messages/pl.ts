@@ -93,7 +93,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.status.connectedRelay': 'Połączono · Relay',
   'mobile.instances.status.connectedSshRelay': 'Połączono · SSH przez relay',
   'mobile.instances.sshBadge': 'SSH',
-  'mobile.instances.sshViaDesktop': 'Przez pulpit do {host} · pulpit musi być online',
+  'mobile.instances.sshViaDesktop': 'Przez pulpit do SSH',
   'mobile.connect.error.sshNotConnected': 'Ta instancja SSH nie jest teraz połączona.',
   'mobile.connect.ssh.fallbackDesktop': 'Instancja SSH niedostępna — połączono z pulpitem.',
   'mobile.instances.saveEdit': 'Zapisz zmiany',

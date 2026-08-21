@@ -94,7 +94,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.status.connectedRelay': '接続中 · リレー',
   'mobile.instances.status.connectedSshRelay': '接続中 · リレー経由 SSH',
   'mobile.instances.sshBadge': 'SSH',
-  'mobile.instances.sshViaDesktop': 'デスクトップ経由で {host} へ · デスクトップのオンラインが必要',
+  'mobile.instances.sshViaDesktop': 'デスクトップ経由で SSH に中継',
   'mobile.connect.error.sshNotConnected': 'その SSH インスタンスは現在接続されていません。',
   'mobile.connect.ssh.fallbackDesktop': 'SSH インスタンスを利用できないため、デスクトップに接続しました。',
   'mobile.instances.saveEdit': '変更を保存',

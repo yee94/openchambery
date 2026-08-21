@@ -91,7 +91,7 @@ export const dict = {
   'mobile.instances.status.connectedRelay': 'Connected · Relay',
   'mobile.instances.status.connectedSshRelay': 'Connected · SSH via relay',
   'mobile.instances.sshBadge': 'SSH',
-  'mobile.instances.sshViaDesktop': 'Routed via desktop to {host} · desktop must stay online',
+  'mobile.instances.sshViaDesktop': 'Routed via desktop to SSH',
   'mobile.connect.error.sshNotConnected': 'That SSH instance is not connected right now.',
   'mobile.connect.ssh.fallbackDesktop': 'SSH instance unavailable — connected to the desktop instead.',
   'mobile.instances.saveEdit': 'Save changes',

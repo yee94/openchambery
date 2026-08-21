@@ -92,7 +92,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.status.connectedRelay': '연결됨 · 릴레이',
   'mobile.instances.status.connectedSshRelay': '연결됨 · 릴레이 SSH',
   'mobile.instances.sshBadge': 'SSH',
-  'mobile.instances.sshViaDesktop': '데스크톱을 통해 {host}(으)로 · 데스크톱이 온라인이어야 함',
+  'mobile.instances.sshViaDesktop': '데스크톱을 통해 SSH로 중계',
   'mobile.connect.error.sshNotConnected': '해당 SSH 인스턴스가 현재 연결되어 있지 않습니다.',
   'mobile.connect.ssh.fallbackDesktop': 'SSH 인스턴스를 사용할 수 없어 데스크톱에 연결했습니다.',
   'mobile.instances.saveEdit': '변경 사항 저장',

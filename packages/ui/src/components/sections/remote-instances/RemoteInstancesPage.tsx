@@ -1155,7 +1155,7 @@ export const RemoteInstancesPage: React.FC = () => {
     }
     const id = `ssh-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     try {
-      await createFromCommand(id, command, sshNameDraft.trim() || t('settings.remoteInstances.sidebar.newSshInstanceName'));
+      await createFromCommand(id, command, sshNameDraft.trim() || undefined);
       setSelectedId(id);
       setSshAddDialogOpen(false);
       setSshCommandDraft('ssh user@example.com');
@@ -1426,9 +1426,8 @@ export const RemoteInstancesPage: React.FC = () => {
         ...(relayUrl ? { relayUrl } : {}),
         ...(sshTarget ? { sshHostId: sshTarget.id } : {}),
       });
-      const desktopName = server.label || t('settings.remoteInstances.clientAuth.addDevice.target.local');
       const payloadLabel = sshTitle
-        ? `${desktopName} · ${sshTitle}`
+        ? (typedLabel || sshTitle)
         : (typedLabel || server.label);
       const payload = buildPairingConnectionPayload({
         pairingId: pairing.id,
@@ -2080,7 +2079,7 @@ export const RemoteInstancesPage: React.FC = () => {
                         </div>
                         <p className={cn('typography-micro text-muted-foreground truncate', host.apiUrl && 'font-mono')}>
                           {host.sshTarget
-                            ? t('mobile.instances.sshViaDesktop', { host: host.label })
+                            ? t('mobile.instances.sshViaDesktop')
                             : host.relay && !host.apiUrl
                               ? t('mobile.connect.relay.badge')
                               : redactSensitiveUrl(host.apiUrl || host.url)}

@@ -2854,7 +2854,7 @@ export const dict = {
   'mobile.instances.status.connectedRelay': 'Connecté · Relais',
   'mobile.instances.status.connectedSshRelay': 'Connecté · SSH via relais',
   'mobile.instances.sshBadge': 'SSH',
-  'mobile.instances.sshViaDesktop': 'Acheminé via le bureau vers {host} · le bureau doit rester en ligne',
+  'mobile.instances.sshViaDesktop': 'Acheminé via le bureau vers SSH',
   'mobile.connect.error.sshNotConnected': 'Cette instance SSH n’est pas connectée pour le moment.',
   'mobile.connect.ssh.fallbackDesktop': 'Instance SSH indisponible — connexion au bureau à la place.',
   'mobile.instances.saveEdit': 'Enregistrer les modifications',

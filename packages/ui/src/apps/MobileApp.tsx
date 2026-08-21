@@ -1495,7 +1495,7 @@ const MobileInstancesSurface: React.FC<{
                     ? t('mobile.instances.status.connectedRelay')
                     : t('mobile.instances.status.connectedDirect'))
                 : sshTarget
-                  ? t('mobile.instances.sshViaDesktop', { host: connection.label })
+                  ? t('mobile.instances.sshViaDesktop')
                   : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
             return (
               <div
@@ -1524,9 +1524,6 @@ const MobileInstancesSurface: React.FC<{
                 <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-3">
                   <span className="relative flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-interactive-hover text-foreground">
                     <Icon name="server" className="size-[18px]" />
-                    {isActive ? (
-                      <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-[var(--surface-elevated)] bg-[var(--status-success)]" aria-hidden />
-                    ) : null}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-center gap-1.5">

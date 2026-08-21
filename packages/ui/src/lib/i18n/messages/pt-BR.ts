@@ -93,7 +93,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.instances.status.connectedRelay": "Conectado · Relay",
   "mobile.instances.status.connectedSshRelay": "Conectado · SSH via relay",
   "mobile.instances.sshBadge": "SSH",
-  "mobile.instances.sshViaDesktop": "Roteado pelo desktop para {host} · o desktop precisa estar online",
+  "mobile.instances.sshViaDesktop": "Roteado pelo desktop para SSH",
   "mobile.connect.error.sshNotConnected": "Essa instância SSH não está conectada agora.",
   "mobile.connect.ssh.fallbackDesktop": "Instância SSH indisponível — conectado ao desktop.",
   "mobile.instances.saveEdit": "Salvar alterações",
