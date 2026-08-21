@@ -21,21 +21,6 @@ import {
   isCancel,
 } from '@clack/prompts';
 
-// ── Provider icons ──────────────────────────────────────────────
-
-const TUNNEL_PROVIDER_ICON = {
-  cloudflare: '☁',
-};
-
-function formatProviderWithIcon(provider) {
-  if (typeof provider !== 'string' || provider.trim().length === 0) {
-    return 'unknown';
-  }
-  const normalized = provider.trim().toLowerCase();
-  const icon = TUNNEL_PROVIDER_ICON[normalized];
-  return icon ? `${icon} ${normalized}` : normalized;
-}
-
 // ── Status-aware log dispatch ───────────────────────────────────
 
 /**
@@ -135,6 +120,5 @@ export {
   createSpinner,
   createProgress,
   printJson,
-  formatProviderWithIcon,
   logStatus,
 };

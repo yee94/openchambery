@@ -23,6 +23,7 @@ import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 import { useUIStore, type TimeFormatPreference } from '@/stores/useUIStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { getSyncParts } from '@/sync/sync-refs';
 import { useSessionMessages } from '@/sync/sync-context';
 import type { QuotaProviderId, UsageWindow } from '@/types';
 
@@ -387,8 +388,8 @@ export function MobileContextProgressButton({
     ?? metadata?.limit?.context
     ?? 0;
   const totalTokens = React.useMemo(
-    () => getLatestAssistantTotalTokens(activeSessionMessages),
-    [activeSessionMessages],
+    () => getLatestAssistantTotalTokens(activeSessionMessages, (messageId) => getSyncParts(messageId, effectiveDirectory || undefined)),
+    [activeSessionMessages, effectiveDirectory],
   );
 
   const contextDisplay = buildMobileContextDisplay({

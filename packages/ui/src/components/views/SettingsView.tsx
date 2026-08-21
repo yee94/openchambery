@@ -255,8 +255,6 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
       return "bar-chart-2";
     case "voice":
       return "mic";
-    case "tunnel":
-      return "global";
     case "about":
       return "information";
     case "home":
@@ -642,7 +640,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       "summary-ai": "summary-ai",
       notifications: "notifications",
       voice: "voice",
-      tunnel: "tunnel",
     }),
     [],
   );
@@ -698,8 +695,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return t("settings.page.notifications.title");
         case "voice":
           return t("settings.page.voice.title");
-        case "tunnel":
-          return t("settings.page.tunnel.title");
         case "about":
           return t("settings.page.about.title");
         case "home":
@@ -1136,8 +1131,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         case "sessions":
         case "summary-ai":
         case "notifications":
-        case "voice":
-        case "tunnel": {
+        case "voice": {
           const section = openChamberSectionBySlug[slug] ?? "visual";
           return <OpenChamberPage section={section} flowMobile={mobileFlow} />;
         }
@@ -1473,11 +1467,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <span className="typography-ui-label font-normal truncate">
                               {getPageTitle(page.slug)}
                             </span>
-                            {page.slug === "tunnel" && (
-                              <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-[var(--status-warning)] bg-[var(--status-warning)]/10">
-                                {t("settings.view.badge.beta")}
-                              </span>
-                            )}
                           </span>
                           {isMobile ? (
                             <Icon

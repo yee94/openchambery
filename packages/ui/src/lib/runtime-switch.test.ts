@@ -203,4 +203,37 @@ describe('runtime endpoint switching', () => {
     expect(getRuntimeGeneration()).toBe(relayGeneration + 1);
     switchRuntimeEndpoint({ apiBaseUrl: 'https://generation-reset.example' });
   });
+
+  test('includes SSH target-port in relay transport identity', () => {
+    const relay = {
+      relayUrl: 'wss://relay.example',
+      serverId: 'server-a',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'axfR8uEsQv8FJfV6gYwVgyNMLawKaV7Rbm6V7RkF7yA', y: 'T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU' },
+    };
+    switchRuntimeEndpoint({
+      apiBaseUrl: 'https://app.example',
+      runtimeKey: 'host:desktop',
+      relay,
+    });
+    const parentIdentity = getRuntimeTransportIdentity();
+    const parentGeneration = getRuntimeGeneration();
+
+    switchRuntimeEndpoint({
+      apiBaseUrl: 'https://app.example',
+      runtimeKey: 'host:ssh-a',
+      relay,
+      requestHeaders: { 'x-openchamber-target-port': '18765' },
+    });
+    expect(getRuntimeTransportIdentity()).not.toBe(parentIdentity);
+    expect(getRuntimeGeneration()).toBe(parentGeneration + 1);
+
+    switchRuntimeEndpoint({
+      apiBaseUrl: 'https://app.example',
+      runtimeKey: 'host:ssh-b',
+      relay,
+      requestHeaders: { 'x-openchamber-target-port': '18766' },
+    });
+    expect(getRuntimeGeneration()).toBe(parentGeneration + 2);
+    switchRuntimeEndpoint({ apiBaseUrl: 'https://generation-reset.example' });
+  });
 });

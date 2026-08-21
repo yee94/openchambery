@@ -128,7 +128,7 @@ describe('MobileSessionStatusBar phone navigation contracts', () => {
   });
 
   test('session action sheet exposes rename and submits smart title without waiting for generation', () => {
-    expect(statusBarSource).toContain("label={t('sessions.sidebar.session.menu.rename')}");
+    expect(statusBarSource).toContain('buildSessionMenuItems({');
     expect(statusBarSource).toContain('beginSessionRename(session)');
     expect(statusBarSource).toContain("t('sessions.sidebar.session.rename.smartTitle')");
     expect(statusBarSource).toContain('onRename={() => beginSessionRename(session)}');

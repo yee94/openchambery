@@ -198,9 +198,32 @@ describe('resolvePrimaryComposerSessionSelection', () => {
         variant: 'ultra',
       },
       catalog,
+      memory: {
+        getAgentModelVariantForSession: () => 'high',
+      },
     });
 
     expect(resolved?.variant).toEqual(undefined);
+    expect(resolved?.providerID).toBe('openai');
+    expect(resolved?.source).toBe('history');
+  });
+
+  test('omitted history variant falls back to session memory', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_4',
+        agent: 'build',
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+      },
+      catalog,
+      memory: {
+        getAgentModelVariantForSession: () => 'high',
+      },
+    });
+
+    expect(resolved?.variant).toBe('high');
     expect(resolved?.providerID).toBe('openai');
     expect(resolved?.source).toBe('history');
   });

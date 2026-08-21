@@ -21,7 +21,6 @@ import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { DiffView } from '@/components/views/DiffView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { MobileSurfaceHeader } from '@/components/ui/MobileSurfaceHeader';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { getMobileWindowMotionController, MOBILE_SESSIONS_WINDOW_ID } from '@/components/ui/MobileWindowMotionRegistry';
@@ -76,12 +75,12 @@ import {
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
+  shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 import { MobileChangesSurface } from './MobileChangesSurface';
 import { MobileFilesSurface } from './MobileFilesSurface';
 import { BusyDots } from '@/components/chat/message/parts/BusyDots';
 import { MobileSessionsSheet } from './MobileSessionsSheet';
-import { MobileSurfaceShell } from './MobileSurfaceShell';
 import { MobilePhoneShell } from '@/mobile/MobilePhoneShell';
 import {
   buildMobileContextDisplay,
@@ -114,6 +113,11 @@ import { handlePendingNativeAssistantOpen } from './nativeAssistantShortcut';
 const MOBILE_DIRECT_DIFF_WINDOW_ID = 'mobile-direct-diff';
 const MOBILE_TURN_DIFF_WINDOW_ID = 'mobile-turn-diff';
 const MOBILE_DIRECT_FILE_WINDOW_ID = 'mobile-direct-file';
+const MOBILE_FILES_WINDOW_ID = 'mobile-files';
+const MOBILE_CHANGES_WINDOW_ID = 'mobile-changes';
+const MOBILE_MCP_WINDOW_ID = 'mobile-mcp';
+const MOBILE_SETTINGS_WINDOW_ID = 'mobile-settings';
+const MOBILE_UPDATE_WINDOW_ID = 'mobile-update';
 const MOBILE_OVERFLOW_MENU_ID = 'mobile-overflow-menu';
 
 type MobileAppProps = {
@@ -416,6 +420,7 @@ const useNativeMobileChrome = (): void => {
         const SHOW_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
         const HIDE_EASING = 'cubic-bezier(0.4, 0, 1, 1)';
         let androidTimer: number | null = null;
+        let composerLiftArmed = false;
 
         const isTextField = isTextFieldLike;
 
@@ -471,6 +476,21 @@ const useNativeMobileChrome = (): void => {
           return slide;
         };
 
+        const reserveFieldScrollInset = (height: number) => {
+          measureSafeBottom();
+          const resolvedHeight = Math.max(0, Math.round(height));
+          keyboardOpen = true;
+          composerLiftArmed = false;
+          armedImeHeight = resolvedHeight;
+          root.classList.remove('oc-keyboard-open', 'oc-kb-animating');
+          setInset(resolvedHeight);
+          setVar('--oc-kb-layout', 0);
+          setVar('--oc-kb-scroll-inset', getAndroidSlide(resolvedHeight));
+          clearAndroidTimer();
+          clearKbMovers();
+          dispatchKb('oc:keyboard-settled', { open: true });
+        };
+
         const markOpen = (
           anchor?: EventTarget | null,
           source: 'intent' | 'focus' | 'ime' = 'focus',
@@ -491,6 +511,10 @@ const useNativeMobileChrome = (): void => {
             const slide = getAndroidSlide(activeImeHeight);
             const movers = getKbMovers(source === 'focus' ? anchor : undefined);
             if (movers.length === 0) return;
+            composerLiftArmed = true;
+            root.classList.add('oc-keyboard-open');
+            setInset(0);
+            setVar('--oc-kb-scroll-inset', 0);
             const alreadyPositioned = movers.every(
               ({ el, factor }) => el.style.transform === getAndroidTransform(slide, factor),
             );
@@ -506,6 +530,7 @@ const useNativeMobileChrome = (): void => {
             return;
           }
           keyboardOpen = true;
+          composerLiftArmed = true;
           root.classList.add('oc-keyboard-open');
           setInset(0);
           setVar('--oc-kb-layout', 0);
@@ -531,7 +556,9 @@ const useNativeMobileChrome = (): void => {
             return;
           }
           const activeImeHeight = armedImeHeight || imeHeight;
+          const hadComposerLift = composerLiftArmed;
           keyboardOpen = false;
+          composerLiftArmed = false;
           armedImeHeight = 0;
           if (blur && isTextField(document.activeElement)) {
             (document.activeElement as HTMLElement).blur();
@@ -542,6 +569,12 @@ const useNativeMobileChrome = (): void => {
           setVar('--oc-kb-scroll-inset', 0);
           dispatchKb('oc:keyboard-intent', { open: false });
           const slide = getAndroidSlide(activeImeHeight);
+          if (!hadComposerLift) {
+            clearAndroidTimer();
+            clearKbMovers();
+            dispatchKb('oc:keyboard-settled', { open: false });
+            return;
+          }
           // Start the transform first so the same frame collapses chrome + lift.
           liftMovers(0, HIDE_MS, HIDE_EASING);
           dispatchKb('oc:keyboard-anim', {
@@ -559,12 +592,15 @@ const useNativeMobileChrome = (): void => {
           }, HIDE_MS + 20);
         };
 
-        // ChatInput intent runs before focus (pre-IME). focusin only lifts when
-        // the focused field is the bottom composer — never question / other inputs.
+        // ChatInput intent runs before focus (pre-IME). focusin lifts only the
+        // bottom composer; other text fields reserve chat scroll room.
         const handleFocusIn = (event: FocusEvent) => {
           if (!isTextField(event.target)) return;
-          if (!isComposerKeyboardTarget(event.target)) return;
-          markOpen(event.target, 'focus');
+          if (isComposerKeyboardTarget(event.target)) {
+            markOpen(event.target, 'focus');
+            return;
+          }
+          reserveFieldScrollInset(armedImeHeight || imeHeight);
         };
         const handleFocusOut = (event: FocusEvent) => {
           if (!isTextField(event.target)) return;
@@ -573,6 +609,11 @@ const useNativeMobileChrome = (): void => {
           // Stay open only when focus remains inside the bottom composer; moving
           // to a question card (or any other field) must drop the lift.
           if (isComposerKeyboardFocusTransfer(event.relatedTarget)) return;
+          if (shouldReserveChatScrollInset(event.relatedTarget)) {
+            dispatchKb('oc:keyboard-intent', { open: false });
+            reserveFieldScrollInset(armedImeHeight || imeHeight);
+            return;
+          }
           // Prefer the earliest close signal. A zero-timeout waits a full task and
           // lets the system IME finish before the composer starts dropping.
           markClosed(false);
@@ -589,8 +630,8 @@ const useNativeMobileChrome = (): void => {
           const detail = nativeEvent.detail ?? nativeEvent;
           if (detail?.open === true) {
             const measured = Math.max(0, Math.round(detail.height ?? 0));
-            const action = getAndroidComposerImeStateAction(keyboardOpen, document.activeElement);
-            if (measured > 0 && action !== 'ignore') {
+            const action = getAndroidComposerImeStateAction(composerLiftArmed, document.activeElement);
+            if (measured > 0 && (action === 'open' || action === 'cache')) {
               // A model-picker search field can have a different IME silhouette
               // from the composer. Keep the cache scoped to composer-owned opens.
               persistHeight(measured);
@@ -600,6 +641,7 @@ const useNativeMobileChrome = (): void => {
             // a focus/intent lift is armed, this event only refreshes next-open
             // cache data and leaves its transform untouched.
             if (action === 'open') markOpen(document.activeElement, 'ime');
+            if (action === 'field') reserveFieldScrollInset(measured || imeHeight);
           }
           if (detail?.open === false) markClosed(true);
         };
@@ -705,10 +747,12 @@ const useNativeMobileChrome = (): void => {
         root.classList.add('oc-keyboard-open');
         setInset(keyboardHeight);
         if (!liftComposer) {
-          // Question / other fields: keep IME chrome signals, do not raise the
-          // bottom composer or shrink the shell under the keyboard.
+          // Question / other fields: keep the overlay and chat scroll insets
+          // without raising the bottom composer or shrinking the shell.
           setVar('--oc-kb-layout', 0);
-          setVar('--oc-kb-scroll-inset', 0);
+          measureSafeBottom();
+          setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
+          root.classList.remove('oc-keyboard-open');
           clearKbMovers();
           layoutApplied = false;
           dispatchKb('oc:keyboard-settled', { open: true });
@@ -795,26 +839,28 @@ const useNativeMobileChrome = (): void => {
         if (!isTextInput(event.target)) return;
         // Drop composer lift when focus leaves the bottom composer (question
         // cards and other fields must not keep the shell raised).
-        if (isComposerKeyboardFocusTransfer(event.relatedTarget)) return;
+        if (isComposerKeyboardFocusTransfer(event.relatedTarget)) {
+          setVar('--oc-kb-scroll-inset', 0);
+          return;
+        }
         window.setTimeout(() => {
           if (!keyboardOpen) return;
           if (isComposerKeyboardTarget(document.activeElement)) return;
           // IME may still be open for a non-composer field — only reverse the
           // composer/shell lift; blur is for true keyboard dismissal paths.
           if (isTextInput(document.activeElement)) {
-            if (!layoutApplied && !root.classList.contains('oc-kb-animating')) return;
             // Soft reverse: clear layout without blurring the new field.
             clearSettle();
-            keyboardOpen = false;
             root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold', 'oc-kb-hide');
-            setInset(0);
+            setInset(keyboardHeight);
             setVar('--oc-kb-layout', 0);
-            setVar('--oc-kb-scroll-inset', 0);
+            measureSafeBottom();
+            setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
             layoutApplied = false;
             clearKbMovers();
             // Let ChatInput collapse expanded chrome; do not blur the new field.
             dispatchKb('oc:keyboard-intent', { open: false });
-            dispatchKb('oc:keyboard-settled', { open: false });
+            dispatchKb('oc:keyboard-settled', { open: true });
             return;
           }
           runHide();
@@ -1439,13 +1485,18 @@ const MobileInstancesSurface: React.FC<{
             const isConnectingRow = connectingId === connection.id;
             // Status line: the active instance says HOW it is connected right
             // now (direct vs relay); others show their address.
+            const sshTarget = connection.sshTarget;
             const statusText = isConnectingRow
               ? t('mobile.connect.connecting')
               : isActive
-                ? (isRelayModeActive()
-                  ? t('mobile.instances.status.connectedRelay')
-                  : t('mobile.instances.status.connectedDirect'))
-                : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
+                ? (sshTarget
+                  ? t('mobile.instances.status.connectedSshRelay')
+                  : isRelayModeActive()
+                    ? t('mobile.instances.status.connectedRelay')
+                    : t('mobile.instances.status.connectedDirect'))
+                : sshTarget
+                  ? t('mobile.instances.sshViaDesktop')
+                  : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
             return (
               <div
                 key={connection.id}
@@ -1473,12 +1524,16 @@ const MobileInstancesSurface: React.FC<{
                 <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-3">
                   <span className="relative flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-interactive-hover text-foreground">
                     <Icon name="server" className="size-[18px]" />
-                    {isActive ? (
-                      <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-[var(--surface-elevated)] bg-[var(--status-success)]" aria-hidden />
-                    ) : null}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate typography-ui-label text-foreground">{connection.label}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="block truncate typography-ui-label text-foreground">{connection.label}</span>
+                      {sshTarget ? (
+                        <span className="shrink-0 rounded border border-border/50 bg-muted px-1 typography-micro leading-none text-muted-foreground pb-px">
+                          {t('mobile.instances.sshBadge')}
+                        </span>
+                      ) : null}
+                    </span>
                     <span className={cn(
                       'block truncate typography-small',
                       isActive && !isConnectingRow ? 'text-[var(--status-success)]' : 'text-muted-foreground',
@@ -2395,6 +2450,8 @@ const MobileShell: React.FC<{
   const [changesOpen, setChangesOpen] = React.useState(false);
   const [turnDiffOpen, setTurnDiffOpen] = React.useState(false);
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
+  // Owning session for the turn-diff sheet; null = primary chat session.
+  const [turnDiffSessionId, setTurnDiffSessionId] = React.useState<string | null>(null);
   const [mcpOpen, setMcpOpen] = React.useState(false);
   const [isMcpRefreshing, setIsMcpRefreshing] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -2472,6 +2529,7 @@ const MobileShell: React.FC<{
   const openFilesSurface = useEvent(() => {
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setTurnDiffSessionId(null);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     if (isIPad) {
@@ -2498,6 +2556,7 @@ const MobileShell: React.FC<{
 
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setTurnDiffSessionId(null);
     setPendingChangesDiff(null);
     setChangesOpen(false);
 
@@ -2541,6 +2600,7 @@ const MobileShell: React.FC<{
   const openChangesSurface = useEvent((diff: PendingMobileChangesDiff | null = null) => {
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setTurnDiffSessionId(null);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setPendingChangesDiff(diff);
@@ -2552,12 +2612,13 @@ const MobileShell: React.FC<{
     setChangesOpen(true);
   });
 
-  const openTurnDiffSurface = useEvent((messageId?: string) => {
+  const openTurnDiffSurface = useEvent((messageId?: string, sessionId?: string | null) => {
     setPendingChangesDiff(null);
     setChangesOpen(false);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setTurnDiffMessageId(messageId ?? null);
+    setTurnDiffSessionId(typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null);
     if (isIPad) {
       setIpadRightPanel('turn-diff');
       if (isPortrait) setIpadSidebarOpen(false);
@@ -3274,7 +3335,13 @@ const MobileShell: React.FC<{
                         </Button>
                       </header>
                       <div className="min-h-0 flex-1 overflow-hidden">
-                        <DiffView hideStackedFileSidebar diffScope="turn" turnMessageId={turnDiffMessageId} flushContent />
+                        <DiffView
+                          hideStackedFileSidebar
+                          diffScope="turn"
+                          turnMessageId={turnDiffMessageId}
+                          sessionId={turnDiffSessionId}
+                          flushContent
+                        />
                       </div>
                     </div>
                   ) : pendingChangesDiff?.toolPatches?.length ? (
@@ -3338,27 +3405,32 @@ const MobileShell: React.FC<{
 
         <ScheduledTasksDialog />
 
-        {/* Mounted only while open (like the sessions sheet) so each surface
-            computes its safe-area / fixed-position layout fresh on open. Keeping
-            them always-mounted left a stale startup layout, which made the
-            top-inset dimming appear only intermittently on iOS. */}
+        {/* Mount only while open so each surface computes safe-area layout
+            fresh. open={state} (not a bare `open`) is required: dismiss settle
+            re-reads the controlled prop before unmount; a hardcoded true makes
+            the sheet flash back up after a gesture dismiss. */}
         {filesOpen ? (
-          <MobileSurfaceShell
-            open
-            onClose={() => setFilesOpen(false)}
+          <MobileResizableSheet
+            id={MOBILE_FILES_WINDOW_ID}
+            open={filesOpen}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) setFilesOpen(false);
+            }}
             ariaLabel={t('mobile.menu.files')}
-            headerless
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+            initiallyExpanded
           >
             <ErrorBoundary>
               <MobileFilesSurface onClose={() => setFilesOpen(false)} />
             </ErrorBoundary>
-          </MobileSurfaceShell>
+          </MobileResizableSheet>
         ) : null}
 
         {filePreviewOpen && pendingFilePreview ? (
           <MobileResizableSheet
             id={MOBILE_DIRECT_FILE_WINDOW_ID}
-            open
+            open={filePreviewOpen}
             onOpenChange={(nextOpen) => {
               if (!nextOpen) closeFilePreview();
             }}
@@ -3401,14 +3473,20 @@ const MobileShell: React.FC<{
             initiallyExpanded
           >
             <ErrorBoundary>
-              <DiffView hideStackedFileSidebar diffScope="turn" turnMessageId={turnDiffMessageId} flushContent />
+              <DiffView
+                hideStackedFileSidebar
+                diffScope="turn"
+                turnMessageId={turnDiffMessageId}
+                sessionId={turnDiffSessionId}
+                flushContent
+              />
             </ErrorBoundary>
         </MobileResizableSheet>
 
         {changesOpen && pendingChangesDiff ? (
           <MobileResizableSheet
             id={MOBILE_DIRECT_DIFF_WINDOW_ID}
-            open
+            open={changesOpen}
             onOpenChange={(nextOpen) => {
               if (!nextOpen) closeChanges();
             }}
@@ -3446,11 +3524,16 @@ const MobileShell: React.FC<{
             </ErrorBoundary>
           </MobileResizableSheet>
         ) : changesOpen ? (
-          <MobileSurfaceShell
-            open
-            onClose={closeChanges}
+          <MobileResizableSheet
+            id={MOBILE_CHANGES_WINDOW_ID}
+            open={changesOpen}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) closeChanges();
+            }}
             ariaLabel={t('mobile.menu.changes')}
-            headerless
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            resizeAriaLabel={t('mobile.changes.sheet.resizeAria')}
+            initiallyExpanded
           >
             <ErrorBoundary>
               <MobileChangesSurface
@@ -3460,52 +3543,52 @@ const MobileShell: React.FC<{
                 initialDiffTargetLine={pendingChangesDiff?.targetLine ?? null}
               />
             </ErrorBoundary>
-          </MobileSurfaceShell>
+          </MobileResizableSheet>
         ) : null}
 
         {mcpOpen ? (
-          <MobileOverlayPanel
-            open
-            onClose={() => setMcpOpen(false)}
-            title={t('mcpDropdown.title')}
-            className="h-[72vh]"
-            contentMaxHeightClassName="max-h-full"
-            renderHeader={(closeButton) => (
-              <div className="shrink-0">
-                <div className="flex justify-center pt-2.5 pb-1">
-                  <div className="h-1 w-9 rounded-full bg-[color-mix(in_srgb,var(--surface-mutedForeground)_40%,transparent)]" />
-                </div>
-                <div className="flex items-center justify-between gap-2 px-4 pb-2">
-                  <h2 className="text-[16px] font-semibold text-[var(--surface-foreground)]">
-                    {t('mcpDropdown.title')}
-                  </h2>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      className="flex size-8 items-center justify-center rounded-full text-[var(--surface-mutedForeground)] transition-colors hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)]"
-                      onClick={openMcpCreateSettings}
-                      aria-label={t('settings.mcp.sidebar.actions.addServerTitle')}
-                      title={t('settings.mcp.sidebar.actions.addServerTitle')}
-                      style={{ touchAction: 'manipulation' }}
-                    >
-                      <Icon name="add" className="h-5 w-5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="flex size-8 items-center justify-center rounded-full text-[var(--surface-mutedForeground)] transition-colors hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)] disabled:opacity-60"
-                      onClick={refreshMcpOverlay}
-                      disabled={isMcpRefreshing}
-                      aria-label={t('mcpDropdown.actions.refreshAria')}
-                      title={t('mcpDropdown.actions.refreshAria')}
-                      style={{ touchAction: 'manipulation' }}
-                    >
-                      <Icon name="refresh" className={cn('h-5 w-5', isMcpRefreshing && 'animate-spin')} />
-                    </button>
-                    {closeButton}
-                  </div>
-                </div>
-              </div>
+          <MobileResizableSheet
+            id={MOBILE_MCP_WINDOW_ID}
+            open={mcpOpen}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) setMcpOpen(false);
+            }}
+            title={(
+              <h2 className="truncate typography-ui-label font-semibold text-foreground">
+                {t('mcpDropdown.title')}
+              </h2>
             )}
+            trailing={(
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={openMcpCreateSettings}
+                  aria-label={t('settings.mcp.sidebar.actions.addServerTitle')}
+                  title={t('settings.mcp.sidebar.actions.addServerTitle')}
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Icon name="add" className="size-5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={refreshMcpOverlay}
+                  disabled={isMcpRefreshing}
+                  aria-label={t('mcpDropdown.actions.refreshAria')}
+                  title={t('mcpDropdown.actions.refreshAria')}
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Icon name="refresh" className={cn('size-5', isMcpRefreshing && 'animate-spin')} />
+                </Button>
+              </>
+            )}
+            ariaLabel={t('mcpDropdown.title')}
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+            initiallyExpanded
           >
             <ErrorBoundary>
               <McpDropdownContent
@@ -3516,15 +3599,20 @@ const MobileShell: React.FC<{
                 mobileListDensity
               />
             </ErrorBoundary>
-          </MobileOverlayPanel>
+          </MobileResizableSheet>
         ) : null}
 
         {settingsOpen && isIPad ? (
-          <MobileSurfaceShell
-            open
-            onClose={() => setSettingsOpen(false)}
+          <MobileResizableSheet
+            id={MOBILE_SETTINGS_WINDOW_ID}
+            open={settingsOpen}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) setSettingsOpen(false);
+            }}
             ariaLabel={t('mobile.menu.settings')}
-            headerless
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+            initiallyExpanded
           >
             <ErrorBoundary>
               <SettingsView
@@ -3542,22 +3630,32 @@ const MobileShell: React.FC<{
                 ) : undefined}
               />
             </ErrorBoundary>
-          </MobileSurfaceShell>
+          </MobileResizableSheet>
         ) : null}
 
         {updateOpen ? (
-          <MobileSurfaceShell
-            open
-            onClose={() => setUpdateOpen(false)}
+          <MobileResizableSheet
+            id={MOBILE_UPDATE_WINDOW_ID}
+            open={updateOpen}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) setUpdateOpen(false);
+            }}
+            title={(
+              <h2 className="truncate typography-ui-label font-semibold text-foreground">
+                {t('mobile.menu.update')}
+              </h2>
+            )}
             ariaLabel={t('mobile.menu.update')}
-            title={t('mobile.menu.update')}
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+            initiallyExpanded
           >
             <ErrorBoundary>
               <div className="h-full overflow-auto px-5 py-4">
                 <AboutSettings initialUpdateDialogOpen />
               </div>
             </ErrorBoundary>
-          </MobileSurfaceShell>
+          </MobileResizableSheet>
         ) : null}
       </div>
       <AssistantShareWelcome

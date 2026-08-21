@@ -37,6 +37,7 @@ interface WorkingSummary {
     lastCompletionId: string | null;
     isComplete: boolean;
     retryInfo: { attempt?: number; next?: number } | null;
+    turnStartedAt?: number;
 }
 
 interface FormingSummary {
@@ -69,6 +70,7 @@ const DEFAULT_WORKING: WorkingSummary = {
     lastCompletionId: null,
     isComplete: false,
     retryInfo: null,
+    turnStartedAt: undefined,
 };
 
 const EMPTY_PARTS: Part[] = [];
@@ -269,10 +271,13 @@ export function useAssistantStatus(
     const primarySessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
     const currentSessionId = sessionId ?? primarySessionId;
     const currentSessionDirectory = directory ?? primarySessionDirectory;
+    const pendingSendMessageIDSelector = React.useMemo(() => (
+        state: ReturnType<typeof useSessionUIStore.getState>
+    ) => (
+        currentSessionId ? state.pendingSendMessageIDs.get(currentSessionId) ?? null : null
+    ), [currentSessionId]);
     const pendingSendMessageID = useSessionUIStore(
-        React.useCallback((state) => (
-            currentSessionId ? state.pendingSendMessageIDs.get(currentSessionId) ?? null : null
-        ), [currentSessionId]),
+        pendingSendMessageIDSelector,
     );
 
     // Ticket 02: messages via repository observer (useSessionMessages).
@@ -290,12 +295,19 @@ export function useAssistantStatus(
         return null;
     }, [rawSessionMessages]);
 
-    const lastUserId = React.useMemo(() => {
+    const lastUser = React.useMemo(() => {
         for (let i = rawSessionMessages.length - 1; i >= 0; i--) {
-            if (rawSessionMessages[i].role === 'user') return rawSessionMessages[i].id;
+            const message = rawSessionMessages[i];
+            if (message.role === 'user') {
+                return {
+                    id: message.id,
+                    turnStartedAt: Number.isFinite(message.time.created) ? message.time.created : undefined,
+                };
+            }
         }
-        return null;
+        return { id: null, turnStartedAt: undefined };
     }, [rawSessionMessages]);
+    const lastUserId = lastUser.id;
 
     // Ticket 02: parts via repository; session-scoped subscription when known.
     const lastAssistantParts = useSessionParts(
@@ -318,14 +330,15 @@ export function useAssistantStatus(
     const sessionPermissionRequests = useSessionPermissions(currentSessionId ?? '', currentSessionDirectory ?? undefined);
     const sessionQuestionRequests = useSessionQuestions(currentSessionId ?? '', currentSessionDirectory ?? undefined);
 
-    const sessionAbortRecord = useSessionUIStore(
-        React.useCallback((state) => {
+    const sessionAbortRecordSelector = React.useMemo(() => (
+        state: ReturnType<typeof useSessionUIStore.getState>
+    ) => {
             if (!currentSessionId) {
                 return null;
             }
             return state.sessionAbortFlags?.get(currentSessionId) ?? null;
-        }, [currentSessionId])
-    );
+    }, [currentSessionId]);
+    const sessionAbortRecord = useSessionUIStore(sessionAbortRecordSelector);
 
     const { phase: activityPhase, isWorking: isPhaseWorking } = useSessionActivity(
         currentSessionId,
@@ -410,8 +423,9 @@ export function useAssistantStatus(
             lastCompletionId: null,
             isComplete: false,
             retryInfo,
+            turnStartedAt: lastUser.turnStartedAt,
         };
-    }, [activityPhase, isPhaseWorking, lastUserIsCompaction, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
+    }, [activityPhase, isPhaseWorking, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
 
     const forming = React.useMemo<FormingSummary>(() => {
         const isActive = isPhaseWorking && parsedStatus.activePartType === 'text';

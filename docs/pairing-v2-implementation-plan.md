@@ -309,7 +309,7 @@ Response:
       },
       {
         "type": "tunnel",
-        "url": "https://abc.ngrok.app",
+        "url": "https://openchamber.example.com",
         "priority": 20
       }
     ]

@@ -20,7 +20,7 @@ I'll acknowledge receipt within 48 hours and aim to provide a fix or mitigation 
 
 OpenChamber handles sensitive context including:
 - UI authentication (password-protected sessions, JWT tokens)
-- Cloudflare tunnel access (remote connectivity)
+- Private Relay remote connectivity (end-to-end encrypted device access)
 - Terminal access (PTY sessions)
 - Git credentials and SSH keys
 - File system operations

@@ -15,7 +15,7 @@ OpenChamber web 服务器监听的地址。使用 `0.0.0.0` 可允许其他机�
 
 ### `OPENCHAMBER_UI_PASSWORD`
 
-浏览器 UI 的密码。当你绑定到 localhost 之外、使用隧道或反向代理时，请设置它。
+浏览器 UI 的密码。当你绑定到 localhost 之外或反向代理时，请设置它。
 
 ### `OPENCHAMBER_API_ONLY`
 
@@ -109,8 +109,7 @@ Git executable 的备用 override。OpenChamber 专用配置建议使用 `OPENCH
 
 Git-backed file reads cache 的 TTL，单位为毫秒。调试时可设置为 `0` 禁用 cache。
 
-## 语音和隧道
-
+## 语音
 ### `OPENAI_API_KEY`
 
 OpenChamber 语音功能调用 OpenAI-compatible services 时使用的 API key。
@@ -118,10 +117,6 @@ OpenChamber 语音功能调用 OpenAI-compatible services 时使用的 API key�
 ### `OPENCHAMBER_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
 
 设置为 `true` 或 `1` 时，允许语音功能使用远程 OpenAI-compatible base URLs。
-
-### `NGROK_AUTHTOKEN`
-
-OpenChamber tunnel commands 使用的 ngrok auth token。也可以用 `ngrok config add-authtoken <token>` 配置。
 
 ## Runtime helpers
 

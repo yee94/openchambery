@@ -66,6 +66,14 @@ describe('agentQueries', () => {
     expect(agentQueryOptions(activeProjectPath).queryKey).toEqual(['runtime-b', 'agents', '/workspace/second']);
   });
 
+  test('empty enriched Agent catalog is not infinitely fresh', async () => {
+    listImpl = async () => [];
+    await queryClient.fetchQuery(agentQueryOptions(activeProjectPath, runtimeKey));
+    expect(listCalls).toBe(1);
+    await queryClient.fetchQuery(agentQueryOptions(activeProjectPath, runtimeKey));
+    expect(listCalls).toBeGreaterThan(1);
+  });
+
   test('enriched query reuses raw agents and keeps metadata work with enriched consumers', async () => {
     listImpl = async () => [{ name: 'build' }];
     await ensureRawAgentsQuery(activeProjectPath, runtimeKey);

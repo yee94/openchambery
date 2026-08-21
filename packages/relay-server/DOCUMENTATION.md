@@ -17,7 +17,7 @@ The Relay keeps process-local routing state only. Hosts reconnect after Relay re
 Install the package, then start the Relay:
 
 ```sh
-npm install -g @openchamber/relay-server
+npm install -g @openchambery/relay-server
 openchamber-relay
 ```
 

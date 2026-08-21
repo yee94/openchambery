@@ -10,8 +10,22 @@ import { execFile, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
-import { ElectronSshManager } from './ssh-manager.mjs';
+import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
+import { createCredentialSyncAuthStore } from './credential-sync-auth-store.mjs';
+import { createDirectConfigSyncController } from './direct-config-sync.mjs';
+import { createSettingsStore } from './settings-store.mjs';
 import { createTrayController } from './tray.mjs';
+import {
+  syncTargetIdForDirectHost,
+  syncTargetIdForRelayServer,
+} from './sync-run-store.mjs';
+import {
+  OPENCODE_CONFIG_SYNC_ALLOWLIST,
+  collectLocalTarBuffer,
+  extractTarGzBuffer,
+  finalizeLocalSyncDestination,
+  prepareLocalSyncDestination,
+} from '@openchambery/web/server/lib/config-sync/index.js';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { assertUpdaterCapability } from './updater-capability.mjs';
@@ -22,7 +36,7 @@ import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 import { getMenuLabels, normalizeMenuLocale } from './menu-i18n.mjs';
-import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
+import { mintOutsideFileGrant } from '@openchambery/web/server/lib/fs/routes.js';
 import {
   UI_PROTOCOL,
   isPackagedUiUrl,
@@ -285,6 +299,22 @@ const readAppMetadata = () => {
 
 const APP_METADATA = readAppMetadata();
 const APP_VERSION = APP_METADATA.version;
+const readPinnedOpenCodeCliVersion = () => {
+  const candidates = [
+    path.resolve(__dirname, '..', '..', 'package.json'),
+    path.join(__dirname, '..', 'web', 'package.json'),
+    path.join(app.getAppPath?.() || '', 'node_modules', '@openchambery', 'web', 'package.json'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const version = JSON.parse(fs.readFileSync(candidate, 'utf8')).dependencies?.['@opencode-ai/sdk'];
+      if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) return version;
+    } catch {
+    }
+  }
+  return null;
+};
+const OPENCODE_CLI_VERSION = readPinnedOpenCodeCliVersion();
 
 const DEFAULT_DESKTOP_PORT = 57123;
 const LOOPBACK_BIND_HOST = '127.0.0.1';
@@ -430,7 +460,6 @@ const shouldHideMainWindowToTray = (browserWindow) => {
 };
 
 const quitRisk = {
-  hasActiveTunnel: false,
   hasRunningScheduledTasks: false,
   hasEnabledScheduledTasks: false,
   runningScheduledTasksCount: 0,
@@ -438,15 +467,11 @@ const quitRisk = {
 };
 
 const shouldRequireQuitConfirmation = () =>
-  quitRisk.hasActiveTunnel
-  || quitRisk.hasRunningScheduledTasks
+  quitRisk.hasRunningScheduledTasks
   || quitRisk.hasEnabledScheduledTasks;
 
 const quitConfirmationMessage = () => {
   const reasons = [];
-  if (quitRisk.hasActiveTunnel) {
-    reasons.push('an active tunnel');
-  }
   if (quitRisk.runningScheduledTasksCount > 0) {
     reasons.push(`${quitRisk.runningScheduledTasksCount} running schedule${quitRisk.runningScheduledTasksCount === 1 ? '' : 's'}`);
   }
@@ -579,7 +604,6 @@ const refreshQuitRiskFlags = async () => {
         quitRisk.hasEnabledScheduledTasks = Boolean(scheduled.hasEnabledScheduledTasks) || quitRisk.enabledScheduledTasksCount > 0;
         quitRisk.hasRunningScheduledTasks = Boolean(scheduled.hasRunningScheduledTasks) || quitRisk.runningScheduledTasksCount > 0;
       }
-      quitRisk.hasActiveTunnel = Boolean(status?.tunnel?.active);
       return;
     } catch {
     }
@@ -589,7 +613,6 @@ const refreshQuitRiskFlags = async () => {
   if (!base) return;
 
   const scheduledUrl = `${base}/api/openchamber/scheduled-tasks/status`;
-  const tunnelUrl = `${base}/api/openchamber/tunnel/status`;
 
   const fetchJson = async (url) => {
     try {
@@ -601,7 +624,7 @@ const refreshQuitRiskFlags = async () => {
     }
   };
 
-  const [scheduled, tunnel] = await Promise.all([fetchJson(scheduledUrl), fetchJson(tunnelUrl)]);
+  const scheduled = await fetchJson(scheduledUrl);
 
   if (scheduled && typeof scheduled === 'object') {
     const enabledCount = Number(scheduled.enabledScheduledTasksCount ?? 0);
@@ -610,10 +633,6 @@ const refreshQuitRiskFlags = async () => {
     quitRisk.runningScheduledTasksCount = Number.isFinite(runningCount) ? runningCount : 0;
     quitRisk.hasEnabledScheduledTasks = Boolean(scheduled.hasEnabledScheduledTasks) || quitRisk.enabledScheduledTasksCount > 0;
     quitRisk.hasRunningScheduledTasks = Boolean(scheduled.hasRunningScheduledTasks) || quitRisk.runningScheduledTasksCount > 0;
-  }
-
-  if (tunnel && typeof tunnel === 'object') {
-    quitRisk.hasActiveTunnel = Boolean(tunnel.active);
   }
 };
 
@@ -624,58 +643,35 @@ const settingsFilePath = () => {
   return path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
 };
 
+// Shared process-local settings mutation chain for main, ssh-manager, and the
+// in-process web settings-runtime. Without one chain, concurrent RMW writers
+// overwrite sibling fields (hosts vs projects vs window state).
+const settingsStore = createSettingsStore({ resolveFilePath: settingsFilePath });
+const readSettingsRoot = () => settingsStore.readRoot();
+const mutateSettingsRoot = (mutator) => settingsStore.mutate(mutator);
+const credentialSyncAuthStore = createCredentialSyncAuthStore({ settingsStore });
+
 const sshManager = new ElectronSshManager({
   settingsFilePath: settingsFilePath(),
+  settingsStore,
+  credentialSyncAuthStore,
   appVersion: APP_VERSION,
+  opencodeCliVersion: OPENCODE_CLI_VERSION,
   emit: (event, detail) => emitToAllWindows(event, detail),
 });
 
-const readJsonFile = (filePath) => {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (error) {
-    if (error && error.code === 'ENOENT') return {};
-    // Parse errors can happen if a concurrent writer just truncated the file
-    // and hasn't finished writing yet. Log loudly so we notice, then return
-    // {} as before. Writes are atomic (tmp + rename) so this race is rare.
-    log.warn?.('[electron] failed to read JSON file', filePath, error);
-    return {};
-  }
-};
+const directConfigSync = createDirectConfigSyncController({
+  credentialSyncAuthStore,
+  syncRunStore: sshManager.syncRunStore,
+  runExclusiveForTarget: (targetId, stage, work) => sshManager.runExclusiveForTarget(targetId, stage, work),
+});
 
-const writeJsonFile = async (filePath, data) => {
-  await fsp.mkdir(path.dirname(filePath), { recursive: true });
-  // Atomic: write to a temp file then rename. Readers never see a partial
-  // JSON file that could parse-error and get coerced to {}.
-  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fsp.rename(tmp, filePath);
+const resolveStoredDesktopHost = (hostId) => {
+  const id = String(hostId || '').trim();
+  if (!id) return null;
+  const hosts = Array.isArray(readSettingsRoot().desktopHosts) ? readSettingsRoot().desktopHosts : [];
+  return hosts.find((entry) => entry?.id === id) || null;
 };
-
-const readSettingsRoot = () => {
-  const root = readJsonFile(settingsFilePath());
-  return root && typeof root === 'object' && !Array.isArray(root) ? root : {};
-};
-
-// Serializes read-modify-write of the settings file within this process.
-// Multiple call sites (spawnLocalServer, writeDesktopHostsConfig, theme
-// preference saves, ssh manager imports, etc.) would otherwise have their
-// RMW pairs interleave across awaits, letting one writer's stale copy
-// overwrite another writer's just-persisted changes.
-let settingsMutationChain = Promise.resolve();
-const mutateSettingsRoot = (mutator) => {
-  const next = settingsMutationChain.then(async () => {
-    const current = readSettingsRoot();
-    const result = await mutator(current);
-    const nextRoot = result ?? current;
-    await writeJsonFile(settingsFilePath(), nextRoot);
-  });
-  // Keep the chain alive even if one mutator throws.
-  settingsMutationChain = next.catch(() => {});
-  return next;
-};
-
-const writeSettingsRoot = async (root) => writeJsonFile(settingsFilePath(), root);
 
 // Stable per-install identifier for this desktop, persisted in settings. Used as
 // the client dedupe key on remote hosts so re-authenticating (e.g. after a login
@@ -836,15 +832,16 @@ const buildStoredHostEntry = (entry) => {
 
   const relay = sanitizeHostRelayForStorage(entry?.relay);
   const relayField = relay ? { relay } : {};
+  const sourceField = entry?.source === 'connect-link' ? { source: 'connect-link' } : {};
   const directUrl = sanitizeHostUrlForStorage(entry?.url);
   const apiUrl = directUrl ? (sanitizeHostUrlForStorage(entry?.apiUrl) || directUrl) : null;
 
   if (directUrl) {
-    return { id, label: labelRaw || directUrl, url: directUrl, apiUrl, ...tokenField, ...headerFields, ...relayField };
+    return { id, label: labelRaw || directUrl, url: directUrl, apiUrl, ...tokenField, ...headerFields, ...relayField, ...sourceField };
   }
   if (relay) {
     const url = `relay://${relay.serverId}`;
-    return { id, label: labelRaw || url, url, ...tokenField, ...headerFields, relay };
+    return { id, label: labelRaw || url, url, ...tokenField, ...headerFields, relay, ...sourceField };
   }
   return null;
 };
@@ -1449,7 +1446,7 @@ const loadShellEnv = () => {
 };
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
-import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
+import { pathLooksUserConfigured, mergePathValues } from '@openchambery/web/server/lib/opencode/path-utils.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
@@ -1538,7 +1535,7 @@ const spawnLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
-  const { startWebUiServer } = await import('@openchamber/web/server/index.js');
+  const { startWebUiServer } = await import('@openchambery/web/server/index.js');
 
   const handle = await startWebUiServer({
     port: chosenPort,
@@ -1556,6 +1553,12 @@ const spawnLocalServer = async () => {
       apiBaseUrl: state.apiBaseUrl || state.sidecarUrl || '',
       requestHeaders: sanitizeRuntimeRequestHeaders(state.requestHeaders || {}),
     }),
+    // Live SSH local-forward ports for relay x-openchamber-target-port routing.
+    getSshRoutingTable: () => sshManager.getRoutingTable(),
+    mintSshHostToken: (hostId) => sshManager.mintSshHostToken(hostId),
+    // Share Electron's settings mutation chain so web persistSettings cannot
+    // race main/ssh-manager read-modify-write on the same settings.json.
+    settingsPersistLock: settingsStore.runExclusive,
     sessionIndexDbPath: path.join(app.getPath('userData'), 'session-index.sqlite'),
     messageQueueDbPath: path.join(app.getPath('userData'), 'message-queue.sqlite'),
     transcriptCacheDbPath: path.join(app.getPath('userData'), 'transcript-cache.sqlite'),
@@ -4785,6 +4788,184 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_ssh_logs_clear':
       sshManager.clearLogsForInstance(String(args.id || '').trim());
       return null;
+
+    // Local renderer only: open/rebuild 0.0.0.0 LAN forward on a ready SSH session.
+    // Not in the remote IPC allowlist (privileged local ControlMaster mutation).
+    case 'desktop_ssh_ensure_lan_forward': {
+      const id = String(args.id || '').trim();
+      return await sshManager.ensureLanForward(id);
+    }
+
+    // Local renderer only: sync local OpenCode config to a managed SSH remote
+    // or a direct desktop host. stage=local scans without network; preview/apply
+    // require targetKind ssh|direct. direction/selections must be re-sent on
+    // every preview (direction switch recomputes). Not in the remote IPC allowlist.
+    case 'desktop_ssh_sync_opencode_config': {
+      const syncOptions = {
+        ...(args.direction === 'pull' || args.direction === 'push' ? { direction: args.direction } : {}),
+        ...(args.selections && typeof args.selections === 'object' ? { selections: args.selections } : {}),
+      };
+      if (args.stage === 'local') {
+        // Inventory-only: include local auth.json presence. Preview/apply still
+        // omit credentials unless this target has an explicit grant.
+        return {
+          plan: planOpenCodeConfigSync(os.homedir(), {
+            includeAuthFile: true,
+            ...(syncOptions.selections ? { selections: syncOptions.selections } : {}),
+          }),
+          selectionShape: {
+            fileGroups: OPENCODE_CONFIG_SYNC_ALLOWLIST.fileGroups.length,
+            singleFiles: OPENCODE_CONFIG_SYNC_ALLOWLIST.singleFiles.length,
+            directories: OPENCODE_CONFIG_SYNC_ALLOWLIST.directories.length,
+          },
+        };
+      }
+      const id = String(args.id || '').trim();
+      const targetKind = args.targetKind === 'direct'
+        ? 'direct'
+        : (args.targetKind === 'relay' ? 'relay' : 'ssh');
+      // Relay preview/apply run in the renderer (tunnel client). Main only packs /
+      // extracts local archives and stores grants/runs for relay:<serverId>.
+      if (targetKind === 'relay') {
+        throw new Error('Relay sync preview/apply must run in the desktop UI process');
+      }
+      if (targetKind === 'direct') {
+        const host = resolveStoredDesktopHost(id);
+        if (!host) throw new Error('Desktop host not found');
+        if (args.apply === true) {
+          return await directConfigSync.apply(host, syncOptions);
+        }
+        return await directConfigSync.preview(host, syncOptions);
+      }
+      if (args.apply === true) {
+        return await sshManager.applyOpencodeConfigSync(id, syncOptions);
+      }
+      return await sshManager.previewOpencodeConfigSync(id, syncOptions);
+    }
+
+    // Local renderer only: recent sync run records for SSH / direct / relay targets.
+    case 'desktop_ssh_sync_runs_list': {
+      const id = String(args.id || '').trim();
+      if (args.targetKind === 'direct') {
+        return await directConfigSync.listRuns(id);
+      }
+      if (args.targetKind === 'relay') {
+        return await sshManager.syncRunStore.readAll(syncTargetIdForRelayServer(id));
+      }
+      return await sshManager.listSyncRuns(id);
+    }
+
+    // Local renderer only: append a sync-run record (relay UI executor).
+    case 'desktop_sync_runs_append': {
+      const record = args.record && typeof args.record === 'object' ? args.record : null;
+      const targetId = typeof record?.targetId === 'string' ? record.targetId.trim() : '';
+      if (!targetId || !targetId.startsWith('relay:')) {
+        throw new Error('desktop_sync_runs_append only accepts relay:<serverId> records');
+      }
+      await sshManager.syncRunStore.append(targetId, record);
+      return { ok: true };
+    }
+
+    // Local renderer only: pack local allowlist tars for relay push (UI streams them).
+    case 'desktop_relay_sync_pack_local': {
+      const plan = args.plan && typeof args.plan === 'object' ? args.plan : null;
+      if (!plan) throw new Error('plan is required');
+      const home = os.homedir();
+      const configDir = path.join(home, '.config', 'opencode');
+      const tarEntries = [
+        ...(Array.isArray(plan.files) ? plan.files.map((entry) => entry.path) : []),
+        ...(Array.isArray(plan.directories) ? plan.directories.map((entry) => entry.path) : []),
+      ];
+      const windowsHide = process.platform === 'win32';
+      const configTar = tarEntries.length > 0
+        ? await collectLocalTarBuffer(['-h', '-czf', '-', '-C', configDir, ...tarEntries], { windowsHide })
+        : null;
+      const agentsTar = plan.agentsRoot
+        ? await collectLocalTarBuffer(['-h', '-czf', '-', '-C', home, '.agents'], { windowsHide })
+        : null;
+      const authTar = plan.authFile
+        ? await collectLocalTarBuffer(
+          ['-h', '-czf', '-', '-C', path.join(home, '.local', 'share', 'opencode'), 'auth.json'],
+          { windowsHide },
+        )
+        : null;
+      return {
+        configTar,
+        agentsTar,
+        authTar,
+      };
+    }
+
+    // Local renderer only: extract relay-downloaded tars into the local home.
+    case 'desktop_relay_sync_apply_local': {
+      const plan = args.plan && typeof args.plan === 'object' ? args.plan : null;
+      const syncRunId = typeof args.syncRunId === 'string' ? args.syncRunId.trim() : '';
+      if (!plan || !syncRunId) throw new Error('plan and syncRunId are required');
+      const home = os.homedir();
+      const toBuffer = (value) => {
+        if (!(value instanceof Uint8Array) || value.byteLength === 0) return null;
+        return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+      };
+      await prepareLocalSyncDestination(home, plan, { syncRunId });
+      const configTar = toBuffer(args.configTar);
+      const agentsTar = toBuffer(args.agentsTar);
+      const authTar = toBuffer(args.authTar);
+      if (configTar) await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
+      if (agentsTar) await extractTarGzBuffer(agentsTar, home);
+      if (authTar) {
+        await fsp.mkdir(path.join(home, '.local', 'share', 'opencode'), { recursive: true });
+        await extractTarGzBuffer(authTar, path.join(home, '.local', 'share', 'opencode'));
+      }
+      await finalizeLocalSyncDestination(home, { syncRunId });
+      return {
+        ok: true,
+        files: Array.isArray(plan.files) ? plan.files.length : 0,
+        directories: Array.isArray(plan.directories) ? plan.directories.length : 0,
+        deletes: Array.isArray(plan.deletes) ? plan.deletes.length : 0,
+        totalBytes: Number(plan.totalBytes) || 0,
+        agentsRoot: plan.agentsRoot ? { fileCount: Number(plan.agentsRoot.fileCount) || 0 } : null,
+        authFile: plan.authFile ? { bytes: Number(plan.authFile.bytes) || 0 } : null,
+      };
+    }
+
+    // Local renderer only: credential-sync grant is a trust-channel privilege
+    // (instance/host/pairing-settings). Never expose to remote host pages.
+    case 'desktop_ssh_credential_sync_get': {
+      const id = String(args.id || '').trim();
+      if (args.targetKind === 'direct') {
+        return credentialSyncAuthStore.getGrant(syncTargetIdForDirectHost(id));
+      }
+      if (args.targetKind === 'relay') {
+        return credentialSyncAuthStore.getGrant(syncTargetIdForRelayServer(id));
+      }
+      return sshManager.getCredentialSyncGrant(id);
+    }
+
+    case 'desktop_ssh_credential_sync_grant': {
+      const id = String(args.id || '').trim();
+      if (args.targetKind === 'direct') {
+        return await credentialSyncAuthStore.grant(syncTargetIdForDirectHost(id), {
+          channel: 'host-settings',
+        });
+      }
+      if (args.targetKind === 'relay') {
+        return await credentialSyncAuthStore.grant(syncTargetIdForRelayServer(id), {
+          channel: 'pairing-settings',
+        });
+      }
+      return await sshManager.grantCredentialSync(id);
+    }
+
+    case 'desktop_ssh_credential_sync_revoke': {
+      const id = String(args.id || '').trim();
+      if (args.targetKind === 'direct') {
+        return await credentialSyncAuthStore.revoke(syncTargetIdForDirectHost(id));
+      }
+      if (args.targetKind === 'relay') {
+        return await credentialSyncAuthStore.revoke(syncTargetIdForRelayServer(id));
+      }
+      return await sshManager.revokeCredentialSync(id);
+    }
 
     // Local renderer only: remote host pages must not control local shell menu language.
     case 'desktop_set_menu_locale': {

@@ -19,14 +19,15 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     const primarySessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
     const currentSessionId = surface.sessionId ?? primarySessionId;
     const currentSessionDirectory = surface.directory ?? primarySessionDirectory ?? undefined;
-    const abortRecord = useSessionUIStore(
-        React.useCallback((state) => {
+    const abortRecordSelector = React.useMemo(() => (
+        state: ReturnType<typeof useSessionUIStore.getState>
+    ) => {
             if (!currentSessionId) {
                 return null;
             }
             return state.sessionAbortFlags?.get(currentSessionId) ?? null;
-        }, [currentSessionId]),
-    );
+    }, [currentSessionId]);
+    const abortRecord = useSessionUIStore(abortRecordSelector);
     const abortPromptSessionId = useSessionUIStore((state) => state.abortPromptSessionId);
     const abortPromptExpiresAt = useSessionUIStore((state) => state.abortPromptExpiresAt);
     const { working } = useAssistantStatus(currentSessionId, currentSessionDirectory);
@@ -48,6 +49,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             wasAborted={wasAborted || working.wasAborted}
             abortActive={wasAborted || working.abortActive}
             retryInfo={working.retryInfo}
+            turnStartedAt={working.turnStartedAt}
             showAbortPrompt={showAbortPrompt}
             showAssistantStatus
             showTodos={false}

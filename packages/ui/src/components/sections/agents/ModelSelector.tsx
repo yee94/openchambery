@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -62,6 +63,16 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     const [isMobilePanelOpen, setIsMobilePanelOpen] = React.useState(false);
     const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+    const openMobilePanel = useEvent(() => {
+        setIsMobilePanelOpen(true);
+        void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'modelSelector:mobilePanel' });
+    });
+    const handleDropdownOpenChange = useEvent((open: boolean) => {
+        setIsDropdownOpen(open);
+        if (open) {
+            void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'modelSelector:desktopMenu' });
+        }
+    });
     const [searchQuery, setSearchQuery] = React.useState('');
     const [variantTarget, setVariantTarget] = React.useState<ModelPickerEntry | null>(null);
     const variantSelectionEnabled = variant !== undefined;
@@ -227,7 +238,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             <>
                 <button
                     type="button"
-                    onClick={isReady ? () => setIsMobilePanelOpen(true) : undefined}
+                    onClick={isReady ? openMobilePanel : undefined}
                     disabled={!isReady}
                     className={cn(
                         'flex w-full items-center justify-between gap-2 rounded-lg border border-border/40 bg-[var(--surface-elevated)] px-2 py-1.5 text-left',
@@ -275,7 +286,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
 
     return (
-        <DropdownMenu open={isReady && isDropdownOpen} onOpenChange={isReady ? setIsDropdownOpen : undefined}>
+        <DropdownMenu open={isReady && isDropdownOpen} onOpenChange={isReady ? handleDropdownOpenChange : undefined}>
             <DropdownMenuTrigger asChild>
                 <div className={cn(
                     'border-input data-[placeholder]:text-muted-foreground flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-transparent px-2 py-2 typography-ui-label whitespace-nowrap shadow-none outline-none hover:bg-interactive-hover data-[popup-open]:bg-interactive-active h-6 w-fit',

@@ -1964,6 +1964,15 @@ export async function setLocalIdentity(directory, profile) {
   }
 }
 
+// Change sets larger than this are reported as `oversized` in the getStatus
+// response and omit diffStats (the same omission shape as light mode). Two
+// full-tree `git diff --numstat` passes and per-new-file line counting over an
+// oversized working tree block the server event loop for seconds; regular
+// repositories never reach this threshold. Clients must derive deferred /
+// load-on-demand behavior from the `oversized` flag, never from their own copy
+// of this threshold.
+const GIT_STATUS_DIFF_STATS_MAX_FILES = 2000;
+
 export async function getStatus(directory, options = {}) {
   const lightMode = options.mode === 'light';
 
@@ -1973,8 +1982,17 @@ export async function getStatus(directory, options = {}) {
     // Use -uall to show all untracked files individually, not just directories
     const status = await git.status(['-uall']);
 
+    // Oversized change sets: skip numstat + new-file stats the same way light
+    // mode does. Two full-tree `git diff --numstat` passes over a huge working
+    // tree take seconds and block the server event loop; regular repositories
+    // stay below the threshold and keep full diffStats. The `oversized` flag in
+    // the response tells clients to defer list rendering; light mode is a
+    // client-requested lightweight poll and does not set the flag.
+    const oversized = (status.files?.length ?? 0) > GIT_STATUS_DIFF_STATS_MAX_FILES;
+    const skipDiffStats = lightMode || oversized;
+
     // Light mode: skip numstat + new-file line counting for faster response
-    const [stagedStatsRaw, workingStatsRaw] = lightMode
+    const [stagedStatsRaw, workingStatsRaw] = skipDiffStats
       ? ['', '']
       : await Promise.all([
           git.raw(['diff', '--cached', '--numstat']).catch(() => ''),
@@ -2019,7 +2037,7 @@ export async function getStatus(directory, options = {}) {
     const MAX_NEW_FILE_STAT_SIZE = 1024 * 1024;
     const newFileStats = [];
 
-    if (!lightMode) {
+    if (!skipDiffStats) {
       for (const file of status.files) {
         if (newFileStats.length >= MAX_NEW_FILE_STATS) {
           break;
@@ -2126,7 +2144,7 @@ export async function getStatus(directory, options = {}) {
     // When no upstream is configured (common for new worktree branches), Git doesn't report ahead/behind.
     // We still want to show the number of unpublished commits to the user.
     // Light mode skips this — the basic ahead/behind from git status is sufficient for polling.
-    if (!lightMode && !tracking && status.current) {
+    if (!skipDiffStats && !tracking && status.current) {
       const baseRef = await selectBaseRefForUnpublished();
       if (baseRef) {
         const countRaw = await git
@@ -2142,7 +2160,7 @@ export async function getStatus(directory, options = {}) {
     }
 
     if (
-      !lightMode
+      !skipDiffStats
       && status.current
       && (!tracking || !tracking.startsWith('upstream/'))
       && await hasRemote(git, directoryPath, 'upstream')
@@ -2217,7 +2235,8 @@ export async function getStatus(directory, options = {}) {
         working_dir: f.working_dir,
       })),
       isClean: status.isClean(),
-      diffStats: lightMode ? undefined : diffStats,
+      oversized,
+      diffStats: skipDiffStats ? undefined : diffStats,
       mergeInProgress,
       rebaseInProgress,
     };

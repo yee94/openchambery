@@ -1,6 +1,12 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-import { loadMobileConnections, upsertMobileConnection, validateMobileConnectionSession, type MobileRelayConfig } from './mobileConnections';
+import {
+  loadMobileConnections,
+  mobileConnectionKey,
+  upsertMobileConnection,
+  validateMobileConnectionSession,
+  type MobileRelayConfig,
+} from './mobileConnections';
 
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
@@ -178,6 +184,96 @@ describe('mobile connection storage', () => {
       expect(connections).toHaveLength(1);
       expect(connections[0]?.label).toBe('Home Mac renamed');
       expect(connections[0]?.clientToken).toBe('new-token');
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test('sshTarget connections keep distinct tokens and keys on the same relay', async () => {
+    try {
+      installTestWindow();
+      await upsertMobileConnection({
+        label: 'Desktop',
+        candidates: [{ kind: 'relay', relay: testRelay }],
+        clientToken: 'desktop-token',
+      });
+      await upsertMobileConnection({
+        label: 'Desktop · SSH A',
+        candidates: [{ kind: 'relay', relay: testRelay }],
+        clientToken: 'ssh-token-a',
+        sshTarget: {
+          hostId: 'ssh-1',
+          desktopServerId: testRelay.serverId,
+          desktopClientToken: 'desktop-token-a',
+        },
+      });
+      await upsertMobileConnection({
+        label: 'Desktop · SSH B',
+        candidates: [{ kind: 'relay', relay: testRelay }],
+        clientToken: 'ssh-token-b',
+        sshTarget: {
+          hostId: 'ssh-2',
+          desktopServerId: testRelay.serverId,
+          desktopClientToken: 'desktop-token-b',
+        },
+      });
+
+      const connections = await loadMobileConnections();
+      expect(connections).toHaveLength(3);
+      const keys = connections.map((c) => mobileConnectionKey(c));
+      expect(new Set(keys).size).toBe(3);
+      expect(keys.some((key) => key.endsWith('#ssh:ssh-1'))).toBe(true);
+      expect(keys.some((key) => key.endsWith('#ssh:ssh-2'))).toBe(true);
+      expect(keys.some((key) => !key.includes('#ssh:'))).toBe(true);
+
+      const sshA = connections.find((c) => c.sshTarget?.hostId === 'ssh-1');
+      expect(sshA?.clientToken).toBe('ssh-token-a');
+      expect(sshA?.sshTarget).toEqual({
+        hostId: 'ssh-1',
+        desktopServerId: testRelay.serverId,
+        desktopClientToken: 'desktop-token-a',
+      });
+
+      // Re-upsert same sshTarget updates in place (does not create a fourth row).
+      await upsertMobileConnection({
+        label: 'Desktop · SSH A renamed',
+        candidates: [{ kind: 'relay', relay: testRelay }],
+        clientToken: 'ssh-token-a2',
+        sshTarget: {
+          hostId: 'ssh-1',
+          desktopServerId: testRelay.serverId,
+          desktopClientToken: 'desktop-token-a',
+        },
+      });
+      const after = await loadMobileConnections();
+      expect(after).toHaveLength(3);
+      expect(after.find((c) => c.sshTarget?.hostId === 'ssh-1')?.label).toBe('Desktop · SSH A renamed');
+      expect(after.find((c) => c.sshTarget?.hostId === 'ssh-1')?.clientToken).toBe('ssh-token-a2');
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test('strips legacy sshTarget that lacks desktopClientToken', async () => {
+    try {
+      installTestWindow();
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify([
+        {
+          id: 'legacy-ssh',
+          label: 'Old SSH',
+          lastUsedAt: 10,
+          candidates: [{ kind: 'relay', relay: testRelay }],
+          clientToken: 'ssh-token',
+          // Missing desktopClientToken — cannot mint localPort on reconnect.
+          sshTarget: { hostId: 'ssh-1', desktopServerId: testRelay.serverId },
+        },
+      ]));
+      const connections = await loadMobileConnections();
+      const legacy = connections.find((c) => c.id === 'legacy-ssh');
+      expect(legacy).toBeTruthy();
+      // Row survives as a plain relay connection; broken sshTarget is dropped.
+      expect(legacy?.sshTarget).toBeUndefined();
+      expect(legacy?.clientToken).toBe('ssh-token');
     } finally {
       restoreGlobals();
     }

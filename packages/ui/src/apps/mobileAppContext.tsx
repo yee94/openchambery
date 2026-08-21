@@ -10,8 +10,11 @@ export type MobileAppActions = {
     patches: ReadonlyArray<{ path: string; patch: string }>;
     targetLine?: number;
   }) => void;
-  /** Open every diff from the owning turn in a mobile review sheet. */
-  openTurnDiff: (messageId?: string) => void;
+  /**
+   * Open every diff from the owning turn in a mobile review sheet.
+   * `sessionId` scopes nested/subagent turns; omit it for the primary session.
+   */
+  openTurnDiff: (messageId?: string, sessionId?: string | null) => void;
   /**
    * Open a file preview in the gesture-capable resizable sheet (phone)
    * or the right Files panel (iPad). Used by Read / Skill tool rows.

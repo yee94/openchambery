@@ -9,11 +9,13 @@ import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { Icon } from '@/components/icon/Icon';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
+import type { ToolPopupContent } from '@/components/chat/message/types';
 import { PIERRE_RUNTIME_BASE_CSS } from '@/components/views/PierreDiffViewer';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
@@ -29,6 +31,8 @@ import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery } from '
 import { cn } from '@/lib/utils';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { useUIStore } from '@/stores/useUIStore';
+
+const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/message/ToolOutputDialog'));
 
 type MobileFilesRoute =
   | { type: 'browser'; directory: string }
@@ -81,7 +85,7 @@ const getImageSrc = (path: string): string => {
 
 const isMarkdownFile = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path);
 type MobileFilesSurfaceProps = {
-  /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileSurfaceShell. */
+  /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileResizableSheet / iPad right panel. */
   onClose?: () => void;
   /**
    * Absolute path to open immediately as file detail (Read tool / direct preview sheet).
@@ -320,10 +324,12 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
           <Icon name="refresh" className={cn('size-5', isLoadingDirectory && 'animate-spin')} />
         </button>
       </header>
-      <div className="shrink-0 px-4 pb-2 pt-1">
+      <div className="shrink-0 px-4 pb-2 pt-1" data-mobile-sheet-no-dismiss="">
         <div className="relative">
           <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            type="text"
+            inputMode="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t('mobile.files.search.placeholder')}
@@ -332,7 +338,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
         </div>
       </div>
 
-      <ScrollShadow className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
+      <ScrollShadow className="overlay-scrollbar-container min-h-0 flex-1 overflow-y-auto px-4 pb-3">
         {directoryError ? (
           <MobileFilesState message={directoryError} />
         ) : query.trim() ? (
@@ -431,6 +437,11 @@ const MobileFileDetail: React.FC<{
   const [relayImageSrc, setRelayImageSrc] = React.useState('');
   const [relayImageError, setRelayImageError] = React.useState<string | null>(null);
   const [isRelayImageLoading, setRelayImageLoading] = React.useState(false);
+  const [imagePopup, setImagePopup] = React.useState<ToolPopupContent>({
+    open: false,
+    title: '',
+    content: '',
+  });
 
   React.useEffect(() => {
     if (!imageAuthKey) {
@@ -502,6 +513,37 @@ const MobileFileDetail: React.FC<{
   const imageAuthLoading = Boolean(imageAuthKey && imageAuthReadyKey !== imageAuthKey);
   const imageSrc = relayImageKey ? relayImageSrc : imageAuthLoading ? '' : getImageSrc(path);
   const imageError = error ?? relayImageError;
+  const imageFilename = getNameFromPath(path);
+  const imageDataUrl = isImageFile(path)
+    ? `data:${getImageMimeType(path)};utf8,${encodeURIComponent(content)}`
+    : '';
+  const previewImageSrc = imageSrc || (isImageFile(path) && content ? imageDataUrl : '');
+
+  const openImagePreview = useEvent(() => {
+    // Prefer the filesystem path so the shared viewer can resolve/save via runtime stream;
+    // fall back to the already-materialized display URL (relay blob / data URL).
+    const url = imagePath || previewImageSrc;
+    if (!url) return;
+    setImagePopup({
+      open: true,
+      title: imageFilename,
+      content: '',
+      metadata: {
+        tool: 'image-preview',
+        filename: imageFilename,
+        mime: getImageMimeType(path),
+      },
+      image: {
+        url,
+        mimeType: getImageMimeType(path),
+        filename: imageFilename,
+      },
+    });
+  });
+
+  const handleImagePopupChange = useEvent((open: boolean) => {
+    setImagePopup((previous) => (previous.open === open ? previous : { ...previous, open }));
+  });
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
@@ -516,7 +558,7 @@ const MobileFileDetail: React.FC<{
             <Icon name="arrow-left" className="size-5" />
           </button>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate typography-ui-header text-foreground">{getNameFromPath(path)}</h2>
+            <h2 className="truncate typography-ui-header text-foreground">{imageFilename}</h2>
           </div>
           {!isImageFile(path) ? (
             <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
@@ -544,18 +586,35 @@ const MobileFileDetail: React.FC<{
           <MobileFilesState loading message={t('filesView.state.loading')} />
         ) : imageError ? (
           <MobileFilesState message={imageError} />
-        ) : isImageFile(path) && imageSrc ? (
+        ) : isImageFile(path) && previewImageSrc ? (
           <ScrollShadow className="h-full overflow-auto p-4">
-            <img src={imageSrc} alt={getNameFromPath(path)} className="mx-auto max-h-full max-w-full rounded-lg object-contain" />
-          </ScrollShadow>
-        ) : isImageFile(path) ? (
-          <ScrollShadow className="h-full overflow-auto p-4">
-            <img src={`data:${getImageMimeType(path)};utf8,${encodeURIComponent(content)}`} alt={getNameFromPath(path)} className="mx-auto max-h-full max-w-full rounded-lg object-contain" />
+            <button
+              type="button"
+              className="mx-auto block max-h-full max-w-full cursor-zoom-in rounded-lg border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={openImagePreview}
+              aria-label={imageFilename}
+            >
+              <img
+                src={previewImageSrc}
+                alt={imageFilename}
+                className="mx-auto max-h-full max-w-full rounded-lg object-contain"
+                draggable={false}
+              />
+            </button>
           </ScrollShadow>
         ) : (
           <MobileTextFile path={path} content={content} />
         )}
       </div>
+      {imagePopup.open ? (
+        <React.Suspense fallback={null}>
+          <ToolOutputDialog
+            popup={imagePopup}
+            onOpenChange={handleImagePopupChange}
+            isMobile
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 };

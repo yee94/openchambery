@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import net from 'node:net';
@@ -5,6 +6,68 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+import {
+  OPENCODE_AGENTS_ROOT_PROBE_MARKER,
+  OPENCODE_AGENTS_SYNC_BACKUP_DIR,
+  OPENCODE_AUTH_FILE_PROBE_MARKER,
+  OPENCODE_AUTH_SYNC_BACKUP_DIR,
+  OPENCODE_CONFIG_SYNC_ALLOWLIST,
+  OPENCODE_CONFIG_SYNC_BACKUP_DIR,
+  SYNC_DIRECTION_PULL,
+  SYNC_DIRECTION_PUSH,
+  applyConfigSyncPlan,
+  assertCredentialSyncAuthorized,
+  assertTargetCapability,
+  buildRemoteAgentsTarScript,
+  buildRemoteAuthTarScript,
+  buildRemoteConfigTarScript,
+  buildRemoteSyncFinalizeScript,
+  buildRemoteSyncInventoryScript,
+  buildRemoteSyncPrepareScript as buildRemoteSyncPrepareScriptShared,
+  buildRemoteSyncProbeScript,
+  createSshSyncTarget,
+  extractTarGzBuffer,
+  finalizeLocalSyncDestination,
+  normalizeSyncSelections,
+  planOpenCodeConfigSync,
+  planOpenCodeConfigSyncFromInventory,
+  prepareLocalSyncDestination,
+  probePathsForPlan,
+  shellQuote,
+} from '@openchambery/web/server/lib/config-sync/index.js';
+
+import { createCredentialSyncAuthStore } from './credential-sync-auth-store.mjs';
+import { createSettingsStore } from './settings-store.mjs';
+import {
+  createSyncRunStore,
+  summarizeSyncPlan,
+  syncTargetIdForSshInstance,
+} from './sync-run-store.mjs';
+
+export {
+  OPENCODE_CONFIG_SYNC_ALLOWLIST,
+  OPENCODE_CONFIG_SYNC_BACKUP_DIR,
+  OPENCODE_AGENTS_SYNC_BACKUP_DIR,
+  OPENCODE_AUTH_SYNC_BACKUP_DIR,
+  OPENCODE_AUTH_FILE_PROBE_MARKER,
+  planOpenCodeConfigSync,
+  buildRemoteSyncProbeScript,
+};
+
+/**
+ * Desktop re-export: prepare scripts require syncRunId for generational backups.
+ * Tests that omit options get a stable fixture id so legacy call shapes still work.
+ * @param {object} plan
+ * @param {{ syncRunId?: string, generations?: number }} [options]
+ */
+export const buildRemoteSyncPrepareScript = (plan, options = {}) => buildRemoteSyncPrepareScriptShared(plan, {
+  syncRunId: options.syncRunId || 'test-sync-run',
+  ...(Number.isFinite(options.generations) ? { generations: options.generations } : {}),
+});
+
+const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
+const OPENCODE_NPM_PACKAGE = 'opencode-ai';
+export const REMOTE_NODE_MIN_MAJOR = 22;
 const LOCAL_HOST_ID = 'local';
 const DEFAULT_CONNECTION_TIMEOUT_SEC = 60;
 const DEFAULT_LOCAL_BIND_HOST = '127.0.0.1';
@@ -21,7 +84,48 @@ const WINDOWS_HIDDEN_SPAWN_OPTIONS = process.platform === 'win32' ? { windowsHid
 
 const nowMillis = () => Date.now();
 
-const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
+/** One-time UI password for an SSH-started remote OpenChamber. Memory-only. */
+export const createEphemeralUiPassword = () => crypto.randomBytes(24).toString('base64url');
+
+export const buildManagedServeEnvPrefix = (uiPassword) => {
+  const password = typeof uiPassword === 'string' ? uiPassword.trim() : '';
+  if (!password) {
+    throw new Error('Managed SSH OpenChamber requires a UI password');
+  }
+  return `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD=${shellQuote(password)}`;
+};
+
+/**
+ * Sets a PATH for one remote command only. It never edits shell startup files.
+ * A fresh DevCloud host can ship several Node versions while its login PATH
+ * still selects Node 18; choose the highest usable Node 22+ binary instead.
+ */
+export const buildRemoteManagedRuntimePrefix = () => `
+prepend_path() { [ -d "$1" ] || return 0; case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac; }
+prepend_path "$HOME/.bun/bin"
+prepend_path "$HOME/.opencode/bin"
+prepend_path "$HOME/.local/bin"
+prepend_path "$HOME/.npm/node_modules/bin"
+best_node_bin=""
+best_node_version=""
+consider_node() {
+  candidate="$1"
+  [ -x "$candidate" ] || return 0
+  version="$("$candidate" -p 'process.versions.node' 2>/dev/null || true)"
+  major="\${version%%.*}"
+  case "$major" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$major" -ge ${REMOTE_NODE_MIN_MAJOR} ] || return 0
+  if [ -z "$best_node_version" ] || [ "$(printf '%s\\n%s\\n' "$best_node_version" "$version" | sort -V | tail -n 1)" = "$version" ]; then
+    best_node_bin="$candidate"
+    best_node_version="$version"
+  fi
+}
+if command -v node >/dev/null 2>&1; then consider_node "$(command -v node)"; fi
+for candidate in /codev/opt/nodejs/*/bin/node /opt/codev/nodejs/*/bin/node "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.fnm/node-versions/*/installation/bin/node "$HOME"/.local/share/fnm/node-versions/*/installation/bin/node; do consider_node "$candidate"; done
+if [ -n "$best_node_bin" ]; then prepend_path "$(dirname "$best_node_bin")"; fi
+if command -v npm >/dev/null 2>&1; then npm_prefix="$(npm prefix -g 2>/dev/null || true)"; [ -n "$npm_prefix" ] && prepend_path "$npm_prefix/bin"; fi
+export PATH
+`;
 
 const hasGlobWildcard = (value) => /[*?]/.test(value);
 
@@ -62,24 +166,15 @@ const expandSshIncludeToken = (token, baseDir) => {
   }
 };
 
-const readJsonRoot = (settingsFilePath) => {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(settingsFilePath, 'utf8'));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
+export class SyncInProgressError extends Error {
+  constructor(targetId, syncRunId) {
+    super(`Config sync already in progress for ${targetId}`);
+    this.name = 'SyncInProgressError';
+    this.code = 'sync_in_progress';
+    this.targetId = targetId;
+    this.syncRunId = typeof syncRunId === 'string' ? syncRunId : undefined;
   }
-};
-
-const writeJsonRoot = async (settingsFilePath, root) => {
-  await fsp.mkdir(path.dirname(settingsFilePath), { recursive: true });
-  // Atomic write: concurrent readers (main.mjs, web server) would otherwise
-  // see partial JSON and readJsonRoot()'s catch would silently coerce to {},
-  // causing the next read-modify-write to wipe the entire settings file.
-  const tmp = `${settingsFilePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await fsp.writeFile(tmp, JSON.stringify(root, null, 2));
-  await fsp.rename(tmp, settingsFilePath);
-};
+}
 
 const defaultTrue = () => true;
 
@@ -137,7 +232,38 @@ const hasDisallowedOOption = (value) => {
   return ['controlmaster', 'controlpath', 'controlpersist', 'batchmode', 'proxycommand'].some((prefix) => lower.startsWith(prefix));
 };
 
-const parseSshCommand = (raw) => {
+/**
+ * scp-style user@host:port → { destination, port }. Strict: exactly one colon,
+ * right side pure digits, no brackets (IPv6 / [::1]:22 left alone for -p).
+ * @param {string} destination
+ * @returns {{ destination: string, port: string } | null}
+ */
+export const splitScpStyleHostPort = (destination) => {
+  if (typeof destination !== 'string') return null;
+  const value = destination.trim();
+  if (!value || value.includes('[') || value.includes(']')) return null;
+  const parts = value.split(':');
+  if (parts.length !== 2) return null;
+  const hostPart = parts[0];
+  const portPart = parts[1];
+  if (!hostPart || !/^\d+$/.test(portPart)) return null;
+  return { destination: hostPart, port: portPart };
+};
+
+/** True when args already carry an explicit -p / -P port flag (token or glued). */
+export const argsHaveExplicitPortFlag = (args) => {
+  if (!Array.isArray(args)) return false;
+  for (const token of args) {
+    if (typeof token !== 'string') continue;
+    if (token === '-p' || token === '-P') return true;
+    if ((token.startsWith('-p') || token.startsWith('-P')) && token.length > 2 && /^\d+$/.test(token.slice(2))) {
+      return true;
+    }
+  }
+  return false;
+};
+
+export const parseSshCommand = (raw) => {
   const tokens = splitShellWords(raw);
   if (tokens.length === 0) {
     throw new Error('SSH command is empty');
@@ -158,16 +284,17 @@ const parseSshCommand = (raw) => {
   let destination = null;
   for (let index = 0; index < tokens.length;) {
     const token = tokens[index];
-    if (destination) {
-      throw new Error(`SSH command has unsupported trailing argument: ${token}`);
-    }
 
     if (!token.startsWith('-')) {
+      if (destination) {
+        throw new Error(`SSH command has unsupported trailing argument: ${token}`);
+      }
       destination = token.trim();
       index += 1;
       continue;
     }
 
+    // Flags may appear before or after the destination (e.g. `ssh host -p 22`).
     if (isDisallowedPrimaryFlag(token)) {
       throw new Error(`SSH option ${token} is not allowed`);
     }
@@ -215,7 +342,62 @@ const parseSshCommand = (raw) => {
     throw new Error('SSH command must include destination');
   }
 
+  // OpenSSH does not accept scp-style user@host:port as a destination; rewrite
+  // to destination + -p so DNS does not treat "host:port" as a hostname.
+  const scpStyle = splitScpStyleHostPort(destination);
+  if (scpStyle) {
+    if (argsHaveExplicitPortFlag(args)) {
+      throw new Error(
+        'SSH command cannot combine host:port destination with an explicit -p flag; use one form only (e.g. user@host:36000 or -p 36000 user@host)',
+      );
+    }
+    destination = scpStyle.destination;
+    args.push('-p', scpStyle.port);
+  }
+
   return { destination, args };
+};
+
+const MASTER_STDERR_TAIL_MAX_CHARS = 500;
+const MASTER_STDERR_TAIL_MAX_LINES = 5;
+
+/**
+ * Collect a short, UI-safe tail of a child process stderr stream.
+ * @param {import('node:child_process').ChildProcess} child
+ * @param {{ maxChars?: number, maxLines?: number }} [options]
+ */
+export const attachProcessStderrTail = (child, options = {}) => {
+  const maxChars = Number.isFinite(options.maxChars) ? options.maxChars : MASTER_STDERR_TAIL_MAX_CHARS;
+  const maxLines = Number.isFinite(options.maxLines) ? options.maxLines : MASTER_STDERR_TAIL_MAX_LINES;
+  let buffer = '';
+  const onData = (chunk) => {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk ?? '');
+    // Drop NULs; keep a bounded rolling buffer (2× so the final tail is complete).
+    buffer = `${buffer}${text}`.replace(/\0/g, '');
+    const keep = Math.max(maxChars * 2, 1024);
+    if (buffer.length > keep) buffer = buffer.slice(-keep);
+  };
+  if (child?.stderr && typeof child.stderr.on === 'function') {
+    child.stderr.on('data', onData);
+  }
+  return {
+    getTail: () => {
+      const text = buffer.replace(/\s+/g, ' ').trim();
+      if (!text) return '';
+      const lines = buffer.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const joined = (lines.length > 0 ? lines.slice(-maxLines) : [text]).join(' ').replace(/\s+/g, ' ').trim();
+      if (joined.length <= maxChars) return joined;
+      return joined.slice(-maxChars);
+    },
+  };
+};
+
+/** @param {string} [stderrTail] */
+export const formatMasterExitError = (stderrTail) => {
+  const tail = typeof stderrTail === 'string' ? stderrTail.trim() : '';
+  return tail
+    ? `SSH master process exited before ready: ${tail}`
+    : 'SSH master process exited before ready';
 };
 
 const runOutput = async (command, args, options = {}) => {
@@ -259,6 +441,105 @@ const runRemoteCommand = async (parsed, controlPath, script, timeoutSec = DEFAUL
     throw new Error((stderr || stdout || 'Remote command failed').trim());
   }
   return stdout;
+};
+
+/**
+ * Like runRemoteCommand, but pipes a Buffer to ssh stdin (e.g. tar stream).
+ * @param {ReturnType<typeof parseSshCommand>} parsed
+ * @param {string} controlPath
+ * @param {string} script
+ * @param {Buffer} input
+ * @param {number} [timeoutSec]
+ * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
+ */
+const runRemoteCommandWithInput = async (parsed, controlPath, script, input, timeoutSec = DEFAULT_CONNECTION_TIMEOUT_SEC) => {
+  const args = buildSshArgs(parsed, [
+    '-o', 'ControlMaster=no',
+    '-o', `ControlPath=${controlPath}`,
+    '-o', `ConnectTimeout=${timeoutSec}`,
+    '-T',
+  ], `sh -lc ${shellQuote(script)}`);
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn('ssh', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...WINDOWS_HIDDEN_SPAWN_OPTIONS,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.stdin?.on('error', (error) => {
+      if (error && (error.code === 'EPIPE' || error.errno === 'EPIPE')) return;
+      reject(error);
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      const exitCode = typeof code === 'number' ? code : -1;
+      if (exitCode !== 0) {
+        reject(new Error((stderr || stdout || 'Remote command failed').trim()));
+        return;
+      }
+      resolve({ code: exitCode, stdout, stderr });
+    });
+
+    try {
+      child.stdin?.write(input);
+      child.stdin?.end();
+    } catch (error) {
+      if (error && (error.code === 'EPIPE' || error.errno === 'EPIPE')) {
+        // Peer closed early; close handler will surface the exit code.
+        return;
+      }
+      reject(error);
+    }
+  });
+};
+
+/**
+ * Capture remote command stdout as a Buffer (for pull tar streams).
+ * @param {ReturnType<typeof parseSshCommand>} parsed
+ * @param {string} controlPath
+ * @param {string} script
+ * @param {number} [timeoutSec]
+ * @returns {Promise<Buffer>}
+ */
+const runRemoteCommandBinary = async (parsed, controlPath, script, timeoutSec = DEFAULT_CONNECTION_TIMEOUT_SEC) => {
+  const args = buildSshArgs(parsed, [
+    '-o', 'ControlMaster=no',
+    '-o', `ControlPath=${controlPath}`,
+    '-o', `ConnectTimeout=${timeoutSec}`,
+    '-T',
+  ], `sh -lc ${shellQuote(script)}`);
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn('ssh', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...WINDOWS_HIDDEN_SPAWN_OPTIONS,
+    });
+    /** @type {Buffer[]} */
+    const chunks = [];
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error((stderr || 'Remote binary command failed').trim()));
+        return;
+      }
+      resolve(Buffer.concat(chunks));
+    });
+  });
 };
 
 const controlMasterOperation = async (parsed, controlPath, op) => {
@@ -418,7 +699,16 @@ const isLivenessHttpStatus = (status) => (status >= 200 && status <= 299) || isA
 export class ElectronSshManager {
   constructor(options) {
     this.settingsFilePath = options.settingsFilePath;
+    this.settingsStore = options.settingsStore
+      || createSettingsStore({ filePath: options.settingsFilePath });
+    this.syncRunStore = options.syncRunStore
+      || createSyncRunStore({
+        resolveDataDir: () => path.dirname(this.settingsStore.resolveFilePath()),
+      });
+    this.credentialSyncAuthStore = options.credentialSyncAuthStore
+      || createCredentialSyncAuthStore({ settingsStore: this.settingsStore });
     this.appVersion = options.appVersion;
+    this.opencodeCliVersion = options.opencodeCliVersion;
     this.emit = options.emit;
     this.logs = new Map();
     this.statuses = new Map();
@@ -427,6 +717,48 @@ export class ElectronSshManager {
     this.reconnectAttempts = new Map();
     this.connectAttempts = new Map();
     this.connecting = new Map();
+    /** @type {Map<string, string>} instanceId → ephemeral UI password (process lifetime, never persisted) */
+    this.ephemeralUiPasswords = new Map();
+    /** @type {Map<string, { syncRunId: string, promise: Promise<unknown> }>} targetId → in-flight sync */
+    this.syncInFlight = new Map();
+  }
+
+  /**
+   * Query credential-sync grant for an SSH instance (trust-channel surface).
+   * @param {string} instanceId
+   */
+  getCredentialSyncGrant(instanceId) {
+    return this.credentialSyncAuthStore.getGrantForSshInstance(instanceId);
+  }
+
+  /**
+   * Grant credential sync for an SSH instance via instance-settings channel.
+   * @param {string} instanceId
+   */
+  async grantCredentialSync(instanceId) {
+    return this.credentialSyncAuthStore.grantForSshInstance(instanceId, {
+      channel: 'instance-settings',
+    });
+  }
+
+  /**
+   * Revoke credential sync for an SSH instance.
+   * @param {string} instanceId
+   */
+  async revokeCredentialSync(instanceId) {
+    return this.credentialSyncAuthStore.revokeForSshInstance(instanceId);
+  }
+
+  readSettingsRoot() {
+    return this.settingsStore.readRoot();
+  }
+
+  /**
+   * Serialized settings read-modify-write via the shared process-local chain.
+   * @param {(root: Record<string, unknown>) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void} mutator
+   */
+  async mutateSettingsRoot(mutator) {
+    return this.settingsStore.mutate(mutator);
   }
 
   appendLogWithLevel(id, level, message) {
@@ -575,47 +907,47 @@ export class ElectronSshManager {
   }
 
   readInstances() {
-    const root = readJsonRoot(this.settingsFilePath);
+    const root = this.readSettingsRoot();
     return { instances: Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [] };
   }
 
   async setInstances(config) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const previousSshIds = new Set(
-      (Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [])
-        .map((entry) => String(entry?.id || '').trim())
-        .filter((id) => id && id !== LOCAL_HOST_ID)
-    );
-    const instances = Array.isArray(config?.instances) ? config.instances.map((instance) => this.sanitizeInstance(instance)) : [];
-    root.desktopSshInstances = instances;
+    await this.mutateSettingsRoot((root) => {
+      const previousSshIds = new Set(
+        (Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [])
+          .map((entry) => String(entry?.id || '').trim())
+          .filter((id) => id && id !== LOCAL_HOST_ID)
+      );
+      const instances = Array.isArray(config?.instances) ? config.instances.map((instance) => this.sanitizeInstance(instance)) : [];
+      root.desktopSshInstances = instances;
 
-    const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts.filter(Boolean) : [];
-    const nextIds = new Set(instances.map((instance) => instance.id));
+      const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts.filter(Boolean) : [];
+      const nextIds = new Set(instances.map((instance) => instance.id));
 
-    const filteredHosts = hosts.filter((entry) => {
-      const id = String(entry?.id || '').trim();
-      return id && id !== LOCAL_HOST_ID && !(previousSshIds.has(id) && !nextIds.has(id));
-    });
+      const filteredHosts = hosts.filter((entry) => {
+        const id = String(entry?.id || '').trim();
+        return id && id !== LOCAL_HOST_ID && !(previousSshIds.has(id) && !nextIds.has(id));
+      });
 
-    for (const instance of instances) {
-      const label = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
-      const existing = filteredHosts.find((entry) => entry?.id === instance.id);
-      if (existing) {
-        existing.label = label;
-        if (!existing.url || !String(existing.url).trim()) {
-          existing.url = 'http://127.0.0.1/';
+      for (const instance of instances) {
+        const label = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
+        const existing = filteredHosts.find((entry) => entry?.id === instance.id);
+        if (existing) {
+          existing.label = label;
+          if (!existing.url || !String(existing.url).trim()) {
+            existing.url = 'http://127.0.0.1/';
+          }
+        } else {
+          filteredHosts.push({ id: instance.id, label, url: 'http://127.0.0.1/' });
         }
-      } else {
-        filteredHosts.push({ id: instance.id, label, url: 'http://127.0.0.1/' });
       }
-    }
 
-    root.desktopHosts = filteredHosts;
-    if (typeof root.desktopDefaultHostId === 'string' && previousSshIds.has(root.desktopDefaultHostId) && !nextIds.has(root.desktopDefaultHostId)) {
-      root.desktopDefaultHostId = LOCAL_HOST_ID;
-    }
-
-    await writeJsonRoot(this.settingsFilePath, root);
+      root.desktopHosts = filteredHosts;
+      if (typeof root.desktopDefaultHostId === 'string' && previousSshIds.has(root.desktopDefaultHostId) && !nextIds.has(root.desktopDefaultHostId)) {
+        root.desktopDefaultHostId = LOCAL_HOST_ID;
+      }
+      return root;
+    });
   }
 
   sanitizeStoredSecret(secret) {
@@ -652,6 +984,17 @@ export class ElectronSshManager {
     return normalized;
   }
 
+  sanitizeLanForward(lanForward) {
+    if (!lanForward || typeof lanForward !== 'object') return undefined;
+    const localPort = Number.isFinite(lanForward.localPort) && Number(lanForward.localPort) > 0
+      ? Number(lanForward.localPort)
+      : undefined;
+    return {
+      enabled: lanForward.enabled === true,
+      ...(localPort ? { localPort } : {}),
+    };
+  }
+
   sanitizeInstance(instance) {
     const id = typeof instance?.id === 'string' ? instance.id.trim() : '';
     const sshCommand = typeof instance?.sshCommand === 'string' ? instance.sshCommand.trim() : '';
@@ -669,6 +1012,7 @@ export class ElectronSshManager {
           .map((forward) => this.sanitizeForward(forward))
           .filter((forward) => forward && !seen.has(forward.id) && seen.add(forward.id))
       : [];
+    const lanForward = this.sanitizeLanForward(instance?.lanForward);
 
     return {
       id,
@@ -696,6 +1040,9 @@ export class ElectronSshManager {
         ...(this.sanitizeStoredSecret(instance?.auth?.openchamberPassword) ? { openchamberPassword: this.sanitizeStoredSecret(instance.auth.openchamberPassword) } : {}),
       },
       portForwards,
+      // Optional LAN bind (0.0.0.0) for direct LAN access to the remote instance.
+      // Absent / enabled:false = off. localPort is sticky across reconnects.
+      ...(lanForward ? { lanForward } : {}),
     };
   }
 
@@ -704,25 +1051,28 @@ export class ElectronSshManager {
   }
 
   async updateHostRuntime(instanceId, label, localUrl, clientToken = '') {
-    const root = readJsonRoot(this.settingsFilePath);
-    const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
-    const existing = hosts.find((entry) => entry?.id === instanceId);
-    const token = typeof clientToken === 'string' ? clientToken.trim() : '';
-    if (existing) {
-      existing.label = label;
-      existing.url = localUrl;
-      existing.apiUrl = localUrl;
-      if (token) existing.clientToken = token;
-    } else {
-      hosts.push({ id: instanceId, label, url: localUrl, apiUrl: localUrl, ...(token ? { clientToken: token } : {}) });
-    }
-    root.desktopHosts = hosts;
-    await writeJsonRoot(this.settingsFilePath, root);
+    await this.mutateSettingsRoot((root) => {
+      const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
+      const existing = hosts.find((entry) => entry?.id === instanceId);
+      const token = typeof clientToken === 'string' ? clientToken.trim() : '';
+      if (existing) {
+        existing.label = label;
+        existing.url = localUrl;
+        existing.apiUrl = localUrl;
+        if (token) existing.clientToken = token;
+      } else {
+        hosts.push({ id: instanceId, label, url: localUrl, apiUrl: localUrl, ...(token ? { clientToken: token } : {}) });
+      }
+      root.desktopHosts = hosts;
+      return root;
+    });
   }
 
   async issueClientToken(localUrl, openchamberPassword) {
     const password = typeof openchamberPassword === 'string' ? openchamberPassword.trim() : '';
-    if (!password) return '';
+    if (!password) {
+      throw new Error('OpenChamber UI password is required to mint an SSH host token');
+    }
 
     const loginResponse = await fetch(new URL('/auth/session', `${localUrl}/`).toString(), {
       method: 'POST',
@@ -739,7 +1089,7 @@ export class ElectronSshManager {
       }),
     });
     if (!loginResponse.ok) {
-      throw new Error(`Configured OpenChamber UI password was rejected by forwarded server (status ${loginResponse.status})`);
+      throw new Error(`OpenChamber UI password was rejected by forwarded server (status ${loginResponse.status})`);
     }
 
     const payload = await loginResponse.json().catch(() => null);
@@ -747,21 +1097,60 @@ export class ElectronSshManager {
     if (token) return token;
 
     const cookie = this.extractCookieHeader(loginResponse);
-    if (!cookie) return '';
+    if (!cookie) {
+      throw new Error('Forwarded OpenChamber did not issue an SSH host token');
+    }
+    const minted = await this.createClientToken(localUrl, { Cookie: cookie });
+    if (!minted) {
+      throw new Error('Forwarded OpenChamber did not issue an SSH host token');
+    }
+    return minted;
+  }
 
+  async createClientToken(localUrl, extraHeaders = {}) {
     const tokenResponse = await fetch(new URL('/api/client-auth/clients', `${localUrl}/`).toString(), {
       method: 'POST',
       signal: AbortSignal.timeout(10_000),
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        Cookie: cookie,
+        ...extraHeaders,
       },
       body: JSON.stringify({ label: 'OpenChamber Desktop SSH' }),
     });
     if (!tokenResponse.ok) return '';
     const tokenPayload = await tokenResponse.json().catch(() => null);
     return typeof tokenPayload?.token === 'string' ? tokenPayload.token.trim() : '';
+  }
+
+  sessionUiPassword(session, instance) {
+    const ephemeral = typeof session?.uiPassword === 'string' ? session.uiPassword.trim() : '';
+    if (ephemeral) return ephemeral;
+    const remembered = this.ephemeralUiPasswords.get(instance?.id || session?.instance?.id);
+    if (typeof remembered === 'string' && remembered.trim()) return remembered.trim();
+    return this.configuredOpenChamberPassword(instance || session?.instance);
+  }
+
+  /**
+   * Mint (or remint) a stored SSH host clientToken for a ready session.
+   * Uses the in-memory tunnel password (ephemeral managed password or configured).
+   */
+  async mintSshHostToken(instanceId) {
+    const id = String(instanceId || '').trim();
+    if (!id || id === LOCAL_HOST_ID) return '';
+    const session = this.sessions.get(id);
+    const phase = this.statuses.get(id)?.phase;
+    const localPort = Number(session?.localPort);
+    if (!session || phase !== 'ready' || !Number.isFinite(localPort) || localPort <= 0) return '';
+    const instance = session.instance;
+    const password = this.sessionUiPassword(session, instance);
+    if (!password) return '';
+    const localUrl = `http://127.0.0.1:${localPort}`;
+    const label = instance?.nickname?.trim() || instance?.sshParsed?.destination || id;
+    const token = await this.issueClientToken(localUrl, password);
+    if (!token) return '';
+    await this.updateHostRuntime(id, label, localUrl, token);
+    return token;
   }
 
   extractCookieHeader(response) {
@@ -779,15 +1168,39 @@ export class ElectronSshManager {
   }
 
   async persistLocalPort(instanceId, localPort) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
-    for (const instance of instances) {
-      if (instance?.id !== instanceId) continue;
-      instance.localForward = instance.localForward && typeof instance.localForward === 'object' ? instance.localForward : {};
-      instance.localForward.preferredLocalPort = localPort;
-    }
-    root.desktopSshInstances = instances;
-    await writeJsonRoot(this.settingsFilePath, root);
+    await this.mutateSettingsRoot((root) => {
+      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
+      for (const instance of instances) {
+        if (instance?.id !== instanceId) continue;
+        instance.localForward = instance.localForward && typeof instance.localForward === 'object' ? instance.localForward : {};
+        instance.localForward.preferredLocalPort = localPort;
+      }
+      root.desktopSshInstances = instances;
+      return root;
+    });
+  }
+
+  /**
+   * Persist sticky LAN-forward port (and enabled flag) on desktopSshInstances.
+   * Serialized via the shared settings store (tmp + rename), same as persistLocalPort.
+   */
+  async persistLanForward(instanceId, { enabled, localPort } = {}) {
+    await this.mutateSettingsRoot((root) => {
+      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
+      for (const instance of instances) {
+        if (instance?.id !== instanceId) continue;
+        const previous = instance.lanForward && typeof instance.lanForward === 'object' ? instance.lanForward : {};
+        const nextPort = Number.isFinite(localPort) && Number(localPort) > 0
+          ? Number(localPort)
+          : (Number.isFinite(previous.localPort) && Number(previous.localPort) > 0 ? Number(previous.localPort) : undefined);
+        instance.lanForward = {
+          enabled: enabled === true || (enabled === undefined && previous.enabled === true),
+          ...(nextPort ? { localPort: nextPort } : {}),
+        };
+      }
+      root.desktopSshInstances = instances;
+      return root;
+    });
   }
 
   async resolveSshConfig(parsed) {
@@ -837,12 +1250,20 @@ export class ElectronSshManager {
         ...(sshPassword ? { OPENCHAMBER_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
       },
     });
+    // Capture stderr while waiting for ControlMaster so early exits surface
+    // ssh's own diagnostic (e.g. DNS failure) instead of a bare exit message.
+    const stderrTail = attachProcessStderrTail(child);
+    child.__openchamberStderrTail = stderrTail;
     return child;
   }
 
   async waitForMasterReady(parsed, controlPath, timeoutSec, master) {
     const deadline = Date.now() + (timeoutSec * 1000);
     let pollMs = 250;
+    const readStderrTail = () => {
+      const getter = master?.__openchamberStderrTail?.getTail;
+      return typeof getter === 'function' ? getter() : '';
+    };
     while (Date.now() < deadline) {
       const { code } = await runOutput('ssh', buildSshArgs(parsed, [
         '-o', 'ControlMaster=no',
@@ -853,7 +1274,7 @@ export class ElectronSshManager {
 
       const exited = master.exitCode;
       if (typeof exited === 'number') {
-        throw new Error('SSH master process exited before ready');
+        throw new Error(formatMasterExitError(readStderrTail()));
       }
       await new Promise((resolve) => setTimeout(resolve, pollMs));
       pollMs = Math.min(pollMs * 2, 2000);
@@ -868,7 +1289,7 @@ export class ElectronSshManager {
 
   async remoteCommandExists(parsed, controlPath, commandName) {
     try {
-      const output = await runRemoteCommand(parsed, controlPath, `command -v ${commandName} >/dev/null 2>&1 && echo yes || echo no`);
+      const output = await this.runManagedRemoteCommand(parsed, controlPath, `command -v ${commandName} >/dev/null 2>&1 && echo yes || echo no`);
       return output.trim() === 'yes';
     } catch {
       return false;
@@ -877,7 +1298,78 @@ export class ElectronSshManager {
 
   async currentRemoteOpenChamberVersion(parsed, controlPath) {
     try {
-      const output = await runRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
+      const output = await this.runManagedRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
+      return parseVersionToken(output);
+    } catch {
+      return null;
+    }
+  }
+
+  async runManagedRemoteCommand(parsed, controlPath, script) {
+    return await runRemoteCommand(parsed, controlPath, `${buildRemoteManagedRuntimePrefix()}\n${script}`);
+  }
+
+  async ensureManagedNodeRuntime(parsed, controlPath) {
+    const output = await this.runManagedRemoteCommand(parsed, controlPath, "node -p 'process.versions.node' 2>/dev/null || true");
+    const major = Number.parseInt(output.trim().split('.')[0], 10);
+    if (!Number.isInteger(major) || major < REMOTE_NODE_MIN_MAJOR) {
+      throw new Error(`Managed SSH remote requires Node.js ${REMOTE_NODE_MIN_MAJOR}+; no supported Node runtime was found on the remote host`);
+    }
+  }
+
+  async ensureRemoteOpenCodeCli(parsed, controlPath, preferred) {
+    const installedVersion = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
+    if (installedVersion && (!this.opencodeCliVersion || installedVersion === this.opencodeCliVersion)) return;
+
+    const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
+    const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
+    const packageSpec = this.opencodeCliVersion ? `${OPENCODE_NPM_PACKAGE}@${this.opencodeCliVersion}` : OPENCODE_NPM_PACKAGE;
+    const commands = [];
+    if (preferred === 'npm') {
+      if (hasNpm) commands.push(`npm install -g ${packageSpec} --force`);
+      if (hasBun) commands.push(`bun add -g ${packageSpec}`);
+    } else {
+      if (hasBun) commands.push(`bun add -g ${packageSpec}`);
+      if (hasNpm) commands.push(`npm install -g ${packageSpec} --force`);
+    }
+    if (commands.length === 0) {
+      throw new Error('Remote host has neither bun nor npm available to install OpenCode CLI');
+    }
+
+    let lastError = null;
+    for (const command of commands) {
+      try {
+        await this.runManagedRemoteCommand(parsed, controlPath, command);
+        const installed = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
+        if (installed && (!this.opencodeCliVersion || installed === this.opencodeCliVersion)) return;
+        lastError = new Error('OpenCode CLI installation completed but the expected executable version is unavailable');
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Failed to install OpenCode CLI on remote host');
+  }
+
+  async ensureRemoteOpenChamberNativeBinding(parsed, controlPath) {
+    const script = `
+openchamber_bin="$(command -v openchamber)"
+openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
+openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
+if (cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()") >/dev/null 2>&1; then exit 0; fi
+if [ -x /usr/bin/python3.8 ]; then export PYTHON=/usr/bin/python3.8; fi
+if [ -x /opt/rh/gcc-toolset-12/root/usr/bin/gcc ] && [ -x /opt/rh/gcc-toolset-12/root/usr/bin/g++ ]; then
+  export CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc
+  export CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++
+fi
+(cd "$openchamber_root" && npm rebuild better-sqlite3 --foreground-scripts)
+(cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()")
+`;
+    await this.runManagedRemoteCommand(parsed, controlPath, script);
+  }
+
+  async currentRemoteOpenCodeVersion(parsed, controlPath) {
+    try {
+      const output = await this.runManagedRemoteCommand(parsed, controlPath, 'opencode --version 2>/dev/null || true');
       return parseVersionToken(output);
     } catch {
       return null;
@@ -887,17 +1379,20 @@ export class ElectronSshManager {
   async installOpenChamberManaged(parsed, controlPath, version, preferred) {
     const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
     const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
+    // npm refuses to overwrite an existing global bin (EEXIST) when a previous
+    // install left the bin file behind; --force makes the reinstall idempotent.
+    const npmInstall = `npm install -g ${OPENCHAMBER_NPM_PACKAGE}@${version} --force`;
     const commands = [];
 
     if (preferred === 'bun') {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasNpm) commands.push(npmInstall);
     } else if (preferred === 'npm') {
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
+      if (hasNpm) commands.push(npmInstall);
+      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
     } else {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g ${OPENCHAMBER_NPM_PACKAGE}@${version}`);
+      if (hasNpm) commands.push(npmInstall);
     }
 
     if (commands.length === 0) {
@@ -907,8 +1402,9 @@ export class ElectronSshManager {
     let lastError = null;
     for (const command of commands) {
       try {
-        await runRemoteCommand(parsed, controlPath, command);
-        return;
+        await this.runManagedRemoteCommand(parsed, controlPath, command);
+        if (await this.currentRemoteOpenChamberVersion(parsed, controlPath)) return;
+        lastError = new Error('OpenChamber installation completed but the executable is unavailable');
       } catch (error) {
         lastError = error;
       }
@@ -958,14 +1454,11 @@ export class ElectronSshManager {
   }
 
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
-    let envPrefix = 'OPENCHAMBER_RUNTIME=ssh-remote';
-    const secret = this.configuredOpenChamberPassword(instance);
-    if (secret) {
-      envPrefix += ` OPENCHAMBER_UI_PASSWORD=${shellQuote(secret)}`;
-    }
-    const output = await runRemoteCommand(parsed, controlPath, `${envPrefix} openchamber serve --hostname 127.0.0.1 --port ${desiredPort}`);
+    const uiPassword = this.configuredOpenChamberPassword(instance) || createEphemeralUiPassword();
+    const envPrefix = buildManagedServeEnvPrefix(uiPassword);
+    const output = await this.runManagedRemoteCommand(parsed, controlPath, `${envPrefix} openchamber serve --hostname 127.0.0.1 --port ${desiredPort}`);
     const port = output.split(/\s+/).map((token) => Number.parseInt(token, 10)).find((value) => Number.isFinite(value));
-    return port || desiredPort;
+    return { port: port || desiredPort, uiPassword };
   }
 
   async stopRemoteServerBestEffort(parsed, controlPath, remotePort) {
@@ -1010,18 +1503,536 @@ export class ElectronSshManager {
     }
   }
 
+  /**
+   * Ensure a LAN-facing local forward (0.0.0.0:<port> → 127.0.0.1:<remotePort>)
+   * on the live ControlMaster. Sticky port is persisted when first allocated.
+   * @param {string} id
+   * @returns {Promise<{ localPort: number }>}
+   */
+  async ensureLanForward(id) {
+    const trimmed = String(id || '').trim();
+    if (!trimmed || trimmed === LOCAL_HOST_ID) {
+      throw new Error('SSH instance id is required');
+    }
+    const session = this.sessions.get(trimmed);
+    const phase = this.statuses.get(trimmed)?.phase;
+    if (!session || phase !== 'ready') {
+      throw new Error('SSH instance is not ready');
+    }
+    const remotePort = Number(session.remotePort);
+    if (!Number.isFinite(remotePort) || remotePort <= 0) {
+      throw new Error('SSH instance remote port is unavailable');
+    }
+
+    let lanPort = Number(session.instance?.lanForward?.localPort);
+    if (!Number.isFinite(lanPort) || lanPort <= 0) {
+      const mainPort = Number(session.localPort);
+      lanPort = await pickUnusedLocalPort();
+      // Avoid colliding with the loopback main forward when the OS reuses a port.
+      if (Number.isFinite(mainPort) && lanPort === mainPort) {
+        lanPort = await pickUnusedLocalPort();
+      }
+      await this.persistLanForward(trimmed, { enabled: true, localPort: lanPort });
+      session.instance = {
+        ...session.instance,
+        lanForward: { enabled: true, localPort: lanPort },
+      };
+      this.appendLogWithLevel(trimmed, 'INFO', `Allocated LAN forward port ${lanPort}`);
+    }
+
+    await this.spawnExtraForward(session.parsed, session.controlPath, {
+      id: 'lan-forward',
+      type: 'local',
+      localHost: '0.0.0.0',
+      localPort: lanPort,
+      remoteHost: '127.0.0.1',
+      remotePort,
+    });
+    this.appendLogWithLevel(trimmed, 'INFO', `LAN forward ready on 0.0.0.0:${lanPort} → 127.0.0.1:${remotePort}`);
+    return { localPort: lanPort };
+  }
+
+  /**
+   * Resolve a ready SSH session that can execute OpenCode config sync.
+   * Capability gate (`posixShell`) replaces the former mode==='managed' hard check
+   * with equivalent semantics via {@link createSshSyncTarget}.
+   * @param {string} id
+   */
+  resolveManagedReadySession(id) {
+    const trimmed = String(id || '').trim();
+    if (!trimmed || trimmed === LOCAL_HOST_ID) {
+      throw new Error('SSH instance id is required');
+    }
+    const session = this.sessions.get(trimmed);
+    if (!session || this.statuses.get(trimmed)?.phase !== 'ready') {
+      throw new Error('SSH instance is not connected');
+    }
+    const target = createSshSyncTarget(trimmed, session.instance);
+    assertTargetCapability(target, 'posixShell');
+    return { id: trimmed, session, target };
+  }
+
+  /**
+   * SSH TargetExecutor: probe/prepare/putTar/finalize over ControlMaster.
+   * putTar currently buffers the whole archive (SSH stdin); the payload type
+   * still accepts AsyncIterable/Readable for a later streaming relay path.
+   * @param {{ parsed: object, controlPath: string, instance?: object }} session
+   * @returns {import('@openchambery/web/server/lib/config-sync/contract.js').TargetExecutor}
+   */
+  createSshTargetExecutor(session) {
+    const timeoutSec = session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC;
+    const ensureBuffer = async (payload) => {
+      if (Buffer.isBuffer(payload)) return payload;
+      if (payload instanceof Uint8Array) return Buffer.from(payload);
+      // Streaming payloads are accepted by the contract but buffered here for SSH stdin.
+      const chunks = [];
+      for await (const chunk of payload) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks);
+    };
+
+    return {
+      async probe(plan) {
+        const probeScript = buildRemoteSyncProbeScript(probePathsForPlan(plan));
+        const stdout = await runRemoteCommand(session.parsed, session.controlPath, probeScript, timeoutSec);
+        const remoteLines = String(stdout || '')
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const remoteAgentsRootExists = remoteLines.includes(OPENCODE_AGENTS_ROOT_PROBE_MARKER);
+        const remoteAuthFileExists = remoteLines.includes(OPENCODE_AUTH_FILE_PROBE_MARKER);
+        const remoteExisting = remoteLines.filter(
+          (line) => line !== OPENCODE_AGENTS_ROOT_PROBE_MARKER && line !== OPENCODE_AUTH_FILE_PROBE_MARKER,
+        );
+        return { remoteExisting, remoteAgentsRootExists, remoteAuthFileExists };
+      },
+
+      async prepare(plan, ctx) {
+        const prepareScript = buildRemoteSyncPrepareScriptShared(plan, { syncRunId: ctx.syncRunId });
+        const prepareStdout = await runRemoteCommand(
+          session.parsed,
+          session.controlPath,
+          prepareScript,
+          timeoutSec,
+        );
+        if (!String(prepareStdout || '').includes('SYNC_READY')) {
+          throw new Error('Remote sync prepare did not report SYNC_READY');
+        }
+      },
+
+      async putTar({ kind, payload }) {
+        const buffer = await ensureBuffer(payload);
+        if (kind === 'config') {
+          await runRemoteCommandWithInput(
+            session.parsed,
+            session.controlPath,
+            'mkdir -p "$HOME/.config/opencode" && tar -xzf - -C "$HOME/.config/opencode"',
+            buffer,
+            timeoutSec,
+          );
+          return;
+        }
+        if (kind === 'agents') {
+          await runRemoteCommandWithInput(
+            session.parsed,
+            session.controlPath,
+            'mkdir -p "$HOME" && tar -xzf - -C "$HOME"',
+            buffer,
+            timeoutSec,
+          );
+          return;
+        }
+        if (kind === 'auth') {
+          // Only auth.json — never the rest of ~/.local/share/opencode (session DBs live there).
+          await runRemoteCommandWithInput(
+            session.parsed,
+            session.controlPath,
+            'mkdir -p "$HOME/.local/share/opencode" && tar -xzf - -C "$HOME/.local/share/opencode"',
+            buffer,
+            timeoutSec,
+          );
+          return;
+        }
+        throw new Error(`Unsupported putTar kind: ${String(kind)}`);
+      },
+
+      async finalize(_plan, ctx) {
+        const finalizeScript = buildRemoteSyncFinalizeScript({ syncRunId: ctx.syncRunId });
+        const stdout = await runRemoteCommand(
+          session.parsed,
+          session.controlPath,
+          finalizeScript,
+          timeoutSec,
+        );
+        if (!String(stdout || '').includes('SYNC_DONE')) {
+          throw new Error('Remote sync finalize did not report SYNC_DONE');
+        }
+        return { ok: true };
+      },
+    };
+  }
+
+  /**
+   * Per-target mutex for preview/apply. Rejects concurrent starts with SyncInProgressError.
+   * @template T
+   * @param {string} instanceId
+   * @param {'preview' | 'apply'} stage
+   * @param {(ctx: { syncRunId: string, targetId: string, startedAt: string }) => Promise<T>} work
+   * @returns {Promise<T & { syncRunId: string }>}
+   */
+  /**
+   * Per-target mutex used by SSH and direct-host sync.
+   * @param {string} targetId namespaced id (`ssh:…` or `host:…`)
+   */
+  async runExclusiveForTarget(targetId, stage, work) {
+    const existing = this.syncInFlight.get(targetId);
+    if (existing) {
+      throw new SyncInProgressError(targetId, existing.syncRunId);
+    }
+
+    const syncRunId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    const flight = { syncRunId, promise: null };
+    const runPromise = (async () => {
+      let summary = summarizeSyncPlan(null);
+      let direction = SYNC_DIRECTION_PUSH;
+      try {
+        const result = await work({ syncRunId, targetId, startedAt });
+        summary = summarizeSyncPlan(result?.plan || result);
+        if (result?.plan?.direction === 'push' || result?.plan?.direction === 'pull') {
+          direction = result.plan.direction;
+        } else if (result?.direction === 'push' || result?.direction === 'pull') {
+          direction = result.direction;
+        }
+        await this.syncRunStore.append(targetId, {
+          syncRunId,
+          targetId,
+          stage,
+          direction,
+          startedAt,
+          endedAt: new Date().toISOString(),
+          result: 'success',
+          summary,
+        });
+        if (result && Object.prototype.hasOwnProperty.call(result, 'plan')) {
+          const { plan: _plan, ...rest } = result;
+          return { ...rest, syncRunId };
+        }
+        return { ...result, syncRunId };
+      } catch (error) {
+        if (!(error instanceof SyncInProgressError)) {
+          await this.syncRunStore.append(targetId, {
+            syncRunId,
+            targetId,
+            stage,
+            direction,
+            startedAt,
+            endedAt: new Date().toISOString(),
+            result: 'failure',
+            summary,
+            error: error instanceof Error ? error.message : String(error),
+          }).catch(() => {});
+        }
+        throw error;
+      } finally {
+        if (this.syncInFlight.get(targetId) === flight) {
+          this.syncInFlight.delete(targetId);
+        }
+      }
+    })();
+    flight.promise = runPromise;
+    this.syncInFlight.set(targetId, flight);
+    return runPromise;
+  }
+
+  async runExclusiveSync(instanceId, stage, work) {
+    return this.runExclusiveForTarget(syncTargetIdForSshInstance(instanceId), stage, work);
+  }
+
+  /**
+   * @param {unknown} raw
+   * @param {{ includeAuthFile?: boolean }} [options]
+   */
+  normalizeSyncOptions(raw = {}, options = {}) {
+    const direction = raw?.direction === SYNC_DIRECTION_PULL ? SYNC_DIRECTION_PULL : SYNC_DIRECTION_PUSH;
+    const selections = normalizeSyncSelections(raw?.selections, {
+      includeAuthFile: options.includeAuthFile === true || raw?.selections?.authFile === true,
+    });
+    if (options.includeAuthFile !== true) {
+      selections.authFile = false;
+    }
+    return { direction, selections };
+  }
+
+  /**
+   * Recent sync run records for an SSH instance (newest last, capped by store).
+   * @param {string} instanceId
+   */
+  async listSyncRuns(instanceId) {
+    const targetId = syncTargetIdForSshInstance(instanceId);
+    return this.syncRunStore.readAll(targetId);
+  }
+
+  /**
+   * Collect remote allowlist inventory for pull planning.
+   * @param {{ parsed: object, controlPath: string, instance?: object }} session
+   */
+  async collectRemoteInventory(session) {
+    const timeoutSec = session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC;
+    const stdout = await runRemoteCommand(
+      session.parsed,
+      session.controlPath,
+      buildRemoteSyncInventoryScript(),
+      timeoutSec,
+    );
+    const line = String(stdout || '')
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .find((entry) => entry.startsWith('SYNC_INVENTORY='));
+    if (!line) {
+      throw new Error('Remote sync inventory did not report SYNC_INVENTORY');
+    }
+    const json = line.slice('SYNC_INVENTORY='.length);
+    const parsed = JSON.parse(json);
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('Remote sync inventory payload is malformed');
+    }
+    return parsed;
+  }
+
+  /**
+   * Preview OpenCode config sync. Direction switch must re-call this (no cached plan reuse).
+   * @param {string} id
+   * @param {{ direction?: 'push' | 'pull', selections?: object }} [options]
+   */
+  async previewOpencodeConfigSync(id, options = {}) {
+    return this.runExclusiveSync(id, 'preview', async ({ syncRunId, targetId }) => {
+      const { session, target } = this.resolveManagedReadySession(id);
+      assertTargetCapability(target, 'tarExtract');
+      const credentialAuthorized = this.credentialSyncAuthStore.isAuthorized(targetId);
+      const { direction, selections } = this.normalizeSyncOptions(options, {
+        includeAuthFile: credentialAuthorized,
+      });
+
+      if (direction === SYNC_DIRECTION_PULL) {
+        const inventory = await this.collectRemoteInventory(session);
+        const plan = planOpenCodeConfigSyncFromInventory(inventory, {
+          direction: SYNC_DIRECTION_PULL,
+          syncRunId,
+          sourceTargetId: targetId,
+          targetId: 'local',
+          selections,
+          includeAuthFile: credentialAuthorized,
+        });
+        assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
+        const localExisting = [];
+        const home = os.homedir();
+        const configDir = path.join(home, '.config', 'opencode');
+        for (const entry of [...plan.files, ...plan.directories]) {
+          try {
+            fs.accessSync(path.join(configDir, entry.path));
+            localExisting.push(entry.path);
+          } catch {
+            // absent locally
+          }
+        }
+        let localAgentsRootExists = false;
+        try {
+          localAgentsRootExists = fs.statSync(path.join(home, '.agents')).isDirectory();
+        } catch {
+          localAgentsRootExists = false;
+        }
+        let localAuthFileExists = false;
+        try {
+          localAuthFileExists = fs.statSync(path.join(home, '.local', 'share', 'opencode', 'auth.json')).isFile();
+        } catch {
+          localAuthFileExists = false;
+        }
+        return {
+          plan,
+          remoteExisting: localExisting,
+          remoteAgentsRootExists: localAgentsRootExists,
+          remoteAuthFileExists: localAuthFileExists,
+          credentialAuthorized,
+        };
+      }
+
+      const plan = planOpenCodeConfigSync(os.homedir(), {
+        direction: SYNC_DIRECTION_PUSH,
+        syncRunId,
+        sourceTargetId: 'local',
+        targetId,
+        selections,
+        includeAuthFile: credentialAuthorized,
+      });
+      assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
+      if (plan.authFile) {
+        assertTargetCapability(target, 'authFileWrite');
+      }
+      const executor = this.createSshTargetExecutor(session);
+      const probe = await executor.probe(plan);
+      return { plan, ...probe, credentialAuthorized };
+    });
+  }
+
+  /**
+   * Apply OpenCode config sync (push to remote or pull to local).
+   * Preview and apply must share the same selections snapshot from the wizard.
+   * @param {string} id
+   * @param {{ direction?: 'push' | 'pull', selections?: object }} [options]
+   */
+  async applyOpencodeConfigSync(id, options = {}) {
+    return this.runExclusiveSync(id, 'apply', async ({ syncRunId, targetId }) => {
+      const { id: trimmed, session, target } = this.resolveManagedReadySession(id);
+      assertTargetCapability(target, 'tarExtract');
+      const home = os.homedir();
+      const credentialAuthorized = this.credentialSyncAuthStore.isAuthorized(targetId);
+      const { direction, selections } = this.normalizeSyncOptions(options, {
+        includeAuthFile: credentialAuthorized,
+      });
+
+      if (direction === SYNC_DIRECTION_PULL) {
+        const inventory = await this.collectRemoteInventory(session);
+        const plan = planOpenCodeConfigSyncFromInventory(inventory, {
+          direction: SYNC_DIRECTION_PULL,
+          syncRunId,
+          sourceTargetId: targetId,
+          targetId: 'local',
+          selections,
+          includeAuthFile: credentialAuthorized,
+        });
+        assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
+        this.appendLogWithLevel(trimmed, 'INFO', 'Pulling OpenCode config from remote');
+        const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
+        if (!hasPayload) {
+          this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync: nothing to download');
+          return {
+            ok: true,
+            files: plan.files.length,
+            directories: plan.directories.length,
+            deletes: plan.deletes.length,
+            totalBytes: plan.totalBytes,
+            agentsRoot: null,
+            authFile: null,
+            plan,
+          };
+        }
+
+        const timeoutSec = session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC;
+        const configTar = (plan.files.length > 0 || plan.directories.length > 0)
+          ? await runRemoteCommandBinary(session.parsed, session.controlPath, buildRemoteConfigTarScript(plan), timeoutSec)
+          : null;
+        const agentsTar = plan.agentsRoot
+          ? await runRemoteCommandBinary(session.parsed, session.controlPath, buildRemoteAgentsTarScript(), timeoutSec)
+          : null;
+        const authTar = plan.authFile
+          ? await runRemoteCommandBinary(session.parsed, session.controlPath, buildRemoteAuthTarScript(), timeoutSec)
+          : null;
+
+        await prepareLocalSyncDestination(home, plan, { syncRunId });
+        if (configTar && configTar.length > 0) {
+          await extractTarGzBuffer(configTar, path.join(home, '.config', 'opencode'));
+        }
+        if (agentsTar && agentsTar.length > 0) {
+          await extractTarGzBuffer(agentsTar, home);
+        }
+        if (authTar && authTar.length > 0) {
+          await fsp.mkdir(path.join(home, '.local', 'share', 'opencode'), { recursive: true });
+          await extractTarGzBuffer(authTar, path.join(home, '.local', 'share', 'opencode'));
+        }
+        await finalizeLocalSyncDestination(home, { syncRunId });
+        this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config pull completed');
+        return {
+          ok: true,
+          files: plan.files.length,
+          directories: plan.directories.length,
+          deletes: plan.deletes.length,
+          totalBytes: plan.totalBytes,
+          agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
+          authFile: plan.authFile ? { bytes: plan.authFile.bytes } : null,
+          plan,
+        };
+      }
+
+      const plan = planOpenCodeConfigSync(home, {
+        direction: SYNC_DIRECTION_PUSH,
+        syncRunId,
+        sourceTargetId: 'local',
+        targetId,
+        selections,
+        includeAuthFile: credentialAuthorized,
+      });
+      assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
+      if (plan.authFile) {
+        assertTargetCapability(target, 'authFileWrite');
+      }
+      this.appendLogWithLevel(trimmed, 'INFO', 'Syncing OpenCode config to remote');
+      const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
+      if (!hasPayload) {
+        this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync: nothing to upload');
+        return {
+          ok: true,
+          files: plan.files.length,
+          directories: plan.directories.length,
+          deletes: plan.deletes.length,
+          totalBytes: plan.totalBytes,
+          agentsRoot: null,
+          authFile: null,
+          plan,
+        };
+      }
+      const executor = this.createSshTargetExecutor(session);
+      const result = await applyConfigSyncPlan({
+        plan,
+        executor,
+        syncRunId,
+        sourceHomedir: home,
+        credentialSyncAuthorized: credentialAuthorized,
+      });
+      this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync completed');
+      return result;
+    });
+  }
+
+  /** Best-effort rebuild on reconnect; never throws into the main connect path. */
+  async rebuildLanForwardIfConfigured(id, session) {
+    const lan = session?.instance?.lanForward;
+    const lanPort = Number(lan?.localPort);
+    if (lan?.enabled !== true || !Number.isFinite(lanPort) || lanPort <= 0) return;
+    try {
+      await this.spawnExtraForward(session.parsed, session.controlPath, {
+        id: 'lan-forward',
+        type: 'local',
+        localHost: '0.0.0.0',
+        localPort: lanPort,
+        remoteHost: '127.0.0.1',
+        remotePort: session.remotePort,
+      });
+      this.appendLogWithLevel(id, 'INFO', `LAN forward restored on 0.0.0.0:${lanPort}`);
+    } catch (error) {
+      this.appendLogWithLevel(
+        id,
+        'WARN',
+        `LAN forward restore failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   async ensureRemoteServer(instance, parsed, controlPath) {
     if (instance.remoteOpenchamber.mode === 'external') {
       if (!instance.remoteOpenchamber.preferredPort) {
         throw new Error('External mode requires a preferred remote OpenChamber port');
       }
       const port = instance.remoteOpenchamber.preferredPort;
+      const uiPassword = this.configuredOpenChamberPassword(instance);
       this.setStatus(instance.id, 'server_detecting', 'Probing external OpenChamber server', null, null, port, false, 0, false);
-      await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredOpenChamberPassword(instance));
-      return { remotePort: port, startedByUs: false };
+      await this.probeRemoteSystemInfo(parsed, controlPath, port, uiPassword);
+      return { remotePort: port, startedByUs: false, uiPassword };
     }
 
     this.setStatus(instance.id, 'remote_probe', 'Checking remote OpenChamber installation');
+    await this.ensureManagedNodeRuntime(parsed, controlPath);
     const installedVersion = await this.currentRemoteOpenChamberVersion(parsed, controlPath);
     if (!installedVersion) {
       this.setStatus(instance.id, 'installing', 'Installing OpenChamber on remote host');
@@ -1030,23 +2041,31 @@ export class ElectronSshManager {
       this.setStatus(instance.id, 'updating', `Updating remote OpenChamber from ${installedVersion} to ${this.appVersion}`);
       await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
     }
+    await this.ensureRemoteOpenChamberNativeBinding(parsed, controlPath);
+    await this.ensureRemoteOpenCodeCli(parsed, controlPath, instance.remoteOpenchamber.installMethod);
 
     this.setStatus(instance.id, 'server_detecting', 'Detecting managed OpenChamber server');
     let remotePort = instance.remoteOpenchamber.preferredPort || null;
     let startedByUs = false;
-    if (remotePort && !(await this.remoteServerRunning(parsed, controlPath, remotePort, this.configuredOpenChamberPassword(instance)))) {
+    let uiPassword = this.configuredOpenChamberPassword(instance)
+      || this.ephemeralUiPasswords.get(instance.id)
+      || null;
+    if (remotePort && !(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
       remotePort = null;
     }
     if (!remotePort) {
       this.setStatus(instance.id, 'server_starting', 'Starting managed OpenChamber server');
       const desiredPort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
-      remotePort = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
+      const started = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
+      remotePort = started.port;
+      uiPassword = started.uiPassword;
       startedByUs = true;
+      this.ephemeralUiPasswords.set(instance.id, uiPassword);
     }
-    if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, this.configuredOpenChamberPassword(instance)))) {
+    if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
       throw new Error('Managed OpenChamber server failed to become reachable');
     }
-    return { remotePort, startedByUs };
+    return { remotePort, startedByUs, uiPassword };
   }
 
   async disconnectInternal(id, reportIdle) {
@@ -1058,6 +2077,14 @@ export class ElectronSshManager {
 
     const session = this.sessions.get(id);
     this.sessions.delete(id);
+    const keepRemoteRunning = Boolean(
+      session?.startedByUs
+      && session?.instance?.remoteOpenchamber?.mode === 'managed'
+      && session.instance.remoteOpenchamber.keepRunning,
+    );
+    if (!keepRemoteRunning) {
+      this.ephemeralUiPasswords.delete(id);
+    }
 
     if (session) {
       if (session.startedByUs && session.instance.remoteOpenchamber.mode === 'managed' && !session.instance.remoteOpenchamber.keepRunning) {
@@ -1111,7 +2138,7 @@ export class ElectronSshManager {
       throw new Error(`Unsupported remote OS: ${remoteOs}`);
     }
 
-    const { remotePort, startedByUs } = await this.ensureRemoteServer(instance, parsed, controlPath);
+    const { remotePort, startedByUs, uiPassword } = await this.ensureRemoteServer(instance, parsed, controlPath);
     this.setStatus(id, 'forwarding', 'Setting up port forwards', null, null, remotePort, startedByUs, 0, false);
 
     const bindHost = sanitizeBindHost(instance.localForward?.bindHost);
@@ -1155,13 +2182,16 @@ export class ElectronSshManager {
 
     const localUrl = `http://127.0.0.1:${localPort}`;
     const label = instance.nickname?.trim() || parsed.destination || id;
-    const clientToken = await this.issueClientToken(localUrl, this.configuredOpenChamberPassword(instance));
+    if (!uiPassword) {
+      throw new Error('OpenChamber UI password is required to mint an SSH host token');
+    }
+    const clientToken = await this.issueClientToken(localUrl, uiPassword);
     await this.updateHostRuntime(id, label, localUrl, clientToken);
     if (instance.localForward?.preferredLocalPort !== localPort) {
       await this.persistLocalPort(id, localPort);
     }
 
-    this.sessions.set(id, {
+    const session = {
       instance,
       parsed,
       sessionDir,
@@ -1169,11 +2199,13 @@ export class ElectronSshManager {
       localPort,
       remotePort,
       startedByUs,
+      ...(typeof uiPassword === 'string' && uiPassword.trim() ? { uiPassword: uiPassword.trim() } : {}),
       master,
       masterDetached: false,
       mainForward,
       mainForwardDetached,
-    });
+    };
+    this.sessions.set(id, session);
 
     this.clearRetryAttempt(id);
     this.setStatus(
@@ -1187,6 +2219,9 @@ export class ElectronSshManager {
       0,
       false,
     );
+    // Sticky LAN forward: rebuild only when explicitly enabled with a saved port.
+    // Failure must not block the main ready path (same class as extra portForwards).
+    await this.rebuildLanForwardIfConfigured(id, session);
     this.spawnMonitor(id);
   }
 
@@ -1310,10 +2345,27 @@ export class ElectronSshManager {
       .sort((left, right) => left.id.localeCompare(right.id));
   }
 
+  /**
+   * Live SSH local-forward ports for relay target routing.
+   * Only ready sessions with a finite localPort are included (memory-authoritative).
+   * @returns {{ id: string, localPort: number }[]}
+   */
+  getRoutingTable() {
+    const table = [];
+    for (const [id, session] of this.sessions) {
+      if (this.statuses.get(id)?.phase !== 'ready') continue;
+      const localPort = Number(session?.localPort);
+      if (!Number.isFinite(localPort)) continue;
+      table.push({ id, localPort });
+    }
+    return table;
+  }
+
   async shutdownAll() {
     const ids = [...new Set([...this.sessions.keys(), ...this.connecting.keys(), ...this.monitorTimers.keys()])];
     for (const id of ids) {
       await this.disconnectInternal(id, false);
     }
+    this.ephemeralUiPasswords.clear();
   }
 }

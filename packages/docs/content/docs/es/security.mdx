@@ -17,7 +17,7 @@ openchamber --ui-password be-creative-here
 
 También puedes definirla con la variable de entorno `OPENCHAMBER_UI_PASSWORD` en lugar de ponerla en la línea de comandos. Tras iniciar sesión, OpenChamber recuerda el dispositivo durante un tiempo para no pedírtela cada vez.
 
-Define siempre una contraseña si la instancia es accesible para alguien más, especialmente a través de un [túnel](/es/tunnels/) o de internet público.
+Define siempre una contraseña si la instancia es accesible para alguien más — especialmente a través de internet público o un proxy inverso.
 
 ## Passkeys
 
@@ -33,12 +33,11 @@ Los dispositivos vinculados mediante [Conectar un dispositivo](/es/connect-devic
 
 - De forma predeterminada, OpenChamber solo escucha en tu propia máquina (`127.0.0.1`). Hace falta un cambio deliberado para escuchar más ampliamente, y deberías definir una contraseña primero.
 - Para tus propios dispositivos, prefiere la [vinculación](/es/connect-devices/) con el [Private Relay](/es/private-relay/): no se expone nada públicamente.
-- Si necesitas una URL pública, prefiere un [túnel](/es/tunnels/) o una red privada (como una VPN) antes que abrir un puerto a internet.
+- Si necesitas una URL pública, prefiere una red privada (como una VPN) o tu propio [proxy inverso](/es/reverse-proxy/) antes que abrir un puerto a internet.
 - Si pones OpenChamber detrás de tu propio servidor HTTPS, consulta [Proxy inverso](/es/reverse-proxy/).
 
 ## Relacionado
 
 - [Conectar un dispositivo](/es/connect-devices/) — vinculación de un solo uso y tokens por dispositivo
 - [Private Relay](/es/private-relay/) — acceso cifrado de extremo a extremo desde cualquier lugar
-- [Túneles](/es/tunnels/) — expón una URL pública cuando la necesites
 - [Proxy inverso](/es/reverse-proxy/) — ejecuta OpenChamber detrás de tu propio servidor

@@ -16,6 +16,7 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useNotificationStore } from '@/sync/notification-store';
@@ -266,7 +267,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
 
     for (const node of nodes) {
       for (const bucket of node.buckets) {
-        bucket.sessions.sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
+        bucket.sessions.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
         for (const session of bucket.sessions) {
           if (!getParentId(session)) node.totalSessions += 1;
           const ts = getSessionTimestamp(session);

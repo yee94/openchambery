@@ -1,10 +1,18 @@
 import { useEvent } from '@reactuses/core';
+import * as React from 'react';
 
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { Button } from '@/components/ui/button';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
+import {
+  buildProjectMenuItems,
+  buildSessionMenuItems,
+  buildWorktreeMenuItems,
+  resolveMobileMenuItemLabel,
+  type MobileMenuItem,
+} from '@/mobile/sessionMenuModel';
 
 export type MobileRowActionTarget =
   | { kind: 'session'; title: string; pinned: boolean; shared: boolean }
@@ -71,6 +79,32 @@ function ActionRow({
   );
 }
 
+function renderMenuItems(
+  items: MobileMenuItem[],
+  t: (key: I18nKey) => string,
+  run: (action?: () => void) => () => void,
+) {
+  return items.map((item) => {
+    const row = (
+      <ActionRow
+        key={item.id}
+        icon={item.icon}
+        label={resolveMobileMenuItemLabel(item, t)}
+        onClick={run(item.onClick)}
+        destructive={item.destructive}
+        disabled={item.disabled}
+        spinning={item.spinning}
+      />
+    );
+    if (!item.separated) return row;
+    return (
+      <div key={item.id} className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
+        {row}
+      </div>
+    );
+  });
+}
+
 export function MobileRowActionsSheet({
   open,
   target,
@@ -84,6 +118,40 @@ export function MobileRowActionsSheet({
     onOpenChange(false);
     action?.();
   };
+
+  const menuItems = React.useMemo(() => {
+    if (!target) return [] as MobileMenuItem[];
+    if (target.kind === 'session') {
+      return buildSessionMenuItems({
+        pinned: target.pinned,
+        shared: target.shared,
+        onRename: actions.onRename,
+        onTogglePin: actions.onTogglePin,
+        onShare: actions.onShare,
+        onCopyLink: actions.onCopyLink,
+        onUnshare: actions.onUnshare,
+        onRefreshTranscript: actions.onRefreshTranscript,
+        onArchive: actions.onArchive,
+        onDelete: actions.onDelete,
+        refreshTranscriptDisabled,
+        refreshTranscriptSpinning,
+      });
+    }
+    if (target.kind === 'project') {
+      return buildProjectMenuItems({
+        gitRepository: target.gitRepository,
+        onNewSession: actions.onNewSession,
+        onNewWorktree: actions.onNewWorktree,
+        onSyncSessions: actions.onSyncSessions,
+        onEditProject: actions.onEditProject,
+        onCloseProject: actions.onCloseProject,
+      });
+    }
+    return buildWorktreeMenuItems({
+      onNewSession: actions.onNewSession,
+      onDeleteWorktree: actions.onDeleteWorktree,
+    });
+  }, [actions, refreshTranscriptDisabled, refreshTranscriptSpinning, target]);
 
   if (!target) return null;
 
@@ -99,66 +167,7 @@ export function MobileRowActionsSheet({
       fitContent
     >
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2">
-        {target.kind === 'session' ? (
-          <>
-            {actions.onRename ? <ActionRow icon="pencil-ai" label={t('sessions.sidebar.session.menu.rename')} onClick={run(actions.onRename)} /> : null}
-            {actions.onTogglePin ? (
-              <ActionRow
-                icon={target.pinned ? 'unpin' : 'pushpin'}
-                label={target.pinned ? t('sessions.sidebar.session.menu.unpin') : t('sessions.sidebar.session.menu.pin')}
-                onClick={run(actions.onTogglePin)}
-              />
-            ) : null}
-            {target.shared ? (
-              <>
-                {actions.onCopyLink ? <ActionRow icon="file-copy" label={t('sessions.sidebar.session.menu.copyLink')} onClick={run(actions.onCopyLink)} /> : null}
-                {actions.onUnshare ? <ActionRow icon="link-unlink-m" label={t('sessions.sidebar.session.menu.unshare')} onClick={run(actions.onUnshare)} /> : null}
-              </>
-            ) : actions.onShare ? (
-              <ActionRow icon="share-2" label={t('sessions.sidebar.session.menu.share')} onClick={run(actions.onShare)} />
-            ) : null}
-            {actions.onRefreshTranscript ? (
-              <ActionRow
-                icon="refresh"
-                label={t('sessions.sidebar.session.menu.refreshTranscript')}
-                disabled={refreshTranscriptDisabled}
-                spinning={refreshTranscriptSpinning}
-                onClick={run(actions.onRefreshTranscript)}
-              />
-            ) : null}
-            {actions.onArchive ? <ActionRow icon="archive" label={t('sessions.sidebar.bulkActions.archive')} onClick={run(actions.onArchive)} /> : null}
-            {actions.onDelete ? (
-              <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
-                <ActionRow icon="delete-bin" label={t('sessions.sidebar.bulkActions.delete')} onClick={run(actions.onDelete)} destructive />
-              </div>
-            ) : null}
-          </>
-        ) : null}
-
-        {target.kind === 'project' ? (
-          <>
-            {actions.onNewSession ? <ActionRow icon="add" label={t('sessions.sidebar.project.actions.newSession')} onClick={run(actions.onNewSession)} /> : null}
-            {target.gitRepository && actions.onNewWorktree ? <ActionRow icon="node-tree" label={t('sessions.sidebar.project.actions.newWorktree')} onClick={run(actions.onNewWorktree)} /> : null}
-            {actions.onSyncSessions ? <ActionRow icon="refresh" label={t('sessions.sidebar.project.actions.syncSessions')} onClick={run(actions.onSyncSessions)} /> : null}
-            {actions.onEditProject ? <ActionRow icon="pencil-ai" label={t('sessions.sidebar.project.actions.edit')} onClick={run(actions.onEditProject)} /> : null}
-            {actions.onCloseProject ? (
-              <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
-                <ActionRow icon="close" label={t('sessions.sidebar.project.actions.closeProject')} onClick={run(actions.onCloseProject)} destructive />
-              </div>
-            ) : null}
-          </>
-        ) : null}
-
-        {target.kind === 'worktree' ? (
-          <>
-            {actions.onNewSession ? <ActionRow icon="add" label={t('sessions.sidebar.project.actions.newSession')} onClick={run(actions.onNewSession)} /> : null}
-            {actions.onDeleteWorktree ? (
-              <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
-                <ActionRow icon="delete-bin" label={t('mobile.projectEdit.deleteWorktreeConfirmButton')} onClick={run(actions.onDeleteWorktree)} destructive />
-              </div>
-            ) : null}
-          </>
-        ) : null}
+        {renderMenuItems(menuItems, t, run)}
       </div>
     </MobileResizableSheet>
   );

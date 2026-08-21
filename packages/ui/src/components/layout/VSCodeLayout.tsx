@@ -6,6 +6,8 @@ import { ChatView } from '@/components/views/ChatView';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
 import { useSessions, useDirectorySync, useSessionMessages, useSessionMessagesResolved } from '@/sync/sync-context';
+import { hasCompactionPartType } from '@/sync/context-token-baseline';
+import { getSyncParts } from '@/sync/sync-refs';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
@@ -688,10 +690,19 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
     let latestAssistantModel: ReturnType<typeof getCurrentModel> | undefined;
     let lastTokens: AssistantTokens | undefined;
     let lastMessageId: string | undefined;
+    // A compaction row newer than the last token-bearing assistant resets the
+    // token baseline (pre-compaction counts no longer describe the live
+    // context window). The model scan keeps going — model identity survives
+    // compaction, and an older compaction row never invalidates a baseline
+    // already found on a newer assistant.
+    let compactionBaselineReset = false;
 
     for (let i = currentSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = currentSessionMessages[i] as { role?: unknown; providerID?: unknown; modelID?: unknown; tokens?: AssistantTokens };
+      const message = currentSessionMessages[i] as { id?: string; role?: unknown; providerID?: unknown; modelID?: unknown; tokens?: AssistantTokens };
       if (message.role !== 'assistant') {
+        if (!lastTokens && !compactionBaselineReset && message.id && hasCompactionPartType(getSyncParts(message.id))) {
+          compactionBaselineReset = true;
+        }
         continue;
       }
 
@@ -700,7 +711,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
         latestAssistantModel = provider?.models.find((entry) => entry.id === message.modelID);
       }
 
-      if (!lastTokens && message.tokens) {
+      if (!lastTokens && !compactionBaselineReset && message.tokens) {
         const total = message.tokens.input + message.tokens.output + message.tokens.reasoning + (message.tokens.cache?.read ?? 0) + (message.tokens.cache?.write ?? 0);
         if (total > 0) {
           lastTokens = message.tokens;

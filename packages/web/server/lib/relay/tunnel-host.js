@@ -35,9 +35,14 @@ const ALLOWED_WS_PATHS = new Set([
   '/api/dictation/ws',
 ]);
 
+// Client-selected SSH local-forward target (decimal port string). Valid only
+// when present in the injected routing table; never falls back to default port.
+const TARGET_PORT_HEADER = 'x-openchamber-target-port';
+
 // Hop-by-hop headers stripped from tunneled requests; `host` is set by fetch
 // to the loopback origin. content-length is dropped too because the body is
 // re-chunked through the tunnel and undici computes framing itself.
+// Target-port is host-routing metadata and must not reach the loopback origin.
 const STRIPPED_REQUEST_HEADERS = new Set([
   'connection',
   'keep-alive',
@@ -45,6 +50,7 @@ const STRIPPED_REQUEST_HEADERS = new Set([
   'upgrade',
   'host',
   'content-length',
+  TARGET_PORT_HEADER,
 ]);
 
 // Response framing headers that no longer apply once the body crosses the
@@ -75,14 +81,45 @@ const isWsOpenPayload = (parsed) =>
   Boolean(parsed && typeof parsed === 'object'
     && typeof parsed.path === 'string'
     && typeof parsed.query === 'string'
-    && (parsed.protocols === undefined || Array.isArray(parsed.protocols)));
+    && (parsed.protocols === undefined || Array.isArray(parsed.protocols))
+    && (parsed.headers === undefined || (parsed.headers && typeof parsed.headers === 'object')));
 
 const isWsClosePayload = (parsed) => Boolean(parsed && typeof parsed === 'object');
+
+const readHeaderValue = (headers, name) => {
+  if (!headers || typeof headers !== 'object') return undefined;
+  const want = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof key === 'string' && key.toLowerCase() === want) return value;
+  }
+  return undefined;
+};
+
+/**
+ * Resolve loopback dial port from optional x-openchamber-target-port.
+ * No header → defaultPort. Header present → only a routingTable hit is accepted;
+ * miss/invalid returns null (caller must not fall back to defaultPort).
+ * @param {Record<string, string> | undefined} requestHeaders
+ * @param {number} defaultPort
+ * @param {() => { id?: string, localPort?: number }[]} getSshRoutingTable
+ * @returns {number | null}
+ */
+export const resolveTargetPort = (requestHeaders, defaultPort, getSshRoutingTable) => {
+  const raw = readHeaderValue(requestHeaders, TARGET_PORT_HEADER);
+  if (raw === undefined || raw === null || raw === '') return defaultPort;
+  const parsed = typeof raw === 'number' ? raw : Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) return null;
+  const table = typeof getSshRoutingTable === 'function' ? getSshRoutingTable() : [];
+  if (!Array.isArray(table)) return null;
+  const hit = table.some((entry) => Number(entry?.localPort) === parsed);
+  return hit ? parsed : null;
+};
 
 /**
  * @param {{
  *   connectionId: string,
  *   getLocalPort: () => number,
+ *   getSshRoutingTable?: () => { id: string, localPort: number }[],
  *   sendFrame: (plaintextFrame: Uint8Array) => void | Promise<void>,
  *   getBufferedAmount: () => number,
  *   createWebSocket?: (url: string, protocols: string[] | undefined, options: { headers: Record<string, string> }) => import('ws').WebSocket,
@@ -91,6 +128,7 @@ const isWsClosePayload = (parsed) => Boolean(parsed && typeof parsed === 'object
 export const createTunnelHost = ({
   connectionId,
   getLocalPort,
+  getSshRoutingTable = () => [],
   sendFrame,
   getBufferedAmount,
   createWebSocket = (url, protocols, options) => new WebSocket(url, protocols, options),
@@ -197,6 +235,13 @@ export const createTunnelHost = ({
     const stream = streams.get(streamId);
     if (!stream || stream.kind !== 'http') return;
 
+    const targetPort = resolveTargetPort(request.headers, getLocalPort(), getSshRoutingTable);
+    if (targetPort === null) {
+      dropStream(streamId);
+      await syntheticResponse(streamId, 503, 'ssh-host-unreachable');
+      return;
+    }
+
     const hasBody = method !== 'GET' && method !== 'HEAD';
     let requestBody;
     if (hasBody) {
@@ -210,7 +255,7 @@ export const createTunnelHost = ({
       stream.noBody = true;
     }
 
-    const url = `http://127.0.0.1:${getLocalPort()}${request.path}${request.query ? `?${request.query}` : ''}`;
+    const url = `http://127.0.0.1:${targetPort}${request.path}${request.query ? `?${request.query}` : ''}`;
     let response;
     try {
       response = await fetch(url, {
@@ -323,7 +368,15 @@ export const createTunnelHost = ({
       return;
     }
 
-    const url = `ws://127.0.0.1:${getLocalPort()}${open.path}${open.query ? `?${open.query}` : ''}`;
+    // Optional headers on WsOpen carry routing metadata (e.g. target-port).
+    // Same resolve rules as HTTP; miss refuses without falling back to default.
+    const targetPort = resolveTargetPort(open.headers, getLocalPort(), getSshRoutingTable);
+    if (targetPort === null) {
+      void sendAbort(streamId, 'ssh-host-unreachable');
+      return;
+    }
+
+    const url = `ws://127.0.0.1:${targetPort}${open.path}${open.query ? `?${open.query}` : ''}`;
     // Present the loopback origin we're actually dialing. The server derives this
     // as a trusted same-origin candidate from the Host header (127.0.0.1:<port>),
     // so the WS origin check passes reliably for every client platform. We do NOT
@@ -333,7 +386,7 @@ export const createTunnelHost = ({
     // authenticated by the tunneled oc_url_token, not by this origin.
     const dialHeaders = {
       'x-openchamber-relay-connection': connectionId,
-      origin: `http://127.0.0.1:${getLocalPort()}`,
+      origin: `http://127.0.0.1:${targetPort}`,
     };
     let socket;
     try {

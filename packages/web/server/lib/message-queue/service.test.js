@@ -969,4 +969,34 @@ describe('message queue service', () => {
     const overflow = stage('late-overflow', [addition('three')]); expect(() => service.commitLateImport({ requestID: 'late-overflow-commit', importID: overflow.created.importID, expectedGeneration: 1, manifestHash: overflow.sealed.manifestHash, protocol: 4 })).toThrow(expect.objectContaining({ code: 'validation_error' }));
     service.close();
   });
+
+  it('evicts oldest empty scopes when admission reaches the scope cap', () => {
+    const service = createService(dbPath());
+    const admissionFor = (suffix) => ({ requestID: `request-${suffix}`, scope: { directory: '/repo', sessionID: `session-${suffix}` }, item: { queueItemID: `item-${suffix}`, operationID: `operation-${suffix}`, messageID: `message-${suffix}`, content: 'hello', attachments: [], attachmentIssues: [], createdAt: 100 } });
+    let retained; const emptied = [];
+    for (let index = 0; index < 128; index += 1) {
+      const result = service.admit(admissionFor(index));
+      if (index === 0) { retained = result; continue; }
+      service.remove({ requestID: `remove-${index}`, queueItemID: result.queueItemID, expectedRevision: result.revision, expectedRowVersion: 1 });
+      emptied.push(result.scopeID);
+    }
+    expect(service.snapshot().scopes).toHaveLength(128);
+    const fresh = service.admit(admissionFor('fresh'));
+    expect(service.getScope(fresh.scopeID).items).toHaveLength(1);
+    expect(service.snapshot().scopes).toHaveLength(128);
+    const remaining = new Set(service.snapshot().scopes.map((scope) => scope.scopeID));
+    expect(remaining.has(fresh.scopeID)).toBe(true);
+    expect(remaining.has(retained.scopeID)).toBe(true);
+    expect(emptied.filter((scopeID) => remaining.has(scopeID))).toHaveLength(emptied.length - 1);
+    expect(service.getScope(retained.scopeID).items[0]).toMatchObject({ queueItemID: retained.queueItemID });
+    service.close();
+  });
+
+  it('fails admission with scope_limit when every scope at the cap still holds items', () => {
+    const service = createService(dbPath());
+    const admissionFor = (suffix) => ({ requestID: `request-${suffix}`, scope: { directory: '/repo', sessionID: `session-${suffix}` }, item: { queueItemID: `item-${suffix}`, operationID: `operation-${suffix}`, messageID: `message-${suffix}`, content: 'hello', attachments: [], attachmentIssues: [], createdAt: 100 } });
+    for (let index = 0; index < 128; index += 1) service.admit(admissionFor(index));
+    expect(() => service.admit(admissionFor('overflow'))).toThrow(expect.objectContaining({ code: 'scope_limit' }));
+    service.close();
+  });
 });

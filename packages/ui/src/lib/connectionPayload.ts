@@ -35,6 +35,8 @@ export type PairingConnectionPayload = {
   label?: string;
   fingerprint?: string;
   expiresAt?: string;
+  /** When set, mobile redeem mints an SSH-host token bound to this desktop SSH instance. */
+  sshHostId?: string;
   candidates: PairingEndpointCandidate[];
 };
 
@@ -172,6 +174,9 @@ const normalizePairingPayload = (value: unknown): PairingConnectionPayload | nul
   }
   const label = typeof record.label === 'string' && record.label.trim() ? record.label.trim() : undefined;
   const fingerprint = typeof record.fingerprint === 'string' && record.fingerprint.trim() ? record.fingerprint.trim() : undefined;
+  const sshHostId = typeof record.sshHostId === 'string' && record.sshHostId.trim()
+    ? record.sshHostId.trim()
+    : undefined;
   return {
     v: 2,
     pairingId,
@@ -179,6 +184,7 @@ const normalizePairingPayload = (value: unknown): PairingConnectionPayload | nul
     ...(label ? { label } : {}),
     ...(fingerprint ? { fingerprint } : {}),
     ...(expiresAt ? { expiresAt } : {}),
+    ...(sshHostId ? { sshHostId } : {}),
     candidates,
   };
 };
@@ -190,6 +196,7 @@ export const buildPairingConnectionPayload = (input: Omit<PairingConnectionPaylo
   ...(input.label?.trim() ? { label: input.label.trim() } : {}),
   ...(input.fingerprint?.trim() ? { fingerprint: input.fingerprint.trim() } : {}),
   ...(input.expiresAt?.trim() ? { expiresAt: input.expiresAt.trim() } : {}),
+  ...(input.sshHostId?.trim() ? { sshHostId: input.sshHostId.trim() } : {}),
   candidates: input.candidates,
 });
 

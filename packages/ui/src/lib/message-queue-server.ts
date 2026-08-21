@@ -121,6 +121,7 @@ export type MessageQueueServerErrorCode =
   | 'authority_conflict'
   | 'not_found'
   | 'scope_locked'
+  | 'scope_limit'
   | 'reserved'
   | 'internal_error'
   | 'unavailable';
@@ -138,7 +139,7 @@ export class MessageQueueServerError extends Error {
 }
 
 const ROUTE = '/api/openchamber/message-queue';
-const errorCodes = new Set<MessageQueueServerErrorCode>(['validation_error', 'revision_conflict', 'row_version_conflict', 'idempotency_conflict', 'generation_conflict', 'authority_conflict', 'not_found', 'scope_locked', 'reserved', 'internal_error', 'unavailable']);
+const errorCodes = new Set<MessageQueueServerErrorCode>(['validation_error', 'revision_conflict', 'row_version_conflict', 'idempotency_conflict', 'generation_conflict', 'authority_conflict', 'not_found', 'scope_locked', 'scope_limit', 'reserved', 'internal_error', 'unavailable']);
 const mutationKeys = new Set(['revision', 'scopeID', 'queueItemID', 'rowVersion', 'removedQueueItemID', 'projectDirectory', 'token', 'state', 'scopeCount', 'statusCounts']);
 const scopeDescriptorKeys = new Set(['scopeID', 'revision', 'directory', 'sessionID', 'worktreeState', 'itemCount']);
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);

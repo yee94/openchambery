@@ -12,6 +12,8 @@ import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControls
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { useSessionMessages, useSessions } from '@/sync/sync-context';
+import { scanContextTokenBaseline, readContextTokenCount } from '@/sync/context-token-baseline';
+import { getSyncParts } from '@/sync/sync-refs';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useGitBranchLabel, useGitStore } from '@/stores/useGitStore';
@@ -155,31 +157,20 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
       return null;
     }
 
-    type AssistantTokens = { input: number; output: number; reasoning: number; cache: { read: number; write: number } };
-    let lastTokens: AssistantTokens | undefined;
-    let lastMessageId: string | undefined;
-
-    for (let i = currentSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = currentSessionMessages[i];
-      if (message.role !== 'assistant') continue;
-      const tokens = (message as { tokens?: AssistantTokens }).tokens;
-      if (!tokens) continue;
-      const total = tokens.input + tokens.output + tokens.reasoning + (tokens.cache?.read ?? 0) + (tokens.cache?.write ?? 0);
-      if (total > 0) {
-        lastTokens = tokens;
-        lastMessageId = message.id;
-        break;
-      }
-    }
-
-    if (!lastTokens) {
+    // A compaction row newer than the last token-bearing assistant resets the
+    // baseline: pre-compaction counts no longer describe the live context
+    // window, so usage stays unknown until a post-compaction assistant
+    // publishes tokens.
+    const baseline = scanContextTokenBaseline(currentSessionMessages, (messageId) => getSyncParts(messageId));
+    if (!baseline || 'compacted' in baseline) {
       return null;
     }
 
-    const totalTokens = lastTokens.input + lastTokens.output + lastTokens.reasoning + (lastTokens.cache?.read ?? 0) + (lastTokens.cache?.write ?? 0);
+    const lastTokens = baseline.tokens;
+    const totalTokens = baseline.totalTokens;
     const thresholdLimit = contextLimit > 0 ? contextLimit : 200000;
     const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0;
-    const normalizedOutput = outputLimit > 0 ? Math.round((lastTokens.output / outputLimit) * 100) : undefined;
+    const normalizedOutput = outputLimit > 0 ? Math.round((readContextTokenCount(lastTokens.output) / outputLimit) * 100) : undefined;
 
     return {
       totalTokens,
@@ -188,7 +179,7 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
       outputLimit: outputLimit || undefined,
       normalizedOutput,
       thresholdLimit,
-      lastMessageId,
+      lastMessageId: baseline.messageId,
     };
   }, [contextLimit, currentSessionId, currentSessionMessages, outputLimit]);
   const [stableContextUsage, setStableContextUsage] = React.useState<SessionContextUsage | null>(null);

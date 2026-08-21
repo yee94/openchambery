@@ -222,18 +222,32 @@ export const syncMarkdownCodeLineNumbers = (root: HTMLElement): void => {
     const lineSpans = collectShikiLineSpans(code);
     if (lineSpans.length === numbers.length) {
       const spanRects = lineSpans.map((el) => el.getBoundingClientRect());
+      const isEmptyShikiLine = (span: HTMLElement | undefined): boolean =>
+        (span?.textContent ?? '').length === 0;
       for (let index = 0; index < numbers.length; index += 1) {
         const lineEl = numbers[index];
+        const span = lineSpans[index];
         const current = spanRects[index];
-        if (!lineEl || !current) continue;
+        if (!lineEl || !span || !current) continue;
+        // Empty `.line` rects often collapse (WebKit origin/zero). Never let them
+        // drive adjacent top-diff — assign one row and measure neighbors from
+        // their own box bottom instead of the empty span's top.
+        if (isEmptyShikiLine(span)) {
+          applyLineNumberSize(lineEl, lineHeight, lineHeight);
+          continue;
+        }
+        const nextSpan = lineSpans[index + 1];
         const next = spanRects[index + 1];
+        const bottom = next && !isEmptyShikiLine(nextSpan)
+          ? next.top
+          : current.bottom;
         applyLineNumberSize(
           lineEl,
           heightFromLineRects([{
             top: current.top,
-            bottom: next ? next.top : current.bottom,
+            bottom,
             width: 1,
-            height: (next ? next.top : current.bottom) - current.top,
+            height: bottom - current.top,
           }], lineHeight),
           lineHeight,
         );

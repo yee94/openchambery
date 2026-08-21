@@ -154,4 +154,32 @@ describe('DiffView turn-scope on-demand session.diff contract', () => {
     expect(diffViewSource).toContain('setFetchedTurnFullDiffs(null)');
     expect(diffViewSource).toContain('turnDiffError');
   });
+
+  test('scopes turn diffs to the owning session instead of the global current session', () => {
+    // Nested/subagent panels pass sessionId; blank/absent falls back to the primary session.
+    expect(diffViewSource).toContain("const resolvedSessionId = (typeof sessionId === 'string' && sessionId.trim())");
+    expect(diffViewSource).toContain('        ? sessionId.trim()');
+    expect(diffViewSource).toContain('        : globalSessionId;');
+    // Transcript scan and session.diff fetch must both use the resolved session…
+    expect(diffViewSource).toContain("useSessionMessages(resolvedSessionId ?? ''");
+    expect(diffViewSource).toContain('sessionID: resolvedSessionId,');
+    // …while review stays attached to the primary chat session.
+    expect(diffViewSource).toContain('originalSessionID: globalSessionId,');
+    // Directory: explicit panel root wins over the primary effective directory.
+    expect(diffViewSource).toContain('const effectiveDirectory = (typeof directory === \'string\' && directory.trim())');
+  });
+});
+
+describe('DiffView per-file row action contract', () => {
+  test('file rows jump to the file viewer instead of duplicating the layout toggle', () => {
+    // Only the toolbar may render the global layout toggle.
+    expect(diffViewSource.split('<DiffViewToggle').length - 1).toBe(1);
+    // Per-file rows navigate to the file (preview state for previewable types).
+    expect(diffViewSource).toContain('onOpenFile?: (filePath: string) => void');
+    expect(diffViewSource).toContain('onOpenFile={openDiffFilePreview}');
+    expect(diffViewSource).toContain('diffView.actions.openFilePreview');
+    // Dedicated mobile routes through the mobile file sheet; desktop validates then opens.
+    expect(diffViewSource).toContain('mobileActions.openFile({ path: absolutePath })');
+    expect(diffViewSource).toContain('openContextFile(effectiveDirectory, absolutePath)');
+  });
 });

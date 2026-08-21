@@ -26,7 +26,6 @@ export type SettingsPageSlug =
   | 'snippets'
   | 'notifications'
   | 'voice'
-  | 'tunnel'
   | 'about';
 
 export type SettingsPageGroup =
@@ -72,7 +71,6 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
   'skills.catalog',
   'usage',
   'voice',
-  'tunnel',
   'about',
 ] as const;
 
@@ -152,7 +150,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     title: 'Remote Instances',
     group: 'workspace',
     kind: 'single',
-    keywords: ['ssh', 'remote', 'instances', 'tunnels', 'forwarding', 'connection'],
+    keywords: ['ssh', 'remote', 'instances', 'forwarding', 'connection'],
     isAvailable: (ctx) => !ctx.isVSCode,
   },
   {
@@ -294,7 +292,6 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
 
   { slug: 'notifications', title: 'Notifications', group: 'personalization', kind: 'single', keywords: ['alerts', 'native', 'summary', 'summarization'], },
   { slug: 'voice', title: 'Voice', group: 'system', kind: 'single', keywords: ['tts', 'speech', 'voice'], isAvailable: (ctx) => !ctx.isVSCode },
-  { slug: 'tunnel', title: 'Remote Tunnel', group: 'system', kind: 'single', keywords: ['tunnel', 'cloudflare', 'qr', 'remote', 'mobile', 'share'], isAvailable: (ctx) => !ctx.isVSCode },
   { slug: 'about', title: 'About', group: 'system', kind: 'single', keywords: ['about', 'version', 'updates', 'release', 'changelog'], isAvailable: (ctx) => ctx.isMobile },
 ] as const;
 

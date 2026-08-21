@@ -395,7 +395,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     // Returns { local, lan, relayAvailable } — the direct transport URLs the
     // server can actually be reached on (LAN derived from the server bind, not
     // the UI origin), for the create-device dialog.
-    getPairingTransports = () => ({ local: null, lan: null, relayAvailable: true }),
+    getPairingTransports = () => ({ local: null, lan: null, relayAvailable: false }),
     // Returns ALL direct LAN URLs the server is currently reachable on (client-
     // reached address first, then interface scan) for the candidates-refresh
     // endpoint. Empty when the server is loopback-only.
@@ -871,6 +871,9 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
         allowedClientKinds: req.body?.allowedClientKinds,
         createdByClientId: clientIdFromAuthContext(authContext),
         usesRelay,
+        // Optional SSH instance id: binds mobile ssh-host-token mint to this
+        // pairing after redeem. Does not affect redeem itself.
+        sshHostId: req.body?.sshHostId,
       });
       void reconcileRelay();
       res.setHeader('Cache-Control', 'no-store');
@@ -1000,8 +1003,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   app.get('/connect', async (req, res) => {
     try {
       const token = typeof req.query?.t === 'string' ? req.query.t : '';
-      const settings = await readSettingsFromDiskMigrated();
-      const tunnelSessionTtlMs = normalizeTunnelSessionTtlMs(settings?.tunnelSessionTtlMs);
+      const tunnelSessionTtlMs = normalizeTunnelSessionTtlMs();
 
       const exchange = tunnelAuthController.exchangeBootstrapToken({
         req,
@@ -1125,6 +1127,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
     } else if (
       (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/))
       || (req.method === 'PUT' && req.path.match(/^\/api\/fs\/prompt-attachments\/[^/]+\/?$/))
+      || (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/config-sync\/put\/[^/]+\/?$/))
     ) {
       // Binary attachment uploads stream as the request body. Parsing JSON here
       // would buffer the entire payload and block the relay tunnel.
@@ -1164,8 +1167,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/goals') ||
       req.path.startsWith('/api/text') ||
       req.path.startsWith('/api/voice') ||
-      req.path.startsWith('/api/tts') ||
-      req.path.startsWith('/api/openchamber/tunnel')
+      req.path.startsWith('/api/tts')
     ) {
       express.json({ limit: '50mb' })(req, res, next);
     } else if (req.path.startsWith('/api')) {

@@ -1,5 +1,7 @@
 import { registerSessionIndexRoutes } from '../session-index/routes.js';
 import { registerTranscriptCacheRoutes } from '../transcript-cache/routes.js';
+import { registerDesktopHostRoutes } from '../desktop-hosts/routes.js';
+import { registerConfigSyncRoutes } from '../config-sync/routes.js';
 
 export const registerOpenChamberRoutes = (app, dependencies) => {
   const {
@@ -10,15 +12,32 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     __dirname,
     openchamberDataDir,
     readSettingsFromDiskMigrated,
+    persistSettings,
     fetchFreeZenModels,
     getCachedZenModels,
     sessionIndexService,
     sessionIndexSyncRuntime,
     transcriptCacheService,
+    getSshRoutingTable,
+    mintSshHostToken,
+    getPairingSession,
+    express,
   } = dependencies;
 
   registerSessionIndexRoutes(app, { sessionIndexService, sessionIndexSyncRuntime });
   registerTranscriptCacheRoutes(app, { transcriptCacheService });
+  registerDesktopHostRoutes(app, {
+    readSettingsFromDiskMigrated,
+    getSshRoutingTable,
+    mintSshHostToken,
+    getPairingSession,
+    express,
+  });
+  registerConfigSyncRoutes(app, {
+    readSettingsFromDiskMigrated,
+    persistSettings,
+    express,
+  });
 
   app.get('/api/openchamber/update-check', async (req, res) => {
     try {

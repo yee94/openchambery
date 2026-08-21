@@ -1,14 +1,80 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { encodePairingConnectionPayload, buildPairingConnectionPayload } from '@/lib/connectionPayload';
+
+const {
+  barcodeScannerPlugin,
+  removeBarcode,
+  removeError,
+  resolveStopScan,
+  stopScan,
+} = vi.hoisted(() => {
+  const removeBarcode = vi.fn();
+  const removeError = vi.fn();
+  let settleStopScan: (() => void) | undefined;
+  const resolveStopScan = () => {
+    settleStopScan?.();
+    settleStopScan = undefined;
+  };
+  const stopScan = vi.fn(() => new Promise<void>((resolve) => {
+    settleStopScan = resolve;
+  }));
+  const barcodeScannerPlugin = {
+    requestPermissions: vi.fn(async () => ({ camera: 'granted' as const })),
+    scan: vi.fn(async () => {
+      throw new Error('17: API_NOT_CONNECTED');
+    }),
+    startScan: vi.fn(async () => undefined),
+    stopScan,
+    addListener: vi.fn(async (event: string) => {
+      if (event === 'barcodesScanned') return { remove: removeBarcode };
+      return { remove: removeError };
+    }),
+  };
+  return { barcodeScannerPlugin, removeBarcode, removeError, resolveStopScan, stopScan };
+});
+
+vi.mock('@capacitor/core', () => ({
+  Capacitor: {
+    isNativePlatform: () => true,
+    isPluginAvailable: (name: string) => name === 'BarcodeScanner',
+  },
+  registerPlugin: () => barcodeScannerPlugin,
+}));
 
 import {
   evaluateQrScanSupport,
   parseConnectionPayload,
+  scanConnectionQr,
   shouldFallbackToBundledScanner,
 } from './mobileQrScan';
 
 const hostEncPubJwk = { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' } as const;
+const BUNDLED_SCANNER_ACTIVE_CLASS = 'oc-barcode-scanner-active';
+
+const originalWindowCapacitor = (window as typeof window & { Capacitor?: unknown }).Capacitor;
+
+beforeEach(() => {
+  (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = {
+    getPlatform: () => 'android',
+  };
+  resolveStopScan();
+  stopScan.mockClear();
+  removeBarcode.mockClear();
+  removeError.mockClear();
+  barcodeScannerPlugin.scan.mockClear();
+  barcodeScannerPlugin.startScan.mockClear();
+  barcodeScannerPlugin.addListener.mockClear();
+  barcodeScannerPlugin.requestPermissions.mockClear();
+});
+
+afterEach(() => {
+  resolveStopScan();
+  document.documentElement.classList.remove(BUNDLED_SCANNER_ACTIVE_CLASS);
+  document.querySelectorAll('.oc-barcode-scanner-chrome').forEach((node) => node.remove());
+  (window as typeof window & { Capacitor?: unknown }).Capacitor = originalWindowCapacitor;
+  vi.restoreAllMocks();
+});
 
 describe('evaluateQrScanSupport', () => {
   test('supports an available plugin on a native platform', () => {
@@ -75,5 +141,66 @@ describe('shouldFallbackToBundledScanner', () => {
     ))).toBe(true);
     expect(shouldFallbackToBundledScanner(new Error('17: API_NOT_CONNECTED'))).toBe(true);
     expect(shouldFallbackToBundledScanner(new Error('module install timed out'))).toBe(true);
+  });
+});
+
+describe('scanConnectionQr bundled CameraX cancel cleanup', () => {
+  test('clears the active class and cancel button before stopScan settles', async () => {
+    const scanPromise = scanConnectionQr();
+    await vi.waitFor(() => {
+      expect(document.documentElement.classList.contains(BUNDLED_SCANNER_ACTIVE_CLASS)).toBe(true);
+      expect(document.querySelector('.oc-barcode-scanner-chrome')).not.toBeNull();
+    });
+
+    document.querySelector<HTMLButtonElement>('.oc-barcode-scanner-chrome')?.click();
+    await vi.waitFor(() => {
+      expect(stopScan).toHaveBeenCalledTimes(1);
+    });
+
+    // Visibility must recover before native stopScan finishes — otherwise the
+    // page stays blank behind the transparent WebView while CameraX tears down.
+    expect(document.documentElement.classList.contains(BUNDLED_SCANNER_ACTIVE_CLASS)).toBe(false);
+    expect(document.querySelector('.oc-barcode-scanner-chrome')).toBeNull();
+    expect(removeBarcode).toHaveBeenCalledTimes(1);
+    expect(removeError).toHaveBeenCalledTimes(1);
+
+    resolveStopScan();
+    await expect(scanPromise).resolves.toEqual({ status: 'cancelled' });
+  });
+
+  test('still clears the active class when cancel-button detach races with DOM removal', async () => {
+    const originalRemoveChild = Node.prototype.removeChild;
+    const removeChildSpy = vi.spyOn(Node.prototype, 'removeChild').mockImplementation(function (
+      this: Node,
+      child: Node,
+    ) {
+      if (
+        this === document.body
+        && child instanceof HTMLElement
+        && child.classList.contains('oc-barcode-scanner-chrome')
+      ) {
+        // Simulate a concurrent detach (e.g. React removeChild) before our cleanup runs.
+        if (child.parentNode === document.body) originalRemoveChild.call(document.body, child);
+        throw new DOMException('The node to be removed is not a child of this node.', 'NotFoundError');
+      }
+      return originalRemoveChild.call(this, child);
+    });
+
+    const scanPromise = scanConnectionQr();
+    await vi.waitFor(() => {
+      expect(document.querySelector('.oc-barcode-scanner-chrome')).not.toBeNull();
+    });
+
+    document.querySelector<HTMLButtonElement>('.oc-barcode-scanner-chrome')?.click();
+    await vi.waitFor(() => {
+      expect(stopScan).toHaveBeenCalledTimes(1);
+    });
+    resolveStopScan();
+    await expect(scanPromise).resolves.toEqual({ status: 'cancelled' });
+
+    expect(document.documentElement.classList.contains(BUNDLED_SCANNER_ACTIVE_CLASS)).toBe(false);
+    expect(document.querySelector('.oc-barcode-scanner-chrome')).toBeNull();
+    expect(stopScan).toHaveBeenCalledTimes(1);
+    removeChildSpy.mockRestore();
   });
 });

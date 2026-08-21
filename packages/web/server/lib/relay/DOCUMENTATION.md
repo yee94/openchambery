@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The private relay lets an OpenChamber client (mobile app, browser, or another desktop) reach a user's OpenChamber instance through OpenChamber-hosted infrastructure when the instance is not directly reachable (behind NAT, no public URL, no tunnel). The instance dials **outbound** to the relay; nothing needs to be exposed inbound.
+The private relay lets an OpenChamber client (mobile app, browser, or another desktop) reach a user's OpenChamber instance through OpenChamber-hosted infrastructure when the instance is not directly reachable (behind NAT or without a public URL). The instance dials **outbound** to the relay; nothing needs to be exposed inbound.
 
 Traffic is **end-to-end encrypted between the two endpoints** (client and host instance). The relay infrastructure forwards opaque ciphertext and cannot read application traffic — it is an untrusted transport, not a trusted middlebox.
 
@@ -19,7 +19,7 @@ Traffic is modeled as three stacked layers. The relay understands only Layer 1; 
 ## Entrypoints and structure
 
 Host side (`packages/web/server/lib/relay/`):
-- `service.js` — thin entrypoint: relay config (enabled flag + relay URL), the management routes (`GET/POST /api/openchamber/relay/{status,enable,disable}`), a `getPairingCandidate()` accessor (the relay transport candidate folded into pairing-v2 links when enabled, consumed by the pairing-session route in `core-routes.js`), and lifecycle wiring. Host lifecycle is gated to Electron: non-desktop runtimes report `state: 'unavailable'`, refuse `/relay/enable` and relay pairing with 403, and never call `startRelayHost`. On desktop, started from `packages/web/server/index.js` only when demand/opt-in enables the relay. The relay endpoint defaults to the OpenChamber-hosted relay but can be pinned to a self-hosted relay via the `OPENCHAMBER_RELAY_URL` env var; when set it overrides the stored setting for the host connection, the pairing candidate, and status, so paired clients inherit the endpoint automatically. Endpoint identity is scheme/host/path only: accepted schemes are `ws://` and `wss://`; URLs with userinfo are rejected (no silent default fallback); query and fragment are stripped before persistence and pairing candidates. Custom endpoint persistence and Host control-connection switching are explicit authenticated management actions. Pairing creation with `relayUrl` requires an owner UI session or the local `desktop-local` shell client; `/relay/enable` follows its API auth gate.
+- `service.js` — thin entrypoint: relay config (enabled flag + relay URL), the management routes (`GET/POST /api/openchamber/relay/{status,enable,disable}`), a `getPairingCandidate()` accessor (the relay transport candidate folded into pairing-v2 links when enabled, consumed by the pairing-session route in `core-routes.js`), and lifecycle wiring. Host lifecycle is gated to Electron: non-desktop runtimes (`bun run dev`, `dev:web:hmr`, CLI `serve`, VS Code, plain `node server`) report `state: 'unavailable'`, refuse `/relay/enable`, `/relay/disable`, and relay pairing with 403, never mint a relay identity, never advertise `relayAvailable`, and never call `startRelayHost`. Direct `node server/index.js` forces `OPENCHAMBER_RUNTIME=web` so a leftover desktop env cannot open the host-control socket. On desktop, started from `packages/web/server/index.js` only when demand/opt-in enables the relay. The relay endpoint defaults to the OpenChamber-hosted relay but can be pinned to a self-hosted relay via the `OPENCHAMBER_RELAY_URL` env var; when set it overrides the stored setting for the host connection, the pairing candidate, and status, so paired clients inherit the endpoint automatically. Endpoint identity is scheme/host/path only: accepted schemes are `ws://` and `wss://`; URLs with userinfo are rejected (no silent default fallback); query and fragment are stripped before persistence and pairing candidates. Custom endpoint persistence and Host control-connection switching are explicit authenticated management actions. Pairing creation with `relayUrl` requires an owner UI session or the local `desktop-local` shell client; `/relay/enable` follows its API auth gate.
 - `identity.js` — the host's stable identity: the long-lived signing keypair (shared with the push relay, defines the routing id) plus a long-lived encryption keypair (the E2EE trust anchor). Reused across restarts; never rotated implicitly.
 - `signing-key.js` — storage/derivation of the signing keypair and the routing id, shared with the notifications runtime.
 - `host-client.js` — the long-lived connection manager: one outbound control connection to the relay, a per-client data connection for each connected device, reconnect/backoff, and the E2EE responder handshake per connection.
@@ -50,7 +50,7 @@ The host dispatcher restricts tunneled traffic to explicit path allowlists (one 
 Private Relay is transparent for allowlisted HTTP paths, so most “works on LAN / Desktop, empty on mobile Relay” bugs are Host routing or client transport-identity mistakes rather than Relay framing bugs:
 
 - **Same path, real Host route required.** Clients call the ordinary `/api/...` path through the tunnel. If that route is missing on the Host process currently holding the relay claim (wrong git worktree, stale packaged Desktop build, or a backend that never registered the OpenChamber route before the OpenCode proxy/SPA fallback), the tunnel still returns HTTP 200 with SPA HTML or proxied OpenCode content. Symptom: chat and status work, Provider/model catalog does not.
-- **HTTP allowlist is prefix-based for `/api/`.** New REST/SSE APIs under `/api/` do not need a tunnel-host allowlist edit. New **WebSocket** paths still need both `ALLOWED_WS_PATHS` and `isUrlAuthWebSocketPath` (see the `relay-transport` skill).
+- **HTTP allowlist is prefix-based for `/api/`.** New REST/SSE APIs under `/api/` do not need a tunnel-host allowlist edit. New **WebSocket** paths still need both `ALLOWED_WS_PATHS` and `isUrlAuthWebSocketPath` (see the `relay-transport` skill). Config sync (`/api/openchamber/config-sync/*`, ticket 05/06) therefore works over Relay without a tunnel-host allowlist change; identity and credential grants remain endpoint concerns (`relay:<serverId>`, pairing-settings / inbound host grant).
 - **Transport identity ≠ runtime key.** After LAN⇄relay swaps, UI catalog loaders commit only when `useConfigStore.catalogTransportIdentity` matches `getRuntimeTransportIdentity()`. `runtimeEndpointReset.ts` must write that transport fingerprint on both full endpoint reset and in-place transport reconnect. Writing `runtimeKey` instead leaves Providers empty because the stable device/instance id is shared across LAN and relay.
 - **Safe catalog projection stays Host-owned.** Provider credentials never cross the browser; Relay only carries the already-allowlisted `GET /api/config/catalog/providers` JSON. Keep Host projection, client parser bounds, and `partial` rules in sync (empty `release_date` is absent, not partial).
 
@@ -104,6 +104,48 @@ Relay mode plugs into the existing client transport layer rather than a parallel
 
 Catalog loaders (`loadProviders` / `loadAgents`) and assistant Query keys gate writes/caches on the **transport fingerprint**, not `runtimeKey`. On endpoint reset and same-device transport switch, `runtimeEndpointReset.ts` must set `useConfigStore.catalogTransportIdentity` to `getRuntimeTransportIdentity()`. Writing `detail.runtimeKey` there silently discards provider/agent catalog refreshes under Relay, which then hides capability-gated surfaces such as Assistants.
 
+## SSH host routing
+
+Mobile (and other relay clients) can reach a desktop's **SSH-forwarded remote OpenChamber instances** through the same private-relay tunnel that already reaches the desktop's local loopback origin. Routing is host-side only: the client selects a target local-forward port; the tunnel dispatcher dials that port on `127.0.0.1` when — and only when — it is present in the live SSH routing table.
+
+### Header contract
+
+- Header name: `x-openchamber-target-port`
+- Value: decimal port number string (e.g. `"41234"`)
+- HTTP: carried on the tunneled request headers
+- WebSocket: optional `headers` field on the `WsOpen` payload (same header name/value)
+- The dispatcher **strips** this header before forwarding to loopback (it is routing metadata, not an upstream header)
+
+### Resolution rules (`resolveTargetPort` in `tunnel-host.js`)
+
+| Condition | Result |
+|---|---|
+| Header absent | Dial `getLocalPort()` (desktop local origin) — unchanged default behavior |
+| Header present and `localPort` is in `getSshRoutingTable()` | Dial that port |
+| Header present but port missing/invalid/not in table | **Do not** fall back to the default port |
+
+HTTP miss → synthetic **503** with body `{ error: 'ssh-host-unreachable', …, source: 'relay-tunnel-host' }`.  
+WS miss → stream abort with reason `ssh-host-unreachable`.
+
+### Routing table (authoritative in memory)
+
+- Electron injects `getSshRoutingTable: () => sshManager.getRoutingTable()` into `startWebUiServer`.
+- Table entries are `{ id, localPort }` for SSH sessions whose status phase is **`ready`** and whose `localPort` is finite.
+- Degraded / connecting / disconnected sessions are absent. Settings.json is **not** the allowlist for dialing — only the live table is.
+- Non-desktop runtimes default to `() => []`.
+
+### Companion HTTP APIs (authenticated `/api` gate)
+
+- `GET /api/openchamber/desktop-hosts` → `{ hosts: [{ id, label, localPort, reachable }] }` for configured SSH instances. `reachable` is true iff the host id is in the routing table. **Never returns `clientToken`.**
+- `POST /api/openchamber/ssh-host-token` body `{ hostId }` → `{ token }` from `settings.json` `desktopHosts[].clientToken` for SSH instance hosts only. Missing / non-SSH / no token → **404**. Response includes `Cache-Control: no-store`.
+
+### Security invariants (do not regress)
+
+- Path allowlists (`isAllowedHttpPath` / `ALLOWED_WS_PATHS`) are **not** relaxed for SSH targets.
+- The dispatcher **never injects credentials**; the client still authenticates with its own bearer / `oc_url_token` against the target instance.
+- Port legitimacy is solely the in-memory routing table, not client-supplied trust and not settings alone.
+- List endpoints must not leak `clientToken`; token mint is a separate authenticated POST.
+
 ## Design invariants (do not regress)
 
 - The relay never sees plaintext application traffic; it sees only routing metadata (routing id, connection identifiers, timestamps, coarse counts).
@@ -112,5 +154,6 @@ Catalog loaders (`loadProviders` / `loadAgents`) and assistant Query keys gate w
 - The host dispatcher never injects credentials; the server authenticates each tunneled request.
 - The tunnel is transparent to the app: adding relay support to a feature should not require the feature to know the relay exists — it goes through the shared runtime transport helpers.
 - The two implementations stay byte-compatible and the wire format is versioned/negotiated so mixed client/host app versions degrade gracefully rather than break.
+- SSH target-port routing never falls back to the default local port on a routing-table miss (see "SSH host routing").
 
 For the operational rules that keep future changes (new WebSocket endpoints, transport refactors, terminal/voice porting) from breaking this, load the `relay-transport` skill.

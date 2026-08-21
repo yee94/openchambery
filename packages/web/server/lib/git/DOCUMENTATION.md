@@ -111,7 +111,8 @@ The following functions are internal helpers used by exported functions:
 - `upstreamComparison`: Optional comparison against `upstream/<current-branch>`, with `{ remote, branch, ahead, behind }`.
 - `files`: Array of file objects with `path`, `index`, `working_dir` status codes.
 - `isClean`: Boolean indicating if working tree is clean.
-- `diffStats`: Object mapping file paths to `{ insertions, deletions }`.
+- `oversized`: Boolean. `true` when the change set exceeds the server-owned `GIT_STATUS_DIFF_STATS_MAX_FILES` threshold; `diffStats` are omitted in that case (same omission shape as light mode). Clients must derive deferred / load-on-demand rendering from this flag rather than from their own threshold, so the server can tune the limit without client changes. Light-mode polls do not set this flag.
+- `diffStats`: Object mapping file paths to `{ insertions, deletions }`. Omitted by light mode and by oversized change sets.
 - `mergeInProgress`: Object with `{ head, message }` if merge in progress.
 - `rebaseInProgress`: Object with `{ headName, onto }` if rebase in progress.
 

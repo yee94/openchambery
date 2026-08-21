@@ -32,7 +32,7 @@ describe('settings navigation metadata', () => {
       workspace: ['projects', 'git', 'remote-instances'],
       opencode: ['providers', 'agents', 'assistants', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
       content: ['magic-prompts', 'snippets', 'skills.installed', 'skills.catalog'],
-      system: ['usage', 'voice', 'tunnel', 'about'],
+      system: ['usage', 'voice', 'about'],
     });
   });
 

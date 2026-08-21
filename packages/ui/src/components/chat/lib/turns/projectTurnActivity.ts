@@ -124,9 +124,11 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             if (isTool) {
                 kind = 'tool';
             } else if (part.type === 'reasoning') {
-                if (text) {
-                    kind = 'reasoning';
-                }
+                // Slim first-packet traces drop the body. They still belong in
+                // Activity so collapsed MessageBody cannot wrap a null
+                // ReasoningPart in tool-row padding (hundreds of empty shells
+                // between the disclosure header and the final answer).
+                kind = 'reasoning';
             } else if (
                 input.showTextJustificationActivity
                 && part.type === 'text'

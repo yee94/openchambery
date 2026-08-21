@@ -2006,6 +2006,30 @@ button.oc-mobile-worktree-label-trigger:active,
     -webkit-overflow-scrolling: touch;
   }
 
+  @supports (-webkit-touch-callout: none) {
+    :root.mobile-pointer:not(.desktop-runtime)
+      .markdown-content
+      [data-component="markdown-code"]
+      :is(pre, code),
+    :root.oc-capacitor-app:not(.oc-platform-android)
+      .markdown-content
+      [data-component="markdown-code"]
+      :is(pre, code) {
+      line-height: var(--markdown-code-block-line-height);
+    }
+  }
+
+  @supports (-webkit-touch-callout: none) {
+    :root.mobile-pointer:not(.desktop-runtime):not(.oc-platform-android)
+      .markdown-content
+      [data-md-code-line-numbers],
+    :root.oc-capacitor-app:not(.oc-platform-android)
+      .markdown-content
+      [data-md-code-line-numbers] {
+      display: none;
+    }
+  }
+
   /*
    * Generic `.overflow-hidden { overflow-x: hidden !important }` above would
    * crush table scroll surfaces. Re-assert horizontal pan for markdown tables
@@ -2334,8 +2358,7 @@ button.oc-mobile-worktree-label-trigger:active,
     margin-bottom: 0;
   }
 
-  .pwa-overlay-panel .pwa-overlay-scroll,
-  .oc-mobile-surface-shell .pwa-overlay-scroll {
+  .pwa-overlay-panel .pwa-overlay-scroll {
     padding-bottom: calc(var(--oc-safe-area-bottom-visual, 0px) + 12px);
   }
 }
@@ -2569,8 +2592,7 @@ button.oc-mobile-worktree-label-trigger:active,
   ) !important;
 }
 
-:root.oc-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll,
-:root.oc-capacitor-app .oc-mobile-surface-shell .pwa-overlay-scroll {
+:root.oc-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll {
   /* Surface already owns the physical bottom inset; keep only a small list gap. */
   padding-bottom: 12px;
 }
@@ -2766,28 +2788,86 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 }
 
-/* Expand/collapse silhouette swap. Same DOM node; the height/padding change
-   is instant (see transition below — animating layout properties reflowed
-   the whole chat every frame under the moving keyboard and read as a laggy
-   open). The soft feel comes from the corner-radius ease plus the footer
-   fade-in. IMPORTANT: overflow stays visible when expanded so slash-command /
-   @-mention / skill autocomplete (absolute bottom-full) is not clipped. */
+/* The viewport permanently reserves the latest expanded silhouette. The surface
+   moves inside that mask with compositor-only translateY; textarea autosize may
+   snap the reserved height between interactions and never animates it. Keyboard
+   lift owns the outer .oc-mobile-composer transform, so the two motions compose
+   on separate elements. */
+.oc-mobile-composer-motion-viewport {
+  position: relative;
+  display: flex;
+  height: var(--oc-mobile-composer-stage-height, 7rem);
+  min-height: 2.75rem;
+  width: 100%;
+  align-items: flex-end;
+  overflow: visible;
+}
+
+.oc-mobile-composer-motion-active,
+.oc-mobile-composer-motion-collapsed {
+  overflow: hidden;
+}
+
 .oc-mobile-composer-surface {
   overflow: visible;
   transform-origin: bottom center;
-  /* Height/padding swap instantly on expand/collapse: layout properties
-     must not animate — every frame reflows the whole chat under the moving
-     keyboard. Only the corner radius eases (paint-only, ~free); the footer
-     keeps its fade-in animation below. */
-  transition: border-radius 200ms cubic-bezier(0.32, 0.72, 0, 1);
   min-height: 2.75rem;
   max-height: min(70vh, 22rem);
+  width: 100%;
+}
+
+.oc-mobile-composer-motion-expanding {
+  animation: oc-mobile-composer-motion-expand 180ms cubic-bezier(0.2, 0, 0, 1)
+    both;
+  will-change: transform;
+}
+
+.oc-mobile-composer-motion-collapsing {
+  animation: oc-mobile-composer-motion-collapse 160ms
+    cubic-bezier(0.4, 0, 1, 1) both;
+  will-change: transform;
+}
+
+@keyframes oc-mobile-composer-motion-expand {
+  from {
+    transform: translate3d(
+      0,
+      calc(var(--oc-mobile-composer-stage-height, 7rem) - 2.75rem),
+      0
+    );
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes oc-mobile-composer-motion-collapse {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(
+      0,
+      calc(var(--oc-mobile-composer-stage-height, 7rem) - 2.75rem),
+      0
+    );
+  }
+}
+
+/* Expensive glass effects stay detached while the surface is moving. This
+   class remains an explicit guard if the static card regains elevation later. */
+.oc-mobile-composer-effects-reduced {
+  background: var(--surface-subtle) !important;
+  background-color: var(--surface-subtle) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
 .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed) {
   /* Popovers (CommandAutocomplete etc.) render as absolute children above
-     the card; never clip them after expand. No scale/transform on open —
-     that containing block leaves a long textarea unscrollable on iOS. */
+     the card; the motion viewport releases clipping after expand settles. */
   overflow: visible;
 }
 
@@ -2799,9 +2879,11 @@ button.oc-mobile-worktree-label-trigger:active,
 @keyframes oc-mobile-composer-footer-in {
   from {
     opacity: 0;
+    transform: translate3d(0, 0.375rem, 0);
   }
   to {
     opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -2822,8 +2904,11 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-mobile-composer-surface {
-    transition: none;
+  .oc-mobile-composer-motion-expanding,
+  .oc-mobile-composer-motion-collapsing {
+    animation: none;
+    transform: none;
+    will-change: auto;
   }
 
   .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)

@@ -28,8 +28,9 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import type { WorktreeMetadata } from '@/types/worktree';
 
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+
 import { MobileDeleteWorktreeDialog } from './MobileDeleteWorktreeDialog';
-import { MobileSurfaceShell } from './MobileSurfaceShell';
 
 type MobileEditableProject = {
   id: string;
@@ -218,12 +219,17 @@ export const MobileProjectEditSurface: React.FC<MobileProjectEditSurfaceProps> =
 
   return (
     <>
-      <MobileSurfaceShell
+      <MobileResizableSheet
+        id="mobile-project-edit"
         open={open}
-        onClose={onClose}
-        onBack={onClose}
-        title={t('projectEditDialog.title')}
-        ariaLabel={t('projectEditDialog.title')}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) onClose();
+        }}
+        title={
+          <h2 className="truncate typography-ui-label font-semibold text-foreground">
+            {t('projectEditDialog.title')}
+          </h2>
+        }
         trailing={
           <Button
             type="button"
@@ -238,9 +244,13 @@ export const MobileProjectEditSurface: React.FC<MobileProjectEditSurfaceProps> =
             {t('projectEditDialog.actions.save')}
           </Button>
         }
+        ariaLabel={t('projectEditDialog.title')}
+        closeAriaLabel={t('mobile.surface.closeAria')}
+        resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+        initiallyExpanded
       >
         {project ? (
-          <div className="h-full space-y-6 overflow-y-auto px-4 pb-8 pt-2">
+          <div className="overlay-scrollbar-container h-full space-y-6 overflow-y-auto px-4 pb-8 pt-2">
             {/* Icon preview */}
             <div className="flex justify-center pt-2">
               <span
@@ -402,7 +412,7 @@ export const MobileProjectEditSurface: React.FC<MobileProjectEditSurfaceProps> =
             ) : null}
           </div>
         ) : null}
-      </MobileSurfaceShell>
+      </MobileResizableSheet>
 
       {project ? (
         <MobileDeleteWorktreeDialog

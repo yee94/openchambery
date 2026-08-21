@@ -28,6 +28,8 @@ describe('mobile press feedback scale policy', () => {
     expect(mobileCss).not.toContain('[data-mobile-composer-surface="true"]:has(textarea:active)');
     expect(mobileCss).not.toContain('oc-mobile-composer-expand');
     expect(mobileCss).toContain('Composer surface must not press-scale');
+    // Collapsed/expanded share 1.5rem; interpolating 9999px dirties iOS corners.
+    expect(mobileCss).not.toContain('transition: border-radius');
   });
 
   test('shared Button only opts icon-sized controls into compact press', () => {

@@ -5,12 +5,6 @@ import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 
-type ManagedRemoteTunnelPreset = {
-  id: string;
-  name: string;
-  hostname: string;
-};
-
 export type UpdateInfo = {
   available: boolean;
   version?: string;
@@ -115,17 +109,6 @@ export type DesktopSettings = {
   autoDeleteEnabled?: boolean;
   autoDeleteAfterDays?: number;
   sessionRetentionAction?: 'archive' | 'delete';
-  tunnelProvider?: string;
-  tunnelMode?: 'quick' | 'managed-remote' | 'managed-local';
-  tunnelBootstrapTtlMs?: number | null;
-  tunnelSessionTtlMs?: number;
-  managedLocalTunnelConfigPath?: string | null;
-  managedRemoteTunnelHostname?: string;
-  managedRemoteTunnelToken?: string | null;
-  hasManagedRemoteTunnelToken?: boolean;
-  managedRemoteTunnelPresets?: ManagedRemoteTunnelPreset[];
-  managedRemoteTunnelSelectedPresetId?: string;
-  managedRemoteTunnelPresetTokens?: Record<string, string>;
   defaultModel?: string; // format: "provider/model"
   defaultVariant?: string;
   defaultAgent?: string;

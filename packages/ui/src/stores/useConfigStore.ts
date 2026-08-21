@@ -1054,10 +1054,16 @@ interface ConfigStore {
     loadAgents: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean }) => Promise<boolean>;
     /**
      * Cold-start recovery for catalogs that are still empty after a successful
-     * but temporarily empty network response was cached with staleTime: Infinity.
-     * Force-refreshes only missing Provider/Agent catalogs for the active directory.
+     * but temporarily empty network response. Empty catalogs use staleTime 0 so
+     * ordinary ensure refetches; this force-refreshes only catalogs that are
+     * still missing in the store.
      */
     refreshMissingCatalogs: (options?: { source?: string }) => Promise<void>;
+    /**
+     * User opened a model/agent picker. Always force-refresh both catalogs in
+     * the background so a stuck empty or stale SWR snapshot cannot hide live data.
+     */
+    refreshCatalogsOnPickerOpen: (options?: { source?: string }) => Promise<void>;
     invalidateProviderCache: (directory?: string | null) => void;
     setProvider: (providerId: string) => void;
     setModel: (modelId: string) => void;
@@ -1099,6 +1105,7 @@ declare global {
 
 let _initializeAppInFlight: Promise<void> | null = null;
 let _refreshMissingCatalogsInFlight: Promise<void> | null = null;
+let _refreshCatalogsOnPickerOpenInFlight: Promise<void> | null = null;
 const _providerLoadEpochByDirectory: Record<string, number> = {};
 const _agentLoadEpochByDirectory: Record<string, number> = {};
 
@@ -1710,7 +1717,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const run = (async () => {
                         // Read the authoritative store snapshot first so recovery only
                         // force-refreshes catalogs that are still empty after a successful
-                        // empty warm load (staleTime: Infinity otherwise keeps that empty result).
+                        // empty warm load.
                         if (get().providers.length === 0) {
                             await get().loadProviders({ source, forceRefresh: true });
                         }
@@ -1724,6 +1731,23 @@ export const useConfigStore = create<ConfigStore>()(
                     });
 
                     _refreshMissingCatalogsInFlight = run;
+                    return run;
+                },
+
+                refreshCatalogsOnPickerOpen: (options) => {
+                    if (_refreshCatalogsOnPickerOpenInFlight) {
+                        return _refreshCatalogsOnPickerOpenInFlight;
+                    }
+
+                    const source = options?.source ?? 'refreshCatalogsOnPickerOpen';
+                    const run = Promise.all([
+                        get().loadProviders({ source, forceRefresh: true }),
+                        get().loadAgents({ source, forceRefresh: true }),
+                    ]).then(() => undefined).finally(() => {
+                        _refreshCatalogsOnPickerOpenInFlight = null;
+                    });
+
+                    _refreshCatalogsOnPickerOpenInFlight = run;
                     return run;
                 },
 
@@ -3256,7 +3280,7 @@ export const useConfigStore = create<ConfigStore>()(
                             if (debug) console.log("Loading providers and agents...");
                             await Promise.all([
                                 get().loadProviders({ directory: configDirectory, source: 'initializeApp', forceRefresh: true }),
-                                get().loadAgents({ directory: configDirectory, source: 'initializeApp' }),
+                                get().loadAgents({ directory: configDirectory, source: 'initializeApp', forceRefresh: true }),
                             ]);
 
                             set({ isInitialized: true, isConnected: true, hasEverConnected: true, connectionPhase: "connected" });

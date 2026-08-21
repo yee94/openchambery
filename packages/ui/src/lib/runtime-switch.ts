@@ -3,11 +3,15 @@ import { configureRuntimeUrlResolver } from '@/lib/runtime-url';
 import {
   activateRelayTunnel,
   deactivateRelayTunnel,
+  getActiveRelayDescriptor,
   getActiveRelayTunnel,
   type RelayRuntimeDescriptor,
 } from '@/lib/relay/runtime-tunnel';
 
-export { getActiveRelayTunnel };
+export { getActiveRelayDescriptor, getActiveRelayTunnel };
+
+/** Routing hint for SSH hosts reached through a desktop relay tunnel. */
+export const OPENCHAMBER_TARGET_PORT_HEADER = 'x-openchamber-target-port';
 
 export type RuntimeEndpointChangedDetail = {
   apiBaseUrl: string;
@@ -89,12 +93,33 @@ const normalizeRuntimeUrlKey = (value: string): string => {
   }
 };
 
-const transportIdentityFor = (apiBaseUrl: string, relay?: RelayRuntimeDescriptor | null): string => {
-  if (!relay) return `direct:${normalizeRuntimeUrlKey(apiBaseUrl)}`;
+const targetPortFromHeaders = (headers?: Record<string, string> | null): string | null => {
+  if (!headers) return null;
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.trim().toLowerCase() !== OPENCHAMBER_TARGET_PORT_HEADER) continue;
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  return null;
+};
+
+const transportIdentityFor = (
+  apiBaseUrl: string,
+  relay?: RelayRuntimeDescriptor | null,
+  requestHeaders?: Record<string, string> | null,
+): string => {
+  // SSH-via-relay shares the same UI origin + relay tunnel as the parent desktop;
+  // target-port must enter identity so query/sync caches never cross hosts.
+  const targetPort = targetPortFromHeaders(requestHeaders);
+  if (!relay) {
+    if (!targetPort) return `direct:${normalizeRuntimeUrlKey(apiBaseUrl)}`;
+    return `direct:${normalizeRuntimeUrlKey(apiBaseUrl)}:target-port:${targetPort}`;
+  }
   return `relay:${stableSerialize({
     relayUrl: relay.relayUrl,
     serverId: relay.serverId,
     hostEncPubJwk: relay.hostEncPubJwk,
+    ...(targetPort ? { targetPort } : {}),
   })}`;
 };
 
@@ -155,7 +180,7 @@ export const initializeRuntimeEndpoint = (options: { apiBaseUrl?: string | null;
 
   activeApiBaseUrl = apiBaseUrl;
   activeRuntimeKey = options.runtimeKey?.trim() || (sameOrigin(apiBaseUrl, readInjectedLocalOrigin()) ? 'local' : normalizeRuntimeUrlKey(apiBaseUrl));
-  activeTransportFingerprint = transportIdentityFor(apiBaseUrl);
+  activeTransportFingerprint = transportIdentityFor(apiBaseUrl, null, null);
 };
 
 export const switchRuntimeEndpoint = (options: { apiBaseUrl: string; clientToken?: string | null; runtimeKey?: string | null; requestHeaders?: Record<string, string> | null; relay?: RelayRuntimeDescriptor | null }): void => {
@@ -170,7 +195,7 @@ export const switchRuntimeEndpoint = (options: { apiBaseUrl: string; clientToken
     return;
   }
   const previousTransportFingerprint = getRuntimeTransportIdentity();
-  const transportFingerprint = transportIdentityFor(apiBaseUrl, options.relay);
+  const transportFingerprint = transportIdentityFor(apiBaseUrl, options.relay, options.requestHeaders);
   const transportIdentityChanged = transportFingerprint !== previousTransportFingerprint;
   activeEndpointFingerprint = endpointFingerprint;
   activeTransportFingerprint = transportFingerprint;

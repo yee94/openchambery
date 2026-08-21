@@ -109,7 +109,7 @@ import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { DraftSessionBranchSelector } from './DraftSessionBranchSelector';
 import { resolveDraftSessionBranchLabel } from './draftSessionBranchLabel';
-import { extractGitChangedFiles } from './changedFiles';
+import { hasExtractableGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { fetchResponseStyleInstruction } from '@/lib/responseStyle';
@@ -135,6 +135,7 @@ import { highlightFencedCode } from './composerCodeHighlight';
 import {
     assignImageAttachmentFilenames,
     buildAttachmentCitationText,
+    collectDetachedAttachmentFilenames,
     findAttachmentCitationRanges,
     isInlineAttachmentCitation,
     resolveAttachmentCitationDeletion,
@@ -201,7 +202,6 @@ import { useComposerController } from '@/composer/use-composer-controller';
 import { buildComposerSemanticParts, dedupeDeliveryAttachments, ensureSessionMentionTranscripts } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import {
-    attachmentCitationDisplay,
     COMPOSER_TRIGGER_ICON_SLOT,
     composerTriggerIconDisplay,
     composerTriggerIconVisual,
@@ -1032,11 +1032,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [snippetQuery, setSnippetQuery] = React.useState('');
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
     const [mobileControlsPanel, setMobileControlsPanel] = React.useState<MobileControlsPanel>(null);
-    // Mobile pill composer: collapsed is only a visual compact state of the SAME
-    // textarea/DOM (no unmount). Expand grows chrome + multi-line size; collapse
-    // shrinks them. Instant, synced with keyboard choreography so chat geometry
-    // and focus continuity stay continuous.
+    // Mobile pill composer keeps the SAME textarea/DOM across both silhouettes.
+    // A fixed-height viewport masks the full surface while transform-only motion
+    // reveals or conceals it, keeping transcript layout out of animation frames.
     const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(false);
+    const [mobileComposerMotion, setMobileComposerMotion] = React.useState<'idle' | 'expanding' | 'collapsing'>('idle');
+    const [mobileComposerStageHeight, setMobileComposerStageHeight] = React.useState(112);
+    const mobileComposerMotionTimerRef = React.useRef<number | null>(null);
     // Footer/chrome phase for the mobile composer, deliberately separate from the
     // silhouette state: 'collapsed' = pill footer (attach + stop), 'full' =
     // expanded footer with all controls, 'none' = transient frame with no footer
@@ -2219,7 +2221,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return run?.status === 'running' && run.runtimeKey === getRuntimeKey();
     }, [currentSessionId]));
 
-    const handleOpenMobilePanel = React.useCallback((panel: MobileControlsPanel) => {
+    const handleOpenMobilePanel = useEvent((panel: MobileControlsPanel) => {
         if (!isMobile) {
             return;
         }
@@ -2231,7 +2233,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         markComposerActionGesture();
         setMobileControlsPanel(panel);
         textareaRef.current?.blur();
-    }, [isMobile, markComposerActionGesture]);
+        void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'chatInput:mobilePanel' });
+    });
 
     // Consume pending input text (e.g., from revert action)
     const pendingInput = surfaceResources.pendingInput;
@@ -2841,11 +2844,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         toast.error(t('chat.chatInput.toast.messageSendFailed'));
     });
 
-    const handleOpenAgentPanel = React.useCallback(() => {
+    const handleOpenAgentPanel = useEvent(() => {
         markComposerActionGesture();
         setMobileControlsPanel('agent');
         textareaRef.current?.blur();
-    }, [markComposerActionGesture]);
+        void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'chatInput:mobileAgentPanel' });
+    });
 
     const openIssuePicker = React.useCallback(() => {
         setIssuePickerOpen(true);
@@ -2909,6 +2913,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 handleOpenMobilePanel('model');
             } else {
                 useUIStore.getState().setModelSelectorOpen(true);
+                void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'chatInput:modelCommand' });
             }
             return;
         }
@@ -3563,7 +3568,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 return;
             }
             else if (commandName === 'compact' && currentSessionId) {
-                await runImmediateSessionCommand({
+                // Compaction is a long-running background turn. The command
+                // text is consumed synchronously before the first await, so
+                // the composer is already free — run summarize without holding
+                // the submission flight so Enter/Send can keep queueing
+                // follow-ups while the session compacts. Failures surface via
+                // onCompactError.
+                void runImmediateSessionCommand({
                     command: 'compact',
                     consumeCommandText: consumeImmediateCommand,
                     forkSession: async () => undefined,
@@ -4851,6 +4862,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         commitBrowserTextChange(nextValue, cursorPosition, cursorPosition, inputSource, text);
     }, [commitBrowserTextChange, message]);
 
+    // Programmatic paste paths (pasted-text compaction, image citations, file
+    // path mentions) replace the selection without a browser change event, so
+    // orphaned attachments are reconciled against the resulting text here.
+    const detachAttachmentsMissingCitations = useEvent((previousText: string, nextText: string) => {
+        const detached = new Set(collectDetachedAttachmentFilenames(
+            attachedFiles.map((file) => file.filename),
+            previousText,
+            nextText,
+        ));
+        if (detached.size === 0) return;
+        for (const file of attachedFiles) {
+            if (detached.has(file.filename)) {
+                surfaceResources.removeAttachment(file.id);
+            }
+        }
+    });
+
     // Store removeDraftAttachment clears inline citations in the same revision.
     const handleAttachedFileRemove = React.useCallback((file: AttachedFile) => {
         void surfaceResources.removeAttachment(file.id);
@@ -4925,14 +4953,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
 
         const value = e.target.value;
-        for (const file of attachedFiles) {
-            const citations = [attachmentCitationDisplay(file.filename), `[${file.filename}]`];
-            const wasPresent = citations.some((citation) => messageRef.current.includes(citation));
-            const stillPresent = citations.some((citation) => value.includes(citation));
-            if (wasPresent && !stillPresent) {
-                surfaceResources.removeAttachment(file.id);
-            }
-        }
+        detachAttachmentsMissingCitations(messageRef.current, value);
         const cursorPosition = e.target.selectionStart ?? value.length;
         const pastedInsertedText = nativeInputEvent?.inputType?.startsWith('insertFromPaste')
             ? getInsertedTextFromChange(messageRef.current, value)
@@ -4989,9 +5010,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             message.slice(selectionEnd),
         );
         const next = `${message.slice(0, selectionStart)}${insertion}${message.slice(selectionEnd)}`;
+        detachAttachmentsMissingCitations(message, next);
         replaceWithConfirmedFileMentions(next, uniquePaths);
-        toast.success(t('chat.chatInput.toast.addedFileMentions', { count: uniquePaths.length }));
-    }, [message, replaceWithConfirmedFileMentions, t]);
+    }, [message, replaceWithConfirmedFileMentions, detachAttachmentsMissingCitations]);
 
     const handlePaste = React.useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
         const pastedFilePaths = collectFilePathsFromTransfer(e.clipboardData);
@@ -5057,6 +5078,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (imageFiles.length === 0) {
             if (inputMode === 'normal' && canCompactPastedText(getDocument(), pastedText)) {
                 e.preventDefault();
+                const textBeforeReplacement = getDocument().text;
                 const textarea = textareaRef.current;
                 const selectionStart = textarea?.selectionStart ?? message.length;
                 const selectionEnd = textarea?.selectionEnd ?? message.length;
@@ -5082,6 +5104,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     adjustTextareaHeight();
                 });
                 updateAutocompleteState(next.document.text, caret);
+                detachAttachmentsMissingCitations(textBeforeReplacement, next.document.text);
                 return;
             }
             if (pastedText.includes('@')) {
@@ -5107,6 +5130,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             ],
         );
         const citationText = buildAttachmentCitationText(assignedFilenames);
+        const textBeforeReplacement = getDocument().text;
         const textarea = textareaRef.current;
         const selectionStart = textarea?.selectionStart ?? message.length;
         const selectionEnd = textarea?.selectionEnd ?? message.length;
@@ -5140,8 +5164,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const nextText = `${inserted.document.text.slice(0, pasteCaret)}${citationText}${inserted.document.text.slice(pasteCaret)}`;
             // paste chip already left a trailing boundary space; citation follows immediately
             commitBrowserTextChange(nextText, pasteCaret + citationText.length, pasteCaret + citationText.length, getFileMentionInputSourceForInsertedText(nextText), citationText);
+            detachAttachmentsMissingCitations(textBeforeReplacement, nextText);
         } else {
             insertTextAtSelection(insertionText, getFileMentionInputSourceForInsertedText(insertionText));
+            // Mirror insertTextAtSelection's splice to know the resulting text.
+            detachAttachmentsMissingCitations(textBeforeReplacement, `${message.slice(0, selectionStart)}${insertionText}${message.slice(selectionEnd)}`);
         }
 
         for (let index = 0; index < imageFiles.length; index += 1) {
@@ -5157,7 +5184,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 pendingPastedAttachmentFilenamesRef.current.delete(filename);
             }
         }
-    }, [surfaceResources, addDroppedPathsAsMentions, attachedFiles, adjustTextareaHeight, currentSessionId, getDocument, inputMode, insertReference, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, t, updateAutocompleteState, commitBrowserTextChange, applyProgrammaticEdit]);
+    }, [surfaceResources, addDroppedPathsAsMentions, attachedFiles, adjustTextareaHeight, currentSessionId, getDocument, inputMode, insertReference, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, t, updateAutocompleteState, commitBrowserTextChange, applyProgrammaticEdit, detachAttachmentsMissingCitations]);
 
     /**
      * Copy/cut emit semantic plain text (no reserved icon em-spaces) so pasting
@@ -5690,6 +5717,26 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const imageInputRef = React.useRef<HTMLInputElement>(null);
 
+    const focusComposerAfterAttachmentSelection = useEvent((placeCaretAtEnd = true) => {
+        // A completed picker hand-off is allowed to reclaim focus even when the
+        // attach button's ordinary action-suppression window is still active.
+        suppressComposerFocusUntilRef.current = 0;
+        const focusAtEnd = () => {
+            const textarea = resolveComposerTextarea(textareaRef);
+            if (!textarea) return;
+            focusComposerTextarea(textareaRef);
+            if (!placeCaretAtEnd) return;
+            const end = textarea.value.length;
+            try {
+                textarea.setSelectionRange(end, end);
+            } catch {
+                // Some browser pickers return while textarea selection is settling.
+            }
+        };
+        focusAtEnd();
+        window.requestAnimationFrame(focusAtEnd);
+    });
+
     const attachFiles = React.useCallback(async (files: FileList | File[]) => {
         const list = Array.isArray(files) ? files : Array.from(files);
 
@@ -5751,13 +5798,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 .filter(Boolean) as File[];
 
             if (asFiles.length > 0) {
+                focusComposerAfterAttachmentSelection(false);
                 await attachFiles(asFiles);
+                focusComposerAfterAttachmentSelection();
             }
         } catch (error) {
             console.error('VS Code file pick failed', error);
             toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.vscodePickFailed'));
         }
-    }, [attachFiles, t, vscodeApi]);
+    }, [attachFiles, focusComposerAfterAttachmentSelection, t, vscodeApi]);
 
     const handlePickLocalFiles = React.useCallback(() => {
         if (isVSCodeRuntime()) {
@@ -5780,19 +5829,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         try {
             const files = await pickNativeMediaFiles(NATIVE_MEDIA_PICK_LIMIT);
             if (files === null) { handlePickLocalImages(); return; }
-            if (files.length > 0) await attachFiles(files);
+            if (files.length > 0) {
+                focusComposerAfterAttachmentSelection(false);
+                await attachFiles(files);
+                focusComposerAfterAttachmentSelection();
+            }
         } catch (error) {
             console.error('Native photo pick failed', error);
             toast.error(t('chat.chatInput.toast.attachFileFailed'));
         }
-    }, [attachFiles, handlePickLocalImages, t]);
+    }, [attachFiles, focusComposerAfterAttachmentSelection, handlePickLocalImages, t]);
 
     const handleLocalFileSelect = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
-        if (!files) return;
+        if (!files || files.length === 0) return;
+        focusComposerAfterAttachmentSelection(false);
         await attachFiles(files);
         event.target.value = '';
-    }, [attachFiles]);
+        focusComposerAfterAttachmentSelection();
+    }, [attachFiles, focusComposerAfterAttachmentSelection]);
 
     const footerGapClass = 'gap-x-1.5 gap-y-0';
     const isVSCode = isVSCodeRuntime();
@@ -5983,8 +6038,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (isGitRepo !== true || !currentGitStatus || currentGitStatus.isClean) {
             return false;
         }
-        return extractGitChangedFiles(currentGitStatus.files, currentGitStatus.diffStats, currentDirectory).length > 0;
-    }, [currentDirectory, currentGitStatus, isGitRepo, isMiniChatSurface]);
+        // 短路谓词：超大变更集下避免为布尔值构造全量 GitChangedFile 数组。
+        return hasExtractableGitChangedFiles(currentGitStatus.files);
+    }, [currentGitStatus, isGitRepo, isMiniChatSurface]);
 
     const selectedDraftBranchIsKnown = React.useMemo(() => {
         if (!selectedDraftDirectory) {
@@ -6119,8 +6175,53 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // chrome; focus is continuous so the soft keyboard can stay tied to one field.
     const mobileComposerExpandedRef = React.useRef(mobileComposerExpanded);
     React.useEffect(() => {
-        mobileComposerExpandedRef.current = mobileComposerExpanded;
+        if (mobileComposerMotion === 'idle') {
+            mobileComposerExpandedRef.current = mobileComposerExpanded;
+        }
+    }, [mobileComposerExpanded, mobileComposerMotion]);
+
+    const clearMobileComposerMotionTimer = useEvent(() => {
+        if (mobileComposerMotionTimerRef.current === null) return;
+        window.clearTimeout(mobileComposerMotionTimerRef.current);
+        mobileComposerMotionTimerRef.current = null;
     });
+
+    const finishMobileComposerMotion = useEvent(() => {
+        clearMobileComposerMotionTimer();
+        if (mobileComposerMotion === 'collapsing') {
+            setMobileComposerExpanded(false);
+            setMobileComposerChrome('collapsed');
+            setExpandedInput(false);
+        }
+        setMobileComposerMotion('idle');
+    });
+
+    const armMobileComposerMotionFallback = useEvent(() => {
+        clearMobileComposerMotionTimer();
+        mobileComposerMotionTimerRef.current = window.setTimeout(finishMobileComposerMotion, 240);
+    });
+
+    const collapseMobileComposer = useEvent(() => {
+        if (!mobileComposerExpandedRef.current) return;
+        mobileComposerExpandedRef.current = false;
+        mobileExpandIntentRef.current = null;
+        if (mobileComposerChromeFrameRef.current !== null) {
+            window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
+            mobileComposerChromeFrameRef.current = null;
+        }
+        setMobileComposerChrome('none');
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            setMobileComposerExpanded(false);
+            setMobileComposerChrome('collapsed');
+            setExpandedInput(false);
+            setMobileComposerMotion('idle');
+            return;
+        }
+        setMobileComposerMotion('collapsing');
+        armMobileComposerMotionFallback();
+    });
+
+    React.useEffect(() => () => clearMobileComposerMotionTimer(), [clearMobileComposerMotionTimer]);
 
     const scheduleMobileComposerChrome = React.useCallback((phase: 'collapsed' | 'full') => {
         if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
@@ -6144,15 +6245,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         };
     }, []);
 
-    const expandMobileComposer = React.useCallback((intent: 'focus') => {
+    const expandMobileComposer = useEvent((intent: 'focus') => {
         // Action buttons set this window — do not steal focus / open the IME.
         if (Date.now() < suppressComposerFocusUntilRef.current) {
             return;
         }
         mobileExpandIntentRef.current = intent;
-        // Capacitor: freeze chat geometry chase BEFORE the compact→full height
-        // change. Without this the auto-follow ResizeObserver re-pins the
-        // message list on the first jump, before keyboardWillShow marks the IME.
+        // Capacitor freezes chat geometry chase before the silhouette starts
+        // moving, ahead of keyboardWillShow marking the IME.
         if (isCapacitorApp() && typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
         }
@@ -6166,10 +6266,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // Update the ref immediately so a same-stack onFocus (after focus())
         // does not re-enter expand before the effect mirrors state.
         if (!mobileComposerExpandedRef.current) {
+            clearMobileComposerMotionTimer();
             mobileComposerExpandedRef.current = true;
             const platform = typeof window !== 'undefined'
                 ? (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.()
                 : undefined;
+            const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
             // Native shells choreograph the IME + composer together; commit the
             // expanded silhouette in this frame (iOS UIKit + Android CSS FLIP).
             // Deferring with startTransition leaves the pill behind the keyboard.
@@ -6177,13 +6279,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 flushSync(() => {
                     setMobileComposerExpanded(true);
                     setMobileComposerChrome('none');
+                    setMobileComposerMotion(reduceMotion ? 'idle' : 'expanding');
                 });
                 scheduleMobileComposerChrome('full');
+                if (!reduceMotion) armMobileComposerMotionFallback();
             } else {
                 React.startTransition(() => {
                     setMobileComposerExpanded(true);
                     setMobileComposerChrome('full');
+                    setMobileComposerMotion(reduceMotion ? 'idle' : 'expanding');
                 });
+                if (!reduceMotion) armMobileComposerMotionFallback();
             }
         }
         // Capacitor: our keyboard choreography positions everything, so the
@@ -6192,7 +6298,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // field above the keyboard) is the only thing that moves the composer.
         // Same DOM node as the collapsed pill — focus continues rather than remounts.
         textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
-    }, [scheduleMobileComposerChrome]);
+    });
 
     const openMobileAttachSheet = React.useCallback(() => {
         // Same order as handleOpenMobilePanel: mark the sheet open BEFORE the
@@ -6218,6 +6324,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // Dictation engine went live (possibly started from the pill):
             // switch straight into the voice variant of the full composer.
             if (!mobileComposerExpandedRef.current) {
+                mobileComposerExpandedRef.current = true;
                 setMobileComposerExpanded(true);
                 setMobileComposerChrome('full');
             }
@@ -6230,11 +6337,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         window.setTimeout(() => {
             if (!mobileComposerExpandedRef.current) return;
             if (document.activeElement === textareaRef.current) return;
-            setMobileComposerExpanded(false);
-            setMobileComposerChrome('collapsed');
-            setExpandedInput(false);
+            collapseMobileComposer();
         }, 30);
-    }, [setExpandedInput]);
+    }, [collapseMobileComposer]);
 
     // Watch the shared overlay portal root: active panels (sessions sheet,
     // model/agent panels, draft pickers, ...) count as busy. Retained hidden
@@ -6440,14 +6545,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // programmatic refocus (overlay-close keyboard restore). Do not
             // shrink chrome while the field is still focused.
             if (document.activeElement === textareaRef.current) return;
-            mobileExpandIntentRef.current = null;
-            mobileComposerExpandedRef.current = false;
-            setMobileComposerExpanded(false);
-            setMobileComposerChrome('collapsed');
-            setExpandedInput(false);
+            collapseMobileComposer();
         }, 250);
         return () => window.clearTimeout(timer);
-    }, [isMobile, mobileComposerExpanded, mobileComposerBusy, setExpandedInput]);
+    }, [isMobile, mobileComposerExpanded, mobileComposerBusy, collapseMobileComposer]);
 
     const mobileComposerHoldOpenRef = React.useRef(false);
     mobileComposerHoldOpenRef.current = mobileComposerHoldOpen;
@@ -6480,10 +6581,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return () => root.classList.remove('oc-browser-keyboard-open');
     }, [isMobile, mobileTextareaFocused]);
 
-    // Capacitor: collapse chrome in the SAME frame the keyboard starts hiding.
-    // hide dispatches oc:keyboard-intent BEFORE restoring shell layout; flushSync
-    // commits the compact height first so keyboard land + composer shrink measure
-    // as ONE motion. Same textarea stays mounted — only layout classes change.
+    // Capacitor starts the transform-only conceal in the SAME frame the keyboard
+    // starts hiding. Keyboard lift stays on the form while this motion stays on
+    // the nested surface, so both compositor transforms can run together.
     // The delayed effect above stays as the fallback for non-Capacitor and for
     // overlays closing without a keyboard transition.
     React.useEffect(() => {
@@ -6496,18 +6596,33 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // remain true for this frame. Only durable surfaces such as
             // dictation or an overlay keep the expanded composer alive.
             if (mobileComposerHoldOpenRef.current) return;
-            mobileExpandIntentRef.current = null;
-            mobileComposerExpandedRef.current = false;
             flushSync(() => {
-                setMobileComposerExpanded(false);
-                setMobileComposerChrome('none');
-                setExpandedInput(false);
+                collapseMobileComposer();
             });
-            scheduleMobileComposerChrome('collapsed');
         };
         window.addEventListener('oc:keyboard-intent', handleIntent);
         return () => window.removeEventListener('oc:keyboard-intent', handleIntent);
-    }, [isMobile, setExpandedInput, scheduleMobileComposerChrome]);
+    }, [isMobile, collapseMobileComposer]);
+
+    React.useLayoutEffect(() => {
+        if (!isMobile || !mobileComposerExpanded || mobileComposerMotion === 'collapsing') return;
+        const surface = dropZoneRef.current;
+        if (!surface) return;
+        const publishHeight = () => {
+            const nextHeight = Math.max(44, Math.ceil(surface.offsetHeight));
+            setMobileComposerStageHeight((height) => height === nextHeight ? height : nextHeight);
+        };
+        publishHeight();
+        const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(publishHeight) : null;
+        observer?.observe(surface);
+        return () => observer?.disconnect();
+    }, [isMobile, mobileComposerExpanded, mobileComposerMotion, textareaSize]);
+
+    const handleMobileComposerAnimationEnd = useEvent((event: React.AnimationEvent<HTMLDivElement>) => {
+        if (event.currentTarget !== event.target) return;
+        if (!event.animationName.startsWith('oc-mobile-composer-motion-')) return;
+        finishMobileComposerMotion();
+    });
 
     // Reset the picker search whenever a draft picker sheet opens/closes.
     React.useEffect(() => {
@@ -7376,6 +7491,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     )}
                 >
                 {queuedMessageSurface}
+                <div
+                    className={cn(
+                        isMobile ? 'oc-mobile-composer-motion-viewport' : 'contents',
+                        isMobile && mobileComposerMotion !== 'idle' && 'oc-mobile-composer-motion-active',
+                        isMobile && !mobileComposerExpanded && mobileComposerMotion === 'idle' && 'oc-mobile-composer-motion-collapsed',
+                    )}
+                    style={isMobile ? ({
+                        '--oc-mobile-composer-stage-height': `${mobileComposerStageHeight}px`,
+                    } as React.CSSProperties) : undefined}
+                >
                 <ChatPromptComposer
                     value={message}
                     attachments={[]}
@@ -7400,11 +7525,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobile && !mobileComposerExpanded && 'oc-mobile-composer-collapsed',
                         // Solid floating card; ambient frosted glass lives on the host.
                         isMobile && 'oc-mobile-composer-surface',
+                        isMobile && mobileComposerMotion === 'expanding' && 'oc-mobile-composer-motion-expanding',
+                        isMobile && mobileComposerMotion === 'collapsing' && 'oc-mobile-composer-motion-collapsing',
+                        isMobile && mobileComposerMotion !== 'idle' && 'oc-mobile-composer-effects-reduced',
                     )}
                     style={{
-                        // Radius is transitioned in CSS (~200ms); keep both states
-                        // as inline values so the browser can interpolate them.
-                        borderRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
+                        // Same radius collapsed and expanded. Collapsed height
+                        // (2.75rem) is < 2×1.5rem, so CSS clamps this into a
+                        // pill without swapping 9999px — that interpolation
+                        // leaves dirty corners on iOS WKWebView.
+                        borderRadius: chatInputRadius,
                         // Solid elevated surface for the floating input card.
                         backgroundColor: currentTheme?.colors?.surface?.subtle,
                     }}
@@ -7415,6 +7545,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onDragEnd={handleDragEnd}
+                    onAnimationEnd={handleMobileComposerAnimationEnd}
                     autoResize={false}
                     disableInputWhilePending={false}
                     contentClassName={cn(
@@ -7450,8 +7581,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         maxHeight: isMobile && !mobileComposerExpanded
                             ? '100%'
                             : (!isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : undefined),
-                        borderTopLeftRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
-                        borderTopRightRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
+                        borderTopLeftRadius: chatInputRadius,
+                        borderTopRightRadius: chatInputRadius,
                     }}
                     footerClassName={cn(
                         // Keep footer chrome (and the floating follow-up send control)
@@ -7463,8 +7594,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobile ? 'flex items-center gap-x-1.5' : cn('flex items-center justify-between', footerGapClass),
                     )}
                     footerStyle={{
-                        borderBottomLeftRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
-                        borderBottomRightRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
+                        borderBottomLeftRadius: chatInputRadius,
+                        borderBottomRightRadius: chatInputRadius,
                     }}
                     footerContent={composerFooterContent}
                     placeholder={currentSessionId || newSessionDraftOpen
@@ -7769,6 +7900,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         renderTrigger={false}
                     />
                 ) : null}
+                </div>
                 </div>
                 {/* Hidden host for the model/agent/variant bottom sheets. Kept
                     outside expanded chrome so an open panel survives (and stays

@@ -27,8 +27,6 @@ const createRuntime = (server, shutdownTimeoutMs = 1000, overrides = {}) => crea
   getServer: () => server,
   getUiAuthController: () => null,
   setUiAuthController: vi.fn(),
-  getActiveTunnelController: () => null,
-  setActiveTunnelController: vi.fn(),
   tunnelAuthController: { clearActiveTunnel: vi.fn() },
   ...overrides,
 });

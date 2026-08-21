@@ -78,15 +78,6 @@ openchamber connect-url --port 3000 --server http://your-host:3000 --qr
 
 `openchamber connect-url --help` を実行すると、`--name`、`--lan`、`--server`、`--api-only`、`--ui-password`、`--qr` など、すべてのリンクオプションを確認できます。
 
-その実行中サービスに対して、トンネルは独立して管理できます。
-
-```bash
-openchamber tunnel start --port 3000
-openchamber tunnel stop --port 3000
-```
-
-トンネルを停止しても、サービスやアプリは再起動されません。
-
 ## "OpenCode is restarting"
 
 サーバーの起動中または再起動中、OpenChamber は "OpenCode is restarting" 状態を表示し、準備が整うまでリクエストを一時停止します。これは起動直後や再起動直後には正常です。いつまでも消えない場合は、[OpenCode 接続](/troubleshooting/opencode-connection/) を参照してください。

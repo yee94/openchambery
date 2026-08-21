@@ -294,7 +294,7 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('shares one mobile detail navigation across settings, task editing, and chat', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [navigationContent, rootHeaderContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles, mobileSurfaceShellContent] = await Promise.all([
+    const [navigationContent, rootHeaderContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
       readFile(join(directory, '../../mobile/MobileDetailNavigation.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobileTabPageHeader.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/projects/MobileProjectsHome.tsx'), 'utf8'),
@@ -305,7 +305,6 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, '../../mobile/chat/MobileChatHeader.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/chat/MobileChatScreen.tsx'), 'utf8'),
       readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
-      readFile(join(directory, '../../apps/MobileSurfaceShell.tsx'), 'utf8'),
     ]);
     expect(navigationContent).toContain('oc-mobile-detail-navigation-content');
     expect(navigationContent).toContain('items-center gap-1 px-4');
@@ -392,7 +391,6 @@ describe('ScheduledTasksDialog queries', () => {
     );
     expect(mobileDetailCardStyles).toContain('background: transparent');
     expect(mobileDetailCardStyles).toContain('backdrop-filter: none');
-    expect(mobileSurfaceShellContent).toContain('oc-mobile-surface-shell oc-mobile-floating-shell');
     expect(settingsTabContent).not.toContain('onMobileStageChange');
     expect(settingsTabContent).toContain('showHeader={false}');
     expect(chatHeaderContent).toContain('<MobileDetailNavigation');

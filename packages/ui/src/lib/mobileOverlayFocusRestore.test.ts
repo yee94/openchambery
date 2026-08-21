@@ -12,7 +12,6 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const read = (relative: string) => readFileSync(join(__dirname, relative), 'utf-8');
 const mobileWindowMotionSource = read('../components/ui/MobileWindowMotion.tsx');
-const mobileSurfaceShellSource = read('../apps/MobileSurfaceShell.tsx');
 const chatInputSource = read('../components/chat/ChatInput.tsx');
 const mobileSessionStatusBarSource = read('../components/chat/MobileSessionStatusBar.tsx');
 const mobileSessionsSheetSource = read('../apps/MobileSessionsSheet.tsx');
@@ -37,8 +36,6 @@ describe('mobileOverlayFocusRestore', () => {
   test('overlay focus restore sites honor the suppression', () => {
     expect(mobileWindowMotionSource).toContain('isMobileOverlayFocusRestoreSuppressed()');
     expect(mobileWindowMotionSource).toContain('previous?.focus({ preventScroll: true })');
-    expect(mobileSurfaceShellSource).toContain('isMobileOverlayFocusRestoreSuppressed()');
-    expect(mobileSurfaceShellSource).toContain('previousFocusRef.current?.focus?.({ preventScroll: true })');
     expect(chatInputSource.match(/isMobileOverlayFocusRestoreSuppressed\(\)/g)?.length).toBe(2);
   });
 

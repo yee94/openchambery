@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
 
 const deferred = <T>() => {
@@ -77,5 +80,19 @@ describe('runImmediateSessionCommand', () => {
 
         expect(summarizeCalls).toBe(0);
         expect(compactErrors).toBe(1);
+    });
+});
+
+describe('ChatInput compact flight contract', () => {
+    test('/compact runs in the background so queueing stays available during compaction', () => {
+        const source = readFileSync(
+            join(dirname(fileURLToPath(import.meta.url)), 'ChatInput.tsx'),
+            'utf8',
+        );
+        const compactBranch = source.slice(source.indexOf("commandName === 'compact' && currentSessionId"));
+        // The submission flight must be released when handleSubmit returns,
+        // not held through the long-running summarize call: awaiting here
+        // disabled Send/Queue and swallowed Enter for the whole compaction.
+        expect(compactBranch.slice(0, 1200)).toContain('void runImmediateSessionCommand');
     });
 });

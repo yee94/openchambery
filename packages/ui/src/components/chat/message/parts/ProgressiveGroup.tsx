@@ -17,6 +17,7 @@ import { SkillToolGroup } from './SkillToolGroup';
 import { collectConsecutiveContextTools, hasContextExploreSuccessor } from './contextToolGrouping';
 import { collectConsecutiveSkillTools, getSkillNameFromToolPart } from './skillToolGrouping';
 import { LatticeOrb } from './LatticeOrb';
+import { extractTextContent } from '../partUtils';
 import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isStandaloneTool, isStaticTool, isToolPartActive } from './toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -33,7 +34,7 @@ import { useSessionSurface } from '../../SessionSurfaceContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
 import { AgentAvatar } from '../../AgentAvatar';
-import { useDurationTickerNow } from './useDurationTicker';
+import { formatActivityDuration } from './formatActivityDuration';
 import { Button } from '@/components/ui/button';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import {
@@ -139,15 +140,7 @@ const ExternalLinkFavicon: React.FC<{ href: string }> = ({ href }) => {
  */
 const sortPartsByTime = (parts: TurnActivityPart[]): TurnActivityPart[] => parts;
 
-const formatActivityDuration = (durationMs: number): string => {
-    const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
-    if (totalSeconds < 60) {
-        return `${totalSeconds}s`;
-    }
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}m ${seconds}s`;
-};
+
 
 /**
  * Extract a short filename from a tool part's input (for aggregation display).
@@ -545,6 +538,10 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
         const activity = parts[i];
 
         if (activity.kind === 'reasoning') {
+            if (!extractTextContent(activity.part).trim()) {
+                i++;
+                continue;
+            }
             rows.push({ type: 'reasoning', activity });
             i++;
             continue;
@@ -975,7 +972,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     completionDisposition,
     activityPresentationKind = 'default',
     durationMs,
-    startedAt,
     onToggle,
     isMobile,
     expandedTools,
@@ -1002,14 +998,10 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         scrollContainer: HTMLElement | null;
     } | null>(null);
     const isActive = completionDisposition === 'active';
-    const tickerNow = useDurationTickerNow(isActive, 250);
-    const activeDuration = isActive
-        && typeof startedAt === 'number'
-        && Number.isFinite(startedAt)
-        && startedAt > 0
-        ? formatActivityDuration(Math.max(0, tickerNow - startedAt))
-        : null;
-    const completedDuration = !isActive
+    // Live elapsed lives only on WorkingPlaceholder (status row). The foldable
+    // activity header shows duration only after the turn settles — avoids two
+    // counters racing with different tick/round rules while work is in flight.
+    const activityDuration = !isActive
         && (completionDisposition === 'normal' || completionDisposition === 'abnormal')
         && typeof durationMs === 'number'
         && Number.isFinite(durationMs)
@@ -1026,7 +1018,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             : isCompleted
                 ? t(isCompaction ? 'chat.activity.compactionCompleted' : 'chat.activity.completedStatus')
                 : t('chat.activity.title');
-    const activityDuration = isActive ? activeDuration : completedDuration;
     const taskAvatarSeeds = React.useMemo(() => getTaskAvatarSeeds(parts), [parts]);
     const displayedTaskAvatarSeeds = isActive ? taskAvatarSeeds.active : taskAvatarSeeds.all;
     // Cap avatars so the collapsed header stays one line (text is already short).
@@ -1054,7 +1045,15 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             materializationErrorsRef.current.delete(targetMessageId);
             if (materializationFlightsRef.current.has(targetMessageId)) continue;
 
-            const flight = materializeTranscriptMessage(effectiveDirectory, targetSessionId, targetMessageId)
+            // Expand / retry jump the shared exact-fill queue; mount auto-fill
+            // (autoSkipFailed) stays background so deep-history remounts cannot
+            // starve a user-driven disclosure.
+            const flight = materializeTranscriptMessage(
+                effectiveDirectory,
+                targetSessionId,
+                targetMessageId,
+                { priority: autoSkipFailed ? 'background' : 'user' },
+            )
                 .catch(() => {
                     materializationErrorsRef.current.add(targetMessageId);
                 })
@@ -1083,17 +1082,18 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         }
         onToggle();
     });
-    // Completed slim groups hydrate in the background after mount; otherwise a
-    // cold-start tail keeps truncated reasoning/tool bodies until manual expand.
+    // Expanded completed groups hydrate slim reasoning/tool bodies after mount.
+    // Collapsed groups stay on slim summaries — virtualizer jump-to-top remounts
+    // hundreds of folded rows and must not fan out exact session.message fills.
     // Active groups are excluded — their slim parts keep updating via SSE.
     // Failed messages are skipped here (autoSkipFailed) so a permanently slim
     // host record cannot turn every remount into another exact fetch.
     React.useEffect(() => {
-        if (isActive) {
+        if (isActive || !isExpanded) {
             return;
         }
         requestMaterialization(false, true);
-    }, [isActive]);
+    }, [isActive, isExpanded]);
     React.useLayoutEffect(() => {
         const anchor = pendingToggleAnchorRef.current;
         const header = activityHeaderRef.current;
@@ -1335,20 +1335,23 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                     >
                     <span className={cn(
                         // flex-1 absorbs free space so the trailer is pushed to the row end.
-                        'inline-flex min-w-0 flex-1 items-center overflow-hidden',
+                        // overflow-clip (not overflow-hidden): mobile.css rewrites
+                        // .overflow-hidden → overflow-y:auto and shows an Android scrollbar.
+                        'inline-flex min-w-0 flex-1 items-center overflow-clip',
                         isMobile ? 'gap-x-1' : 'gap-x-1.5',
                     )}>
                         <span
                             className={cn(
-                                'inline-flex flex-shrink-0 items-center',
-                                isMobile ? 'h-5' : 'h-6',
+                                'inline-flex flex-none items-center justify-center',
+                                isMobile ? 'h-5 w-4' : 'h-6 w-3.5',
                             )}
                             style={{ color: 'var(--tools-icon)' }}
                         >
                             {isActive && !isCompaction ? (
                                 <LatticeOrb
-                                    size={isMobile ? 16 : 18}
+                                    isMobile={isMobile}
                                     label={activityStatusLabel}
+                                    className="block"
                                 />
                             ) : (
                                 <Icon name={activityIconName} className="h-[14px] w-[14px]" />
@@ -1357,7 +1360,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <span className={cn(
                             'inline-flex flex-shrink-0 items-center',
                             // Mobile matches tool-row body (meta); desktop keeps label emphasis.
-                            isMobile ? 'typography-meta h-4' : 'typography-ui-label h-5 font-semibold',
+                            isMobile ? 'typography-meta h-5' : 'typography-ui-label h-5 font-semibold',
                             isActive
                                 ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
                                 : 'text-foreground/85',

@@ -110,7 +110,7 @@ Quiet output should still be complete enough for scripts and quick human scannin
 
 ### Progress feedback for visible operations
 
-- For operations users wait on (start/stop/restart/tunnel lifecycle), show in-progress spinner in interactive mode.
+- For operations users wait on (start/stop/restart), show in-progress spinner in interactive mode.
 - Resolve each spinner explicitly to done/error so users can see completion state at the same visual location.
 - Keep quiet/json modes non-animated.
 

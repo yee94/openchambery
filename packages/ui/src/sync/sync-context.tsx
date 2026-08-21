@@ -42,6 +42,7 @@ import {
   ensureTranscriptInitial,
   getTranscriptRepository,
   getTranscriptRepositoryBindingRevision,
+  refreshTranscriptFromAuthority,
   requireTranscriptRepository,
   resolveTranscriptRepositoryForStore,
   subscribeTranscriptRepositoryBinding,
@@ -63,7 +64,11 @@ import {
   getRuntimeTransportIdentity,
   subscribeRuntimeEndpointChanged,
 } from "@/lib/runtime-switch"
-import { isTranscriptSseEventType, type TranscriptScope } from "./transcript-repository"
+import {
+  hasTailAssistantMissingSettledCompletion,
+  isTranscriptSseEventType,
+  type TranscriptScope,
+} from "./transcript-repository"
 import { listTranscriptEventBroadcastScopes } from "./transcript-event-broadcast"
 import {
   materializationStatusFromTranscriptData,
@@ -379,6 +384,34 @@ const pendingSessionMaterializations = new Map<string, PendingSessionMaterializa
 
 const materializationKey = (directory: string, sessionID: string) => `${directory}:${sessionID}`
 
+function liveTailMissingSettledCompletion(directory: string, sessionID: string): boolean {
+  try {
+    const repository = getTranscriptRepository()
+    if (!repository) return false
+    return hasTailAssistantMissingSettledCompletion(
+      repository.getTranscript(transcriptScope(directory, sessionID)),
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Repair a lost settle tick: the tail assistant carries a server-stamped
+ * terminal finish but no `time.completed`, so turn duration and assistant TPS
+ * cannot render. The reconcile-page merge upserts the authoritative row and is
+ * never stale-dropped, unlike a materialize page racing live SSE.
+ */
+async function repairMissingSettleCompletion(directory: string, sessionID: string): Promise<void> {
+  try {
+    if (!getTranscriptRepository()) return
+    await refreshTranscriptFromAuthority(directory, sessionID)
+  } catch {
+    // Authority refresh keeps the prior transcript on failure; the next
+    // materialization enqueue re-checks the gap.
+  }
+}
+
 function enqueueSessionMaterialization(
   directory: string,
   sessionID: string,
@@ -388,7 +421,23 @@ function enqueueSessionMaterialization(
   if (!directory || directory === "global" || !sessionID) return
   const k = materializationKey(directory, sessionID)
   const existing = pendingSessionMaterializations.get(k)
-  if (existing && Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS) return
+  if (existing && Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS) {
+    // The cooldown suppresses recovery churn, but it must not suppress the
+    // settle repair: a tail assistant with a server-stamped terminal finish
+    // and no time.completed means the settle `message.updated` tick was lost
+    // on the live channel, and once the session is idle this enqueue is the
+    // last authority-refresh trigger (the transcript stall watchdog only
+    // runs while the session reports work). The check is deferred one
+    // microtask because transcript SSE batches commit at flush end — a
+    // settle tick lost earlier in the current event frame is only visible
+    // in the tail after the frame applies.
+    void Promise.resolve().then(() => {
+      if (liveTailMissingSettledCompletion(directory, sessionID)) {
+        void repairMissingSettleCompletion(directory, sessionID)
+      }
+    })
+    return
+  }
 
   pendingSessionMaterializations.set(k, { sessionID, directory, enqueuedAt: Date.now(), request })
 
@@ -490,6 +539,14 @@ export async function materializeSessionFromServer(
       liveRevision: readLiveRevision(),
       skipPartTypes: RECONNECT_SKIP_PARTS,
     })
+    // A settle tick lost around this fetch leaves the tail assistant with a
+    // terminal finish but no time.completed — the page may have been
+    // stale-dropped (live SSE moved during the fetch) or captured before the
+    // server persisted completion. Reconcile once from authority so turn
+    // duration and assistant TPS render without a reload.
+    if (liveTailMissingSettledCompletion(directory, sessionID)) {
+      await repairMissingSettleCompletion(directory, sessionID)
+    }
     if (!result.applied) return "skipped"
     seedSessionTodosFromHydratedTranscript({
       directory,
@@ -1752,6 +1809,109 @@ function resolveTranscriptSseSessionID(payload: Event): string | undefined {
   return undefined
 }
 
+type TranscriptSseBatchScopeGroup = {
+  scope: TranscriptScope
+  events: Event[]
+  transcriptSessionID: string
+  eventMessageIDs: Array<string | undefined>
+  childStores: ChildStoreManager
+  routingIndex: EventRoutingIndex
+}
+
+type TranscriptSseBatch = {
+  byScope: Map<string, TranscriptSseBatchScopeGroup>
+  routing: Array<{
+    routingIndex: EventRoutingIndex
+    resolvedDirectory: string
+    payload: Event
+  }>
+  debug: Array<{
+    payloadType: string
+    transcriptSessionID: string
+    eventMessageID: string | undefined
+    changed: boolean
+  }>
+}
+
+let transcriptSseBatch: TranscriptSseBatch | null = null
+let transcriptSseBatchDepth = 0
+
+function transcriptSseBatchScopeKey(scope: TranscriptScope): string {
+  return `${scope.directory}\0${scope.sessionID}\0${scope.transport ?? ""}\0${scope.generation ?? ""}`
+}
+
+function beginTranscriptSseBatch(): void {
+  if (transcriptSseBatchDepth === 0) {
+    transcriptSseBatch = {
+      byScope: new Map(),
+      routing: [],
+      debug: [],
+    }
+  }
+  transcriptSseBatchDepth += 1
+}
+
+function flushTranscriptSseBatch(): void {
+  if (transcriptSseBatchDepth === 0) return
+  transcriptSseBatchDepth -= 1
+  if (transcriptSseBatchDepth > 0) return
+
+  const batch = transcriptSseBatch
+  transcriptSseBatch = null
+  if (!batch) return
+
+  try {
+    for (const group of batch.byScope.values()) {
+      const repoResult = applyTranscriptCommand(
+        group.scope,
+        { type: "sse-event-batch", events: group.events },
+      ) ?? { applied: false, changed: false }
+
+      if (repoResult.changed) {
+        for (const entry of batch.debug) {
+          if (entry.transcriptSessionID === group.transcriptSessionID) {
+            entry.changed = true
+          }
+        }
+      }
+
+      const materializationResult = repoResult.materialization
+      if (materializationResult) {
+        const fallbackMessageID = group.eventMessageIDs.find((id) => typeof id === "string")
+        const materializationSessionID = resolveMaterializationSessionID(
+          materializationResult.sessionID ?? group.transcriptSessionID,
+          materializationResult.messageID ?? fallbackMessageID,
+          group.scope.directory,
+          group.routingIndex,
+        )
+        if (materializationSessionID) {
+          enqueueSessionMaterialization(group.scope.directory, materializationSessionID, group.childStores, {
+            reason: materializationResult.reason,
+            messageID: materializationResult.messageID,
+            partID: materializationResult.partID,
+          })
+        }
+      }
+    }
+
+    for (const entry of batch.debug) {
+      if (entry.changed) {
+        syncDebug.dispatch.eventApplied(entry.payloadType, entry.transcriptSessionID, entry.eventMessageID)
+      } else {
+        syncDebug.dispatch.eventNoChange(entry.payloadType, entry.transcriptSessionID, entry.eventMessageID)
+      }
+    }
+
+    for (const item of batch.routing) {
+      updateRoutingIndexFromEvent(item.routingIndex, item.resolvedDirectory, item.payload)
+    }
+  } finally {
+    // Ensure a failed flush cannot leave a stale batch for the next frame.
+    transcriptSseBatch = null
+    transcriptSseBatchDepth = 0
+  }
+}
+
 function commitTranscriptSseEvent(
   payload: Event,
   transcriptSessionID: string,
@@ -1767,6 +1927,36 @@ function commitTranscriptSseEvent(
     generation: getRuntimeGeneration(),
     listCanonicalScopes: listCanonicalScopesForTranscriptEvent,
   })
+
+  // When a flush-frame batch is active, accumulate per scope and apply once on flush.
+  if (transcriptSseBatch) {
+    for (const scope of scopes) {
+      const key = transcriptSseBatchScopeKey(scope)
+      let group = transcriptSseBatch.byScope.get(key)
+      if (!group) {
+        group = {
+          scope,
+          events: [],
+          transcriptSessionID,
+          eventMessageIDs: [],
+          childStores,
+          routingIndex,
+        }
+        transcriptSseBatch.byScope.set(key, group)
+      }
+      group.events.push(payload)
+      group.eventMessageIDs.push(eventMessageID)
+    }
+    transcriptSseBatch.debug.push({
+      payloadType: payload.type,
+      transcriptSessionID,
+      eventMessageID,
+      changed: false,
+    })
+    transcriptSseBatch.routing.push({ routingIndex, resolvedDirectory, payload })
+    return
+  }
+
   let anyChanged = false
   for (const scope of scopes) {
     const repoResult = applyTranscriptCommand(
@@ -2431,6 +2621,12 @@ export function SyncProvider(props: {
       transport: messageStreamTransport,
       routeDirectory: (directory, payload) => {
         return resolveDirectoryFromRoutingIndex(routingIndex, directory, payload, childStores)
+      },
+      onFlushStart: () => {
+        beginTranscriptSseBatch()
+      },
+      onFlushEnd: () => {
+        flushTranscriptSseBatch()
       },
       onNormalizedEvent: (directory, normalized) => {
         handleNormalizedOpenCodeHints(directory, normalized, childStores)

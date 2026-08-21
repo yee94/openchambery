@@ -134,6 +134,13 @@ export interface GitStatus {
   upstreamComparison?: GitRemoteComparison | null;
   files: GitStatusFile[];
   isClean: boolean;
+  /**
+   * Server marker: the change set is oversized (server-owned threshold) and
+   * diffStats were omitted. Clients derive deferred load-on-demand rendering
+   * from this flag instead of their own threshold, so the server can tune the
+   * limit without client changes.
+   */
+  oversized?: boolean;
   diffStats?: Record<string, { insertions: number; deletions: number }>;
   /** Present when a merge is in progress with conflicts */
   mergeInProgress?: GitMergeInProgress | null;
@@ -1194,6 +1201,8 @@ export interface ClientAuthAPI {
     // to this endpoint before returning the candidate. Deployments pinned by
     // OPENCHAMBER_RELAY_URL keep using the pinned value.
     relayUrl?: string;
+    /** Bind mobile ssh-host-token mint to this desktop SSH instance after redeem. */
+    sshHostId?: string;
   }): Promise<PairingSessionCreateResult>;
   purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;

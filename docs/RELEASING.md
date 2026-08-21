@@ -51,7 +51,9 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。iOS 流程会上传 IPA 到 TestFlight：稳定版关联外测群组并提交 Beta App Review；prerelease 只进内测，不走已有外测组。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。iOS 流程会上传 IPA 到 TestFlight：稳定版关联外测群组并提交 Beta App Review；prerelease 只进内测，不走已有外测组。
+
+npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@openchambery/web`。
 
 ### Beta / prerelease
 
@@ -152,6 +154,7 @@ gh release view "v$VERSION" --repo yee94/openchamber --json isDraft,isPrerelease
 - `isDraft` 为 `false`。
 - assets 包含 `.apk` 和 `.aab`。
 - 最新稳定 Release 的 APK asset 具有 `.apk` 后缀。
+- npm 上存在 `@openchambery/web@$VERSION` 与 `@openchambery/relay-server@$VERSION`（稳定版在 `latest`，prerelease 在 `beta`）。
 
 Android 客户端通过 `https://api.github.com/repos/yee94/openchamber/releases/latest` 获取最新稳定 Release，并使用第一个 `.apk` asset 的 `browser_download_url` 作为下载地址。
 

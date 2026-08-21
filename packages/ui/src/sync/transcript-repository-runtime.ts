@@ -30,6 +30,10 @@ import {
   beginTranscriptAuthorityRefresh,
   endTranscriptAuthorityRefresh,
 } from "./transcript-authority-refresh-flight"
+import {
+  enqueueExactFill,
+  type ExactFillPriority,
+} from "./transcript-exact-fill-scheduler"
 
 type TranscriptRepositoryBinding = {
   kind: "query" | "store-test"
@@ -290,17 +294,28 @@ export async function refreshTranscriptFromAuthority(
  * Fetch the exact Host snapshot for one message and merge it into Query.
  * UI Activity lanes call this; the repository no-ops when the message has
  * no slim tool / reasoning / file / text parts.
+ *
+ * All callers share the process-wide exact-fill scheduler (concurrency ≤4).
+ * Pass `priority: "user"` for expand / retry so they jump ahead of background
+ * cold-start and pagination fills.
  */
 export async function materializeTranscriptMessage(
   directory: string,
   sessionID: string,
   messageID: string,
+  options?: { readonly priority?: ExactFillPriority },
 ): Promise<void> {
   const repository = requireTranscriptRepository()
   if (typeof repository.materializeMessage !== "function") {
     throw new Error("TranscriptRepository does not support materializeMessage")
   }
-  await repository.materializeMessage(transcriptScope(directory, sessionID), messageID)
+  const scope = transcriptScope(directory, sessionID)
+  const key = `${directory}\n${sessionID}\n${messageID}`
+  await enqueueExactFill(
+    key,
+    () => repository.materializeMessage!(scope, messageID),
+    { priority: options?.priority ?? "background" },
+  )
 }
 
 /**

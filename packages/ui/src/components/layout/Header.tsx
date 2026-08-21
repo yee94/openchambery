@@ -1769,6 +1769,18 @@ export const Header: React.FC<HeaderProps> = ({
         return;
       }
 
+      const openUsageCombo = getEffectiveShortcutCombo('open_usage', shortcutOverrides);
+      if (eventMatchesShortcut(e, openUsageCombo)) {
+        e.preventDefault();
+        setDesktopServicesTab('usage');
+        setIsDesktopServicesOpen(true);
+        void refreshCurrentInstanceLabel();
+        if (quotaResults.length === 0) {
+          void fetchAllQuotas();
+        }
+        return;
+      }
+
       const toggleContextPlanCombo = getEffectiveShortcutCombo('toggle_context_plan', shortcutOverrides);
       if (eventMatchesShortcut(e, toggleContextPlanCombo)) {
         e.preventDefault();
@@ -1916,6 +1928,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Icon name="timer" className="h-3.5 w-3.5" />
             <span className="flex-1">{t('header.actions.sessionMenu.viewUsage')}</span>
+            <span className="typography-micro text-muted-foreground">{shortcutLabel('open_usage')}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

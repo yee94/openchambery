@@ -25,6 +25,7 @@ const LOGO_ALIAS = new Map<string, string>([
     ['evroc-ai', 'evroc'],
     ['evrocai', 'evroc'],
     ['ollama-cloud', 'ollama'],
+    ['opencode-go', 'opencode'],
     ['wafer-ai', 'wafer.ai'],
     ['wafer', 'wafer.ai'],
 ]);

@@ -145,6 +145,8 @@ const stagedPinnedBinary = path.join(repoRoot, 'packages', 'electron', 'resource
 const apiEnv = {
   OPENCHAMBER_PORT: backendPort,
   OPENCHAMBER_SESSION_INDEX_DB_PATH: hmrSessionIndexDbPath,
+  // Never inherit a leftover desktop runtime from the parent shell.
+  OPENCHAMBER_RUNTIME: 'web',
 };
 if (
   !process.env.OPENCODE_BINARY

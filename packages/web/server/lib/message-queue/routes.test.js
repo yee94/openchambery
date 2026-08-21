@@ -20,6 +20,7 @@ describe('message queue routes', () => {
   });
   it('maps stable errors to code-only responses', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: { admit: () => { const error = new Error('private detail'); error.code = 'attachment_total_limit'; throw error; } } }); const res = response(); route('POST', `${prefix}/items`)({ body: {} }, res); expect(res).toMatchObject({ statusCode: 413, body: { code: 'attachment_total_limit' } }); });
   it('maps admission payload limits to 413', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: { admit: () => { const error = new Error('private detail'); error.code = 'admission_payload_limit'; throw error; } } }); const res = response(); route('POST', `${prefix}/items`)({ body: {} }, res); expect(res).toMatchObject({ statusCode: 413, body: { code: 'admission_payload_limit' } }); });
+  it('maps scope capacity exhaustion to 409 scope_limit', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: { admit: () => { const error = new Error('private detail'); error.code = 'scope_limit'; throw error; } } }); const res = response(); route('POST', `${prefix}/items`)({ body: {} }, res); expect(res).toMatchObject({ statusCode: 409, body: { code: 'scope_limit' } }); });
   it('wakes the runtime after a successful admit', () => {
     const { app, route } = registry();
     const admit = vi.fn(() => ({ revision: 1, queueItemID: 'item' }));

@@ -29,6 +29,12 @@ describe('MobileProjectsHomeContainer session actions', () => {
     expect(containerSource).toContain("t('sessions.sidebar.session.menu.refreshTranscriptFailed')");
     expect(containerSource).not.toContain('ensureTranscriptInitial');
   });
+
+  test('project sheet wires edit through MobileProjectEditSurface', () => {
+    expect(containerSource).toContain('onEditProject: () => setEditingProjectId(project.id)');
+    expect(containerSource).toContain('<MobileProjectEditSurface');
+    expect(containerSource).not.toContain('onEditProject: undefined');
+  });
 });
 
 describe('MobileProjectsHomeContainer git probe', () => {

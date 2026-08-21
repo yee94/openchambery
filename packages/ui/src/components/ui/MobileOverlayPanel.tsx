@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
+import { markOverlayScrimPress, shouldCommitOverlayScrimDismiss } from './matchingPress';
 import { ScrollableOverlay } from './ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
 
@@ -148,7 +149,11 @@ export const MobileOverlayPanel: React.FC<MobileOverlayPanelProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      onClick={onClose}
+      onPointerDown={markOverlayScrimPress}
+      onClick={(event) => {
+        if (!shouldCommitOverlayScrimDismiss(event)) return;
+        onClose();
+      }}
     >
         <div
           className={cn(

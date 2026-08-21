@@ -95,6 +95,7 @@ import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 import {
   normalizeSessionProjectionMessage,
 } from "./session-projection-api"
+import { enqueueExactFill } from "./transcript-exact-fill-scheduler"
 
 // ---------------------------------------------------------------------------
 // Deps
@@ -349,7 +350,8 @@ export function createQueryTranscriptRepository(
   const messageFlights = new Map<string, Promise<TranscriptData>>()
   /**
    * Durable-seeded message IDs still awaiting an exact `session.message`
-   * revalidation. Keyed by scopeKey; values are unverified message IDs.
+   * fill (slim tool/reasoning/file, or full-but-open snapshot). Keyed by
+   * scopeKey. Settled full rows never enter this set.
    */
   const durableSeededExact = new Map<string, Set<string>>()
   /**
@@ -725,17 +727,20 @@ export function createQueryTranscriptRepository(
     ) {
       return
     }
-    if (command.type === "sse-event") {
-      const action = transcriptDurableSseAction(command.event)
-      if (action.action === "remove") {
-        void durableQueue.removeMessage(durableScope, action.messageID)
-        return
-      }
-      if (action.action === "skip") return
+    if (command.type === "sse-event" || command.type === "sse-event-batch") {
+      const events = command.type === "sse-event" ? [command.event] : command.events
       const transcript = toTranscriptData(readData(scope), identity.sessionID)
-      const info = transcript.messagesByID[action.messageID]
-      if (!info) return
-      persistSettledRecord(identity, info, transcript.partsByMessageID[action.messageID])
+      for (const event of events) {
+        const action = transcriptDurableSseAction(event)
+        if (action.action === "remove") {
+          void durableQueue.removeMessage(durableScope, action.messageID)
+          continue
+        }
+        if (action.action === "skip") continue
+        const info = transcript.messagesByID[action.messageID]
+        if (!info) continue
+        persistSettledRecord(identity, info, transcript.partsByMessageID[action.messageID])
+      }
       return
     }
     if (command.type === "http-page" || command.type === "materialize-snapshots") {
@@ -807,6 +812,24 @@ export function createQueryTranscriptRepository(
     return transportPageFromHttpPage(httpPage)
   }
 
+  /**
+   * Background exact fills after an authority tail. Shares the process-wide
+   * scheduler with UI `materializeTranscriptMessage` (concurrency ≤4).
+   */
+  const scheduleBoundedExactFills = (
+    scope: TranscriptScope,
+    messageIDs: readonly string[],
+  ): void => {
+    for (const id of messageIDs) {
+      const key = `${scope.directory}\n${scope.sessionID}\n${id}`
+      void enqueueExactFill(
+        key,
+        () => repository.materializeMessage(scope, id),
+        { priority: "background" },
+      ).catch(() => undefined)
+    }
+  }
+
   const runAuthorityInitial = (
     scope: TranscriptScope,
     captured: ReturnType<typeof resolveScopeIdentity>,
@@ -828,16 +851,28 @@ export function createQueryTranscriptRepository(
           transport: captured.transport,
           generation: captured.generation,
         })
-        // Durable-seeded full tool/reasoning/file parts stay unverified until
-        // one background exact fill. Bounded by this authority tail page.
+        // Durable-seeded tool/reasoning/file parts that still need exact fill
+        // (slim, or full-but-open) queue a bounded background materialize.
+        // Settled full parts are dropped from the pending set as ready.
         const pending = durableSeededExact.get(flightKey)
         if (pending && pending.size > 0) {
+          const toFill: string[] = []
+          let markedReady = 0
           for (const record of page.records) {
             const id = record.info.id
             if (!id || !pending.has(id)) continue
-            if (!messageNeedsExactRevalidation(record.parts ?? [])) continue
-            void repository.materializeMessage(scope, id).catch(() => undefined)
+            const storeParts = repository.getParts(scope, id)
+            const storeInfo = repository.getMessage(scope, id) ?? record.info
+            if (!messageNeedsExactRevalidation(storeParts, storeInfo)) {
+              clearDurableSeededExactMessage(captured, id)
+              messageStates.set(messageStateKey(captured, id), { status: "ready" })
+              markedReady += 1
+              continue
+            }
+            toFill.push(id)
           }
+          if (markedReady > 0) notify(scope)
+          scheduleBoundedExactFills(scope, toFill)
         }
         authorityFlights.delete(flightKey)
         cacheBudget.noteScopeObserved(toCacheScope(scope))
@@ -1245,6 +1280,17 @@ export function createQueryTranscriptRepository(
           if (merge.result.changed) notify(scope)
           return merge.result
         }
+        case "sse-event-batch": {
+          const merge = applySessionTranscriptMerge(
+            client,
+            queryKey,
+            identity.sessionID,
+            { type: "sse-event-batch", events: command.events },
+          )
+          if (merge.result.applied) seededAuthorityPending.delete(scopeKey(identity))
+          if (merge.result.changed) notify(scope)
+          return merge.result
+        }
         case "optimistic-add": {
           deps.setOptimisticShadow?.({
             directory: identity.directory,
@@ -1418,12 +1464,13 @@ export function createQueryTranscriptRepository(
               })
               const pending = new Set<string>()
               for (const record of session.records) {
-                if (!messageNeedsExactRevalidation(record.parts)) continue
+                if (!messageNeedsExactRevalidation(record.parts, record.info)) continue
                 pending.add(record.info.id)
               }
               if (pending.size > 0) durableSeededExact.set(flightKey, pending)
               // Seeded tail still owes one authority fetch: clear only after an
-              // http-page / SSE frame lands (see apply below).
+              // http-page / SSE frame lands (see apply below). Independent of
+              // whether any message still needs exact revalidation.
               seededAuthorityPending.add(flightKey)
             } finally {
               suppressDurableWrite -= 1

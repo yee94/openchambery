@@ -16,6 +16,13 @@ export function isComposerKeyboardTarget(node: unknown): boolean {
   return Boolean(element.closest(COMPOSER_KEYBOARD_LIFT_SELECTOR));
 }
 
+export function shouldReserveChatScrollInset(node: unknown): boolean {
+  if (!node || typeof node !== 'object' || isComposerKeyboardTarget(node)) return false;
+  const element = node as { tagName?: unknown; isContentEditable?: unknown };
+  const tagName = typeof element.tagName === 'string' ? element.tagName.toUpperCase() : '';
+  return tagName === 'TEXTAREA' || tagName === 'INPUT' || element.isContentEditable === true;
+}
+
 /** True when a focus move should keep the composer lift armed. */
 export function isComposerKeyboardFocusTransfer(
   relatedTarget: EventTarget | null | undefined,
@@ -31,7 +38,8 @@ export function isComposerKeyboardFocusTransfer(
 export function getAndroidComposerImeStateAction(
   composerLiftArmed: boolean,
   activeElement: EventTarget | null | undefined,
-): 'ignore' | 'cache' | 'open' {
+): 'ignore' | 'cache' | 'open' | 'field' {
   if (composerLiftArmed) return 'cache';
-  return isComposerKeyboardTarget(activeElement ?? null) ? 'open' : 'ignore';
+  if (isComposerKeyboardTarget(activeElement ?? null)) return 'open';
+  return shouldReserveChatScrollInset(activeElement ?? null) ? 'field' : 'ignore';
 }

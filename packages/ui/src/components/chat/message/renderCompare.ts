@@ -6,6 +6,19 @@ type MessageRecord = {
   parts: Part[];
 };
 
+/** Usage counters that message-derived display (assistant TPS, cost) reads. */
+const areMessageTokensEqual = (left: unknown, right: unknown): boolean => {
+  if (left === right) return true
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false
+  const l = left as { input?: unknown; output?: unknown; reasoning?: unknown; cache?: { read?: unknown; write?: unknown } };
+  const r = right as { input?: unknown; output?: unknown; reasoning?: unknown; cache?: { read?: unknown; write?: unknown } };
+  return l.input === r.input
+    && l.output === r.output
+    && l.reasoning === r.reasoning
+    && l.cache?.read === r.cache?.read
+    && l.cache?.write === r.cache?.write;
+};
+
 const readPartId = (part: Part | undefined): string | null => {
   if (!part) return null;
   const candidate = (part as { id?: unknown }).id;
@@ -134,7 +147,10 @@ const areRenderRelevantMessageInfoEqual = (left: Message, right: Message): boole
     && (left as { clientRole?: unknown }).clientRole === (right as { clientRole?: unknown }).clientRole
     && (left as { userMessageMarker?: unknown }).userMessageMarker === (right as { userMessageMarker?: unknown }).userMessageMarker
     && ((left as { time?: { created?: unknown; completed?: unknown } }).time?.created ?? null) === ((right as { time?: { created?: unknown; completed?: unknown } }).time?.created ?? null)
-    && ((left as { time?: { created?: unknown; completed?: unknown } }).time?.completed ?? null) === ((right as { time?: { created?: unknown; completed?: unknown } }).time?.completed ?? null);
+    && ((left as { time?: { created?: unknown; completed?: unknown } }).time?.completed ?? null) === ((right as { time?: { created?: unknown; completed?: unknown } }).time?.completed ?? null)
+    // Token counts feed the assistant TPS footer; a tokens-only message
+    // update (late settle tick, authority repair) must still re-render.
+    && areMessageTokensEqual((left as { tokens?: unknown }).tokens, (right as { tokens?: unknown }).tokens);
 };
 
 export const areRenderRelevantMessagesEqual = (left: MessageRecord, right: MessageRecord): boolean => {

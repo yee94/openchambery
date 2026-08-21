@@ -92,20 +92,13 @@ export const ContextToolGroup: React.FC<{
                         // Same line box as title/summary; center orb on both desktop and mobile.
                         'inline-flex flex-none items-center justify-center self-center',
                         rowLineClass,
-                        // Active orb matches ProgressiveGroup collapsed header (≤ 18 desktop / 16 mobile).
-                        isActive
-                            ? isMobile
-                                ? 'w-4'
-                                : 'w-[18px]'
-                            : isMobile
-                              ? 'w-4'
-                              : 'w-3.5',
+                        isMobile ? 'w-4' : 'w-3.5',
                     )}
                     style={{ color: 'var(--tools-icon)' }}
                 >
                     {isActive ? (
                         <LatticeOrb
-                            size={isMobile ? 16 : 18}
+                            isMobile={isMobile}
                             label={t('chat.contextGroup.exploring')}
                             className="block"
                         />

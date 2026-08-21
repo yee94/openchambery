@@ -161,7 +161,7 @@ an ordinarily evicted session all leave pagination clean — a later visit reads
 
 `useCurrentSessionEntity(sessionID)` owns current-session entity resolution for the desktop Header and mobile Header. It prioritizes the matching cross-directory live session, then the matching global active session. A resolved entity remains available for two seconds during a brief source gap; clearing or changing the session ID immediately clears that fallback.
 
-Renderable messages and session identity are independent completeness signals. Missing session identity keeps `session.get` eligible even when the repository transcript is already resolved, blocks prompt submission while preserving the mounted primary Composer and its editable draft, and receives a bounded current-view retry. The subagent read-only prompt banner requires the current directory's confirmed session entity to carry `parentID`; loading, missing, cached cross-directory, root, and generic read-only states never display it. Parent navigation derives its target identity from the authoritative child `parentID`; a cached parent entity enriches its title and directory.
+Renderable messages and session identity are independent completeness signals. Missing session identity keeps `session.get` eligible even when the repository transcript is already resolved, blocks prompt submission while preserving the mounted primary Composer and its editable draft, and receives a bounded current-view retry. The subagent read-only prompt banner requires a confirmed child `parentID` before first paint; loading, missing, cached cross-directory, root, and generic read-only states never display it. Once that child identity is confirmed for the current chat view, `resolveSubagentReadOnlyBannerLatch` keeps the parent target and last-known agent/provider/model through temporary live-list gaps (`session.updated` hides subagents from the directory list; recovery may reinsert the row) and resets when the view identity changes. Parent navigation derives its target identity from the authoritative child `parentID`; a cached parent entity enriches its title and directory. Cover the latch in `components/chat/chatPromptAvailability.test.ts`.
 
 `scoped-session-status.ts` owns exact `(directory, sessionID)` status reads and subscriptions. A missing child-store snapshot reads as `unknown`; a successful directory status snapshot with no matching entry reads as `idle`. Its registry subscription rebinds when a requested directory store appears, and status listeners ignore parts plus other session IDs.
 
@@ -305,7 +305,8 @@ It covers:
   and single-message / parts selectors.
 - **Commands**: `http-page` (purpose =
   `initial` / `prepend` / `recovery` / `materialize`), `sse-event` (message /
-  part events only), `optimistic-add` / `optimistic-confirm` /
+  part events only), `sse-event-batch` (ordered multi-event SSE merge with one
+  rebuild per flush frame), `optimistic-add` / `optimistic-confirm` /
   `optimistic-remove`, `materialize-snapshots`, `remove-message`, and `reset`
   (clear or rebuild tail). Production never uses a `commit-reduced` command.
 
@@ -313,8 +314,8 @@ Modules:
 
 | Module | Role |
 |---|---|
-| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
-| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded tool/reasoning/file parts revalidate via exact `session.message` after the authority tail; post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
+| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; `hasTailAssistantMissingSettledCompletion` (lost settle-tick gap detection); optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
+| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded slim or open tool/reasoning/file parts exact-fill via `session.message` after the authority tail (≤4 concurrent FIFO; settled full rows skip); post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
 | `session-authority-revalidate.ts` | Enter-and-sync 30s window keyed by transport+generation+directory+sessionID; stamped only after a successful authority pull |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
 | `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset |
@@ -324,12 +325,12 @@ Modules:
 | `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset`; observe-time 60s TTL reconcile head check for non-stale cached sessions |
 | `transcript-event-broadcast.ts` | Pure helper: list every current-runtime canonical scope that should receive one transcript `sse-event` (multi-directory broadcast; zero hits fall back to resolved directory) |
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
-| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `materializeTranscriptMessage` / `getTranscriptHydrationState` / `getTranscriptMessageMaterializationState` / `refreshTranscriptFromAuthority` / `purgeTranscriptSession` / `listCanonicalTranscriptScopes` |
+| `transcript-exact-fill-scheduler.ts` | Process-wide exact `session.message` fill queue (concurrency ≤4, `user` ahead of `background`, same-key coalesce). Used by `materializeTranscriptMessage` and durable-seed background fills |
+| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `materializeTranscriptMessage` (shared exact-fill scheduler) / `getTranscriptHydrationState` / `getTranscriptMessageMaterializationState` / `refreshTranscriptFromAuthority` / `purgeTranscriptSession` / `listCanonicalTranscriptScopes` |
 | `session-projection-api.ts` | Official v2 `GET /api/session/:id/message` projection page via Host shallow proxy + `runtimeFetch`; normalizes `SessionMessage.Info` to Message+Part; unknown variants stay as placeholders |
-| `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and v2 projection production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
-| `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers plus shared exact v2 `session.message` fetch (`fetchExactSessionMessageRecord`, transport+generation flight key; no nested store commit). Parent recovery is best-effort: a 404/failed exact fetch keeps the Host page. |
+| `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
-| `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` today), redacted snapshots (no bodies/tokens/URLs), bounded recorder, export schema `openchamber.client-diagnostics.v1`; `transcript-diff` before/after identity snapshots |
+| `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` and `task` today), redacted snapshots (no bodies/tokens/URLs/titles), bounded recorder, export schema `openchamber.client-diagnostics.v1`; `transcript-diff` before/after identity snapshots; `task-row` / `task-click` lifecycle facts |
 | `transcript-diagnostics-runtime.ts` | Production selector: About switch (beta default on, stable default off), IndexedDB/memory sink, export/download, `recordTranscriptDiff` |
 | `transcript-diagnostics-diff.test.ts` | Canonical snapshot capture + added/removed/partsChanged/downgraded/optimisticLost contracts |
 | `transcript-diagnostics-indexeddb.ts` | IndexedDB ring buffer for local feat events |
@@ -337,7 +338,7 @@ Modules:
 | `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |
 | `session-transcript-reconcile-api.test.ts` / `session-transcript-reconnect-compensation.test.ts` | Client contract, checkpoint/anchor, first-ready skip, priority set, concurrency, continuation, multi-round, reset, generation cancel |
 
-**Client diagnostics hub:** Query adapter and About export share one local recorder. Each event names a `feat` (`transcript` today). About has a switch: prerelease versions default on, stable versions default off, and the user can override. Export appears only while the switch is on. Events never include message bodies, part text, URLs, tokens, or attachments. Each event records `source` (`network` / `query-cache` / `durable-cache` / `sse`), optional `durationMs`, request status, hydration/paint order (`lastMessageIDs`), command/SSE type, and sanitized `error` / `httpStatus` so GET vs cache vs on-screen order and settled load-failed walls are reconstructable. `purpose: load-failed` is the visible "unable to load this conversation" wall; `purpose: retry` is the user retry. `kind: transcript-diff` is a before/after identity snapshot (`messageIDs`, per-message part/slim/full/optimistic counts, no bodies) recorded around user send/edit/delete/refresh and reconnect compensation / materialize / destructiveReset. Diff fields are `addedMessageIDs`, `removedMessageIDs`, `partsChanged`, `downgraded` (full parts replaced by slim-only), and `optimisticLost` (optimistic row vanished or became non-optimistic without `time.completed > 0`). Capture is read-only `getTranscript` and is swallowed on throw. Export writes `openchamber.client-diagnostics.v1` JSON from the local ring buffer; native `diagnostics.downloadLogs` is optional and never replaces an empty local report with a failed fetch. Capacitor uses `OpenChamberMedia.saveFile` (iOS document picker / Android create-document) so export is a real file save, not clipboard or `navigator.share`. Android writes a cache file first and drops `dataBase64` from the persisted plugin call so DocumentsUI pause/restore cannot `TransactionTooLarge`; the create-document MIME is `application/octet-stream` because `application/json` crashes some OEM pickers on confirm.
+**Client diagnostics hub:** Query adapter, Task rows, and About export share one local recorder. Each event names a `feat` (`transcript` or `task` today). About has a switch: prerelease versions default on, stable versions default off, and the user can override. Export appears only while the switch is on. Events never include message bodies, part text, URLs, tokens, titles, prompts, agent names, or attachments. Each `transcript` event records `source` (`network` / `query-cache` / `durable-cache` / `sse`), optional `durationMs`, request status, hydration/paint order (`lastMessageIDs`), command/SSE type, and sanitized `error` / `httpStatus` so GET vs cache vs on-screen order and settled load-failed walls are reconstructable. `purpose: load-failed` is the visible "unable to load this conversation" wall; `purpose: retry` is the user retry. `kind: transcript-diff` is a before/after identity snapshot (`messageIDs`, per-message part/slim/full/optimistic counts, no bodies) recorded around user send/edit/delete/refresh and reconnect compensation / materialize / destructiveReset. Diff fields are `addedMessageIDs`, `removedMessageIDs`, `partsChanged`, `downgraded` (full parts replaced by slim-only), and `optimisticLost` (optimistic row vanished or became non-optimistic without `time.completed > 0`). Capture is read-only `getTranscript` and is swallowed on throw. `feat: task` records compact Task-row lifecycle facts (`kind: task-row` on identity/status change, `kind: task-click` on row click or queued open): parent/child session IDs, whether a child id is present, tool status, finalized/background/effective-active/suppress-loading/delegating, child/parent `session_status` (`idle`/`busy`/`retry`/`missing`), idle-confirmed, navigate capability, directory presence, and click outcome (`opened` / `queued` / `capability-off` / `missing-directory` / `navigate-rejected`). Recording is gated by the same About switch as transcript events and never writes when the switch is off. Export writes `openchamber.client-diagnostics.v1` JSON from the local ring buffer; native `diagnostics.downloadLogs` is optional and never replaces an empty local report with a failed fetch. Capacitor uses `OpenChamberMedia.saveFile` (iOS document picker / Android create-document) so export is a real file save, not clipboard or `navigator.share`. Android writes a cache file first and drops `dataBase64` from the persisted plugin call so DocumentsUI pause/restore cannot `TransactionTooLarge`; the create-document MIME is `application/octet-stream` because `application/json` crashes some OEM pickers on confirm.
 
 **Ownership boundary (QueryCache sole production authority):**
 
@@ -364,16 +365,22 @@ Modules:
    canonical (HTTP `initial` won the race) skips seed — older rows load
    through `fetchPreviousPage`, not a late seed. If a seed still lands on a
    non-empty canonical, unowned snapshots insert by `time.created` (same as
-   reconcile-page), never append to the tail. Seeded full tool / reasoning /
-   file parts stay unverified until one background exact `session.message`
-   revalidation self-heals the cache.
+   reconcile-page), never append to the tail.    Seeded tool / reasoning / file parts schedule a background exact
+   `session.message` fill only when the store still holds a slim part of
+   those types, or the message snapshot is still open (`isMessageSnapshotOpen`).
+   Settled messages whose matching parts are already full skip revalidation
+   and report materialization `ready` (cold-start must not fan out one exact
+   fetch per historical tool/reasoning row). Remaining fills run with bounded
+   concurrency (≤4 FIFO) after the authority tail lands. Authority-tail pull
+   itself is gated by `seededAuthorityPending`, independent of the exact-fill
+   pending set.
    Slim text parts take the on-demand exact-fill path
    (`messageNeedsExactMaterialization` requires `isSlimPart`, and the set
    includes `text`) so an explicit `materializeMessage` replaces a summary
    with the Host full body. They stay out of the durable-seed revalidation
-   set (`messageNeedsExactRevalidation` remains `{tool, reasoning, file}`)
-   so cold-start text-only messages do not fan out exact `session.message`
-   fetches.
+   set (`messageNeedsExactRevalidation` remains `{tool, reasoning, file}` plus
+   slim/open gates) so cold-start text-only messages do not fan out exact
+   `session.message` fetches.
    Visible slim file images subscribe to that message's live parts so the fill
   upgrades in place. File `url` / `slim` are part of merge equality so an exact
   fill is not dropped as a no-op. A fill that leaves slim parts is `error`, not
@@ -649,7 +656,7 @@ both readers agree on when a frame may shrink.
 - A panel transcript's domain identity is the normalized `(directory, sessionId)` target. Its geometry/view identity is `JSON.stringify([runtimeKey, surfaceId, normalizedDirectory, sessionId])`; `surfaceId` is scoped to normalized `(directoryKey, tabId)`. Keep these identities separate when changing viewport restoration or retained-view behavior.
 - Nested panel navigation is local to the `(directoryKey, tabId)` surface. It accepts same-directory targets, maintains anchor/current/stack metadata, and never writes the primary `setCurrentSession()` selection.
 - ContextPanel retains a bounded panel-local `React.Activity` cache of three transcript views and 32 MiB. The active view is touched, hidden views pause effects, estimate callbacks update their matching view, and closing a tab removes every retained nested view for that tab.
-- Context panel transcript capabilities are strict read-only: nested-session navigation is available within the panel directory; composer, session mutation, and primary-selection ownership remain outside the surface. Once a viewed session is authoritatively confirmed as a child session, its fixed read-only execution footer remains mounted through temporary session-identity gaps and resets with the panel view identity.
+- Context panel transcript capabilities are strict read-only: nested-session navigation is available within the panel directory; composer, session mutation, and primary-selection ownership remain outside the surface. Once a viewed session is authoritatively confirmed as a child session, its fixed read-only execution footer remains mounted through temporary session-identity gaps and resets with the panel view identity. Primary `ChatContainer` (including mobile nested-session pages) uses the same confirmation rule for its read-only execution footer via `resolveSubagentReadOnlyBannerLatch`, so a live-list hide of the child row cannot flash the footer to the metadata-less banner.
 - Cover planner, navigation, geometry key, cache touch/estimate/close, render-mode, and viewed-session behavior in `components/layout/contextPanelSessionSurface.test.ts`.
 
 - HTTP page → transcript draft conversion is owned by the pure reducer
@@ -725,12 +732,12 @@ both readers agree on when a frame may shrink.
   the strategy field names that asymmetry explicitly.
 
   Known limitation: `initial` resolves to `insert-only`, so a first-screen load
-  cannot refresh a message body the server has since changed. Durable-seeded
-  full tool / reasoning / file parts are the exception: after the authority
-  tail applies, those messages schedule one background exact `session.message`
-  revalidation and rewrite the durable cache when the body changed. Whether to
-  widen insert-only itself is a separate decision; the table makes the
-  behavior visible.
+  cannot refresh a message body the server has since changed for settled full
+  rows. Durable-seeded tool / reasoning / file parts still schedule one
+  background exact `session.message` fill when the store holds a slim part or
+  the snapshot is open; settled full parts skip that fan-out. Whether to widen
+  insert-only itself is a separate decision; the table makes the behavior
+  visible.
   Ticket 05: a stale `initial` / `materialize` page no longer drops when
   liveRevision advanced — it backfills missing ids and keeps live rows.
   User-triggered refresh is a reconcile, not a reset: `refreshFromAuthority`
@@ -1072,6 +1079,16 @@ both readers agree on when a frame may shrink.
   rebuilt lagging tail.
   Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
+  A lost settle tick — tail assistant with a server-stamped terminal finish
+  (`stop` / `length`) but no `time.completed`, detected via
+  `hasTailAssistantMissingSettledCompletion` — self-heals through
+  `refreshTranscriptFromAuthority` (reconcile upsert, never stale-dropped):
+  a cooldown-suppressed materialization enqueue re-checks the gap one
+  microtask after the event frame (transcript SSE batches commit at flush
+  end), and a completed materialization re-checks after its page applies.
+  Without this repair, turn duration and assistant TPS stay missing until a
+  cold start because the transcript stall watchdog only runs while the
+  session reports work.
 - The client stall timer starts before SSE response headers arrive. Transport
   activity includes SSE comments and heartbeats, iterator events, and every
   WebSocket message frame. A transport stale watchdog reconnects after this

@@ -9,13 +9,18 @@ import {
   diagnosticsHttpStatus,
   diagnosticsKindForCommand,
   diagnosticsSourceForCommand,
+  diagnosticsSessionStatusType,
   diffTranscriptCanonicalSnapshots,
   isPrereleaseClientVersion,
   lastTranscriptMessageIDs,
   parseTranscriptDiagnosticsPreference,
+  resolveTaskClickOutcome,
   resolveTranscriptDiagnosticsEnabled,
   sanitizeDiagnosticsError,
+  snapshotTaskClickDiagnostics,
+  snapshotTaskRowDiagnostics,
   snapshotTranscriptDiagnostics,
+  taskRowDiagnosticsSignature,
 } from "./transcript-diagnostics"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
@@ -189,5 +194,107 @@ describe("transcript diagnostics", () => {
     )
     expect(diagnosticsExportEventCount('{"eventCount":3}')).toBe(3)
     expect(diagnosticsExportEventCount("not-json")).toBe(0)
+  })
+})
+
+describe("task diagnostics", () => {
+  const facts = {
+    sessionID: "ses_parent",
+    partID: "prt_1",
+    messageID: "msg_1",
+    directory: "/repo",
+    directoryPresent: true,
+    childSessionPresent: false,
+    toolStatus: "running",
+    finalized: false,
+    backgroundRunning: false,
+    effectiveActive: true,
+    suppressLoading: false,
+    delegating: false,
+    childStatus: "missing",
+    parentStatus: "busy",
+    idleConfirmed: false,
+    navigateCapability: true,
+    surfaceKind: "primary",
+    taskStartedAt: 100,
+  }
+
+  test("row snapshots keep identities and omit titles", () => {
+    const event = snapshotTaskRowDiagnostics({ ...facts, now: () => 10 })
+    expect(event.at).toBe(10)
+    expect(event.feat).toBe("task")
+    expect(event.kind).toBe("task-row")
+    expect(event.sessionID).toBe("ses_parent")
+    expect(event.partID).toBe("prt_1")
+    expect(event.childSessionPresent).toBe(false)
+    expect(event.childStatus).toBe("missing")
+    expect(event.parentStatus).toBe("busy")
+    expect(event.effectiveActive).toBe(true)
+    expect(event.directoryPresent).toBe(true)
+    expect(JSON.stringify(event)).not.toContain("Oracle")
+    expect(JSON.stringify(event)).not.toContain("Review")
+  })
+
+  test("click outcomes distinguish queued, capability-off, and opened", () => {
+    expect(resolveTaskClickOutcome({
+      opened: false,
+      navigateCapability: true,
+      childSessionPresent: false,
+      directoryPresent: true,
+    })).toBe("queued")
+    expect(resolveTaskClickOutcome({
+      opened: false,
+      navigateCapability: false,
+      childSessionPresent: true,
+      directoryPresent: true,
+    })).toBe("capability-off")
+    expect(diagnosticsSessionStatusType(undefined)).toBe("missing")
+    expect(diagnosticsSessionStatusType({ type: "idle" })).toBe("idle")
+    const opened = snapshotTaskClickDiagnostics({
+      ...facts,
+      childSessionPresent: true,
+      childSessionID: "ses_child",
+      opened: true,
+      clickSource: "row",
+      now: () => 11,
+    })
+    expect(opened.feat).toBe("task")
+    expect(opened.kind).toBe("task-click")
+    expect(opened.clickSource).toBe("row")
+    expect(opened.clickOutcome).toBe("opened")
+    expect(opened.childSessionID).toBe("ses_child")
+    expect(opened.childSessionPresent).toBe(true)
+  })
+
+  test("row signatures ignore object identity and change when status facts change", () => {
+    expect(taskRowDiagnosticsSignature(facts)).toBe(taskRowDiagnosticsSignature({ ...facts }))
+    expect(taskRowDiagnosticsSignature(facts)).not.toBe(taskRowDiagnosticsSignature({
+      ...facts,
+      childSessionPresent: true,
+      childSessionID: "ses_child",
+      childStatus: "busy",
+    }))
+  })
+
+  test("enabled recorder includes the task feat in the export", async () => {
+    const sink = createMemoryTranscriptDiagnosticsSink({ limit: 4 })
+    const recorder = createTranscriptDiagnosticsRecorder({ sink, isEnabled: () => true })
+    recorder.record({ at: 1, feat: "transcript", kind: "http-page", sessionID: "ses_parent" })
+    recorder.record(snapshotTaskRowDiagnostics({ ...facts, now: () => 2 }))
+    const report = JSON.parse(await recorder.exportReport()) as { feats: string[]; eventCount: number }
+    expect(report.eventCount).toBe(2)
+    expect(report.feats).toEqual(["transcript", "task"])
+  })
+
+  test("disabled recorder stays silent for task events", async () => {
+    const sink = createMemoryTranscriptDiagnosticsSink()
+    const recorder = createTranscriptDiagnosticsRecorder({ sink, isEnabled: () => false })
+    recorder.record(snapshotTaskClickDiagnostics({
+      ...facts,
+      opened: false,
+      clickSource: "row",
+      now: () => 3,
+    }))
+    expect(await sink.read()).toEqual([])
   })
 })

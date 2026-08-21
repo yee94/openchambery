@@ -116,18 +116,32 @@ const setBundledScannerActive = (active: boolean): void => {
   document.documentElement.classList.toggle(BUNDLED_SCANNER_ACTIVE_CLASS, active);
 };
 
+const runCleanupStep = (step: () => void): void => {
+  try {
+    step();
+  } catch {
+    // Cleanup must stay idempotent across cancel races; one step must not block others.
+  }
+};
+
 const mountBundledScannerCancel = (onCancel: () => void): (() => void) => {
   if (typeof document === 'undefined') return () => undefined;
+  const parent = document.body;
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'oc-barcode-scanner-chrome';
   button.setAttribute('aria-label', 'Cancel');
   button.textContent = '×';
   button.addEventListener('click', onCancel);
-  document.body.appendChild(button);
+  parent.appendChild(button);
+  let cleaned = false;
   return () => {
+    if (cleaned) return;
+    cleaned = true;
     button.removeEventListener('click', onCancel);
-    button.remove();
+    // Only detach when still under the expected parent — avoid removeChild races
+    // after React/native teardown already moved or discarded the node.
+    if (button.parentNode === parent) parent.removeChild(button);
   };
 };
 
@@ -187,9 +201,10 @@ const scanWithBundledAndroidScanner = async (plugin: BarcodeScannerPlugin): Prom
 
     return await result;
   } finally {
-    removeCancel();
-    removeBack?.();
+    // Restore page visibility first — CSS hides every body child while active.
     setBundledScannerActive(false);
+    runCleanupStep(removeCancel);
+    runCleanupStep(() => removeBack?.());
     await Promise.allSettled([
       Promise.resolve(barcodeListener?.remove()),
       Promise.resolve(errorListener?.remove()),

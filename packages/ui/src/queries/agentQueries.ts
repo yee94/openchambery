@@ -75,7 +75,10 @@ export const agentQueryOptions = (
       });
     },
     retry: 2,
-    staleTime: Infinity,
+    staleTime: ((query: { state: { data: unknown } }) => {
+      const data = query.state.data as Agent[] | undefined;
+      return data && data.length > 0 ? Infinity : 0;
+    }) as () => number,
     gcTime: Infinity,
   };
 };

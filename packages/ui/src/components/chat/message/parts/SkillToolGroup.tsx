@@ -62,7 +62,7 @@ export const SkillToolGroup: React.FC<{
                     style={{ color: 'var(--tools-icon)' }}
                 >
                     {isActive ? (
-                        <LatticeOrb isMobile={isMobile} label={title} />
+                        <LatticeOrb isMobile={isMobile} label={title} className="block" />
                     ) : (
                         <Icon name="book" className="h-[13px] w-[13px]" />
                     )}

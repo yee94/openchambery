@@ -76,6 +76,8 @@ export interface TunnelWsOpenPayload {
   path: string;
   query: string;
   protocols?: string[];
+  /** Optional routing headers (e.g. x-openchamber-target-port for SSH-via-relay). */
+  headers?: Record<string, string>;
 }
 
 export interface TunnelWsOpenedPayload {

@@ -72,6 +72,9 @@ const publicSession = (session) => ({
   allowedClientKinds: session.allowedClientKinds,
   createdByClientId: session.createdByClientId,
   usesRelay: session.usesRelay === true,
+  // Optional SSH instance binding for mobile-over-relay host-token mint.
+  // Null when the pairing is for the desktop local origin (default).
+  sshHostId: session.sshHostId ?? null,
 });
 
 // A pending session is one that can still be redeemed: not used, not cancelled,
@@ -138,6 +141,7 @@ export const createClientPairingRuntime = ({
           allowedClientKinds: normalizeAllowedClientKinds(session.allowedClientKinds),
           createdByClientId: normalizeOptionalString(session.createdByClientId),
           usesRelay: session.usesRelay === true,
+          sshHostId: normalizeOptionalString(session.sshHostId),
         }))
         .filter((session) => session.secretHash.length > 0)
       : [],
@@ -176,7 +180,7 @@ export const createClientPairingRuntime = ({
     });
   };
 
-  const createPairingSession = async ({ label, allowedClientKinds, createdByClientId, usesRelay } = {}) => {
+  const createPairingSession = async ({ label, allowedClientKinds, createdByClientId, usesRelay, sshHostId } = {}) => {
     return withStoreMutation(async () => {
       const store = await readStore();
       sweepExpiredSessionsFromStore(store);
@@ -194,6 +198,8 @@ export const createClientPairingRuntime = ({
         allowedClientKinds: normalizeAllowedClientKinds(allowedClientKinds),
         createdByClientId: normalizeOptionalString(createdByClientId),
         usesRelay: usesRelay === true,
+        // Binds later ssh-host-token mint to this pairing; not used by redeem.
+        sshHostId: normalizeOptionalString(sshHostId),
       };
       store.sessions.push(session);
       await writeStore(store);

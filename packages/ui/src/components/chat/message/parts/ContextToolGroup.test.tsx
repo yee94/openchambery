@@ -38,10 +38,13 @@ describe('LatticeOrb', () => {
         const mobileMarkup = renderToStaticMarkup(<LatticeOrb isMobile label="Exploring" />);
 
         expect(desktopMarkup).toContain('aria-label="Exploring"');
+        expect(desktopMarkup).toContain('relative block flex-none overflow-clip');
         expect(desktopMarkup).toContain('width:14px;height:14px');
-        expect(mobileMarkup).toContain('width:16px;height:16px');
+        expect(mobileMarkup).toContain('width:12px;height:12px');
         expect(desktopMarkup.match(/oc-lattice-orb-dot/g)).toHaveLength(9);
         expect(desktopMarkup).toContain('data-center="true"');
+        expect(desktopMarkup).toContain('left:4px;top:4px;width:4px;height:4px');
+        expect(desktopMarkup).toContain('left:24px;top:24px;width:4px;height:4px');
     });
 });
 
@@ -63,11 +66,13 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('aria-expanded="false"');
         expect(markup).toContain('Exploring');
         expect(markup).toContain('1 search, 3 reads');
-        expect(markup).toContain('typography-meta inline-flex min-h-0 w-0 min-w-0 max-w-full flex-1 items-center self-center overflow-clip h-6');
+        expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
+        expect(markup).toContain('width:14px;height:14px');
+        expect(markup).toContain('typography-meta inline-flex min-h-0 w-0 min-w-0 max-w-full flex-1 items-center');
         expect(markup).toContain('oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6');
     });
 
-    test('uses a 16px orb and matching leading slot on mobile', () => {
+    test('centers a 12px orb in the 16px leading slot on mobile', () => {
         const activities = [contextActivity('grep-1', 'grep', 'running')];
         const markup = renderToStaticMarkup(
             <I18nProvider>
@@ -76,7 +81,7 @@ describe('ContextToolGroup', () => {
         );
 
         expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-5 w-4');
-        expect(markup).toContain('width:16px;height:16px');
+        expect(markup).toContain('width:12px;height:12px');
         expect(markup).toContain('min-h-0 min-w-0 items-center gap-1.5 overflow-clip');
     });
 
@@ -126,6 +131,7 @@ describe('ContextToolGroup', () => {
         expect(liveMarkup).toContain('oc-lattice-orb-dot');
         expect(settledMarkup).toContain('Explored');
         expect(settledMarkup).toContain('#oc-search');
+        expect(settledMarkup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
         expect(settledMarkup).not.toContain('oc-lattice-orb-dot');
     });
 

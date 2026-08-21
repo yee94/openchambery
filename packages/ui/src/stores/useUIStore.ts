@@ -36,6 +36,8 @@ function normalizeFileEditorKeymap(value: unknown): FileEditorKeymap {
   return value === 'vim' ? 'vim' : 'default';
 }
 
+export type ContextPanelFileNotice = 'turn-diff-outside-workspace';
+
 type ContextPanelTab = {
   id: string;
   mode: ContextPanelMode;
@@ -48,6 +50,10 @@ type ContextPanelTab = {
   diffScope: PendingDiffScope | null;
   diffTargetLine?: number | null;
   diffTurnMessageId: string | null;
+  /** Session that owns turn-scoped diffs (nested/subagent panels; not global currentSessionId). */
+  diffSessionId: string | null;
+  /** Transient notice for a file tab opened via a degraded Changes click path. */
+  fileNotice: ContextPanelFileNotice | null;
   touchedAt: number;
 };
 
@@ -62,6 +68,9 @@ type ContextPanelTabDescriptor = {
   diffScope?: PendingDiffScope | null;
   diffTargetLine?: number | null;
   diffTurnMessageId?: string | null;
+  /** Session that owns turn-scoped diffs (nested/subagent panels). */
+  diffSessionId?: string | null;
+  fileNotice?: ContextPanelFileNotice | null;
 };
 
 type ContextPanelDirectoryState = {
@@ -232,6 +241,15 @@ const normalizeContextDiffTurnMessageId = (value: unknown): string | null => {
   return trimmed || null;
 };
 
+const normalizeContextDiffSessionId = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
 const buildDefaultContextPanelTabDedupeKey = (mode: ContextPanelMode, targetPath: string | null): string => {
   if (mode === 'file') {
     return targetPath || mode;
@@ -267,6 +285,10 @@ const buildContextPanelTabID = (mode: ContextPanelMode, dedupeKey: string): stri
   return dedupeKey === mode ? mode : `${mode}:${dedupeKey}`;
 };
 
+const normalizeContextPanelFileNotice = (value: unknown): ContextPanelFileNotice | null => {
+  return value === 'turn-diff-outside-workspace' ? value : null;
+};
+
 const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPanelTab => {
   const normalizedTargetPath = normalizeContextTargetPath(descriptor.targetPath);
   const dedupeKey = normalizeContextPanelTabDedupeKey(
@@ -288,6 +310,8 @@ const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPa
       ? Math.max(1, Math.trunc(descriptor.diffTargetLine))
       : null,
     diffTurnMessageId: normalizeContextDiffTurnMessageId(descriptor.diffTurnMessageId),
+    diffSessionId: normalizeContextDiffSessionId(descriptor.diffSessionId),
+    fileNotice: descriptor.mode === 'file' ? normalizeContextPanelFileNotice(descriptor.fileNotice) : null,
     touchedAt: Date.now(),
   };
 };
@@ -332,6 +356,8 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       diffScope?: unknown;
       diffTargetLine?: unknown;
       diffTurnMessageId?: unknown;
+      diffSessionId?: unknown;
+      fileNotice?: unknown;
       touchedAt?: unknown;
     };
 
@@ -365,6 +391,8 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
         ? Math.max(1, Math.trunc(candidate.diffTargetLine))
         : null,
       diffTurnMessageId: normalizeContextDiffTurnMessageId(candidate.diffTurnMessageId),
+      diffSessionId: normalizeContextDiffSessionId(candidate.diffSessionId),
+      fileNotice: candidate.mode === 'file' ? normalizeContextPanelFileNotice(candidate.fileNotice) : null,
       touchedAt: typeof candidate.touchedAt === 'number' && Number.isFinite(candidate.touchedAt)
         ? candidate.touchedAt
         : Date.now(),
@@ -421,6 +449,7 @@ const upsertContextPanelTab = (
           ...tab,
           diffTargetLine: nextTab.diffTargetLine,
           diffTurnMessageId: nextTab.diffTurnMessageId,
+          diffSessionId: nextTab.diffSessionId,
           mode: nextTab.mode,
           targetPath: nextTab.targetPath || tab.targetPath,
           dedupeKey: nextTab.dedupeKey,
@@ -429,6 +458,7 @@ const upsertContextPanelTab = (
           stagedDiff: nextTab.stagedDiff,
           diffScope: nextTab.diffScope,
           readOnly: nextTab.readOnly,
+          fileNotice: nextTab.mode === 'file' ? nextTab.fileNotice : null,
           touchedAt: Date.now(),
         }
       : tab));
@@ -839,10 +869,10 @@ interface UIStore {
    */
   syncWorkspacePanelsForSessionSwitch: (args: SessionWorkspacePanelSwitchArgs) => void;
   openContextPanelTab: (directory: string, tab: ContextPanelTabDescriptor) => void;
-  openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number, turnMessageId?: string | null) => void;
-  openContextToolDiff: (directory: string, filePath: string, patches: ReadonlyArray<{ path: string; patch: string }>, targetLine?: number, turnMessageId?: string | null) => void;
+  openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
+  openContextToolDiff: (directory: string, filePath: string, patches: ReadonlyArray<{ path: string; patch: string }>, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
   openContextFileDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null) => void;
-  openContextFile: (directory: string, filePath: string) => void;
+  openContextFile: (directory: string, filePath: string, options?: { fileNotice?: ContextPanelFileNotice | null }) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
   openContextOverview: (directory: string) => void;
   openContextPlan: (directory: string) => void;
@@ -1105,7 +1135,7 @@ export const useUIStore = create<UIStore>()(
         isImagePreviewOpen: false,
         nativeNotificationsEnabled: false,
         notificationMode: 'hidden-only',
-        notifyOnSubtasks: true,
+        notifyOnSubtasks: false,
         dockBadgeEnabled: true,
 
         // Event toggles (which events trigger notifications)
@@ -1368,7 +1398,7 @@ export const useUIStore = create<UIStore>()(
           });
         },
 
-        openContextDiff: (directory, filePath, staged = false, scope = null, targetLine, turnMessageId) => {
+        openContextDiff: (directory, filePath, staged = false, scope = null, targetLine, turnMessageId, sessionId) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedFilePath = (filePath || '').trim();
           if (!normalizedDirectory || !normalizedFilePath) {
@@ -1384,10 +1414,11 @@ export const useUIStore = create<UIStore>()(
             diffScope,
             diffTargetLine: targetLine,
             diffTurnMessageId: turnMessageId,
+            diffSessionId: sessionId,
           });
         },
 
-        openContextToolDiff: (directory, filePath, patches, targetLine, turnMessageId) => {
+        openContextToolDiff: (directory, filePath, patches, targetLine, turnMessageId, sessionId) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedFilePath = (filePath || '').trim();
           const normalizedPatches = patches.flatMap((entry) => {
@@ -1406,6 +1437,7 @@ export const useUIStore = create<UIStore>()(
             diffScope: 'turn',
             diffTargetLine: targetLine,
             diffTurnMessageId: turnMessageId,
+            diffSessionId: sessionId,
           };
 
           set((state) => {
@@ -1449,14 +1481,18 @@ export const useUIStore = create<UIStore>()(
           });
         },
 
-        openContextFile: (directory, filePath) => {
+        openContextFile: (directory, filePath, options) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedFilePath = normalizeContextTargetPath(filePath);
           if (!normalizedDirectory || !normalizedFilePath) {
             return;
           }
 
-          get().openContextPanelTab(normalizedDirectory, { mode: 'file', targetPath: normalizedFilePath });
+          get().openContextPanelTab(normalizedDirectory, {
+            mode: 'file',
+            targetPath: normalizedFilePath,
+            fileNotice: normalizeContextPanelFileNotice(options?.fileNotice),
+          });
           get().setPendingFileFocusPath(normalizedFilePath);
           get().setPendingFileNavigation(null);
         },

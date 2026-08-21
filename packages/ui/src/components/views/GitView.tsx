@@ -54,6 +54,8 @@ import { WorktreeBranchDisplay } from './git/WorktreeBranchDisplay';
 import { SyncActions } from './git/SyncActions';
 import { StashesDialog } from './git/StashesDialog';
 import { ChangesPanel, type ChangesGroupConfig } from './git/ChangesPanel';
+import { DeferredChangesNotice } from './git/DeferredChangesNotice';
+import { isDeferredGitChangesStatus } from './git/deferredChanges';
 import { CommitSection } from './git/CommitSection';
 import { GitEmptyState } from './git/GitEmptyState';
 import { HistorySection } from './git/HistorySection';
@@ -511,6 +513,10 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     initialSnapshot?.commitMessage ?? ''
   );
   const [visibleChangePaths, setVisibleChangePaths] = React.useState<string[]>([]);
+  // 超大变更集（>阈值）默认延迟：不排序/分组/建树/预取，直到用户点击加载。
+  // 用户显式加载后保持加载状态；变更集规模回落到阈值以下时自动恢复正常渲染。
+  const [deferredChangesLoaded, setDeferredChangesLoaded] = React.useState(false);
+  const isDeferredChanges = isDeferredGitChangesStatus(status) && !deferredChangesLoaded;
   const [isGitmojiPickerOpen, setIsGitmojiPickerOpen] = React.useState(false);
   const actionPanelScrollRef = React.useRef<HTMLElement | null>(null);
   const [syncAction, setSyncAction] = React.useState<SyncAction>(null);
@@ -806,11 +812,13 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
 
   const changeEntries = React.useMemo(() => {
     if (!status) return [];
+    // Deferred 模式短路：跳过全量拷贝 + localeCompare 排序，等用户点击加载。
+    if (isDeferredChanges) return [];
     const files = status.files ?? [];
     // GitStatus.files is already unique by `path` per the server contract;
     // a defensive dedup pass would only mask real upstream bugs.
     return [...files].sort((a, b) => a.path.localeCompare(b.path));
-  }, [status]);
+  }, [status, isDeferredChanges]);
 
   const stagedChangeEntries = React.useMemo(
     () => changeEntries.filter(isStagedStatusFile),
@@ -821,6 +829,19 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     () => changeEntries.filter(isUnstagedStatusFile),
     [changeEntries]
   );
+
+  // Deferred 模式概要计数：单趟 O(n) 扫描，不做排序/分组/数组拷贝。
+  // 只在降级时计算，避免正常路径重复扫描。
+  const { deferredStagedCount, deferredUnstagedCount } = React.useMemo(() => {
+    if (!isDeferredChanges || !status) return { deferredStagedCount: 0, deferredUnstagedCount: 0 };
+    let staged = 0;
+    let unstaged = 0;
+    for (const file of status.files ?? []) {
+      if (isStagedStatusFile(file)) staged += 1;
+      if (isUnstagedStatusFile(file)) unstaged += 1;
+    }
+    return { deferredStagedCount: staged, deferredUnstagedCount: unstaged };
+  }, [isDeferredChanges, status]);
 
   React.useEffect(() => {
     if (!currentDirectory || changeEntries.length === 0) {
@@ -1925,7 +1946,23 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
               preventOverscroll
             >
               <div className="flex h-full min-h-0 flex-col gap-2">
-                {(changeEntries?.length ?? 0) > 0 ? (
+                {isDeferredChanges ? (
+                  <>
+                    <div className="mb-1 flex h-8 shrink-0 items-center bg-background pr-2">
+                      <span className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">
+                        {t('gitView.changes.deferredTitle', { count: status?.files?.length ?? 0 })}
+                      </span>
+                      <div className="ml-auto grid shrink-0 grid-flow-col auto-cols-[1.5rem] items-center justify-end">
+                        {gitHeaderActions}
+                      </div>
+                    </div>
+                    <DeferredChangesNotice
+                      stagedCount={deferredStagedCount}
+                      unstagedCount={deferredUnstagedCount}
+                      onLoad={() => setDeferredChangesLoaded(true)}
+                    />
+                  </>
+                ) : (changeEntries?.length ?? 0) > 0 ? (
                   <>
                     <div className="min-h-0 flex-1 overflow-hidden">
                       <ChangesPanel
