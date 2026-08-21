@@ -420,7 +420,23 @@ export const projectTurnRecords = (
         }
 
         const parentId = getMessageParentId(message);
-        const targetTurn = parentId ? turnByUserId.get(parentId) : undefined;
+        let targetTurn = parentId ? turnByUserId.get(parentId) : undefined;
+        if (!targetTurn && !parentId) {
+            // v2 message records may not carry parentID at all; fall back to the
+            // most recent preceding user turn so assistant replies (including
+            // failed turns with no parts) still attach instead of being dropped.
+            // An explicit-but-unresolvable parentID keeps the old drop behavior:
+            // the parent user turn may simply not be loaded yet.
+            const createdAt = getMessageCreatedAt(message);
+            for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex--) {
+                const candidate = turns[turnIndex];
+                const candidateCreated = getMessageCreatedAt(candidate.userMessage);
+                if (createdAt === undefined || candidateCreated === undefined || candidateCreated <= createdAt) {
+                    targetTurn = candidate;
+                    break;
+                }
+            }
+        }
         if (!targetTurn) {
             return;
         }

@@ -81,6 +81,20 @@ describe('projectTurnRecords', () => {
         expect(projection.indexes.messageToTurnId.has('a2')).toBe(false);
     });
 
+    test('attaches parentless v2 assistant messages to the preceding user turn by time order', () => {
+        const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant1 = createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2, finish: 'error' });
+        const user2 = createMessageEntry({ id: 'u2', role: 'user', createdAt: 3 });
+        const assistant2 = createMessageEntry({ id: 'a2', role: 'assistant', createdAt: 4 });
+
+        const projection = projectTurnRecords([user1, assistant1, user2, assistant2]);
+
+        expect(projection.turns).toHaveLength(2);
+        expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1']);
+        expect(projection.turns[1]?.assistantMessageIds).toEqual(['a2']);
+        expect(projection.ungroupedMessageIds.size).toBe(0);
+    });
+
     test('does not render orphan assistant messages as standalone ungrouped entries', () => {
         const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'missing-user', createdAt: 1 });
 

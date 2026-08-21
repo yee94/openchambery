@@ -109,7 +109,13 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
   };
   const run = async () => {
     if (paused || stopping) return status();
-    const runtimeKey = service.getRuntimeKey(); const runtime = adapter.captureRuntime(); const authority = service.getAuthority({ runtimeKey });
+    const runtimeKey = service.getRuntimeKey();
+    // The managed OpenCode service may still be booting when the worker starts;
+    // captureRuntime throws until its port is detected. Leave queued work
+    // pending and retry on the next tick instead of failing the flight.
+    let runtime;
+    try { runtime = adapter.captureRuntime(); } catch { return status(); }
+    const authority = service.getAuthority({ runtimeKey });
     if (authority?.authority !== 'active') return status();
     service.recoverExpiredSending?.({ runtimeKey });
     // Start dispatch probes before awaiting reconciling work so a hung findMessage
