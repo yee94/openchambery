@@ -183,7 +183,10 @@ export const createSessionIndexSyncRuntime = ({
     currentWasPreempted = false;
     const timeout = setTimer(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const url = new URL(buildOpenCodeUrl(`/session/${encodeURIComponent(task.sessionID)}/children`));
+      // v2 protocol has no `/session/:id/children` route; child sessions are a
+      // `parentID` filter on the session list (`GET /api/session`).
+      const url = new URL(buildOpenCodeUrl('/session'));
+      url.searchParams.set('parentID', task.sessionID);
       url.searchParams.set('directory', task.directory);
       const response = await fetchFn(url, {
         method: 'GET',
@@ -195,8 +198,12 @@ export const createSessionIndexSyncRuntime = ({
         error.status = response.status;
         throw error;
       }
-      const children = await response.json();
-      if (!Array.isArray(children)) throw new Error('Invalid OpenCode child-session list payload');
+      const payload = await response.json();
+      // v2 wraps list responses in `{ data, cursor }`; accept a bare array too.
+      const children = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.data) ? payload.data : null);
+      if (!children) throw new Error('Invalid OpenCode child-session list payload');
       sessionIndexService.replaceChildSessions(task.directory, task.sessionID, children);
       return 'completed';
     } catch (error) {

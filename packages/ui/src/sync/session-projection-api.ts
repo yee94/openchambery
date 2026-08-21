@@ -225,6 +225,18 @@ export function normalizeSessionProjectionMessage(
     if (agent) {
       info.agent = agent
     }
+    // Failed turns carry no content parts; keep finish/error on the info so
+    // the transcript can still render the failure instead of dropping it.
+    const finish = asString(item.finish)
+    if (finish) {
+      info.finish = finish
+    }
+    if (record(item.error)) {
+      info.error = {
+        type: asString(item.error.type) ?? "error",
+        message: asString(item.error.message) ?? "",
+      }
+    }
     const parts: Part[] = []
     const content: unknown[] = Array.isArray(item.content) ? item.content : []
     let textOrdinal = 0
