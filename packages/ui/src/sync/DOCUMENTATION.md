@@ -314,7 +314,7 @@ Modules:
 
 | Module | Role |
 |---|---|
-| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
+| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; `hasTailAssistantMissingSettledCompletion` (lost settle-tick gap detection); optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
 | `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded slim or open tool/reasoning/file parts exact-fill via `session.message` after the authority tail (≤4 concurrent FIFO; settled full rows skip); post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
 | `session-authority-revalidate.ts` | Enter-and-sync 30s window keyed by transport+generation+directory+sessionID; stamped only after a successful authority pull |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
@@ -1071,6 +1071,16 @@ both readers agree on when a frame may shrink.
   rebuilt lagging tail.
   Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
+  A lost settle tick — tail assistant with a server-stamped terminal finish
+  (`stop` / `length`) but no `time.completed`, detected via
+  `hasTailAssistantMissingSettledCompletion` — self-heals through
+  `refreshTranscriptFromAuthority` (reconcile upsert, never stale-dropped):
+  a cooldown-suppressed materialization enqueue re-checks the gap one
+  microtask after the event frame (transcript SSE batches commit at flush
+  end), and a completed materialization re-checks after its page applies.
+  Without this repair, turn duration and assistant TPS stay missing until a
+  cold start because the transcript stall watchdog only runs while the
+  session reports work.
 - The client stall timer starts before SSE response headers arrive. Transport
   activity includes SSE comments and heartbeats, iterator events, and every
   WebSocket message frame. A transport stale watchdog reconnects after this

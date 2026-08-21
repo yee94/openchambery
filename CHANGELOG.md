@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.5] - 2026-08-22
+
+### 聊天
+
+- **修复推理完成后 TPS 不显示：** settle 阶段携带 `time.completed` 的 `message.updated` 事件在实时链路（移动端 relay / WS）丢失时，回合时长与生成速度（tok/s）不再永久缺失。新增缺口自愈：检测到尾部助手消息带终态 finish 却缺完成时间戳时，通过权威 reconcile 刷新补齐——冷却窗口内的 materialization 入队与 materialize 完成后各复查一次，无需重启应用。
+- **移动端胶囊输入框动画重构：** 展开 / 收起改为固定高度视口遮罩 + 纯 transform 动效，同一 textarea/DOM 跨两种形态保持连续，动画帧不再牵动会话列表布局。
+- **附件选择后焦点回收：** 从文件 / 图片选择器返回后自动重新聚焦输入框并将光标置于末尾，不再停留在失焦状态。
+
 ## [1.18.2-beta.4] - 2026-08-21
 
 ### 配置同步

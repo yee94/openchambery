@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
 
 import {
+  hasTailAssistantMissingSettledCompletion,
   isTranscriptSseEventType,
   projectPagination,
   projectTranscriptData,
@@ -208,6 +209,49 @@ describe("transcript repository projections", () => {
     expect(isTranscriptSseEventType("message.part.delta")).toBe(true)
     expect(isTranscriptSseEventType("session.updated")).toBe(false)
     expect(isTranscriptSseEventType("permission.updated")).toBe(false)
+  })
+})
+
+describe("hasTailAssistantMissingSettledCompletion", () => {
+  const tail = (message: Message) => ({
+    messageOrder: message ? [message.id] : [],
+    messagesByID: message ? { [message.id]: message } : {},
+  })
+
+  test("terminal finish without completed marks the settle gap", () => {
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "stop",
+      tokens: { input: 1, output: 2, reasoning: 3 },
+    } as Message))).toBe(true)
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "length",
+    } as Message))).toBe(true)
+  })
+
+  test("completed, streaming, and interrupted tails are not gaps", () => {
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "stop",
+      time: { created: 1, completed: 2 },
+    } as Message))).toBe(false)
+    expect(hasTailAssistantMissingSettledCompletion(tail(assistantMessage("msg_a")))).toBe(false)
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "canceled",
+    } as Message))).toBe(false)
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "stop",
+      error: { name: "MessageAbortedError", data: { message: "aborted" } },
+    } as Message))).toBe(false)
+  })
+
+  test("user tail and empty transcript are not gaps", () => {
+    expect(hasTailAssistantMissingSettledCompletion(tail(userMessage("msg_u")))).toBe(false)
+    expect(hasTailAssistantMissingSettledCompletion(tail(null as unknown as Message))).toBe(false)
+    expect(hasTailAssistantMissingSettledCompletion({ messageOrder: [], messagesByID: {} })).toBe(false)
   })
 })
 

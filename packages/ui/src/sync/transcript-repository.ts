@@ -254,6 +254,32 @@ export function resolveTranscriptHydrationPhase(input: {
   return "idle"
 }
 
+/** Terminal finishes the server always stamps with `time.completed`. */
+const SERVER_STAMPED_TERMINAL_FINISHES = new Set(["stop", "length"])
+
+/**
+ * Whether the transcript tail is an assistant whose settle tick never arrived:
+ * it carries a server-stamped terminal finish but no `time.completed`.
+ *
+ * The settle `message.updated` tick (finish + tokens, then completed) can be
+ * lost on the live channel. Once the session goes idle nothing re-derives it,
+ * so derived display (turn duration, assistant TPS) stays missing until an
+ * authority refresh repairs the row. Interrupted finishes (`canceled`,
+ * `aborted`, errors) legitimately omit `time.completed` and never count.
+ */
+export function hasTailAssistantMissingSettledCompletion(
+  transcript: Pick<TranscriptData, "messageOrder" | "messagesByID">,
+): boolean {
+  const tailID = transcript.messageOrder[transcript.messageOrder.length - 1]
+  if (!tailID) return false
+  const message = transcript.messagesByID[tailID]
+  if (!message || messageRole(message) !== "assistant") return false
+  if ((message as { error?: unknown }).error) return false
+  const finish = (message as { finish?: unknown }).finish
+  if (typeof finish !== "string" || !SERVER_STAMPED_TERMINAL_FINISHES.has(finish)) return false
+  return typeof (message.time as { completed?: number } | undefined)?.completed !== "number"
+}
+
 // ---------------------------------------------------------------------------
 // Transport page / command inputs
 // ---------------------------------------------------------------------------

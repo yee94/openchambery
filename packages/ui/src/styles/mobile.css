@@ -2788,25 +2788,86 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 }
 
-/* Expand/collapse silhouette swap. Same DOM node; the height/padding change
-   is instant (animating layout properties reflowed the whole chat every
-   frame under the moving keyboard and read as a laggy open). Soft feel
-   comes from the footer fade-in. Radius stays 1.5rem in both states —
-   collapsed height already clamps it into a pill, so do not interpolate
-   9999px (iOS WKWebView leaves dirty corners). IMPORTANT: overflow stays
-   visible when expanded so slash-command / @-mention / skill autocomplete
-   (absolute bottom-full) is not clipped. */
+/* The viewport permanently reserves the latest expanded silhouette. The surface
+   moves inside that mask with compositor-only translateY; textarea autosize may
+   snap the reserved height between interactions and never animates it. Keyboard
+   lift owns the outer .oc-mobile-composer transform, so the two motions compose
+   on separate elements. */
+.oc-mobile-composer-motion-viewport {
+  position: relative;
+  display: flex;
+  height: var(--oc-mobile-composer-stage-height, 7rem);
+  min-height: 2.75rem;
+  width: 100%;
+  align-items: flex-end;
+  overflow: visible;
+}
+
+.oc-mobile-composer-motion-active,
+.oc-mobile-composer-motion-collapsed {
+  overflow: hidden;
+}
+
 .oc-mobile-composer-surface {
   overflow: visible;
   transform-origin: bottom center;
   min-height: 2.75rem;
   max-height: min(70vh, 22rem);
+  width: 100%;
+}
+
+.oc-mobile-composer-motion-expanding {
+  animation: oc-mobile-composer-motion-expand 180ms cubic-bezier(0.2, 0, 0, 1)
+    both;
+  will-change: transform;
+}
+
+.oc-mobile-composer-motion-collapsing {
+  animation: oc-mobile-composer-motion-collapse 160ms
+    cubic-bezier(0.4, 0, 1, 1) both;
+  will-change: transform;
+}
+
+@keyframes oc-mobile-composer-motion-expand {
+  from {
+    transform: translate3d(
+      0,
+      calc(var(--oc-mobile-composer-stage-height, 7rem) - 2.75rem),
+      0
+    );
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes oc-mobile-composer-motion-collapse {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(
+      0,
+      calc(var(--oc-mobile-composer-stage-height, 7rem) - 2.75rem),
+      0
+    );
+  }
+}
+
+/* Expensive glass effects stay detached while the surface is moving. This
+   class remains an explicit guard if the static card regains elevation later. */
+.oc-mobile-composer-effects-reduced {
+  background: var(--surface-subtle) !important;
+  background-color: var(--surface-subtle) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
 .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed) {
   /* Popovers (CommandAutocomplete etc.) render as absolute children above
-     the card; never clip them after expand. No scale/transform on open —
-     that containing block leaves a long textarea unscrollable on iOS. */
+     the card; the motion viewport releases clipping after expand settles. */
   overflow: visible;
 }
 
@@ -2818,9 +2879,11 @@ button.oc-mobile-worktree-label-trigger:active,
 @keyframes oc-mobile-composer-footer-in {
   from {
     opacity: 0;
+    transform: translate3d(0, 0.375rem, 0);
   }
   to {
     opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -2841,6 +2904,13 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .oc-mobile-composer-motion-expanding,
+  .oc-mobile-composer-motion-collapsing {
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+
   .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
     [data-chat-input-footer="true"] {
     animation: none;
