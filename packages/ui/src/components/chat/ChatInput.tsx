@@ -109,7 +109,7 @@ import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { DraftSessionBranchSelector } from './DraftSessionBranchSelector';
 import { resolveDraftSessionBranchLabel } from './draftSessionBranchLabel';
-import { extractGitChangedFiles, hasExtractableGitChangedFiles } from './changedFiles';
+import { hasExtractableGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { fetchResponseStyleInstruction } from '@/lib/responseStyle';

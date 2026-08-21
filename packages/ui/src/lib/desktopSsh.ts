@@ -432,7 +432,18 @@ export type DesktopSshConfigSyncAuthFile = {
   bytes: number;
 };
 
+export type DesktopSshConfigSyncDirection = 'push' | 'pull';
+
+export type DesktopSshConfigSyncSelections = {
+  fileGroups: boolean[];
+  singleFiles: boolean[];
+  directories: boolean[];
+  agentsRoot: boolean;
+  authFile: boolean;
+};
+
 export type DesktopSshConfigSyncPlan = {
+  direction?: DesktopSshConfigSyncDirection;
   files: { path: string; bytes: number }[];
   directories: { path: string; fileCount: number; bytes: number }[];
   agentsRoot: DesktopSshConfigSyncAgentsRoot | null;
@@ -440,6 +451,7 @@ export type DesktopSshConfigSyncPlan = {
   authFile: DesktopSshConfigSyncAuthFile | null;
   deletes: string[];
   totalBytes: number;
+  selections?: DesktopSshConfigSyncSelections;
 };
 
 export type DesktopSshConfigSyncPreview = {
@@ -447,6 +459,27 @@ export type DesktopSshConfigSyncPreview = {
   remoteExisting: string[];
   remoteAgentsRootExists: boolean;
   remoteAuthFileExists: boolean;
+  credentialAuthorized?: boolean;
+};
+
+export type DesktopSshConfigSyncTargetKind = 'ssh' | 'direct' | 'relay';
+
+export type DesktopSshConfigSyncOptions = {
+  direction?: DesktopSshConfigSyncDirection;
+  selections?: DesktopSshConfigSyncSelections;
+  targetKind?: DesktopSshConfigSyncTargetKind;
+};
+
+export type DesktopSshSyncRunRecord = {
+  syncRunId: string;
+  targetId: string;
+  stage?: string;
+  direction?: DesktopSshConfigSyncDirection;
+  startedAt?: string;
+  endedAt?: string;
+  result?: 'success' | 'failure' | string;
+  summary?: { files?: number; directories?: number; deletes?: number; totalBytes?: number };
+  error?: string;
 };
 
 export type DesktopSshConfigSyncResult = {
@@ -523,8 +556,36 @@ const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null =>
   // Missing/invalid authFile → null (backward comfort with older payloads).
   const authFileRaw = value.authFile ?? value.auth_file;
   const authFile = authFileRaw == null ? null : parseConfigSyncAuthFile(authFileRaw);
+  const direction = value.direction === 'pull' || value.direction === 'push'
+    ? value.direction
+    : undefined;
+  const selectionsRaw = value.selections;
+  const selections = isRecord(selectionsRaw)
+    ? {
+        fileGroups: Array.isArray(selectionsRaw.fileGroups)
+          ? selectionsRaw.fileGroups.map((entry) => entry !== false)
+          : [],
+        singleFiles: Array.isArray(selectionsRaw.singleFiles)
+          ? selectionsRaw.singleFiles.map((entry) => entry !== false)
+          : [],
+        directories: Array.isArray(selectionsRaw.directories)
+          ? selectionsRaw.directories.map((entry) => entry !== false)
+          : [],
+        agentsRoot: selectionsRaw.agentsRoot !== false,
+        authFile: selectionsRaw.authFile === true,
+      }
+    : undefined;
 
-  return { files, directories, agentsRoot, authFile, deletes, totalBytes };
+  return {
+    files,
+    directories,
+    agentsRoot,
+    authFile,
+    deletes,
+    totalBytes,
+    ...(direction ? { direction } : {}),
+    ...(selections ? { selections } : {}),
+  };
 };
 
 const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | null => {
@@ -542,6 +603,9 @@ const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | n
       readBoolean(value, 'remoteAuthFileExists')
       ?? readBoolean(value, 'remote_auth_file_exists')
       ?? false,
+    ...(typeof value.credentialAuthorized === 'boolean'
+      ? { credentialAuthorized: value.credentialAuthorized }
+      : {}),
   };
 };
 
@@ -571,30 +635,133 @@ const parseConfigSyncResult = (value: unknown): DesktopSshConfigSyncResult | nul
   return { ok: true, files, directories, deletes, totalBytes, agentsRoot, authFile };
 };
 
-export const desktopSshSyncOpencodeConfigLocalScan = async (): Promise<DesktopSshConfigSyncPlan | null> => {
+export const desktopSshSyncOpencodeConfigLocalScan = async (
+  options: DesktopSshConfigSyncOptions = {},
+): Promise<DesktopSshConfigSyncPlan | null> => {
   const invoke = getInvoke();
   if (!invoke) return null;
-  const raw = await invoke('desktop_ssh_sync_opencode_config', { stage: 'local' });
+  const raw = await invoke('desktop_ssh_sync_opencode_config', {
+    stage: 'local',
+    ...(options.direction ? { direction: options.direction } : {}),
+    ...(options.selections ? { selections: options.selections } : {}),
+  });
   if (!isRecord(raw)) return null;
   return parseConfigSyncPlan(raw.plan);
 };
 
 export const desktopSshSyncOpencodeConfigPreview = async (
   id: string,
+  options: DesktopSshConfigSyncOptions = {},
 ): Promise<DesktopSshConfigSyncPreview | null> => {
   const invoke = getInvoke();
   if (!invoke) return null;
-  const raw = await invoke('desktop_ssh_sync_opencode_config', { id });
+  const raw = await invoke('desktop_ssh_sync_opencode_config', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+    ...(options.direction ? { direction: options.direction } : {}),
+    ...(options.selections ? { selections: options.selections } : {}),
+  });
   return parseConfigSyncPreview(raw);
 };
 
 export const desktopSshSyncOpencodeConfigApply = async (
   id: string,
+  options: DesktopSshConfigSyncOptions = {},
 ): Promise<DesktopSshConfigSyncResult | null> => {
   const invoke = getInvoke();
   if (!invoke) return null;
-  const raw = await invoke('desktop_ssh_sync_opencode_config', { id, apply: true });
+  const raw = await invoke('desktop_ssh_sync_opencode_config', {
+    id,
+    apply: true,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+    ...(options.direction ? { direction: options.direction } : {}),
+    ...(options.selections ? { selections: options.selections } : {}),
+  });
   return parseConfigSyncResult(raw);
+};
+
+export const desktopSshSyncRunsList = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshSyncRunRecord[]> => {
+  const invoke = getInvoke();
+  if (!invoke) return [];
+  const raw = await invoke('desktop_ssh_sync_runs_list', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is DesktopSshSyncRunRecord => (
+    isRecord(entry) && typeof entry.syncRunId === 'string' && typeof entry.targetId === 'string'
+  ));
+};
+
+export type DesktopSshCredentialSyncGrant = {
+  targetId: string;
+  authorized: boolean;
+  grantedAt?: string;
+  channel?: string;
+};
+
+const parseCredentialSyncGrant = (raw: unknown): DesktopSshCredentialSyncGrant | null => {
+  if (!isRecord(raw)) return null;
+  const targetId = typeof raw.targetId === 'string' ? raw.targetId.trim() : '';
+  if (!targetId) return null;
+  const authorized = raw.authorized === true;
+  const grantedAt = typeof raw.grantedAt === 'string' && raw.grantedAt.trim()
+    ? raw.grantedAt.trim()
+    : undefined;
+  const channel = typeof raw.channel === 'string' && raw.channel.trim()
+    ? raw.channel.trim()
+    : undefined;
+  return {
+    targetId,
+    authorized,
+    ...(grantedAt ? { grantedAt } : {}),
+    ...(channel ? { channel } : {}),
+  };
+};
+
+/** Query whether provider-credential sync is authorized for this SSH/direct target. */
+export const desktopSshCredentialSyncGet = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshCredentialSyncGrant | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_credential_sync_get', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  return parseCredentialSyncGrant(raw);
+};
+
+/** Grant credential sync via the instance/host-settings trust channel. */
+export const desktopSshCredentialSyncGrant = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshCredentialSyncGrant | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_credential_sync_grant', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  return parseCredentialSyncGrant(raw);
+};
+
+/** Revoke credential sync for this SSH/direct target. */
+export const desktopSshCredentialSyncRevoke = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshCredentialSyncGrant | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_credential_sync_revoke', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  return parseCredentialSyncGrant(raw);
 };
 
 export const listenDesktopSshStatus = async (

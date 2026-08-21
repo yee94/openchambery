@@ -39,9 +39,41 @@ export const createSettingsRuntime = (deps) => {
     normalizeStringArray,
     formatSettingsResponse,
     resolveDirectoryCandidate,
+    /**
+     * Optional late-bound exclusive runner (Electron injects after startWebUiServer).
+     * May be a function returning the runner, or the runner itself.
+     */
+    getRunExclusivePersist,
+    runExclusivePersist: initialRunExclusivePersist,
   } = deps;
 
   let persistSettingsLock = Promise.resolve();
+  let runExclusivePersist = typeof initialRunExclusivePersist === 'function'
+    ? initialRunExclusivePersist
+    : null;
+
+  const resolveRunExclusivePersist = () => {
+    if (typeof getRunExclusivePersist === 'function') {
+      const resolved = getRunExclusivePersist();
+      if (typeof resolved === 'function') return resolved;
+    }
+    return typeof runExclusivePersist === 'function' ? runExclusivePersist : null;
+  };
+
+  const runPersistedWrite = (work) => {
+    const external = resolveRunExclusivePersist();
+    if (external) {
+      return external(work);
+    }
+    const next = persistSettingsLock.then(async () => work());
+    // Keep the chain alive even if one writer throws.
+    persistSettingsLock = next.catch(() => {});
+    return next;
+  };
+
+  const setRunExclusivePersist = (fn) => {
+    runExclusivePersist = typeof fn === 'function' ? fn : null;
+  };
 
   // Orphan recovery is a one-shot best-effort scan: when orphans can't be
   // matched on first pass they stay on disk and every subsequent settings
@@ -495,7 +527,7 @@ export const createSettingsRuntime = (deps) => {
     await fsPromises.rm(tmp, { force: true });
   };
 
-  const writeSettingsToDisk = async (settings) => {
+  const writeSettingsToDiskUnlocked = async (settings) => {
     try {
       await fsPromises.mkdir(path.dirname(SETTINGS_FILE_PATH), { recursive: true });
       // Atomic write: Electron main and ssh-manager read this file via plain
@@ -510,6 +542,8 @@ export const createSettingsRuntime = (deps) => {
       throw error;
     }
   };
+
+  const writeSettingsToDisk = async (settings) => runPersistedWrite(() => writeSettingsToDiskUnlocked(settings));
 
   const validateProjectEntries = async (projects) => {
     if (!Array.isArray(projects)) {
@@ -778,67 +812,63 @@ export const createSettingsRuntime = (deps) => {
     const migration7 = migrateSettingsRemoveApprovedDirectories(migration6.settings);
     const migration8 = migrateSettingsCompactChatDefaults(migration7.settings);
     if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed) {
-      await writeSettingsToDisk(migration8.settings);
+      await runPersistedWrite(() => writeSettingsToDiskUnlocked(migration8.settings));
     }
     return migration8.settings;
   };
 
-  const persistSettings = async (changes) => {
-    persistSettingsLock = persistSettingsLock.then(async () => {
-      // Log field names only — changes can carry credentials (UI password,
-      // client tokens) that must never reach the log file.
-      console.log('[persistSettings] Updating fields:', Object.keys(changes || {}).join(', ') || '(none)');
-      const current = await readSettingsFromDisk();
-      const sanitized = sanitizeSettingsUpdate(changes);
-      let next = mergePersistedSettings(current, sanitized);
+  const persistSettings = async (changes) => runPersistedWrite(async () => {
+    // Log field names only — changes can carry credentials (UI password,
+    // client tokens) that must never reach the log file.
+    console.log('[persistSettings] Updating fields:', Object.keys(changes || {}).join(', ') || '(none)');
+    const current = await readSettingsFromDisk();
+    const sanitized = sanitizeSettingsUpdate(changes);
+    let next = mergePersistedSettings(current, sanitized);
 
-      const normalizedState = normalizeSettingsPaths(next);
-      if (normalizedState.changed) {
-        next = normalizedState.settings;
+    const normalizedState = normalizeSettingsPaths(next);
+    if (normalizedState.changed) {
+      next = normalizedState.settings;
+    }
+
+    const deterministicProjectIdMigration = await migrateSettingsToDeterministicProjectIds(next);
+    if (deterministicProjectIdMigration.changed) {
+      next = deterministicProjectIdMigration.settings;
+    }
+
+    const approvedDirectoriesMigration = migrateSettingsRemoveApprovedDirectories(next);
+    if (approvedDirectoriesMigration.changed) {
+      next = approvedDirectoriesMigration.settings;
+    }
+
+    // Ensure marker + new defaults exist before the first settings write lands.
+    const compactChatDefaultsMigration = migrateSettingsCompactChatDefaults(next);
+    if (compactChatDefaultsMigration.changed) {
+      next = compactChatDefaultsMigration.settings;
+    }
+
+    // Validating project paths hits the filesystem for every entry, so only
+    // do it when the incoming update actually touches the projects list —
+    // not on every theme/window-state/etc. save.
+    if (Object.prototype.hasOwnProperty.call(sanitized, 'projects') && Array.isArray(next.projects)) {
+      const validated = await validateProjectEntries(next.projects);
+      next = { ...next, projects: validated };
+    }
+
+    if (Array.isArray(next.projects) && next.projects.length > 0) {
+      const activeId = typeof next.activeProjectId === 'string' ? next.activeProjectId : '';
+      const active = next.projects.find((project) => project.id === activeId) || null;
+      if (!active) {
+        console.log(`[persistSettings] Active project ID ${activeId} not found, switching to ${next.projects[0].id}`);
+        next = { ...next, activeProjectId: next.projects[0].id };
       }
+    } else if (next.activeProjectId) {
+      console.log(`[persistSettings] No projects found, clearing activeProjectId ${next.activeProjectId}`);
+      next = { ...next, activeProjectId: undefined };
+    }
 
-      const deterministicProjectIdMigration = await migrateSettingsToDeterministicProjectIds(next);
-      if (deterministicProjectIdMigration.changed) {
-        next = deterministicProjectIdMigration.settings;
-      }
-
-      const approvedDirectoriesMigration = migrateSettingsRemoveApprovedDirectories(next);
-      if (approvedDirectoriesMigration.changed) {
-        next = approvedDirectoriesMigration.settings;
-      }
-
-      // Ensure marker + new defaults exist before the first settings write lands.
-      const compactChatDefaultsMigration = migrateSettingsCompactChatDefaults(next);
-      if (compactChatDefaultsMigration.changed) {
-        next = compactChatDefaultsMigration.settings;
-      }
-
-      // Validating project paths hits the filesystem for every entry, so only
-      // do it when the incoming update actually touches the projects list —
-      // not on every theme/window-state/etc. save.
-      if (Object.prototype.hasOwnProperty.call(sanitized, 'projects') && Array.isArray(next.projects)) {
-        const validated = await validateProjectEntries(next.projects);
-        next = { ...next, projects: validated };
-      }
-
-      if (Array.isArray(next.projects) && next.projects.length > 0) {
-        const activeId = typeof next.activeProjectId === 'string' ? next.activeProjectId : '';
-        const active = next.projects.find((project) => project.id === activeId) || null;
-        if (!active) {
-          console.log(`[persistSettings] Active project ID ${activeId} not found, switching to ${next.projects[0].id}`);
-          next = { ...next, activeProjectId: next.projects[0].id };
-        }
-      } else if (next.activeProjectId) {
-        console.log(`[persistSettings] No projects found, clearing activeProjectId ${next.activeProjectId}`);
-        next = { ...next, activeProjectId: undefined };
-      }
-
-      await writeSettingsToDisk(next);
-      return formatSettingsResponse(next);
-    });
-
-    return persistSettingsLock;
-  };
+    await writeSettingsToDiskUnlocked(next);
+    return formatSettingsResponse(next);
+  });
 
   return {
     readSettingsFromDisk,
@@ -846,5 +876,6 @@ export const createSettingsRuntime = (deps) => {
     readSettingsFromDiskMigrated,
     writeSettingsToDisk,
     persistSettings,
+    setRunExclusivePersist,
   };
 };

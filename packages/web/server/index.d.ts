@@ -25,6 +25,12 @@ export interface StartWebUiServerOptions {
   getSshRoutingTable?: () => { id: string; localPort: number }[];
   /** Mint a stored SSH host clientToken for a ready session (Electron). */
   mintSshHostToken?: (hostId: string) => Promise<string>;
+  /**
+   * Optional process-local lock for settings persistence (Electron in-process).
+   * When provided, every settings write/migrate joins this exclusive chain so
+   * concurrent desktop writers cannot clobber sibling fields in settings.json.
+   */
+  settingsPersistLock?: <T>(work: () => Promise<T> | T) => Promise<T>;
 }
 
 export declare function startWebUiServer(

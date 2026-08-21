@@ -190,6 +190,48 @@ describe('settings runtime', () => {
     }
   });
 
+  it('joins an external exclusive persist runner when provided', async () => {
+    const { runtime, settingsFilePath, cleanup } = await createRuntime();
+    try {
+      const order = [];
+      let releaseOuter;
+      const outerGate = new Promise((resolve) => {
+        releaseOuter = resolve;
+      });
+
+      runtime.setRunExclusivePersist(async (work) => {
+        order.push('lock-enter');
+        const result = await work();
+        order.push('lock-exit');
+        return result;
+      });
+
+      const pending = (async () => {
+        order.push('outer-start');
+        await outerGate;
+        order.push('outer-before-write');
+        await runtime.writeSettingsToDisk({ theme: 'external' });
+        order.push('outer-after-write');
+      })();
+
+      // Without awaiting the outer gate, ensure the lock wrapper is the one used.
+      releaseOuter();
+      await pending;
+      expect(order).toEqual([
+        'outer-start',
+        'outer-before-write',
+        'lock-enter',
+        'lock-exit',
+        'outer-after-write',
+      ]);
+      await expect(fsPromises.readFile(settingsFilePath, 'utf8')).resolves.toBe(
+        JSON.stringify({ theme: 'external' }, null, 2),
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
   it.skipIf(process.platform !== 'win32')('falls back when Windows blocks atomic settings replacement', async () => {
     const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-settings-runtime-'));
     const settingsFilePath = path.join(tempRoot, 'settings.json');

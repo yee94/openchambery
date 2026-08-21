@@ -451,6 +451,7 @@ describe('planOpenCodeConfigSync', () => {
     const { home, configDir } = await makeHomeWithConfig();
     await fsp.writeFile(path.join(configDir, 'opencode.jsonc'), '{}\n');
     const plan = planOpenCodeConfigSync(home);
+    expect(plan.direction).toBe('push');
     expect(plan.files.map((entry) => entry.path)).toContain('opencode.jsonc');
     expect(plan.files.some((entry) => entry.path === 'opencode.json')).toBe(false);
     expect(plan.deletes).toEqual(expect.arrayContaining(['config.json', 'opencode.json']));
@@ -579,7 +580,7 @@ describe('planOpenCodeConfigSync', () => {
     expect(plan.authFile).toBeNull();
   });
 
-  test('includes ~/.local/share/opencode/auth.json bytes in totalBytes', async () => {
+  test('includes ~/.local/share/opencode/auth.json bytes when includeAuthFile is true', async () => {
     const { home, configDir } = await makeHomeWithConfig();
     await fsp.writeFile(path.join(configDir, 'AGENTS.md'), 'hi\n');
     const shareDir = path.join(home, '.local', 'share', 'opencode');
@@ -588,12 +589,17 @@ describe('planOpenCodeConfigSync', () => {
     // Sibling session DB must never be walked/counted.
     await fsp.writeFile(path.join(shareDir, 'session.db'), 'db\n');
 
+    // Default inventory (includeAuthFile unset) still discovers auth.json.
     const plan = planOpenCodeConfigSync(home);
     expect(plan.authFile).toEqual({ bytes: expect.any(Number) });
     expect(plan.authFile.bytes).toBeGreaterThan(0);
     expect(plan.totalBytes).toBeGreaterThanOrEqual(
       plan.files.reduce((sum, entry) => sum + entry.bytes, 0) + plan.authFile.bytes,
     );
+
+    // Unauthorized sync path must skip credentials.
+    const skipped = planOpenCodeConfigSync(home, { includeAuthFile: false });
+    expect(skipped.authFile).toBeNull();
   });
 
   test('dereferences symlinked auth.json', async () => {
@@ -605,14 +611,14 @@ describe('planOpenCodeConfigSync', () => {
     await fsp.mkdir(shareDir, { recursive: true });
     await fsp.symlink(realAuth, path.join(shareDir, 'auth.json'));
 
-    const plan = planOpenCodeConfigSync(home);
+    const plan = planOpenCodeConfigSync(home, { includeAuthFile: true });
     expect(plan.authFile).toBeTruthy();
     expect(plan.authFile.bytes).toBeGreaterThan(0);
   });
 });
 
 describe('buildRemoteSyncPrepareScript', () => {
-  test('quotes paths with spaces and emits backup/delete/SYNC_READY lines', () => {
+  test('quotes paths with spaces and emits generational backup/delete/SYNC_READY lines', () => {
     const script = buildRemoteSyncPrepareScript({
       files: [{ path: 'my file.jsonc', bytes: 1 }],
       directories: [{ path: 'commands', fileCount: 1, bytes: 1 }],
@@ -620,14 +626,17 @@ describe('buildRemoteSyncPrepareScript', () => {
       authFile: null,
       deletes: ['opencode.json', 'commands', 'command'],
       totalBytes: 2,
-    });
+    }, { syncRunId: 'run-a' });
     expect(script).toContain('SYNC_READY');
-    expect(script).toContain("cp -a \"$CFG\"/'my file.jsonc' \"$BK\"/'my file.jsonc'");
-    expect(script).toContain("cp -a \"$CFG\"/'commands' \"$BK\"/'commands'");
+    expect(script).toContain("RUN_BK=\"$BK\"/'run-a'");
+    expect(script).toContain("cp -a \"$CFG\"/'my file.jsonc' \"$RUN_BK\"/'my file.jsonc'");
+    expect(script).toContain("cp -a \"$CFG\"/'commands' \"$RUN_BK\"/'commands'");
     expect(script).toContain("rm -f -- \"$CFG\"/'opencode.json'");
     expect(script).toContain("rm -rf -- \"$CFG\"/'command'");
     expect(script).toContain("rm -rf -- \"$CFG\"/'commands'");
     expect(script).not.toMatch(/\$CFG\/my file/);
+    // Generational: never wipe the entire backup root at prepare start.
+    expect(script).not.toContain('rm -rf -- "$BK"\n');
     expect(script).not.toContain('.openchamber.sync-backup-agents');
     expect(script).not.toContain('rm -rf -- "$HOME/.agents"');
     expect(script).not.toContain('.openchamber.sync-backup-auth');
@@ -642,12 +651,13 @@ describe('buildRemoteSyncPrepareScript', () => {
       authFile: null,
       deletes: [],
       totalBytes: 4,
-    });
+    }, { syncRunId: 'run-agents' });
     expect(script).toContain('SYNC_READY');
     expect(script).toContain('AGENTS_BK="$HOME/.openchamber.sync-backup-agents"');
-    expect(script).toContain('rm -rf -- "$AGENTS_BK"');
-    expect(script).toContain('cp -a "$HOME/.agents" "$AGENTS_BK/agents"');
+    expect(script).toContain("AGENTS_RUN_BK=\"$AGENTS_BK\"/'run-agents'");
+    expect(script).toContain('cp -a "$HOME/.agents" "$AGENTS_RUN_BK/agents"');
     expect(script).toContain('rm -rf -- "$HOME/.agents"');
+    expect(script).not.toContain('rm -rf -- "$AGENTS_BK"\n');
   });
 
   test('with authFile backs up auth.json outside share dir without deleting it', () => {
@@ -658,15 +668,16 @@ describe('buildRemoteSyncPrepareScript', () => {
       authFile: { bytes: 12 },
       deletes: [],
       totalBytes: 12,
-    });
+    }, { syncRunId: 'run-auth' });
     expect(script).toContain('SYNC_READY');
     expect(script).toContain('AUTH_BK="$HOME/.openchamber.sync-backup-auth"');
-    expect(script).toContain('rm -rf -- "$AUTH_BK"');
+    expect(script).toContain("AUTH_RUN_BK=\"$AUTH_BK\"/'run-auth'");
     expect(script).toContain(
-      'cp -a "$HOME/.local/share/opencode/auth.json" "$AUTH_BK/auth.json"',
+      'cp -a "$HOME/.local/share/opencode/auth.json" "$AUTH_RUN_BK/auth.json"',
     );
     expect(script).not.toContain('rm -rf -- "$HOME/.local/share/opencode"');
     expect(script).not.toContain('rm -f -- "$HOME/.local/share/opencode/auth.json"');
+    expect(script).not.toContain('rm -rf -- "$AUTH_BK"\n');
   });
 });
 

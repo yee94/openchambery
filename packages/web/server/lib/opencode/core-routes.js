@@ -1127,6 +1127,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
     } else if (
       (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/))
       || (req.method === 'PUT' && req.path.match(/^\/api\/fs\/prompt-attachments\/[^/]+\/?$/))
+      || (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/config-sync\/put\/[^/]+\/?$/))
     ) {
       // Binary attachment uploads stream as the request body. Parsing JSON here
       // would buffer the entire payload and block the relay tunnel.

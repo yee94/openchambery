@@ -43,17 +43,29 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { PendingPairingRecord, RemoteClientRecord } from '@/lib/api/types';
 import { buildPairingConnectionPayload, encodePairingConnectionPayload, parsePairingConnectionPayload, type PairingEndpointCandidate } from '@/lib/connectionPayload';
 import {
+  desktopSshCredentialSyncGet,
+  desktopSshCredentialSyncGrant,
+  desktopSshCredentialSyncRevoke,
   desktopSshLogsClear,
   desktopSshLogs,
   desktopSshSyncOpencodeConfigApply,
   desktopSshSyncOpencodeConfigLocalScan,
   desktopSshSyncOpencodeConfigPreview,
+  desktopSshSyncRunsList,
+  type DesktopSshConfigSyncDirection,
   type DesktopSshConfigSyncPlan,
   type DesktopSshConfigSyncPreview,
+  type DesktopSshConfigSyncSelections,
   type DesktopSshInstance,
   type DesktopSshPortForward,
   type DesktopSshPortForwardType,
+  type DesktopSshSyncRunRecord,
 } from '@/lib/desktopSsh';
+import {
+  applyRelayConfigSync,
+  previewRelayConfigSync,
+  type RelayConfigSyncHost,
+} from '@/lib/relay/relay-config-sync';
 import {
   desktopHostProbe,
   desktopHostsGet,
@@ -114,11 +126,22 @@ const formatSyncBytes = (bytes: number): string => {
 type SyncConfigDialogProps = {
   open: boolean;
   instanceId: string | null;
+  targetKind?: 'ssh' | 'direct' | 'relay';
+  /** Required when targetKind is relay — carries DesktopHostRelay trust anchor. */
+  relayHost?: RelayConfigSyncHost | null;
   onOpenChange: (open: boolean) => void;
 };
 
 type SyncWizardStep = 1 | 2 | 3;
 type SyncDialogPhase = 'scanning-local' | 'comparing-remote' | 'review' | 'applying' | 'error';
+
+const DEFAULT_SYNC_SELECTIONS: DesktopSshConfigSyncSelections = {
+  fileGroups: [true, true, true],
+  singleFiles: [true, true],
+  directories: [true, true, true, true, true, true, true],
+  agentsRoot: true,
+  authFile: false,
+};
 
 const SYNC_STEP_KEYS: I18nKey[] = [
   'settings.remoteInstances.page.sync.step.scanLocal',
@@ -126,26 +149,44 @@ const SYNC_STEP_KEYS: I18nKey[] = [
   'settings.remoteInstances.page.sync.step.confirm',
 ];
 
-const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, onOpenChange }) => {
+const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
+  open,
+  instanceId,
+  targetKind = 'ssh',
+  relayHost = null,
+  onOpenChange,
+}) => {
   const { t } = useI18n();
   const reviewListRef = React.useRef<HTMLElement | null>(null);
   const [step, setStep] = React.useState<SyncWizardStep>(1);
   const [phase, setPhase] = React.useState<SyncDialogPhase>('scanning-local');
+  const [direction, setDirection] = React.useState<DesktopSshConfigSyncDirection>('push');
+  const [selections, setSelections] = React.useState<DesktopSshConfigSyncSelections>(DEFAULT_SYNC_SELECTIONS);
   const [localPlan, setLocalPlan] = React.useState<DesktopSshConfigSyncPlan | null>(null);
   const [preview, setPreview] = React.useState<DesktopSshConfigSyncPreview | null>(null);
+  const [credentialAuthorized, setCredentialAuthorized] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [errorStep, setErrorStep] = React.useState<1 | 2 | null>(null);
+  // Snapshot frozen at preview time so apply cannot drift from the reviewed plan.
+  const confirmedSelectionsRef = React.useRef<DesktopSshConfigSyncSelections>(DEFAULT_SYNC_SELECTIONS);
 
   const resetState = useEvent(() => {
     setStep(1);
     setPhase('scanning-local');
+    setDirection('push');
+    setSelections(DEFAULT_SYNC_SELECTIONS);
     setLocalPlan(null);
     setPreview(null);
+    setCredentialAuthorized(false);
     setErrorMessage(null);
     setErrorStep(null);
+    confirmedSelectionsRef.current = DEFAULT_SYNC_SELECTIONS;
   });
 
-  const runCompareRemote = useEvent(async () => {
+  const runCompareRemote = useEvent(async (
+    nextDirection: DesktopSshConfigSyncDirection = direction,
+    nextSelections: DesktopSshConfigSyncSelections = selections,
+  ) => {
     if (!instanceId) {
       return;
     }
@@ -157,7 +198,18 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
     setPreview(null);
 
     try {
-      const next = await desktopSshSyncOpencodeConfigPreview(instanceId);
+      const next = targetKind === 'relay'
+        ? (relayHost
+          ? await previewRelayConfigSync(relayHost, {
+            direction: nextDirection,
+            selections: nextSelections,
+          })
+          : null)
+        : await desktopSshSyncOpencodeConfigPreview(instanceId, {
+          targetKind,
+          direction: nextDirection,
+          selections: nextSelections,
+        });
       if (!next) {
         // Null means no desktop bridge or an unrecognized IPC payload (e.g. a
         // stale Electron main process). Surface it in the dialog instead of
@@ -168,6 +220,8 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
         return;
       }
       setPreview(next);
+      setCredentialAuthorized(next.credentialAuthorized === true);
+      confirmedSelectionsRef.current = nextSelections;
       setStep(3);
       setPhase('review');
     } catch (error) {
@@ -177,7 +231,10 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
     }
   });
 
-  const runScanLocal = useEvent(async () => {
+  const runScanLocal = useEvent(async (
+    nextDirection: DesktopSshConfigSyncDirection = direction,
+    nextSelections: DesktopSshConfigSyncSelections = selections,
+  ) => {
     if (!instanceId) {
       return;
     }
@@ -190,7 +247,23 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
     setPreview(null);
 
     try {
-      const plan = await desktopSshSyncOpencodeConfigLocalScan();
+      if (instanceId) {
+        const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
+          ? relayHost.relay.serverId
+          : instanceId;
+        const grant = await desktopSshCredentialSyncGet(grantId, { targetKind });
+        const authorized = grant?.authorized === true;
+        setCredentialAuthorized(authorized);
+        if (!authorized && nextSelections.authFile) {
+          nextSelections = { ...nextSelections, authFile: false };
+          setSelections(nextSelections);
+        }
+      }
+      const plan = await desktopSshSyncOpencodeConfigLocalScan({
+        targetKind,
+        direction: nextDirection,
+        selections: nextSelections,
+      });
       if (!plan) {
         // Null means no desktop bridge or an unrecognized IPC payload. Show the
         // failure in the foreground; never close the dialog silently.
@@ -200,7 +273,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
         return;
       }
       setLocalPlan(plan);
-      await runCompareRemote();
+      await runCompareRemote(nextDirection, nextSelections);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(1);
@@ -212,7 +285,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
     if (!open || !instanceId) {
       return;
     }
-    void runScanLocal();
+    void runScanLocal('push', DEFAULT_SYNC_SELECTIONS);
   }, [open, instanceId]);
 
   React.useEffect(() => {
@@ -238,10 +311,19 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
 
   const handleRetry = useEvent(() => {
     if (errorStep === 2) {
-      void runCompareRemote();
+      void runCompareRemote(direction, selections);
       return;
     }
-    void runScanLocal();
+    void runScanLocal(direction, selections);
+  });
+
+  const handleDirectionChange = useEvent((next: DesktopSshConfigSyncDirection) => {
+    if (next === direction || isApplying) return;
+    // Direction switch discards the old preview and recomputes via IPC.
+    setDirection(next);
+    setPreview(null);
+    setLocalPlan(null);
+    void runScanLocal(next, selections);
   });
 
   const handleConfirm = useEvent(async () => {
@@ -251,7 +333,18 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
 
     setPhase('applying');
     try {
-      const result = await desktopSshSyncOpencodeConfigApply(instanceId);
+      const result = targetKind === 'relay'
+        ? (relayHost
+          ? await applyRelayConfigSync(relayHost, {
+            direction,
+            selections: confirmedSelectionsRef.current,
+          })
+          : null)
+        : await desktopSshSyncOpencodeConfigApply(instanceId, {
+          targetKind,
+          direction,
+          selections: confirmedSelectionsRef.current,
+        });
       if (!result) {
         throw new Error('Sync bridge unavailable');
       }
@@ -286,6 +379,127 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({ open, instanceId, o
           <DialogTitle>{t('settings.remoteInstances.page.sync.title')}</DialogTitle>
           <DialogDescription>{t('settings.remoteInstances.page.sync.description')}</DialogDescription>
         </DialogHeader>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="xs"
+            variant={direction === 'push' ? 'default' : 'outline'}
+            className="!font-normal"
+            aria-pressed={direction === 'push'}
+            disabled={isApplying || phase === 'comparing-remote' || phase === 'scanning-local'}
+            onClick={() => handleDirectionChange('push')}
+          >
+            {t('settings.remoteInstances.page.sync.direction.push')}
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant={direction === 'pull' ? 'default' : 'outline'}
+            className="!font-normal"
+            aria-pressed={direction === 'pull'}
+            disabled={isApplying || phase === 'comparing-remote' || phase === 'scanning-local'}
+            onClick={() => handleDirectionChange('pull')}
+          >
+            {t('settings.remoteInstances.page.sync.direction.pull')}
+          </Button>
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-border/60 p-2">
+          <div className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.sync.scope.title')}</div>
+          {([
+            { key: 'config', label: 'config.json / opencode.json(c)', index: 0, kind: 'fileGroups' as const },
+            { key: 'oh-slim', label: 'oh-my-opencode-slim.json(c)', index: 1, kind: 'fileGroups' as const },
+            { key: 'oh-agent', label: 'oh-my-openagent.json(c)', index: 2, kind: 'fileGroups' as const },
+            { key: 'agents-md', label: 'AGENTS.md', index: 0, kind: 'singleFiles' as const },
+            { key: 'cursor-models', label: 'cursor-models.json', index: 1, kind: 'singleFiles' as const },
+            { key: 'agents', label: 'agents/', index: 0, kind: 'directories' as const },
+            { key: 'commands', label: 'commands/', index: 1, kind: 'directories' as const },
+            { key: 'skills', label: 'skills/', index: 2, kind: 'directories' as const },
+            { key: 'plugins', label: 'plugins/', index: 5, kind: 'directories' as const },
+          ]).map((item) => {
+            const checked = selections[item.kind][item.index] !== false;
+            return (
+              <label key={item.key} className="flex items-center gap-2 typography-meta">
+                <Checkbox
+                  checked={checked}
+                  disabled={isApplying}
+                  ariaLabel={item.label}
+                  onChange={(nextChecked) => {
+                    const list = [...selections[item.kind]];
+                    list[item.index] = nextChecked;
+                    const next = { ...selections, [item.kind]: list };
+                    setSelections(next);
+                    if (phase === 'review') void runCompareRemote(direction, next);
+                  }}
+                />
+                <span className="font-mono">{item.label}</span>
+              </label>
+            );
+          })}
+          <label className="flex items-center gap-2 typography-meta">
+            <Checkbox
+              checked={selections.agentsRoot}
+              disabled={isApplying}
+              ariaLabel={t('settings.remoteInstances.page.sync.section.agentsRoot')}
+              onChange={(checked) => {
+                const next = { ...selections, agentsRoot: checked };
+                setSelections(next);
+                if (phase === 'review') void runCompareRemote(direction, next);
+              }}
+            />
+            {t('settings.remoteInstances.page.sync.section.agentsRoot')}
+          </label>
+          <label className="flex items-center gap-2 typography-meta">
+            <Checkbox
+              checked={selections.authFile}
+              disabled={isApplying || !credentialAuthorized}
+              ariaLabel={t('settings.remoteInstances.page.sync.section.authFile')}
+              onChange={(checked) => {
+                if (!credentialAuthorized) return;
+                const next = { ...selections, authFile: checked };
+                setSelections(next);
+                if (phase === 'review') void runCompareRemote(direction, next);
+              }}
+            />
+            {t('settings.remoteInstances.page.sync.section.authFile')}
+          </label>
+          {!credentialAuthorized ? (
+            <div className="space-y-2">
+              <div className="typography-micro text-muted-foreground">
+                {t('settings.remoteInstances.page.sync.scope.authRequiresGrant')}
+              </div>
+              {(targetKind === 'relay' || targetKind === 'direct') && instanceId ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  className="!font-normal"
+                  disabled={isApplying}
+                  onClick={() => {
+                    const ok = window.confirm(t('settings.remoteInstances.page.credentialSync.confirmGrant'));
+                    if (!ok) return;
+                    const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
+                      ? relayHost.relay.serverId
+                      : instanceId;
+                    void desktopSshCredentialSyncGrant(grantId, { targetKind })
+                      .then((grant) => {
+                        setCredentialAuthorized(grant?.authorized === true);
+                        toast.success(t('settings.remoteInstances.page.credentialSync.toast.granted'));
+                      })
+                      .catch((err) => {
+                        toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
+                          description: err instanceof Error ? err.message : String(err),
+                        });
+                      });
+                  }}
+                >
+                  {t('settings.remoteInstances.page.credentialSync.toggleLabel')}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
         <div className="space-y-2">
           {SYNC_STEP_KEYS.map((key, index) => {
@@ -791,12 +1005,17 @@ export const RemoteInstancesPage: React.FC = () => {
   }, [instances, selectedId]);
 
   const [draft, setDraft] = React.useState<DesktopSshInstance | null>(null);
+  const [credentialSyncAuthorized, setCredentialSyncAuthorized] = React.useState(false);
+  const [credentialSyncBusy, setCredentialSyncBusy] = React.useState(false);
+  const [syncRuns, setSyncRuns] = React.useState<DesktopSshSyncRunRecord[]>([]);
   const [logDialogOpen, setLogDialogOpen] = React.useState(false);
   const [logDialogLoading, setLogDialogLoading] = React.useState(false);
   const [logDialogError, setLogDialogError] = React.useState<string | null>(null);
   const [logDialogLines, setLogDialogLines] = React.useState<string[]>([]);
   const [syncDialogOpen, setSyncDialogOpen] = React.useState(false);
   const [syncDialogInstanceId, setSyncDialogInstanceId] = React.useState<string | null>(null);
+  const [syncDialogTargetKind, setSyncDialogTargetKind] = React.useState<'ssh' | 'direct' | 'relay'>('ssh');
+  const [syncDialogRelayHost, setSyncDialogRelayHost] = React.useState<RelayConfigSyncHost | null>(null);
   const [patternHost, setPatternHost] = React.useState<string | null>(null);
   const [patternDestination, setPatternDestination] = React.useState('');
   const [patternCreating, setPatternCreating] = React.useState(false);
@@ -1518,6 +1737,42 @@ export const RemoteInstancesPage: React.FC = () => {
   }, [selectedInstance]);
 
   React.useEffect(() => {
+    let cancelled = false;
+    if (!selectedId || selectedInstance?.remoteOpenchamber?.mode !== 'managed') {
+      setCredentialSyncAuthorized(false);
+      setSyncRuns([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void desktopSshCredentialSyncGet(selectedId)
+      .then((grant) => {
+        if (!cancelled) {
+          setCredentialSyncAuthorized(grant?.authorized === true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCredentialSyncAuthorized(false);
+        }
+      });
+    void desktopSshSyncRunsList(selectedId)
+      .then((runs) => {
+        if (!cancelled) {
+          setSyncRuns(runs.slice(-5).reverse());
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSyncRuns([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, selectedInstance?.remoteOpenchamber?.mode, syncDialogOpen]);
+
+  React.useEffect(() => {
     if (!selectedId) {
       return;
     }
@@ -1833,8 +2088,14 @@ export const RemoteInstancesPage: React.FC = () => {
     navigateToUrl(target);
   }, [status?.localUrl, t]);
 
-  const openSyncDialog = React.useCallback((instanceId: string) => {
+  const openSyncDialog = React.useCallback((
+    instanceId: string,
+    targetKind: 'ssh' | 'direct' | 'relay' = 'ssh',
+    relayHost: RelayConfigSyncHost | null = null,
+  ) => {
     setSyncDialogInstanceId(instanceId);
+    setSyncDialogTargetKind(targetKind);
+    setSyncDialogRelayHost(relayHost);
     setSyncDialogOpen(true);
   }, []);
 
@@ -2101,6 +2362,46 @@ export const RemoteInstancesPage: React.FC = () => {
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void setDefaultDirectHost(host.id)} disabled={directSaving || directDefaultHostId === host.id} aria-label={t('desktopHostSwitcher.actions.setAsDefaultAria')}>
                           {directDefaultHostId === host.id ? <Icon name="star-fill" className="h-3.5 w-3.5" /> : <Icon name="star" className="h-3.5 w-3.5" />}
                         </Button>
+                        {(() => {
+                          const apiUrl = getDesktopHostApiUrl(host);
+                          const canDirectSync = Boolean(apiUrl)
+                            && !apiUrl.startsWith('relay://')
+                            && !host.relay
+                            && !host.sshTarget;
+                          const canRelaySync = Boolean(host.relay?.serverId)
+                            && Boolean(host.relay?.relayUrl)
+                            && Boolean(host.relay?.hostEncPubJwk)
+                            && Boolean(host.clientToken)
+                            && !host.sshTarget;
+                          if (canRelaySync && host.relay) {
+                            return (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                className="!font-normal"
+                                onClick={() => openSyncDialog(host.id, 'relay', host as RelayConfigSyncHost)}
+                                aria-label={t('settings.remoteInstances.page.sync.title')}
+                              >
+                                <Icon name="refresh" className="h-3.5 w-3.5" />
+                                {t('settings.remoteInstances.page.sync.actions.syncNow')}
+                              </Button>
+                            );
+                          }
+                          return canDirectSync ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="xs"
+                              className="!font-normal"
+                              onClick={() => openSyncDialog(host.id, 'direct')}
+                              aria-label={t('settings.remoteInstances.page.sync.title')}
+                            >
+                              <Icon name="refresh" className="h-3.5 w-3.5" />
+                              {t('settings.remoteInstances.page.sync.actions.syncNow')}
+                            </Button>
+                          ) : null;
+                        })()}
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void handleRemoveDirectHost(host.id)} disabled={directSaving || hostSwitchPending}>
                           <Icon name="delete-bin" className="h-3.5 w-3.5" />
                           {t('settings.common.actions.delete')}
@@ -2569,10 +2870,14 @@ export const RemoteInstancesPage: React.FC = () => {
       <SyncConfigDialog
         open={syncDialogOpen}
         instanceId={syncDialogInstanceId}
+        targetKind={syncDialogTargetKind}
+        relayHost={syncDialogRelayHost}
         onOpenChange={(open) => {
           setSyncDialogOpen(open);
           if (!open) {
             setSyncDialogInstanceId(null);
+            setSyncDialogTargetKind('ssh');
+            setSyncDialogRelayHost(null);
           }
         }}
       />
@@ -2928,6 +3233,88 @@ export const RemoteInstancesPage: React.FC = () => {
           </SettingsRow>
       </SettingsGroup>
 
+      {isManagedMode ? (
+        <SettingsGroup label={t('settings.remoteInstances.page.sync.runs.title')}>
+          {syncRuns.length === 0 ? (
+            <div className="oc-settings-group-row typography-meta text-muted-foreground">
+              {t('settings.remoteInstances.page.sync.runs.empty')}
+            </div>
+          ) : (
+            syncRuns.map((run) => (
+              <div key={run.syncRunId} className="oc-settings-group-row flex items-center gap-2 typography-meta">
+                <span className={cn(
+                  'shrink-0',
+                  run.result === 'success' ? 'text-[var(--status-success)]' : 'text-[var(--status-error)]',
+                )}>
+                  {run.result === 'success'
+                    ? t('settings.remoteInstances.page.sync.runs.result.success')
+                    : t('settings.remoteInstances.page.sync.runs.result.failure')}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                  {run.direction === 'pull'
+                    ? t('settings.remoteInstances.page.sync.direction.pull')
+                    : t('settings.remoteInstances.page.sync.direction.push')}
+                  {run.endedAt ? ` · ${run.endedAt}` : ''}
+                </span>
+              </div>
+            ))
+          )}
+        </SettingsGroup>
+      ) : null}
+
+      {isManagedMode ? (
+        <SettingsGroup
+          label={t('settings.remoteInstances.page.section.credentialSync')}
+          description={t('settings.remoteInstances.page.credentialSync.description')}
+        >
+          <SettingsToggleRow
+            checked={credentialSyncAuthorized}
+            disabled={credentialSyncBusy}
+            ariaLabel={t('settings.remoteInstances.page.credentialSync.toggleAria')}
+            label={t('settings.remoteInstances.page.credentialSync.toggleLabel')}
+            description={t('settings.remoteInstances.page.credentialSync.toggleDescription')}
+            onChange={(checked) => {
+              if (!draft?.id) return;
+              if (checked) {
+                const ok = window.confirm(t('settings.remoteInstances.page.credentialSync.confirmGrant'));
+                if (!ok) return;
+                setCredentialSyncBusy(true);
+                void desktopSshCredentialSyncGrant(draft.id)
+                  .then((grant) => {
+                    setCredentialSyncAuthorized(grant?.authorized === true);
+                    toast.success(t('settings.remoteInstances.page.credentialSync.toast.granted'));
+                  })
+                  .catch((err) => {
+                    toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
+                      description: err instanceof Error ? err.message : String(err),
+                    });
+                  })
+                  .finally(() => {
+                    setCredentialSyncBusy(false);
+                  });
+                return;
+              }
+              const ok = window.confirm(t('settings.remoteInstances.page.credentialSync.confirmRevoke'));
+              if (!ok) return;
+              setCredentialSyncBusy(true);
+              void desktopSshCredentialSyncRevoke(draft.id)
+                .then((grant) => {
+                  setCredentialSyncAuthorized(grant?.authorized === true);
+                  toast.success(t('settings.remoteInstances.page.credentialSync.toast.revoked'));
+                })
+                .catch((err) => {
+                  toast.error(t('settings.remoteInstances.page.credentialSync.toast.revokeFailed'), {
+                    description: err instanceof Error ? err.message : String(err),
+                  });
+                })
+                .finally(() => {
+                  setCredentialSyncBusy(false);
+                });
+            }}
+          />
+        </SettingsGroup>
+      ) : null}
+
       <SettingsGroup label={t('settings.remoteInstances.page.section.portForwards')}>
           {draft.portForwards.length === 0 ? (
             <div className="oc-settings-group-row typography-meta text-muted-foreground">{t('settings.remoteInstances.page.empty.noExtraForwards')}</div>
@@ -3224,10 +3611,14 @@ export const RemoteInstancesPage: React.FC = () => {
       <SyncConfigDialog
         open={syncDialogOpen}
         instanceId={syncDialogInstanceId}
+        targetKind={syncDialogTargetKind}
+        relayHost={syncDialogRelayHost}
         onOpenChange={(open) => {
           setSyncDialogOpen(open);
           if (!open) {
             setSyncDialogInstanceId(null);
+            setSyncDialogTargetKind('ssh');
+            setSyncDialogRelayHost(null);
           }
         }}
       />

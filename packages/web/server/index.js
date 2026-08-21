@@ -1240,6 +1240,11 @@ async function main(options = {}) {
   if (typeof options.getIsWindowFocused === 'function') {
     notificationTriggerRuntime.setGetIsWindowFocused(options.getIsWindowFocused);
   }
+  // Electron in-process: join the desktop settings mutation chain so web
+  // persistSettings cannot race main/ssh-manager writers on settings.json.
+  if (typeof options.settingsPersistLock === 'function') {
+    settingsRuntime.setRunExclusivePersist(options.settingsPersistLock);
+  }
   const getDesktopRuntimeConfig = typeof options.getDesktopRuntimeConfig === 'function'
     ? options.getDesktopRuntimeConfig
     : null;
@@ -1441,6 +1446,7 @@ async function main(options = {}) {
     // is not an instance identity — one machine can run several servers.
     getServerLabel: () => 'OpenChamber',
     readSettingsFromDiskMigrated,
+    persistSettings,
     normalizeTunnelSessionTtlMs,
     authorizeManagedOpenCodeBridgeRequest: managedCapabilitiesRuntime.authorizeManagedOpenCodeBridgeRequest,
     sayTTSCapability,

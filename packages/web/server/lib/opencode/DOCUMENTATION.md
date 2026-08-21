@@ -184,13 +184,16 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (settings-runtime.js)
 - `createSettingsRuntime(dependencies)`: creates settings lifecycle runtime for read/migrate/persist concerns.
+- Optional dependency `runExclusivePersist` / `getRunExclusivePersist`, plus returned `setRunExclusivePersist(fn)`, let an in-process host (Electron) replace the default `persistSettingsLock` with a shared exclusive runner so desktop main/ssh writers and web settings persistence serialize on one chain.
 - Returned API:
   - `readSettingsFromDisk()`
   - `readSettingsFromDiskMigrated()`
   - `writeSettingsToDisk(settings)`
   - `persistSettings(changes)`
+  - `setRunExclusivePersist(fn)`
   - Persistent permission auto-accept policy is stored under `permissionAutoAccept`; execution ownership lives in `lib/permission-auto-accept/`.
   - One-shot compact-chat defaults migration: when disk marker `compactChatDefaultsMigrationVersion` is missing, rewrite legacy/absent `chatRenderMode`/`activityRenderMode`/`showTurnChangedFiles` to `sorted`/`collapsed`/`true` and persist marker `1` (marker stays on disk; response allowlist still hides it). Marker already `1` preserves user values; `persistSettings` runs the same migration before the first write.
+  - `startWebUiServer({ settingsPersistLock })` late-binds that shared runner after module load.
 
 ## Public exports (settings-helpers.js)
 - `createSettingsHelpers(dependencies)`: creates settings helper runtime for settings request/response shaping.

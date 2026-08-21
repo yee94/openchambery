@@ -150,3 +150,13 @@ Project names: `@openchamber/ui`, `@openchamber/web`, `openchamber-vscode`, `@op
 - Run focused tests, syntax checks, builds, or runtime validation for the touched surface when relevant.
 - For docs-only or isolated config changes, run the narrowest relevant validation.
 - Report exactly what was and was not validated. Static checks alone do not prove runtime, relay, performance, or platform correctness.
+
+## Agent skills
+
+### Issue tracker
+
+Tickets live as local Markdown under `.scratch/<feature>/issues/`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Use a single `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
