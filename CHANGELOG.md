@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.2] - 2026-08-21
+
+### Git
+
+- **超大变更集降级改为服务端驱动：** `/api/git/status` 响应新增 `oversized` 标记，服务端变更文件数超过其阈值（当前 2000）时置位并省略 `diffStats`（跳过两轮全树 `git diff --numstat` 与新文件行数统计，避免阻塞服务事件循环数秒）。客户端降级渲染只认该标记，不再持有本地阈值副本；服务端调整阈值时客户端零改动自动跟随。常规项目响应不变（`oversized: false`）。VS Code 运行时不计算 diffStats，不设置该标记。
+
 ## [1.18.2-beta.1] - 2026-08-21
 
 ### Git

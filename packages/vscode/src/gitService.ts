@@ -382,6 +382,12 @@ export interface GitStatusResult {
   behind: number;
   files: GitStatusFile[];
   isClean: boolean;
+  /**
+   * Server marker for oversized change sets (web runtime). The VS Code git
+   * service never sets it: it does not compute diffStats at all, so there is
+   * no heavy path to degrade and deferred rendering never activates here.
+   */
+  oversized?: boolean;
   diffStats?: Record<string, { insertions: number; deletions: number }>;
   /** Present when a merge is in progress with conflicts */
   mergeInProgress?: GitMergeInProgress | null;

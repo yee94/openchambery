@@ -1,14 +1,12 @@
 import type { GitStatus } from '@/lib/api/types';
 
 /**
- * 当工作区变更文件数超过该阈值时，变更列表与派生数据（排序/分组/树/预取）
- * 不再自动渲染，改为展示一个"点击加载"的降级入口，由用户显式触发加载。
- * 该规模下全量排序 + 树构建 + 行扁平化会阻塞主线程数秒。
+ * 超大变更集的降级入口由服务端决定：`GitStatus.oversized` 是服务端在
+ * 变更文件数超过其自有阈值时下发的标记（此时 diffStats 一并省略）。
+ * 客户端不做本地阈值判断，服务端调整阈值时这里零改动自动跟随。
+ * 点击"加载更改"后由调用方用本地 loaded 状态解除降级。
  */
-export const GIT_CHANGES_DEFERRED_THRESHOLD = 2000;
-
-/** 状态是否应进入延迟加载（deferred）模式。空/无状态不降级。 */
 export const isDeferredGitChangesStatus = (status: GitStatus | null | undefined): boolean => {
   if (!status) return false;
-  return (status.files?.length ?? 0) > GIT_CHANGES_DEFERRED_THRESHOLD;
+  return status.oversized === true;
 };
