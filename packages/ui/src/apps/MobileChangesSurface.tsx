@@ -6,6 +6,8 @@ import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { ChangesPanel, type ChangesGroupConfig } from '@/components/views/git/ChangesPanel';
+import { DeferredChangesNotice } from '@/components/views/git/DeferredChangesNotice';
+import { isDeferredGitChangesStatus } from '@/components/views/git/deferredChanges';
 import { CommitSection } from '@/components/views/git/CommitSection';
 import { SyncActions } from '@/components/views/git/SyncActions';
 import { PierreDiffViewer } from '@/components/views/PierreDiffViewer';
@@ -112,15 +114,20 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
   });
   const [diffRetryNonce, setDiffRetryNonce] = React.useState(0);
   const remoteRequest = React.useRef({ key: null as string | null, generation: 0 });
+  // 超大变更集（>阈值）默认延迟：不去重/排序/预取，直到用户点击加载。
+  const [deferredChangesLoaded, setDeferredChangesLoaded] = React.useState(false);
+  const isDeferredChanges = isDeferredGitChangesStatus(status) && !deferredChangesLoaded;
 
   const changeEntries = React.useMemo(() => {
     const files = status?.files ?? [];
+    // Deferred 模式短路：跳过 Map 去重 + localeCompare 排序，等用户点击加载。
+    if (isDeferredChanges) return [];
     const unique = new Map<string, (typeof files)[number]>();
     for (const file of files) {
       unique.set(file.path, file);
     }
     return Array.from(unique.values()).sort((a, b) => a.path.localeCompare(b.path));
-  }, [status?.files]);
+  }, [status?.files, isDeferredChanges]);
 
   const stagedChangeEntries = React.useMemo(
     () => changeEntries.filter(isStagedStatusFile),
@@ -131,6 +138,18 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     () => changeEntries.filter(isUnstagedStatusFile),
     [changeEntries],
   );
+
+  // Deferred 模式概要计数：单趟 O(n) 扫描，不做去重/排序/数组拷贝。
+  const { deferredStagedCount, deferredUnstagedCount } = React.useMemo(() => {
+    if (!isDeferredChanges || !status) return { deferredStagedCount: 0, deferredUnstagedCount: 0 };
+    let staged = 0;
+    let unstaged = 0;
+    for (const file of status.files ?? []) {
+      if (isStagedStatusFile(file)) staged += 1;
+      if (isUnstagedStatusFile(file)) unstaged += 1;
+    }
+    return { deferredStagedCount: staged, deferredUnstagedCount: unstaged };
+  }, [isDeferredChanges, status]);
 
   const effectiveRemotes = React.useMemo<GitRemote[]>(() => {
     if (remotes.length > 0) return remotes;
@@ -620,10 +639,18 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
           aheadCount={status?.ahead ?? 0}
           behindCount={status?.behind ?? 0}
           trackingRemoteName={status?.tracking?.split('/')[0]}
-          hasUncommittedChanges={changeEntries.length > 0}
+          hasUncommittedChanges={(status?.files?.length ?? 0) > 0}
         />
       </header>
-      {changeEntries.length > 0 ? (
+      {isDeferredChanges ? (
+        <div className="min-h-0 flex-1">
+          <DeferredChangesNotice
+            stagedCount={deferredStagedCount}
+            unstagedCount={deferredUnstagedCount}
+            onLoad={() => setDeferredChangesLoaded(true)}
+          />
+        </div>
+      ) : changeEntries.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col">
           {/* File list scrolls inside ChangesPanel; the commit footer stays pinned. */}
           <div className="min-h-0 flex-1 overflow-hidden px-4 pt-4">

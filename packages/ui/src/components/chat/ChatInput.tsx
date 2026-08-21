@@ -109,7 +109,7 @@ import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { DraftSessionBranchSelector } from './DraftSessionBranchSelector';
 import { resolveDraftSessionBranchLabel } from './draftSessionBranchLabel';
-import { extractGitChangedFiles } from './changedFiles';
+import { extractGitChangedFiles, hasExtractableGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { fetchResponseStyleInstruction } from '@/lib/responseStyle';
@@ -5966,8 +5966,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (isGitRepo !== true || !currentGitStatus || currentGitStatus.isClean) {
             return false;
         }
-        return extractGitChangedFiles(currentGitStatus.files, currentGitStatus.diffStats, currentDirectory).length > 0;
-    }, [currentDirectory, currentGitStatus, isGitRepo, isMiniChatSurface]);
+        // 短路谓词：超大变更集下避免为布尔值构造全量 GitChangedFile 数组。
+        return hasExtractableGitChangedFiles(currentGitStatus.files);
+    }, [currentGitStatus, isGitRepo, isMiniChatSurface]);
 
     const selectedDraftBranchIsKnown = React.useMemo(() => {
         if (!selectedDraftDirectory) {
