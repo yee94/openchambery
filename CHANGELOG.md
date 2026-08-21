@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.18] - 2026-08-21
+
+### 移动端
+
+- **Android 回退扫码取消恢复：** bundled CameraX 扫码点击取消时优先恢复 WebView 页面可见性；取消按钮与原生扫码清理可处理 DOM 竞态，避免透明相机页停留为白屏。
+
+### SSH 远程实例
+
+- **配置同步文案统一：** 简体中文与繁体中文界面统一使用 Agent 名称。
+
 ## [1.17.1-beta.17] - 2026-08-21
 
 ### SSH 远程实例
