@@ -129,6 +129,20 @@ describe('ChatContainer source contracts', () => {
         expect(timelineSource).toContain('endHistoryViewportPreservation();');
     });
 
+    test('latches confirmed subagent footer identity through temporary session identity gaps', () => {
+        // session.updated hides subagents from the live directory list, so
+        // parentSessionTarget can go null while the child is still on screen.
+        // The banner must keep the last-known parent + agent/model instead of
+        // flashing to the metadata-less "cannot send to child" foot.
+        expect(source).toContain('resolveSubagentReadOnlyBannerLatch');
+        expect(source).toContain('const nextSubagentBannerLatch = resolveSubagentReadOnlyBannerLatch(');
+        expect(source).toContain('const resolvedParentSessionTarget = parentSessionTarget ?? nextSubagentBannerLatch?.parentTarget ?? null');
+        expect(source).toContain('const bannerExecution = nextSubagentBannerLatch?.execution ?? sessionExecution');
+        expect(source).toContain('agentName={bannerExecution.agentName}');
+        expect(source).toContain('modelId={bannerExecution.modelId}');
+        expect(source).not.toContain('const readOnlyPromptBanner = parentSessionTarget ? (');
+    });
+
     test('timeline viewport metrics are ResizeObserver-owned and identity-stable on no-op', () => {
         // Trace-20260805: messages-keyed layout effect + fresh setState object
         // forced a second ChatContainer render on every shell-tool part commit.

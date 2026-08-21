@@ -1746,14 +1746,13 @@ describe('useConfigStore provider persistence', () => {
     liveProviderId = 'recovered';
     liveAgents = [testAgent('build')];
 
-    // Empty provider catalogs use staleTime 0, so ordinary ensure refetches.
-    // Empty agent catalogs still use staleTime Infinity until force-refresh.
+    // Empty catalogs use staleTime 0, so ordinary ensure refetches both.
     await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:staleEnsure' });
     await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:staleEnsure' });
     expect(getProvidersCalls).toBe(providerCallsAfterEmpty + 1);
-    expect(listAgentsCalls).toBe(agentCallsAfterEmpty);
+    expect(listAgentsCalls).toBe(agentCallsAfterEmpty + 1);
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['recovered']);
-    expect(useConfigStore.getState().agents).toEqual([]);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
 
     await useConfigStore.getState().refreshMissingCatalogs({ source: 'test:recovery' });
 
@@ -1762,6 +1761,48 @@ describe('useConfigStore provider persistence', () => {
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['recovered']);
     expect(useConfigStore.getState().currentProviderId).toBe('recovered');
     expect(useConfigStore.getState().currentModelId).toBe('recovered-model');
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
+  });
+
+  test('refreshCatalogsOnPickerOpen force-refreshes both catalogs even when they already have data', async () => {
+    liveProviderId = 'warm';
+    liveAgents = [testAgent('build')];
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:pickerWarmProviders' });
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:pickerWarmAgents' });
+    const providerCallsAfterWarm = getProvidersCalls;
+    const agentCallsAfterWarm = listAgentsCalls;
+
+    liveProviderId = 'picker';
+    liveAgents = [testAgent('plan')];
+    await useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'test:pickerOpen' });
+
+    expect(getProvidersCalls).toBe(providerCallsAfterWarm + 1);
+    expect(listAgentsCalls).toBe(agentCallsAfterWarm + 1);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['picker']);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['plan']);
+  });
+
+  test('refreshCatalogsOnPickerOpen merges concurrent picker-open refreshes into one flight', async () => {
+    const pendingProviders = deferred<{ providers: ReturnType<typeof providerResponse>[]; default: Record<string, string> }>();
+    const pendingAgents = deferred<TestAgent[]>();
+    getProvidersForConfigImpl = () => pendingProviders.promise;
+    listAgentsImpl = () => pendingAgents.promise;
+
+    const first = useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'test:picker-a' });
+    const second = useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'test:picker-b' });
+    expect(second).toBe(first);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getProvidersCalls).toBe(1);
+    expect(listAgentsCalls).toBe(1);
+
+    pendingProviders.resolve({ providers: [providerResponse('merged-picker')], default: {} });
+    pendingAgents.resolve([testAgent('build')]);
+    await Promise.all([first, second]);
+
+    expect(getProvidersCalls).toBe(1);
+    expect(listAgentsCalls).toBe(1);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['merged-picker']);
     expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
   });
 

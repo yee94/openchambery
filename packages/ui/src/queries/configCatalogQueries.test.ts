@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let runtimeKey = 'runtime-a';
 let agentCalls = 0;
+let agentResult: Array<{ name: string }> | null = null;
 let providerCalls = 0;
 let seenSignal: AbortSignal | undefined;
 let providerSignal: AbortSignal | undefined;
@@ -36,7 +37,7 @@ mock.module('@/lib/opencode/client', () => ({
       agentCalls += 1;
       seenSignal = signal;
       await new Promise<void>((resolve) => { resolveAgents = resolve; });
-      return [{ name: `${runtimeKey}:${_directory}` }];
+      return agentResult ?? [{ name: `${runtimeKey}:${_directory}` }];
     },
   },
 }));
@@ -66,6 +67,7 @@ describe('configCatalogQueries', () => {
     queryClient.clear();
     runtimeKey = 'runtime-a';
     agentCalls = 0;
+    agentResult = null;
     providerCalls = 0;
     seenSignal = undefined;
     providerSignal = undefined;
@@ -304,5 +306,18 @@ describe('configCatalogQueries', () => {
 
     await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
     expect(providerCalls).toBeGreaterThan(1);
+  });
+
+  test('成功返回空 Agent catalog 后，再次 ensure 会重新发起请求', async () => {
+    agentResult = [];
+    const first = ensureRawAgentsQuery('/workspace/project', runtimeKey);
+    resolveAgents?.();
+    expect(await first).toEqual([]);
+    expect(agentCalls).toBe(1);
+
+    const second = ensureRawAgentsQuery('/workspace/project', runtimeKey);
+    resolveAgents?.();
+    expect(await second).toEqual([]);
+    expect(agentCalls).toBe(2);
   });
 });

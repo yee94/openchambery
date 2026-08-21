@@ -695,7 +695,7 @@ export const createSettingsRuntime = (deps) => {
     const next = { ...settings };
 
     if (typeof settings.notifyOnSubtasks !== 'boolean') {
-      next.notifyOnSubtasks = true;
+      next.notifyOnSubtasks = false;
       changed = true;
     }
     if (typeof settings.notifyOnCompletion !== 'boolean') {

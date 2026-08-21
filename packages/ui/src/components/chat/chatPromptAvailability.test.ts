@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { composerSendPhase } from '@/sync/composer-send-manager';
-import { resolveChatPromptAvailability, resolveComposerActionAvailability, resolveSessionIdentityPending } from './chatPromptAvailability';
+import { resolveChatPromptAvailability, resolveComposerActionAvailability, resolveSessionIdentityPending, resolveSubagentReadOnlyBannerLatch } from './chatPromptAvailability';
 
 const idlePhase = composerSendPhase(null, false);
 
@@ -114,6 +114,37 @@ describe('resolveChatPromptAvailability', () => {
             showReadOnlyBanner: false,
             blockSubmission: false,
         });
+    });
+});
+
+describe('resolveSubagentReadOnlyBannerLatch', () => {
+    const parent = { id: 'ses_parent', directory: '/repo' };
+    const viewKey = 'explicit:runtime:["/repo","ses_child"]';
+    const execution = { agentName: 'explorer', providerId: 'opencode', modelId: 'grok-4.6' };
+
+    test('keeps confirmed subagent footer ownership and execution identity across temporary session identity gaps', () => {
+        const confirmed = resolveSubagentReadOnlyBannerLatch(null, viewKey, parent, execution);
+        const duringGap = resolveSubagentReadOnlyBannerLatch(confirmed, viewKey, null, {});
+        const afterRecovery = resolveSubagentReadOnlyBannerLatch(duringGap, viewKey, parent, {
+            agentName: 'explorer',
+            providerId: 'opencode',
+            modelId: 'grok-4.6',
+        });
+
+        expect(confirmed).toEqual({ viewKey, parentTarget: parent, execution });
+        expect(duringGap).toEqual({ viewKey, parentTarget: parent, execution });
+        expect(duringGap).toBe(confirmed);
+        expect(afterRecovery).toEqual({ viewKey, parentTarget: parent, execution });
+        expect(afterRecovery).toBe(duringGap);
+        expect(resolveSubagentReadOnlyBannerLatch(confirmed, 'other-view', null, execution)).toBeNull();
+        expect(resolveSubagentReadOnlyBannerLatch(confirmed, viewKey, { ...parent }, execution)).toBe(confirmed);
+    });
+
+    test('preserves last-known execution fields when a later snapshot omits identity', () => {
+        const confirmed = resolveSubagentReadOnlyBannerLatch(null, viewKey, parent, execution);
+        const duringStream = resolveSubagentReadOnlyBannerLatch(confirmed, viewKey, parent, {});
+
+        expect(duringStream?.execution).toEqual(execution);
     });
 });
 

@@ -8,9 +8,11 @@ const INTERVAL_MS = 2000;
 
 /**
  * Polls force-refresh of empty Provider/Agent catalogs after a successful empty
- * warm load (TanStack Query staleTime: Infinity). Shared across web, mobile, and
- * mini-chat so recovery has one attempt budget, one immediate kick, and one
- * interval owner. Store-level single-flight keeps concurrent force-refreshes merged.
+ * warm load. Empty catalogs use staleTime 0 so ordinary ensure refetches; this
+ * poll still force-refreshes store-empty catalogs after init swallows errors.
+ * Shared across web, mobile, and mini-chat so recovery has one attempt budget,
+ * one immediate kick, and one interval owner. Store-level single-flight keeps
+ * concurrent force-refreshes merged.
  */
 export const useStartupCatalogRecovery = (options: {
   enabled: boolean;

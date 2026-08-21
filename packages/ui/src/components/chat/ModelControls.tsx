@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import type { Agent } from '@opencode-ai/sdk/v2';
 import type { EditPermissionMode } from '@/stores/types/sessionTypes';
 import type { ModelMetadata } from '@/types';
@@ -435,6 +436,23 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const usingExternalMobilePanel = mobilePanel !== undefined && typeof onMobilePanelChange === 'function';
     const activeMobilePanel = usingExternalMobilePanel ? mobilePanel : localMobilePanel;
     const setActiveMobilePanel = usingExternalMobilePanel ? onMobilePanelChange : setLocalMobilePanel;
+    const openLocalMobilePanel = useEvent((panel: MobileControlsPanel) => {
+        setActiveMobilePanel(panel);
+        void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'modelControls:mobilePanel' });
+    });
+    const handleAgentMenuOpenChange = useEvent((
+        open: boolean,
+        eventDetails?: { reason?: string; cancel?: () => void },
+    ) => {
+        if (shouldCancelSearchableSelectorHoverDismiss(open, eventDetails?.reason)) {
+            eventDetails?.cancel?.();
+            return;
+        }
+        setAgentSelectorOpen(open);
+        if (open) {
+            void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'modelControls:desktopAgentMenu' });
+        }
+    });
     const [mobileTooltipOpen, setMobileTooltipOpen] = React.useState<'model' | 'agent' | null>(null);
     const manualVariantSelectionRef = React.useRef(false);
     const closeMobilePanel = React.useCallback(() => setActiveMobilePanel(null), [setActiveMobilePanel]);
@@ -454,6 +472,25 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const [desktopVariantTarget, setDesktopVariantTarget] = React.useState<ModelPickerEntry | null>(null);
     const [modelTooltipOpen, setModelTooltipOpen] = React.useState(false);
     const suppressModelTooltipUntilRef = React.useRef(0);
+    const handleModelMenuOpenChange = useEvent((
+        nextOpen: boolean,
+        eventDetails?: { reason?: string; cancel?: () => void },
+    ) => {
+        if (shouldCancelSearchableSelectorHoverDismiss(nextOpen, eventDetails?.reason)) {
+            eventDetails?.cancel?.();
+            return;
+        }
+        setModelTooltipOpen(false);
+        if (!nextOpen) {
+            suppressModelTooltipUntilRef.current = performance.now() + 200;
+            setDesktopVariantTarget(null);
+            setDesktopModelQuery('');
+        }
+        setAgentMenuOpen(nextOpen);
+        if (nextOpen) {
+            void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'modelControls:desktopModelMenu' });
+        }
+    });
     const keyboardOwnsModelSelectionRef = React.useRef(false);
     const lastModelPointerPositionRef = React.useRef<{ x: number; y: number } | null>(null);
     const activeModelPickerEntryRef = React.useRef<ModelPickerEntry | undefined>(undefined);
@@ -1991,23 +2028,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             handleCycleAgentFromModelPicker(cycleAgentDirection);
         };
 
-        const handleModelMenuOpenChange = (
-            nextOpen: boolean,
-            eventDetails?: { reason?: string; cancel?: () => void },
-        ) => {
-            if (shouldCancelSearchableSelectorHoverDismiss(nextOpen, eventDetails?.reason)) {
-                eventDetails?.cancel?.();
-                return;
-            }
-            setModelTooltipOpen(false);
-            if (!nextOpen) {
-                suppressModelTooltipUntilRef.current = performance.now() + 200;
-                setDesktopVariantTarget(null);
-                setDesktopModelQuery('');
-            }
-            setAgentMenuOpen(nextOpen);
-        };
-
         const formatVariantLabel = (variant: string | undefined) => {
             if (!variant?.trim()) return t('chat.modelControls.default');
             return formatEffortLabel(variant);
@@ -2338,7 +2358,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 ) : (
                     <button
                         type="button"
-                        onClick={isModelControlReady ? () => setActiveMobilePanel('model') : undefined}
+                        onClick={isModelControlReady ? () => openLocalMobilePanel('model') : undefined}
                         onTouchStart={isModelControlReady ? () => handleLongPressStart('model') : undefined}
                         onTouchEnd={isModelControlReady ? handleLongPressEnd : undefined}
                         onTouchCancel={isModelControlReady ? handleLongPressEnd : undefined}
@@ -2528,13 +2548,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     <Tooltip delayDuration={600}>
                         <DropdownMenu
                             open={isAgentControlReady && isAgentSelectorOpen}
-                            onOpenChange={isAgentControlReady ? (open, eventDetails) => {
-                                if (shouldCancelSearchableSelectorHoverDismiss(open, eventDetails?.reason)) {
-                                    eventDetails?.cancel?.();
-                                    return;
-                                }
-                                setAgentSelectorOpen(open);
-                            } : undefined}
+                            onOpenChange={isAgentControlReady ? handleAgentMenuOpenChange : undefined}
                             onOpenChangeComplete={(open) => {
                                 if (!open) handleSelectorCloseComplete('agent');
                             }}
@@ -2659,7 +2673,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return (
             <button
                 type="button"
-                onClick={isAgentControlReady ? () => setActiveMobilePanel('agent') : undefined}
+                onClick={isAgentControlReady ? () => openLocalMobilePanel('agent') : undefined}
                 onTouchStart={isAgentControlReady ? () => handleLongPressStart('agent') : undefined}
                 onTouchEnd={isAgentControlReady ? handleLongPressEnd : undefined}
                 onTouchCancel={isAgentControlReady ? handleLongPressEnd : undefined}

@@ -6,6 +6,12 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { parseProviderCatalog } from '@/lib/configCatalogParser';
 import type { ProviderCatalog } from '@/types/configCatalog';
 
+// 空 catalog 绝不能永久 fresh：成功或失败后的空列表都必须在下一次
+// ensure/fetchQuery 时重新请求，避免 UI 被空 SWR 快照永久困住。
+const catalogStaleTime = (isPopulated: (data: unknown) => boolean) => (
+  ((query: { state: { data: unknown } }) => (isPopulated(query.state.data) ? Infinity : 0)) as () => number
+);
+
 export const normalizeConfigCatalogDirectory = (directory: string | null | undefined): string | null => {
   if (typeof directory !== 'string') return null;
   const normalized = directory.trim().replace(/\\/g, '/');
@@ -59,12 +65,10 @@ export const providerCatalogQueryOptions = (
       }
       return catalog;
     },
-    staleTime: ((query: { state: { data: unknown } }) => {
-      const data = query.state.data as ProviderCatalog | undefined;
-      // 空结果绝不永久 fresh：成功拉回空 provider 列表时，下一次
-      // ensure/fetchQuery 必须重新请求，避免 UI 会话被空 catalog 永久困住。
-      return data && data.providers.length > 0 ? Infinity : 0;
-    }) as () => number,
+    staleTime: catalogStaleTime((data) => {
+      const catalog = data as ProviderCatalog | undefined;
+      return Boolean(catalog && catalog.providers.length > 0);
+    }),
     gcTime: Infinity,
     retry: 2,
     retryDelay: 100,
@@ -83,7 +87,7 @@ export const rawAgentsQueryOptions = (
   return {
     queryKey: queryKeys.agents.raw(normalizedDirectory, transport),
     queryFn: ({ signal }: { signal: AbortSignal }) => opencodeClient.listAgents(normalizedDirectory, signal),
-    staleTime: Infinity,
+    staleTime: catalogStaleTime((data) => Array.isArray(data) && data.length > 0),
     gcTime: Infinity,
     retry: 2,
     retryDelay: 100,

@@ -31,6 +31,10 @@ import {
 } from '@/lib/desktopBoot';
 import type { RecoveryVariant } from '@/components/onboarding/DesktopConnectionRecovery';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import {
+  disposePendingNotificationOpen,
+  openSessionFromNotification,
+} from '@/sync/openSessionFromNotification';
 import { markSessionViewed } from '@/sync/notification-store';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -567,7 +571,7 @@ function App({ apis }: AppProps) {
   // Startup recovery: poll until providers AND agents are loaded.
   // loadProviders/loadAgents resolve normally even on failure (errors swallowed),
   // so a reactive effect can't detect failure — we need an interval.
-  // refreshMissingCatalogs force-refreshes empty Infinity Query caches so a
+  // refreshMissingCatalogs force-refreshes empty Query caches so a
   // successful-but-empty warm catalog does not stick forever.
   useStartupCatalogRecovery({
     enabled: embeddedBackgroundWorkEnabled && !isVSCodeRuntime,
@@ -679,17 +683,14 @@ function App({ apis }: AppProps) {
 
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ sessionId?: string; directory?: string }>).detail;
-      const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
-      if (!sessionId) return;
-      const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
-        ? detail.directory.trim()
-        : null;
-      useUIStore.getState().setActiveMainTab('chat');
-      void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
+      openSessionFromNotification(detail ?? {});
     };
 
     window.addEventListener('openchamber:open-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    return () => {
+      disposePendingNotificationOpen();
+      window.removeEventListener('openchamber:open-session', handler as EventListener);
+    };
   }, []);
 
   // Open a draft Mini Chat window from the native File menu / tray. Uses a

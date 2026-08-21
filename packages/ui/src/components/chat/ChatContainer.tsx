@@ -140,7 +140,12 @@ import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { findShellCommandForMessage, isUserShellMarkerMessage } from './lib/shellBridge';
 import { resolveContextPanelSessionExecution } from '@/components/layout/contextPanelSessionExecution';
-import { resolveChatPromptAvailability, resolveSessionIdentityPending } from './chatPromptAvailability';
+import {
+    resolveChatPromptAvailability,
+    resolveSessionIdentityPending,
+    resolveSubagentReadOnlyBannerLatch,
+    type SubagentReadOnlyBannerLatch,
+} from './chatPromptAvailability';
 import { shouldEnsureChatSessionRenderable } from './chatSessionMaterialization';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
@@ -1056,6 +1061,27 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [activeProjectId, newSessionDraft?.selectedProjectId, projects]);
 
     const parentSessionTarget = useParentSessionTarget(currentSessionId, effectiveSessionDirectory);
+    // Subagent rows leave the live directory list on session.updated; keep the
+    // confirmed footer parent + agent/model through that gap (mobile nested
+    // pages share this ChatContainer path).
+    const subagentBannerViewKey = sessionViewKey ?? currentSessionId ?? '';
+    const [subagentBannerLatch, setSubagentBannerLatch] = React.useState<SubagentReadOnlyBannerLatch<NonNullable<typeof parentSessionTarget>> | null>(null);
+    const nextSubagentBannerLatch = resolveSubagentReadOnlyBannerLatch(
+        subagentBannerLatch,
+        subagentBannerViewKey,
+        parentSessionTarget,
+        sessionExecution,
+    );
+    useIsomorphicLayoutEffect(() => {
+        setSubagentBannerLatch((previous) => resolveSubagentReadOnlyBannerLatch(
+            previous,
+            subagentBannerViewKey,
+            parentSessionTarget,
+            sessionExecution,
+        ));
+    }, [parentSessionTarget, sessionExecution, subagentBannerViewKey]);
+    const resolvedParentSessionTarget = parentSessionTarget ?? nextSubagentBannerLatch?.parentTarget ?? null;
+    const bannerExecution = nextSubagentBannerLatch?.execution ?? sessionExecution;
 
     // In the embedded session-chat iframe, hide "Return to parent" when
     // viewing the panel's anchor session (the one recorded in the URL). Going
@@ -1067,12 +1093,12 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         embeddedPanelAnchorSessionId !== null && currentSessionId === embeddedPanelAnchorSessionId;
 
     const handleReturnToParentSession = useEvent(() => {
-        if (!parentSessionTarget) return;
-        setCurrentSession(parentSessionTarget.id, parentSessionTarget.directory);
+        if (!resolvedParentSessionTarget) return;
+        setCurrentSession(resolvedParentSessionTarget.id, resolvedParentSessionTarget.directory);
     });
 
-    const parentSessionTitle = parentSessionTarget?.session?.title;
-    const returnToParentButton = hostFeatures.returnToParent && parentSessionTarget && !hideReturnToParent ? (
+    const parentSessionTitle = resolvedParentSessionTarget?.session?.title;
+    const returnToParentButton = hostFeatures.returnToParent && resolvedParentSessionTarget && !hideReturnToParent ? (
         <Button
             type="button"
             variant="outline"
@@ -1091,15 +1117,23 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const promptAvailability = resolveChatPromptAvailability({
         readOnly,
         sessionIdentityPending,
-        isSubagentSession: Boolean(currentSessionEntity?.parentID),
+        isSubagentSession: Boolean(currentSessionEntity?.parentID) || Boolean(nextSubagentBannerLatch),
         allowPromptingSubagentSessions,
     });
-    const readOnlyPromptBanner = parentSessionTarget ? (
+    const bannerModelName = bannerExecution.modelId === sessionExecution.modelId
+        ? sessionExecutionModelName
+        : bannerExecution.modelId
+            ? getProviderModelDisplayName(
+                providers.find((entry) => entry.id === bannerExecution.providerId),
+                bannerExecution.modelId,
+            ) || bannerExecution.modelId
+            : t('common.unavailable');
+    const readOnlyPromptBanner = resolvedParentSessionTarget ? (
         <ReadOnlyPromptBanner
-            agentName={sessionExecution.agentName}
-            providerId={sessionExecution.providerId}
-            modelId={sessionExecution.modelId}
-            modelName={sessionExecutionModelName}
+            agentName={bannerExecution.agentName}
+            providerId={bannerExecution.providerId}
+            modelId={bannerExecution.modelId}
+            modelName={bannerModelName}
         />
     ) : <ReadOnlyPromptBanner />;
     const applyEmbeddedChatSettingsSync = useEvent((payload: { allowPromptingSubagentSessions: boolean }) => {

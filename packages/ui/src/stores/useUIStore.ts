@@ -1122,7 +1122,7 @@ export const useUIStore = create<UIStore>()(
         isImagePreviewOpen: false,
         nativeNotificationsEnabled: false,
         notificationMode: 'hidden-only',
-        notifyOnSubtasks: true,
+        notifyOnSubtasks: false,
         dockBadgeEnabled: true,
 
         // Event toggles (which events trigger notifications)

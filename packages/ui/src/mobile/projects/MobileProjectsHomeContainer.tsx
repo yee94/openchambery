@@ -9,6 +9,7 @@ import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
 import { MobileDeleteWorktreeDialog } from '@/apps/MobileDeleteWorktreeDialog';
+import { MobileProjectEditSurface } from '@/apps/MobileProjectEditSurface';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
@@ -85,12 +86,14 @@ export function MobileProjectsHomeContainer({
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const openDraft = useMobileNavigationStore((state) => state.openDraft);
   const openSession = useMobileNavigationStore((state) => state.openSession);
+  const projects = useProjectsStore((state) => state.projects);
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
   const removeProject = useProjectsStore((state) => state.removeProject);
   const sync = useSync();
 
   const [actionTarget, setActionTarget] = React.useState<ActionTargetState | null>(null);
   const [actionsOpen, setActionsOpen] = React.useState(false);
+  const [editingProjectId, setEditingProjectId] = React.useState<string | null>(null);
   const [closingProject, setClosingProject] = React.useState<ProjectMeta | null>(null);
   const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
@@ -495,8 +498,7 @@ export function MobileProjectsHomeContainer({
         onNewSession: () => startSessionDraftForDirectory(project, project.path),
         onNewWorktree: () => handleNewWorktree(project.id),
         onSyncSessions: () => handleSyncProjectSessions(project),
-        // Edit project (MobileProjectEditSurface) is out of scope for this wiring lane.
-        onEditProject: undefined,
+        onEditProject: () => setEditingProjectId(project.id),
         onCloseProject: () => setClosingProject(project),
       };
     }
@@ -529,6 +531,27 @@ export function MobileProjectsHomeContainer({
     t,
     togglePinnedSession,
   ]);
+
+  const editingProject = React.useMemo(() => {
+    if (!editingProjectId) return null;
+    const entry = projects.find((project) => project.id === editingProjectId);
+    const meta = model.projectMetaById.get(editingProjectId);
+    if (!entry || !meta) return null;
+    const isGitRepo = actionTarget?.kind === 'project' && actionTarget.project.id === editingProjectId
+      ? actionTarget.isGitRepository
+      : meta.worktrees.length > 0;
+    return {
+      id: entry.id,
+      label: entry.label?.trim() || meta.label,
+      path: normalizePath(entry.path) || meta.path,
+      icon: entry.icon,
+      color: entry.color,
+      iconImage: entry.iconImage,
+      iconBackground: entry.iconBackground,
+      isGitRepo,
+      worktrees: meta.worktrees,
+    };
+  }, [actionTarget, editingProjectId, model.projectMetaById, projects]);
 
   return (
     <>
@@ -684,6 +707,12 @@ export function MobileProjectsHomeContainer({
           </Button>
         </form>
       </MobileOverlayPanel>
+
+      <MobileProjectEditSurface
+        open={editingProjectId !== null}
+        project={editingProject}
+        onClose={() => setEditingProjectId(null)}
+      />
     </>
   );
 }

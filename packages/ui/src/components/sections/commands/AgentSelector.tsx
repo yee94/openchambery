@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import type { Agent } from '@opencode-ai/sdk/v2';
 import {
     DropdownMenu,
@@ -58,6 +59,15 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const isActuallyMobile = isMobile || deviceIsMobile;
 
     const [isMobilePanelOpen, setIsMobilePanelOpen] = React.useState(false);
+    const openMobilePanel = useEvent(() => {
+        setIsMobilePanelOpen(true);
+        void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'agentSelector:mobilePanel' });
+    });
+    const handleDropdownOpenChange = useEvent((open: boolean) => {
+        if (open) {
+            void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'agentSelector:desktopMenu' });
+        }
+    });
     const mobileSheetId = React.useId();
 
     React.useEffect(() => {
@@ -152,7 +162,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
             {isActuallyMobile ? (
                 <button
                     type="button"
-                    onClick={isReady ? () => setIsMobilePanelOpen(true) : undefined}
+                    onClick={isReady ? openMobilePanel : undefined}
                     disabled={!isReady}
                     className={cn(
                         'flex w-full items-center justify-between gap-2 rounded-lg border border-border/40 bg-background/95 px-2 py-1.5 text-left',
@@ -188,7 +198,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                     </span>
                 </div>
             ) : (
-                <DropdownMenu>
+                <DropdownMenu onOpenChange={handleDropdownOpenChange}>
                     <DropdownMenuTrigger asChild>
                         <div className={cn(
                             'flex items-center gap-2 px-2 rounded-lg bg-interactive-selection/20 border border-border/20 cursor-pointer hover:bg-interactive-hover/30 h-6 w-fit',

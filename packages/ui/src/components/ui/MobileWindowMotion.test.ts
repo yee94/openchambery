@@ -127,6 +127,14 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileModelPickerPanelSource).toContain('data-mobile-sheet-no-dismiss=""');
     expect(mobileModelPickerPanelSource).toContain('onPointerUp={(event) => {');
     expect(mobileModelPickerPanelSource).toContain('event.currentTarget.focus({ preventScroll: true })');
+    expect(mobileModelPickerPanelSource).toContain('type="text"\n                            value={query}');
+    expect(mobileModelPickerPanelSource).not.toContain('type="search"');
+    expect(mobileModelPickerPanelSource).toContain('from \'@/components/ui/matchingPress\'');
+    expect(mobileModelPickerPanelSource).toContain('onClickCapture');
+    expect(mobileWindowMotionSource).toContain('onPointerDown={markOverlayScrimPress}');
+    expect(mobileWindowMotionSource).toContain('shouldCommitOverlayScrimDismiss(event)');
+    expect(mobileOverlayPanelSource).toContain('onPointerDown={markOverlayScrimPress}');
+    expect(mobileOverlayPanelSource).toContain('shouldCommitOverlayScrimDismiss(event)');
     expect(mobileResizableSheetSource).toContain("className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', bodyClassName)}");
     expect(mobileResizableSheetSource).toContain('data-page-scroll-lock="true"');
     expect(agentSelectorSource).toContain("from '@/components/ui/MobileResizableSheet'");

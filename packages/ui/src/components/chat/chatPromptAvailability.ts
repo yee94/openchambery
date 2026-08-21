@@ -49,6 +49,85 @@ export const resolveChatPromptAvailability = (input: {
     };
 };
 
+export type SubagentReadOnlyBannerExecution = {
+    agentName?: string;
+    providerId?: string;
+    modelId?: string;
+};
+
+export type SubagentReadOnlyBannerParentTarget = {
+    id: string;
+    directory: string | null;
+};
+
+export type SubagentReadOnlyBannerLatch<TParent extends SubagentReadOnlyBannerParentTarget = SubagentReadOnlyBannerParentTarget> = {
+    viewKey: string;
+    parentTarget: TParent;
+    execution: SubagentReadOnlyBannerExecution;
+};
+
+const mergeSubagentReadOnlyBannerExecution = (
+    previous: SubagentReadOnlyBannerExecution | undefined,
+    next: SubagentReadOnlyBannerExecution,
+): SubagentReadOnlyBannerExecution => ({
+    agentName: next.agentName ?? previous?.agentName,
+    providerId: next.providerId ?? previous?.providerId,
+    modelId: next.modelId ?? previous?.modelId,
+});
+
+const sameSubagentReadOnlyBannerParent = (
+    left: SubagentReadOnlyBannerParentTarget,
+    right: SubagentReadOnlyBannerParentTarget,
+): boolean => left.id === right.id && left.directory === right.directory;
+
+const sameSubagentReadOnlyBannerExecution = (
+    left: SubagentReadOnlyBannerExecution,
+    right: SubagentReadOnlyBannerExecution,
+): boolean => (
+    left.agentName === right.agentName
+    && left.providerId === right.providerId
+    && left.modelId === right.modelId
+);
+
+/**
+ * Once a viewed session is confirmed as a child, keep its read-only footer
+ * parent target and last-known execution identity through temporary list-row
+ * gaps. `session.updated` hides subagents from the live directory list; recovery
+ * may reinsert the row, and streaming must not flash the footer to the
+ * metadata-less banner between those writes. Reset when the view identity
+ * changes so a different session cannot inherit the previous child's footer.
+ *
+ * Returns `previous` when the latched identity is unchanged so a render-phase
+ * caller can keep a stable reference across parent-object churn.
+ */
+export const resolveSubagentReadOnlyBannerLatch = <TParent extends SubagentReadOnlyBannerParentTarget>(
+    previous: SubagentReadOnlyBannerLatch<TParent> | null,
+    currentViewKey: string,
+    parentTarget: TParent | null,
+    execution: SubagentReadOnlyBannerExecution,
+): SubagentReadOnlyBannerLatch<TParent> | null => {
+    if (!currentViewKey) return null;
+    const nextParent = parentTarget ?? (previous?.viewKey === currentViewKey ? previous.parentTarget : null);
+    if (!nextParent) return null;
+    const nextExecution = mergeSubagentReadOnlyBannerExecution(
+        previous?.viewKey === currentViewKey ? previous.execution : undefined,
+        execution,
+    );
+    if (
+        previous
+        && previous.viewKey === currentViewKey
+        && sameSubagentReadOnlyBannerParent(previous.parentTarget, nextParent)
+        && sameSubagentReadOnlyBannerExecution(previous.execution, nextExecution)
+    ) {
+        return previous;
+    }
+    return {
+        viewKey: currentViewKey,
+        parentTarget: nextParent,
+        execution: nextExecution,
+    };
+};
+
 /**
  * Send/queue availability derives from one composer send phase instead of
  * separate flight booleans. An establishing new-session send keeps both actions

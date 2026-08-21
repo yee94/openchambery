@@ -22,6 +22,14 @@ import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/pro
 import { cn } from '@/lib/utils';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
+import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
+import {
+  buildProjectMenuItems,
+  buildSessionMenuItems,
+  buildWorktreeMenuItems,
+  resolveMobileMenuItemLabel,
+  type MobileMenuItem,
+} from '@/mobile/sessionMenuModel';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import {
   loadMoreGlobalSessionsForDirectory,
@@ -775,7 +783,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
 
     for (const node of nodes) {
       for (const bucket of node.buckets) {
-        bucket.sessions.sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
+        bucket.sessions.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
         for (const session of bucket.sessions) {
           if (!getParentId(session)) node.totalSessions += 1;
         }
@@ -1213,7 +1221,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
         const project = findExactProjectMatch(projectsMeta, directory);
         return sessionMatchesQuery(session, project?.label ?? '', normalizedQuery);
       })
-      .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
+      .sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
   }, [normalizedQuery, projectsMeta, sessions]);
 
   const searchProjectMatches = React.useMemo(() => {
@@ -1294,159 +1302,124 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
         ? actionTarget.session.title?.trim() || t('mobile.sessions.untitled')
         : '';
 
-  const actionMenuContent = actionTarget?.kind === 'project' ? (
-    <div className="flex flex-col gap-1">
-      <MobileActionButton
-        icon="add"
-        label={t('sessions.sidebar.project.actions.newSession')}
-        onClick={() => {
-          const project = actionTarget.project;
+  const actionMenuItems = React.useMemo((): MobileMenuItem[] => {
+    if (!actionTarget) return [];
+    if (actionTarget.kind === 'project') {
+      const project = actionTarget.project;
+      return buildProjectMenuItems({
+        gitRepository: project.isGitRepo,
+        onNewSession: () => {
           closeActionMenu();
           startSessionDraftForDirectory(project, project.path);
-        }}
-      />
-      {actionTarget.project.isGitRepo ? (
-        <MobileActionButton
-          icon="node-tree"
-          label={t('sessions.sidebar.project.actions.newWorktree')}
-          onClick={() => {
-            const projectId = actionTarget.project.id;
-            closeActionMenu();
-            handleNewWorktree(projectId);
-          }}
-        />
-      ) : null}
-      <MobileActionButton
-        icon="refresh"
-        label={t('sessions.sidebar.project.actions.syncSessions')}
-        onClick={() => {
-          const project = actionTarget.project;
+        },
+        onNewWorktree: () => {
+          closeActionMenu();
+          handleNewWorktree(project.id);
+        },
+        onSyncSessions: () => {
           closeActionMenu();
           syncProjectSessions(project);
-        }}
-      />
-      <MobileActionButton
-        icon="pencil-ai"
-        label={t('sessions.sidebar.project.actions.edit')}
-        onClick={() => {
-          const projectId = actionTarget.project.id;
+        },
+        onEditProject: () => {
           closeActionMenu();
-          setEditingProjectId(projectId);
-        }}
-      />
-      <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
-        <MobileActionButton
-          icon="close"
-          label={t('sessions.sidebar.project.actions.closeProject')}
-          destructive
-          onClick={() => {
-            const project = actionTarget.project;
-            closeActionMenu();
-            setClosingProject(project);
-          }}
-        />
-      </div>
-    </div>
-  ) : actionTarget?.kind === 'worktree' ? (
-    <div className="flex flex-col gap-1">
-      <MobileActionButton
-        icon="add"
-        label={t('sessions.sidebar.project.actions.newSession')}
-        onClick={() => {
-          const { project, worktree } = actionTarget;
+          setEditingProjectId(project.id);
+        },
+        onCloseProject: () => {
+          closeActionMenu();
+          setClosingProject(project);
+        },
+      });
+    }
+    if (actionTarget.kind === 'worktree') {
+      const { project, worktree } = actionTarget;
+      return buildWorktreeMenuItems({
+        onNewSession: () => {
           closeActionMenu();
           startSessionDraftForDirectory(project, worktree.path);
-        }}
-      />
-      <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
-        <MobileActionButton
-          icon="delete-bin"
-          label={t('mobile.projectEdit.deleteWorktreeConfirmButton')}
-          destructive
-          onClick={() => {
-            const target = { project: actionTarget.project, worktree: actionTarget.worktree };
-            closeActionMenu();
-            setWorktreeToDelete(target);
-          }}
-        />
-      </div>
-    </div>
-  ) : actionTarget?.kind === 'session' ? (
-    <div className="flex flex-col gap-1">
-      <MobileActionButton
-        icon="pencil-ai"
-        label={t('sessions.sidebar.session.menu.rename')}
-        onClick={() => {
-          const session = actionTarget.session;
+        },
+        onDeleteWorktree: () => {
           closeActionMenu();
-          setRenameDraft(session.title?.trim() || t('mobile.sessions.untitled'));
-          setRenamingSession(session);
-        }}
-      />
-      <MobileActionButton
-        icon={pinnedSessionIds.has(actionTarget.session.id) ? 'unpin' : 'pushpin'}
-        label={pinnedSessionIds.has(actionTarget.session.id)
-          ? t('sessions.sidebar.session.menu.unpin')
-          : t('sessions.sidebar.session.menu.pin')}
-        onClick={() => {
-          const sessionId = actionTarget.session.id;
-          closeActionMenu();
-          togglePinnedSession(sessionId);
-        }}
-      />
-      {actionTarget.session.share?.url ? (
-        <>
-          <MobileActionButton
-            icon="file-copy"
-            label={t('sessions.sidebar.session.menu.copyLink')}
-            onClick={() => {
-              const url = actionTarget.session.share?.url;
-              closeActionMenu();
-              if (url) void handleCopyShareUrl(url);
-            }}
-          />
-          <MobileActionButton
-            icon="link-unlink-m"
-            label={t('sessions.sidebar.session.menu.unshare')}
-            onClick={() => {
-              const sessionId = actionTarget.session.id;
-              closeActionMenu();
-              void handleUnshareFromMenu(sessionId);
-            }}
-          />
-        </>
-      ) : (
-        <MobileActionButton
-          icon="share-2"
-          label={t('sessions.sidebar.session.menu.share')}
-          onClick={() => {
-            const session = actionTarget.session;
+          setWorktreeToDelete({ project, worktree });
+        },
+      });
+    }
+    const session = actionTarget.session;
+    const shared = Boolean(session.share?.url);
+    return buildSessionMenuItems({
+      pinned: pinnedSessionIds.has(session.id),
+      shared,
+      onRename: () => {
+        closeActionMenu();
+        setRenameDraft(session.title?.trim() || t('mobile.sessions.untitled'));
+        setRenamingSession(session);
+      },
+      onTogglePin: () => {
+        closeActionMenu();
+        togglePinnedSession(session.id);
+      },
+      onShare: shared
+        ? undefined
+        : () => {
             closeActionMenu();
             void handleShareFromMenu(session);
-          }}
-        />
-      )}
-      <MobileActionButton
-        icon="archive"
-        label={t('sessions.sidebar.bulkActions.archive')}
-        onClick={() => {
-          const session = actionTarget.session;
-          closeActionMenu();
-          void handleArchiveFromMenu(session);
-        }}
-      />
-      <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
-        <MobileActionButton
-          icon="delete-bin"
-          label={t('sessions.sidebar.bulkActions.delete')}
-          destructive
-          onClick={() => {
-            const session = actionTarget.session;
+          },
+      onCopyLink: shared
+        ? () => {
+            const url = session.share?.url;
             closeActionMenu();
-            handleHardDeleteSession(session);
-          }}
-        />
-      </div>
+            if (url) void handleCopyShareUrl(url);
+          }
+        : undefined,
+      onUnshare: shared
+        ? () => {
+            closeActionMenu();
+            void handleUnshareFromMenu(session.id);
+          }
+        : undefined,
+      onArchive: () => {
+        closeActionMenu();
+        void handleArchiveFromMenu(session);
+      },
+      onDelete: () => {
+        closeActionMenu();
+        handleHardDeleteSession(session);
+      },
+    });
+  }, [
+    actionTarget,
+    closeActionMenu,
+    handleArchiveFromMenu,
+    handleCopyShareUrl,
+    handleHardDeleteSession,
+    handleNewWorktree,
+    handleShareFromMenu,
+    handleUnshareFromMenu,
+    pinnedSessionIds,
+    startSessionDraftForDirectory,
+    syncProjectSessions,
+    t,
+    togglePinnedSession,
+  ]);
+
+  const actionMenuContent = actionMenuItems.length > 0 ? (
+    <div className="flex flex-col gap-1">
+      {actionMenuItems.map((item) => {
+        const button = (
+          <MobileActionButton
+            key={item.id}
+            icon={item.icon}
+            label={resolveMobileMenuItemLabel(item, t)}
+            destructive={item.destructive}
+            onClick={item.onClick}
+          />
+        );
+        if (!item.separated) return button;
+        return (
+          <div key={item.id} className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
+            {button}
+          </div>
+        );
+      })}
     </div>
   ) : null;
 

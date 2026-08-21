@@ -2204,7 +2204,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return run?.status === 'running' && run.runtimeKey === getRuntimeKey();
     }, [currentSessionId]));
 
-    const handleOpenMobilePanel = React.useCallback((panel: MobileControlsPanel) => {
+    const handleOpenMobilePanel = useEvent((panel: MobileControlsPanel) => {
         if (!isMobile) {
             return;
         }
@@ -2216,7 +2216,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         markComposerActionGesture();
         setMobileControlsPanel(panel);
         textareaRef.current?.blur();
-    }, [isMobile, markComposerActionGesture]);
+        void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'chatInput:mobilePanel' });
+    });
 
     // Consume pending input text (e.g., from revert action)
     const pendingInput = surfaceResources.pendingInput;
@@ -2805,11 +2806,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         toast.error(t('chat.chatInput.toast.messageSendFailed'));
     });
 
-    const handleOpenAgentPanel = React.useCallback(() => {
+    const handleOpenAgentPanel = useEvent(() => {
         markComposerActionGesture();
         setMobileControlsPanel('agent');
         textareaRef.current?.blur();
-    }, [markComposerActionGesture]);
+        void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'chatInput:mobileAgentPanel' });
+    });
 
     const openIssuePicker = React.useCallback(() => {
         setIssuePickerOpen(true);
@@ -2871,6 +2873,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 handleOpenMobilePanel('model');
             } else {
                 useUIStore.getState().setModelSelectorOpen(true);
+                void useConfigStore.getState().refreshCatalogsOnPickerOpen({ source: 'chatInput:modelCommand' });
             }
             return;
         }

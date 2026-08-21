@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllSessionStatuses, useAllLiveSessions } from '@/sync/sync-context';
 import {
@@ -11,9 +12,12 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { useSessionStatusBarCollapseStore } from '@/stores/useSessionStatusBarCollapseStore';
+import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { WorktreeMetadata } from '@/types/worktree';
+import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import { cn, formatDirectoryName } from '@/lib/utils';
 import { PROJECT_ICON_MAP, PROJECT_COLOR_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { Icon } from "@/components/icon/Icon";
@@ -36,7 +40,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import { showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
+import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { suppressMobileOverlayFocusRestore } from '@/lib/mobileOverlayFocusRestore';
 import { isIPadApp } from '@/lib/platform';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -47,7 +51,15 @@ import {
   type MobileLongPressController,
 } from '@/components/ui/mobileLongPress';
 import { MobileDeleteWorktreeDialog } from '@/apps/MobileDeleteWorktreeDialog';
+import { MobileProjectEditSurface } from '@/apps/MobileProjectEditSurface';
 import { mergeMobileWorktreeRefreshResults } from '@/apps/mobileSessionPagination';
+import {
+  buildProjectMenuItems,
+  buildSessionMenuItems,
+  buildWorktreeMenuItems,
+  resolveMobileMenuItemLabel,
+  type MobileMenuItem,
+} from '@/mobile/sessionMenuModel';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import {
   MOBILE_SHEET_EXPANDED_SNAP,
@@ -260,14 +272,11 @@ function useSessionGrouping(
       }
     });
 
-    const sortByUpdated = (a: Session, b: Session) => {
-      const aTime = (a as unknown as { time?: { updated?: number } }).time?.updated ?? 0;
-      const bTime = (b as unknown as { time?: { updated?: number } }).time?.updated ?? 0;
-      return bTime - aTime;
-    };
+    const sortByActivityUpdated = (a: Session, b: Session) =>
+      getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a);
 
-    running.sort(sortByUpdated);
-    viewed.sort(sortByUpdated);
+    running.sort(sortByActivityUpdated);
+    viewed.sort(sortByActivityUpdated);
 
     return [...running, ...viewed];
   }, [sessions, getStatusType, hasRunningChildren, getRunningChildrenCount, getChildIndicators, unseenCounts]);
@@ -426,6 +435,7 @@ export function SessionItem({
   onCopyShareUrl,
   onUnshare,
   onArchive,
+  onDelete,
   needsAttention,
   longPressHandlers,
 }: {
@@ -441,6 +451,7 @@ export function SessionItem({
   onCopyShareUrl: (url: string) => void;
   onUnshare: () => void;
   onArchive: () => void;
+  onDelete?: () => void;
   needsAttention: (sessionId: string) => boolean;
   longPressHandlers: LongPressHandlers;
 }) {
@@ -448,6 +459,20 @@ export function SessionItem({
   const [contextMenuOpen, setContextMenuOpen] = React.useState(false);
   const attention = needsAttention(session.id);
   const shareUrl = session.share?.url;
+  const menuItems = React.useMemo(
+    () => buildSessionMenuItems({
+      pinned: isPinned,
+      shared: Boolean(shareUrl),
+      onRename,
+      onTogglePin: onTogglePinned,
+      onShare: shareUrl ? undefined : onShare,
+      onCopyLink: shareUrl ? () => onCopyShareUrl(shareUrl) : undefined,
+      onUnshare: shareUrl ? onUnshare : undefined,
+      onArchive,
+      onDelete,
+    }),
+    [isPinned, onArchive, onCopyShareUrl, onDelete, onRename, onShare, onTogglePinned, onUnshare, shareUrl],
+  );
 
   return (
     <ContextMenu open={contextMenuOpen} onOpenChange={setContextMenuOpen}>
@@ -515,38 +540,15 @@ export function SessionItem({
         )}
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] p-1.5">
-        <ContextMenuItem className="min-h-10 px-3" onClick={onRename}>
-          <Icon name="pencil-ai" className="size-4" />
-          {t('sessions.sidebar.session.menu.rename')}
-        </ContextMenuItem>
-        <ContextMenuItem className="min-h-10 px-3" onClick={onTogglePinned}>
-          <Icon name={isPinned ? 'unpin' : 'pushpin'} className="size-4" />
-          {isPinned
-            ? t('sessions.sidebar.session.menu.unpin')
-            : t('sessions.sidebar.session.menu.pin')}
-        </ContextMenuItem>
-        {shareUrl ? (
-          <>
-            <ContextMenuItem className="min-h-10 px-3" onClick={() => onCopyShareUrl(shareUrl)}>
-              <Icon name="file-copy" className="size-4" />
-              {t('sessions.sidebar.session.menu.copyLink')}
+        {menuItems.map((item, index) => (
+          <React.Fragment key={item.id}>
+            {index > 0 && (item.separated || item.id === 'archive') ? <ContextMenuSeparator /> : null}
+            <ContextMenuItem className="min-h-10 px-3" onClick={item.onClick}>
+              <Icon name={item.icon} className="size-4" />
+              {resolveMobileMenuItemLabel(item, t)}
             </ContextMenuItem>
-            <ContextMenuItem className="min-h-10 px-3" onClick={onUnshare}>
-              <Icon name="link-unlink-m" className="size-4" />
-              {t('sessions.sidebar.session.menu.unshare')}
-            </ContextMenuItem>
-          </>
-        ) : (
-          <ContextMenuItem className="min-h-10 px-3" onClick={onShare}>
-            <Icon name="share-2" className="size-4" />
-            {t('sessions.sidebar.session.menu.share')}
-          </ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        <ContextMenuItem className="min-h-10 px-3" onClick={onArchive}>
-          <Icon name="inbox-archive" className="size-4" />
-          {t('sessions.sidebar.bulkActions.archive')}
-        </ContextMenuItem>
+          </React.Fragment>
+        ))}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -657,16 +659,19 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const projects = useProjectsStore((state) => state.projects);
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
+  const removeProject = useProjectsStore((state) => state.removeProject);
   const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
   const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
+  const worktreeOrderByProject = useWorktreeOrderStore((state) => state.orderByProject);
   const activePaginationByDirectory = useGlobalSessionsStore((state) => state.activePaginationByDirectory);
+  const expandedWorktreeGroups = useSessionStatusBarCollapseStore((state) => state.expandedWorktreeGroups);
+  const setWorktreeGroupExpanded = useSessionStatusBarCollapseStore((state) => state.setWorktreeGroupExpanded);
 
   const { sessions: sortedSessions, totalRunning, totalUnread } = useSessionGrouping(sessions, sessionStatus);
   const { getSessionTitle, needsAttention } = useSessionHelpers();
   const getProjectStatus = useProjectStatus(sessions, sessionStatus, currentSessionId);
   const resolveProjectRoots = useProjectRootsResolver();
-  const [expandedWorktreeGroups, setExpandedWorktreeGroups] = React.useState<Set<string>>(new Set());
   const [visibleCountByGroup, setVisibleCountByGroup] = React.useState<Map<string, number>>(new Map());
   const [rootBranchesByProject, setRootBranchesByProject] = React.useState<Map<string, string>>(new Map());
   const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
@@ -675,6 +680,8 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const [pressedActionKey, setPressedActionKey] = React.useState<string | null>(null);
   const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
+  const [editingProjectId, setEditingProjectId] = React.useState<string | null>(null);
+  const [closingProject, setClosingProject] = React.useState<ProjectEntry | null>(null);
   const [worktreeToDelete, setWorktreeToDelete] = React.useState<{
     project: ProjectEntry;
     worktree: WorktreeMetadata;
@@ -879,7 +886,10 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const projectSessionGroups = React.useMemo<ProjectSessionGroup[]>(() => {
     if (!selectedProject) return [];
     const projectRoot = normalize(selectedProject.path);
-    const worktrees = availableWorktreesByProject.get(projectRoot) ?? [];
+    const worktrees = orderWorktrees(
+      worktreeOrderByProject[selectedProject.id],
+      availableWorktreesByProject.get(projectRoot) ?? [],
+    );
     const groups: ProjectSessionGroup[] = [{
       key: `${selectedProject.id}::${projectRoot}`,
       directory: projectRoot,
@@ -903,7 +913,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       groupByDirectory.get(sessionDirectory(session))?.sessions.push(session);
     }
     return groups;
-  }, [availableWorktreesByProject, filteredSessions, formatProjectLabel, selectedProject]);
+  }, [availableWorktreesByProject, filteredSessions, formatProjectLabel, selectedProject, worktreeOrderByProject]);
 
   const sessionContextLabel = React.useCallback((session: Session): string | undefined => {
     const directory = sessionDirectory(session);
@@ -1040,6 +1050,39 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     });
   }, [archiveSession, t]);
 
+  const collectSessionTreeIds = useEvent((sessionId: string): string[] => {
+    const childrenByParent = new Map<string, string[]>();
+    for (const candidate of sessions) {
+      const parentID = (candidate as { parentID?: string | null }).parentID ?? null;
+      if (!parentID) continue;
+      const childIds = childrenByParent.get(parentID) ?? [];
+      childIds.push(candidate.id);
+      childrenByParent.set(parentID, childIds);
+    }
+    const collected: string[] = [];
+    const visited = new Set<string>();
+    const visit = (id: string) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      collected.push(id);
+      for (const childId of childrenByParent.get(id) ?? []) visit(childId);
+    };
+    visit(sessionId);
+    return collected;
+  });
+
+  const handleHardDeleteSession = useEvent((session: Session) => {
+    const ids = collectSessionTreeIds(session.id);
+    deleteSessionsWithUndo({
+      sessionIds: ids,
+      message: ids.length === 1
+        ? t('sessions.sidebar.session.delete.success')
+        : t('sessions.sidebar.bulkActions.deletedPlural', { count: ids.length }),
+      undoLabel: t('sessions.sidebar.undo'),
+      commitFailedMessage: t('sessions.sidebar.session.delete.error'),
+    });
+  });
+
   // Open the same rename sheet used on mobile home / sessions list.
   const beginSessionRename = React.useCallback((session: Session) => {
     setRenameDraft(getSessionTitle(session));
@@ -1134,20 +1177,15 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     })();
   };
 
-  const toggleWorktreeGroup = React.useCallback((groupKey: string) => {
-    setExpandedWorktreeGroups((previous) => {
-      const next = new Set(previous);
-      if (next.has(groupKey)) next.delete(groupKey);
-      else next.add(groupKey);
-      return next;
-    });
+  const toggleWorktreeGroup = useEvent((groupKey: string) => {
+    setWorktreeGroupExpanded(groupKey, !expandedWorktreeGroups[groupKey]);
     setVisibleCountByGroup((previous) => {
       if (!previous.has(groupKey)) return previous;
       const next = new Map(previous);
       next.delete(groupKey);
       return next;
     });
-  }, []);
+  });
 
   const showMoreGroupSessions = React.useCallback((group: ProjectSessionGroup) => {
     const currentVisibleCount = visibleCountByGroup.get(group.key) ?? DEFAULT_GROUP_SESSION_COUNT;
@@ -1175,7 +1213,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
 
   const renderProjectGroup = (group: ProjectSessionGroup) => {
     const isRoot = group.worktree === null;
-    const expanded = isRoot || expandedWorktreeGroups.has(group.key);
+    const expanded = isRoot || expandedWorktreeGroups[group.key] === true;
     const visibleCount = visibleCountByGroup.get(group.key) ?? DEFAULT_GROUP_SESSION_COUNT;
     const visibleSessions = group.sessions.slice(0, visibleCount);
     const pagination = activePaginationByDirectory.get(group.directory);
@@ -1284,6 +1322,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
                 onCopyShareUrl={(url) => { void handleCopyShareUrl(url); }}
                 onUnshare={() => { void handleUnshareSession(session.id); }}
                 onArchive={() => { void handleArchiveSession(session.id); }}
+                onDelete={() => handleHardDeleteSession(session)}
                 needsAttention={needsAttention}
                 longPressHandlers={getLongPressHandlers({ key: `session:${session.id}`, kind: 'session', session })}
               />
@@ -1415,114 +1454,155 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         ? getSessionTitle(actionTarget.session)
         : '';
 
-  const actionMenuContent = actionTarget?.kind === 'project' ? (
-    <div className="flex flex-col gap-1" data-mobile-session-action-sheet="project">
-      <MobileActionButton
-        icon="add"
-        label={t('sessions.sidebar.project.actions.newSession')}
-        onClick={() => startSessionDraftForDirectory(actionTarget.project, actionTarget.project.path)}
-      />
-      {actionTarget.isGitRepository ? (
-        <MobileActionButton
-          icon="node-tree"
-          label={t('sessions.sidebar.project.actions.newWorktree')}
-          onClick={() => {
-            const projectId = actionTarget.project.id;
-            closeActionMenu();
-            closeSessionPanel();
-            setActiveProjectIdOnly(projectId);
-            setWorktreeDialogProjectId(projectId);
-            setNewWorktreeDialogOpen(true);
-          }}
-        />
-      ) : null}
-      <MobileActionButton
-        icon="refresh"
-        label={t('sessions.sidebar.project.actions.syncSessions')}
-        onClick={() => syncProjectSessions(actionTarget)}
-      />
-    </div>
-  ) : actionTarget?.kind === 'worktree' ? (
-    <div className="flex flex-col gap-1" data-mobile-session-action-sheet="worktree">
-      <MobileActionButton
-        icon="add"
-        label={t('sessions.sidebar.project.actions.newSession')}
-        onClick={() => startSessionDraftForDirectory(actionTarget.project, actionTarget.worktree.path)}
-      />
-      <MobileActionButton
-        icon="delete-bin"
-        label={t('mobile.projectEdit.deleteWorktreeConfirmButton')}
-        destructive
-        onClick={() => {
-          const target = { project: actionTarget.project, worktree: actionTarget.worktree };
+  const editingProject = React.useMemo(() => {
+    if (!editingProjectId) return null;
+    const project = projects.find((entry) => entry.id === editingProjectId);
+    if (!project) return null;
+    const projectRoot = normalize(project.path);
+    const worktrees = orderWorktrees(
+      worktreeOrderByProject[project.id],
+      availableWorktreesByProject.get(projectRoot) ?? [],
+    );
+    const isGitRepo = actionTarget?.kind === 'project' && actionTarget.project.id === project.id
+      ? actionTarget.isGitRepository
+      : worktrees.length > 0 || Boolean(rootBranchesByProject.get(project.id));
+    return {
+      id: project.id,
+      label: formatProjectLabel(project),
+      path: projectRoot || project.path,
+      icon: project.icon,
+      color: project.color,
+      iconImage: project.iconImage,
+      iconBackground: project.iconBackground,
+      isGitRepo,
+      worktrees,
+    };
+  }, [
+    actionTarget,
+    availableWorktreesByProject,
+    editingProjectId,
+    formatProjectLabel,
+    projects,
+    rootBranchesByProject,
+    worktreeOrderByProject,
+  ]);
+
+  const actionMenuItems = React.useMemo((): MobileMenuItem[] => {
+    if (!actionTarget) return [];
+    if (actionTarget.kind === 'project') {
+      const project = actionTarget.project;
+      return buildProjectMenuItems({
+        gitRepository: actionTarget.isGitRepository,
+        onNewSession: () => startSessionDraftForDirectory(project, project.path),
+        onNewWorktree: () => {
+          const projectId = project.id;
           closeActionMenu();
-          setWorktreeToDelete(target);
-        }}
-      />
-    </div>
-  ) : actionTarget?.kind === 'session' ? (
-    <div className="flex flex-col gap-1" data-mobile-session-action-sheet="session">
-      <MobileActionButton
-        icon="pencil-ai"
-        label={t('sessions.sidebar.session.menu.rename')}
-        onClick={() => {
-          const session = actionTarget.session;
+          closeSessionPanel();
+          setActiveProjectIdOnly(projectId);
+          setWorktreeDialogProjectId(projectId);
+          setNewWorktreeDialogOpen(true);
+        },
+        onSyncSessions: () => syncProjectSessions(actionTarget),
+        onEditProject: () => {
           closeActionMenu();
-          beginSessionRename(session);
-        }}
-      />
-      <MobileActionButton
-        icon={pinnedSessionIds.has(actionTarget.session.id) ? 'unpin' : 'pushpin'}
-        label={pinnedSessionIds.has(actionTarget.session.id)
-          ? t('sessions.sidebar.session.menu.unpin')
-          : t('sessions.sidebar.session.menu.pin')}
-        onClick={() => {
-          const sessionId = actionTarget.session.id;
+          setEditingProjectId(project.id);
+        },
+        onCloseProject: () => {
           closeActionMenu();
-          togglePinnedSession(sessionId);
-        }}
-      />
-      {actionTarget.session.share?.url ? (
-        <>
-          <MobileActionButton
-            icon="file-copy"
-            label={t('sessions.sidebar.session.menu.copyLink')}
-            onClick={() => {
-              const url = actionTarget.session.share?.url;
-              closeActionMenu();
-              if (url) void handleCopyShareUrl(url);
-            }}
-          />
-          <MobileActionButton
-            icon="link-unlink-m"
-            label={t('sessions.sidebar.session.menu.unshare')}
-            onClick={() => {
-              const sessionId = actionTarget.session.id;
-              closeActionMenu();
-              void handleUnshareSession(sessionId);
-            }}
-          />
-        </>
-      ) : (
-        <MobileActionButton
-          icon="share-2"
-          label={t('sessions.sidebar.session.menu.share')}
-          onClick={() => {
-            const session = actionTarget.session;
+          setClosingProject(project);
+        },
+      });
+    }
+    if (actionTarget.kind === 'worktree') {
+      const { project, worktree } = actionTarget;
+      return buildWorktreeMenuItems({
+        onNewSession: () => startSessionDraftForDirectory(project, worktree.path),
+        onDeleteWorktree: () => {
+          closeActionMenu();
+          setWorktreeToDelete({ project, worktree });
+        },
+      });
+    }
+    const session = actionTarget.session;
+    const shared = Boolean(session.share?.url);
+    return buildSessionMenuItems({
+      pinned: pinnedSessionIds.has(session.id),
+      shared,
+      onRename: () => {
+        closeActionMenu();
+        beginSessionRename(session);
+      },
+      onTogglePin: () => {
+        closeActionMenu();
+        togglePinnedSession(session.id);
+      },
+      onShare: shared
+        ? undefined
+        : () => {
             closeActionMenu();
             void handleShareSession(session);
-          }}
-        />
-      )}
-      <MobileActionButton
-        icon="archive"
-        label={t('sessions.sidebar.bulkActions.archive')}
-        onClick={() => {
-          const sessionId = actionTarget.session.id;
-          closeActionMenu();
-          void handleArchiveSession(sessionId);
-        }}
-      />
+          },
+      onCopyLink: shared
+        ? () => {
+            const url = session.share?.url;
+            closeActionMenu();
+            if (url) void handleCopyShareUrl(url);
+          }
+        : undefined,
+      onUnshare: shared
+        ? () => {
+            closeActionMenu();
+            void handleUnshareSession(session.id);
+          }
+        : undefined,
+      onArchive: () => {
+        closeActionMenu();
+        void handleArchiveSession(session.id);
+      },
+      onDelete: () => {
+        closeActionMenu();
+        handleHardDeleteSession(session);
+      },
+    });
+  }, [
+    actionTarget,
+    beginSessionRename,
+    closeActionMenu,
+    closeSessionPanel,
+    handleArchiveSession,
+    handleCopyShareUrl,
+    handleHardDeleteSession,
+    handleShareSession,
+    handleUnshareSession,
+    pinnedSessionIds,
+    setActiveProjectIdOnly,
+    startSessionDraftForDirectory,
+    syncProjectSessions,
+    togglePinnedSession,
+  ]);
+
+  const actionMenuContent = actionMenuItems.length > 0 ? (
+    <div
+      className="flex flex-col gap-1"
+      data-mobile-session-action-sheet={actionTarget?.kind ?? 'none'}
+    >
+      {actionMenuItems.map((item) => {
+        const button = (
+          <MobileActionButton
+            key={item.id}
+            icon={item.icon}
+            label={resolveMobileMenuItemLabel(item, t)}
+            destructive={item.destructive}
+            onClick={item.onClick}
+          />
+        );
+        if (!item.separated) return button;
+        return (
+          <div key={item.id} className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
+            {button}
+          </div>
+        );
+      })}
     </div>
   ) : null;
 
@@ -1584,6 +1664,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
                     onCopyShareUrl={(url) => { void handleCopyShareUrl(url); }}
                     onUnshare={() => { void handleUnshareSession(session.id); }}
                     onArchive={() => { void handleArchiveSession(session.id); }}
+                    onDelete={() => handleHardDeleteSession(session)}
                     needsAttention={needsAttention}
                     longPressHandlers={getLongPressHandlers({ key: `session:${session.id}`, kind: 'session', session })}
                   />
@@ -1658,6 +1739,46 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
           </Button>
         </form>
       </MobileOverlayPanel>
+      <MobileOverlayPanel
+        open={Boolean(closingProject)}
+        title={t('sessions.sidebar.project.actions.closeProject')}
+        onClose={() => setClosingProject(null)}
+        closeAriaLabel={t('mobile.surface.closeAria')}
+        footer={
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setClosingProject(null)}
+            >
+              {t('sessions.sidebar.dialogs.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="flex-1"
+              onClick={() => {
+                if (!closingProject) return;
+                const project = closingProject;
+                setClosingProject(null);
+                removeProject(project.id);
+                toast.success(t('mobile.sessions.toast.projectRemoved', {
+                  label: formatProjectLabel(project),
+                }));
+              }}
+            >
+              {t('mobile.sessions.confirmRemoveProject')}
+            </Button>
+          </div>
+        }
+      >
+        <p className="px-1 py-1 typography-ui-body text-foreground">
+          {t('mobile.projects.closeConfirmMessage', {
+            title: closingProject ? formatProjectLabel(closingProject) : '',
+          })}
+        </p>
+      </MobileOverlayPanel>
       <NewWorktreeDialog
         open={newWorktreeDialogOpen}
         projectId={worktreeDialogProjectId}
@@ -1707,6 +1828,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
           }}
         />
       ) : null}
+      <MobileProjectEditSurface
+        open={editingProjectId !== null}
+        project={editingProject}
+        onClose={() => setEditingProjectId(null)}
+      />
     </>
   );
 };

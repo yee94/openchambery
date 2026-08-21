@@ -4,6 +4,7 @@ import type { IconName } from '@/components/icon/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { consumeMatchingPress, markMatchingPress } from '@/components/ui/matchingPress';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ModelLogo } from '@/components/ui/ModelLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
@@ -205,6 +206,15 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         setView('variant');
     };
 
+    const matchingPressProps = {
+        onPointerDown: markMatchingPress,
+        onClickCapture: (event: React.MouseEvent<HTMLElement>) => {
+            if (consumeMatchingPress(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+        },
+    };
+
     const renderModelRow = (entry: ModelPickerEntry) => {
         const { model, providerID, modelID } = entry;
         const rowKey = `${providerID}:${modelID}`;
@@ -224,7 +234,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         return (
             <div key={`mobile-model-${rowKey}`} className={cn('border-b border-border/30 last:border-b-0', selected && 'bg-interactive-selection/15 text-interactive-selection-foreground')}>
                 <div className="flex items-center gap-2 px-2 py-1.5">
-                    <button type="button" onClick={() => onSelect(providerID, modelID, selectedVariant)} className="flex min-w-0 flex-1 items-start gap-2 rounded-lg text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary">
+                    <button type="button" {...matchingPressProps} onClick={() => onSelect(providerID, modelID, selectedVariant)} className="flex min-w-0 flex-1 items-start gap-2 rounded-lg text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary">
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <div className="flex min-w-0 items-center gap-1.5">
                                 <ModelLogo modelId={modelID} providerId={providerID} className="size-3.5 flex-shrink-0" />
@@ -247,12 +257,12 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                         </div>
                     </button>
                     {variants.length > 0 ? (
-                        <button type="button" onClick={() => setExpandedModelKey((current) => current === rowKey ? null : rowKey)} className="flex flex-shrink-0 items-center gap-0.5 typography-micro font-medium text-muted-foreground hover:text-foreground" aria-expanded={expanded} aria-label={expanded ? t('chat.modelControls.hideThinkingModes') : t('chat.modelControls.showThinkingModes')}>
+                        <button type="button" {...matchingPressProps} onClick={() => setExpandedModelKey((current) => current === rowKey ? null : rowKey)} className="flex flex-shrink-0 items-center gap-0.5 typography-micro font-medium text-muted-foreground hover:text-foreground" aria-expanded={expanded} aria-label={expanded ? t('chat.modelControls.hideThinkingModes') : t('chat.modelControls.showThinkingModes')}>
                             <span className="whitespace-nowrap">{formatVariantLabel(selectedVariant)}</span>
                             <Icon name={expanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3.5" />
                         </button>
                     ) : null}
-                    <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onToggleFavorite(providerID, modelID); }} className={cn('model-favorite-button flex size-5 flex-shrink-0 items-center justify-center hover:text-primary/80', isFavorite(providerID, modelID) ? 'text-primary' : 'text-muted-foreground')} aria-label={isFavorite(providerID, modelID) ? t('chat.modelControls.unfavoriteAria') : t('chat.modelControls.favoriteAria')} title={isFavorite(providerID, modelID) ? t('chat.modelControls.removeFromFavorites') : t('chat.modelControls.addToFavorites')}>
+                    <button type="button" {...matchingPressProps} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onToggleFavorite(providerID, modelID); }} className={cn('model-favorite-button flex size-5 flex-shrink-0 items-center justify-center hover:text-primary/80', isFavorite(providerID, modelID) ? 'text-primary' : 'text-muted-foreground')} aria-label={isFavorite(providerID, modelID) ? t('chat.modelControls.unfavoriteAria') : t('chat.modelControls.favoriteAria')} title={isFavorite(providerID, modelID) ? t('chat.modelControls.removeFromFavorites') : t('chat.modelControls.addToFavorites')}>
                         <Icon name={isFavorite(providerID, modelID) ? 'star-fill' : 'star'} className="size-4" />
                     </button>
                 </div>
@@ -261,9 +271,9 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                         <div className="flex flex-wrap gap-2">
                             {inlineVariants.map((variant) => {
                                 const variantSelected = variant === selectedVariant || (!variant && !selectedVariant);
-                                return <button key={`${rowKey}-${variant ?? 'default'}`} type="button" onClick={() => onSelect(providerID, modelID, variant)} className={cn('inline-flex items-center rounded-full border px-2.5 py-1 typography-meta font-medium', variantSelected ? 'border-primary/30 bg-primary/10 text-foreground' : 'border-border/40 text-muted-foreground hover:bg-interactive-hover/50')} aria-pressed={variantSelected}>{formatVariantLabel(variant)}</button>;
+                                return <button key={`${rowKey}-${variant ?? 'default'}`} type="button" {...matchingPressProps} onClick={() => onSelect(providerID, modelID, variant)} className={cn('inline-flex items-center rounded-full border px-2.5 py-1 typography-meta font-medium', variantSelected ? 'border-primary/30 bg-primary/10 text-foreground' : 'border-border/40 text-muted-foreground hover:bg-interactive-hover/50')} aria-pressed={variantSelected}>{formatVariantLabel(variant)}</button>;
                             })}
-                            {inlineVariants.length < variants.length + 1 ? <button type="button" onClick={() => openVariantOverflow(providerID, modelID)} className="inline-flex items-center rounded-full border border-border/40 px-2.5 py-1 typography-meta font-medium text-muted-foreground hover:bg-interactive-hover/50" aria-label={t('chat.modelControls.moreThinkingModes')}>{t('inlineComment.actions.showMore')}</button> : null}
+                            {inlineVariants.length < variants.length + 1 ? <button type="button" {...matchingPressProps} onClick={() => openVariantOverflow(providerID, modelID)} className="inline-flex items-center rounded-full border border-border/40 px-2.5 py-1 typography-meta font-medium text-muted-foreground hover:bg-interactive-hover/50" aria-label={t('chat.modelControls.moreThinkingModes')}>{t('inlineComment.actions.showMore')}</button> : null}
                         </div>
                     </div>
                 ) : null}
@@ -316,7 +326,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                     >
                         <Icon name="search" className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                         <Input
-                            type="search"
+                            type="text"
                             value={query}
                             onChange={(event) => {
                                 setQuery(event.target.value);
@@ -371,6 +381,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                                                 'flex w-full items-center justify-between gap-2 rounded-xl border px-2 py-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary',
                                                 selected ? 'border-primary/30 bg-primary/10' : 'border-border/40',
                                             )}
+                                            {...matchingPressProps}
                                             onClick={() => onSelect(activeVariantTarget.providerID, activeVariantTarget.modelID, variant)}
                                         >
                                             <span className="typography-meta font-medium text-foreground">{formatVariantLabel(variant)}</span>
@@ -410,6 +421,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                                         <div key={provider.id} className="overflow-hidden rounded-xl border border-border/40 bg-[var(--surface-elevated)]">
                                             <button
                                                 type="button"
+                                                {...matchingPressProps}
                                                 onClick={() => {
                                                     if (query.trim()) return;
                                                     setExpandedProviders((current) => {
