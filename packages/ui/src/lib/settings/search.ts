@@ -186,13 +186,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'about.diagnostics',
     page: 'about',
     titleKey: 'settings.openchamber.about.diagnostics.label',
-    keywords: ['diagnostics', 'logs', 'feat', 'transcript'],
+    keywords: ['diagnostics', 'logs', 'feat', 'transcript', 'task'],
   },
   {
     id: 'about.export-diagnostics',
     page: 'about',
     titleKey: 'settings.openchamber.about.diagnostics.export',
-    keywords: ['diagnostics', 'logs', 'export', 'feat', 'transcript'],
+    keywords: ['diagnostics', 'logs', 'export', 'feat', 'transcript', 'task'],
     isAvailable: () => isTranscriptDiagnosticsEnabled(),
   },
   {

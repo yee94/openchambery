@@ -8,6 +8,8 @@ import path from 'node:path';
 import {
   ElectronSshManager,
   attachProcessStderrTail,
+  buildManagedServeEnvPrefix,
+  createEphemeralUiPassword,
   formatMasterExitError,
   parseSshCommand,
 } from './ssh-manager.mjs';
@@ -142,6 +144,70 @@ describe('ElectronSshManager', () => {
       issueClientToken: true,
     });
     expect(settings.desktopHosts).toEqual([{ id: 'ssh-1', label: 'SSH Host', url: localUrl, apiUrl: localUrl, clientToken: 'ssh-client-token' }]);
+  });
+
+  test('refuses to mint an SSH host token without a UI password', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    tempDirs.push(tempDir);
+    const manager = new ElectronSshManager({
+      settingsFilePath: path.join(tempDir, 'settings.json'),
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+    });
+    await expect(manager.issueClientToken('http://127.0.0.1:9', null)).rejects.toThrow(/UI password is required/i);
+  });
+
+  test('managed serve env always injects a UI password', () => {
+    const password = createEphemeralUiPassword();
+    expect(password).toMatch(/^[A-Za-z0-9_-]{20,}$/);
+    expect(buildManagedServeEnvPrefix(password)).toBe(
+      `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='${password}'`,
+    );
+    expect(() => buildManagedServeEnvPrefix('')).toThrow(/requires a UI password/i);
+  });
+
+  test('mintSshHostToken issues and stores a token using the in-memory session password', async () => {
+    let loginPayload = null;
+    const server = http.createServer(async (req, res) => {
+      if (req.method === 'POST' && req.url === '/auth/session') {
+        loginPayload = JSON.parse(await readBody(req));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ authenticated: true, clientToken: 'minted-ssh-token' }));
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    const localUrl = await listen(server);
+    const localPort = Number(new URL(localUrl).port);
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    tempDirs.push(tempDir);
+    const settingsFilePath = path.join(tempDir, 'settings.json');
+    const manager = new ElectronSshManager({
+      settingsFilePath,
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+    });
+    manager.sessions.set('ssh-1', {
+      localPort,
+      uiPassword: 'ephemeral-secret',
+      instance: { id: 'ssh-1', nickname: 'SSH Host' },
+    });
+    manager.statuses.set('ssh-1', { id: 'ssh-1', phase: 'ready' });
+
+    const token = await manager.mintSshHostToken('ssh-1');
+    expect(token).toBe('minted-ssh-token');
+    expect(loginPayload).toMatchObject({
+      password: 'ephemeral-secret',
+      issueClientToken: true,
+    });
+    const settings = JSON.parse(fs.readFileSync(settingsFilePath, 'utf8'));
+    expect(settings.desktopHosts).toEqual([{
+      id: 'ssh-1',
+      label: 'SSH Host',
+      url: `http://127.0.0.1:${localPort}`,
+      apiUrl: `http://127.0.0.1:${localPort}`,
+      clientToken: 'minted-ssh-token',
+    }]);
   });
 
   test('getRoutingTable includes only ready sessions with a finite localPort', async () => {

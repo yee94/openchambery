@@ -122,6 +122,23 @@ describe('tool busy title chrome', () => {
         expect(lifecycleBranch.indexOf('<LatticeOrb')).toBeGreaterThan(lifecycleBranch.indexOf('<AgentAvatar'));
     });
 
+    test('task rows record client-diagnostics facts without titles', () => {
+        expect(toolPartSource).toContain("from '@/sync/transcript-diagnostics'");
+        expect(toolPartSource).toContain('recordTaskRowDiagnostics');
+        expect(toolPartSource).toContain('recordTaskClickDiagnostics');
+        expect(toolPartSource).toContain("recordTaskOpenAttempt(opened, 'row')");
+        expect(toolPartSource).toContain("recordTaskOpenAttempt(openTaskSession(taskSessionId), 'queued-effect')");
+        const factsBlock = toolPartSource.slice(
+            toolPartSource.indexOf('const taskDiagnosticsFacts = React.useMemo'),
+            toolPartSource.indexOf('const taskDiagnosticsSignature'),
+        );
+        expect(factsBlock).toContain('childSessionPresent');
+        expect(factsBlock).toContain('diagnosticsSessionStatusType');
+        expect(factsBlock).not.toContain('taskTitle');
+        expect(factsBlock).not.toContain('taskAgentName');
+        expect(factsBlock).not.toContain('justificationText');
+    });
+
     test('assigned task rows keep the agent name visible beside the avatar', () => {
         expect(toolPartSource).toContain('const taskTitle = taskRowChrome.title;');
         expect(toolPartSource).not.toContain('chat.assistantStatus.taskWorking');

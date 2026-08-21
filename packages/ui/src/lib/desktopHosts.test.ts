@@ -17,6 +17,7 @@ const {
   desktopHostsGet,
   desktopHostsSet,
   fetchSshHostToken,
+  isSettingsLinkDesktopHost,
   isVisibleDesktopHost,
   redactSensitiveUrl,
   requestSshHostToken,
@@ -242,6 +243,44 @@ describe('isVisibleDesktopHost', () => {
 
   test('hides legacy manually added hosts without deleting them', () => {
     expect(isVisibleDesktopHost(host(), new Set(['other-ssh']))).toBe(false);
+  });
+});
+
+describe('isSettingsLinkDesktopHost', () => {
+  const host = (overrides: Partial<DesktopHost> = {}): DesktopHost => ({
+    id: 'host-1',
+    label: 'Host',
+    url: 'https://host.example',
+    ...overrides,
+  });
+
+  test('hides SSH instance mirror hosts that Settings already renders as SSH rows', () => {
+    expect(isSettingsLinkDesktopHost(host({ id: 'ssh-1', url: 'http://127.0.0.1:60612/' }), new Set(['ssh-1']))).toBe(false);
+    expect(isVisibleDesktopHost(host({ id: 'ssh-1', url: 'http://127.0.0.1:60612/' }), new Set(['ssh-1']))).toBe(true);
+  });
+
+  test('still shows imported connect-link hosts', () => {
+    expect(isSettingsLinkDesktopHost(host({ source: DESKTOP_HOST_SOURCE_CONNECT_LINK }), new Set())).toBe(true);
+  });
+
+  test('still shows imported SSH pairing hosts with sshTarget', () => {
+    expect(isSettingsLinkDesktopHost(host({
+      url: 'relay://server-1',
+      relay: {
+        relayUrl: 'wss://relay.example/ws',
+        serverId: 'server-1',
+        hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+      },
+      sshTarget: { hostId: 'ssh-1', desktopClientToken: 'desk-token' },
+      source: DESKTOP_HOST_SOURCE_CONNECT_LINK,
+    }), new Set())).toBe(true);
+  });
+
+  test('hides a connect-link host whose id is owned by a local SSH instance', () => {
+    expect(isSettingsLinkDesktopHost(host({
+      id: 'ssh-1',
+      source: DESKTOP_HOST_SOURCE_CONNECT_LINK,
+    }), new Set(['ssh-1']))).toBe(false);
   });
 });
 

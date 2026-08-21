@@ -202,7 +202,7 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 - One-click open/reveal/open-in-app actions.
 - Desktop host switcher and deep-link imports.
 - Local and remote instance handling.
-- SSH host import, connections, logs, and port forwarding.
+- SSH host import, connections, logs, and port forwarding. Managed SSH remotes always start with a UI password (configured or a one-time in-memory secret); the desktop mints the SSH host token through that password over the tunnel.
 - Auto-update checks, downloads, and restart/apply flow.
 
 ## IPC Pattern

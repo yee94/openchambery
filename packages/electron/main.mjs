@@ -1548,6 +1548,7 @@ const spawnLocalServer = async () => {
     }),
     // Live SSH local-forward ports for relay x-openchamber-target-port routing.
     getSshRoutingTable: () => sshManager.getRoutingTable(),
+    mintSshHostToken: (hostId) => sshManager.mintSshHostToken(hostId),
     sessionIndexDbPath: path.join(app.getPath('userData'), 'session-index.sqlite'),
     messageQueueDbPath: path.join(app.getPath('userData'), 'message-queue.sqlite'),
     transcriptCacheDbPath: path.join(app.getPath('userData'), 'transcript-cache.sqlite'),

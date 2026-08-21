@@ -1471,6 +1471,9 @@ async function main(options = {}) {
     sessionIndexSyncRuntime,
     transcriptCacheService,
     getSshRoutingTable,
+    mintSshHostToken: typeof options.mintSshHostToken === 'function'
+      ? options.mintSshHostToken
+      : undefined,
     getPairingSession: (id) => clientPairingRuntime.getPairingSession(id),
   });
   uiAuthController = bootstrapResult.uiAuthController;

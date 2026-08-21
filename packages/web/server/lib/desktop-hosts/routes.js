@@ -1,13 +1,14 @@
 // Desktop SSH host listing + short-lived token mint for mobile-over-relay.
 // Protected by the global /api UI auth gate (registerAuthAndAccessRoutes).
 // Never returns clientToken from the list endpoint; token is only issued via
-// POST /ssh-host-token for SSH instance hosts that already store one.
+// POST /ssh-host-token. Tokenless ready hosts may mint on demand.
 
 /**
  * @param {import('express').Express} app
  * @param {{
  *   readSettingsFromDiskMigrated: () => Promise<object>,
  *   getSshRoutingTable?: () => { id: string, localPort: number }[],
+ *   mintSshHostToken?: (hostId: string) => Promise<string>,
  *   getPairingSession?: (id: string) => Promise<{ id: string, sshHostId?: string | null, usedAt?: string | null } | null>,
  *   express?: typeof import('express'),
  *   logger?: Pick<Console, 'warn' | 'error'>,
@@ -17,6 +18,7 @@ export const registerDesktopHostRoutes = (app, deps) => {
   const {
     readSettingsFromDiskMigrated,
     getSshRoutingTable = () => [],
+    mintSshHostToken,
     getPairingSession,
     express,
     logger = console,
@@ -130,7 +132,10 @@ export const registerDesktopHostRoutes = (app, deps) => {
 
       const hostsRaw = Array.isArray(settings?.desktopHosts) ? settings.desktopHosts : [];
       const host = hostsRaw.find((entry) => typeof entry?.id === 'string' && entry.id.trim() === hostId);
-      const token = typeof host?.clientToken === 'string' ? host.clientToken.trim() : '';
+      let token = typeof host?.clientToken === 'string' ? host.clientToken.trim() : '';
+      if (!token && typeof mintSshHostToken === 'function') {
+        token = String(await mintSshHostToken(hostId) || '').trim();
+      }
       if (!token) {
         return res.status(404).json({ error: 'host_not_found' });
       }

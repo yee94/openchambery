@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.1-beta.15] - 2026-08-21
+
+### 诊断
+
+- **子 Agent 任务行可导出诊断：** About → 客户端诊断开启后，任务行会记录 `feat: task`（子会话 id 是否到位、tool/status、是否仍在 loading、点击是打开/排队/能力关闭）。不含标题、prompt、agent 名；开关关闭时不写。用于定位「上面能点、下面点不动、底下转圈」。
+
+### SSH 远程实例
+
+- **托管 SSH 远程始终带 UI 密码：** 未配置密码时桌面端会发一次性内存密码，经隧道签发 SSH host token；无密码不再静默失败。
+- **无 token 的就绪 SSH 主机可按需签发：** 手机 / 另一台电脑换 token 时，桌面可现场 mint 并写回，不再因 tokenless 返回 404。
+- **SSH 配对失败不再降级成本机：** 扫码或导入链接拿不到 SSH token 时直接报错，不再误存成桌面连接。
+- **设置页去掉 SSH 镜像重复行：** 本地 SSH 实例已在 SSH 列表里，链接列表不再再画一条。
+
 ## [1.17.1-beta.14] - 2026-08-21
 
 ### 会话列表

@@ -17,6 +17,7 @@ const createApp = ({
   settings = baseSettings,
   getSshRoutingTable = () => [],
   getPairingSession,
+  mintSshHostToken,
   logger = { warn: vi.fn(), error: vi.fn() },
 } = {}) => {
   const app = express();
@@ -25,6 +26,7 @@ const createApp = ({
     readSettingsFromDiskMigrated: async () => settings,
     getSshRoutingTable,
     getPairingSession,
+    mintSshHostToken,
     logger,
   });
   return { app, logger };
@@ -190,5 +192,36 @@ describe('desktop host routes', () => {
       .post('/api/openchamber/ssh-host-token')
       .send({ hostId: 'ssh-empty' });
     expect(noToken.status).toBe(404);
+  });
+
+  it('mints a token on demand when the stored SSH host is tokenless', async () => {
+    const mintSshHostToken = vi.fn(async (hostId) => {
+      expect(hostId).toBe('ssh-empty');
+      return 'minted-on-demand';
+    });
+    const { app } = createApp({
+      settings: {
+        desktopSshInstances: [{ id: 'ssh-empty' }],
+        desktopHosts: [{ id: 'ssh-empty' }],
+      },
+      getSshRoutingTable: () => [{ id: 'ssh-empty', localPort: 41234 }],
+      getPairingSession: async () => ({
+        id: 'pair_ok',
+        sshHostId: 'ssh-empty',
+        usedAt: '2026-01-01T00:00:00.000Z',
+      }),
+      mintSshHostToken,
+    });
+
+    const res = await request(app)
+      .post('/api/openchamber/ssh-host-token')
+      .send({ hostId: 'ssh-empty', pairingId: 'pair_ok' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      token: 'minted-on-demand',
+      localPort: 41234,
+      reachable: true,
+    });
+    expect(mintSshHostToken).toHaveBeenCalledWith('ssh-empty');
   });
 });

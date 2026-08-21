@@ -83,13 +83,17 @@ export type DesktopHost = {
 };
 
 /**
- * Whether a persisted desktop host should appear in Settings / the host switcher.
+ * Whether a persisted desktop host should appear in the host switcher.
  * Hidden hosts stay on disk; this is display-only.
  *
  * A host is visible when any of these authoritative facts hold:
  * 1. it was imported via a connect/pairing link (`source === 'connect-link'`)
  * 2. its id matches a desktop SSH instance (SSH connect writes back the same id)
  * 3. it carries a relay descriptor (pairing-produced)
+ *
+ * Settings remote instances already render SSH rows from `desktopSshInstances`.
+ * Use `isSettingsLinkDesktopHost` there so the SSH mirror host is not also
+ * shown as a connect-link row.
  */
 export const isVisibleDesktopHost = (
   host: DesktopHost,
@@ -100,6 +104,19 @@ export const isVisibleDesktopHost = (
   if (host.viaSshRelay) return true;
   if (host.sshTarget) return true;
   return sshInstanceIds.has(host.id);
+};
+
+/**
+ * Whether a persisted desktop host should appear as a Settings "链接" row.
+ * Local SSH instance mirrors share an id with `desktopSshInstances` and stay
+ * available to the host switcher; Settings already owns those as SSH rows.
+ */
+export const isSettingsLinkDesktopHost = (
+  host: DesktopHost,
+  sshInstanceIds: ReadonlySet<string>,
+): boolean => {
+  if (sshInstanceIds.has(host.id)) return false;
+  return isVisibleDesktopHost(host, sshInstanceIds);
 };
 
 /** Display-only pseudo-URL for a relay host (never fetched). */

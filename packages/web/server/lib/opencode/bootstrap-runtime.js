@@ -62,6 +62,7 @@ export const createBootstrapRuntime = (dependencies) => {
       sessionIndexSyncRuntime,
       transcriptCacheService,
       getSshRoutingTable,
+      mintSshHostToken,
       getPairingSession,
     } = options;
 
@@ -152,6 +153,7 @@ export const createBootstrapRuntime = (dependencies) => {
       sessionIndexSyncRuntime,
       transcriptCacheService,
       getSshRoutingTable,
+      mintSshHostToken,
       getPairingSession,
       express,
     });

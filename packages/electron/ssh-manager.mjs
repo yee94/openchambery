@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import net from 'node:net';
@@ -23,6 +24,17 @@ const WINDOWS_HIDDEN_SPAWN_OPTIONS = process.platform === 'win32' ? { windowsHid
 const nowMillis = () => Date.now();
 
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
+
+/** One-time UI password for an SSH-started remote OpenChamber. Memory-only. */
+export const createEphemeralUiPassword = () => crypto.randomBytes(24).toString('base64url');
+
+export const buildManagedServeEnvPrefix = (uiPassword) => {
+  const password = typeof uiPassword === 'string' ? uiPassword.trim() : '';
+  if (!password) {
+    throw new Error('Managed SSH OpenChamber requires a UI password');
+  }
+  return `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD=${shellQuote(password)}`;
+};
 
 const hasGlobWildcard = (value) => /[*?]/.test(value);
 
@@ -515,6 +527,8 @@ export class ElectronSshManager {
     this.reconnectAttempts = new Map();
     this.connectAttempts = new Map();
     this.connecting = new Map();
+    /** @type {Map<string, string>} instanceId → ephemeral UI password (process lifetime, never persisted) */
+    this.ephemeralUiPasswords = new Map();
   }
 
   appendLogWithLevel(id, level, message) {
@@ -825,7 +839,9 @@ export class ElectronSshManager {
 
   async issueClientToken(localUrl, openchamberPassword) {
     const password = typeof openchamberPassword === 'string' ? openchamberPassword.trim() : '';
-    if (!password) return '';
+    if (!password) {
+      throw new Error('OpenChamber UI password is required to mint an SSH host token');
+    }
 
     const loginResponse = await fetch(new URL('/auth/session', `${localUrl}/`).toString(), {
       method: 'POST',
@@ -842,7 +858,7 @@ export class ElectronSshManager {
       }),
     });
     if (!loginResponse.ok) {
-      throw new Error(`Configured OpenChamber UI password was rejected by forwarded server (status ${loginResponse.status})`);
+      throw new Error(`OpenChamber UI password was rejected by forwarded server (status ${loginResponse.status})`);
     }
 
     const payload = await loginResponse.json().catch(() => null);
@@ -850,21 +866,60 @@ export class ElectronSshManager {
     if (token) return token;
 
     const cookie = this.extractCookieHeader(loginResponse);
-    if (!cookie) return '';
+    if (!cookie) {
+      throw new Error('Forwarded OpenChamber did not issue an SSH host token');
+    }
+    const minted = await this.createClientToken(localUrl, { Cookie: cookie });
+    if (!minted) {
+      throw new Error('Forwarded OpenChamber did not issue an SSH host token');
+    }
+    return minted;
+  }
 
+  async createClientToken(localUrl, extraHeaders = {}) {
     const tokenResponse = await fetch(new URL('/api/client-auth/clients', `${localUrl}/`).toString(), {
       method: 'POST',
       signal: AbortSignal.timeout(10_000),
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        Cookie: cookie,
+        ...extraHeaders,
       },
       body: JSON.stringify({ label: 'OpenChamber Desktop SSH' }),
     });
     if (!tokenResponse.ok) return '';
     const tokenPayload = await tokenResponse.json().catch(() => null);
     return typeof tokenPayload?.token === 'string' ? tokenPayload.token.trim() : '';
+  }
+
+  sessionUiPassword(session, instance) {
+    const ephemeral = typeof session?.uiPassword === 'string' ? session.uiPassword.trim() : '';
+    if (ephemeral) return ephemeral;
+    const remembered = this.ephemeralUiPasswords.get(instance?.id || session?.instance?.id);
+    if (typeof remembered === 'string' && remembered.trim()) return remembered.trim();
+    return this.configuredOpenChamberPassword(instance || session?.instance);
+  }
+
+  /**
+   * Mint (or remint) a stored SSH host clientToken for a ready session.
+   * Uses the in-memory tunnel password (ephemeral managed password or configured).
+   */
+  async mintSshHostToken(instanceId) {
+    const id = String(instanceId || '').trim();
+    if (!id || id === LOCAL_HOST_ID) return '';
+    const session = this.sessions.get(id);
+    const phase = this.statuses.get(id)?.phase;
+    const localPort = Number(session?.localPort);
+    if (!session || phase !== 'ready' || !Number.isFinite(localPort) || localPort <= 0) return '';
+    const instance = session.instance;
+    const password = this.sessionUiPassword(session, instance);
+    if (!password) return '';
+    const localUrl = `http://127.0.0.1:${localPort}`;
+    const label = instance?.nickname?.trim() || instance?.sshParsed?.destination || id;
+    const token = await this.issueClientToken(localUrl, password);
+    if (!token) return '';
+    await this.updateHostRuntime(id, label, localUrl, token);
+    return token;
   }
 
   extractCookieHeader(response) {
@@ -1094,14 +1149,11 @@ export class ElectronSshManager {
   }
 
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
-    let envPrefix = 'OPENCHAMBER_RUNTIME=ssh-remote';
-    const secret = this.configuredOpenChamberPassword(instance);
-    if (secret) {
-      envPrefix += ` OPENCHAMBER_UI_PASSWORD=${shellQuote(secret)}`;
-    }
+    const uiPassword = this.configuredOpenChamberPassword(instance) || createEphemeralUiPassword();
+    const envPrefix = buildManagedServeEnvPrefix(uiPassword);
     const output = await runRemoteCommand(parsed, controlPath, `${envPrefix} openchamber serve --hostname 127.0.0.1 --port ${desiredPort}`);
     const port = output.split(/\s+/).map((token) => Number.parseInt(token, 10)).find((value) => Number.isFinite(value));
-    return port || desiredPort;
+    return { port: port || desiredPort, uiPassword };
   }
 
   async stopRemoteServerBestEffort(parsed, controlPath, remotePort) {
@@ -1225,9 +1277,10 @@ export class ElectronSshManager {
         throw new Error('External mode requires a preferred remote OpenChamber port');
       }
       const port = instance.remoteOpenchamber.preferredPort;
+      const uiPassword = this.configuredOpenChamberPassword(instance);
       this.setStatus(instance.id, 'server_detecting', 'Probing external OpenChamber server', null, null, port, false, 0, false);
-      await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredOpenChamberPassword(instance));
-      return { remotePort: port, startedByUs: false };
+      await this.probeRemoteSystemInfo(parsed, controlPath, port, uiPassword);
+      return { remotePort: port, startedByUs: false, uiPassword };
     }
 
     this.setStatus(instance.id, 'remote_probe', 'Checking remote OpenChamber installation');
@@ -1243,19 +1296,25 @@ export class ElectronSshManager {
     this.setStatus(instance.id, 'server_detecting', 'Detecting managed OpenChamber server');
     let remotePort = instance.remoteOpenchamber.preferredPort || null;
     let startedByUs = false;
-    if (remotePort && !(await this.remoteServerRunning(parsed, controlPath, remotePort, this.configuredOpenChamberPassword(instance)))) {
+    let uiPassword = this.configuredOpenChamberPassword(instance)
+      || this.ephemeralUiPasswords.get(instance.id)
+      || null;
+    if (remotePort && !(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
       remotePort = null;
     }
     if (!remotePort) {
       this.setStatus(instance.id, 'server_starting', 'Starting managed OpenChamber server');
       const desiredPort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
-      remotePort = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
+      const started = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
+      remotePort = started.port;
+      uiPassword = started.uiPassword;
       startedByUs = true;
+      this.ephemeralUiPasswords.set(instance.id, uiPassword);
     }
-    if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, this.configuredOpenChamberPassword(instance)))) {
+    if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
       throw new Error('Managed OpenChamber server failed to become reachable');
     }
-    return { remotePort, startedByUs };
+    return { remotePort, startedByUs, uiPassword };
   }
 
   async disconnectInternal(id, reportIdle) {
@@ -1267,6 +1326,14 @@ export class ElectronSshManager {
 
     const session = this.sessions.get(id);
     this.sessions.delete(id);
+    const keepRemoteRunning = Boolean(
+      session?.startedByUs
+      && session?.instance?.remoteOpenchamber?.mode === 'managed'
+      && session.instance.remoteOpenchamber.keepRunning,
+    );
+    if (!keepRemoteRunning) {
+      this.ephemeralUiPasswords.delete(id);
+    }
 
     if (session) {
       if (session.startedByUs && session.instance.remoteOpenchamber.mode === 'managed' && !session.instance.remoteOpenchamber.keepRunning) {
@@ -1320,7 +1387,7 @@ export class ElectronSshManager {
       throw new Error(`Unsupported remote OS: ${remoteOs}`);
     }
 
-    const { remotePort, startedByUs } = await this.ensureRemoteServer(instance, parsed, controlPath);
+    const { remotePort, startedByUs, uiPassword } = await this.ensureRemoteServer(instance, parsed, controlPath);
     this.setStatus(id, 'forwarding', 'Setting up port forwards', null, null, remotePort, startedByUs, 0, false);
 
     const bindHost = sanitizeBindHost(instance.localForward?.bindHost);
@@ -1364,7 +1431,10 @@ export class ElectronSshManager {
 
     const localUrl = `http://127.0.0.1:${localPort}`;
     const label = instance.nickname?.trim() || parsed.destination || id;
-    const clientToken = await this.issueClientToken(localUrl, this.configuredOpenChamberPassword(instance));
+    if (!uiPassword) {
+      throw new Error('OpenChamber UI password is required to mint an SSH host token');
+    }
+    const clientToken = await this.issueClientToken(localUrl, uiPassword);
     await this.updateHostRuntime(id, label, localUrl, clientToken);
     if (instance.localForward?.preferredLocalPort !== localPort) {
       await this.persistLocalPort(id, localPort);
@@ -1378,6 +1448,7 @@ export class ElectronSshManager {
       localPort,
       remotePort,
       startedByUs,
+      ...(typeof uiPassword === 'string' && uiPassword.trim() ? { uiPassword: uiPassword.trim() } : {}),
       master,
       masterDetached: false,
       mainForward,
@@ -1544,5 +1615,6 @@ export class ElectronSshManager {
     for (const id of ids) {
       await this.disconnectInternal(id, false);
     }
+    this.ephemeralUiPasswords.clear();
   }
 }

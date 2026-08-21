@@ -50,7 +50,7 @@ import {
   desktopInstallIdGet,
   DESKTOP_HOST_SOURCE_CONNECT_LINK,
   getDesktopHostApiUrl,
-  isVisibleDesktopHost,
+  isSettingsLinkDesktopHost,
   normalizeHostUrl,
   probeRelayDesktopHost,
   redactSensitiveUrl,
@@ -541,7 +541,7 @@ export const RemoteInstancesPage: React.FC = () => {
     [instances],
   );
   const visibleDirectHosts = React.useMemo(
-    () => directHosts.filter((host) => isVisibleDesktopHost(host, sshInstanceIds)),
+    () => directHosts.filter((host) => isSettingsLinkDesktopHost(host, sshInstanceIds)),
     [directHosts, sshInstanceIds],
   );
 
@@ -678,7 +678,7 @@ export const RemoteInstancesPage: React.FC = () => {
           };
         }
       } catch {
-        // Fall through to desktop host save.
+        // SSH mint failed — do not import as the parent desktop.
       } finally {
         redeemed.tunnel.close();
       }
@@ -711,7 +711,8 @@ export const RemoteInstancesPage: React.FC = () => {
         setDirectImportDialogOpen(false);
         return;
       }
-      toast.message(t('mobile.connect.ssh.fallbackDesktop'));
+      setDirectError(t('mobile.connect.error.sshNotConnected'));
+      return;
     } else if (redeemed.kind === 'relay') {
       redeemed.tunnel.close();
     }

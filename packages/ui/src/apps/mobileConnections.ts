@@ -19,7 +19,6 @@ import { Capacitor } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 import React from 'react';
 
-import { toast } from '@/components/ui';
 import { applySshRelayRuntime } from '@/lib/desktopHostSwitch';
 import { requestSshHostToken } from '@/lib/desktopHosts';
 import { useI18n } from '@/lib/i18n';
@@ -1679,7 +1678,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       const label = payload.label || serverLabel || getConnectionLabel(connectionDisplayUrl({ candidates: deviceCandidates }));
 
       // 3a. SSH pairing: mint SSH host token on the same tunnel, then route with
-      // target-port. Unreachable / mismatch falls back to a normal desktop save.
+      // target-port. Failure stays on the SSH path — never save as the parent desktop.
       const sshHostId = payload.sshHostId?.trim() || '';
       const relayChosen = chosen.kind === 'relay' ? chosen : null;
       if (sshHostId && relayChosen) {
@@ -1722,9 +1721,10 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
             return;
           }
         } catch {
-          // Fall through: still save as a normal desktop connection.
+          // SSH mint failed; report instead of pairing the parent desktop.
         }
-        toast.message(t('mobile.connect.ssh.fallbackDesktop'));
+        setError(t('mobile.connect.error.sshNotConnected'));
+        return;
       }
 
       // 3b. Persist the device with ALL its candidates + one token, then switch to

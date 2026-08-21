@@ -95,6 +95,11 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Nested task-session navigation delegates to `SessionSurfaceContext`. In an
     ContextPanel transcript, the strict read-only panel surface accepts
     same-directory local navigation and preserves the primary session selection.
+  - When About → client diagnostics is on, each Task row records `feat: task`
+    events through the shared diagnostics hub (`task-row` on identity/status
+    change, `task-click` on row click or queued open). Events keep session/part
+    identities and loading/click facts only — never titles, prompts, or agent
+    names. Recording is silent when the switch is off.
   - If you want to change expandable tool layout, edit here.
 
 - `taskToolModel.ts`

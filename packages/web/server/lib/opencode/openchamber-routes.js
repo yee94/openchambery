@@ -17,6 +17,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     sessionIndexSyncRuntime,
     transcriptCacheService,
     getSshRoutingTable,
+    mintSshHostToken,
     getPairingSession,
     express,
   } = dependencies;
@@ -26,6 +27,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
   registerDesktopHostRoutes(app, {
     readSettingsFromDiskMigrated,
     getSshRoutingTable,
+    mintSshHostToken,
     getPairingSession,
     express,
   });

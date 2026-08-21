@@ -15,12 +15,13 @@ export type TranscriptDiagnosticsHydration = {
 
 /**
  * Client diagnostics hub. Each domain reports through a named feat
- * (`transcript` today; more feats can join the same export).
+ * (`transcript` and `task` today; more feats can join the same export).
  *
- * Events never carry message bodies, part text, URLs, tokens, or attachment
- * payloads — only identities and lifecycle facts.
+ * Events never carry message bodies, part text, URLs, tokens, titles,
+ * prompts, agent names, or attachment payloads — only identities and
+ * lifecycle facts.
  */
-export type ClientDiagnosticsFeat = "transcript"
+export type ClientDiagnosticsFeat = "transcript" | "task"
 
 export type TranscriptDiagnosticsKind =
   | "ensure-initial"
@@ -34,6 +35,19 @@ export type TranscriptDiagnosticsKind =
   | "request-error"
   | "hydration"
   | "transcript-diff"
+
+export type TaskDiagnosticsKind = "task-row" | "task-click"
+
+export type ClientDiagnosticsKind = TranscriptDiagnosticsKind | TaskDiagnosticsKind
+
+export type TaskClickOutcome =
+  | "opened"
+  | "queued"
+  | "capability-off"
+  | "missing-directory"
+  | "navigate-rejected"
+
+export type TaskClickSource = "row" | "queued-effect"
 
 export type TranscriptDiagnosticsDiffTrigger =
   | "user-refresh"
@@ -98,7 +112,7 @@ export type TranscriptDiagnosticsSource = "network" | "query-cache" | "durable-c
 export type TranscriptDiagnosticsEvent = {
   readonly at: number
   readonly feat: ClientDiagnosticsFeat
-  readonly kind: TranscriptDiagnosticsKind
+  readonly kind: ClientDiagnosticsKind
   readonly sessionID: string
   readonly directory?: string
   readonly transport?: string
@@ -124,6 +138,27 @@ export type TranscriptDiagnosticsEvent = {
   readonly before?: TranscriptCanonicalSnapshot
   readonly after?: TranscriptCanonicalSnapshot
   readonly diff?: TranscriptDiff
+  readonly partID?: string
+  readonly messageID?: string
+  readonly childSessionID?: string
+  readonly childSessionPresent?: boolean
+  readonly toolStatus?: string
+  readonly finalized?: boolean
+  readonly backgroundRunning?: boolean
+  readonly effectiveActive?: boolean
+  readonly suppressLoading?: boolean
+  readonly delegating?: boolean
+  readonly childStatus?: string
+  readonly parentStatus?: string
+  readonly idleConfirmed?: boolean
+  readonly clickOutcome?: TaskClickOutcome
+  readonly clickSource?: TaskClickSource
+  readonly surfaceKind?: string
+  readonly navigateCapability?: boolean
+  readonly directoryPresent?: boolean
+  readonly taskStartedAt?: number
+  readonly statusObservedAt?: number
+  readonly statusSnapshotAt?: number
 }
 
 export type TranscriptDiagnosticsSink = {
@@ -535,5 +570,137 @@ export function snapshotTranscriptDiff(input: {
     ...(input.transport ? { transport: input.transport } : {}),
     ...(input.generation !== undefined ? { generation: input.generation } : {}),
     ...(input.purpose ? { purpose: input.purpose } : {}),
+  }
+}
+
+export type TaskDiagnosticsFacts = {
+  readonly sessionID: string
+  readonly partID?: string
+  readonly messageID?: string
+  readonly directory?: string
+  readonly directoryPresent: boolean
+  readonly childSessionPresent: boolean
+  readonly childSessionID?: string
+  readonly toolStatus?: string
+  readonly finalized: boolean
+  readonly backgroundRunning: boolean
+  readonly effectiveActive: boolean
+  readonly suppressLoading: boolean
+  readonly delegating: boolean
+  readonly childStatus: string
+  readonly parentStatus: string
+  readonly idleConfirmed: boolean
+  readonly navigateCapability: boolean
+  readonly surfaceKind?: string
+  readonly taskStartedAt?: number
+  readonly statusObservedAt?: number
+  readonly statusSnapshotAt?: number
+}
+
+export function diagnosticsSessionStatusType(status: { type?: unknown } | null | undefined): string {
+  if (!status || typeof status.type !== "string") return "missing"
+  const trimmed = status.type.trim()
+  return trimmed.length > 0 ? trimmed : "missing"
+}
+
+export function resolveTaskClickOutcome(input: {
+  opened: boolean
+  navigateCapability: boolean
+  childSessionPresent: boolean
+  directoryPresent: boolean
+}): TaskClickOutcome {
+  if (input.opened) return "opened"
+  if (!input.navigateCapability) return "capability-off"
+  if (!input.directoryPresent) return "missing-directory"
+  if (!input.childSessionPresent) return "queued"
+  return "navigate-rejected"
+}
+
+function optionalIdentity(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function taskDiagnosticsFields(facts: TaskDiagnosticsFacts): Partial<TranscriptDiagnosticsEvent> {
+  const partID = optionalIdentity(facts.partID)
+  const messageID = optionalIdentity(facts.messageID)
+  const directory = optionalIdentity(facts.directory)
+  const childSessionID = optionalIdentity(facts.childSessionID)
+  const toolStatus = optionalIdentity(facts.toolStatus)
+  const surfaceKind = optionalIdentity(facts.surfaceKind)
+  return {
+    directoryPresent: facts.directoryPresent,
+    childSessionPresent: facts.childSessionPresent,
+    finalized: facts.finalized,
+    backgroundRunning: facts.backgroundRunning,
+    effectiveActive: facts.effectiveActive,
+    suppressLoading: facts.suppressLoading,
+    delegating: facts.delegating,
+    childStatus: facts.childStatus,
+    parentStatus: facts.parentStatus,
+    idleConfirmed: facts.idleConfirmed,
+    navigateCapability: facts.navigateCapability,
+    ...(partID ? { partID } : {}),
+    ...(messageID ? { messageID } : {}),
+    ...(directory ? { directory } : {}),
+    ...(childSessionID ? { childSessionID } : {}),
+    ...(toolStatus ? { toolStatus } : {}),
+    ...(surfaceKind ? { surfaceKind } : {}),
+    ...(facts.taskStartedAt !== undefined ? { taskStartedAt: facts.taskStartedAt } : {}),
+    ...(facts.statusObservedAt !== undefined ? { statusObservedAt: facts.statusObservedAt } : {}),
+    ...(facts.statusSnapshotAt !== undefined ? { statusSnapshotAt: facts.statusSnapshotAt } : {}),
+  }
+}
+
+export function taskRowDiagnosticsSignature(facts: TaskDiagnosticsFacts): string {
+  return [
+    facts.sessionID,
+    optionalIdentity(facts.partID) ?? "",
+    facts.childSessionPresent ? "1" : "0",
+    optionalIdentity(facts.childSessionID) ?? "",
+    optionalIdentity(facts.toolStatus) ?? "",
+    facts.finalized ? "1" : "0",
+    facts.backgroundRunning ? "1" : "0",
+    facts.effectiveActive ? "1" : "0",
+    facts.suppressLoading ? "1" : "0",
+    facts.delegating ? "1" : "0",
+    facts.childStatus,
+    facts.parentStatus,
+    facts.idleConfirmed ? "1" : "0",
+    facts.navigateCapability ? "1" : "0",
+    facts.directoryPresent ? "1" : "0",
+    optionalIdentity(facts.surfaceKind) ?? "",
+    String(facts.taskStartedAt ?? ""),
+    String(facts.statusObservedAt ?? ""),
+    String(facts.statusSnapshotAt ?? ""),
+  ].join("\u0000")
+}
+
+export function snapshotTaskRowDiagnostics(input: TaskDiagnosticsFacts & {
+  now?: () => number
+}): TranscriptDiagnosticsEvent {
+  return {
+    at: (input.now ?? Date.now)(),
+    feat: "task",
+    kind: "task-row",
+    sessionID: input.sessionID,
+    ...taskDiagnosticsFields(input),
+  }
+}
+
+export function snapshotTaskClickDiagnostics(input: TaskDiagnosticsFacts & {
+  opened: boolean
+  clickSource: TaskClickSource
+  now?: () => number
+}): TranscriptDiagnosticsEvent {
+  return {
+    at: (input.now ?? Date.now)(),
+    feat: "task",
+    kind: "task-click",
+    sessionID: input.sessionID,
+    clickSource: input.clickSource,
+    clickOutcome: resolveTaskClickOutcome(input),
+    ...taskDiagnosticsFields(input),
   }
 }

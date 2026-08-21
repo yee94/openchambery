@@ -23,6 +23,8 @@ export interface StartWebUiServerOptions {
   messageQueueAttachmentRoot?: string | null;
   /** Live SSH local-forward ports for relay target-port routing (Electron). */
   getSshRoutingTable?: () => { id: string; localPort: number }[];
+  /** Mint a stored SSH host clientToken for a ready session (Electron). */
+  mintSshHostToken?: (hostId: string) => Promise<string>;
 }
 
 export declare function startWebUiServer(

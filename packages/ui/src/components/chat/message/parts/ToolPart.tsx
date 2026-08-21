@@ -75,6 +75,16 @@ import { navigateNestedSession, useSessionSurface } from '../../SessionSurfaceCo
 import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { LatticeOrb } from './LatticeOrb';
 import { isToolPartSettled } from './toolRenderUtils';
+import {
+    diagnosticsSessionStatusType,
+    taskRowDiagnosticsSignature,
+    type TaskClickSource,
+    type TaskDiagnosticsFacts,
+} from '@/sync/transcript-diagnostics';
+import {
+    recordTaskClickDiagnostics,
+    recordTaskRowDiagnostics,
+} from '@/sync/transcript-diagnostics-runtime';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -2290,6 +2300,77 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     });
     const isDelegatingTask = isTaskTool && taskRowChrome.isDelegating;
     const taskTitle = taskRowChrome.title;
+    const parentSessionID = typeof part.sessionID === 'string' ? part.sessionID.trim() : '';
+    const taskDiagnosticsFacts = React.useMemo((): TaskDiagnosticsFacts | null => {
+        if (!isTaskTool || !parentSessionID) return null;
+        const childSessionID = typeof taskSessionId === 'string' && taskSessionId.trim().length > 0
+            ? taskSessionId.trim()
+            : undefined;
+        const partID = typeof part.id === 'string' && part.id.trim().length > 0 ? part.id.trim() : undefined;
+        const resolvedMessageID = typeof part.messageID === 'string' && part.messageID.trim().length > 0
+            ? part.messageID.trim()
+            : (typeof messageId === 'string' && messageId.trim().length > 0 ? messageId.trim() : undefined);
+        return {
+            sessionID: parentSessionID,
+            ...(partID ? { partID } : {}),
+            ...(resolvedMessageID ? { messageID: resolvedMessageID } : {}),
+            ...(currentDirectory ? { directory: currentDirectory } : {}),
+            directoryPresent: Boolean(currentDirectory),
+            childSessionPresent: Boolean(childSessionID),
+            ...(childSessionID ? { childSessionID } : {}),
+            ...(status ? { toolStatus: status } : {}),
+            finalized: isFinalized,
+            backgroundRunning: taskBackgroundRunning,
+            effectiveActive,
+            suppressLoading: suppressTaskLoading,
+            delegating: isDelegatingTask,
+            childStatus: diagnosticsSessionStatusType(childSessionStatus),
+            parentStatus: diagnosticsSessionStatusType(parentSessionStatus),
+            idleConfirmed: childIdleConfirmed,
+            navigateCapability: sessionSurface.capabilities.navigateNestedSession,
+            surfaceKind: sessionSurface.kind,
+            ...(typeof effectiveTimeStart === 'number' ? { taskStartedAt: effectiveTimeStart } : {}),
+            ...(typeof statusObservedAt === 'number' ? { statusObservedAt } : {}),
+            ...(typeof statusSnapshotAt === 'number' ? { statusSnapshotAt } : {}),
+        };
+    }, [
+        childIdleConfirmed,
+        childSessionStatus,
+        currentDirectory,
+        effectiveActive,
+        effectiveTimeStart,
+        isDelegatingTask,
+        isFinalized,
+        isTaskTool,
+        messageId,
+        parentSessionID,
+        parentSessionStatus,
+        part.id,
+        part.messageID,
+        sessionSurface.capabilities.navigateNestedSession,
+        sessionSurface.kind,
+        status,
+        statusObservedAt,
+        statusSnapshotAt,
+        suppressTaskLoading,
+        taskBackgroundRunning,
+        taskSessionId,
+    ]);
+    const taskDiagnosticsSignature = taskDiagnosticsFacts
+        ? taskRowDiagnosticsSignature(taskDiagnosticsFacts)
+        : '';
+    const taskDiagnosticsFactsRef = React.useRef(taskDiagnosticsFacts);
+    taskDiagnosticsFactsRef.current = taskDiagnosticsFacts;
+    React.useEffect(() => {
+        const facts = taskDiagnosticsFactsRef.current;
+        if (!facts || !taskDiagnosticsSignature) return;
+        recordTaskRowDiagnostics(facts);
+    }, [taskDiagnosticsSignature]);
+    const recordTaskOpenAttempt = useEvent((opened: boolean, clickSource: TaskClickSource) => {
+        const facts = taskDiagnosticsFactsRef.current;
+        if (!facts) return;
+        recordTaskClickDiagnostics({ ...facts, opened, clickSource });
+    });
     // 委派中的任务行：root 层暴露 data 属性，供测试与诊断用，不影响渲染
     const delegatingDataAttr = isDelegatingTask ? { 'data-delegating': 'true' } : undefined;
     
@@ -2352,14 +2433,17 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         if (!pendingOpenTaskSessionRef.current || !taskSessionId) {
             return;
         }
-        openTaskSession(taskSessionId);
+        recordTaskOpenAttempt(openTaskSession(taskSessionId), 'queued-effect');
     }, [taskSessionId]);
 
     const handleMainClick = (e: { stopPropagation: () => void }) => {
         // Task：整行始终打开子会话（含 loading）；详情展开只走图标位箭头
         if (isTaskTool) {
             e.stopPropagation();
-            if (sessionSurface.capabilities.navigateNestedSession && !openTaskSession()) {
+            const canNavigate = sessionSurface.capabilities.navigateNestedSession;
+            const opened = canNavigate ? openTaskSession() : false;
+            recordTaskOpenAttempt(opened, 'row');
+            if (canNavigate && !opened) {
                 // 子会话 id 还在路上：记下意图，id 到达后自动打开
                 pendingOpenTaskSessionRef.current = true;
             }

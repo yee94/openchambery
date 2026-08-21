@@ -33,7 +33,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: active loopback-port wiring shared by pairing/LAN URLs and the private relay host.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
-- `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update, models metadata, session-index, and transcript-cache route registration.
+- `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update, models metadata, session-index, transcript-cache, and desktop SSH host-token route registration. Tokenless ready SSH hosts may mint a client token on demand via Electron `mintSshHostToken`, which authenticates to the forwarded remote with the in-memory tunnel UI password.
 - `packages/web/server/lib/transcript-cache/`: opt-in Electron/local SQLite transcript cache (`/api/openchamber/transcript-cache`); default path is null so remote Web servers do not persist conversation bodies. See `transcript-cache/DOCUMENTATION.md`.
 - `packages/web/server/lib/opencode/pwa-manifest-routes.js`: PWA manifest route registration with recent-session shortcut resolution and short-lived caching.
 - `packages/web/server/lib/opencode/project-icon-routes.js`: project icon upload/read/discovery route registration and icon storage orchestration.
