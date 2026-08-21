@@ -57,4 +57,36 @@ describe('mobileContextUsage', () => {
     });
     expect(getLatestAssistantTotalTokens(messages)).toBe(150);
   });
+
+  test('compaction row newer than the last assistant resets the token baseline', () => {
+    const messages = [
+      { id: 'a1', role: 'assistant', tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } },
+      { id: 'u-compact', role: 'user' },
+    ];
+    const partsByMessage = new Map([['u-compact', [{ type: 'compaction' }]]]);
+    const getParts = (messageId: string) => partsByMessage.get(messageId);
+
+    expect(getLatestAssistantTotalTokens(messages, getParts)).toBe(0);
+  });
+
+  test('post-compaction assistant with tokens becomes the new baseline', () => {
+    const messages = [
+      { id: 'a1', role: 'assistant', tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } },
+      { id: 'u-compact', role: 'user' },
+      { id: 'a2', role: 'assistant', tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ];
+    const partsByMessage = new Map([['u-compact', [{ type: 'compaction' }]]]);
+    const getParts = (messageId: string) => partsByMessage.get(messageId);
+
+    expect(getLatestAssistantTotalTokens(messages, getParts)).toBe(15);
+  });
+
+  test('without a parts getter the scan keeps its legacy behavior', () => {
+    const messages = [
+      { id: 'a1', role: 'assistant', tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } },
+      { id: 'u-compact', role: 'user' },
+    ];
+
+    expect(getLatestAssistantTotalTokens(messages)).toBe(150);
+  });
 });

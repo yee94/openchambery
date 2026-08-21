@@ -21,16 +21,16 @@ Relay v1 accepts anonymous Client route requests. Admission, connection, frame, 
 
 ## Requirements
 
-- `@openchamber/relay-server` installation: Node.js 22 or later and a supported package manager such as npm, pnpm, yarn, or Bun.
+- `@openchambery/relay-server` installation: Node.js 22 or later and a supported package manager such as npm, pnpm, yarn, or Bun.
 - Single-file bundle build: Bun. This repository uses Bun 1.3.14.
 - Public deployment: a DNS name, TLS certificate, reverse proxy, and firewall policy appropriate for the deployment.
 
 ## Install and quick start
 
-`openchamber-relay` ships as an executable in the public `@openchamber/relay-server` package.
+`openchamber-relay` ships as an executable in the public `@openchambery/relay-server` package.
 
 ```sh
-npm install -g @openchamber/relay-server
+npm install -g @openchambery/relay-server
 openchamber-relay --public-url wss://relay.example.com/ws
 ```
 
@@ -57,7 +57,7 @@ kill -TERM "$relay_pid"
 wait "$relay_pid"
 ```
 
-The executable remains independently deployable after compilation. `@openchamber/relay-server` owns its distribution and publishes the `openchamber-relay` executable.
+The executable remains independently deployable after compilation. `@openchambery/relay-server` owns its distribution and publishes the `openchamber-relay` executable.
 
 ## Configure the listener and public URL
 

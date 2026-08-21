@@ -15,7 +15,7 @@ OpenChamber читає ці змінні під час запуску. Для st
 
 ### `OPENCHAMBER_UI_PASSWORD`
 
-Пароль для browser UI. Використовуйте його для доступу не лише з localhost, тунелів або reverse proxy.
+Пароль для browser UI. Використовуйте його для доступу не лише з localhost, reverse proxy.
 
 ### `OPENCHAMBER_API_ONLY`
 
@@ -109,7 +109,7 @@ Git executable для Git-функцій OpenChamber.
 
 TTL у мілісекундах для cached Git-backed file reads. Встановіть `0`, щоб вимкнути cache під час debugging.
 
-## Voice і tunnels
+## Voice
 
 ### `OPENAI_API_KEY`
 
@@ -118,10 +118,6 @@ API key для voice-функцій OpenChamber, які викликають Ope
 ### `OPENCHAMBER_ALLOW_REMOTE_OPENAI_COMPAT_URLS`
 
 Дозволяє remote OpenAI-compatible base URLs для voice-функцій, якщо встановлено `true` або `1`.
-
-### `NGROK_AUTHTOKEN`
-
-ngrok auth token для tunnel-команд OpenChamber. Також можна налаштувати ngrok через `ngrok config add-authtoken <token>`.
 
 ## Runtime helpers
 

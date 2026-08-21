@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import type { Message } from '@opencode-ai/sdk/v2';
 import type { TurnGroupingContext } from '../lib/turns/types';
-import { areRelevantTurnGroupingContextsEqual } from './renderCompare';
+import { areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './renderCompare';
 
 const toggleGroup = () => {};
 
@@ -53,5 +54,40 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
 
   test('ignores turn context expansion for a user message', () => {
     expectExpansionChange(createContext({ activityOwnerMessageId: 'assistant-owner' }), 'user-1', true);
+  });
+});
+
+describe('areRenderRelevantMessagesEqual — token counts', () => {
+  const baseMessage = {
+    id: 'msg_a',
+    role: 'assistant',
+    sessionID: 'ses_1',
+    finish: 'stop',
+    time: { created: 1, completed: 2 },
+  } as unknown as Message;
+
+  test('tokens-only update re-renders (assistant TPS depends on it)', () => {
+    const before = { ...baseMessage, tokens: { input: 10, output: 0, reasoning: 0 } } as Message;
+    const after = { ...baseMessage, tokens: { input: 10, output: 42, reasoning: 7 } } as Message;
+    expect(areRenderRelevantMessagesEqual(
+      { info: before, parts: [] },
+      { info: after, parts: [] },
+    )).toBe(false);
+  });
+
+  test('equal tokens keep the memo hit', () => {
+    const before = { ...baseMessage, tokens: { input: 10, output: 42, reasoning: 7 } } as Message;
+    const after = { ...baseMessage, tokens: { input: 10, output: 42, reasoning: 7 } } as Message;
+    expect(areRenderRelevantMessagesEqual(
+      { info: before, parts: [] },
+      { info: after, parts: [] },
+    )).toBe(true);
+  });
+
+  test('tokens appearing (undefined → counts) re-renders', () => {
+    expect(areRenderRelevantMessagesEqual(
+      { info: { ...baseMessage } as Message, parts: [] },
+      { info: { ...baseMessage, tokens: { input: 1, output: 2, reasoning: 0 } } as Message, parts: [] },
+    )).toBe(false);
   });
 });

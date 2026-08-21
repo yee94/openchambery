@@ -189,6 +189,28 @@ export const buildAttachmentCitationText = (filenames: string[]): string => (
     filenames.map((filename) => attachmentCitationDisplay(filename)).join(' ')
 );
 
+/**
+ * Filenames whose citation was present in the previous composer text but is
+ * absent from the next text — the edit orphaned those attachments.
+ */
+export const collectDetachedAttachmentFilenames = (
+    filenames: readonly string[],
+    previousText: string,
+    nextText: string,
+): string[] => {
+    if (previousText === nextText) return [];
+    const detached: string[] = [];
+    for (const filename of filenames) {
+        const citations = [attachmentCitationDisplay(filename), `[${filename}]`];
+        const wasPresent = citations.some((citation) => previousText.includes(citation));
+        const stillPresent = citations.some((citation) => nextText.includes(citation));
+        if (wasPresent && !stillPresent) {
+            detached.push(filename);
+        }
+    }
+    return detached;
+};
+
 /** Drop reserved icon wells before delivery so agents see plain `[filename]`. */
 export const stripAttachmentCitationSlotsForDelivery = (text: string): string => (
     text.replaceAll(`[${COMPOSER_TRIGGER_ICON_SLOT}`, '[')

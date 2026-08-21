@@ -1,5 +1,5 @@
 /**
- * Production selector for transcript diagnostics.
+ * Production selector for client diagnostics (`transcript` and `task`).
  *
  * Web / Electron renderer / Capacitor / VS Code webview persist through
  * IndexedDB. Tests inject a memory sink. Recording is off unless the client
@@ -48,8 +48,12 @@ import {
   resolveTranscriptDiagnosticsEnabled,
   snapshotTranscriptDiagnostics,
   snapshotTranscriptDiff,
+  snapshotTaskClickDiagnostics,
+  snapshotTaskRowDiagnostics,
   captureTranscriptCanonicalSnapshot,
   TRANSCRIPT_DIAGNOSTICS_PREFERENCE_KEY,
+  type TaskDiagnosticsFacts,
+  type TaskClickSource,
   type TranscriptCanonicalSnapshot,
   type TranscriptDiagnosticsDiffTrigger,
   type TranscriptDiagnosticsEvent,
@@ -169,6 +173,25 @@ export function recordTranscriptDiff(input: {
 }): void {
   try {
     recordTranscriptDiagnostics(snapshotTranscriptDiff(input))
+  } catch {
+    // Diagnostics must never affect the calling path.
+  }
+}
+
+export function recordTaskRowDiagnostics(input: TaskDiagnosticsFacts): void {
+  try {
+    recordTranscriptDiagnostics(snapshotTaskRowDiagnostics(input))
+  } catch {
+    // Diagnostics must never affect the calling path.
+  }
+}
+
+export function recordTaskClickDiagnostics(input: TaskDiagnosticsFacts & {
+  opened: boolean
+  clickSource: TaskClickSource
+}): void {
+  try {
+    recordTranscriptDiagnostics(snapshotTaskClickDiagnostics(input))
   } catch {
     // Diagnostics must never affect the calling path.
   }

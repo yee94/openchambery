@@ -168,7 +168,7 @@ export interface RelayTunnelClientOptions {
 
 export interface RelayTunnelClient {
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
-  openWebSocket(pathWithQuery: string, protocols?: string[]): RelayTunnelWebSocket;
+  openWebSocket(pathWithQuery: string, protocols?: string[], headers?: Record<string, string>): RelayTunnelWebSocket;
   getStatus(): RelayTunnelStatus;
   subscribeStatus(listener: (status: RelayTunnelStatus) => void): () => void;
   close(): void;
@@ -836,7 +836,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     return { path: pathWithQuery.slice(0, index), query: pathWithQuery.slice(index + 1) };
   };
 
-  const openTunnelWebSocket = (pathWithQuery: string, protocols?: string[]): RelayTunnelWebSocket => {
+  const openTunnelWebSocket = (pathWithQuery: string, protocols?: string[], headers?: Record<string, string>): RelayTunnelWebSocket => {
     let readyState = WS_CONNECTING;
     let channelRef: ActiveChannel | null = null;
     let streamId = 0;
@@ -978,7 +978,12 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
       const { path, query } = splitPathQuery(pathWithQuery);
       // The host sets the WS Origin itself (to the loopback origin it dials); the
       // client's window.location.origin is unreliable in WKWebView, so we don't send it.
-      const openPayload: TunnelWsOpenPayload = protocols && protocols.length > 0 ? { path, query, protocols } : { path, query };
+      const openPayload: TunnelWsOpenPayload = {
+        path,
+        query,
+        ...(protocols && protocols.length > 0 ? { protocols } : {}),
+        ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+      };
       channel.send(encodeTunnelFrame(TunnelFrameType.WsOpen, streamId, encodeJsonPayload(openPayload)));
     })();
 

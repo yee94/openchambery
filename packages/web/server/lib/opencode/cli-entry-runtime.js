@@ -4,8 +4,6 @@ export const runCliEntryIfMain = (dependencies) => {
     currentFilename,
     parseServeCliOptions,
     defaultPort,
-    cloudflareProvider,
-    managedLocalMode,
     setExitOnShutdown,
     startServer,
   } = dependencies;
@@ -15,24 +13,22 @@ export const runCliEntryIfMain = (dependencies) => {
     return;
   }
 
+  // Direct `node server/index.js` is the standalone web/dev server. Never inherit
+  // OPENCHAMBER_RUNTIME=desktop from the parent shell — that would open a relay
+  // host-control socket from `bun run dev` / `dev:server`. Electron sets desktop
+  // before importing this module and never takes this CLI path.
+  process.env.OPENCHAMBER_RUNTIME = 'web';
+
   const cliOptions = parseServeCliOptions({
     argv: process.argv.slice(2),
     env: process.env,
     defaultPort,
-    cloudflareProvider,
-    managedLocalMode,
   });
 
   setExitOnShutdown(true);
   startServer({
     port: cliOptions.port,
     host: cliOptions.host,
-    tryCfTunnel: cliOptions.tryCfTunnel,
-    tunnelProvider: cliOptions.tunnelProvider,
-    tunnelMode: cliOptions.tunnelMode,
-    tunnelConfigPath: cliOptions.tunnelConfigPath,
-    tunnelToken: cliOptions.tunnelToken,
-    tunnelHostname: cliOptions.tunnelHostname,
     attachSignals: true,
     exitOnShutdown: true,
     uiPassword: cliOptions.uiPassword,

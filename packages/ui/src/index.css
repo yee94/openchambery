@@ -1768,6 +1768,54 @@ input[aria-label="Terminal input"] {
   animation: oc-lattice-orb-swell 2.4s ease-in-out infinite;
 }
 
+@keyframes oc-morph-orb-unfolding {
+  0%,
+  5% {
+    transform: translate(var(--m-1));
+  }
+  25%,
+  30% {
+    transform: translate(var(--m-2));
+  }
+  50%,
+  55% {
+    transform: translate(var(--m-3));
+  }
+  75%,
+  80% {
+    transform: translate(var(--m-4));
+  }
+  100% {
+    transform: translate(var(--m-1));
+  }
+}
+
+.oc-morph-orb-glyph {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  contain: strict;
+}
+
+.oc-morph-orb-stage {
+  position: absolute;
+  inset: 0;
+  transform: scale(var(--orb-k, 1));
+}
+
+.oc-morph-orb-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3.5px;
+  height: 3.5px;
+  margin: -1.75px 0 0 -1.75px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(var(--m-1));
+  animation: oc-morph-orb-unfolding 4.8s cubic-bezier(0.4, 0, 0.2, 1) infinite both;
+}
+
 @keyframes oc-summary-flip-out {
   to {
     transform: translateY(-100%);
@@ -1992,6 +2040,7 @@ input[aria-label="Terminal input"] {
 
   .animate-busy-pulse,
   .oc-lattice-orb-dot,
+  .oc-morph-orb-dot,
   .oc-summary-flip-out,
   .oc-summary-flip-in {
     animation: none;

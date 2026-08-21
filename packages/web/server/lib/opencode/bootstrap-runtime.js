@@ -30,6 +30,7 @@ export const createBootstrapRuntime = (dependencies) => {
       getServerId,
       getServerLabel,
       readSettingsFromDiskMigrated,
+      persistSettings,
       normalizeTunnelSessionTtlMs,
       authorizeManagedOpenCodeBridgeRequest,
       sayTTSCapability,
@@ -61,6 +62,9 @@ export const createBootstrapRuntime = (dependencies) => {
       sessionIndexService,
       sessionIndexSyncRuntime,
       transcriptCacheService,
+      getSshRoutingTable,
+      mintSshHostToken,
+      getPairingSession,
     } = options;
 
     const uiAuthController = createUiAuth({
@@ -144,11 +148,16 @@ export const createBootstrapRuntime = (dependencies) => {
       __dirname,
       openchamberDataDir,
       readSettingsFromDiskMigrated,
+      persistSettings,
       fetchFreeZenModels,
       getCachedZenModels,
       sessionIndexService,
       sessionIndexSyncRuntime,
       transcriptCacheService,
+      getSshRoutingTable,
+      mintSshHostToken,
+      getPairingSession,
+      express,
     });
 
     return {

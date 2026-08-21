@@ -423,6 +423,399 @@ export const desktopSshLogsClear = async (id: string): Promise<void> => {
   await invoke('desktop_ssh_logs_clear', { id });
 };
 
+export type DesktopSshConfigSyncAgentsRoot = {
+  fileCount: number;
+  bytes: number;
+};
+
+export type DesktopSshConfigSyncAuthFile = {
+  bytes: number;
+};
+
+export type DesktopSshConfigSyncDirection = 'push' | 'pull';
+
+export type DesktopSshConfigSyncSelections = {
+  fileGroups: boolean[];
+  singleFiles: boolean[];
+  directories: boolean[];
+  agentsRoot: boolean;
+  authFile: boolean;
+};
+
+/** Allowlist cardinality from the desktop local-scan IPC (drives default selection arrays). */
+export type DesktopSshConfigSyncSelectionShape = {
+  fileGroups: number;
+  singleFiles: number;
+  directories: number;
+};
+
+/**
+ * Build an all-selected whitelist snapshot from a scan-reported shape.
+ * `authFile` stays opt-in via includeAuthFile (credential grant gate).
+ */
+export const buildDefaultSyncSelections = (
+  shape: DesktopSshConfigSyncSelectionShape,
+  options?: { includeAuthFile?: boolean },
+): DesktopSshConfigSyncSelections => {
+  const fileGroups = Math.max(0, Math.trunc(Number(shape.fileGroups) || 0));
+  const singleFiles = Math.max(0, Math.trunc(Number(shape.singleFiles) || 0));
+  const directories = Math.max(0, Math.trunc(Number(shape.directories) || 0));
+  return {
+    fileGroups: Array.from({ length: fileGroups }, () => true),
+    singleFiles: Array.from({ length: singleFiles }, () => true),
+    directories: Array.from({ length: directories }, () => true),
+    agentsRoot: true,
+    authFile: options?.includeAuthFile === true,
+  };
+};
+
+export type DesktopSshConfigSyncPlan = {
+  direction?: DesktopSshConfigSyncDirection;
+  files: { path: string; bytes: number }[];
+  directories: { path: string; fileCount: number; bytes: number }[];
+  agentsRoot: DesktopSshConfigSyncAgentsRoot | null;
+  /** Provider credentials at `~/.local/share/opencode/auth.json` only. */
+  authFile: DesktopSshConfigSyncAuthFile | null;
+  deletes: string[];
+  totalBytes: number;
+  selections?: DesktopSshConfigSyncSelections;
+  /** Present on local-scan responses from desktop main (allowlist shape). */
+  selectionShape?: DesktopSshConfigSyncSelectionShape;
+};
+
+export type DesktopSshConfigSyncPreview = {
+  plan: DesktopSshConfigSyncPlan;
+  remoteExisting: string[];
+  remoteAgentsRootExists: boolean;
+  remoteAuthFileExists: boolean;
+  credentialAuthorized?: boolean;
+  selectionShape?: DesktopSshConfigSyncSelectionShape;
+};
+
+export type DesktopSshConfigSyncTargetKind = 'ssh' | 'direct' | 'relay';
+
+export type DesktopSshConfigSyncOptions = {
+  direction?: DesktopSshConfigSyncDirection;
+  selections?: DesktopSshConfigSyncSelections;
+  targetKind?: DesktopSshConfigSyncTargetKind;
+};
+
+export type DesktopSshSyncRunRecord = {
+  syncRunId: string;
+  targetId: string;
+  stage?: string;
+  direction?: DesktopSshConfigSyncDirection;
+  startedAt?: string;
+  endedAt?: string;
+  result?: 'success' | 'failure' | string;
+  summary?: { files?: number; directories?: number; deletes?: number; totalBytes?: number };
+  error?: string;
+};
+
+export type DesktopSshConfigSyncResult = {
+  ok: true;
+  files: number;
+  directories: number;
+  deletes: number;
+  totalBytes: number;
+  /** Present when `~/.agents` was synced; mirrors plan.agentsRoot.fileCount. */
+  agentsRoot: { fileCount: number } | null;
+  /** Present when provider auth.json was synced; mirrors plan.authFile.bytes. */
+  authFile: DesktopSshConfigSyncAuthFile | null;
+};
+
+const parseConfigSyncFileEntry = (value: unknown): { path: string; bytes: number } | null => {
+  if (!isRecord(value)) return null;
+  const pathValue = readString(value, 'path');
+  const bytes = readNumber(value, 'bytes');
+  if (!pathValue || bytes === null) return null;
+  return { path: pathValue, bytes };
+};
+
+const parseConfigSyncDirectoryEntry = (
+  value: unknown,
+): { path: string; fileCount: number; bytes: number } | null => {
+  if (!isRecord(value)) return null;
+  const pathValue = readString(value, 'path');
+  const fileCount = readNumber(value, 'fileCount') ?? readNumber(value, 'file_count');
+  const bytes = readNumber(value, 'bytes');
+  if (!pathValue || fileCount === null || bytes === null) return null;
+  return { path: pathValue, fileCount, bytes };
+};
+
+const parseConfigSyncAgentsRoot = (value: unknown): DesktopSshConfigSyncAgentsRoot | null => {
+  if (value == null) return null;
+  if (!isRecord(value)) return null;
+  const fileCount = readNumber(value, 'fileCount') ?? readNumber(value, 'file_count');
+  const bytes = readNumber(value, 'bytes');
+  if (fileCount === null || bytes === null) return null;
+  return { fileCount, bytes };
+};
+
+const parseConfigSyncAuthFile = (value: unknown): DesktopSshConfigSyncAuthFile | null => {
+  if (value == null) return null;
+  if (!isRecord(value)) return null;
+  const bytes = readNumber(value, 'bytes');
+  if (bytes === null) return null;
+  return { bytes };
+};
+
+const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null => {
+  if (!isRecord(value)) return null;
+  const filesRaw = Array.isArray(value.files) ? value.files : null;
+  const directoriesRaw = Array.isArray(value.directories) ? value.directories : null;
+  const deletes = asStringArray(value.deletes);
+  const totalBytes = readNumber(value, 'totalBytes') ?? readNumber(value, 'total_bytes');
+  if (!filesRaw || !directoriesRaw || totalBytes === null) return null;
+  if (!('agentsRoot' in value) && !('agents_root' in value)) return null;
+
+  const files = filesRaw
+    .map((item) => parseConfigSyncFileEntry(item))
+    .filter((item): item is { path: string; bytes: number } => Boolean(item));
+  const directories = directoriesRaw
+    .map((item) => parseConfigSyncDirectoryEntry(item))
+    .filter((item): item is { path: string; fileCount: number; bytes: number } => Boolean(item));
+
+  if (files.length !== filesRaw.length || directories.length !== directoriesRaw.length) return null;
+
+  const agentsRootRaw = value.agentsRoot ?? value.agents_root;
+  const agentsRoot =
+    agentsRootRaw == null ? null : parseConfigSyncAgentsRoot(agentsRootRaw);
+  if (agentsRootRaw != null && agentsRoot === null) return null;
+
+  // Missing/invalid authFile → null (backward comfort with older payloads).
+  const authFileRaw = value.authFile ?? value.auth_file;
+  const authFile = authFileRaw == null ? null : parseConfigSyncAuthFile(authFileRaw);
+  const direction = value.direction === 'pull' || value.direction === 'push'
+    ? value.direction
+    : undefined;
+  const selectionsRaw = value.selections;
+  const selections = isRecord(selectionsRaw)
+    ? {
+        fileGroups: Array.isArray(selectionsRaw.fileGroups)
+          ? selectionsRaw.fileGroups.map((entry) => entry !== false)
+          : [],
+        singleFiles: Array.isArray(selectionsRaw.singleFiles)
+          ? selectionsRaw.singleFiles.map((entry) => entry !== false)
+          : [],
+        directories: Array.isArray(selectionsRaw.directories)
+          ? selectionsRaw.directories.map((entry) => entry !== false)
+          : [],
+        agentsRoot: selectionsRaw.agentsRoot !== false,
+        authFile: selectionsRaw.authFile === true,
+      }
+    : undefined;
+  const selectionShape = parseSelectionShape(value.selectionShape ?? value.selection_shape);
+
+  return {
+    files,
+    directories,
+    agentsRoot,
+    authFile,
+    deletes,
+    totalBytes,
+    ...(direction ? { direction } : {}),
+    ...(selections ? { selections } : {}),
+    ...(selectionShape ? { selectionShape } : {}),
+  };
+};
+
+const parseSelectionShape = (value: unknown): DesktopSshConfigSyncSelectionShape | null => {
+  if (!isRecord(value)) return null;
+  const fileGroups = readNumber(value, 'fileGroups') ?? readNumber(value, 'file_groups');
+  const singleFiles = readNumber(value, 'singleFiles') ?? readNumber(value, 'single_files');
+  const directories = readNumber(value, 'directories');
+  if (fileGroups === null || singleFiles === null || directories === null) return null;
+  if (fileGroups < 0 || singleFiles < 0 || directories < 0) return null;
+  return { fileGroups, singleFiles, directories };
+};
+
+const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | null => {
+  if (!isRecord(value)) return null;
+  const plan = parseConfigSyncPlan(value.plan);
+  if (!plan) return null;
+  const selectionShape = parseSelectionShape(value.selectionShape ?? value.selection_shape)
+    ?? plan.selectionShape
+    ?? null;
+  return {
+    plan,
+    remoteExisting: asStringArray(value.remoteExisting ?? value.remote_existing),
+    remoteAgentsRootExists:
+      readBoolean(value, 'remoteAgentsRootExists')
+      ?? readBoolean(value, 'remote_agents_root_exists')
+      ?? false,
+    remoteAuthFileExists:
+      readBoolean(value, 'remoteAuthFileExists')
+      ?? readBoolean(value, 'remote_auth_file_exists')
+      ?? false,
+    ...(typeof value.credentialAuthorized === 'boolean'
+      ? { credentialAuthorized: value.credentialAuthorized }
+      : {}),
+    ...(selectionShape ? { selectionShape } : {}),
+  };
+};
+
+const parseConfigSyncResult = (value: unknown): DesktopSshConfigSyncResult | null => {
+  if (!isRecord(value)) return null;
+  if (readBoolean(value, 'ok') !== true) return null;
+  const files = readNumber(value, 'files');
+  const directories = readNumber(value, 'directories');
+  const deletes = readNumber(value, 'deletes');
+  const totalBytes = readNumber(value, 'totalBytes') ?? readNumber(value, 'total_bytes');
+  if (files === null || directories === null || deletes === null || totalBytes === null) return null;
+  if (!('agentsRoot' in value) && !('agents_root' in value)) return null;
+
+  const agentsRootRaw = value.agentsRoot ?? value.agents_root;
+  let agentsRoot: { fileCount: number } | null = null;
+  if (agentsRootRaw != null) {
+    if (!isRecord(agentsRootRaw)) return null;
+    const fileCount =
+      readNumber(agentsRootRaw, 'fileCount') ?? readNumber(agentsRootRaw, 'file_count');
+    if (fileCount === null) return null;
+    agentsRoot = { fileCount };
+  }
+
+  const authFileRaw = value.authFile ?? value.auth_file;
+  const authFile = authFileRaw == null ? null : parseConfigSyncAuthFile(authFileRaw);
+
+  return { ok: true, files, directories, deletes, totalBytes, agentsRoot, authFile };
+};
+
+export const desktopSshSyncOpencodeConfigLocalScan = async (
+  options: DesktopSshConfigSyncOptions = {},
+): Promise<DesktopSshConfigSyncPlan | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_sync_opencode_config', {
+    stage: 'local',
+    ...(options.direction ? { direction: options.direction } : {}),
+    ...(options.selections ? { selections: options.selections } : {}),
+  });
+  if (!isRecord(raw)) return null;
+  const plan = parseConfigSyncPlan(raw.plan);
+  if (!plan) return null;
+  // Prefer top-level IPC selectionShape (desktop main contract); fall back to plan field.
+  const selectionShape = parseSelectionShape(raw.selectionShape ?? raw.selection_shape)
+    ?? plan.selectionShape
+    ?? null;
+  return selectionShape ? { ...plan, selectionShape } : plan;
+};
+
+export const desktopSshSyncOpencodeConfigPreview = async (
+  id: string,
+  options: DesktopSshConfigSyncOptions = {},
+): Promise<DesktopSshConfigSyncPreview | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_sync_opencode_config', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+    ...(options.direction ? { direction: options.direction } : {}),
+    ...(options.selections ? { selections: options.selections } : {}),
+  });
+  return parseConfigSyncPreview(raw);
+};
+
+export const desktopSshSyncOpencodeConfigApply = async (
+  id: string,
+  options: DesktopSshConfigSyncOptions = {},
+): Promise<DesktopSshConfigSyncResult | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_sync_opencode_config', {
+    id,
+    apply: true,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+    ...(options.direction ? { direction: options.direction } : {}),
+    ...(options.selections ? { selections: options.selections } : {}),
+  });
+  return parseConfigSyncResult(raw);
+};
+
+export const desktopSshSyncRunsList = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshSyncRunRecord[]> => {
+  const invoke = getInvoke();
+  if (!invoke) return [];
+  const raw = await invoke('desktop_ssh_sync_runs_list', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is DesktopSshSyncRunRecord => (
+    isRecord(entry) && typeof entry.syncRunId === 'string' && typeof entry.targetId === 'string'
+  ));
+};
+
+export type DesktopSshCredentialSyncGrant = {
+  targetId: string;
+  authorized: boolean;
+  grantedAt?: string;
+  channel?: string;
+};
+
+const parseCredentialSyncGrant = (raw: unknown): DesktopSshCredentialSyncGrant | null => {
+  if (!isRecord(raw)) return null;
+  const targetId = typeof raw.targetId === 'string' ? raw.targetId.trim() : '';
+  if (!targetId) return null;
+  const authorized = raw.authorized === true;
+  const grantedAt = typeof raw.grantedAt === 'string' && raw.grantedAt.trim()
+    ? raw.grantedAt.trim()
+    : undefined;
+  const channel = typeof raw.channel === 'string' && raw.channel.trim()
+    ? raw.channel.trim()
+    : undefined;
+  return {
+    targetId,
+    authorized,
+    ...(grantedAt ? { grantedAt } : {}),
+    ...(channel ? { channel } : {}),
+  };
+};
+
+/** Query whether provider-credential sync is authorized for this SSH/direct target. */
+export const desktopSshCredentialSyncGet = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshCredentialSyncGrant | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_credential_sync_get', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  return parseCredentialSyncGrant(raw);
+};
+
+/** Grant credential sync via the instance/host-settings trust channel. */
+export const desktopSshCredentialSyncGrant = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshCredentialSyncGrant | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_credential_sync_grant', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  return parseCredentialSyncGrant(raw);
+};
+
+/** Revoke credential sync for this SSH/direct target. */
+export const desktopSshCredentialSyncRevoke = async (
+  id: string,
+  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
+): Promise<DesktopSshCredentialSyncGrant | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_credential_sync_revoke', {
+    id,
+    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
+  });
+  return parseCredentialSyncGrant(raw);
+};
+
 export const listenDesktopSshStatus = async (
   listener: (status: DesktopSshInstanceStatus) => void,
 ): Promise<() => Promise<void>> => {

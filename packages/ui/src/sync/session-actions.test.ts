@@ -339,7 +339,6 @@ const mocks = vi.hoisted(() => {
 const {
   replyCalls,
   scopedClientDirectories,
-  registeredSessionDirectories,
   globalUpsertedSessions,
   abortBlockEvents,
   pendingSendTransitions,
@@ -347,7 +346,6 @@ const {
   setCurrentSessionCalls,
   draftCommits,
   configStoreState,
-  mockScopedClient,
   mockSdk,
   inputState,
 } = mocks

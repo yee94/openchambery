@@ -61,7 +61,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                         >
                             <span className="truncate">{isUser ? 'You' : displayModelName}</span>
                             {variantSuffix ? (
-                                <span className="shrink-0 font-normal text-muted-foreground">
+                                <span className="shrink-0 text-xs font-normal leading-none text-muted-foreground">
                                     {variantSuffix}
                                 </span>
                             ) : null}

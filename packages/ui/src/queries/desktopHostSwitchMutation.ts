@@ -4,6 +4,7 @@ import {
   isDesktopHostActive,
   runtimeKeyForDesktopHost,
   switchDesktopHost,
+  switchViaSshRelay,
   type DesktopHostProbeSnapshot,
   type SwitchDesktopHostResult,
 } from '@/lib/desktopHostSwitch';
@@ -62,6 +63,15 @@ const mutationFn = async (
       runtimeKey: runtimeKeyForDesktopHost(host),
     });
     return { ok: true, via: 'direct', status: { status: 'ok', latencyMs: 0 } };
+  }
+
+  // Mobile/browser over relay: keep the tunnel, retarget with SSH host token + port.
+  if (host.viaSshRelay) {
+    const result = await switchViaSshRelay(host);
+    if (!result.ok) {
+      throw new DesktopHostSwitchError(result, host);
+    }
+    return result;
   }
 
   const result = await switchDesktopHost(host, { cachedProbe: variables.cachedProbe });

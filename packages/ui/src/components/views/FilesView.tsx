@@ -26,6 +26,7 @@ import { CodeMirrorEditor } from '@/components/ui/CodeMirrorEditor';
 import { GoToLineDialog } from './GoToLineDialog';
 import { PreviewToggleButton } from './PreviewToggleButton';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
+import type { ToolPopupContent } from '@/components/chat/message/types';
 import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { languageByExtension, loadLanguageByExtension } from '@/lib/codemirror/languageByExtension';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
@@ -43,6 +44,7 @@ import {
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { useDeviceInfo } from '@/lib/device';
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { cn, getModifierLabel, getRevealLabelKey, hasModifier } from '@/lib/utils';
 import { getLanguageFromExtension, getImageMimeType, isDrawioFile, isImageFile, isPdfFile } from '@/lib/toolHelpers';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
@@ -75,6 +77,8 @@ import { useOpenInAppsStore } from '@/stores/useOpenInAppsStore';
 import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
 import { ShortcutKbd } from '@/components/ui/kbd';
+
+const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/message/ToolOutputDialog'));
 
 type FileNode = {
   name: string;
@@ -753,6 +757,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const [isFloatingToolbarOpen, setIsFloatingToolbarOpen] = React.useState(false);
+  const [imagePopup, setImagePopup] = React.useState<ToolPopupContent>({
+    open: false,
+    title: '',
+    content: '',
+  });
   const floatingToolbarRef = React.useRef<HTMLDivElement | null>(null);
   const toolbarDropdownOpenCountRef = React.useRef(0);
 
@@ -3025,6 +3034,60 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         }) : ''))
     : '';
 
+  const openSelectedImagePreview = React.useCallback(() => {
+    if (!selectedFile?.path || !isSelectedImage) return;
+    // Prefer path for non-SVG so the shared viewer resolves/saves via runtime stream;
+    // SVG and already-materialized blob/data URLs stay on the display source.
+    const url = isSelectedSvg ? imageSrc : (selectedFile.path || imageSrc);
+    if (!url) return;
+    const filename = selectedFile.name || selectedFile.path;
+    setImagePopup({
+      open: true,
+      title: filename,
+      content: '',
+      metadata: {
+        tool: 'image-preview',
+        filename,
+        mime: getImageMimeType(selectedFile.path),
+      },
+      image: {
+        url,
+        mimeType: getImageMimeType(selectedFile.path),
+        filename,
+      },
+    });
+  }, [imageSrc, isSelectedImage, isSelectedSvg, selectedFile?.name, selectedFile?.path]);
+
+  const handleImagePopupChange = React.useCallback((open: boolean) => {
+    setImagePopup((previous) => (previous.open === open ? previous : { ...previous, open }));
+  }, []);
+
+  const renderImagePreview = React.useCallback((file: FileNode, options?: { fullHeight?: boolean }) => {
+    const alt = file.name || t('filesView.editor.imageAltFallback');
+    return (
+      <div className={cn('flex items-center justify-center', options?.fullHeight ? 'h-full p-4' : 'h-full p-3')}>
+        <button
+          type="button"
+          className="max-h-full max-w-full cursor-zoom-in rounded-md border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          onClick={openSelectedImagePreview}
+          aria-label={alt}
+          disabled={!imageSrc}
+        >
+          <img
+            key={imagePreviewNonce}
+            src={imageSrc}
+            alt={alt}
+            className={cn(
+              'object-contain rounded-md border border-border/30 bg-primary/10',
+              options?.fullHeight ? 'max-h-full max-w-full' : 'max-h-[70vh] max-w-full',
+            )}
+            draggable={false}
+          />
+        </button>
+      </div>
+    );
+  }, [imagePreviewNonce, imageSrc, openSelectedImagePreview, t]);
+
   const pdfSrc = selectedFile?.path && isSelectedPdf && pdfAssetAuthReadyKey === pdfAssetAuthKey
     ? getRuntimeUrlResolver().authenticatedAsset('/api/fs/raw', {
       path: selectedFile.path,
@@ -3857,15 +3920,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               )
           ) : fileError ? (
             <div className="p-3 typography-ui text-[color:var(--status-error)]">{fileError}</div>
-          ) : isSelectedImage ? (
-            <div className="flex h-full items-center justify-center p-3">
-              <img
-                key={imagePreviewNonce}
-                src={imageSrc}
-                alt={selectedFile?.name ?? t('filesView.editor.imageAltFallback')}
-                className="max-w-full max-h-[70vh] object-contain rounded-md border border-border/30 bg-primary/10"
-              />
-            </div>
+          ) : isSelectedImage && selectedFile ? (
+            renderImagePreview(selectedFile)
           ) : isSelectedPdf ? (
             renderPdfPreview(selectedFile)
           ) : selectedFile && isDrawio && drawioViewMode === 'preview' ? (
@@ -4231,14 +4287,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           ) : fileError ? (
             <div className="p-4 typography-ui text-[color:var(--status-error)]">{fileError}</div>
           ) : isSelectedImage ? (
-            <div className="flex h-full items-center justify-center p-4">
-              <img
-                key={imagePreviewNonce}
-                src={imageSrc}
-                alt={selectedFile.name}
-                className="max-w-full max-h-full object-contain rounded-md border border-border/30 bg-primary/10"
-              />
-            </div>
+            renderImagePreview(selectedFile, { fullHeight: true })
           ) : isSelectedPdf ? (
             renderPdfPreview(selectedFile)
           ) : isMarkdown && getMdViewMode() === 'preview' ? (
@@ -4330,6 +4379,15 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       />
       {fullscreenViewer}
       {editorSelectionBubble}
+      {imagePopup.open ? (
+        <React.Suspense fallback={null}>
+          <ToolOutputDialog
+            popup={imagePopup}
+            onOpenChange={handleImagePopupChange}
+            isMobile={isMobile}
+          />
+        </React.Suspense>
+      ) : null}
       {isMobile ? (
         showMobilePageContent ? (
           fileViewer

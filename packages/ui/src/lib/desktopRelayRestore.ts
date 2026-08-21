@@ -1,5 +1,13 @@
 import { isElectronShell } from '@/lib/desktop';
-import { desktopHostProbe, desktopHostsGet, desktopHostsSet, getDesktopHostApiUrl, normalizeHostUrl } from '@/lib/desktopHosts';
+import {
+  desktopHostProbe,
+  desktopHostsGet,
+  desktopHostsSet,
+  getDesktopHostApiUrl,
+  normalizeHostUrl,
+  probeRelayDesktopHost,
+} from '@/lib/desktopHosts';
+import { applySshRelayRuntime, runtimeKeyForDesktopHost } from '@/lib/desktopHostSwitch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeKey, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 
@@ -39,6 +47,9 @@ export const refreshDesktopHostCandidates = async (hostId: string): Promise<void
     const config = await desktopHostsGet().catch(() => null);
     const host = config?.hosts.find((entry) => entry.id === hostId);
     if (!config || !host?.relay) return;
+    // Imported SSH hosts route through the parent desktop; they have no LAN
+    // candidate set of their own to refresh.
+    if (host.sshTarget) return;
     const currentApiUrl = host.apiUrl ? normalizeHostUrl(host.apiUrl) : null;
     if (currentApiUrl && currentApiUrl.startsWith('https://')) return;
 
@@ -122,8 +133,28 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
   const host = config.hosts.find((entry) => entry.id === hostId);
   if (!host?.relay) return;
   // Must match runtimeKeyForHost() in DesktopHostSwitcher so switch/resolve agree.
-  const runtimeKey = `host:${host.id}`;
+  const runtimeKey = runtimeKeyForDesktopHost(host);
   if (getRuntimeKey() === runtimeKey) return;
+
+  // Imported SSH pairing: mint live localPort, then apply target-port routing.
+  // Do not fall back to the parent desktop's data plane.
+  if (host.sshTarget) {
+    const probe = await probeRelayDesktopHost(host.relay, {
+      keepTunnel: true,
+      sshTarget: host.sshTarget,
+    }).catch(() => ({ status: 'unreachable' as const, latencyMs: 0 }));
+    if (probe.status !== 'ok' || !('localPort' in probe) || typeof probe.localPort !== 'number') {
+      return;
+    }
+    applySshRelayRuntime({
+      token: ('sshToken' in probe && probe.sshToken) || host.clientToken || '',
+      localPort: probe.localPort,
+      runtimeKey,
+      relay: host.relay,
+      liveTunnel: 'tunnel' in probe ? probe.tunnel : undefined,
+    });
+    return;
+  }
 
   const switchToDirect = (url: string) => {
     switchRuntimeEndpoint({

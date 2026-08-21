@@ -282,6 +282,57 @@ describe('getStatus', () => {
 
     await expect(getStatus(repo)).resolves.toMatchObject({ current: 'main' });
   });
+
+  it('returns diffStats for regular-sized change sets', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\nMore lines\n');
+
+    const status = await getStatus(repo);
+    expect(status.oversized).toBe(false);
+    expect(status.diffStats).toBeDefined();
+    expect(status.diffStats['README.md']).toEqual({ insertions: 1, deletions: 0 });
+  });
+
+  it('marks oversized change sets and omits diffStats without changing the rest of the contract', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+
+    // Create one modified tracked file plus enough untracked files to cross
+    // the oversized threshold (untracked files are part of status.files).
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\nChanged\n');
+    const oversizeCount = 2001;
+    fs.mkdirSync(path.join(repo, 'generated'), { recursive: true });
+    for (let i = 0; i < oversizeCount; i += 1) {
+      fs.writeFileSync(path.join(repo, 'generated', `file-${i}.txt`), `content ${i}\n`);
+    }
+
+    const status = await getStatus(repo);
+    expect(status.files.length).toBeGreaterThan(2000);
+    // The server flags the oversized state so clients defer list rendering.
+    expect(status.oversized).toBe(true);
+    // Same omission shape as light mode: the key is absent, not an empty object.
+    expect(status.diffStats).toBeUndefined();
+    // Everything else in the contract stays intact.
+    expect(status.current).toBe('main');
+    expect(status.isClean).toBe(false);
+    expect(status.files.some((file) => file.path === 'README.md')).toBe(true);
+    expect(status.files.some((file) => file.path.startsWith('generated/'))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

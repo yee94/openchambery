@@ -78,6 +78,17 @@ describe('static navigation hit targets', () => {
         expect(filesSurfaceSource).toContain('URL.revokeObjectURL(objectUrl)');
         expect(filesSurfaceSource).toContain('const imageSrc = relayImageKey ? relayImageSrc');
     });
+
+    test('mobile and desktop file image previews open the shared ToolOutputDialog viewer', () => {
+        const filesSurfaceSource = readFileSync(join(__dirname, '../../../../apps/MobileFilesSurface.tsx'), 'utf-8');
+        const filesViewSource = readFileSync(join(__dirname, '../../../../components/views/FilesView.tsx'), 'utf-8');
+        expect(filesSurfaceSource).toContain("import('@/components/chat/message/ToolOutputDialog')");
+        expect(filesSurfaceSource).toContain('openImagePreview');
+        expect(filesSurfaceSource).toContain("tool: 'image-preview'");
+        expect(filesViewSource).toContain("import('@/components/chat/message/ToolOutputDialog')");
+        expect(filesViewSource).toContain('openSelectedImagePreview');
+        expect(filesViewSource).toContain('renderImagePreview');
+    });
 });
 
 describe('tool busy title chrome', () => {
@@ -109,6 +120,23 @@ describe('tool busy title chrome', () => {
         expect(lifecycleBranch).toContain(') : effectiveActive ? (');
         expect(lifecycleBranch).toContain('<LatticeOrb');
         expect(lifecycleBranch.indexOf('<LatticeOrb')).toBeGreaterThan(lifecycleBranch.indexOf('<AgentAvatar'));
+    });
+
+    test('task rows record client-diagnostics facts without titles', () => {
+        expect(toolPartSource).toContain("from '@/sync/transcript-diagnostics'");
+        expect(toolPartSource).toContain('recordTaskRowDiagnostics');
+        expect(toolPartSource).toContain('recordTaskClickDiagnostics');
+        expect(toolPartSource).toContain("recordTaskOpenAttempt(opened, 'row')");
+        expect(toolPartSource).toContain("recordTaskOpenAttempt(openTaskSession(taskSessionId), 'queued-effect')");
+        const factsBlock = toolPartSource.slice(
+            toolPartSource.indexOf('const taskDiagnosticsFacts = React.useMemo'),
+            toolPartSource.indexOf('const taskDiagnosticsSignature'),
+        );
+        expect(factsBlock).toContain('childSessionPresent');
+        expect(factsBlock).toContain('diagnosticsSessionStatusType');
+        expect(factsBlock).not.toContain('taskTitle');
+        expect(factsBlock).not.toContain('taskAgentName');
+        expect(factsBlock).not.toContain('justificationText');
     });
 
     test('assigned task rows keep the agent name visible beside the avatar', () => {
@@ -186,9 +214,10 @@ describe('apply_patch navigation', () => {
         expect(fileNavigation).toContain('getToolNavigationDiffEntries(');
         expect(fileNavigation).toContain('patches: toolPatches,');
         expect(fileNavigation).toContain("else if (normalizedPartTool === 'apply_patch')");
-        expect(toolPartSource).toContain('mobileActions.openTurnDiff(messageId);');
-        expect(mobileAppSource).toContain('const openTurnDiffSurface = useEvent((messageId?: string) => {');
+        expect(toolPartSource).toContain('mobileActions.openTurnDiff(messageId, sessionSurface.sessionId);');
+        expect(mobileAppSource).toContain('const openTurnDiffSurface = useEvent((messageId?: string, sessionId?: string | null) => {');
         expect(mobileAppSource).toContain('setTurnDiffMessageId(messageId ?? null);');
+        expect(mobileAppSource).toContain("setTurnDiffSessionId(typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null);");
         expect(mobileAppSource).toContain('openToolDiff: ({ diffPath, patches, targetLine }) => {');
         expect(mobileAppSource).toContain('openChangesSurface({ path: diffPath, staged: false, targetLine, toolPatches: patches });');
         expect(fileNavigation).toContain('mobileActions.openChanges({ diffPath: relativePath, staged: false, targetLine });');
@@ -202,12 +231,16 @@ describe('apply_patch navigation', () => {
         expect(toolPartSource).toContain('const fileDiff = metadata.filediff;');
         expect(toolPartSource).toContain('getPatchText((fileDiff as { patch?: unknown }).patch)');
         expect(toolPartSource).toContain('if (isFileNavTool && !currentDirectory)');
-        expect(toolPartSource).toContain("openContextDiff(currentDirectory, relativePath, false, 'turn', targetLine, messageId);");
-        expect(toolPartSource).toContain("openContextPanelTab(currentDirectory, { mode: 'diff', diffScope: 'turn', diffTurnMessageId: messageId });");
+        expect(toolPartSource).toContain("openContextDiff(currentDirectory, relativePath, false, 'turn', targetLine, messageId, sessionSurface.sessionId);");
+        expect(toolPartSource).toContain('openContextToolDiff(');
+        expect(toolPartSource).toContain('sessionSurface.sessionId,');
+        expect(toolPartSource).toContain('diffSessionId: sessionSurface.sessionId');
+        expect(toolPartSource).toContain("const currentDirectory = sessionSurface.directory || effectiveDirectory || '';");
         expect(toolPartSource).toContain('openContextToolDiff(');
         expect(contextPanelSource).toContain('contextToolDiff?.targetPath === tab.targetPath');
         expect(contextPanelSource).toContain('toolPatches={toolPatches}');
         expect(contextPanelSource).toContain('stackedDefaultCollapsedAll={!toolPatches}');
+        expect(contextPanelSource).toContain('sessionId={tab.diffSessionId}');
         expect(diffViewSource).toContain('const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(');
         expect(diffViewSource).toContain('const usesToolPatches = selectedToolTurnDiffs.length > 0;');
         expect(diffViewSource).toContain('if (usesToolPatches) return selectedToolTurnDiffs;');
@@ -215,6 +248,8 @@ describe('apply_patch navigation', () => {
         expect(diffViewSource).toContain('return lastTurnDiffs;');
         expect(diffViewSource).toContain("if (activeDiffScope !== 'turn' || usesToolPatches)");
         expect(diffViewSource).toContain('stackedToolPatchesRef.current !== toolPatches');
+        expect(diffViewSource).toContain('const resolvedSessionId = (typeof sessionId === \'string\' && sessionId.trim())');
+        expect(diffViewSource).toContain('sessionID: resolvedSessionId');
     });
 
     test('keeps the owning assistant message id when memoized tool rows update', () => {
@@ -233,7 +268,10 @@ describe('apply_patch navigation', () => {
         expect(turnDiffPresentation).toContain('open={turnDiffOpen}');
         expect(turnDiffPresentation).toContain('resizeAriaLabel={t(\'mobile.changes.sheet.resizeAria\')}');
         expect(turnDiffPresentation).toContain('initiallyExpanded');
-        expect(turnDiffPresentation).toContain('<DiffView hideStackedFileSidebar diffScope="turn" turnMessageId={turnDiffMessageId} flushContent />');
+        expect(turnDiffPresentation).toContain('<DiffView');
+        expect(turnDiffPresentation).toContain('diffScope="turn"');
+        expect(turnDiffPresentation).toContain('turnMessageId={turnDiffMessageId}');
+        expect(turnDiffPresentation).toContain('sessionId={turnDiffSessionId}');
         expect(mobileAppSource).toContain('|| turnDiffOpen');
         expect(mobileAppSource).toContain('if (turnDiffOpen) {');
         expect(diffViewSource).toContain("showFileActions={activeDiffScope !== 'turn'}");
@@ -258,13 +296,43 @@ describe('apply_patch navigation', () => {
         expect(mobileChangesSurfaceSource).toContain('hideHeader={hideDiffHeader}');
         expect(mobileChangesSurfaceSource).toContain('p-3 pwa-overlay-scroll');
     });
+
+    test('hosts mobile files and changes windows with stable window ids', () => {
+        expect(mobileAppSource).toContain("const MOBILE_FILES_WINDOW_ID = 'mobile-files'");
+        expect(mobileAppSource).toContain("const MOBILE_CHANGES_WINDOW_ID = 'mobile-changes'");
+        expect(mobileAppSource).toContain('id={MOBILE_FILES_WINDOW_ID}');
+        expect(mobileAppSource).toContain('id={MOBILE_CHANGES_WINDOW_ID}');
+    });
+
+    test('keeps gesture sheets controlled so dismiss settle cannot re-present', () => {
+        const filesStart = mobileAppSource.indexOf('<MobileResizableSheet\n            id={MOBILE_FILES_WINDOW_ID}');
+        const filesEnd = mobileAppSource.indexOf('{filePreviewOpen && pendingFilePreview ? (', filesStart);
+        const filesPresentation = mobileAppSource.slice(filesStart, filesEnd);
+        expect(filesPresentation).toContain('open={filesOpen}');
+        expect(filesPresentation).not.toMatch(/\n\s+open\n/);
+
+        const changesListStart = mobileAppSource.indexOf('<MobileResizableSheet\n            id={MOBILE_CHANGES_WINDOW_ID}');
+        const changesListEnd = mobileAppSource.indexOf('{mcpOpen ? (', changesListStart);
+        const changesListPresentation = mobileAppSource.slice(changesListStart, changesListEnd);
+        expect(changesListPresentation).toContain('open={changesOpen}');
+        expect(changesListPresentation).not.toMatch(/\n\s+open\n/);
+
+        expect(mobileAppSource).toContain('open={filePreviewOpen}');
+        expect(mobileAppSource).toContain('open={mcpOpen}');
+        expect(mobileAppSource).toContain('open={updateOpen}');
+        expect(mobileAppSource).not.toContain('MobileSurfaceShell');
+    });
 });
 
 describe('context diff navigation', () => {
     test('replays same-target navigation requests when a context tab is reopened', () => {
         expect(contextPanelSource).toContain('navigationRequestKey={tab.touchedAt}');
         expect(contextPanelSource).toContain('turnMessageId={tab.diffTurnMessageId}');
+        expect(contextPanelSource).toContain('sessionId={tab.diffSessionId}');
+        expect(contextPanelSource).toContain('directory={directoryKey}');
         expect(diffViewSource).toContain('navigationRequestKey?: number;');
+        expect(diffViewSource).toContain('sessionId?: string | null;');
+        expect(diffViewSource).toContain('directory?: string | null;');
         expect(diffViewSource).toContain('[activeDiffScope, expandStackedFile, navigationRequestKey, targetFilePath, targetLine]');
     });
 });

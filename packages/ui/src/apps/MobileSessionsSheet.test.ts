@@ -71,7 +71,8 @@ describe('MobileSessionsSheet sharing capability', () => {
   test('gates the existing share and unshare menu branch', () => {
     expect(mobileSessionsSheetSource).toContain("import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';");
     expect(mobileSessionsSheetSource).toContain('const sharingAvailable = isSessionSharingAvailable();');
-    expect(mobileSessionsSheetSource).toContain('{sharingAvailable ? (actionTarget.session.share?.url ? (');
+    expect(mobileSessionsSheetSource).toContain('onShare: !sharingAvailable || shared');
+    expect(mobileSessionsSheetSource).toContain('onUnshare: sharingAvailable && shared');
   });
 });
 

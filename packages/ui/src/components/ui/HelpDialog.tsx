@@ -292,6 +292,12 @@ export const HelpDialog: React.FC = () => {
           keys: '',
         },
         {
+          id: 'open_usage',
+          descriptionKey: 'helpDialog.item.openUsage',
+          icon: "timer",
+          keys: '',
+        },
+        {
           id: 'cycle_services_tab',
           descriptionKey: 'helpDialog.item.cycleServicesTab',
           icon: "stack",

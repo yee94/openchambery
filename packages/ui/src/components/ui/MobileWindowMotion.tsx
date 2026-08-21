@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { cn } from '@/lib/utils';
+import { markOverlayScrimPress, shouldCommitOverlayScrimDismiss } from './matchingPress';
 import { mobileWindowStack } from './MobileWindowStack';
 import {
   getMobileWindowMotionFrame,
@@ -388,7 +389,12 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
       data-mobile-overlay-active={String(active)}
       role={isPreview ? undefined : 'dialog'} aria-label={isPreview ? undefined : ariaLabel}
       aria-modal={active && isTop ? 'true' : undefined} aria-hidden={isPreview || !active || !isTop || undefined} inert={isPreview || !active || !isTop || undefined}
-      onClick={() => { if (active && !isPreview && isTop) onOpenChangeRef.current(false); }}
+      onPointerDown={markOverlayScrimPress}
+      onClick={(event) => {
+        if (!active || isPreview || !isTop) return;
+        if (!shouldCommitOverlayScrimDismiss(event)) return;
+        onOpenChangeRef.current(false);
+      }}
     >
       <div ref={setSurfaceRef} tabIndex={-1} className={cn('oc-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
         {children}

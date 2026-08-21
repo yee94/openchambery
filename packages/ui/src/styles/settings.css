@@ -347,6 +347,13 @@
   --oc-settings-desktop-value-max-width: 18rem;
 }
 
+/* SSH command and extra port-forward endpoints are longer than ordinary
+   Settings values; keep them on one labeled row without truncating the host. */
+.oc-settings-workspace-desktop .oc-settings-ssh-command-row,
+.oc-settings-workspace-desktop .oc-settings-ssh-endpoint-row {
+  --oc-settings-desktop-value-max-width: 28rem;
+}
+
 .oc-settings-workspace-desktop .oc-settings-split-row-copy {
   max-width: 24rem;
 }

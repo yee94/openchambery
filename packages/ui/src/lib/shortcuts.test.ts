@@ -6,6 +6,10 @@ describe('getEffectiveShortcutCombo', () => {
   test('uses Ctrl+backtick as the default terminal shortcut', () => {
     expect(getEffectiveShortcutCombo('toggle_terminal')).toBe('ctrl+backtick');
   });
+
+  test('uses mod+shift+c as the default open usage shortcut', () => {
+    expect(getEffectiveShortcutCombo('open_usage')).toBe('mod+shift+c');
+  });
 });
 
 describe('getEffectiveShortcutCombos', () => {

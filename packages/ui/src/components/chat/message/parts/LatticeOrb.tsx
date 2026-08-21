@@ -3,10 +3,10 @@ import { cn } from '@/lib/utils';
 
 const STAGE_SIZE = 28;
 const GRID_SIZE = 3;
-const GRID_OFFSET = 8;
-const PITCH = 6;
+const GRID_OFFSET = 4;
+const PITCH = 10;
 const MID = 1;
-const DOT_SIZE = 2.5;
+const DOT_SIZE = 4;
 
 export const LatticeOrb: React.FC<{
     size?: number;
@@ -14,7 +14,7 @@ export const LatticeOrb: React.FC<{
     className?: string;
     label?: string;
 }> = ({ size, isMobile = false, className, label = '' }) => {
-    const resolvedSize = size ?? (isMobile ? 16 : 14);
+    const resolvedSize = size ?? (isMobile ? 12 : 14);
     const cells = Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => {
         const x = index % GRID_SIZE;
         const y = Math.floor(index / GRID_SIZE);
@@ -28,7 +28,8 @@ export const LatticeOrb: React.FC<{
 
     return (
         <span
-            className={cn('relative inline-block flex-none', className)}
+            // overflow-clip: mobile.css turns .overflow-hidden into a scrollport.
+            className={cn('relative block flex-none overflow-clip', className)}
             style={{ width: resolvedSize, height: resolvedSize }}
             role={label ? 'img' : undefined}
             aria-label={label || undefined}

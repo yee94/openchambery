@@ -774,7 +774,22 @@ describe('core-routes', () => {
       allowedClientKinds: ['mobile'],
       createdByClientId: null,
       usesRelay: false,
+      sshHostId: undefined,
     });
+  });
+
+  it('forwards optional sshHostId into createPairingSession', async () => {
+    const { app, dependencies } = createPairingRouteApp();
+
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .set('Host', 'runtime.example')
+      .send({ label: 'SSH phone', allowedClientKinds: ['mobile'], sshHostId: 'ssh-1', includeRelay: true })
+      .expect(201);
+
+    expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sshHostId: 'ssh-1' }),
+    );
   });
 
   it('advertises the caller-supplied serverUrl as the direct candidate over the request origin', async () => {
@@ -986,6 +1001,20 @@ describe('core-routes', () => {
 
     expect(getRelayPairingCandidate).toHaveBeenCalled();
     expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalled();
+  });
+
+  it('defaults pairing transports to relay unavailable so web/dev never advertise Anywhere', async () => {
+    const { app } = createPairingRouteApp();
+
+    const response = await request(app)
+      .get('/api/client-auth/pairing/transports')
+      .expect(200);
+
+    expect(response.body).toEqual({
+      local: null,
+      lan: null,
+      relayAvailable: false,
+    });
   });
 
   it('reports the effective Relay endpoint and environment lock to the pairing dialog', async () => {

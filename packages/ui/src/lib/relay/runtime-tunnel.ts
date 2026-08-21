@@ -23,6 +23,9 @@ const descriptorsEqual = (a: RelayRuntimeDescriptor, b: RelayRuntimeDescriptor):
 
 export const getActiveRelayTunnel = (): RelayTunnelClient | null => activeTunnel;
 
+/** Active relay descriptor, or null when not in relay mode. */
+export const getActiveRelayDescriptor = (): RelayRuntimeDescriptor | null => activeDescriptor;
+
 export const isRelayModeActive = (): boolean => activeTunnel !== null;
 
 /** True when the E2EE tunnel is up. Event-pipeline `isConnected` can still be false while the multiplexed event WS is reconnecting; HTTP send still works. */

@@ -27,7 +27,6 @@ describe('VS Code settings bootstrap projector', () => {
       token: 'TOKEN_SENTINEL',
       apiKey: 'API_KEY_SENTINEL',
       password: 'PASSWORD_SENTINEL',
-      managedRemoteTunnelToken: 'TUNNEL_SENTINEL',
       summaryCustomAPIToken: 'SUMMARY_SENTINEL',
     });
 

@@ -180,12 +180,33 @@ const catalogHasVariant = (
   return false;
 };
 
+const resolveHistoryModelVariant = (options: {
+  catalog: PrimaryComposerCatalog;
+  providerID: string;
+  modelID: string;
+  historyVariant?: string;
+  memoryVariant?: string;
+}): string | undefined => {
+  const { catalog, providerID, modelID, historyVariant, memoryVariant } = options;
+  if (historyVariant) {
+    return catalogHasVariant(catalog, providerID, modelID, historyVariant)
+      ? historyVariant
+      : undefined;
+  }
+  // Older servers omit model.variant. Absence is not an explicit "default"
+  // pick — keep the same-client session memory when it still validates.
+  if (memoryVariant && catalogHasVariant(catalog, providerID, modelID, memoryVariant)) {
+    return memoryVariant;
+  }
+  return undefined;
+};
+
 /**
  * Resolve the session selection to restore into the primary composer.
  *
  * History (latest user message) is the cross-client authoritative baseline.
  * Same-client selection-store memory is the fallback when messages are not
- * ready or the history choice fails catalog validation.
+ * ready, the history choice fails catalog validation, or history omits variant.
  */
 export const resolvePrimaryComposerSessionSelection = (options: {
   sessionId: string;
@@ -218,16 +239,21 @@ export const resolvePrimaryComposerSessionSelection = (options: {
             ? fallbackAgentName
             : undefined));
 
-    const variant =
-      latestUserChoice.variant
-      && catalogHasVariant(
-        catalog,
+    const memoryVariant = historyAgent
+      ? memory?.getAgentModelVariantForSession?.(
+        sessionId,
+        historyAgent,
         latestUserChoice.providerID,
         latestUserChoice.modelID,
-        latestUserChoice.variant,
       )
-        ? latestUserChoice.variant
-        : undefined;
+      : undefined;
+    const variant = resolveHistoryModelVariant({
+      catalog,
+      providerID: latestUserChoice.providerID,
+      modelID: latestUserChoice.modelID,
+      historyVariant: latestUserChoice.variant,
+      memoryVariant,
+    });
 
     return {
       agent: historyAgent,
@@ -334,7 +360,8 @@ export const applyPrimaryComposerSessionRestore = (
   if (selection.modelID) {
     config.setModel(selection.modelID);
   }
-  // Always apply variant — missing/invalid history variant clears the previous one.
+  // Always apply the resolved variant. Explicit default / invalid history still
+  // clears; omitted history variant is resolved to session memory upstream.
   config.setCurrentVariant(selection.variant);
 
   const { sessionId, memory } = options;

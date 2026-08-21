@@ -8,7 +8,7 @@ This package owns the native shell: windows, menus, deep links, native notificat
 
 Desktop starts the OpenChamber web server in the same Electron main process. There is no separate sidecar subprocess for the OpenChamber server.
 
-`main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
+`main.mjs` imports `@openchambery/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
@@ -23,7 +23,13 @@ Electron owns the in-process server handle. Normal quit, relaunch, vibrancy rela
 | `main.mjs` | Electron main process, app lifecycle, windows, menus, deep links, native IPC handlers, updates, local server startup |
 | `preload.mjs` | Safe bridge from the rendered UI to Electron IPC |
 | `virtual-asset-protocol.mjs` | Opaque virtual image asset registry + `openchamber-asset` streaming protocol helpers |
-| `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers |
+| `settings-store.mjs` | Process-local serialized `settings.json` read-modify-write shared by main, ssh-manager, and the in-process web settings runtime |
+| `sync-run-store.mjs` | Append-only OpenCode config sync run records under `<dataDir>/sync-runs/` (not written into `settings.json`) |
+| `credential-sync-auth-store.mjs` | Per-target credential-sync grants (`desktopCredentialSyncGrants`) on the shared settings mutation chain |
+| `direct-config-sync.mjs` | Direct OpenChamber host sync over HTTP `/api/openchamber/config-sync/*` (`host:<id>` targets) |
+| `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers; managed OpenCode config sync via shared `@openchambery/web/server/lib/config-sync` (plan/executor/generational backup) with per-target mutex, credential-sync grants, and run records |
+
+Relay config sync runs in the renderer (`packages/ui/src/lib/relay/relay-config-sync.ts`) because the E2EE tunnel client is UI-owned. Main process helpers pack/extract local tars (`desktop_relay_sync_pack_local` / `desktop_relay_sync_apply_local`), append `relay:<serverId>` run records, and store pairing-settings credential grants. Identity is pinned to `serverId`; a changed fingerprint fails with `relay_identity_changed`.
 | `scripts/electron-dev.mjs` | Desktop dev launcher with Vite HMR support |
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
 | `scripts/prepare-opencode-cli.mjs` | Downloads the pinned OpenCode CLI from npm platform packages (`@opencode-ai/cli-<os>-<arch>`) and stages it into `resources/opencode-cli` |
@@ -164,7 +170,7 @@ The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. 
 
 1. Run `bun run version:bump -- <version>` and update the matching `CHANGELOG.md` section.
 2. Set `CSC_LINK`, `CSC_KEY_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY_BASE64`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID` for signed and notarized macOS desktop builds.
-3. Configure `NPM_TOKEN` only when publishing to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
+3. Configure `NPM_TOKEN` so the release workflow can publish `@openchambery/web` and `@openchambery/relay-server` to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
 4. For a desktop-only release, manually dispatch the workflow with scope `desktop` (the default). Pushing tag `v<version>` retains the full-release behavior.
 
 The workflow creates the GitHub Release and uploads the desktop artifacts. macOS, Windows, and writable Linux AppImage installs use in-app automatic updates. Formal releases also upload Android artifacts and send iOS builds to TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
@@ -202,8 +208,7 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 - One-click open/reveal/open-in-app actions.
 - Desktop host switcher and deep-link imports.
 - Local and remote instance handling.
-- SSH host import, connections, logs, and port forwarding.
-- Tunnel lifecycle integration through the web server runtime.
+- SSH host import, connections, logs, and port forwarding. Managed SSH remotes always start with a UI password (configured or a one-time in-memory secret); the desktop mints the SSH host token through that password over the tunnel. Each managed command scopes its own PATH, discovers a Node.js 22+ runtime from common remote locations, installs missing OpenChamber or OpenCode CLIs with the selected package manager, and rebuilds the OpenChamber `better-sqlite3` binding when the selected Node ABI requires it. This bootstrap never edits remote shell startup files. Managed SSH remotes can mirror the local `~/.config/opencode` allowlist (config json/jsonc winner + agents/commands/skills/plugins dirs, symlinks dereferenced), the `~/.agents` agent skills root, and provider `~/.local/share/opencode/auth.json` (that file only — never session DBs under the same share dir) to the remote after connect, with remote-side backups under `.openchamber.sync-backup` / `.openchamber.sync-backup-agents` / `.openchamber.sync-backup-auth` and stale counterpart deletion. Preview/apply sync for a given `ssh:<instanceId>` target is process-local exclusive (`sync_in_progress` when already running); each run gets a `syncRunId` and an append-only record under `<OPENCHAMBER_DATA_DIR>/sync-runs/` (newest 20 kept per target, never stored in `settings.json`; records include plan `direction`; readable via `desktop_ssh_sync_runs_list`). Sync planning, selections, POSIX prepare/probe/inventory/finalize scripts, and apply orchestration live in `packages/web/server/lib/config-sync/`. **Push** uses an SSH `TargetExecutor`; **pull** inventories the remote, downloads tar streams over ControlMaster, and applies generational backups locally. Direction changes re-run preview IPC (no cached plan flip). Whitelist selections (`fileGroups` / `singleFiles` / `directories` / `agentsRoot` / `authFile`) are shared by preview and apply. Prepare keeps generational backups under `<backupRoot>/<syncRunId>/` (retention 5). **Credential sync is opt-in per target** and applies to both directions: grants live in `settings.json` under `desktopCredentialSyncGrants`, are set only from instance settings (IPC `desktop_ssh_credential_sync_*`, not remote-safe), and are enforced in preview/apply (`credential_sync_unauthorized` if a plan still carries `authFile` without a grant). Unauthorized syncs skip `auth.json` by default. Desktop `settings.json` writes from main, ssh-manager, and the in-process web server share one mutation chain via `settings-store.mjs` / `startWebUiServer({ settingsPersistLock })`.
 - Auto-update checks, downloads, and restart/apply flow.
 
 ## IPC Pattern
@@ -282,7 +287,7 @@ Development builds use a separate user data directory named `OpenChamber Dev`, s
 
 - Keep desktop-specific code in this package. Do not move OpenCode feature backend logic into Electron.
 - Use hidden Windows process launches for background helpers. Avoid visible console flashes.
-- Keep `@openchamber/web`, `bun-pty`, `node-pty`, and native modules external in `bundle-main.mjs`; bundling them can break Electron startup.
+- Keep `@openchambery/web`, `bun-pty`, `node-pty`, and native modules external in `bundle-main.mjs`; bundling them can break Electron startup.
 - Rebuild native modules after dependency or Electron version changes.
 - Test both HMR dev mode and bundled UI mode when changing startup, preload, routing, or packaged asset behavior.
 

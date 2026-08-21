@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
     assignImageAttachmentFilenames,
     buildAttachmentCitationText,
+    collectDetachedAttachmentFilenames,
     expandCodeSelectionCitations,
     expandImageAttachmentCitations,
     findAttachmentCitationRanges,
@@ -55,6 +56,38 @@ describe('attachment citations', () => {
 
     test('builds bracket citations with a reserved icon slot', () => {
         expect(buildAttachmentCitationText(['desktop.jpg', 'icon.png'])).toBe('[\u2003desktop.jpg] [\u2003icon.png]');
+    });
+
+    test('reports attachments orphaned when a replacement drops their citations', () => {
+        const previous = `look ${buildAttachmentCitationText(['image-1.png', 'image-2.png'])}`;
+        expect(collectDetachedAttachmentFilenames(
+            ['image-1.png', 'image-2.png'],
+            previous,
+            'replaced text',
+        )).toEqual(['image-1.png', 'image-2.png']);
+    });
+
+    test('keeps attachments whose citations survive a replacement', () => {
+        const previous = `look ${buildAttachmentCitationText(['image-1.png', 'image-2.png'])}`;
+        expect(collectDetachedAttachmentFilenames(
+            ['image-1.png', 'image-2.png'],
+            previous,
+            `keep ${buildAttachmentCitationText(['image-2.png'])} only`,
+        )).toEqual(['image-1.png']);
+    });
+
+    test('counts slotless citations as still present', () => {
+        const previous = `look ${buildAttachmentCitationText(['image-1.png'])}`;
+        expect(collectDetachedAttachmentFilenames(
+            ['image-1.png'],
+            previous,
+            'keep [image-1.png] plain',
+        )).toEqual([]);
+    });
+
+    test('never detaches when the text did not change', () => {
+        const previous = `look ${buildAttachmentCitationText(['image-1.png'])}`;
+        expect(collectDetachedAttachmentFilenames(['image-1.png'], previous, previous)).toEqual([]);
     });
 
     test('strips reserved icon slots before delivery', () => {

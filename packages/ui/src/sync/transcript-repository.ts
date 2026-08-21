@@ -124,13 +124,32 @@ export function messageNeedsExactMaterialization(parts: readonly Part[]): boolea
 }
 
 /**
- * Whether a durable-seeded message has tool / reasoning / file parts that
- * still need an exact `session.message` revalidation even when those parts
- * already look full. Text is intentionally excluded so cold-start
- * text-only messages do not fan out exact fetches.
+ * Whether a durable-seeded message still needs an exact `session.message`
+ * revalidation after cold start.
+ *
+ * - No tool / reasoning / file parts → false (text-only stays out of the fan-out).
+ * - Any slim tool / reasoning / file part → true (needs fill).
+ * - All such parts already full and the message snapshot is settled → false
+ *   (cold-start must not re-fetch hundreds of completed full messages).
+ * - All such parts full but the snapshot is still open → true (mid-turn
+ *   durable snapshot may be stale).
+ * - When `info` is omitted, full target parts skip revalidation (same as settled).
  */
-export function messageNeedsExactRevalidation(parts: readonly Part[]): boolean {
-  return parts.some((part) => EXACT_REVALIDATION_PART_TYPES.has(part.type))
+export function messageNeedsExactRevalidation(
+  parts: readonly Part[],
+  info?: Message | null,
+): boolean {
+  let hasTarget = false
+  let hasSlimTarget = false
+  for (const part of parts) {
+    if (!EXACT_REVALIDATION_PART_TYPES.has(part.type)) continue
+    hasTarget = true
+    if (isSlimPart(part)) hasSlimTarget = true
+  }
+  if (!hasTarget) return false
+  if (hasSlimTarget) return true
+  if (!info) return false
+  return isMessageSnapshotOpen(info)
 }
 
 export type TranscriptHydrationPhase = "idle" | "p0" | "p1" | "p2"
@@ -236,6 +255,32 @@ export function resolveTranscriptHydrationPhase(input: {
   return "idle"
 }
 
+/** Terminal finishes the server always stamps with `time.completed`. */
+const SERVER_STAMPED_TERMINAL_FINISHES = new Set(["stop", "length"])
+
+/**
+ * Whether the transcript tail is an assistant whose settle tick never arrived:
+ * it carries a server-stamped terminal finish but no `time.completed`.
+ *
+ * The settle `message.updated` tick (finish + tokens, then completed) can be
+ * lost on the live channel. Once the session goes idle nothing re-derives it,
+ * so derived display (turn duration, assistant TPS) stays missing until an
+ * authority refresh repairs the row. Interrupted finishes (`canceled`,
+ * `aborted`, errors) legitimately omit `time.completed` and never count.
+ */
+export function hasTailAssistantMissingSettledCompletion(
+  transcript: Pick<TranscriptData, "messageOrder" | "messagesByID">,
+): boolean {
+  const tailID = transcript.messageOrder[transcript.messageOrder.length - 1]
+  if (!tailID) return false
+  const message = transcript.messagesByID[tailID]
+  if (!message || messageRole(message) !== "assistant") return false
+  if ((message as { error?: unknown }).error) return false
+  const finish = (message as { finish?: unknown }).finish
+  if (typeof finish !== "string" || !SERVER_STAMPED_TERMINAL_FINISHES.has(finish)) return false
+  return typeof (message.time as { completed?: number } | undefined)?.completed !== "number"
+}
+
 // ---------------------------------------------------------------------------
 // Transport page / command inputs
 // ---------------------------------------------------------------------------
@@ -276,6 +321,15 @@ export type TranscriptSseEventCommand = {
    * Non-transcript events are no-ops (return applied:false).
    */
   readonly event: Event
+}
+
+/**
+ * Same semantics as `sse-event`, but applies N events in order with one merge
+ * rebuild (ordered reducer steps; no delivery-layer coalesce).
+ */
+export type TranscriptSseEventBatchCommand = {
+  readonly type: "sse-event-batch"
+  readonly events: readonly Event[]
 }
 
 export type TranscriptOptimisticAddCommand = {
@@ -332,6 +386,7 @@ export type TranscriptRemoveMessageCommand = {
 export type TranscriptCommand =
   | TranscriptHttpPageCommand
   | TranscriptSseEventCommand
+  | TranscriptSseEventBatchCommand
   | TranscriptOptimisticAddCommand
   | TranscriptOptimisticConfirmCommand
   | TranscriptOptimisticRemoveCommand

@@ -163,21 +163,6 @@ async function waitForServerHealth(port, {
 }
 
 
-async function fetchTunnelProvidersFromPort(port, fetchImpl = globalThis.fetch) {
-  if (!Number.isFinite(port) || port <= 0 || typeof fetchImpl !== 'function') {
-    return null;
-  }
-  try {
-    const response = await fetchImpl(buildLocalUrl(port, '/api/openchamber/tunnel/providers'));
-    if (!response.ok) return null;
-    const body = await response.json().catch(() => null);
-    if (!body || !Array.isArray(body.providers)) return null;
-    return body.providers;
-  } catch {
-    return null;
-  }
-}
-
 async function fetchSystemInfoFromPort(port, fetchImpl = globalThis.fetch, hostOverride) {
   if (!Number.isFinite(port) || port <= 0 || typeof fetchImpl !== 'function') {
     return null;
@@ -211,6 +196,5 @@ export {
   requestJson,
   isServerHealthReady,
   waitForServerHealth,
-  fetchTunnelProvidersFromPort,
   fetchSystemInfoFromPort,
 };

@@ -371,11 +371,22 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     if (excess) db.prepare('DELETE FROM operation_receipt WHERE rowid IN (SELECT rowid FROM operation_receipt WHERE runtime_key = ? ORDER BY created_at, rowid LIMIT ?)').run(key, excess);
     db.prepare('INSERT INTO operation_receipt(runtime_key,request_id,operation_type,payload_hash,response_json,committed_revision,created_at) VALUES (?,?,?,?,?,?,?)').run(key, requestID, operationType, payloadHash, JSON.stringify(response), revision, now());
   };
+  // Empty scopes carry no durable queue rows (queue_item is the sole FK into
+  // queue_scope), so LRU eviction cannot strand items, attempts, receipts, or
+  // completions; worktree lifecycle state lives in its own table and scopes
+  // re-create from it on demand.
+  const evictEmptyScopes = (key, slots) => db.prepare(`DELETE FROM queue_scope WHERE runtime_key = ? AND scope_id IN (
+    SELECT s.scope_id FROM queue_scope s WHERE s.runtime_key = ? AND NOT EXISTS (SELECT 1 FROM queue_item i WHERE i.scope_id = s.scope_id)
+    ORDER BY s.updated_at, s.scope_id LIMIT ?
+  )`).run(key, key, slots);
   const ensureScope = (scope, key) => {
     const directory = normalizeDirectory(scope.directory); const scopeID = scopeIDFor(key, directory, scope.sessionID);
     const state = lifecycle(key, directory)?.state ?? 'active';
     db.prepare('INSERT OR IGNORE INTO worktree_lifecycle(runtime_key,directory,state,deletion_token,updated_at) VALUES (?,?,?,NULL,?)').run(key, directory, state, now());
-    if (!scopeRow(scopeID) && Number(db.prepare('SELECT COUNT(*) AS count FROM queue_scope WHERE runtime_key = ?').get(key).count) >= MAX_SCOPES) fail('validation_error');
+    if (!scopeRow(scopeID)) {
+      const count = db.prepare('SELECT COUNT(*) AS count FROM queue_scope WHERE runtime_key = ?').get(key).count;
+      if (count >= MAX_SCOPES) { evictEmptyScopes(key, count - MAX_SCOPES + 1); if (Number(db.prepare('SELECT COUNT(*) AS count FROM queue_scope WHERE runtime_key = ?').get(key).count) >= MAX_SCOPES) fail('scope_limit'); }
+    }
     db.prepare('INSERT OR IGNORE INTO queue_scope(scope_id,runtime_key,directory,session_id,revision,worktree_state,created_at,updated_at) VALUES (?,?,?,?,0,?,?,?)').run(scopeID, key, directory, scope.sessionID, state, now(), now());
     return scopeRow(scopeID);
   };

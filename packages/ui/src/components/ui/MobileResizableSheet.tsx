@@ -16,6 +16,7 @@ type MobileResizableSheetProps = {
   onOpenChange: (open: boolean) => void;
   title?: React.ReactNode;
   leading?: React.ReactNode;
+  trailing?: React.ReactNode;
   ariaLabel: string;
   closeAriaLabel: string;
   resizeAriaLabel: string;
@@ -31,6 +32,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
   onOpenChange,
   title,
   leading,
+  trailing,
   ariaLabel,
   closeAriaLabel,
   resizeAriaLabel,
@@ -44,7 +46,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
     fitContent,
     onDismiss: () => onOpenChange(false),
   });
-  const hasHeader = title != null || leading != null;
+  const hasHeader = title != null || leading != null || trailing != null;
 
   return (
     <MobileWindowMotion
@@ -70,6 +72,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
             <div className="flex min-h-10 items-center gap-2 px-4 pb-2">
               {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
               <div className="min-w-0 flex-1">{title}</div>
+              {trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
               <Button
                 type="button"
                 variant="ghost"

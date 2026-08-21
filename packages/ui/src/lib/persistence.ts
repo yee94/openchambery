@@ -347,51 +347,6 @@ const sanitizeProjects = (value: unknown): DesktopSettings['projects'] | undefin
   return result.length > 0 ? result : undefined;
 };
 
-const sanitizeManagedRemoteTunnelPresets = (value: unknown): DesktopSettings['managedRemoteTunnelPresets'] | undefined => {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  const result: NonNullable<DesktopSettings['managedRemoteTunnelPresets']> = [];
-  const seenIds = new Set<string>();
-  const seenHostnames = new Set<string>();
-
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object') continue;
-    const candidate = entry as Record<string, unknown>;
-
-    const id = typeof candidate.id === 'string' ? candidate.id.trim() : '';
-    const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
-    const hostname = typeof candidate.hostname === 'string' ? candidate.hostname.trim().toLowerCase() : '';
-
-    if (!id || !name || !hostname) continue;
-    if (seenIds.has(id) || seenHostnames.has(hostname)) continue;
-    seenIds.add(id);
-    seenHostnames.add(hostname);
-
-    result.push({ id, name, hostname });
-  }
-
-  return result;
-};
-
-const sanitizeManagedRemoteTunnelPresetTokens = (value: unknown): DesktopSettings['managedRemoteTunnelPresetTokens'] | undefined => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const result: Record<string, string> = {};
-  for (const [key, tokenValue] of Object.entries(candidate)) {
-    const id = key.trim();
-    const token = typeof tokenValue === 'string' ? tokenValue.trim() : '';
-    if (!id || !token) continue;
-    result[id] = token;
-  }
-
-  return Object.keys(result).length > 0 ? result : undefined;
-};
-
 const sanitizeModelRefs = (value: unknown, limit: number): Array<{ providerID: string; modelID: string }> | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
@@ -866,52 +821,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (candidate.sessionRetentionAction === 'archive' || candidate.sessionRetentionAction === 'delete') {
     result.sessionRetentionAction = candidate.sessionRetentionAction;
-  }
-  if (typeof candidate.tunnelProvider === 'string') {
-    const provider = candidate.tunnelProvider.trim().toLowerCase();
-    if (provider.length > 0) {
-      result.tunnelProvider = provider;
-    }
-  }
-  if (typeof candidate.tunnelMode === 'string') {
-    const mode = candidate.tunnelMode.trim().toLowerCase();
-    if (mode === 'quick' || mode === 'managed-remote' || mode === 'managed-local') {
-      result.tunnelMode = mode;
-    }
-  }
-  if (candidate.tunnelBootstrapTtlMs === null) {
-    result.tunnelBootstrapTtlMs = null;
-  } else if (typeof candidate.tunnelBootstrapTtlMs === 'number' && Number.isFinite(candidate.tunnelBootstrapTtlMs)) {
-    result.tunnelBootstrapTtlMs = candidate.tunnelBootstrapTtlMs;
-  }
-  if (typeof candidate.tunnelSessionTtlMs === 'number' && Number.isFinite(candidate.tunnelSessionTtlMs)) {
-    result.tunnelSessionTtlMs = candidate.tunnelSessionTtlMs;
-  }
-  if (candidate.managedLocalTunnelConfigPath === null) {
-    result.managedLocalTunnelConfigPath = null;
-  } else if (typeof candidate.managedLocalTunnelConfigPath === 'string') {
-    const trimmed = candidate.managedLocalTunnelConfigPath.trim();
-    result.managedLocalTunnelConfigPath = trimmed.length > 0 ? trimmed : null;
-  }
-  if (typeof candidate.managedRemoteTunnelHostname === 'string') {
-    result.managedRemoteTunnelHostname = candidate.managedRemoteTunnelHostname.trim();
-  }
-  if (candidate.managedRemoteTunnelToken === null) {
-    result.managedRemoteTunnelToken = null;
-  } else if (typeof candidate.managedRemoteTunnelToken === 'string') {
-    result.managedRemoteTunnelToken = candidate.managedRemoteTunnelToken.trim();
-  }
-  const managedRemoteTunnelPresets = sanitizeManagedRemoteTunnelPresets(candidate.managedRemoteTunnelPresets);
-  if (managedRemoteTunnelPresets) {
-    result.managedRemoteTunnelPresets = managedRemoteTunnelPresets;
-  }
-  if (typeof candidate.managedRemoteTunnelSelectedPresetId === 'string') {
-    const trimmed = candidate.managedRemoteTunnelSelectedPresetId.trim();
-    result.managedRemoteTunnelSelectedPresetId = trimmed.length > 0 ? trimmed : undefined;
-  }
-  const managedRemoteTunnelPresetTokens = sanitizeManagedRemoteTunnelPresetTokens(candidate.managedRemoteTunnelPresetTokens);
-  if (managedRemoteTunnelPresetTokens) {
-    result.managedRemoteTunnelPresetTokens = managedRemoteTunnelPresetTokens;
   }
   if (typeof candidate.defaultModel === 'string' && candidate.defaultModel.length > 0) {
     result.defaultModel = candidate.defaultModel;

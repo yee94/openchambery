@@ -143,11 +143,14 @@ arrive later via force-refresh or Agents settings metadata (`agentQueries.ts`,
 still directory-scoped). A new directory must not clear the in-memory Agent list
 or raise `agentConfigLoading` when the global catalog is already present.
 Failed refreshes retain the
-previous snapshot. A successful empty Provider or Agent catalog remains a valid
-success response and is retained by TanStack Query's infinite freshness; cold-start
-  recovery therefore uses `refreshMissingCatalogs`, which re-reads the authoritative
+previous snapshot. A successful empty Provider or Agent catalog is still a valid
+success response, but empty catalogs use `staleTime: 0` so the next `ensure`/`fetchQuery`
+refetches instead of treating the empty list as infinitely fresh. Cold-start
+  recovery still uses `refreshMissingCatalogs`, which re-reads the authoritative
   store and force-refreshes only missing catalogs over the network so a temporary
-  empty warm response cannot stick until a page restart. Concurrent recovery calls
+  empty warm response cannot stick until a page restart. Opening a model or agent
+  picker always force-refreshes both catalogs in the background via
+  `refreshCatalogsOnPickerOpen`. Concurrent recovery and picker-open calls each
   share one in-flight promise. App shells own the poll via `useStartupCatalogRecovery`
   (`useInterval` + bounded attempts); VS Code bootstrap invokes the store action
   directly. Persisted selection, startup snapshots, and settings carry

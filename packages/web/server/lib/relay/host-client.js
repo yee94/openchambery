@@ -54,12 +54,14 @@ const resolveBatchWindowMs = (option) => {
  *   identity: { serverId: string, hostEncPrivateKey: CryptoKey, signRelayAuth: (role: string, connectionId?: string | null) => { ts: number, sig: string, pk: string } },
  *   localPort?: number,
  *   getLocalPort?: () => number,
+ *   getSshRoutingTable?: () => { id: string, localPort: number }[],
  *   onStatus?: (status: { state: string, lastError: string | null, connectedClients: number }) => void,
  *   logger?: Pick<Console, 'warn'>,
  * }} options
  */
-export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, onStatus, logger = console, batchWindowMs, batch }) => {
+export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, getSshRoutingTable = () => [], onStatus, logger = console, batchWindowMs, batch }) => {
   const resolveLocalPort = typeof getLocalPort === 'function' ? getLocalPort : () => localPort;
+  const resolveSshRoutingTable = typeof getSshRoutingTable === 'function' ? getSshRoutingTable : () => [];
   const localBatch = batch !== false;
   const resolvedBatchWindowMs = resolveBatchWindowMs(batchWindowMs);
 
@@ -188,6 +190,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
           entry.tunnel = createTunnelHost({
             connectionId,
             getLocalPort: resolveLocalPort,
+            getSshRoutingTable: resolveSshRoutingTable,
             getBufferedAmount: () => socket.bufferedAmount,
             sendFrame: (plaintextFrame) => {
               if (dataSockets.get(connectionId) !== entry || socket.readyState !== WebSocket.OPEN) return;

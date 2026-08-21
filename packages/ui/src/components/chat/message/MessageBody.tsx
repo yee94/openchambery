@@ -66,6 +66,7 @@ import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { parseSubagentNotification, type SubagentNotification } from './parts/taskToolModel';
+import { openTurnChangedFilePreview } from '../openTurnChangedFile';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const };
@@ -190,12 +191,14 @@ const TurnChangesPreview = React.memo(({
 }) => {
     const { t } = useI18n();
     const effectiveDirectory = useEffectiveDirectory();
-    const navigateToDiff = useUIStore((state) => state.navigateToDiff);
-    const openContextDiff = useUIStore((state) => state.openContextDiff);
+    const sessionSurface = useSessionSurface();
+    // Nested/subagent surfaces own their directory + session; primary falls back to global.
+    const diffDirectory = sessionSurface.directory || effectiveDirectory;
+    const diffSessionId = sessionSurface.sessionId;
     const mobileActions = useMobileAppActions();
     const visibleFiles = files.slice(0, 5);
     const hiddenCount = Math.max(0, files.length - visibleFiles.length);
-    const canOpen = Boolean(mobileActions || (!isMobile && effectiveDirectory) || (isMobile && isLatestTurn));
+    const canOpen = Boolean(mobileActions || (!isMobile && diffDirectory) || (isMobile && isLatestTurn));
     const fileCountLabel = files.length === 1
         ? t('chat.pendingChanges.fileCountSingle', { count: files.length })
         : t('chat.pendingChanges.fileCountPlural', { count: files.length });
@@ -220,17 +223,28 @@ const TurnChangesPreview = React.memo(({
 
     const openTurnDiff = useEvent((file: string) => {
         if (mobileActions) {
-            mobileActions.openTurnDiff(turnId);
+            mobileActions.openTurnDiff(turnId, diffSessionId);
             return;
         }
 
-        if (!isMobile && effectiveDirectory) {
-            openContextDiff(effectiveDirectory, file, false, 'turn', undefined, turnId);
+        if (!isMobile && diffDirectory) {
+            openTurnChangedFilePreview({
+                directory: diffDirectory,
+                filePath: file,
+                turnMessageId: turnId,
+                sessionId: diffSessionId,
+            });
             return;
         }
 
-        if (isMobile && isLatestTurn) {
-            navigateToDiff(file, false, 'turn');
+        if (isMobile && isLatestTurn && diffDirectory) {
+            openTurnChangedFilePreview({
+                directory: diffDirectory,
+                filePath: file,
+                turnMessageId: turnId,
+                sessionId: diffSessionId,
+                mobile: true,
+            });
         }
     });
 
@@ -1998,6 +2012,10 @@ const AssistantMessageBody = React.memo(({
             if (part.type === 'reasoning') {
                 const activity = activityByPart.get(part);
                 if (activity?.kind === 'reasoning') {
+                    i += 1;
+                    continue;
+                }
+                if (!extractTextContent(part).trim()) {
                     i += 1;
                     continue;
                 }

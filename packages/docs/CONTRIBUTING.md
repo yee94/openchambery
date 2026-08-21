@@ -20,7 +20,7 @@ stays the same no matter who is writing.
 ### Keep it short
 
 - Lead with the task, not background. The first line should say what the page is
-  for ("Use `openchamber tunnel` to expose a running OpenChamber instance.").
+  for ("Pair another device with your OpenChamber server using a one-time QR code.").
 - Cut anything that doesn't change what the reader does next.
 - A basic page should fit in a screen or two. Long, dense reference pages (like
   Reverse Proxy) are the exception — and they say so in their first line ("Use
@@ -44,8 +44,8 @@ running.
 ### Plain language
 
 - Explain a term the first time it appears, in parentheses, in everyday words:
-  - good: start a tunnel (a public link to your local OpenChamber)
-  - bad: start a tunnel — the reader doesn't know what that is yet
+  - good: start the Private Relay (an end-to-end encrypted path to your server from anywhere)
+  - bad: start the Private Relay — the reader doesn't know what that is yet
 - Prefer common words over internal ones. "App", "version", "page" beat
   "surface", "instance", "route" when the meaning is the same. If an internal
   term is unavoidable, define it once.
@@ -233,8 +233,8 @@ content/docs/
   fr/install.mdx           # French
   ja/install.mdx           # Japanese
 
-  guides/tunnels.mdx       # nested English page
-  uk/guides/tunnels.mdx    # its Ukrainian translation
+  troubleshooting/remote-access.mdx       # nested English page
+  uk/troubleshooting/remote-access.mdx    # its Ukrainian translation
 ```
 
 Each translated file needs its **own translated frontmatter** (`title` and

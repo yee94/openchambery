@@ -39,14 +39,41 @@ export const createSettingsRuntime = (deps) => {
     normalizeStringArray,
     formatSettingsResponse,
     resolveDirectoryCandidate,
-    normalizeManagedRemoteTunnelHostname,
-    normalizeManagedRemoteTunnelPresets,
-    normalizeManagedRemoteTunnelPresetTokens,
-    syncManagedRemoteTunnelConfigWithPresets,
-    upsertManagedRemoteTunnelToken,
+    /**
+     * Optional late-bound exclusive runner (Electron injects after startWebUiServer).
+     * May be a function returning the runner, or the runner itself.
+     */
+    getRunExclusivePersist,
+    runExclusivePersist: initialRunExclusivePersist,
   } = deps;
 
   let persistSettingsLock = Promise.resolve();
+  let runExclusivePersist = typeof initialRunExclusivePersist === 'function'
+    ? initialRunExclusivePersist
+    : null;
+
+  const resolveRunExclusivePersist = () => {
+    if (typeof getRunExclusivePersist === 'function') {
+      const resolved = getRunExclusivePersist();
+      if (typeof resolved === 'function') return resolved;
+    }
+    return typeof runExclusivePersist === 'function' ? runExclusivePersist : null;
+  };
+
+  const runPersistedWrite = (work) => {
+    const external = resolveRunExclusivePersist();
+    if (external) {
+      return external(work);
+    }
+    const next = persistSettingsLock.then(async () => work());
+    // Keep the chain alive even if one writer throws.
+    persistSettingsLock = next.catch(() => {});
+    return next;
+  };
+
+  const setRunExclusivePersist = (fn) => {
+    runExclusivePersist = typeof fn === 'function' ? fn : null;
+  };
 
   // Orphan recovery is a one-shot best-effort scan: when orphans can't be
   // matched on first pass they stay on disk and every subsequent settings
@@ -500,7 +527,7 @@ export const createSettingsRuntime = (deps) => {
     await fsPromises.rm(tmp, { force: true });
   };
 
-  const writeSettingsToDisk = async (settings) => {
+  const writeSettingsToDiskUnlocked = async (settings) => {
     try {
       await fsPromises.mkdir(path.dirname(SETTINGS_FILE_PATH), { recursive: true });
       // Atomic write: Electron main and ssh-manager read this file via plain
@@ -515,6 +542,8 @@ export const createSettingsRuntime = (deps) => {
       throw error;
     }
   };
+
+  const writeSettingsToDisk = async (settings) => runPersistedWrite(() => writeSettingsToDiskUnlocked(settings));
 
   const validateProjectEntries = async (projects) => {
     if (!Array.isArray(projects)) {
@@ -700,7 +729,7 @@ export const createSettingsRuntime = (deps) => {
     const next = { ...settings };
 
     if (typeof settings.notifyOnSubtasks !== 'boolean') {
-      next.notifyOnSubtasks = true;
+      next.notifyOnSubtasks = false;
       changed = true;
     }
     if (typeof settings.notifyOnCompletion !== 'boolean') {
@@ -720,67 +749,6 @@ export const createSettingsRuntime = (deps) => {
     if (templatesChanged || !settings.notificationTemplates || typeof settings.notificationTemplates !== 'object') {
       next.notificationTemplates = templates;
       changed = true;
-    }
-
-    return { settings: changed ? next : settings, changed };
-  };
-
-  const migrateSettingsFromLegacyNamedTunnelKeys = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
-    const next = { ...settings };
-    let changed = false;
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelHostname')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelHostname')) {
-      next.managedRemoteTunnelHostname = normalizeManagedRemoteTunnelHostname(next.namedTunnelHostname);
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelToken')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelToken')) {
-      if (next.namedTunnelToken === null) {
-        next.managedRemoteTunnelToken = null;
-      } else if (typeof next.namedTunnelToken === 'string') {
-        next.managedRemoteTunnelToken = next.namedTunnelToken.trim();
-      }
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelPresets')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelPresets')) {
-      next.managedRemoteTunnelPresets = normalizeManagedRemoteTunnelPresets(next.namedTunnelPresets);
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelPresetTokens')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelPresetTokens')) {
-      next.managedRemoteTunnelPresetTokens = normalizeManagedRemoteTunnelPresetTokens(next.namedTunnelPresetTokens);
-      changed = true;
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(next, 'managedRemoteTunnelSelectedPresetId')
-      && Object.prototype.hasOwnProperty.call(next, 'namedTunnelSelectedPresetId')) {
-      const selectedPresetId = typeof next.namedTunnelSelectedPresetId === 'string'
-        ? next.namedTunnelSelectedPresetId.trim()
-        : '';
-      if (selectedPresetId) {
-        next.managedRemoteTunnelSelectedPresetId = selectedPresetId;
-      }
-      changed = true;
-    }
-
-    const legacyKeys = [
-      'namedTunnelHostname',
-      'namedTunnelToken',
-      'namedTunnelPresets',
-      'namedTunnelPresetTokens',
-      'namedTunnelSelectedPresetId',
-    ];
-    for (const key of legacyKeys) {
-      if (Object.prototype.hasOwnProperty.call(next, key)) {
-        delete next[key];
-        changed = true;
-      }
     }
 
     return { settings: changed ? next : settings, changed };
@@ -839,99 +807,68 @@ export const createSettingsRuntime = (deps) => {
     const migration2 = await migrateSettingsFromLegacyThemePreferences(migration1.settings);
     const migration3 = await migrateSettingsFromLegacyCollapsedProjects(migration2.settings);
     const migration4 = await migrateSettingsNotificationDefaults(migration3.settings);
-    const migration5 = await migrateSettingsFromLegacyNamedTunnelKeys(migration4.settings);
-    const migration6 = normalizeSettingsPaths(migration5.settings);
-    const migration7 = await migrateSettingsToDeterministicProjectIds(migration6.settings);
-    const migration8 = migrateSettingsRemoveApprovedDirectories(migration7.settings);
-    const migration9 = migrateSettingsCompactChatDefaults(migration8.settings);
-    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed || migration9.changed) {
-      await writeSettingsToDisk(migration9.settings);
+    const migration5 = normalizeSettingsPaths(migration4.settings);
+    const migration6 = await migrateSettingsToDeterministicProjectIds(migration5.settings);
+    const migration7 = migrateSettingsRemoveApprovedDirectories(migration6.settings);
+    const migration8 = migrateSettingsCompactChatDefaults(migration7.settings);
+    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed) {
+      await runPersistedWrite(() => writeSettingsToDiskUnlocked(migration8.settings));
     }
-    return migration9.settings;
+    return migration8.settings;
   };
 
-  const persistSettings = async (changes) => {
-    persistSettingsLock = persistSettingsLock.then(async () => {
-      // Log field names only — changes can carry credentials (UI password,
-      // client tokens, tunnel tokens) that must never reach the log file.
-      console.log('[persistSettings] Updating fields:', Object.keys(changes || {}).join(', ') || '(none)');
-      const current = await readSettingsFromDisk();
-      const sanitized = sanitizeSettingsUpdate(changes);
-      let next = mergePersistedSettings(current, sanitized);
+  const persistSettings = async (changes) => runPersistedWrite(async () => {
+    // Log field names only — changes can carry credentials (UI password,
+    // client tokens) that must never reach the log file.
+    console.log('[persistSettings] Updating fields:', Object.keys(changes || {}).join(', ') || '(none)');
+    const current = await readSettingsFromDisk();
+    const sanitized = sanitizeSettingsUpdate(changes);
+    let next = mergePersistedSettings(current, sanitized);
 
-      const normalizedState = normalizeSettingsPaths(next);
-      if (normalizedState.changed) {
-        next = normalizedState.settings;
+    const normalizedState = normalizeSettingsPaths(next);
+    if (normalizedState.changed) {
+      next = normalizedState.settings;
+    }
+
+    const deterministicProjectIdMigration = await migrateSettingsToDeterministicProjectIds(next);
+    if (deterministicProjectIdMigration.changed) {
+      next = deterministicProjectIdMigration.settings;
+    }
+
+    const approvedDirectoriesMigration = migrateSettingsRemoveApprovedDirectories(next);
+    if (approvedDirectoriesMigration.changed) {
+      next = approvedDirectoriesMigration.settings;
+    }
+
+    // Ensure marker + new defaults exist before the first settings write lands.
+    const compactChatDefaultsMigration = migrateSettingsCompactChatDefaults(next);
+    if (compactChatDefaultsMigration.changed) {
+      next = compactChatDefaultsMigration.settings;
+    }
+
+    // Validating project paths hits the filesystem for every entry, so only
+    // do it when the incoming update actually touches the projects list —
+    // not on every theme/window-state/etc. save.
+    if (Object.prototype.hasOwnProperty.call(sanitized, 'projects') && Array.isArray(next.projects)) {
+      const validated = await validateProjectEntries(next.projects);
+      next = { ...next, projects: validated };
+    }
+
+    if (Array.isArray(next.projects) && next.projects.length > 0) {
+      const activeId = typeof next.activeProjectId === 'string' ? next.activeProjectId : '';
+      const active = next.projects.find((project) => project.id === activeId) || null;
+      if (!active) {
+        console.log(`[persistSettings] Active project ID ${activeId} not found, switching to ${next.projects[0].id}`);
+        next = { ...next, activeProjectId: next.projects[0].id };
       }
+    } else if (next.activeProjectId) {
+      console.log(`[persistSettings] No projects found, clearing activeProjectId ${next.activeProjectId}`);
+      next = { ...next, activeProjectId: undefined };
+    }
 
-      const deterministicProjectIdMigration = await migrateSettingsToDeterministicProjectIds(next);
-      if (deterministicProjectIdMigration.changed) {
-        next = deterministicProjectIdMigration.settings;
-      }
-
-      const approvedDirectoriesMigration = migrateSettingsRemoveApprovedDirectories(next);
-      if (approvedDirectoriesMigration.changed) {
-        next = approvedDirectoriesMigration.settings;
-      }
-
-      // Ensure marker + new defaults exist before the first settings write lands.
-      const compactChatDefaultsMigration = migrateSettingsCompactChatDefaults(next);
-      if (compactChatDefaultsMigration.changed) {
-        next = compactChatDefaultsMigration.settings;
-      }
-
-      // Validating project paths hits the filesystem for every entry, so only
-      // do it when the incoming update actually touches the projects list —
-      // not on every theme/window-state/etc. save.
-      if (Object.prototype.hasOwnProperty.call(sanitized, 'projects') && Array.isArray(next.projects)) {
-        const validated = await validateProjectEntries(next.projects);
-        next = { ...next, projects: validated };
-      }
-
-      if (Array.isArray(next.projects) && next.projects.length > 0) {
-        const activeId = typeof next.activeProjectId === 'string' ? next.activeProjectId : '';
-        const active = next.projects.find((project) => project.id === activeId) || null;
-        if (!active) {
-          console.log(`[persistSettings] Active project ID ${activeId} not found, switching to ${next.projects[0].id}`);
-          next = { ...next, activeProjectId: next.projects[0].id };
-        }
-      } else if (next.activeProjectId) {
-        console.log(`[persistSettings] No projects found, clearing activeProjectId ${next.activeProjectId}`);
-        next = { ...next, activeProjectId: undefined };
-      }
-
-      if (Object.prototype.hasOwnProperty.call(sanitized, 'managedRemoteTunnelPresets')) {
-        await syncManagedRemoteTunnelConfigWithPresets(next.managedRemoteTunnelPresets);
-      }
-
-      if (Object.prototype.hasOwnProperty.call(sanitized, 'managedRemoteTunnelPresetTokens') && sanitized.managedRemoteTunnelPresetTokens) {
-        const presetsById = new Map((next.managedRemoteTunnelPresets || []).map((entry) => [entry.id, entry]));
-        const updates = Object.entries(sanitized.managedRemoteTunnelPresetTokens)
-          .map(([presetId, token]) => {
-            const preset = presetsById.get(presetId);
-            if (!preset || typeof token !== 'string' || token.trim().length === 0) {
-              return null;
-            }
-            return {
-              id: preset.id,
-              name: preset.name,
-              hostname: preset.hostname,
-              token: token.trim(),
-            };
-          })
-          .filter(Boolean);
-
-        for (const update of updates) {
-          await upsertManagedRemoteTunnelToken(update);
-        }
-      }
-
-      await writeSettingsToDisk(next);
-      return formatSettingsResponse(next);
-    });
-
-    return persistSettingsLock;
-  };
+    await writeSettingsToDiskUnlocked(next);
+    return formatSettingsResponse(next);
+  });
 
   return {
     readSettingsFromDisk,
@@ -939,5 +876,6 @@ export const createSettingsRuntime = (deps) => {
     readSettingsFromDiskMigrated,
     writeSettingsToDisk,
     persistSettings,
+    setRunExclusivePersist,
   };
 };

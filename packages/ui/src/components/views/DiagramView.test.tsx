@@ -181,20 +181,20 @@ const harness = vi.hoisted(() => {
       pendingDiagramFile = null;
       return pending;
     },
-    startFileQuery: (
+    useStartFileQuery: (
       input: { scopeDirectory: string | null; path: string | null },
       options: { enabled?: boolean },
     ): QuerySnapshot => {
       const key = queryKey(input.scopeDirectory, input.path);
       const enabled = Boolean(options.enabled && input.path);
-      ReactMock.useEffect(() => {
+      useEffect(() => {
         if (!enabled || startedQueries.has(key) || !input.path) return;
         startedQueries.add(key);
         void readFile(input.path).then(
           (result) => querySnapshots.set(key, { data: result.content, isPending: false, isError: false }),
           () => querySnapshots.set(key, { isPending: false, isError: true }),
         );
-      }, [enabled, key]);
+      }, [enabled, key, input.path]);
       return querySnapshots.get(key) ?? { isPending: enabled, isError: false };
     },
     recordCacheSet: (key: readonly unknown[], content: string) => {
@@ -237,7 +237,7 @@ vi.mock('@/queries/fileQueries', () => ({
   useFileContentQuery: (
     input: { scopeDirectory: string | null; path: string | null },
     options: { enabled?: boolean },
-  ): QuerySnapshot => harness.startFileQuery(input, options),
+  ): QuerySnapshot => harness.useStartFileQuery(input, options),
   setFileContentSnapshot: (
     client: { setQueryData: (key: readonly unknown[], content: string) => void },
     input: { scopeDirectory: string | null; path: string | null },

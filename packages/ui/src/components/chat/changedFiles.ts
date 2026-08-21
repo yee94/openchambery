@@ -176,6 +176,24 @@ export const extractGitChangedFiles = (
     return result;
 };
 
+/**
+ * `extractGitChangedFiles(...).length > 0` 的短路版本：
+ * 逐文件复用同一过滤谓词，首个命中即返回，避免超大变更集下
+ * 为一个布尔值构造全量数组（含绝对路径字符串）。
+ */
+export const hasExtractableGitChangedFiles = (
+    files: Array<{ path: string; index: string; working_dir: string }>,
+): boolean => {
+    for (const file of files) {
+        const indexStatus = file.index?.trim() ?? '';
+        const workingStatus = file.working_dir?.trim() ?? '';
+        const code = workingStatus || indexStatus;
+        if (!code || code === '!') continue;
+        return true;
+    }
+    return false;
+};
+
 export const toRelativePath = (absolutePath: string, baseDirectory: string): string => {
     return getRelativeFilePath(absolutePath, baseDirectory);
 };

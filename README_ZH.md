@@ -119,7 +119,6 @@ openchamber --port 8080              # 自定义端口
 openchamber --lan --port 3000        # 监听局域网 (0.0.0.0)
 openchamber --ui-password secret     # UI 密码保护
 openchamber startup enable           # 开机自启（系统服务）
-openchamber tunnel start --provider cloudflare --mode quick --qr
 openchamber connect-url --port 3000 --qr
 OPENCODE_PORT=4096 OPENCODE_SKIP_START=true openchamber
 openchamber stop
@@ -135,7 +134,7 @@ openchamber update
 docker compose up -d
 ```
 
-访问 `http://localhost:3000`。按需设置 `UI_PASSWORD` 与 Cloudflare 隧道相关环境变量。确保 `data/` 可写（`chown -R 1000:1000 data/`）。
+访问 `http://localhost:3000`。按需设置 `UI_PASSWORD`。确保 `data/` 可写（`chown -R 1000:1000 data/`）。
 
 </details>
 
@@ -147,8 +146,8 @@ docker compose up -d
 - 应用内 Git / GitHub 工作流（提交、PR、检查、合并）
 - Plan/Build 模式，diff / 计划上的行内评论
 - 集成终端、技能目录、语音模式
-- 桌面：多窗口、Mini Chat、SSH/隧道、deep link
-- Web/PWA：隧道扫码接入、移动端优先、自更新
+- 桌面：多窗口、Mini Chat、SSH 远程实例、deep link
+- Web/PWA：扫码配对接入、移动端优先、自更新
 - VS Code：编辑器内会话、Agent Manager、上下文操作
 
 ## 署名

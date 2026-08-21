@@ -78,15 +78,6 @@ openchamber connect-url --port 3000 --server http://your-host:3000 --qr
 
 Lancez `openchamber connect-url --help` pour voir toutes les options de lien, dont `--name`, `--lan`, `--server`, `--api-only`, `--ui-password` et `--qr`.
 
-Vous pouvez toujours gérer les tunnels séparément pour ce service en cours d’exécution :
-
-```bash
-openchamber tunnel start --port 3000
-openchamber tunnel stop --port 3000
-```
-
-Arrêter le tunnel ne redémarre ni le service ni l’application.
-
 ## « OpenCode redémarre »
 
 Pendant que le serveur démarre ou redémarre, OpenChamber affiche l’état « OpenCode redémarre » et met les requêtes en pause jusqu’à ce qu’il soit prêt. C’est normal juste après un lancement ou un redémarrage. Si l’état ne disparaît jamais, consultez [Connexion à OpenCode](/troubleshooting/opencode-connection/).

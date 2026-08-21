@@ -365,7 +365,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                             >
                                 {t(variant === 'justification' ? 'chat.reasoningTrace.justification' : 'chat.reasoningTrace.thinking')}
                             </span>
-                            <LatticeOrb isMobile={isMobile} className="text-[var(--tools-icon)]" />
+                            <LatticeOrb isMobile={isMobile} className="block text-[var(--tools-icon)]" />
                         </span>
                     ) : isExpanded ? (
                         <span

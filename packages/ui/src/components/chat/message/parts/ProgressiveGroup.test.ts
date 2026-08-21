@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
+const formatActivityDurationSource = readFileSync(join(__dirname, 'formatActivityDuration.ts'), 'utf-8');
 const messageBodySource = readFileSync(join(__dirname, '../MessageBody.tsx'), 'utf-8');
 const messageListSource = readFileSync(join(__dirname, '../../MessageList.tsx'), 'utf-8');
 const turnItemSource = readFileSync(join(__dirname, '../../components/TurnItem.tsx'), 'utf-8');
@@ -68,6 +69,7 @@ describe('progressive activity presentation', () => {
     test('uses the S1 lattice orb while activity is live and the stack icon when settled', () => {
         expect(progressiveGroupSource).toContain('LatticeOrb');
         expect(progressiveGroupSource).toContain('isActive && !isCompaction');
+        expect(progressiveGroupSource).toContain('isMobile={isMobile}');
         expect(progressiveGroupSource).toContain("activityIconName = isCompaction ? 'fold-vertical' : 'stack'");
     });
 
@@ -150,15 +152,19 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('startedAt={turnGroupingContext.userMessageCreatedAt}');
         expect(messageBodySource).toContain('const durationMs = turnGroupingContext?.durationMs;');
         expect(messageBodySource).not.toContain('formatTurnDuration(messageCompletedAt - userCreatedAt)');
-        expect(progressiveGroupSource).toContain('useDurationTickerNow(isActive, 250)');
-        expect(progressiveGroupSource).toContain('tickerNow - startedAt');
+        // Live elapsed is owned by WorkingPlaceholder only; activity header
+        // shows duration after the turn settles (no in-flight ticker).
+        expect(progressiveGroupSource).not.toContain('useDurationTickerNow');
+        expect(progressiveGroupSource).not.toContain('tickerNow - startedAt');
+        expect(progressiveGroupSource).not.toContain('activeDuration');
         expect(progressiveGroupSource).toContain('formatActivityDuration(durationMs)');
+        expect(progressiveGroupSource).toContain("import { formatActivityDuration } from './formatActivityDuration'");
     });
 
     test('uses one full-width disclosure with identical title geometry in both states', () => {
         const activityStatusSource = progressiveGroupSource.slice(
             progressiveGroupSource.indexOf('const activityStatusLabel = completionDisposition === undefined'),
-            progressiveGroupSource.indexOf('const activityDuration'),
+            progressiveGroupSource.indexOf('const taskAvatarSeeds'),
         );
         const ariaExpandedIndex = progressiveGroupSource.indexOf('aria-expanded={isExpanded}');
         const activityHeaderSource = progressiveGroupSource.slice(
@@ -172,21 +178,21 @@ describe('progressive activity presentation', () => {
         expect(activityStatusSource).toContain("? t(isCompaction ? 'chat.activity.compactionCompleted' : 'chat.activity.completedStatus')");
         expect(activityStatusSource).not.toContain('isExpanded');
         expect(activityStatusSource).not.toContain("t('chat.activity.completed', { duration: completedDuration })");
-        expect(progressiveGroupSource).toContain('const activityDuration = isActive ? activeDuration : completedDuration;');
+        expect(progressiveGroupSource).toContain('const activityDuration = !isActive');
         expect(activityHeaderSource).toContain('{activityStatusLabel}');
         expect(activityHeaderSource).toContain('className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>');
         expect(activityHeaderSource.match(/typography-meta shrink-0 tabular-nums text-muted-foreground/g)).toHaveLength(1);
         expect(activityHeaderSource).not.toContain('{activeDuration}');
         expect(activityHeaderSource).not.toContain('{completedDuration}');
         expect(progressiveGroupSource).toContain("'group/tool flex w-full min-w-0 flex-nowrap items-center text-left'");
-        expect(progressiveGroupSource).toContain("'inline-flex min-w-0 flex-1 items-center overflow-hidden'");
+        expect(progressiveGroupSource).toContain("'inline-flex min-w-0 flex-1 items-center overflow-clip'");
         expect(progressiveGroupSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end'");
         expect(progressiveGroupSource).toContain("isMobile && 'pr-0'");
         expect(progressiveGroupSource.match(/aria-expanded=\{isExpanded\}/g)).toHaveLength(1);
         expect(progressiveGroupSource).toContain("aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}");
         expect(progressiveGroupSource).toContain("name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}");
         expect(progressiveGroupSource).not.toContain("displayedTaskAvatarSeeds.length === 0 && 'ml-auto'");
-        expect(progressiveGroupSource).toContain("return `${minutes}m ${seconds}s`;");
+        expect(formatActivityDurationSource).toContain("return `${minutes}m ${seconds}s`;");
     });
 
     test('shimmers only the active title with the info status token', () => {
@@ -277,7 +283,9 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('flex-nowrap');
         expect(progressiveGroupSource).toContain('flex-1');
         expect(progressiveGroupSource).toContain('ml-auto');
-        expect(progressiveGroupSource).toContain("isMobile ? 'typography-meta h-4' : 'typography-ui-label h-5 font-semibold'");
+        expect(progressiveGroupSource).toContain("'inline-flex flex-none items-center justify-center'");
+        expect(progressiveGroupSource).toContain("isMobile ? 'h-5 w-4' : 'h-6 w-3.5'");
+        expect(progressiveGroupSource).toContain("isMobile ? 'typography-meta h-5' : 'typography-ui-label h-5 font-semibold'");
         expect(progressiveGroupSource).toContain('displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3)');
         // Status/duration left (flex-1), agents+chevron trailer right (ml-auto).
         // Mobile pr-0 flushes chevron; desktop keeps chip px-2 for symmetric hover wash.
@@ -302,19 +310,21 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("part.slim === true && (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file')");
         expect(progressiveGroupSource).toContain('const materializationFlightsRef = React.useRef(new Map<string, Promise<void>>())');
         expect(progressiveGroupSource).toContain('if (materializationFlightsRef.current.has(targetMessageId)) continue;');
-        expect(progressiveGroupSource).toContain('const flight = materializeTranscriptMessage(effectiveDirectory, targetSessionId, targetMessageId)');
+        expect(progressiveGroupSource).toContain('materializeTranscriptMessage(\n                effectiveDirectory,\n                targetSessionId,\n                targetMessageId,\n                { priority: autoSkipFailed ? \'background\' : \'user\' },\n            )');
         expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
         expect(progressiveGroupSource).toContain("if (current.status === 'ready') continue;");
         expect(messageBodySource).toContain('materializationParts={materializationParts}');
         expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
     });
 
-    test('auto-materializes slim parts of completed groups without waiting for expansion', () => {
-        // Completed groups must hydrate their slim reasoning/tool parts in the
-        // background after mount (cold-start tails render slim bodies as
-        // truncated text otherwise). Active groups keep streaming via SSE.
-        expect(progressiveGroupSource).toContain('if (isActive) {\n            return;\n        }\n        requestMaterialization(false, true);');
-        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive\]\);/);
+    test('does not auto-materialize collapsed completed groups on mount', () => {
+        // Jump-to-top virtualizer remounts hundreds of folded activity rows;
+        // mount-time exact fill on every collapsed group recreated the 500+
+        // session.message storm. Collapsed rows keep slim summaries; expand
+        // (user priority) and already-expanded mount (background) still fill.
+        expect(progressiveGroupSource).toContain('if (isActive || !isExpanded) {\n            return;\n        }\n        requestMaterialization(false, true);');
+        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive \|\| !isExpanded\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive, isExpanded\]\);/);
+        expect(progressiveGroupSource).toContain("{ priority: autoSkipFailed ? 'background' : 'user' }");
     });
 
     test('background auto-fill never retries failed materializations', () => {
@@ -327,6 +337,20 @@ describe('progressive activity presentation', () => {
         // User-driven expand keeps retrying transient errors.
         expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
         expect(progressiveGroupSource).toContain('requestMaterialization(true)');
+    });
+
+    test('collapsed sorted body does not wrap empty or slim reasoning in tool-row padding', () => {
+        // Slim reasoning has no text, so ReasoningPart returns null. Wrapping
+        // that null in getToolRowBlockClass still paints py-1.5 per part and a
+        // long turn (hundreds of slim traces) becomes a screen of blank space
+        // between the Activity header and the final body. Expand/collapse
+        // remounts after materialize and the gap disappears.
+        expect(messageBodySource).toContain('if (part.type === \'reasoning\')');
+        expect(messageBodySource).toContain('const activity = activityByPart.get(part);');
+        expect(messageBodySource).toContain('if (activity?.kind === \'reasoning\')');
+        expect(messageBodySource).toContain('if (!extractTextContent(part).trim())');
+        expect(progressiveGroupSource).toContain("if (activity.kind === 'reasoning')");
+        expect(progressiveGroupSource).toContain('if (!extractTextContent(activity.part).trim())');
     });
 
     test('sorted mode never treats a context-less assistant as the activity owner', () => {
@@ -388,8 +412,10 @@ describe('progressive activity presentation', () => {
     });
 
     test('turn changes preview carries historical turn identity across desktop and dedicated mobile', () => {
-        expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId);');
-        expect(messageBodySource).toContain("openContextDiff(effectiveDirectory, file, false, 'turn', undefined, turnId);");
+        expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId);');
+        expect(messageBodySource).toContain('turnMessageId: turnId,');
+        expect(messageBodySource).toContain('sessionId: diffSessionId,');
+        expect(messageBodySource).toContain('const diffSessionId = sessionSurface.sessionId;');
         expect(messageBodySource).toContain('const visibleFiles = files.slice(0, 5);');
         expect(messageBodySource).toContain('&& !hasAuthoritativeChangedFiles');
     });

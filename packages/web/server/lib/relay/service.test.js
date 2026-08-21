@@ -5,14 +5,18 @@ import request from 'supertest';
 const relayMocks = vi.hoisted(() => ({
   starts: [],
   stops: [],
+  identityReads: 0,
 }));
 
 vi.mock('./identity.js', () => ({
   createRelayIdentityRuntime: () => ({
-    getRelayIdentity: async () => ({
-      serverId: 'server-test',
-      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
-    }),
+    getRelayIdentity: async () => {
+      relayMocks.identityReads += 1;
+      return {
+        serverId: 'server-test',
+        hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+      };
+    },
   }),
 }));
 
@@ -59,6 +63,7 @@ describe('relay service pairing endpoint', () => {
   afterEach(() => {
     relayMocks.starts.length = 0;
     relayMocks.stops.length = 0;
+    relayMocks.identityReads = 0;
     delete process.env.OPENCHAMBER_RELAY_URL;
   });
 
@@ -142,9 +147,10 @@ describe('relay host desktop-only gate', () => {
   afterEach(() => {
     relayMocks.starts.length = 0;
     relayMocks.stops.length = 0;
+    relayMocks.identityReads = 0;
   });
 
-  it('does not start a host, claim, or rewrite settings when reconcile runs off desktop', async () => {
+  it('does not start a host, claim, mint identity, or rewrite settings when reconcile runs off desktop', async () => {
     const write = vi.fn(async (next) => next);
     const { service, settings } = createTestRelayService({
       canHostRelay: false,
@@ -157,12 +163,16 @@ describe('relay host desktop-only gate', () => {
     expect(relayMocks.starts).toEqual([]);
     expect(write).not.toHaveBeenCalled();
     expect(settings.current()).toEqual({});
-    await expect(service.getStatus()).resolves.toMatchObject({
+    await expect(service.getStatus()).resolves.toEqual({
       enabled: false,
       hostAllowed: false,
       state: 'unavailable',
+      serverId: null,
+      connectedClients: 0,
       lastError: RELAY_HOST_DESKTOP_ONLY_MESSAGE,
     });
+    await expect(service.getServerId()).resolves.toBeNull();
+    expect(relayMocks.identityReads).toBe(0);
   });
 
   it('refuses relay pairing and enable off desktop', async () => {
@@ -178,6 +188,11 @@ describe('relay host desktop-only gate', () => {
 
     await request(app)
       .post('/api/openchamber/relay/enable')
+      .send({})
+      .expect(403, { error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
+
+    await request(app)
+      .post('/api/openchamber/relay/disable')
       .send({})
       .expect(403, { error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
 

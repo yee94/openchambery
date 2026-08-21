@@ -105,7 +105,6 @@ openchamber --port 8080              # Custom port
 openchamber --lan --port 3000        # Listen on LAN (0.0.0.0)
 openchamber --ui-password secret     # Password-protect UI
 openchamber startup enable           # Start at login as a native service
-openchamber tunnel start --provider cloudflare --mode quick --qr
 openchamber connect-url --port 3000 --qr
 OPENCODE_PORT=4096 OPENCODE_SKIP_START=true openchamber
 openchamber stop
@@ -121,7 +120,7 @@ openchamber update
 docker compose up -d
 ```
 
-Available at `http://localhost:3000`. Set `UI_PASSWORD` and optional Cloudflare tunnel env vars as needed. Ensure `data/` is writable (`chown -R 1000:1000 data/`).
+Available at `http://localhost:3000`. Set `UI_PASSWORD` as needed. Ensure `data/` is writable (`chown -R 1000:1000 data/`).
 
 </details>
 
@@ -133,8 +132,8 @@ Available at `http://localhost:3000`. Set `UI_PASSWORD` and optional Cloudflare 
 - In-app Git / GitHub workflows (commits, PRs, checks, merge)
 - Plan/Build mode, inline comments on diffs and plans
 - Integrated terminal, skills catalog, voice mode
-- Desktop: multi-window, Mini Chat, SSH/tunnels, deep links
-- Web/PWA: tunnel QR onboarding, mobile-first chat, self-update
+- Desktop: multi-window, Mini Chat, SSH remote instances, deep links
+- Web/PWA: pairing QR onboarding, mobile-first chat, self-update
 - VS Code: editor-native sessions, Agent Manager, context actions
 
 ## Attribution
