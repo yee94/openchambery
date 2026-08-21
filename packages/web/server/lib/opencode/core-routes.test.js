@@ -1003,6 +1003,20 @@ describe('core-routes', () => {
     expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalled();
   });
 
+  it('defaults pairing transports to relay unavailable so web/dev never advertise Anywhere', async () => {
+    const { app } = createPairingRouteApp();
+
+    const response = await request(app)
+      .get('/api/client-auth/pairing/transports')
+      .expect(200);
+
+    expect(response.body).toEqual({
+      local: null,
+      lan: null,
+      relayAvailable: false,
+    });
+  });
+
   it('reports the effective Relay endpoint and environment lock to the pairing dialog', async () => {
     const { app } = createPairingRouteApp({
       getPairingTransports: vi.fn(async () => ({

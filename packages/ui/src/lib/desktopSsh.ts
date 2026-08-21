@@ -423,6 +423,180 @@ export const desktopSshLogsClear = async (id: string): Promise<void> => {
   await invoke('desktop_ssh_logs_clear', { id });
 };
 
+export type DesktopSshConfigSyncAgentsRoot = {
+  fileCount: number;
+  bytes: number;
+};
+
+export type DesktopSshConfigSyncAuthFile = {
+  bytes: number;
+};
+
+export type DesktopSshConfigSyncPlan = {
+  files: { path: string; bytes: number }[];
+  directories: { path: string; fileCount: number; bytes: number }[];
+  agentsRoot: DesktopSshConfigSyncAgentsRoot | null;
+  /** Provider credentials at `~/.local/share/opencode/auth.json` only. */
+  authFile: DesktopSshConfigSyncAuthFile | null;
+  deletes: string[];
+  totalBytes: number;
+};
+
+export type DesktopSshConfigSyncPreview = {
+  plan: DesktopSshConfigSyncPlan;
+  remoteExisting: string[];
+  remoteAgentsRootExists: boolean;
+  remoteAuthFileExists: boolean;
+};
+
+export type DesktopSshConfigSyncResult = {
+  ok: true;
+  files: number;
+  directories: number;
+  deletes: number;
+  totalBytes: number;
+  /** Present when `~/.agents` was synced; mirrors plan.agentsRoot.fileCount. */
+  agentsRoot: { fileCount: number } | null;
+  /** Present when provider auth.json was synced; mirrors plan.authFile.bytes. */
+  authFile: DesktopSshConfigSyncAuthFile | null;
+};
+
+const parseConfigSyncFileEntry = (value: unknown): { path: string; bytes: number } | null => {
+  if (!isRecord(value)) return null;
+  const pathValue = readString(value, 'path');
+  const bytes = readNumber(value, 'bytes');
+  if (!pathValue || bytes === null) return null;
+  return { path: pathValue, bytes };
+};
+
+const parseConfigSyncDirectoryEntry = (
+  value: unknown,
+): { path: string; fileCount: number; bytes: number } | null => {
+  if (!isRecord(value)) return null;
+  const pathValue = readString(value, 'path');
+  const fileCount = readNumber(value, 'fileCount') ?? readNumber(value, 'file_count');
+  const bytes = readNumber(value, 'bytes');
+  if (!pathValue || fileCount === null || bytes === null) return null;
+  return { path: pathValue, fileCount, bytes };
+};
+
+const parseConfigSyncAgentsRoot = (value: unknown): DesktopSshConfigSyncAgentsRoot | null => {
+  if (value == null) return null;
+  if (!isRecord(value)) return null;
+  const fileCount = readNumber(value, 'fileCount') ?? readNumber(value, 'file_count');
+  const bytes = readNumber(value, 'bytes');
+  if (fileCount === null || bytes === null) return null;
+  return { fileCount, bytes };
+};
+
+const parseConfigSyncAuthFile = (value: unknown): DesktopSshConfigSyncAuthFile | null => {
+  if (value == null) return null;
+  if (!isRecord(value)) return null;
+  const bytes = readNumber(value, 'bytes');
+  if (bytes === null) return null;
+  return { bytes };
+};
+
+const parseConfigSyncPlan = (value: unknown): DesktopSshConfigSyncPlan | null => {
+  if (!isRecord(value)) return null;
+  const filesRaw = Array.isArray(value.files) ? value.files : null;
+  const directoriesRaw = Array.isArray(value.directories) ? value.directories : null;
+  const deletes = asStringArray(value.deletes);
+  const totalBytes = readNumber(value, 'totalBytes') ?? readNumber(value, 'total_bytes');
+  if (!filesRaw || !directoriesRaw || totalBytes === null) return null;
+  if (!('agentsRoot' in value) && !('agents_root' in value)) return null;
+
+  const files = filesRaw
+    .map((item) => parseConfigSyncFileEntry(item))
+    .filter((item): item is { path: string; bytes: number } => Boolean(item));
+  const directories = directoriesRaw
+    .map((item) => parseConfigSyncDirectoryEntry(item))
+    .filter((item): item is { path: string; fileCount: number; bytes: number } => Boolean(item));
+
+  if (files.length !== filesRaw.length || directories.length !== directoriesRaw.length) return null;
+
+  const agentsRootRaw = value.agentsRoot ?? value.agents_root;
+  const agentsRoot =
+    agentsRootRaw == null ? null : parseConfigSyncAgentsRoot(agentsRootRaw);
+  if (agentsRootRaw != null && agentsRoot === null) return null;
+
+  // Missing/invalid authFile → null (backward comfort with older payloads).
+  const authFileRaw = value.authFile ?? value.auth_file;
+  const authFile = authFileRaw == null ? null : parseConfigSyncAuthFile(authFileRaw);
+
+  return { files, directories, agentsRoot, authFile, deletes, totalBytes };
+};
+
+const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | null => {
+  if (!isRecord(value)) return null;
+  const plan = parseConfigSyncPlan(value.plan);
+  if (!plan) return null;
+  return {
+    plan,
+    remoteExisting: asStringArray(value.remoteExisting ?? value.remote_existing),
+    remoteAgentsRootExists:
+      readBoolean(value, 'remoteAgentsRootExists')
+      ?? readBoolean(value, 'remote_agents_root_exists')
+      ?? false,
+    remoteAuthFileExists:
+      readBoolean(value, 'remoteAuthFileExists')
+      ?? readBoolean(value, 'remote_auth_file_exists')
+      ?? false,
+  };
+};
+
+const parseConfigSyncResult = (value: unknown): DesktopSshConfigSyncResult | null => {
+  if (!isRecord(value)) return null;
+  if (readBoolean(value, 'ok') !== true) return null;
+  const files = readNumber(value, 'files');
+  const directories = readNumber(value, 'directories');
+  const deletes = readNumber(value, 'deletes');
+  const totalBytes = readNumber(value, 'totalBytes') ?? readNumber(value, 'total_bytes');
+  if (files === null || directories === null || deletes === null || totalBytes === null) return null;
+  if (!('agentsRoot' in value) && !('agents_root' in value)) return null;
+
+  const agentsRootRaw = value.agentsRoot ?? value.agents_root;
+  let agentsRoot: { fileCount: number } | null = null;
+  if (agentsRootRaw != null) {
+    if (!isRecord(agentsRootRaw)) return null;
+    const fileCount =
+      readNumber(agentsRootRaw, 'fileCount') ?? readNumber(agentsRootRaw, 'file_count');
+    if (fileCount === null) return null;
+    agentsRoot = { fileCount };
+  }
+
+  const authFileRaw = value.authFile ?? value.auth_file;
+  const authFile = authFileRaw == null ? null : parseConfigSyncAuthFile(authFileRaw);
+
+  return { ok: true, files, directories, deletes, totalBytes, agentsRoot, authFile };
+};
+
+export const desktopSshSyncOpencodeConfigLocalScan = async (): Promise<DesktopSshConfigSyncPlan | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_sync_opencode_config', { stage: 'local' });
+  if (!isRecord(raw)) return null;
+  return parseConfigSyncPlan(raw.plan);
+};
+
+export const desktopSshSyncOpencodeConfigPreview = async (
+  id: string,
+): Promise<DesktopSshConfigSyncPreview | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_sync_opencode_config', { id });
+  return parseConfigSyncPreview(raw);
+};
+
+export const desktopSshSyncOpencodeConfigApply = async (
+  id: string,
+): Promise<DesktopSshConfigSyncResult | null> => {
+  const invoke = getInvoke();
+  if (!invoke) return null;
+  const raw = await invoke('desktop_ssh_sync_opencode_config', { id, apply: true });
+  return parseConfigSyncResult(raw);
+};
+
 export const listenDesktopSshStatus = async (
   listener: (status: DesktopSshInstanceStatus) => void,
 ): Promise<() => Promise<void>> => {

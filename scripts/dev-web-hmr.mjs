@@ -140,6 +140,8 @@ mkdirSync(hmrSessionIndexDir, { recursive: true });
 const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
   OPENCHAMBER_PORT: backendPort,
   OPENCHAMBER_SESSION_INDEX_DB_PATH: hmrSessionIndexDbPath,
+  // Never inherit a leftover desktop runtime from the parent shell.
+  OPENCHAMBER_RUNTIME: 'web',
 });
 
 const viteArgs = ['x', 'vite', '--host', hmrHost, '--port', uiPort, '--strictPort'];

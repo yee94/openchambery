@@ -49,7 +49,7 @@ const isUnstagedStatusFile = (file: GitStatus['files'][number]): boolean => {
 const diffCacheKey = (path: string, staged: boolean): string => staged ? `${path}\u0000staged` : path;
 
 type MobileChangesSurfaceProps = {
-  /** When provided, the list header gets a close X that calls this; used when the surface is hosted in MobileSurfaceShell. */
+  /** When provided, the list header gets a close X that calls this; used when the surface is hosted in MobileResizableSheet (phone changes list) or the iPad right panel. */
   onClose?: () => void;
   /**
    * When set (and non-null), the surface opens directly into the per-file diff view for this

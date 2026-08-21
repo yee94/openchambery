@@ -3528,7 +3528,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 return;
             }
             else if (commandName === 'compact' && currentSessionId) {
-                await runImmediateSessionCommand({
+                // Compaction is a long-running background turn. The command
+                // text is consumed synchronously before the first await, so
+                // the composer is already free — run summarize without holding
+                // the submission flight so Enter/Send can keep queueing
+                // follow-ups while the session compacts. Failures surface via
+                // onCompactError.
+                void runImmediateSessionCommand({
                     command: 'compact',
                     consumeCommandText: consumeImmediateCommand,
                     forkSession: async () => undefined,

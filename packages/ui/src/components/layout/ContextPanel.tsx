@@ -2602,6 +2602,7 @@ export const ContextPanel: React.FC = () => {
   );
 
   const isFileTabActive = activeTab?.mode === 'file';
+  const fileNotice = isFileTabActive ? activeTab?.fileNotice ?? null : null;
 
   React.useEffect(() => {
     const liveChatSurfaceIDs = new Set(chatTabs.map((tab) => createContextPanelSessionSurfaceId(directoryKey, tab.id)));
@@ -2779,6 +2780,11 @@ export const ContextPanel: React.FC = () => {
         />
       )}
       {header}
+      {fileNotice === 'turn-diff-outside-workspace' ? (
+        <div className="shrink-0 border-b border-status-info/20 bg-status-info/10 px-3 py-2 typography-meta text-status-info">
+          {t('contextPanel.file.notice.turnDiffOutsideWorkspace')}
+        </div>
+      ) : null}
       <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
         {hasFileTabs ? (
           <div className={cn('absolute inset-0', isFileTabActive ? 'block' : 'hidden')}>

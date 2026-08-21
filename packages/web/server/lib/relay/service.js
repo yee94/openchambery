@@ -9,8 +9,9 @@
 // Host gate: only the Electron desktop runtime may run a relay host
 // (OPENCHAMBER_RUNTIME=desktop, set before the in-process web server starts).
 // Plain `node server`, `dev:web:hmr`, VS Code, CLI, and browser clients must
-// never open the host-control socket or advertise a host pairing candidate.
-// They may still be relay *clients* when connecting to another host.
+// never open the host-control socket, mint a relay identity, advertise a host
+// pairing candidate, or probe the relay. They may still be relay *clients*
+// when connecting to another host.
 
 import express from 'express';
 
@@ -269,27 +270,27 @@ export const createRelayService = ({
   // Stable server identity (base64url SHA-256 of the canonical public signing
   // JWK). Derived from a public key, so it is not a secret; clients use it to
   // verify that a learned/probed address belongs to this server before trusting
-  // it. Independent of whether the relay host is currently enabled.
+  // it. Independent of whether the relay host is currently enabled. Off
+  // desktop this is null — minting identity is a desktop-host concern.
   const getServerId = async () => {
+    if (!hostAllowed()) return null;
     const identity = await identityRuntime.getRelayIdentity();
     return identity.serverId;
   };
 
   const getStatus = async () => {
-    const config = await readConfig();
-    const identity = await identityRuntime.getRelayIdentity();
     if (!hostAllowed()) {
       return {
         enabled: false,
         hostAllowed: false,
         state: 'unavailable',
-        serverId: identity.serverId,
+        serverId: null,
         connectedClients: 0,
-        relayUrl: config.relayUrl,
-        relayUrlLocked: config.relayUrlLocked,
         lastError: RELAY_HOST_DESKTOP_ONLY_MESSAGE,
       };
     }
+    const config = await readConfig();
+    const identity = await identityRuntime.getRelayIdentity();
     const live = hostClient ? hostClient.getStatus() : status;
     return {
       enabled: config.enabled,
@@ -408,6 +409,9 @@ export const createRelayService = ({
 
     app.post('/api/openchamber/relay/disable', async (_req, res) => {
       try {
+        if (!hostAllowed()) {
+          return res.status(403).json({ error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
+        }
         const current = await readConfig();
         await writeConfig({ enabled: false, relayUrl: current.relayUrl });
         stop();

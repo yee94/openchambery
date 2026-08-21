@@ -10,7 +10,7 @@ import { execFile, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
-import { ElectronSshManager } from './ssh-manager.mjs';
+import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
 import { createTrayController } from './tray.mjs';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
@@ -4784,6 +4784,20 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_ssh_ensure_lan_forward': {
       const id = String(args.id || '').trim();
       return await sshManager.ensureLanForward(id);
+    }
+
+    // Local renderer only: sync local OpenCode config to a managed SSH remote.
+    // stage=local scans without SSH; preview returns the plan; apply performs the sync.
+    // Not in the remote IPC allowlist.
+    case 'desktop_ssh_sync_opencode_config': {
+      if (args.stage === 'local') {
+        return { plan: planOpenCodeConfigSync(os.homedir()) };
+      }
+      const id = String(args.id || '').trim();
+      if (args.apply === true) {
+        return await sshManager.applyOpencodeConfigSync(id);
+      }
+      return await sshManager.previewOpencodeConfigSync(id);
     }
 
     // Local renderer only: remote host pages must not control local shell menu language.

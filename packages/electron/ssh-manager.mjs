@@ -25,6 +25,346 @@ const nowMillis = () => Date.now();
 
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
 
+/** Allowlist for mirroring local `~/.config/opencode` (non-session) to managed SSH remotes. */
+export const OPENCODE_CONFIG_SYNC_ALLOWLIST = {
+  // Mutually exclusive groups: first existing local file wins; other members are deleted on remote.
+  fileGroups: [
+    ['config.json', 'opencode.json', 'opencode.jsonc'],
+    ['oh-my-opencode-slim.json', 'oh-my-opencode-slim.jsonc'],
+    ['oh-my-openagent.json', 'oh-my-openagent.jsonc'],
+  ],
+  singleFiles: ['AGENTS.md', 'cursor-models.json'],
+  directories: [
+    { path: 'agents', legacy: 'agent' },
+    { path: 'commands', legacy: 'command' },
+    { path: 'skills', legacy: 'skill' },
+    { path: 'snippet' },
+    { path: 'snippets' },
+    { path: 'plugins', excludeNames: ['node_modules'] },
+    { path: '.oh-my-opencode-slim' },
+  ],
+};
+
+export const OPENCODE_CONFIG_SYNC_BACKUP_DIR = '.openchamber.sync-backup';
+/** Remote backup dir for `$HOME/.agents` (outside `~/.agents` so rm -rf does not eat it). */
+export const OPENCODE_AGENTS_SYNC_BACKUP_DIR = '.openchamber.sync-backup-agents';
+/** Remote backup dir for provider `auth.json` (outside `~/.local/share`). */
+export const OPENCODE_AUTH_SYNC_BACKUP_DIR = '.openchamber.sync-backup-auth';
+const OPENCODE_AGENTS_ROOT_PROBE_MARKER = '__AGENTS_ROOT__';
+export const OPENCODE_AUTH_FILE_PROBE_MARKER = '__AUTH_FILE__';
+
+const OPENCODE_CONFIG_SYNC_MAX_BYTES = 512 * 1024 * 1024;
+const OPENCODE_CONFIG_SYNC_MAX_FILES = 20000;
+
+/**
+ * Walk an allowlist directory with symlink dereference (fs.stat), cycle-guard, excludeNames, and `.backup` skip.
+ * @param {string} absPath
+ * @param {Set<string>} excludeNames
+ * @param {Set<string>} seenRealpaths
+ * @returns {{ fileCount: number, bytes: number }}
+ */
+const walkAllowlistDirectory = (absPath, excludeNames, seenRealpaths) => {
+  let real;
+  try {
+    real = fs.realpathSync(absPath);
+  } catch {
+    return { fileCount: 0, bytes: 0 };
+  }
+  if (seenRealpaths.has(real)) return { fileCount: 0, bytes: 0 };
+  seenRealpaths.add(real);
+
+  let fileCount = 0;
+  let bytes = 0;
+  let names;
+  try {
+    names = fs.readdirSync(absPath);
+  } catch {
+    return { fileCount: 0, bytes: 0 };
+  }
+
+  for (const name of names) {
+    if (excludeNames.has(name) || name === 'node_modules') continue;
+    if (/\.backup$/.test(name)) continue;
+    const childAbs = path.join(absPath, name);
+    let st;
+    try {
+      st = fs.statSync(childAbs);
+    } catch {
+      // Broken symlink or unreadable entry — skip.
+      continue;
+    }
+    if (st.isDirectory()) {
+      const nested = walkAllowlistDirectory(childAbs, excludeNames, seenRealpaths);
+      fileCount += nested.fileCount;
+      bytes += nested.bytes;
+    } else if (st.isFile()) {
+      fileCount += 1;
+      bytes += st.size;
+    }
+  }
+  return { fileCount, bytes };
+};
+
+/**
+ * Pure planner: local `~/.config/opencode` allowlist + optional `~/.agents` + optional provider auth.json.
+ * Signature takes the home dir. fs.stat follows symlinks; broken symlinks are skipped.
+ * Missing groups/dirs / missing `~/.agents` / missing auth.json are untouched (null).
+ * Only `~/.local/share/opencode/auth.json` is considered under that share dir — never session DBs.
+ * @param {string} homedir
+ * @returns {{
+ *   files: { path: string, bytes: number }[],
+ *   directories: { path: string, fileCount: number, bytes: number }[],
+ *   agentsRoot: { fileCount: number, bytes: number } | null,
+ *   authFile: { bytes: number } | null,
+ *   deletes: string[],
+ *   totalBytes: number,
+ * }}
+ */
+export const planOpenCodeConfigSync = (homedir) => {
+  const home = String(homedir || '');
+  const root = path.join(home, '.config', 'opencode');
+  /** @type {{ path: string, bytes: number }[]} */
+  const files = [];
+  /** @type {{ path: string, fileCount: number, bytes: number }[]} */
+  const directories = [];
+  /** @type {string[]} */
+  const deletes = [];
+  let totalBytes = 0;
+  let totalFileCount = 0;
+
+  for (const group of OPENCODE_CONFIG_SYNC_ALLOWLIST.fileGroups) {
+    let winner = null;
+    for (const member of group) {
+      const abs = path.join(root, member);
+      let st;
+      try {
+        st = fs.statSync(abs);
+      } catch {
+        continue;
+      }
+      if (!st.isFile()) continue;
+      winner = { path: member, bytes: st.size };
+      break;
+    }
+    if (!winner) continue;
+    files.push(winner);
+    totalBytes += winner.bytes;
+    totalFileCount += 1;
+    for (const member of group) {
+      if (member !== winner.path) deletes.push(member);
+    }
+  }
+
+  for (const name of OPENCODE_CONFIG_SYNC_ALLOWLIST.singleFiles) {
+    const abs = path.join(root, name);
+    let st;
+    try {
+      st = fs.statSync(abs);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    files.push({ path: name, bytes: st.size });
+    totalBytes += st.size;
+    totalFileCount += 1;
+  }
+
+  for (const dirSpec of OPENCODE_CONFIG_SYNC_ALLOWLIST.directories) {
+    const abs = path.join(root, dirSpec.path);
+    let st;
+    try {
+      st = fs.statSync(abs);
+    } catch {
+      continue;
+    }
+    if (!st.isDirectory()) continue;
+    const excludeNames = new Set(Array.isArray(dirSpec.excludeNames) ? dirSpec.excludeNames : []);
+    const walked = walkAllowlistDirectory(abs, excludeNames, new Set());
+    directories.push({
+      path: dirSpec.path,
+      fileCount: walked.fileCount,
+      bytes: walked.bytes,
+    });
+    totalBytes += walked.bytes;
+    totalFileCount += walked.fileCount;
+    deletes.push(dirSpec.path);
+    if (typeof dirSpec.legacy === 'string' && dirSpec.legacy) {
+      deletes.push(dirSpec.legacy);
+    }
+  }
+
+  /** @type {{ fileCount: number, bytes: number } | null} */
+  let agentsRoot = null;
+  const agentsAbs = path.join(home, '.agents');
+  let agentsStat;
+  try {
+    agentsStat = fs.statSync(agentsAbs);
+  } catch {
+    agentsStat = null;
+  }
+  if (agentsStat?.isDirectory()) {
+    const walked = walkAllowlistDirectory(agentsAbs, new Set(), new Set());
+    agentsRoot = { fileCount: walked.fileCount, bytes: walked.bytes };
+    totalBytes += walked.bytes;
+    totalFileCount += walked.fileCount;
+  }
+
+  /** @type {{ bytes: number } | null} */
+  let authFile = null;
+  const authAbs = path.join(home, '.local', 'share', 'opencode', 'auth.json');
+  let authStat;
+  try {
+    // fs.stat follows symlinks (auth.json is sometimes a symlink).
+    authStat = fs.statSync(authAbs);
+  } catch {
+    authStat = null;
+  }
+  if (authStat?.isFile()) {
+    authFile = { bytes: authStat.size };
+    totalBytes += authStat.size;
+    // Single credential file — does not count against the 20000 file-count cap.
+  }
+
+  if (totalBytes > OPENCODE_CONFIG_SYNC_MAX_BYTES || totalFileCount > OPENCODE_CONFIG_SYNC_MAX_FILES) {
+    throw new Error('OpenCode config sync exceeds size limit (512MB)');
+  }
+
+  return { files, directories, agentsRoot, authFile, deletes, totalBytes };
+};
+
+/**
+ * Build the remote POSIX prepare script: backup affected paths, delete stale counterparts, print SYNC_READY.
+ * When plan.agentsRoot is set, also backs up and removes `$HOME/.agents`.
+ * When plan.authFile is set, backs up `$HOME/.local/share/opencode/auth.json` only (no rm; extract overwrites).
+ * Every path is shell-quoted. Tar extract is a separate follow-up command.
+ * @param {{ files: { path: string }[], directories: { path: string }[], deletes: string[], agentsRoot?: { fileCount: number, bytes: number } | null, authFile?: { bytes: number } | null }} plan
+ * @returns {string}
+ */
+export const buildRemoteSyncPrepareScript = (plan) => {
+  const backupDir = OPENCODE_CONFIG_SYNC_BACKUP_DIR;
+  const directoryDeleteNames = new Set();
+  for (const dirSpec of OPENCODE_CONFIG_SYNC_ALLOWLIST.directories) {
+    directoryDeleteNames.add(dirSpec.path);
+    if (typeof dirSpec.legacy === 'string' && dirSpec.legacy) {
+      directoryDeleteNames.add(dirSpec.legacy);
+    }
+  }
+
+  const lines = [
+    'set -e',
+    'CFG="$HOME/.config/opencode"',
+    'mkdir -p "$CFG"',
+    `BK="$CFG/${backupDir}"`,
+    'rm -rf -- "$BK"',
+    'mkdir -p "$BK"',
+  ];
+
+  const backupPaths = [
+    ...(Array.isArray(plan?.files) ? plan.files.map((entry) => entry.path) : []),
+    ...(Array.isArray(plan?.directories) ? plan.directories.map((entry) => entry.path) : []),
+  ];
+
+  for (const rel of backupPaths) {
+    const quoted = shellQuote(rel);
+    const dirname = path.posix.dirname(rel);
+    const quotedDir = shellQuote(dirname === '.' ? '' : dirname);
+    lines.push(`if [ -e "$CFG"/${quoted} ]; then`);
+    if (dirname === '.' || dirname === '') {
+      lines.push('  mkdir -p "$BK"');
+    } else {
+      lines.push(`  mkdir -p "$BK"/${quotedDir}`);
+    }
+    lines.push(`  cp -a "$CFG"/${quoted} "$BK"/${quoted}`);
+    lines.push('fi');
+  }
+
+  for (const rel of Array.isArray(plan?.deletes) ? plan.deletes : []) {
+    const quoted = shellQuote(rel);
+    if (directoryDeleteNames.has(rel)) {
+      lines.push(`rm -rf -- "$CFG"/${quoted}`);
+    } else {
+      lines.push(`rm -f -- "$CFG"/${quoted}`);
+    }
+  }
+
+  if (plan?.agentsRoot) {
+    const agentsBackup = OPENCODE_AGENTS_SYNC_BACKUP_DIR;
+    lines.push(`AGENTS_BK="$HOME/${agentsBackup}"`);
+    lines.push('rm -rf -- "$AGENTS_BK"');
+    lines.push('if [ -e "$HOME/.agents" ]; then');
+    lines.push('  mkdir -p "$AGENTS_BK"');
+    lines.push('  cp -a "$HOME/.agents" "$AGENTS_BK/agents"');
+    lines.push('fi');
+    lines.push('rm -rf -- "$HOME/.agents"');
+  }
+
+  if (plan?.authFile) {
+    const authBackup = OPENCODE_AUTH_SYNC_BACKUP_DIR;
+    lines.push(`AUTH_BK="$HOME/${authBackup}"`);
+    lines.push('rm -rf -- "$AUTH_BK"');
+    lines.push('if [ -e "$HOME/.local/share/opencode/auth.json" ]; then');
+    lines.push('  mkdir -p "$AUTH_BK"');
+    lines.push('  cp -a "$HOME/.local/share/opencode/auth.json" "$AUTH_BK/auth.json"');
+    lines.push('fi');
+  }
+
+  lines.push("printf 'SYNC_READY\\n'");
+  return lines.join('\n');
+};
+
+/**
+ * Build the remote existence probe script for the sync preview. Prints each
+ * existing opencode-config path on its own line plus `__AGENTS_ROOT__` /
+ * `__AUTH_FILE__` markers when those roots/files exist. Ends with `exit 0`
+ * so a trailing false `[ -e … ] && printf` cannot fail the whole `sh -lc`
+ * invocation (the printed paths would otherwise surface as the thrown error).
+ * @param {string[]} uniqueProbePaths
+ * @returns {string}
+ */
+export const buildRemoteSyncProbeScript = (uniqueProbePaths) => {
+  const lines = (Array.isArray(uniqueProbePaths) ? uniqueProbePaths : []).map((rel) => {
+    const quoted = shellQuote(rel);
+    return `[ -e "$HOME/.config/opencode"/${quoted} ] && printf '%s\\n' ${quoted}`;
+  });
+  lines.push(
+    `[ -e "$HOME/.agents" ] && printf '%s\\n' ${shellQuote(OPENCODE_AGENTS_ROOT_PROBE_MARKER)}`,
+  );
+  lines.push(
+    `[ -e "$HOME/.local/share/opencode/auth.json" ] && printf '%s\\n' ${shellQuote(OPENCODE_AUTH_FILE_PROBE_MARKER)}`,
+  );
+  lines.push('exit 0');
+  return lines.join('\n');
+};
+
+/**
+ * Collect stdout from a local `tar -h -czf - ...` into a Buffer.
+ * @param {string[]} tarArgs
+ * @returns {Promise<Buffer>}
+ */
+const collectLocalTarBuffer = (tarArgs) => new Promise((resolve, reject) => {
+  const child = spawn('tar', tarArgs, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...WINDOWS_HIDDEN_SPAWN_OPTIONS,
+  });
+  /** @type {Buffer[]} */
+  const chunks = [];
+  let stderr = '';
+  child.stdout?.on('data', (chunk) => {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  });
+  child.stderr?.on('data', (chunk) => {
+    stderr += chunk.toString();
+  });
+  child.on('error', reject);
+  child.on('close', (code) => {
+    if (code !== 0) {
+      reject(new Error((stderr || 'Local tar failed').trim()));
+      return;
+    }
+    resolve(Buffer.concat(chunks));
+  });
+});
+
 /** One-time UI password for an SSH-started remote OpenChamber. Memory-only. */
 export const createEphemeralUiPassword = () => crypto.randomBytes(24).toString('base64url');
 
@@ -359,6 +699,64 @@ const runRemoteCommand = async (parsed, controlPath, script, timeoutSec = DEFAUL
     throw new Error((stderr || stdout || 'Remote command failed').trim());
   }
   return stdout;
+};
+
+/**
+ * Like runRemoteCommand, but pipes a Buffer to ssh stdin (e.g. tar stream).
+ * @param {ReturnType<typeof parseSshCommand>} parsed
+ * @param {string} controlPath
+ * @param {string} script
+ * @param {Buffer} input
+ * @param {number} [timeoutSec]
+ * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
+ */
+const runRemoteCommandWithInput = async (parsed, controlPath, script, input, timeoutSec = DEFAULT_CONNECTION_TIMEOUT_SEC) => {
+  const args = buildSshArgs(parsed, [
+    '-o', 'ControlMaster=no',
+    '-o', `ControlPath=${controlPath}`,
+    '-o', `ConnectTimeout=${timeoutSec}`,
+    '-T',
+  ], `sh -lc ${shellQuote(script)}`);
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn('ssh', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...WINDOWS_HIDDEN_SPAWN_OPTIONS,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.stdin?.on('error', (error) => {
+      if (error && (error.code === 'EPIPE' || error.errno === 'EPIPE')) return;
+      reject(error);
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      const exitCode = typeof code === 'number' ? code : -1;
+      if (exitCode !== 0) {
+        reject(new Error((stderr || stdout || 'Remote command failed').trim()));
+        return;
+      }
+      resolve({ code: exitCode, stdout, stderr });
+    });
+
+    try {
+      child.stdin?.write(input);
+      child.stdin?.end();
+    } catch (error) {
+      if (error && (error.code === 'EPIPE' || error.errno === 'EPIPE')) {
+        // Peer closed early; close handler will surface the exit code.
+        return;
+      }
+      reject(error);
+    }
+  });
 };
 
 const controlMasterOperation = async (parsed, controlPath, op) => {
@@ -1245,6 +1643,161 @@ export class ElectronSshManager {
     });
     this.appendLogWithLevel(trimmed, 'INFO', `LAN forward ready on 0.0.0.0:${lanPort} → 127.0.0.1:${remotePort}`);
     return { localPort: lanPort };
+  }
+
+  /**
+   * Resolve a ready managed SSH session for OpenCode config sync.
+   * @param {string} id
+   */
+  resolveManagedReadySession(id) {
+    const trimmed = String(id || '').trim();
+    if (!trimmed || trimmed === LOCAL_HOST_ID) {
+      throw new Error('SSH instance id is required');
+    }
+    const session = this.sessions.get(trimmed);
+    if (!session || this.statuses.get(trimmed)?.phase !== 'ready') {
+      throw new Error('SSH instance is not connected');
+    }
+    if (session.instance?.remoteOpenchamber?.mode !== 'managed') {
+      throw new Error('OpenCode config sync requires a managed remote');
+    }
+    return { id: trimmed, session };
+  }
+
+  /**
+   * Preview local OpenCode config sync plan and which remote paths already exist.
+   * @param {string} id
+   * @returns {Promise<{ plan: ReturnType<typeof planOpenCodeConfigSync>, remoteExisting: string[], remoteAgentsRootExists: boolean, remoteAuthFileExists: boolean }>}
+   */
+  async previewOpencodeConfigSync(id) {
+    const { session } = this.resolveManagedReadySession(id);
+    const plan = planOpenCodeConfigSync(os.homedir());
+
+    const probePaths = [
+      ...plan.files.map((entry) => entry.path),
+      ...plan.directories.map((entry) => entry.path),
+      ...plan.deletes,
+    ];
+    const uniqueProbePaths = [...new Set(probePaths)];
+    const probeScript = buildRemoteSyncProbeScript(uniqueProbePaths);
+
+    const stdout = await runRemoteCommand(
+      session.parsed,
+      session.controlPath,
+      probeScript,
+      session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC,
+    );
+    const remoteLines = String(stdout || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const remoteAgentsRootExists = remoteLines.includes(OPENCODE_AGENTS_ROOT_PROBE_MARKER);
+    const remoteAuthFileExists = remoteLines.includes(OPENCODE_AUTH_FILE_PROBE_MARKER);
+    const remoteExisting = remoteLines.filter(
+      (line) => line !== OPENCODE_AGENTS_ROOT_PROBE_MARKER && line !== OPENCODE_AUTH_FILE_PROBE_MARKER,
+    );
+
+    return { plan, remoteExisting, remoteAgentsRootExists, remoteAuthFileExists };
+  }
+
+  /**
+   * Apply local OpenCode config sync to a managed SSH remote.
+   * On failure after prepare, remote backups remain for manual recovery; local side is untouched.
+   * Provider credentials: only `auth.json` under `~/.local/share/opencode` is transferred.
+   * @param {string} id
+   * @returns {Promise<{ ok: true, files: number, directories: number, deletes: number, totalBytes: number, agentsRoot: { fileCount: number } | null, authFile: { bytes: number } | null }>}
+   */
+  async applyOpencodeConfigSync(id) {
+    const { id: trimmed, session } = this.resolveManagedReadySession(id);
+    const home = os.homedir();
+    const configDir = path.join(home, '.config', 'opencode');
+    const plan = planOpenCodeConfigSync(home);
+    this.appendLogWithLevel(trimmed, 'INFO', 'Syncing OpenCode config to remote');
+
+    const tarEntries = [
+      ...plan.files.map((entry) => entry.path),
+      ...plan.directories.map((entry) => entry.path),
+    ];
+    const hasConfigPayload = tarEntries.length > 0;
+    const hasAgentsPayload = Boolean(plan.agentsRoot);
+    const hasAuthPayload = Boolean(plan.authFile);
+    if (!hasConfigPayload && !hasAgentsPayload && !hasAuthPayload) {
+      this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync: nothing to upload');
+      return {
+        ok: true,
+        files: plan.files.length,
+        directories: plan.directories.length,
+        deletes: plan.deletes.length,
+        totalBytes: plan.totalBytes,
+        agentsRoot: null,
+        authFile: null,
+      };
+    }
+
+    const configTarBuffer = hasConfigPayload
+      ? await collectLocalTarBuffer(['-h', '-czf', '-', '-C', configDir, ...tarEntries])
+      : null;
+    const agentsTarBuffer = hasAgentsPayload
+      ? await collectLocalTarBuffer(['-h', '-czf', '-', '-C', home, '.agents'])
+      : null;
+    const authShareDir = path.join(home, '.local', 'share', 'opencode');
+    const authTarBuffer = hasAuthPayload
+      ? await collectLocalTarBuffer(['-h', '-czf', '-', '-C', authShareDir, 'auth.json'])
+      : null;
+
+    const prepareScript = buildRemoteSyncPrepareScript(plan);
+    const prepareStdout = await runRemoteCommand(
+      session.parsed,
+      session.controlPath,
+      prepareScript,
+      session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC,
+    );
+    if (!String(prepareStdout || '').includes('SYNC_READY')) {
+      throw new Error('Remote sync prepare did not report SYNC_READY');
+    }
+
+    // Extract is a separate command after backup/delete. On failure, remote backup from prepare remains.
+    if (configTarBuffer) {
+      await runRemoteCommandWithInput(
+        session.parsed,
+        session.controlPath,
+        'mkdir -p "$HOME/.config/opencode" && tar -xzf - -C "$HOME/.config/opencode"',
+        configTarBuffer,
+        session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC,
+      );
+    }
+
+    if (agentsTarBuffer) {
+      await runRemoteCommandWithInput(
+        session.parsed,
+        session.controlPath,
+        'mkdir -p "$HOME" && tar -xzf - -C "$HOME"',
+        agentsTarBuffer,
+        session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC,
+      );
+    }
+
+    if (authTarBuffer) {
+      // Only auth.json — never the rest of ~/.local/share/opencode (session DBs live there).
+      await runRemoteCommandWithInput(
+        session.parsed,
+        session.controlPath,
+        'mkdir -p "$HOME/.local/share/opencode" && tar -xzf - -C "$HOME/.local/share/opencode"',
+        authTarBuffer,
+        session.instance?.connectionTimeoutSec || DEFAULT_CONNECTION_TIMEOUT_SEC,
+      );
+    }
+
+    this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync completed');
+    return {
+      ok: true,
+      files: plan.files.length,
+      directories: plan.directories.length,
+      deletes: plan.deletes.length,
+      totalBytes: plan.totalBytes,
+      agentsRoot: plan.agentsRoot ? { fileCount: plan.agentsRoot.fileCount } : null,
+      authFile: plan.authFile ? { bytes: plan.authFile.bytes } : null,
+    };
   }
 
   /** Best-effort rebuild on reconnect; never throws into the main connect path. */

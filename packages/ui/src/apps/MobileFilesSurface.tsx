@@ -85,7 +85,7 @@ const getImageSrc = (path: string): string => {
 
 const isMarkdownFile = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path);
 type MobileFilesSurfaceProps = {
-  /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileSurfaceShell. */
+  /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileResizableSheet / iPad right panel. */
   onClose?: () => void;
   /**
    * Absolute path to open immediately as file detail (Read tool / direct preview sheet).
@@ -324,10 +324,12 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
           <Icon name="refresh" className={cn('size-5', isLoadingDirectory && 'animate-spin')} />
         </button>
       </header>
-      <div className="shrink-0 px-4 pb-2 pt-1">
+      <div className="shrink-0 px-4 pb-2 pt-1" data-mobile-sheet-no-dismiss="">
         <div className="relative">
           <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            type="text"
+            inputMode="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t('mobile.files.search.placeholder')}
@@ -336,7 +338,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
         </div>
       </div>
 
-      <ScrollShadow className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
+      <ScrollShadow className="overlay-scrollbar-container min-h-0 flex-1 overflow-y-auto px-4 pb-3">
         {directoryError ? (
           <MobileFilesState message={directoryError} />
         ) : query.trim() ? (

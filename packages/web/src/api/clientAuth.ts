@@ -97,7 +97,7 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
     return {
       local: payload.local ?? null,
       lan: payload.lan ?? null,
-      relayAvailable: payload.relayAvailable !== false,
+      relayAvailable: payload.relayAvailable === true,
       ...(typeof payload.relayUrl === 'string' ? { relayUrl: payload.relayUrl } : {}),
       ...(typeof payload.relayUrlLocked === 'boolean' ? { relayUrlLocked: payload.relayUrlLocked } : {}),
     };

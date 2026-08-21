@@ -1,5 +1,7 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 
+import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useUIStore } from '@/stores/useUIStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useGitStore, useGitStatus, useIsGitRepo, useGitLoadingStatus } from '@/stores/useGitStore';
@@ -579,6 +581,8 @@ interface MultiFileDiffEntryProps {
     showOpenInEditorAction?: boolean;
     isOpeningInEditor?: boolean;
     onOpenInEditor?: (filePath: string, diffData: DiffData | null) => void;
+    /** Jump to this file in the file viewer (preview state for previewable types like md/png). */
+    onOpenFile?: (filePath: string) => void;
     staged?: boolean;
     loadFullFiles?: boolean;
     initialDiffData?: DiffData | null;
@@ -602,6 +606,7 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
     showOpenInEditorAction = false,
     isOpeningInEditor = false,
     onOpenInEditor,
+    onOpenFile,
     staged = false,
     loadFullFiles = false,
     initialDiffData = null,
@@ -618,7 +623,6 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
     );
     const setDiff = useGitStore((state) => state.setDiff);
     const fetchStatus = useGitStore((state) => state.fetchStatus);
-    const setDiffFileLayout = useUIStore((state) => state.setDiffFileLayout);
 
     const [diffRetryNonce, setDiffRetryNonce] = React.useState(0);
     const [diffLoadError, setDiffLoadError] = React.useState<string | null>(null);
@@ -874,15 +878,21 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                                 )}
                             </Button>
                         ) : null}
-                        <DiffViewToggle
-                            mode={renderSideBySide ? 'side-by-side' : 'unified'}
-                            onModeChange={(mode: DiffViewMode) => {
-                                const nextLayout: 'inline' | 'side-by-side' =
-                                    mode === 'side-by-side' ? 'side-by-side' : 'inline';
-                                setDiffFileLayout(file.path, nextLayout);
-                            }}
-                            className="opacity-70"
-                        />
+                        {onOpenFile ? (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0 opacity-70 hover:opacity-100"
+                                title={t('diffView.actions.openFilePreview')}
+                                aria-label={t('diffView.actions.openFilePreview')}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onOpenFile(file.path);
+                                }}
+                            >
+                                <Icon name="eye" className="size-3.5" />
+                            </Button>
+                        ) : null}
                     </div>
                 </div>
             </div>
@@ -1055,6 +1065,8 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const diffWrapLinesStore = useUIStore((state) => state.diffWrapLines);
     const setDiffWrapLines = useUIStore((state) => state.setDiffWrapLines);
     const openContextFileAtLine = useUIStore((state) => state.openContextFileAtLine);
+    const openContextFile = useUIStore((state) => state.openContextFile);
+    const mobileActions = useMobileAppActions();
     const globalSessionId = useSessionUIStore((state) => state.currentSessionId);
     // Prefer explicit session (nested/subagent panel); fall back to primary chat session.
     const resolvedSessionId = (typeof sessionId === 'string' && sessionId.trim())
@@ -1739,6 +1751,32 @@ export const DiffView: React.FC<DiffViewProps> = ({
         }
     }, [activeDiffStaged, effectiveDirectory, files, git, openContextFileAtLine, setDiff]);
 
+    /**
+     * Jump from a diff file row to the file viewer. Any file type is allowed;
+     * previewable types (md, png, ...) land in their preview state. Dedicated
+     * mobile routes through openFile so the Changes sheet closes properly.
+     */
+    const openDiffFilePreview = useEvent((filePath: string) => {
+        if (!effectiveDirectory || !filePath) {
+            return;
+        }
+
+        const absolutePath = toAbsolutePath(effectiveDirectory, filePath);
+
+        if (mobileActions) {
+            mobileActions.openFile({ path: absolutePath });
+            return;
+        }
+
+        void validateContextFileOpen(files, absolutePath).then((validation) => {
+            if (!validation.ok) {
+                toast.error(getContextFileOpenFailureMessage(validation.reason));
+                return;
+            }
+            openContextFile(effectiveDirectory, absolutePath);
+        });
+    });
+
     const renderStackedDiffView = () => {
         if (!effectiveDirectory) return null;
 
@@ -1793,6 +1831,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                                     onOpenInEditor={(filePath, diffData) => {
                                         void openFileInEditorAtChange(filePath, diffData);
                                     }}
+                                    onOpenFile={openDiffFilePreview}
                                     staged={getFileStaged(file.path)}
                                     loadFullFiles={loadFullFiles}
                                     initialDiffData={activeDiffScope === 'turn' ? lastTurnDiffData.get(file.path) ?? null : null}

@@ -395,7 +395,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     // Returns { local, lan, relayAvailable } — the direct transport URLs the
     // server can actually be reached on (LAN derived from the server bind, not
     // the UI origin), for the create-device dialog.
-    getPairingTransports = () => ({ local: null, lan: null, relayAvailable: true }),
+    getPairingTransports = () => ({ local: null, lan: null, relayAvailable: false }),
     // Returns ALL direct LAN URLs the server is currently reachable on (client-
     // reached address first, then interface scan) for the candidates-refresh
     // endpoint. Empty when the server is loopback-only.

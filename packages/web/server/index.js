@@ -90,7 +90,7 @@ import { applyRuntimeCorsHeaders } from './lib/request-cors.js';
 import { createClientPairingRuntime } from './lib/client-auth/pairing.js';
 import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
 import { attachRealtimeProxy } from './lib/realtime-proxy.js';
-import { createRelayService } from './lib/relay/service.js';
+import { createRelayService, isDesktopRelayHostRuntime } from './lib/relay/service.js';
 import { createRelayHostLock } from './lib/relay/host-lock.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import webPush from 'web-push';
@@ -1184,7 +1184,9 @@ async function main(options = {}) {
       if (h && h !== '127.0.0.1' && h !== 'localhost' && h !== '::1') lanHost = effectiveBindHost;
     }
     const lan = lanHost ? `http://${lanHost.includes(':') ? `[${lanHost}]` : lanHost}:${activePort}` : null;
-    return { local, lan, relayAvailable: true };
+    // Only the desktop host may advertise relay. Local `dev` / `web` / CLI
+    // servers must not present "Anywhere" as available or trigger a probe.
+    return { local, lan, relayAvailable: isDesktopRelayHostRuntime() };
   };
   // ALL direct LAN URLs this server is currently reachable on, for the
   // candidates-refresh endpoint: the address the requesting client already
@@ -1422,7 +1424,7 @@ async function main(options = {}) {
     reconcileRelay: () => (relayServiceInstance ? relayServiceInstance.reconcile() : Promise.resolve()),
     getPairingTransports: async (req) => {
       const transports = resolvePairingTransports(req);
-      if (!relayServiceInstance) return transports;
+      if (!relayServiceInstance || !transports.relayAvailable) return transports;
       const relay = await relayServiceInstance.getStatus();
       return {
         ...transports,
@@ -1637,18 +1639,19 @@ async function main(options = {}) {
   }
 
   // Only Electron (OPENCHAMBER_RUNTIME=desktop) opens a relay host-control
-  // socket. Other runtimes no-op reconcile. When allowed, demand-driven: run if
-  // any relay device/session exists, stop (and clear a stale enabled flag)
-  // otherwise.
-  void relayService.reconcile();
-
-  // Relay demand can change outside our routes: pending sessions expire, or a
-  // paired device is revoked, without hitting our management routes. Poll so
-  // the desktop host picks demand up (or drops it) within a minute.
-  const relayReconcileTimer = setInterval(() => {
+  // socket or polls relay demand. Local `dev` / `web` never reconcile, so they
+  // cannot inherit a leftover desktop env and start probing the relay.
+  let relayReconcileTimer = null;
+  if (isDesktopRelayHostRuntime()) {
     void relayService.reconcile();
-  }, 60_000);
-  relayReconcileTimer.unref?.();
+    // Relay demand can change outside our routes: pending sessions expire, or a
+    // paired device is revoked, without hitting our management routes. Poll so
+    // the desktop host picks demand up (or drops it) within a minute.
+    relayReconcileTimer = setInterval(() => {
+      void relayService.reconcile();
+    }, 60_000);
+    relayReconcileTimer.unref?.();
+  }
 
   return {
     expressApp: app,
@@ -1694,7 +1697,7 @@ async function main(options = {}) {
         console.warn('[message-queue] Failed to close durable database during shutdown');
       }
       realtimeProxyRuntime.stop();
-      clearInterval(relayReconcileTimer);
+      if (relayReconcileTimer) clearInterval(relayReconcileTimer);
       try {
         relayService.stop();
       } catch {

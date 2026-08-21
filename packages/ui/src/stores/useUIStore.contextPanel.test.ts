@@ -35,6 +35,24 @@ describe('useUIStore context panel tabs', () => {
     expect(reopenedTabs[0]?.diffSessionId).toBe('ses_child_2');
   });
 
+  test('opens a file preview with a degraded turn-diff notice', () => {
+    const directory = '/repo';
+
+    useUIStore.getState().openContextFile(directory, '/Users/dev/.config/opencode/skills/clonedeps/SKILL.md', {
+      fileNotice: 'turn-diff-outside-workspace',
+    });
+
+    const tab = useUIStore.getState().contextPanelByDirectory[directory]?.tabs[0];
+    expect(tab?.mode).toBe('file');
+    expect(tab?.targetPath).toBe('/Users/dev/.config/opencode/skills/clonedeps/SKILL.md');
+    expect(tab?.fileNotice).toBe('turn-diff-outside-workspace');
+
+    useUIStore.getState().openContextFile(directory, '/Users/dev/.config/opencode/skills/clonedeps/SKILL.md');
+
+    const cleared = useUIStore.getState().contextPanelByDirectory[directory]?.tabs[0];
+    expect(cleared?.fileNotice).toBe(null);
+  });
+
   test('keeps a clicked tool patch transient and clears it for regular diff navigation', () => {
     const directory = '/repo';
     const patch = '--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-old\n+new\n ';

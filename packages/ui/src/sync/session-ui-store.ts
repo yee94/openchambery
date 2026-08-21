@@ -35,6 +35,7 @@ import { getWorktreeSetupWaitEnabled } from "@/lib/openchamberConfig"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { createUuid } from "@/lib/uuid"
 import { ascendingId } from "./message-id"
+import { readContextTokenCount, scanContextTokenBaseline } from "./context-token-baseline"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import type { ConversationCreateWithPromptResult, ConversationCreateWithPromptInput } from "@/lib/api/types"
 import type { I18nKey } from "@/lib/i18n/messages/en"
@@ -1847,28 +1848,18 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const messages = getSyncMessages(sessionId)
     if (messages.length === 0) return null
 
-    type AssistantTokens = { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
-    let lastTokens: AssistantTokens | undefined
-    let lastMessageId: string | undefined
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg.role !== "assistant") continue
-      const tokens = (msg as { tokens?: AssistantTokens }).tokens
-      if (!tokens) continue
-      const total = tokens.input + tokens.output + tokens.reasoning + (tokens.cache?.read ?? 0) + (tokens.cache?.write ?? 0)
-      if (total > 0) {
-        lastTokens = tokens
-        lastMessageId = msg.id
-        break
-      }
-    }
+    // A compaction row newer than the last token-bearing assistant resets the
+    // baseline: pre-compaction counts no longer describe the live context
+    // window, so usage stays unknown until a post-compaction assistant
+    // publishes tokens.
+    const baseline = scanContextTokenBaseline(messages, (messageId) => getSyncParts(messageId))
+    if (!baseline || "compacted" in baseline) return null
+    const lastTokens = baseline.tokens
 
-    if (!lastTokens) return null
-
-    const totalTokens = lastTokens.input + lastTokens.output + lastTokens.reasoning + (lastTokens.cache?.read ?? 0) + (lastTokens.cache?.write ?? 0)
+    const totalTokens = baseline.totalTokens
     const thresholdLimit = contextLimit > 0 ? contextLimit : 200000
     const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0
-    const normalizedOutput = outputLimit > 0 ? Math.round((lastTokens.output / outputLimit) * 100) : undefined
+    const normalizedOutput = outputLimit > 0 ? Math.round((readContextTokenCount(lastTokens.output) / outputLimit) * 100) : undefined
 
     return {
       totalTokens,
@@ -1877,7 +1868,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       outputLimit: outputLimit || undefined,
       normalizedOutput,
       thresholdLimit,
-      lastMessageId,
+      lastMessageId: baseline.messageId,
     }
   },
 

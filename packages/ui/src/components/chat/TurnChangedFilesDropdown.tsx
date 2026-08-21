@@ -9,7 +9,6 @@ import {
     type ChangedFileEntry,
     FILE_EDIT_TOOLS,
     extractChangedFiles,
-    toRelativePath,
 } from './changedFiles';
 import { ChangedFilesList } from './ChangedFilesList';
 import { changedFilesPopoverClassName, changedFilesPopoverStyle } from './changedFilesPopover';
@@ -17,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Icon } from "@/components/icon/Icon";
 import type { TurnActivityRecord } from './lib/turns/types';
 import { useSessionSurface } from './SessionSurfaceContext';
+import { openTurnChangedFilePreview } from './openTurnChangedFile';
 
 interface TurnChangedFilesDropdownProps {
     activityParts: TurnActivityRecord[] | undefined;
@@ -57,23 +57,12 @@ export const TurnChangedFilesDropdown: React.FC<TurnChangedFilesDropdownProps> =
         if (!currentDirectory) return;
 
         const store = useUIStore.getState();
-        const relativePath = toRelativePath(file.path, currentDirectory);
-        if (!store.isMobile) {
-            store.openContextDiff(
-                currentDirectory,
-                relativePath,
-                false,
-                'turn',
-                undefined,
-                undefined,
-                sessionSurface.sessionId,
-            );
-            setIsExpanded(false);
-            return;
-        }
-
-        store.navigateToDiff(relativePath, false, 'turn');
-        store.setRightSidebarOpen(false);
+        openTurnChangedFilePreview({
+            directory: currentDirectory,
+            filePath: file.path,
+            sessionId: sessionSurface.sessionId,
+            mobile: store.isMobile,
+        });
         setIsExpanded(false);
     };
 

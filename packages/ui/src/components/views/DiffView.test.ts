@@ -169,3 +169,17 @@ describe('DiffView turn-scope on-demand session.diff contract', () => {
     expect(diffViewSource).toContain('const effectiveDirectory = (typeof directory === \'string\' && directory.trim())');
   });
 });
+
+describe('DiffView per-file row action contract', () => {
+  test('file rows jump to the file viewer instead of duplicating the layout toggle', () => {
+    // Only the toolbar may render the global layout toggle.
+    expect(diffViewSource.split('<DiffViewToggle').length - 1).toBe(1);
+    // Per-file rows navigate to the file (preview state for previewable types).
+    expect(diffViewSource).toContain('onOpenFile?: (filePath: string) => void');
+    expect(diffViewSource).toContain('onOpenFile={openDiffFilePreview}');
+    expect(diffViewSource).toContain('diffView.actions.openFilePreview');
+    // Dedicated mobile routes through the mobile file sheet; desktop validates then opens.
+    expect(diffViewSource).toContain('mobileActions.openFile({ path: absolutePath })');
+    expect(diffViewSource).toContain('openContextFile(effectiveDirectory, absolutePath)');
+  });
+});

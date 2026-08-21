@@ -115,6 +115,8 @@ describe('MobileWindowMotion recipe', () => {
 
   test('keeps compact resizable sheets content-sized below the collapsed maximum', () => {
     expect(mobileResizableSheetSource).toContain("? 'h-auto max-h-[72dvh]'");
+    expect(mobileResizableSheetSource).toContain('trailing?: React.ReactNode;');
+    expect(mobileResizableSheetSource).toContain('{trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}');
     expect(mobileResizableSheetSource).not.toContain('border-b border-border/40');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('rounded-t-2xl');
   });

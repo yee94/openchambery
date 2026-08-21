@@ -19,6 +19,7 @@ Command modules implement user-facing commands and preserve output contracts acr
   - Implements `openchamber serve`.
   - Owns OpenCode CLI checks, port resolution, log rotation, PID/instance registry writes, foreground/background server launch, startup summaries, and foreground shutdown behavior.
   - The Host process always inherits the CLI's Node executable. Do not select Bun based on PATH availability: the Web API owns `better-sqlite3` and requires the prepared Node ABI.
+  - Sets `OPENCHAMBER_RUNTIME=web` for both foreground and daemon children so a leftover desktop env cannot host or probe the private relay.
 
 - `commands-lifecycle.js`
   - Implements `openchamber stop` and `openchamber restart`.

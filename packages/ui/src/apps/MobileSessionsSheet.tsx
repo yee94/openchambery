@@ -57,12 +57,12 @@ import {
   getMobileSessionShowMoreIncrement,
   mergeMobileWorktreeRefreshResults,
 } from './mobileSessionPagination';
-import { MobileSurfaceShell } from './MobileSurfaceShell';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 
 type MobileSessionsSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 'sheet' (default) wraps the content in the swipe-dismiss MobileSurfaceShell;
+  /** 'sheet' (default) wraps the content in MobileResizableSheet;
       'sidebar' renders the same content inline for the iPad persistent sidebar. */
   variant?: 'sheet' | 'sidebar';
 };
@@ -1448,7 +1448,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           </div>
         </div>
 
-        <ScrollShadow className="min-h-0 flex-1 overflow-y-auto pb-4">
+        <ScrollShadow className="overlay-scrollbar-container min-h-0 flex-1 overflow-y-auto pb-4">
           {projectsMeta.length === 0 ? (
             <MobileSessionsEmpty
               title={t('mobile.sessions.empty.noProjectsTitle')}
@@ -1906,14 +1906,18 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   }
 
   return (
-    <MobileSurfaceShell
+    <MobileResizableSheet
+      id="mobile-sessions-sheet"
       open={open}
-      onClose={() => onOpenChange(false)}
-      ariaLabel={t('mobile.sessions.sheet.title')}
+      onOpenChange={onOpenChange}
       trailing={trailingActions}
+      ariaLabel={t('mobile.sessions.sheet.title')}
+      closeAriaLabel={t('mobile.surface.closeAria')}
+      resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+      initiallyExpanded
     >
       {surfaceContent}
-    </MobileSurfaceShell>
+    </MobileResizableSheet>
   );
 };
 

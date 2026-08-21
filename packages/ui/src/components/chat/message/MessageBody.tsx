@@ -66,6 +66,7 @@ import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { parseSubagentNotification, type SubagentNotification } from './parts/taskToolModel';
+import { openTurnChangedFilePreview } from '../openTurnChangedFile';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const };
@@ -194,8 +195,6 @@ const TurnChangesPreview = React.memo(({
     // Nested/subagent surfaces own their directory + session; primary falls back to global.
     const diffDirectory = sessionSurface.directory || effectiveDirectory;
     const diffSessionId = sessionSurface.sessionId;
-    const navigateToDiff = useUIStore((state) => state.navigateToDiff);
-    const openContextDiff = useUIStore((state) => state.openContextDiff);
     const mobileActions = useMobileAppActions();
     const visibleFiles = files.slice(0, 5);
     const hiddenCount = Math.max(0, files.length - visibleFiles.length);
@@ -229,12 +228,23 @@ const TurnChangesPreview = React.memo(({
         }
 
         if (!isMobile && diffDirectory) {
-            openContextDiff(diffDirectory, file, false, 'turn', undefined, turnId, diffSessionId);
+            openTurnChangedFilePreview({
+                directory: diffDirectory,
+                filePath: file,
+                turnMessageId: turnId,
+                sessionId: diffSessionId,
+            });
             return;
         }
 
-        if (isMobile && isLatestTurn) {
-            navigateToDiff(file, false, 'turn');
+        if (isMobile && isLatestTurn && diffDirectory) {
+            openTurnChangedFilePreview({
+                directory: diffDirectory,
+                filePath: file,
+                turnMessageId: turnId,
+                sessionId: diffSessionId,
+                mobile: true,
+            });
         }
     });
 

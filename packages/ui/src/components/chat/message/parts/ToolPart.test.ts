@@ -296,6 +296,32 @@ describe('apply_patch navigation', () => {
         expect(mobileChangesSurfaceSource).toContain('hideHeader={hideDiffHeader}');
         expect(mobileChangesSurfaceSource).toContain('p-3 pwa-overlay-scroll');
     });
+
+    test('hosts mobile files and changes windows with stable window ids', () => {
+        expect(mobileAppSource).toContain("const MOBILE_FILES_WINDOW_ID = 'mobile-files'");
+        expect(mobileAppSource).toContain("const MOBILE_CHANGES_WINDOW_ID = 'mobile-changes'");
+        expect(mobileAppSource).toContain('id={MOBILE_FILES_WINDOW_ID}');
+        expect(mobileAppSource).toContain('id={MOBILE_CHANGES_WINDOW_ID}');
+    });
+
+    test('keeps gesture sheets controlled so dismiss settle cannot re-present', () => {
+        const filesStart = mobileAppSource.indexOf('<MobileResizableSheet\n            id={MOBILE_FILES_WINDOW_ID}');
+        const filesEnd = mobileAppSource.indexOf('{filePreviewOpen && pendingFilePreview ? (', filesStart);
+        const filesPresentation = mobileAppSource.slice(filesStart, filesEnd);
+        expect(filesPresentation).toContain('open={filesOpen}');
+        expect(filesPresentation).not.toMatch(/\n\s+open\n/);
+
+        const changesListStart = mobileAppSource.indexOf('<MobileResizableSheet\n            id={MOBILE_CHANGES_WINDOW_ID}');
+        const changesListEnd = mobileAppSource.indexOf('{mcpOpen ? (', changesListStart);
+        const changesListPresentation = mobileAppSource.slice(changesListStart, changesListEnd);
+        expect(changesListPresentation).toContain('open={changesOpen}');
+        expect(changesListPresentation).not.toMatch(/\n\s+open\n/);
+
+        expect(mobileAppSource).toContain('open={filePreviewOpen}');
+        expect(mobileAppSource).toContain('open={mcpOpen}');
+        expect(mobileAppSource).toContain('open={updateOpen}');
+        expect(mobileAppSource).not.toContain('MobileSurfaceShell');
+    });
 });
 
 describe('context diff navigation', () => {

@@ -1,3 +1,5 @@
+import { scanContextTokenBaseline } from '@/sync/context-token-baseline';
+
 export type MobileContextDisplay = {
   percentage: number;
   tokens: string;
@@ -42,6 +44,7 @@ export const buildMobileContextDisplay = (input: {
 };
 
 type MessageLike = {
+  id?: string;
   role?: string;
   model?: { providerID?: string; modelID?: string };
   tokens?: {
@@ -69,16 +72,15 @@ export const getLatestUserMessageModel = (
   return null;
 };
 
-export const getLatestAssistantTotalTokens = (messages: readonly MessageLike[]): number => {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message.role !== 'assistant' || !message.tokens) continue;
-    const total = getTokenCount(message.tokens.input)
-      + getTokenCount(message.tokens.output)
-      + getTokenCount(message.tokens.reasoning)
-      + getTokenCount(message.tokens.cache?.read)
-      + getTokenCount(message.tokens.cache?.write);
-    if (total > 0) return total;
-  }
-  return 0;
+export const getLatestAssistantTotalTokens = (
+  messages: readonly MessageLike[],
+  getParts?: (messageId: string) => readonly unknown[] | undefined,
+): number => {
+  // A compaction row newer than the last token-bearing assistant resets the
+  // baseline: pre-compaction counts no longer describe the live context
+  // window, so usage stays unknown (0 hides the display) until a
+  // post-compaction assistant publishes tokens.
+  const baseline = scanContextTokenBaseline(messages, getParts ?? (() => undefined));
+  if (!baseline || 'compacted' in baseline) return 0;
+  return baseline.totalTokens;
 };

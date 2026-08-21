@@ -202,7 +202,7 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 - One-click open/reveal/open-in-app actions.
 - Desktop host switcher and deep-link imports.
 - Local and remote instance handling.
-- SSH host import, connections, logs, and port forwarding. Managed SSH remotes always start with a UI password (configured or a one-time in-memory secret); the desktop mints the SSH host token through that password over the tunnel.
+- SSH host import, connections, logs, and port forwarding. Managed SSH remotes always start with a UI password (configured or a one-time in-memory secret); the desktop mints the SSH host token through that password over the tunnel. Managed SSH remotes can mirror the local `~/.config/opencode` allowlist (config json/jsonc winner + agents/commands/skills/plugins dirs, symlinks dereferenced), the `~/.agents` agent skills root, and provider `~/.local/share/opencode/auth.json` (that file only — never session DBs under the same share dir) to the remote after connect, with remote-side backups under `.openchamber.sync-backup` / `.openchamber.sync-backup-agents` / `.openchamber.sync-backup-auth` and stale counterpart deletion.
 - Auto-update checks, downloads, and restart/apply flow.
 
 ## IPC Pattern
