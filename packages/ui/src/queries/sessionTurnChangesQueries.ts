@@ -41,6 +41,14 @@ const normalizeDirectory = (directory: string): string => directory.trim();
 const isLegacyHostFallbackStatus = (status: number): boolean =>
   status === 404 || status === 405 || status === 501;
 
+const isSessionTurnChangeFileResponse = (
+  payload: unknown,
+): payload is SessionTurnChangeFileResponse => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  const diff = (payload as { diff?: unknown }).diff;
+  return Boolean(diff) && typeof diff === 'object' && !Array.isArray(diff);
+};
+
 const findLegacyFileDiff = (
   diffs: unknown,
   file: string,
@@ -115,13 +123,13 @@ export const sessionTurnChangeFileQueryOptions = (
   queryFn: async ({ signal }: { signal: AbortSignal }): Promise<SessionTurnChangeFileResponse> => {
     const response = await fetchOpenChamberChanges(input, signal);
     if (response.ok) {
-      const payload = await response.json().catch(() => null) as SessionTurnChangeFileResponse | null;
-      if (!payload || !payload.diff || typeof payload.diff !== 'object') {
-        throw new Error('Invalid session turn change file response');
+      const payload = await response.json().catch(() => null);
+      if (isSessionTurnChangeFileResponse(payload)) {
+        return payload;
       }
-      return payload;
-    }
-    if (!isLegacyHostFallbackStatus(response.status)) {
+      // Older hosts expose /changes as L2 `{ files }` only and ignore `file=`.
+      // A 200 without `{ diff }` is a missing-L3 signal, not a valid empty file.
+    } else if (!isLegacyHostFallbackStatus(response.status)) {
       throw new Error(`Session turn change file request failed (${response.status})`);
     }
     const diffs = await fallbackLegacySessionDiff(input, signal);

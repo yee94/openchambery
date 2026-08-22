@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.27] - 2026-08-22
+
+### 变更
+
+- **新客户端连旧服时，turn 文件 diff 不再盖「加载差异失败」：** 旧 Host 的 `/changes` 可能回 200 但只有文件列表、没有单文件 `{ diff }`。客户端现在把它当成缺 L3，回退到官方 `session.diff`；已经画出来的 diff 也不会再被错误条挡住。
+
 ## [1.18.2-beta.26] - 2026-08-22
 
 ### 移动端

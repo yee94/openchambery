@@ -688,7 +688,9 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
         : turnChangeFileQuery.error
             ? String(turnChangeFileQuery.error)
             : null;
-    const visibleDiffLoadError = turnChangeError ?? diffLoadError;
+    const visibleDiffLoadError = diffData
+        ? null
+        : (turnChangeError ?? diffLoadError);
     const visibleIsLoading = (loadTurnChangeFile && turnChangeFileQuery.isPending) || isLoading;
 
     const diffDataMatchesContextMode = diffData?.contextMode === desiredContextMode;
