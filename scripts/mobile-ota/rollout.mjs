@@ -30,7 +30,9 @@ import { Readable } from 'node:stream'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '../..')
 
-const DEFAULT_OTA_BASE = 'https://openchamber.xiaobe.top'
+// CI deploys snapshots to Vercel; it is the authoritative OTA origin. The
+// EdgeOne host stays client-readable as a legacy mirror but never as write source.
+const DEFAULT_OTA_BASE = 'https://openchamber-update.vercel.app'
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const ALLOWED_CHANNELS = new Set(['beta', 'stable'])

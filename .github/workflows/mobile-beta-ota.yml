@@ -39,7 +39,7 @@ permissions:
   contents: write
 
 env:
-  OTA_BASE_URL: https://openchamber.xiaobe.top
+  OTA_BASE_URL: https://openchamber-update.vercel.app
   MOBILE_APP_ID: com.yee94.openchamber
   MAX_BUNDLE_BYTES: 25165824 # 24 MiB
 

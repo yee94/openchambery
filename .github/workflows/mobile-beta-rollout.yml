@@ -72,7 +72,7 @@ permissions:
   contents: read
 
 env:
-  OTA_BASE_URL: https://openchamber.xiaobe.top
+  OTA_BASE_URL: https://openchamber-update.vercel.app
 
 jobs:
   rollout:

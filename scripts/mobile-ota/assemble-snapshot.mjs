@@ -8,7 +8,8 @@
  *   <out>/ota/channels/<other>.json   (full-snapshot mirror)
  *   <out>/ota-meta.json
  *
- * Fetches the live channel manifest from OTA_BASE_URL (default EdgeOne host).
+ * Fetches the live channel manifest from OTA_BASE_URL (default: the Vercel
+ * origin that CI auto-deploys — the authoritative OTA source of truth).
  * 404 → start generation 1 with empty rollbacks.
  * Other HTTP errors → abort (never silently reset a live channel).
  *
@@ -32,7 +33,9 @@ import { Readable } from 'node:stream'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '../..')
 
-const DEFAULT_OTA_BASE = 'https://openchamber.xiaobe.top'
+// CI deploys snapshots to Vercel; it is the authoritative OTA origin. The
+// EdgeOne host stays client-readable as a legacy mirror but never as write source.
+const DEFAULT_OTA_BASE = 'https://openchamber-update.vercel.app'
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
 const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
 
