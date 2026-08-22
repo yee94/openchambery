@@ -363,8 +363,15 @@ describe('assistants service', () => {
     service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_saved', sessionID: first.sessionID, role: 'assistant', time: { created: 1 } } } }); service.close();
     const Database = require('better-sqlite3'); const db = new Database(path.join(directory, 'assistants.sqlite')); db.prepare('DELETE FROM assistant_message_backfill').run(); db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?)').run(assistant.id, first.sessionID, null, 0, 1); db.close();
     const restarted = setup(directory, { messages: async () => ({ error: { status: 503 } }) });
-    await expect(restarted.historicalMessages(assistant.id, { limit: 10 })).rejects.toMatchObject({ code: 'upstream_error' }); restarted.close();
-    const persisted = new Database(path.join(directory, 'assistants.sqlite')); expect(persisted.prepare('SELECT message_id FROM assistant_message_mirror').all()).toEqual([{ message_id: 'msg_saved' }]); persisted.close();
+    const page = await restarted.historicalMessages(assistant.id, { limit: 10 });
+    expect(page.entries.map((entry) => entry.info.id)).toEqual(['msg_saved']);
+    expect(page.complete).toBe(false);
+    expect(page.nextCursor).toEqual(expect.any(String));
+    restarted.close();
+    const persisted = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(persisted.prepare('SELECT message_id,covered FROM assistant_message_mirror').all()).toEqual([{ message_id: 'msg_saved', covered: 0 }]);
+    expect(persisted.prepare('SELECT complete FROM assistant_message_backfill WHERE session_id=?').get(first.sessionID)).toEqual({ complete: 0 });
+    persisted.close();
   });
 
   it('retries a transient session.messages failure once then succeeds', async () => {
@@ -508,7 +515,7 @@ describe('assistants service', () => {
       messages: async ({ sessionID }) => {
         calls += 1;
         return {
-          data: [{ info: { id: 'msg_1', sessionID, role: 'assistant', time: { created: 1 } }, parts: [{ id: 'part_1', sessionID, messageID: 'msg_1', type: 'text', text: 'hello' }] }],
+          data: [{ info: { id: 'msg_1', sessionID, role: 'assistant', time: { created: 1 }, status: 'completed' }, parts: [{ id: 'part_1', sessionID, messageID: 'msg_1', type: 'text', text: 'hello updated' }] }],
           response: { headers: { get: () => null } },
         };
       },
@@ -532,6 +539,9 @@ describe('assistants service', () => {
       parts: [{ id: 'part_1', sessionID: first.sessionID, messageID: 'msg_1', type: 'text', text: 'hello updated' }],
     }]);
     expect(calls).toBe(2);
+    const after = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(after.prepare('SELECT covered FROM assistant_message_mirror WHERE session_id=? AND message_id=?').get(first.sessionID, 'msg_1')).toEqual({ covered: 1 });
+    after.close();
     service.close();
   });
 

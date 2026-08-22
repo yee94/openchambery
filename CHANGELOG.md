@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.24] - 2026-08-22
+
+### 移动端
+
+- **彻底修复 Android 整体偏大（字体+显示大小双缩放）：** Android 系统的「字体大小」与「显示大小」会在 WebView 里叠乘放大（最多约 2 倍），beta.23 只抵消了前者。现在原生层同时钉死 `fontScale` 与 `densityDpi`（出厂密度），CSS px 与 iOS pt 1:1 对齐，并在 onResume 幂等兜底 `textZoom(100)`；应用内字号设置不受影响。
+
 ## [1.18.2-beta.23] - 2026-08-22
 
 ### 移动端

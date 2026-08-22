@@ -1,6 +1,9 @@
 package com.openchamber.app;
 
+import android.content.Context;
+import android.content.res.Configuration;
 import android.os.Bundle;
+import android.util.DisplayMetrics;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -9,6 +12,21 @@ public class MainActivity extends BridgeActivity {
     static final String ACTION_ASSISTANT_OPEN_READY = "com.openchamber.app.ASSISTANT_OPEN_READY";
 
     private ImeSyncBridge imeSyncBridge;
+
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        // iOS WKWebView ignores the system font size and display size for web
+        // content. Android multiplies the system font scale into WebView
+        // textZoom AND the display size (densityDpi) into the whole-page DIP
+        // scale; the two stack up to ~2x. Pin both on a Configuration copy so
+        // CSS px matches iOS pt 1:1. Must edit a copy — never the system
+        // Configuration object itself.
+        // Reference: https://stackoverflow.com/questions/56779224
+        Configuration config = new Configuration(newBase.getResources().getConfiguration());
+        config.fontScale = 1.0f;
+        config.densityDpi = DisplayMetrics.DENSITY_DEVICE_STABLE;
+        super.attachBaseContext(newBase.createConfigurationContext(config));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,15 +44,30 @@ public class MainActivity extends BridgeActivity {
         // IME bookends for cached-height CSS composer choreography.
         // Double-post = after load.
         if (getBridge() != null && getBridge().getWebView() != null) {
-            // Keep CSS px at 100% so Android system font scale does not inflate
-            // WebView text relative to iOS WKWebView.
-            getBridge().getWebView().getSettings().setTextZoom(100);
+            applyDeviceParityTextZoom();
             getBridge().getWebView().post(() ->
                 getBridge().getWebView().post(() -> {
                     imeSyncBridge = new ImeSyncBridge(this);
                     imeSyncBridge.attach();
                 })
             );
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Idempotent safety net: AwSettings multiplies fontScale into textZoom
+        // only once at WebView construction and setTextZoom is an absolute
+        // override, so re-applying covers any unexpected restore path.
+        applyDeviceParityTextZoom();
+    }
+
+    private void applyDeviceParityTextZoom() {
+        // Keep CSS px at 100% so Android system font scale does not inflate
+        // WebView text relative to iOS WKWebView.
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().getSettings().setTextZoom(100);
         }
     }
 

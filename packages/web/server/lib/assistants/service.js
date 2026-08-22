@@ -367,15 +367,18 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     };
     const nextIncomplete = (boundary = before?.scanSessionOrdinal ?? before?.sessionOrdinal ?? null) => db.prepare(`SELECT h.* FROM assistant_session_history h LEFT JOIN assistant_message_backfill b ON b.assistant_id=h.assistant_id AND b.session_id=h.session_id WHERE h.assistant_id=? AND (b.complete IS NULL OR b.complete=0) AND (? IS NULL OR h.ordinal<=?) ORDER BY h.ordinal DESC LIMIT 1`).get(row.assistant_id, boundary, boundary ?? 0);
     let rows = pageRows();
-    for (let page = 0; rows.length < limit + 1 && page < BACKFILL_MAX_PAGES; page++) {
+    // Demand-backfill incomplete archived sessions even when provisional
+    // mirrors already fill the page, so authoritative upserts can elevate
+    // covered=0 fallbacks. Cap remains BACKFILL_MAX_PAGES per request.
+    for (let page = 0; page < BACKFILL_MAX_PAGES; page++) {
       const target = nextIncomplete();
       if (!target) break;
       try {
         await backfillSession(target);
       } catch (error) {
-        // A persisted admitted row is already useful authoritative Assistant
-        // history. Preserve and serve it while leaving the incomplete cursor
-        // retryable instead of turning an OpenCode outage into an empty wall.
+        // Partial-result scope is this request's pageRows() only: any already
+        // visible covered or provisional row keeps the page usable and the
+        // incomplete cursor retryable. An empty current page still throws.
         if (rows.length === 0) throw error;
         break;
       }
