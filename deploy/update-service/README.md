@@ -149,4 +149,6 @@ Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne)
 
 ### Deploying bundles and channels
 
-CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The next Vercel/EdgeOne deployment serves that snapshot; the Edge handlers only read those static files at request time.
+CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The Vercel origin (`openchamber-update.vercel.app`) is authoritative — CI deploys snapshots there via `vercel deploy --prebuilt`.
+
+The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries the seeds. To keep it current, `edge-functions/ota/[...path].js` reverse-proxies `/ota/channels/*.json` and `/ota/bundles/*.zip` to the Vercel origin with edge-friendly cache headers (channels `s-maxage=60` + stale-while-revalidate, bundles `immutable`). The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative no-update.
