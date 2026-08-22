@@ -91,7 +91,7 @@ test('upstream failure surfaces as 502, never as authoritative empty success', a
   );
   assert.equal(response.status, 502);
   assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.deepEqual(await response.json(), { error: 'ota_upstream_unavailable' });
+  assert.deepEqual(await response.json(), { error: 'ota_upstream_unavailable', detail: 'Error: network down' });
 });
 
 test('HEAD requests return empty body but keep headers', async () => {

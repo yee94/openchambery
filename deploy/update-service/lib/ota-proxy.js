@@ -54,14 +54,25 @@ export async function handleOtaProxyRequest(request, options = {}) {
   if (!isBundle && !CHANNEL_PATH_PATTERN.test(path)) return notFound();
 
   let upstream;
+  let upstreamError = 'unknown';
   try {
     upstream = await fetchImpl(origin + path, {
       method,
       headers: { Accept: '*/*' },
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-  } catch {
-    return upstreamUnavailable();
+  } catch (error) {
+    upstreamError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    // Never masquerade an origin failure as an authoritative empty result.
+    // Include the failure reason so edge/origin reachability issues are
+    // diagnosable from the response alone.
+    return new Response(JSON.stringify({ error: 'ota_upstream_unavailable', detail: upstreamError }), {
+      status: 502,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      },
+    });
   }
 
   if (!upstream.ok) {
