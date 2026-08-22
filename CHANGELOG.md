@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.35] - 2026-08-23
+
+### 聊天
+
+- **sorted 流式正文不再重复显示：** 修复 beta.34 引入的回归——流式中的正文段落同时出现在正文区和 Activity 里。现在同一段文字任意时刻只渲染一处：流式期间留在正文区，步骤结束后整理进 Activity。
+
 ## [1.18.2-beta.34] - 2026-08-23
 
 ### 更新卡片
