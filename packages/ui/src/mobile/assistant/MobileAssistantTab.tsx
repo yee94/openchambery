@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 
-import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero.jpg';
+import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero-wide.jpg';
 import androidDirectShareImage from '@/assets/assistant-share-welcome/android-direct-share.jpg';
 import iosShareSheetImage from '@/assets/assistant-share-welcome/ios-share-sheet.jpg';
 import selectAssistantImage from '@/assets/assistant-share-welcome/select-assistant.jpg';
@@ -78,16 +78,14 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
   const { t } = useI18n();
 
   return (
-    <MobileFloatingSurface className="oc-mobile-assistant-guide">
+    <article className="oc-mobile-assistant-guide">
       <div className="oc-mobile-assistant-guide-hero" aria-hidden="true">
         <img src={assistantGuideHero} alt="" />
-        <div className="oc-mobile-assistant-guide-hero-fade" />
       </div>
 
       <div className="oc-mobile-assistant-guide-body">
         <div className="oc-mobile-assistant-guide-heading">
           <span className="oc-mobile-assistant-guide-kicker">
-            <Icon name="sparkling" className="size-3.5" />
             {t('assistants.subtitle')}
           </span>
           <h2 className="oc-mobile-assistant-guide-title">
@@ -101,14 +99,11 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
         <Button type="button" size="lg" className="w-full" onClick={onEnable}>
           <Icon name="sparkling" className="size-[18px]" />
           {t('assistants.settings.instanceEnabled')}
-          <Icon name="arrow-right-s" className="ml-auto size-4" />
         </Button>
 
         <section className="oc-mobile-assistant-guide-share" aria-labelledby="assistant-share-guide-title">
           <div className="oc-mobile-assistant-guide-share-heading">
-            <span className="oc-mobile-assistant-guide-share-icon">
-              <Icon name="share-2" className="size-4" />
-            </span>
+            <Icon name="share-2" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <h3 id="assistant-share-guide-title" className="typography-ui-label font-semibold text-foreground">
                 {t('assistants.shareWelcome.title')}
@@ -135,7 +130,7 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
           </div>
         </section>
       </div>
-    </MobileFloatingSurface>
+    </article>
   );
 }
 
@@ -245,25 +240,32 @@ function MobileAssistantCard({
             />
           }
         >
-          <span className="oc-mobile-assistant-avatar oc-mobile-glass-control oc-mobile-glass-control--clear rounded-full">
+          <span className={cn(
+            'oc-mobile-assistant-avatar',
+            avatarEmoji
+              ? 'oc-mobile-assistant-avatar--emoji'
+              : 'oc-mobile-assistant-avatar--visual',
+          )}>
             <AgentAvatar
               name={assistantID}
               emoji={avatarEmoji}
-              size={28}
+              size={avatarEmoji ? 40 : 38}
               label={displayName}
             />
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="oc-mobile-entity-title block truncate font-semibold text-foreground">
-              {displayName}
+          <span className="oc-mobile-assistant-card-content min-w-0 flex-1">
+            <span className="oc-mobile-assistant-card-header">
+              <span className="oc-mobile-entity-title oc-mobile-assistant-name min-w-0 flex-1 truncate font-semibold text-foreground">
+                {displayName}
+              </span>
+              <span className="oc-mobile-entity-meta oc-mobile-assistant-mode shrink-0 text-muted-foreground">
+                {modeLabel}
+              </span>
             </span>
-            <span className="oc-mobile-entity-meta mt-0.5 flex min-w-0 items-center text-muted-foreground">
-              <span className="shrink-0">{modeLabel}</span>
-              <span aria-hidden className="text-muted-foreground/50">·</span>
-              <span className="min-w-0 truncate">{summary}</span>
+            <span className="oc-mobile-assistant-summary text-muted-foreground">
+              {summary}
             </span>
           </span>
-          <Icon name="arrow-right-s" className="size-4 shrink-0 text-muted-foreground" />
         </ContextMenuTrigger>
       </MobileFloatingSurface>
       <ContextMenuContent className="min-w-[10rem]">

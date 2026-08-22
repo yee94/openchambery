@@ -148,15 +148,78 @@ describe('Assistant UI product contract', () => {
     expect(view).not.toContain('mobileSelectorOpen');
   });
 
+  test('fills the mobile Assistant avatar while preserving its circular frame', async () => {
+    const [mobileTab, mobileStyles] = await Promise.all([
+      read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('../../styles/mobile.css'),
+    ]);
+    expect(mobileTab).toContain("'oc-mobile-assistant-avatar'");
+    expect(mobileTab).toContain("'oc-mobile-assistant-avatar--emoji'");
+    expect(mobileTab).toContain("'oc-mobile-assistant-avatar--visual'");
+    expect(mobileTab).toContain('size={avatarEmoji ? 40 : 38}');
+    expect(mobileTab).not.toContain('oc-mobile-assistant-avatar oc-mobile-glass-control');
+    const avatarStyles = mobileStyles.slice(
+      mobileStyles.indexOf('.oc-mobile-assistant-avatar {'),
+      mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
+    );
+    expect(avatarStyles).toContain('border-radius: 999px');
+    expect(avatarStyles).toContain(':is(img, svg)');
+    expect(avatarStyles).toContain('object-fit: cover');
+    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar--emoji');
+    expect(avatarStyles).toContain('padding: 0');
+    expect(avatarStyles).toContain('width: 100% !important');
+    expect(avatarStyles).toContain('height: 100% !important');
+    expect(avatarStyles).toContain('font-size: 1.75rem !important');
+    expect(avatarStyles).toContain('background: var(--interactive-selection)');
+    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar--visual');
+    expect(avatarStyles).toContain('padding: 1px');
+  });
+
+  test('gives mobile Assistant cards room for mode and bounded prompt details', async () => {
+    const [mobileTab, mobileStyles] = await Promise.all([
+      read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('../../styles/mobile.css'),
+    ]);
+    expect(mobileTab).toContain('oc-mobile-assistant-name');
+    expect(mobileTab).toContain('oc-mobile-assistant-card-header');
+    expect(mobileTab).toContain('oc-mobile-assistant-mode');
+    expect(mobileTab).toContain('oc-mobile-assistant-summary');
+    expect(mobileTab).not.toContain('name="arrow-right-s"');
+    expect(mobileTab).toContain('{modeLabel}');
+    expect(mobileTab).toContain('{summary}');
+    const cardStyles = mobileStyles.slice(
+      mobileStyles.indexOf('.oc-mobile-assistant-catalog {'),
+      mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
+    );
+    expect(cardStyles).toContain('gap: 0.875rem');
+    expect(cardStyles).toContain('min-height: 7rem');
+    expect(cardStyles).toContain('align-items: flex-start');
+    expect(cardStyles).toContain('padding: 1rem');
+    expect(cardStyles).toContain('.oc-mobile-assistant-card-header');
+    expect(cardStyles).toContain('-webkit-line-clamp: 3');
+  });
+
   test('separates mobile disabled guidance, empty onboarding, and unavailable states', async () => {
-    const mobileTab = await read('../../mobile/assistant/MobileAssistantTab.tsx');
-    expect(mobileTab).toContain("assistant-guide/assistant-guide-hero.jpg");
+    const [mobileTab, mobileStyles] = await Promise.all([
+      read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('../../styles/mobile.css'),
+    ]);
+    expect(mobileTab).toContain("assistant-guide/assistant-guide-hero-wide.jpg");
     expect(mobileTab).toContain('oc-mobile-assistant-guide-steps');
     expect(mobileTab).toContain("t('assistants.shareWelcome.description')");
     expect(mobileTab).toContain('instanceDisabled && !unavailable');
     expect(mobileTab).toContain('snapshot.data.assistants.length === 0');
     expect(mobileTab).toContain('requestCreate();');
     expect(mobileTab).toContain("t('assistants.onboarding.action')");
+    const guideStyles = mobileStyles.slice(
+      mobileStyles.indexOf('.oc-mobile-assistant-guide {'),
+      mobileStyles.indexOf('.oc-mobile-assistant-onboarding {'),
+    );
+    expect(guideStyles).toContain('aspect-ratio: 16 / 9');
+    expect(guideStyles).toContain('object-fit: contain');
+    expect(guideStyles).toContain('.oc-mobile-assistant-guide-step + .oc-mobile-assistant-guide-step');
+    expect(guideStyles).not.toContain('grid-auto-flow: column');
+    expect(guideStyles).not.toContain('overflow-x: auto');
   });
 
   test('offers edit and delete from assistant list context menu and long-press', async () => {

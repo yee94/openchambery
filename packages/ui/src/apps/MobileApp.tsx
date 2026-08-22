@@ -715,9 +715,15 @@ const useNativeMobileChrome = (): void => {
         if (isTextFieldLike(document.activeElement) && !isComposerKeyboardTarget(document.activeElement)) {
           return;
         }
+        const wasKeyboardOpen = keyboardOpen;
         keyboardOpen = true;
         root.classList.remove('oc-kb-hide');
-        root.classList.add('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold');
+        root.classList.add('oc-keyboard-open');
+        // Caret hold only masks the caret DURING a keyboard rise. When the IME
+        // is already open (soft focus return from another field), no
+        // keyboardWillShow will ever arrive to run the removal chain, and a
+        // hold added here would stick forever — keep the caret visible.
+        if (!wasKeyboardOpen) root.classList.add('oc-kb-animating', 'oc-kb-caret-hold');
         const predictedHeight = keyboardHeight > 0 ? keyboardHeight : readCachedIosImeHeight();
         const slide = liftIosMovers(predictedHeight, event.target);
         dispatchKb('oc:keyboard-anim', {
@@ -750,11 +756,14 @@ const useNativeMobileChrome = (): void => {
         setInset(keyboardHeight);
         if (!liftComposer) {
           // Question / other fields: keep the overlay and chat scroll insets
-          // without raising the bottom composer or shrinking the shell.
+          // without raising the bottom composer or shrinking the shell. The
+          // pre-focus intent may have armed the caret hold for this field —
+          // this early return has no removal chain of its own, so drop it or
+          // the caret stays transparent for the whole session.
           setVar('--oc-kb-layout', 0);
           measureSafeBottom();
           setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
-          root.classList.remove('oc-keyboard-open');
+          root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold');
           clearKbMovers();
           layoutApplied = false;
           dispatchKb('oc:keyboard-settled', { open: true });
