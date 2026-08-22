@@ -1,0 +1,421 @@
+name: Mobile Beta OTA
+
+# Tag namespace: mobile-beta/vX.Y.Z-beta.N → web-bundle OTA only.
+# Native shell changes must use a normal v* tag (mobile-release via release.yml).
+on:
+  push:
+    tags:
+      - 'mobile-beta/v*-beta.*'
+
+concurrency:
+  group: mobile-beta-ota-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  OTA_BASE_URL: https://openchamber.xiaobe.top
+  MOBILE_APP_ID: com.yee94.openchamber
+  MAX_BUNDLE_BYTES: 25165824 # 24 MiB
+
+jobs:
+  release-plan:
+    name: Check OTA eligibility
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      version: ${{ steps.plan.outputs.version }}
+      shell_api_version: ${{ steps.plan.outputs.shell_api_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Run mobile release plan
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          # mobile-beta/v1.18.2-beta.25 → 1.18.2-beta.25
+          VERSION="${TAG#mobile-beta/v}"
+          if [[ -z "$VERSION" || "$VERSION" == "$TAG" ]]; then
+            echo "Unexpected OTA tag format: $TAG (expected mobile-beta/vX.Y.Z-beta.N)"
+            exit 1
+          fi
+
+          node scripts/mobile-release-plan.mjs --json > /tmp/mobile-release-plan.json
+          cat /tmp/mobile-release-plan.json
+
+          MODE="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/mobile-release-plan.json','utf8')).mode")"
+          REASON="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/mobile-release-plan.json','utf8')).reason")"
+          SHELL="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/mobile-release-plan.json','utf8')).shellApiVersion")"
+          {
+            echo "mode=$MODE"
+            echo "version=$VERSION"
+            echo "shell_api_version=$SHELL"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "$MODE" != "ota" ]]; then
+            echo "::error::OTA tag rejected: mode=$MODE reason=$REASON"
+            echo "Native fingerprint or bridge contract changed. Use a native v* tag instead of mobile-beta/*."
+            node -e "
+              const p = JSON.parse(require('fs').readFileSync('/tmp/mobile-release-plan.json','utf8'));
+              console.log('changedNativePaths:', p.changedNativePaths.join(', ') || '(none)');
+              console.log('changedContracts:', p.changedContracts.join(', ') || '(none)');
+            "
+            exit 1
+          fi
+
+  build-ota:
+    name: Build OTA bundle
+    needs: release-plan
+    runs-on: ubuntu-latest
+    outputs:
+      bundle_id: ${{ steps.assemble.outputs.bundle_id }}
+      checksum: ${{ steps.assemble.outputs.checksum }}
+      generation: ${{ steps.assemble.outputs.generation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build mobile web assets
+        # packages/mobile "build" = web build + prepare-web-assets (no cap sync).
+        run: bun run --cwd packages/mobile build
+
+      - name: Package Capgo zip
+        id: zip
+        shell: bash
+        env:
+          CAPGO_PRIVATE_KEY_V2: ${{ secrets.CAPGO_PRIVATE_KEY_V2 }}
+          VERSION: ${{ needs.release-plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          DIST="packages/mobile/dist"
+          ZIP_NAME="openchamber-${VERSION}.zip"
+          ZIP_PATH="$RUNNER_TEMP/$ZIP_NAME"
+
+          # Capgo CLI: bundle zip <appId> --path <dir> --name <file> --json
+          # --no-code-check: notifyAppReady may live outside the scanned entry.
+          ZIP_JSON="$(npx --yes @capgo/cli@latest bundle zip "$MOBILE_APP_ID" \
+            --path "$DIST" \
+            --name "$ZIP_PATH" \
+            --no-code-check \
+            --json)"
+          echo "$ZIP_JSON"
+
+          # Capgo may write beside cwd; normalize to ZIP_PATH.
+          if [[ ! -f "$ZIP_PATH" ]]; then
+            FOUND="$(find . -maxdepth 3 -type f -name "$ZIP_NAME" -print -quit || true)"
+            if [[ -z "$FOUND" ]]; then
+              FOUND="$(find . -maxdepth 3 -type f -name '*.zip' -print -quit || true)"
+            fi
+            if [[ -z "$FOUND" ]]; then
+              echo "Capgo zip output not found"
+              exit 1
+            fi
+            cp "$FOUND" "$ZIP_PATH"
+          fi
+
+          CHECKSUM="$(node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const j = JSON.parse(process.argv[1]);
+            const fromJson = j.checksum || j.Checksum || j.hash;
+            if (typeof fromJson === 'string' && fromJson.length > 0) {
+              const hex = fromJson.replace(/^sha256:/i, '');
+              if (/^[0-9a-f]{64}$/i.test(hex)) {
+                process.stdout.write('sha256:' + hex.toLowerCase());
+                process.exit(0);
+              }
+            }
+            const digest = crypto.createHash('sha256').update(fs.readFileSync(process.argv[2])).digest('hex');
+            process.stdout.write('sha256:' + digest);
+          " "$ZIP_JSON" "$ZIP_PATH")"
+
+          SESSION_KEY=""
+          # Optional Capgo encryption v2 when CAPGO_PRIVATE_KEY_V2 is configured.
+          if [[ -n "${CAPGO_PRIVATE_KEY_V2:-}" ]]; then
+            KEY_FILE="$RUNNER_TEMP/capgo_private_key_v2.pem"
+            printf '%s' "$CAPGO_PRIVATE_KEY_V2" > "$KEY_FILE"
+            ENC_JSON="$(npx --yes @capgo/cli@latest bundle encrypt "$ZIP_PATH" "${CHECKSUM#sha256:}" \
+              --key "$KEY_FILE" \
+              --json)"
+            echo "Encrypted bundle (session key redacted from logs)."
+            # Prefer encrypted zip if CLI rewrites path / emits new checksum.
+            # The encrypted checksum is an opaque string produced by the CLI —
+            # the native plugin RSA-decrypts it, so never recompute or normalize it.
+            ENC_CHECKSUM="$(node -e "
+              const j = JSON.parse(process.argv[1]);
+              const c = j.checksum || j.Checksum;
+              if (typeof c === 'string' && c.trim().length > 0) process.stdout.write(c.trim());
+            " "$ENC_JSON" || true)"
+            SESSION_KEY="$(node -e "
+              const j = JSON.parse(process.argv[1]);
+              process.stdout.write(j.ivSessionKey || j.sessionKey || j.key || '');
+            " "$ENC_JSON")"
+            # Capgo encrypt typically writes <name>_encrypted.zip beside the source.
+            ENC_ZIP="$(dirname "$ZIP_PATH")/$(basename "$ZIP_PATH" .zip)_encrypted.zip"
+            if [[ -f "$ENC_ZIP" ]]; then
+              ZIP_PATH="$ENC_ZIP"
+              if [[ -z "$ENC_CHECKSUM" ]]; then
+                echo "::error::Capgo CLI did not return an encrypted checksum; refusing to publish an unverifiable encrypted bundle."
+                exit 1
+              fi
+              CHECKSUM="$ENC_CHECKSUM"
+            fi
+            rm -f "$KEY_FILE"
+          fi
+
+          SIZE="$(node -e "process.stdout.write(String(require('fs').statSync(process.argv[1]).size))" "$ZIP_PATH")"
+          if (( SIZE > MAX_BUNDLE_BYTES )); then
+            echo "::error::OTA zip is ${SIZE} bytes (> ${MAX_BUNDLE_BYTES}). Migrate bundle hosting to COS before publishing oversized zips."
+            exit 1
+          fi
+
+          # Keep session key off GITHUB_OUTPUT (appears in the Actions UI).
+          SESSION_KEY_FILE="$RUNNER_TEMP/capgo_session_key.txt"
+          if [[ -n "$SESSION_KEY" ]]; then
+            printf '%s' "$SESSION_KEY" > "$SESSION_KEY_FILE"
+          else
+            : > "$SESSION_KEY_FILE"
+          fi
+
+          {
+            echo "zip_path=$ZIP_PATH"
+            echo "checksum=$CHECKSUM"
+            echo "session_key_file=$SESSION_KEY_FILE"
+            echo "size=$SIZE"
+            echo "encrypted=$([[ -n "$SESSION_KEY" ]] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Assemble OTA snapshot
+        id: assemble
+        shell: bash
+        env:
+          VERSION: ${{ needs.release-plan.outputs.version }}
+          ZIP_PATH: ${{ steps.zip.outputs.zip_path }}
+          CHECKSUM: ${{ steps.zip.outputs.checksum }}
+          SESSION_KEY_FILE: ${{ steps.zip.outputs.session_key_file }}
+          OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+          ROLLOUT_PERCENT: '100'
+        run: |
+          set -euo pipefail
+          # Keep snapshot under the workspace so upload-artifact can collect it.
+          OUT="${GITHUB_WORKSPACE}/.ota-snapshot"
+          rm -rf "$OUT"
+          ARGS=(
+            --zip "$ZIP_PATH"
+            --version "$VERSION"
+            --checksum "$CHECKSUM"
+            --channel beta
+            --out "$OUT"
+          )
+          if [[ -s "${SESSION_KEY_FILE:-}" ]]; then
+            ARGS+=(--session-key "$(cat "$SESSION_KEY_FILE")")
+          fi
+          node scripts/mobile-ota/assemble-snapshot.mjs "${ARGS[@]}"
+          # Copy zip beside snapshot for a stable artifact path.
+          mkdir -p "${GITHUB_WORKSPACE}/.ota-zip"
+          cp "$ZIP_PATH" "${GITHUB_WORKSPACE}/.ota-zip/bundle.zip"
+          BUNDLE_ID="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).bundleId")"
+          GENERATION="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).generation")"
+          {
+            echo "bundle_id=$BUNDLE_ID"
+            echo "checksum=$CHECKSUM"
+            echo "generation=$GENERATION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload OTA snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ota-snapshot-${{ needs.release-plan.outputs.version }}
+          path: .ota-snapshot
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Capgo zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ota-zip-${{ needs.release-plan.outputs.version }}
+          path: .ota-zip/bundle.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    name: Deploy OTA to update service
+    needs: [release-plan, build-ota]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Download OTA snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-ota-snapshot-${{ needs.release-plan.outputs.version }}
+          path: /tmp/ota-snapshot
+
+      - name: Vercel pull + prebuilt build + overlay OTA
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "$name secret is required for OTA deploy."
+              exit 1
+            fi
+          done
+
+          mkdir -p deploy/update-service/.vercel
+          printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" \
+            > deploy/update-service/.vercel/project.json
+
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN" \
+            --cwd deploy/update-service
+
+          # Assumption: `vercel build --prod` writes static files under
+          # deploy/update-service/.vercel/output/static/ (Vercel Build Output API).
+          npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN" \
+            --cwd deploy/update-service
+
+          STATIC_DIR="deploy/update-service/.vercel/output/static"
+          if [[ ! -d "$STATIC_DIR" ]]; then
+            echo "Expected prebuilt static dir missing: $STATIC_DIR"
+            find deploy/update-service/.vercel -maxdepth 3 -type d -print || true
+            exit 1
+          fi
+
+          mkdir -p "$STATIC_DIR/ota"
+          # Overlay channel + bundles from the assembled snapshot (content-addressed).
+          cp -R /tmp/ota-snapshot/ota/. "$STATIC_DIR/ota/"
+
+          npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN" \
+            --cwd deploy/update-service
+
+          rm -rf deploy/update-service/.vercel
+
+      - name: Verify production OTA manifest + bundle
+        shell: bash
+        env:
+          OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+          BUNDLE_ID: ${{ needs.build-ota.outputs.bundle_id }}
+          EXPECTED_CHECKSUM: ${{ needs.build-ota.outputs.checksum }}
+          EXPECTED_GENERATION: ${{ needs.build-ota.outputs.generation }}
+          ENCRYPTED: ${{ needs.build-ota.outputs.encrypted }}
+        run: |
+          set -euo pipefail
+          MANIFEST_URL="${OTA_BASE_URL}/ota/channels/beta.json"
+          BUNDLE_URL="${OTA_BASE_URL}/ota/bundles/${BUNDLE_ID}.zip"
+
+          curl -fsS "$MANIFEST_URL" -o /tmp/beta.json
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('/tmp/beta.json','utf8'));
+            if (m.generation !== Number(process.env.EXPECTED_GENERATION)) {
+              throw new Error('generation mismatch: ' + m.generation + ' !== ' + process.env.EXPECTED_GENERATION);
+            }
+            if (!m.activeBundle || m.activeBundle.bundleId !== process.env.BUNDLE_ID) {
+              throw new Error('activeBundle.bundleId mismatch');
+            }
+            console.log('manifest ok generation=' + m.generation + ' bundleId=' + m.activeBundle.bundleId);
+          "
+
+          curl -fsS "$BUNDLE_URL" -o /tmp/bundle.zip
+          ACTUAL_SIZE="$(node -e "process.stdout.write(String(require('fs').statSync('/tmp/bundle.zip').size))")"
+          META_SIZE="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/beta.json','utf8')).activeBundle.size")"
+          if [[ "$ACTUAL_SIZE" != "$META_SIZE" ]]; then
+            echo "content-length/size mismatch: actual=$ACTUAL_SIZE meta=$META_SIZE"
+            exit 1
+          fi
+
+          # Plain path: checksum is the sha256 of the served zip. Encrypted
+          # bundles carry an opaque CLI-encrypted checksum that cannot be
+          # recomputed here — only size is verified for those.
+          if [[ "${ENCRYPTED}" != "true" ]]; then
+            ACTUAL="$(node -e "const fs=require('fs');const c=require('crypto');process.stdout.write(c.createHash('sha256').update(fs.readFileSync('/tmp/bundle.zip')).digest('hex'))")"
+            EXPECTED_HEX="${EXPECTED_CHECKSUM#sha256:}"
+            if [[ "$ACTUAL" != "$EXPECTED_HEX" ]]; then
+              echo "checksum mismatch: actual=$ACTUAL expected=$EXPECTED_HEX"
+              exit 1
+            fi
+            echo "bundle verified size=$ACTUAL_SIZE checksum=$ACTUAL"
+          else
+            echo "encrypted bundle verified by size only ($ACTUAL_SIZE bytes); checksum is CLI-encrypted"
+          fi
+
+  archive:
+    name: Archive OTA prerelease
+    needs: [release-plan, build-ota, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/ota-artifacts
+
+      - name: Create GitHub prerelease archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release-plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="mobile-beta/v${VERSION}"
+          SNAPSHOT_DIR="$(find /tmp/ota-artifacts -type d -name "mobile-ota-snapshot-${VERSION}" -print -quit)"
+          ZIP_DIR="$(find /tmp/ota-artifacts -type d -name "mobile-ota-zip-${VERSION}" -print -quit)"
+          if [[ -z "$SNAPSHOT_DIR" || -z "$ZIP_DIR" ]]; then
+            echo "Missing snapshot or zip artifact directories"
+            find /tmp/ota-artifacts -maxdepth 3 -print || true
+            exit 1
+          fi
+          MANIFEST="$SNAPSHOT_DIR/ota/channels/beta.json"
+          ZIP_FILE="$(find "$ZIP_DIR" -type f -name '*.zip' -print -quit)"
+          if [[ ! -f "$MANIFEST" || ! -f "$ZIP_FILE" ]]; then
+            echo "Missing manifest or zip file"
+            exit 1
+          fi
+
+          NOTES="$(mktemp)"
+          cat > "$NOTES" <<EOF
+          Mobile OTA beta archive for ${TAG}.
+
+          This prerelease is a disaster-recovery archive of the web bundle and
+          channel manifest. It must never become GitHub Latest and never enters
+          the stable desktop/Android auto-update feeds.
+
+          Use workflow mobile-beta-rollout.yml for promote / pause / rollback.
+          EOF
+
+          # Tag already exists (workflow trigger). Create a prerelease on it.
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP_FILE" "$MANIFEST" --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG" "$ZIP_FILE" "$MANIFEST" \
+              --prerelease \
+              --title "Mobile OTA ${TAG}" \
+              --notes-file "$NOTES" \
+              --repo "${{ github.repository }}"
+          fi

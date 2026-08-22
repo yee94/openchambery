@@ -1,0 +1,189 @@
+name: Mobile Beta OTA Rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Rollout action
+        required: true
+        type: choice
+        options:
+          - promote
+          - pause
+          - rollback
+          - set-native-target
+      percent:
+        description: Rollout percent (promote only, 0-100)
+        required: false
+        type: string
+        default: '100'
+      platform:
+        description: Platform for set-native-target (ios|android; ignore for other actions)
+        required: false
+        type: choice
+        default: ios
+        options:
+          - ios
+          - android
+      version:
+        description: Native version for set-native-target
+        required: false
+        type: string
+      build:
+        description: Native build number for set-native-target
+        required: false
+        type: string
+      url:
+        description: installUrl for set-native-target
+        required: false
+        type: string
+      channel:
+        description: OTA channel name
+        required: false
+        type: string
+        default: beta
+
+concurrency:
+  group: mobile-beta-rollout-${{ inputs.channel || 'beta' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  OTA_BASE_URL: https://openchamber.xiaobe.top
+
+jobs:
+  rollout:
+    name: Apply rollout action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Prepare rollout snapshot
+        id: prepare
+        shell: bash
+        env:
+          ACTION: ${{ inputs.action }}
+          PERCENT: ${{ inputs.percent }}
+          PLATFORM: ${{ inputs.platform }}
+          VERSION: ${{ inputs.version }}
+          BUILD: ${{ inputs.build }}
+          URL: ${{ inputs.url }}
+          CHANNEL: ${{ inputs.channel }}
+          OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/ota-rollout-snapshot"
+          ARGS=(--action "$ACTION" --channel "$CHANNEL" --out "$OUT")
+          case "$ACTION" in
+            promote)
+              ARGS+=(--percent "$PERCENT")
+              ;;
+            pause)
+              ;;
+            rollback)
+              ;;
+            set-native-target)
+              if [[ -z "${PLATFORM:-}" || -z "${VERSION:-}" || -z "${BUILD:-}" ]]; then
+                echo "set-native-target requires platform, version, and build"
+                exit 1
+              fi
+              ARGS+=(--platform "$PLATFORM" --version "$VERSION" --build "$BUILD" --status published)
+              if [[ -n "${URL:-}" ]]; then
+                ARGS+=(--url "$URL")
+              fi
+              ;;
+            *)
+              echo "Unknown action: $ACTION"
+              exit 1
+              ;;
+          esac
+
+          node scripts/mobile-ota/rollout.mjs "${ARGS[@]}"
+          GENERATION="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).generation")"
+          PREV="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).previousGeneration")"
+          ACTIVE="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).activeBundleId || ''")"
+          {
+            echo "snapshot_dir=$OUT"
+            echo "generation=$GENERATION"
+            echo "previous_generation=$PREV"
+            echo "active_bundle_id=$ACTIVE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Vercel pull + prebuilt build + overlay OTA
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          SNAPSHOT_DIR: ${{ steps.prepare.outputs.snapshot_dir }}
+        run: |
+          set -euo pipefail
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "$name secret is required for OTA deploy."
+              exit 1
+            fi
+          done
+
+          mkdir -p deploy/update-service/.vercel
+          printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" \
+            > deploy/update-service/.vercel/project.json
+
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN" \
+            --cwd deploy/update-service
+
+          # Assumption: prebuilt static output lives at .vercel/output/static
+          npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN" \
+            --cwd deploy/update-service
+
+          STATIC_DIR="deploy/update-service/.vercel/output/static"
+          if [[ ! -d "$STATIC_DIR" ]]; then
+            echo "Expected prebuilt static dir missing: $STATIC_DIR"
+            exit 1
+          fi
+
+          mkdir -p "$STATIC_DIR/ota"
+          cp -R "$SNAPSHOT_DIR/ota/." "$STATIC_DIR/ota/"
+
+          npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN" \
+            --cwd deploy/update-service
+
+          rm -rf deploy/update-service/.vercel
+
+      - name: Verify production channel after rollout
+        shell: bash
+        env:
+          OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+          CHANNEL: ${{ inputs.channel }}
+          EXPECTED_GENERATION: ${{ steps.prepare.outputs.generation }}
+          PREVIOUS_GENERATION: ${{ steps.prepare.outputs.previous_generation }}
+          ACTION: ${{ inputs.action }}
+          ACTIVE_BUNDLE_ID: ${{ steps.prepare.outputs.active_bundle_id }}
+        run: |
+          set -euo pipefail
+          MANIFEST_URL="${OTA_BASE_URL}/ota/channels/${CHANNEL}.json"
+          curl -fsS "$MANIFEST_URL" -o /tmp/channel.json
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('/tmp/channel.json','utf8'));
+            const expected = Number(process.env.EXPECTED_GENERATION);
+            const previous = Number(process.env.PREVIOUS_GENERATION);
+            if (m.generation !== expected) {
+              throw new Error('generation mismatch: got ' + m.generation + ' expected ' + expected);
+            }
+            if (!(expected > previous)) {
+              throw new Error('generation did not increment');
+            }
+            if (process.env.ACTION !== 'set-native-target' && process.env.ACTIVE_BUNDLE_ID) {
+              if (!m.activeBundle || m.activeBundle.bundleId !== process.env.ACTIVE_BUNDLE_ID) {
+                throw new Error('activeBundle.bundleId mismatch after ' + process.env.ACTION);
+              }
+            }
+            console.log('rollout verified generation=' + m.generation + ' action=' + process.env.ACTION);
+          "

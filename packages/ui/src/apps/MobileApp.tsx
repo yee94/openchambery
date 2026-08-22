@@ -39,6 +39,7 @@ import type { ProjectEntry, RuntimeAPIs } from '@/lib/api/types';
 import type { PairingConnectionPayload } from '@/lib/connectionPayload';
 import { useOrientation } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
+import { getCapgoUpdater } from '@/lib/mobile-updates/capgoAdapter';
 import { MOBILE_SETTINGS_PAGE_SLUGS } from '@/lib/settings/metadata';
 import { isIPadApp } from '@/lib/platform';
 import { resolveProjectForDirectory, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
@@ -3922,6 +3923,60 @@ export function MobileApp({ apis }: MobileAppProps) {
     registerRuntimeAPIs(apis);
     return () => registerRuntimeAPIs(null);
   }, [apis]);
+
+  // Capgo app-ready must fire on load, not after server connection — readiness is
+  // about the JS shell surviving the first paint, not remote connectivity.
+  React.useEffect(() => {
+    if (!isNativeMobileApp) return;
+    void getCapgoUpdater().then((updater) => {
+      if (!updater) return;
+      void updater.notifyAppReady().catch(() => undefined);
+    });
+  }, [isNativeMobileApp]);
+
+  React.useEffect(() => {
+    if (!isNativeMobileApp) return;
+
+    let disposed = false;
+    const cleanups: Array<() => void> = [];
+
+    void getCapgoUpdater().then(async (updater) => {
+      if (!updater || disposed) return;
+
+      try {
+        const downloadComplete = await updater.addListener('downloadComplete', () => {
+          useUpdateStore.getState().setOtaPhase('pending_restart');
+        });
+        const appReloaded = await updater.addListener('appReloaded', () => {
+          useUpdateStore.getState().setOtaPhase('pending_restart');
+        });
+        const autoRevert = await updater.addListener('autoRevert', () => {
+          console.warn('[OTA] Capgo auto-reverted the last bundle');
+          useUpdateStore.getState().setOtaPhase('error', 'OTA update was reverted');
+        });
+
+        if (disposed) {
+          void downloadComplete.remove();
+          void appReloaded.remove();
+          void autoRevert.remove();
+          return;
+        }
+
+        cleanups.push(
+          () => void downloadComplete.remove(),
+          () => void appReloaded.remove(),
+          () => void autoRevert.remove(),
+        );
+      } catch (error) {
+        console.warn('[OTA] Failed to subscribe to Capgo updater events:', error);
+      }
+    });
+
+    return () => {
+      disposed = true;
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, [isNativeMobileApp]);
 
   // Switching instances (or disconnecting) only changes the runtime endpoint; the
   // stores still hold the previous instance's data. Mirror the web App.tsx reset

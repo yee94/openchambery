@@ -44,6 +44,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     downloaded: s.downloaded,
     progress: s.progress,
     runtimeType: s.runtimeType,
+    otaDecision: s.otaDecision,
     checkForUpdates: s.checkForUpdates,
     downloadUpdate: s.downloadUpdate,
     restartToUpdate: s.restartToUpdate,
@@ -51,6 +52,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const { isMobile } = useDeviceInfo();
   const [exportingDiagnostics, setExportingDiagnostics] = React.useState(false);
   const [diagnosticsEnabled, setDiagnosticsEnabled] = React.useState(() => isTranscriptDiagnosticsEnabled());
+  const [webBundleLabel, setWebBundleLabel] = React.useState<string | null>(null);
 
   const handleDiagnosticsEnabledChange = useEvent((enabled: boolean) => {
     setTranscriptDiagnosticsEnabled(enabled);
@@ -92,6 +94,40 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
       cancelled = true;
     };
   }, []);
+
+  const otaBundleVersion = updateStore.otaDecision?.ota.bundle?.releaseVersion
+    ?? updateStore.otaDecision?.ota.bundle?.bundleId
+    ?? null;
+
+  React.useEffect(() => {
+    if (otaBundleVersion) {
+      setWebBundleLabel(otaBundleVersion);
+      return;
+    }
+
+    let cancelled = false;
+    void import('@/lib/mobile-updates/capgoAdapter').then(async ({ getCapgoUpdater }) => {
+      const updater = await getCapgoUpdater();
+      if (!updater || cancelled) return;
+      try {
+        const current = await updater.current();
+        const id = typeof current.bundle?.id === 'string' ? current.bundle.id.trim() : '';
+        if (!id || id === 'builtin') {
+          if (!cancelled) setWebBundleLabel(null);
+          return;
+        }
+        // Prefer a short hex prefix when Capgo returns a long content hash.
+        const short = /^[0-9a-f]{8,}$/i.test(id) ? id.slice(0, 8) : id;
+        if (!cancelled) setWebBundleLabel(short);
+      } catch {
+        if (!cancelled) setWebBundleLabel(null);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [otaBundleVersion]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -186,6 +222,11 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
         <SettingsGroup>
           <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
+          </SettingsRow>
+          <SettingsRow label={t('settings.openchamber.about.field.webBundle')}>
+            <span className="typography-ui-label font-mono text-foreground text-right">
+              {webBundleLabel || t('settings.openchamber.about.state.builtin')}
+            </span>
           </SettingsRow>
           <SettingsRow label={t('settings.openchamber.about.field.instanceOpenChamberVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">

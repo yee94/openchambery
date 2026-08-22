@@ -27,6 +27,11 @@ test('build emits an update manifest from the published release manifest and cha
     assert.deepEqual(manifest, sourceManifest);
     assert.deepEqual(health, { service: 'openchamber-update', latestVersion: sourceManifest.latestVersion });
     assert.equal(existsSync(path.join(outputPath, 'CHANGELOG.md')), true);
+
+    const betaChannel = JSON.parse(readFileSync(path.join(outputPath, 'ota', 'channels', 'beta.json'), 'utf8'));
+    assert.equal(betaChannel.schemaVersion, 1);
+    assert.equal(betaChannel.channel, 'beta');
+    assert.equal(betaChannel.activeBundle, null);
   } finally {
     rmSync(outputPath, { recursive: true, force: true });
   }
