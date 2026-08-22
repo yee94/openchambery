@@ -247,7 +247,11 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 onClick={() => setUpdateDialogOpen(true)}
               >
                 <Icon name="download" className="size-4" />
-                {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
+                {updateStore.info?.inAppApply
+                  ? t('settings.openchamber.about.actions.applyOtaToVersion', { version: updateStore.info?.version || '' })
+                  : updateStore.info?.manualUpdate
+                    ? t('settings.openchamber.about.actions.installNativeToVersion', { version: updateStore.info?.version || '' })
+                    : t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
               </Button>
             ) : (
               <Button

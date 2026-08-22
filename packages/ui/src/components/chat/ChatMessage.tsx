@@ -20,7 +20,7 @@ import type { AgentMentionInfo } from './message/types';
 import type { StreamPhase, ToolPopupContent } from './message/types';
 import { deriveMessageRole } from './message/messageRole';
 import { filterVisibleParts, normalizeParts } from './message/partUtils';
-import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
+import { hasVisibleUserBubbleContent, normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/lib/messages/providerAuthError';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
@@ -592,7 +592,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return { name, token: rawValue } satisfies AgentMentionInfo;
     }, [isUser, normalizedParts]);
 
-    const shouldHideUserMessage = isUser && displayParts.length === 0;
+    const shouldHideUserMessage = isUser && !hasVisibleUserBubbleContent(displayParts);
 
     // Message is considered to have an "open step" if info.finish is not yet present
     const hasOpenStep = typeof messageFinish !== 'string';
@@ -1115,7 +1115,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             >
                 <div className="chat-message-column relative">
                     {isUser ? (
-                        displayParts.length === 0 ? null : (
+                        !hasVisibleUserBubbleContent(displayParts) ? null : (
                             <FadeInOnReveal
                                 forceAnimation
                                 skipAnimation={!animateUserOnMount}

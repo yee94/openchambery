@@ -113,6 +113,25 @@ export function MobileSessionRow({
     setOffset(0);
   }, [session.id]);
 
+  // Press feedback must never stick after the finger leaves. Ordinary taps do
+  // not setPointerCapture, so pointerup can miss the row button when the
+  // finger drifts or navigation remounts the page — clear from window instead.
+  React.useEffect(() => {
+    if (!pressed) return;
+    const clearPressed = () => {
+      longPressRef.current?.reset();
+      setPressed(false);
+    };
+    window.addEventListener('pointerup', clearPressed);
+    window.addEventListener('pointercancel', clearPressed);
+    window.addEventListener('blur', clearPressed);
+    return () => {
+      window.removeEventListener('pointerup', clearPressed);
+      window.removeEventListener('pointercancel', clearPressed);
+      window.removeEventListener('blur', clearPressed);
+    };
+  }, [pressed]);
+
   const closeActions = useEvent(() => setOffset(0));
   const revealed = offset !== 0;
 
@@ -145,6 +164,16 @@ export function MobileSessionRow({
         onOpenActions(session);
       },
     });
+  });
+
+  const handlePaginationPointerDown = useEvent((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+    setPressed(true);
+  });
+
+  const handlePaginationPointerEnd = useEvent(() => {
+    setPressed(false);
   });
 
   const handlePointerMove = useEvent((event: React.PointerEvent<HTMLElement>) => {
@@ -205,6 +234,9 @@ export function MobileSessionRow({
   });
 
   const handleSelect = useEvent(() => {
+    // Clear visual press before navigation, but do not reset() first —
+    // consumeClick still needs the long-press suppression key.
+    setPressed(false);
     if (longPressRef.current?.consumeClick(session.id)) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
@@ -268,8 +300,13 @@ export function MobileSessionRow({
         <button
           type="button"
           data-mobile-press-feedback="soft"
+          data-pressed={pressed ? 'true' : undefined}
           className="oc-mobile-session-pagination-row"
+          style={{ touchAction: 'pan-y' }}
           onClick={handleSelect}
+          onPointerDown={handlePaginationPointerDown}
+          onPointerUp={handlePaginationPointerEnd}
+          onPointerCancel={handlePaginationPointerEnd}
         >
           <span className="min-w-0 flex-1 truncate text-left font-medium text-foreground">
             {session.title}

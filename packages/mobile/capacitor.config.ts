@@ -64,8 +64,9 @@ const config: CapacitorConfig & {
       // Empty string disables Capgo cloud stats reporting (self-hosted only).
       statsUrl: '',
       defaultChannel: otaChannel,
-      // Check+download in foreground; apply on next background (Capgo autoUpdate: true).
-      autoUpdate: true,
+      // Check+download stay available to the in-app prompt. Do not auto-apply:
+      // About / UpdateDialog lets the user confirm a one-tap reload.
+      autoUpdate: false,
       // Raised above Capgo's 10s default: mobile splash + remote-config-free cold start
       // can exceed 10s on low-end devices before JS can call notifyAppReady.
       appReadyTimeout: 20000,

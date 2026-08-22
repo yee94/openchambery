@@ -216,6 +216,64 @@ test('matching bundleId is current; newer nativeTargets marks native available (
   assert.equal(decision.native.version, '1.18.3');
 });
 
+test('builtin on a newer native version must not apply an older OTA bundle', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.29' }),
+    nativeTargets: {
+      ios: { version: '1.18.2-beta.30', build: 360, installUrl: 'https://example.com/ios' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2-beta.30',
+    nativeBuild: 360,
+  }));
+  assert.equal(decision.primaryAction, 'none');
+  assert.equal(decision.ota.state, 'current');
+});
+
+test('stripped iOS nativeVersion still blocks downgrade via nativeTargets.build', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.29' }),
+    nativeTargets: {
+      ios: { version: '1.18.2-beta.30', build: 360, installUrl: 'https://example.com/ios' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2',
+    nativeBuild: 360,
+  }));
+  assert.equal(decision.primaryAction, 'none');
+  assert.equal(decision.ota.state, 'current');
+});
+
+test('applied newer bundle version name must not roll back to an older activeBundle', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.29' }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.2-beta.30',
+    nativeVersion: '1.18.2-beta.29',
+    nativeBuild: 359,
+  }));
+  assert.equal(decision.primaryAction, 'none');
+  assert.equal(decision.ota.state, 'current');
+});
+
+test('same-version different bundleId is still apply_ota (content correction)', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.23' }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'aaaaaaaaaaaaaaaa',
+    nativeVersion: '1.18.2-beta.23',
+    nativeBuild: 350,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.state, 'available');
+});
+
 test('releaseVersion identity also counts as current (on-device bundle version name)', () => {
   const manifest = parseOtaManifest(validManifest()).manifest;
   // The Capgo plugin identifies applied bundles by their version string, so

@@ -233,6 +233,7 @@ function mapOtaDecisionToUpdateInfo(
         currentVersion,
         downloadUrl: decision.ota.bundle.url,
         nextSuggestedCheckInSec: decision.nextCheckInSec,
+        inAppApply: true,
       },
     };
   }
@@ -398,7 +399,44 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   },
 
   downloadUpdate: async () => {
-    const { available, runtimeType } = get();
+    const { available, runtimeType, otaDecision, downloading, downloaded } = get();
+
+    if (
+      runtimeType === 'mobile'
+      && otaDecision?.primaryAction === 'apply_ota'
+      && otaDecision.ota.bundle
+    ) {
+      if (downloading || downloaded) return;
+
+      const mobileUpdates = getRegisteredRuntimeAPIs()?.mobileUpdates;
+      if (!mobileUpdates) {
+        set({
+          error: 'Mobile OTA updates are unavailable in this runtime',
+          otaPhase: 'error',
+        });
+        return;
+      }
+
+      set({ downloading: true, error: null, progress: null, otaPhase: 'downloading' });
+      try {
+        await mobileUpdates.downloadOtaUpdate(otaDecision.ota.bundle);
+        await mobileUpdates.queueOtaUpdateForNextLaunch();
+        set({
+          downloading: false,
+          downloaded: true,
+          progress: null,
+          otaPhase: 'pending_restart',
+        });
+        await mobileUpdates.applyOtaUpdateNow();
+      } catch (error) {
+        set({
+          downloading: false,
+          error: error instanceof Error ? error.message : 'Failed to download update',
+          otaPhase: 'error',
+        });
+      }
+      return;
+    }
 
     // For web runtime, there's no download - user uses in-app update or CLI
     if (runtimeType !== 'desktop' || !available) {
@@ -520,7 +558,33 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   },
 
   restartToUpdate: async () => {
-    const { downloaded, runtimeType } = get();
+    const { downloaded, runtimeType, otaDecision } = get();
+
+    if (
+      runtimeType === 'mobile'
+      && otaDecision?.primaryAction === 'apply_ota'
+    ) {
+      if (!downloaded) return;
+
+      const mobileUpdates = getRegisteredRuntimeAPIs()?.mobileUpdates;
+      if (!mobileUpdates) {
+        set({
+          error: 'Mobile OTA updates are unavailable in this runtime',
+          otaPhase: 'error',
+        });
+        return;
+      }
+
+      try {
+        await mobileUpdates.applyOtaUpdateNow();
+      } catch (error) {
+        set({
+          error: error instanceof Error ? error.message : 'Failed to restart',
+          otaPhase: 'error',
+        });
+      }
+      return;
+    }
 
     if (runtimeType !== 'desktop' || !downloaded) {
       return;

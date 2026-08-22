@@ -98,6 +98,30 @@ describe('chatContainerHost', () => {
     expect(reconciled[0]).toBe(pending);
   });
 
+  test('substitutes hollow authoritative image shells with pending counterpart', () => {
+    const pending = {
+      info: { id: 'msg_pending', role: 'user' },
+      parts: [
+        { type: 'text', text: 'with image' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,pending' },
+      ],
+    } as PendingUserMessagePresentation;
+    // Server admitted the row before file URL / text landed — empty text +
+    // mime-only file would otherwise paint a blank bubble and clear pending.
+    const hollow = [{
+      info: { ...pending.info, sessionID: 'ses_real' },
+      parts: [
+        { type: 'text', text: '' } as Part,
+        { type: 'file', mime: 'image/png' } as Part,
+      ],
+    }] as PendingUserMessagePresentation[];
+
+    expect(hasUserDisplayableParts(hollow[0]!.parts)).toBe(false);
+    const reconciled = mergePendingUserMessagePresentations(hollow, [pending]);
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]).toBe(pending);
+  });
+
   test('keeps primary-only features on when no host is provided', () => {
     expect(resolveChatContainerHostFeatures(undefined)).toEqual({
       newSessionDraft: true,

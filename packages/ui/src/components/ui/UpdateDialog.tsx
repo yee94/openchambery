@@ -217,6 +217,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
   const isWebRuntime = runtimeType === 'web';
   const isMobileRuntime = runtimeType === 'mobile';
+  const isInAppMobileOta = isMobileRuntime && info?.inAppApply === true;
   const isManualDesktopUpdate = runtimeType === 'desktop' && info?.manualUpdate === true;
   const updateCommand = info?.updateCommand || 'openchamber update';
 
@@ -444,8 +445,8 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             </div>
           )}
 
-          {/* Desktop progress bar */}
-          {!isWebRuntime && !isMobileRuntime && downloading && (
+          {/* Desktop / in-app mobile OTA progress bar */}
+          {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading && (
             <div className="space-y-2 mt-4">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">{t('updateDialog.status.downloadingPayload')}</span>
@@ -481,14 +482,16 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           </a>
 
           <div className="flex-1 flex justify-end">
-            {/* Desktop Buttons */}
-            {!isWebRuntime && !isMobileRuntime && !isManualDesktopUpdate && !downloaded && !downloading && (
+            {/* Desktop / in-app mobile OTA buttons */}
+            {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && !isManualDesktopUpdate && !downloaded && !downloading && (
               <button
                 onClick={onDownload}
                 className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
               >
                 <Icon name="download" className="h-4 w-4" />
-                {t('updateDialog.actions.downloadUpdate')}
+                {isInAppMobileOta
+                  ? t('updateDialog.actions.applyOtaNow')
+                  : t('updateDialog.actions.downloadUpdate')}
               </button>
             )}
 
@@ -499,7 +502,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               </Button>
             )}
 
-            {!isWebRuntime && !isMobileRuntime && downloading && (
+            {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading && (
               <button
                 disabled
                 className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] cursor-not-allowed"
@@ -509,7 +512,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               </button>
             )}
 
-            {!isWebRuntime && !isMobileRuntime && downloaded && (
+            {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloaded && (
               <button
                 onClick={onRestart}
                 className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
@@ -519,8 +522,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               </button>
             )}
 
-            {/* Web Buttons */}
-            {isMobileRuntime && (
+            {isMobileRuntime && !isInAppMobileOta && (
               <Button
                 onClick={handleMobileUpdate}
                 size="default"

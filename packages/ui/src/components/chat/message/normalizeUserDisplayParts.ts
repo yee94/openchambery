@@ -1,4 +1,6 @@
 import type { Part } from '@opencode-ai/sdk/v2';
+import { isCodeSelectionFilePart } from '../attachmentCitations';
+import { isEmptyTextPart } from './partUtils';
 
 const GITHUB_ISSUE_CONTEXT_PREFIX = 'GitHub issue context (JSON)';
 const GITHUB_PR_CONTEXT_PREFIX = 'GitHub pull request context (JSON)';
@@ -151,12 +153,36 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
 };
 
 /**
+ * Whether already-normalized display parts carry visible bubble content.
+ * Hollow parts — empty/whitespace text, or file parts without mime/url, or
+ * code-selection file parts — do not count as visible.
+ */
+export const hasVisibleUserBubbleContent = (parts: readonly Part[]): boolean => {
+    return parts.some((part) => {
+        if (part.type === 'text') {
+            return !isEmptyTextPart(part);
+        }
+        if (part.type === 'file') {
+            // FileAttachment keeps `(mime || url) && !codeSelection`. Hollow
+            // image shells often land with mime before url and paint nothing,
+            // so bubble visibility also requires a non-empty url.
+            const file = part as { mime?: unknown; url?: unknown };
+            const mime = typeof file.mime === 'string' ? file.mime : '';
+            const url = typeof file.url === 'string' ? file.url : '';
+            return (Boolean(mime) || Boolean(url)) && Boolean(url) && !isCodeSelectionFilePart(part);
+        }
+        return true;
+    });
+};
+
+/**
  * Whether parts would paint a user bubble.
  * `ChatMessage` hides user rows when display parts are empty. Synthetic-only
- * shells (e.g. `<system-reminder>`) count as present for `parts.length` but
- * still render as null — treat them as not yet materialized.
+ * shells (e.g. `<system-reminder>`) and hollow parts (empty text, file without
+ * mime/url) count as present for `parts.length` but still render as null —
+ * treat them as not yet materialized.
  */
 export const hasUserDisplayableParts = (parts: readonly Part[] | undefined): boolean => {
     if (!parts?.length) return false;
-    return normalizeUserDisplayParts(parts as Part[]).length > 0;
+    return hasVisibleUserBubbleContent(normalizeUserDisplayParts(parts as Part[]));
 };

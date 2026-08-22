@@ -86,6 +86,9 @@ describe('useUpdateStore mobile OTA branch', () => {
     mocks.isCapacitor = true;
     mocks.registeredApis = { mobileUpdates: mocks.mobileUpdates };
     mocks.mobileUpdates.checkForOtaUpdate.mockReset();
+    mocks.mobileUpdates.downloadOtaUpdate.mockReset();
+    mocks.mobileUpdates.queueOtaUpdateForNextLaunch.mockReset();
+    mocks.mobileUpdates.applyOtaUpdateNow.mockReset();
     mocks.legacyCheck.mockReset();
     useUpdateStore.getState().reset();
   });
@@ -101,7 +104,77 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(state.otaDecision?.primaryAction).toBe('apply_ota');
     expect(state.otaPhase).toBe('available');
     expect(state.info?.version).toBe('1.18.3');
+    expect(state.info?.inAppApply).toBe(true);
     expect(mocks.legacyCheck).not.toHaveBeenCalled();
+  });
+
+  test('apply_ota download queues the bundle for in-app restart', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(otaAvailableDecision());
+    mocks.mobileUpdates.downloadOtaUpdate.mockResolvedValue(undefined);
+    mocks.mobileUpdates.queueOtaUpdateForNextLaunch.mockResolvedValue(undefined);
+
+    await useUpdateStore.getState().checkForUpdates();
+    await useUpdateStore.getState().downloadUpdate();
+
+    const state = useUpdateStore.getState();
+    expect(mocks.mobileUpdates.downloadOtaUpdate).toHaveBeenCalledWith(
+      otaAvailableDecision().ota.bundle,
+    );
+    expect(mocks.mobileUpdates.queueOtaUpdateForNextLaunch).toHaveBeenCalledOnce();
+    expect(mocks.mobileUpdates.applyOtaUpdateNow).toHaveBeenCalledOnce();
+    expect(state.downloaded).toBe(true);
+    expect(state.downloading).toBe(false);
+    expect(state.otaPhase).toBe('pending_restart');
+  });
+
+  test('apply_ota restart applies the queued bundle now', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(otaAvailableDecision());
+    mocks.mobileUpdates.applyOtaUpdateNow.mockResolvedValue(undefined);
+
+    await useUpdateStore.getState().checkForUpdates();
+    useUpdateStore.setState({ downloaded: true });
+    await useUpdateStore.getState().restartToUpdate();
+
+    expect(mocks.mobileUpdates.applyOtaUpdateNow).toHaveBeenCalledOnce();
+  });
+
+  test('apply_ota download failure stays available and does not mark downloaded', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(otaAvailableDecision());
+    mocks.mobileUpdates.downloadOtaUpdate.mockRejectedValue(new Error('disk full'));
+
+    await useUpdateStore.getState().checkForUpdates();
+    await useUpdateStore.getState().downloadUpdate();
+
+    const state = useUpdateStore.getState();
+    expect(state.downloaded).toBe(false);
+    expect(state.downloading).toBe(false);
+    expect(state.available).toBe(true);
+    expect(state.otaPhase).toBe('error');
+    expect(state.error).toBe('disk full');
+    expect(mocks.mobileUpdates.queueOtaUpdateForNextLaunch).not.toHaveBeenCalled();
+  });
+
+  test('install_native_required does not use the in-app OTA download path', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
+      status: 'ok',
+      primaryAction: 'install_native_required',
+      ota: { state: 'incompatible' },
+      native: {
+        state: 'required',
+        version: '1.19.0',
+        installUrl: 'https://example.com/app.apk',
+      },
+      nextCheckInSec: 1200,
+    });
+
+    await useUpdateStore.getState().checkForUpdates();
+    await useUpdateStore.getState().downloadUpdate();
+
+    const state = useUpdateStore.getState();
+    expect(state.info?.inAppApply).toBeUndefined();
+    expect(state.info?.manualUpdate).toBe(true);
+    expect(state.downloaded).toBe(false);
+    expect(mocks.mobileUpdates.downloadOtaUpdate).not.toHaveBeenCalled();
   });
 
   test('OTA throw falls back to legacy mobile client update check', async () => {

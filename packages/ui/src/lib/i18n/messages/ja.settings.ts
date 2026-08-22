@@ -379,6 +379,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.checkUpdates': 'アップデートを確認',
   'settings.openchamber.about.actions.update': 'アップデート',
   'settings.openchamber.about.actions.updateToVersion': '{version} にアップデート',
+  'settings.openchamber.about.actions.applyOtaToVersion': '{version} に今すぐ更新',
+  'settings.openchamber.about.actions.installNativeToVersion': '{version} をインストール',
   'settings.openchamber.about.actions.checkForUpdates': 'アップデートを確認',
   'settings.openchamber.about.toast.latestVersion': '最新バージョンです',
   'settings.openchamber.about.toast.checkFailed': '更新を確認できませんでした',

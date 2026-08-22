@@ -42,6 +42,9 @@ const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
 const { parseOtaManifest } = await import(
   pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/ota-manifest.js')).href
 )
+const { compareReleaseVersions } = await import(
+  pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/semver.js')).href
+)
 
 function parseArgs(argv) {
   const out = {
@@ -258,6 +261,14 @@ async function main() {
   const previousGeneration = Number.isInteger(previous.generation) ? previous.generation : 0
   const generation = previousGeneration + 1
   const previousActive = previous.activeBundle ?? null
+  if (previousActive?.releaseVersion) {
+    const comparison = compareReleaseVersions(args.version, previousActive.releaseVersion)
+    if (comparison !== null && comparison < 0) {
+      throw new Error(
+        `Refusing to publish OTA ${args.version} older than active ${previousActive.releaseVersion}`,
+      )
+    }
+  }
 
   const rollbackBundleIds = []
   if (previousActive?.bundleId) rollbackBundleIds.push(previousActive.bundleId)

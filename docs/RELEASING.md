@@ -371,7 +371,9 @@ node scripts/mobile-ota/rollout.mjs --action rollback --channel beta --out /tmp/
 node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 100 --out /tmp/ota-snap
 ```
 
-`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`，把本轮 Android/iOS 版本写入 beta 通道的 `nativeTargets`（稳定版与 beta `v*` 都会前移指针）。
+`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`（`minNativeBuild` = 本轮 `run_number`），再写入 Android/iOS `nativeTargets`。这样刚装完的原生 N 不会被仍停在 N-1 的 OTA 包打回去。OTA 解析器也禁止把设备降到比当前 native / 已应用 bundle 更旧的 `releaseVersion`。
+
+稳定版与 beta `v*` 都会前移指针。后续纯 web 的 `mobile-beta/*` / `mobile-stable/*` 仍可单独发更高版本 OTA；assemble 会拒绝比当前 active 更旧的包。
 
 ### 加密与体积门禁
 

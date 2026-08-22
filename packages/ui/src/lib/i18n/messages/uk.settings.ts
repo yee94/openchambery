@@ -346,6 +346,8 @@ export const settingsDict = {
   "settings.openchamber.about.actions.checkUpdates": "Перевірити оновлення",
   "settings.openchamber.about.actions.update": "Оновити",
   "settings.openchamber.about.actions.updateToVersion": "Оновити до {version}",
+  "settings.openchamber.about.actions.applyOtaToVersion": "Оновити зараз до {version}",
+  "settings.openchamber.about.actions.installNativeToVersion": "Встановити {version}",
   "settings.openchamber.about.actions.checkForUpdates": "Перевірити наявність оновлень",
   "settings.openchamber.about.toast.latestVersion": "Ви використовуєте останню версію",
   "settings.openchamber.about.toast.checkFailed": "Не вдалося перевірити наявність оновлень",

@@ -1,3 +1,5 @@
+import { compareReleaseVersions, parseReleaseVersion } from './semver.js';
+
 const DEFAULT_NEXT_CHECK_IN_SEC = 3600;
 
 /**
@@ -48,6 +50,49 @@ function nativeInfo(nativeTarget) {
     info.installUrl = nativeTarget.installUrl;
   }
   return info;
+}
+
+/**
+ * Highest release version the device is already known to be on.
+ * Used so a fresh native install (`currentBundleId: builtin`) cannot be
+ * rolled back to an older activeBundle.
+ */
+export function resolveCurrentFloorVersion(request, nativeTarget) {
+  const candidates = [];
+  if (parseReleaseVersion(request.currentBundleId)) {
+    candidates.push(request.currentBundleId);
+  }
+  const native = parseReleaseVersion(request.nativeVersion);
+  // iOS marketing versions may strip `-beta.N`. Only trust nativeVersion when
+  // it still carries a prerelease (Android versionName, or an unstripped iOS).
+  if (native && native.beta !== null) {
+    candidates.push(request.nativeVersion);
+  }
+  if (
+    nativeTarget
+    && Number.isInteger(request.nativeBuild)
+    && Number.isInteger(nativeTarget.build)
+    && request.nativeBuild >= nativeTarget.build
+    && parseReleaseVersion(nativeTarget.version)
+  ) {
+    candidates.push(nativeTarget.version);
+  }
+
+  let floor = null;
+  for (const candidate of candidates) {
+    if (floor === null) {
+      floor = candidate;
+      continue;
+    }
+    const comparison = compareReleaseVersions(candidate, floor);
+    if (comparison !== null && comparison > 0) floor = candidate;
+  }
+  return floor;
+}
+
+function isOtaDowngrade(activeVersion, floorVersion) {
+  const comparison = compareReleaseVersions(activeVersion, floorVersion);
+  return comparison !== null && comparison < 0;
 }
 
 function nativeAvailableIfNewer(nativeTarget, nativeBuild) {
@@ -121,7 +166,8 @@ export function resolveMobileUpdate(manifest, request) {
   // both identities count as "current".
   const onCurrentBundle = request.currentBundleId === activeBundle.bundleId
     || request.currentBundleId === activeBundle.releaseVersion;
-  if (!onCurrentBundle) {
+  const floorVersion = resolveCurrentFloorVersion(request, nativeTarget);
+  if (!onCurrentBundle && !isOtaDowngrade(activeBundle.releaseVersion, floorVersion)) {
     return {
       status: 'ok',
       primaryAction: 'apply_ota',

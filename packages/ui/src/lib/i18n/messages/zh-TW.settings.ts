@@ -343,6 +343,8 @@
   'settings.openchamber.about.actions.checkUpdates': '檢查更新',
   'settings.openchamber.about.actions.update': '更新',
   'settings.openchamber.about.actions.updateToVersion': '更新到 {version}',
+  'settings.openchamber.about.actions.applyOtaToVersion': '一鍵更新到 {version}',
+  'settings.openchamber.about.actions.installNativeToVersion': '安裝 {version}',
   'settings.openchamber.about.actions.checkForUpdates': '檢查更新',
   'settings.openchamber.about.toast.latestVersion': '你已是最新版本',
   'settings.openchamber.about.toast.checkFailed': '無法檢查更新',

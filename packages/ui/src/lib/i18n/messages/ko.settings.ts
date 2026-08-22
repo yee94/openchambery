@@ -346,6 +346,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.checkUpdates': '업데이트 확인',
   'settings.openchamber.about.actions.update': '업데이트',
   'settings.openchamber.about.actions.updateToVersion': '{version}으로 업데이트',
+  'settings.openchamber.about.actions.applyOtaToVersion': '{version}으로 지금 업데이트',
+  'settings.openchamber.about.actions.installNativeToVersion': '{version} 설치',
   'settings.openchamber.about.actions.checkForUpdates': '업데이트 확인',
   'settings.openchamber.about.toast.latestVersion': '최신 버전을 사용 중입니다',
   'settings.openchamber.about.toast.checkFailed': '업데이트를 확인할 수 없습니다',

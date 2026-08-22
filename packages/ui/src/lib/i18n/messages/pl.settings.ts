@@ -689,6 +689,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.checkUpdates': 'Sprawdź aktualizacje',
   'settings.openchamber.about.actions.update': 'Aktualizuj',
   'settings.openchamber.about.actions.updateToVersion': 'Aktualizuj do wersji {version}',
+  'settings.openchamber.about.actions.applyOtaToVersion': 'Aktualizuj teraz do {version}',
+  'settings.openchamber.about.actions.installNativeToVersion': 'Zainstaluj {version}',
   'settings.openchamber.about.field.version': 'Wersja',
   'settings.openchamber.about.field.clientVersion': 'Klient',
   'settings.openchamber.about.field.webBundle': 'Pakiet web',

@@ -346,6 +346,8 @@ export const settingsDict = {
   "settings.openchamber.about.actions.checkUpdates": "Comprobar actualizaciones",
   "settings.openchamber.about.actions.update": "Actualizar",
   "settings.openchamber.about.actions.updateToVersion": "Actualizar a {version}",
+  "settings.openchamber.about.actions.applyOtaToVersion": "Actualizar ahora a {version}",
+  "settings.openchamber.about.actions.installNativeToVersion": "Instalar {version}",
   "settings.openchamber.about.actions.checkForUpdates": "Comprobar actualizaciones",
   "settings.openchamber.about.toast.latestVersion": "Ya estás en la última versión",
   "settings.openchamber.about.toast.checkFailed": "No se pudo comprobar actualizaciones",

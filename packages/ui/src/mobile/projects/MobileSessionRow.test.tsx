@@ -35,9 +35,9 @@ describe('Mobile project group chrome', () => {
   });
 
   test('uses explicit session-row state selectors after the transparent base', () => {
-    const transparentIndex = mobileStyles.indexOf('.oc-mobile-session-row-content {');
+    const transparentIndex = mobileStyles.indexOf('.oc-mobile-session-row-content,\n.oc-mobile-session-pagination-row {');
     const activeIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-active="true"]');
-    const pressedIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-pressed="true"]');
+    const pressedIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-pressed="true"],\n.oc-mobile-session-pagination-row[data-pressed="true"]');
     const activePressedIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-active="true"][data-pressed="true"]');
 
     expect(transparentIndex).toBeGreaterThan(-1);
@@ -92,6 +92,10 @@ describe('MobileSessionRow status placement', () => {
     );
     expect(source).toContain("data-active={session.active ? 'true' : undefined}");
     expect(source).toContain("data-pressed={pressed ? 'true' : undefined}");
+    expect(source).toContain('setPressed(false)');
+    expect(source).toContain("window.addEventListener('pointerup', clearPressed)");
+    expect(source).toContain('handlePaginationPointerDown');
+    expect(source).toContain('oc-mobile-session-pagination-row');
   });
 
   test('renders the running indicator in the leading status slot', () => {

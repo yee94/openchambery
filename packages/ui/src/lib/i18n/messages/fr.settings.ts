@@ -269,6 +269,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.checkUpdates': 'Vérifier les mises à jour',
   'settings.openchamber.about.actions.update': 'Mise à jour',
   'settings.openchamber.about.actions.updateToVersion': 'Mise à jour vers {version}',
+  'settings.openchamber.about.actions.applyOtaToVersion': 'Mettre à jour vers {version}',
+  'settings.openchamber.about.actions.installNativeToVersion': 'Installer {version}',
   'settings.openchamber.about.actions.checkForUpdates': 'Vérifier les mises à jour',
   'settings.openchamber.about.toast.latestVersion': 'Vous êtes sur la dernière version',
   'settings.openchamber.about.toast.checkFailed': 'Impossible de vérifier les mises à jour',

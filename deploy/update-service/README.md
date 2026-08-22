@@ -123,6 +123,8 @@ Maps the same resolver decision:
 - `install_native_required` → `{ major: true, breaking: true, message: "native update required" }`
 - otherwise → `{ message: "No new version available", version: "", url: "" }`
 
+OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 设备已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。同版本不同 `bundleId` 仍可作内容更正。
+
 Manifest load failure returns `503 { "error": "ota_manifest_unavailable" }` on both endpoints (never a forged no-update).
 
 Capgo clients typically send `platform`, `device_id`, `app_id`, `version_build`, `version_code`, `version_name`, and `defaultChannel`.

@@ -64,9 +64,14 @@ export const canSendQueuedMessage = (message: QueuedMessage, hasDispatchLock: bo
     return !hasDispatchLock && (status === 'queued' || status === 'retrying' || status === 'failed' || status === 'unresolved');
 };
 
-export const canSendServerQueuedMessage = (message: MessageQueueServerDisplayItem, hasDispatchLock: boolean): boolean => {
+export const canSendServerQueuedMessage = (
+    message: MessageQueueServerDisplayItem,
+    hasDispatchLock: boolean,
+    options?: { allowManualDispatchRetry?: boolean },
+): boolean => {
     if (isMessageQueuePendingAdmissionItem(message)) return false;
     if (hasDispatchLock) return false;
+    if (message.manualDispatchRequested === true && !options?.allowManualDispatchRetry) return false;
     return ['queued', 'retrying', 'failed', 'unresolved'].includes(message.status);
 };
 
@@ -96,12 +101,26 @@ export const isServerQueueItemActiveAttempt = (item: Pick<MessageQueueItem, 'sta
 // inspects authoritative MessageQueueItem rows.
 export const isServerQueueItemDispatchPending = (item: MessageQueueItem): boolean => item.manualDispatchRequested === true || item.status === 'sending' || item.status === 'reconciling';
 
-// Tracking rows that already crossed (or are about to cross) the send boundary stay
-// durable server-side until exact confirmation/tombstone, but chips hide them so the
-// user sees only waiting/recoverable work. failed/unresolved restore visibility.
+// Chips hide only after the worker truly starts consuming the row (sending/reconciling).
+// Pending client send, committed-ack send shadows, and authoritative
+// `manualDispatchRequested` keep the waiting row visible in a "Sending…" state.
+// failed/unresolved restore normal Send/Edit once tracking ends.
 export const isServerQueueItemHiddenFromChips = (item: MessageQueueItem): boolean => (
-    item.manualDispatchRequested === true || item.status === 'sending' || item.status === 'reconciling'
+    item.status === 'sending' || item.status === 'reconciling'
 );
+
+/** Client presentation timeout for optimistic/manual send-pending before restoring Send. */
+export const SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS = 8_000;
+
+export const isServerQueueSendPendingTimedOut = (
+    startedAtMs: number,
+    nowMs: number,
+    timeoutMs = SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS,
+): boolean => {
+    if (!Number.isFinite(startedAtMs) || !Number.isFinite(nowMs) || !Number.isFinite(timeoutMs)) return false;
+    if (timeoutMs < 0) return false;
+    return nowMs - startedAtMs >= timeoutMs;
+};
 
 export type ServerQueueOperationKind = 'edit' | 'send' | 'remove' | 'reorder';
 
@@ -116,7 +135,7 @@ export type ServerQueueOperationIdentity = {
     queueItemIDs?: string[];
 };
 
-/** Successful send mutations that still outrank the authoritative scope revision keep hiding their target until the observer converges. */
+/** Successful send mutations that still outrank the authoritative scope revision keep the waiting row in send-pending UI until the observer converges. */
 export type ServerQueueCommittedSendShadow = ServerQueueOperationIdentity & {
     kind: 'send';
     committedRevision: number;
@@ -167,8 +186,10 @@ export const selectCommittedSendShadows = (
 // Pure optimistic reordering over authoritative server items. Only existing item
 // references are reused; no item is recreated and pending admission rows are
 // preserved untouched.
-//   - send/edit/remove: hide the target immediately; definitive mutation failure
+//   - edit/remove: hide the target immediately; definitive mutation failure
 //     clears the pending overlay so waiting/failed/unresolved rows reappear.
+//   - send: leave the target visible (chip shows "Sending…"); definitive mutation
+//     failure clears the pending overlay so Send/Edit return.
 //   - reorder: reorders existing items to match queueItemIDs order; returns the
 //     original array reference when the existing order already matches.
 // When the target is missing or the reorder order already matches, the original
@@ -177,7 +198,10 @@ export const applyPendingServerQueueOperation = (
     items: readonly MessageQueueServerDisplayItem[],
     operation: ServerQueueOperationIdentity,
 ): readonly MessageQueueServerDisplayItem[] => {
-    if (operation.kind === 'edit' || operation.kind === 'remove' || operation.kind === 'send') {
+    if (operation.kind === 'send') {
+        return items;
+    }
+    if (operation.kind === 'edit' || operation.kind === 'remove') {
         const index = items.findIndex((item) => !isMessageQueuePendingAdmissionItem(item) && item.queueItemID === operation.queueItemID);
         if (index < 0) return items;
         return [...items.slice(0, index), ...items.slice(index + 1)];
@@ -223,8 +247,9 @@ export const applyPendingServerQueueOperations = (
 ): readonly MessageQueueServerDisplayItem[] => operations.reduce(applyPendingServerQueueOperation, items);
 
 // Chip projection: apply pending + committed-ack-revision send shadows, then hide
-// authoritative tracking rows (manual intent / sending / reconciling). Durable
-// rows remain on the server until exact message confirmation or tombstone.
+// only authoritative sending/reconciling rows. Pending/committed send overlays and
+// `manualDispatchRequested` leave the waiting row visible for "Sending…" UI.
+// Durable rows remain on the server until exact message confirmation or tombstone.
 // failed/unresolved reappear once the authoritative revision reaches the ack
 // (shadow ends) even if a success mutation entry remains briefly in cache.
 export const projectServerQueueChipItems = (
