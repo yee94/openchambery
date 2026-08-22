@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { rewriteLengthToDesignPt } from './postcss-dpt-font-size.mjs';
+import { rewriteLengthToDesignPt } from '../../../../scripts/postcss-dpt-font-size.mjs';
 
 describe('rewriteLengthToDesignPt', () => {
   test('converts px and rem font sizes', () => {

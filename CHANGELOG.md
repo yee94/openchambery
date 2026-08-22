@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.30] - 2026-08-22
+
+### 移动端
+
+- **OTA 更新通道国内入口就绪：** `openchamber.xiaobe.top` 现通过边缘反向代理实时跟随权威更新源——渠道清单 60 秒边缘缓存、更新包内容寻址永久缓存，国内设备检查更新与下载包全程走 EdgeOne CDN，发布后无需任何手动同步。
+- **字体按物理尺寸渲染（pt 基准）：** 移动端引入 design-pt 缩放管线，字号以物理点为单位换算，不同屏幕密度下视觉大小一致。
+
 ## [1.18.2-beta.29] - 2026-08-22
 
 ### 移动端
