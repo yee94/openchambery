@@ -208,4 +208,37 @@ describe('hostedSessionHistory', () => {
     expect(merged[0]?.info).toBe(liveSystemOnly.info);
     expect(merged[0]?.parts).toEqual(admissionParts);
   });
+
+  test('previous assistant reply survives stateless binding advance once history owns it', () => {
+    const oldUser = historyEntry('ses_old', 'msg_old_user');
+    const oldReply: AssistantHistoryEntry = {
+      sessionID: 'ses_old',
+      directory: '/workspace',
+      info: { id: 'msg_old_reply', role: 'assistant', sessionID: 'ses_old', time: { created: 2 } } as Message,
+      parts: [{ type: 'text', text: 'old reply' } as never],
+    };
+    const oldLive = [
+      entry('msg_old_user'),
+      { info: { id: 'msg_old_reply', role: 'assistant' as const, time: { created: 2 } } as Message, parts: oldReply.parts },
+    ];
+    expect(mergeHostedCurrentSessionHistory([oldUser, oldReply], 'ses_old', oldLive).map((item) => item.info.id))
+      .toEqual(['msg_old_user', 'msg_old_reply']);
+
+    const newUser = historyEntry('ses_new', 'msg_new_user');
+    const entries = [oldUser, oldReply, newUser];
+    const prefix = stitchHostedSessionHistory(entries, 'ses_new');
+    const current = mergeHostedCurrentSessionHistory(entries, 'ses_new', [entry('msg_new_user')]);
+
+    expect(prefix.map((item) => item.info.id)).toEqual([
+      'msg_old_user',
+      'msg_old_reply',
+    ]);
+    expect(current.map((item) => item.info.id)).toEqual(['msg_new_user']);
+    expect([...prefix, createAssistantSessionDivider('ses_new'), ...current].map((item) => item.info.id)).toEqual([
+      'msg_old_user',
+      'msg_old_reply',
+      `${ASSISTANT_SESSION_DIVIDER_PREFIX}ses_new`,
+      'msg_new_user',
+    ]);
+  });
 });

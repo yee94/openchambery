@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
+import { reduceBackfillState } from './history-state.js';
 
 const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 11;
@@ -222,6 +223,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
     db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
   };
+  // Reopen demand backfill without clearing covered/provisional mirrors.
+  const invalidateBackfill = (assistantID, sessionID) => {
+    const current = db.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').get(assistantID, sessionID);
+    const next = reduceBackfillState({ cursor: current?.cursor ?? null, complete: Boolean(current?.complete) }, 'invalidate');
+    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(assistantID, sessionID, next.cursor, next.complete ? 1 : 0, now());
+  };
   // Structural part deletes may leave a covered message incomplete; re-demand that session only.
   // Do not blanket-uncover on ordinary message/part upserts — that blanks served history until re-backfill.
   const invalidateMessageCoverage = (assistantID, sessionID, messageID) => {
@@ -235,12 +242,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (payload.type === 'message.updated') {
       const info = properties.info; const sessionID = info?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(info)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) mirrorMessage(assistantID, sessionID, info, undefined, assistant(assistantID)?.current_session_id === sessionID); return assistants.length > 0;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { const current = assistant(assistantID)?.current_session_id === sessionID; mirrorMessage(assistantID, sessionID, info, undefined, current); if (!current) invalidateBackfill(assistantID, sessionID); } return assistants.length > 0;
     }
     if (payload.type === 'message.part.updated') {
       const part = properties.part; const sessionID = properties.sessionID ?? part?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(part)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare("DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id GLOB 'oc_asst_admission:*'").run(assistantID, sessionID, part.messageID); mirrorPart(assistantID, sessionID, part); } return assistants.length > 0;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare("DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id GLOB 'oc_asst_admission:*'").run(assistantID, sessionID, part.messageID); mirrorPart(assistantID, sessionID, part); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.length > 0;
     }
     if (payload.type === 'message.removed') {
       const sessionID = properties.sessionID; const messageID = properties.messageID;
@@ -251,6 +258,18 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       const sessionID = properties.sessionID; const messageID = properties.messageID ?? properties.part?.messageID; const partID = properties.partID ?? properties.part?.id;
       if (!nonEmptyString(sessionID) || !nonEmptyString(messageID) || !nonEmptyString(partID)) return false;
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').run(assistantID, sessionID, messageID, partID); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateMessageCoverage(assistantID, sessionID, messageID); } return assistants.length > 0;
+    }
+    if (payload.type === 'session.idle' || payload.type === 'session.error') {
+      const sessionID = properties.sessionID;
+      if (!nonEmptyString(sessionID)) return false;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+    }
+    if (payload.type === 'session.status') {
+      const sessionID = properties.sessionID;
+      const statusType = typeof properties.status?.type === 'string' ? properties.status.type : typeof properties.info?.type === 'string' ? properties.info.type : '';
+      if (!nonEmptyString(sessionID) || !nonEmptyString(statusType)) return false;
+      if (statusType !== 'busy' && statusType !== 'retry' && statusType !== 'idle') return false;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
     }
     return false;
   };

@@ -418,7 +418,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     // Agent selector open state lives in useUIStore so Ctrl+X → A (and other
     // global shortcuts) can open it the same way Ctrl+Shift+M opens models.
-    const { favoriteModelsList, recentModelsList } = useModelLists();
+    const { favoriteModelsList, recentModelsList } = useModelLists({
+        currentProviderID: currentProviderId,
+        currentModelID: currentModelId,
+    });
 
     const { isMobile: deviceIsMobile } = useDeviceInfo();
     // The composer decides whether it renders the mobile layout from the UI

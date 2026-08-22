@@ -26,6 +26,9 @@ public class MainActivity extends BridgeActivity {
         // IME bookends for cached-height CSS composer choreography.
         // Double-post = after load.
         if (getBridge() != null && getBridge().getWebView() != null) {
+            // Keep CSS px at 100% so Android system font scale does not inflate
+            // WebView text relative to iOS WKWebView.
+            getBridge().getWebView().getSettings().setTextZoom(100);
             getBridge().getWebView().post(() ->
                 getBridge().getWebView().post(() -> {
                     imeSyncBridge = new ImeSyncBridge(this);

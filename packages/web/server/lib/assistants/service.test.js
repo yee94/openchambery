@@ -501,7 +501,7 @@ describe('assistants service', () => {
     expect((await restarted.historicalMessages(assistant.id)).entries[0]).toMatchObject({ sessionID: first.sessionID, directory: null }); const historicalRequest = messages.find((input) => input.sessionID === first.sessionID); expect(historicalRequest).toMatchObject({ sessionID: first.sessionID }); expect(historicalRequest.directory).toBeUndefined(); const persisted = new Database(path.join(directory, 'assistants.sqlite')); expect(persisted.prepare('SELECT directory FROM assistant_session_history WHERE assistant_id=? AND session_id=?').get(assistant.id, first.sessionID).directory).toBeNull(); persisted.close(); restarted.close();
   });
 
-  it('keeps covered history visible across ordinary message events without re-backfill', async () => {
+  it('keeps covered history visible across ordinary message events without clearing coverage', async () => {
     const directory = root(); let creates = 0; let calls = 0;
     const service = setup(directory, {
       create: async () => ({ data: { id: `ses_${++creates}` } }),
@@ -520,13 +520,117 @@ describe('assistants service', () => {
     expect(calls).toBe(1);
     service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_1', sessionID: first.sessionID, role: 'assistant', time: { created: 1 }, status: 'completed' } } });
     service.processEvent({ type: 'message.part.updated', properties: { sessionID: first.sessionID, part: { id: 'part_1', sessionID: first.sessionID, messageID: 'msg_1', type: 'text', text: 'hello updated' } } });
+    const Database = require('better-sqlite3');
+    const db = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(db.prepare('SELECT covered FROM assistant_message_mirror WHERE session_id=? AND message_id=?').get(first.sessionID, 'msg_1')).toEqual({ covered: 1 });
+    expect(db.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE session_id=?').get(first.sessionID)).toEqual({ cursor: null, complete: 0 });
+    db.close();
     expect((await service.historicalMessages(assistant.id)).entries).toEqual([{
       sessionID: first.sessionID,
       directory: expect.any(String),
       info: { id: 'msg_1', sessionID: first.sessionID, role: 'assistant', time: { created: 1 }, status: 'completed' },
       parts: [{ id: 'part_1', sessionID: first.sessionID, messageID: 'msg_1', type: 'text', text: 'hello updated' }],
     }]);
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
+    service.close();
+  });
+
+  it('keeps a provisional archived assistant reply when the first backfill page only returns the user row', async () => {
+    const directory = root();
+    let creates = 0;
+    let archivedPages = 0;
+    let allowFullArchive = false;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      promptAsync: async () => ({ response: { status: 204 } }),
+      messages: async ({ sessionID }) => {
+        if (sessionID !== 'ses_2') return { data: [], response: { headers: { get: () => null } } };
+        archivedPages += 1;
+        if (!allowFullArchive) {
+          return {
+            data: [{ info: { id: 'msg_user_1', sessionID, role: 'user', time: { created: 10 } }, parts: [{ id: 'part_user_1', sessionID, messageID: 'msg_user_1', type: 'text', text: 'one' }] }],
+            response: { headers: { get: () => null } },
+          };
+        }
+        return {
+          data: [
+            { info: { id: 'msg_reply_1', sessionID, role: 'assistant', time: { created: 20 } }, parts: [{ id: 'part_reply_1', sessionID, messageID: 'msg_reply_1', type: 'text', text: 'reply-one' }] },
+            { info: { id: 'msg_user_1', sessionID, role: 'user', time: { created: 10 } }, parts: [{ id: 'part_user_1', sessionID, messageID: 'msg_user_1', type: 'text', text: 'one' }] },
+          ],
+          response: { headers: { get: () => null } },
+        };
+      },
+    });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const initial = await service.ensure(assistant.id);
+    expect(initial.sessionID).toBe('ses_1');
+    // Stateless send replaces the binding: execution lives on a fresh session.
+    const first = await service.send(assistant.id, { ...initial, messageID: 'msg_user_1', parts: [{ type: 'text', text: 'one' }] });
+    expect(first.binding.sessionID).toBe('ses_2');
+    service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_user_1', sessionID: first.binding.sessionID, role: 'user', time: { created: 10 } } } });
+    service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_reply_1', sessionID: first.binding.sessionID, role: 'assistant', time: { created: 20 } } } });
+    service.processEvent({ type: 'message.part.updated', properties: { sessionID: first.binding.sessionID, part: { id: 'part_reply_1', sessionID: first.binding.sessionID, messageID: 'msg_reply_1', type: 'text', text: 'reply-one' } } });
+    await service.send(assistant.id, { ...first.binding, messageID: 'msg_user_2', parts: [{ type: 'text', text: 'two' }] });
+    const page = await service.historicalMessages(assistant.id, { limit: 10 });
+    expect(page.entries.map((entry) => [entry.sessionID, entry.info.id, entry.info.role])).toEqual(expect.arrayContaining([
+      [first.binding.sessionID, 'msg_user_1', 'user'],
+      [first.binding.sessionID, 'msg_reply_1', 'assistant'],
+    ]));
+    expect(archivedPages).toBe(1);
+    const Database = require('better-sqlite3');
+    const persisted = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(persisted.prepare('SELECT message_id,covered FROM assistant_message_mirror WHERE session_id=? ORDER BY message_id').all(first.binding.sessionID)).toEqual(expect.arrayContaining([
+      { message_id: 'msg_reply_1', covered: 0 },
+      { message_id: 'msg_user_1', covered: 1 },
+    ]));
+    expect(persisted.prepare('SELECT message_id FROM assistant_message_mirror WHERE session_id=? AND message_id=?').get(first.binding.sessionID, 'msg_reply_1')).toEqual({ message_id: 'msg_reply_1' });
+    persisted.close();
+    allowFullArchive = true;
+    service.processEvent({ type: 'session.idle', properties: { sessionID: first.binding.sessionID } });
+    const upgraded = await service.historicalMessages(assistant.id, { limit: 10 });
+    expect(upgraded.entries.map((entry) => [entry.sessionID, entry.info.id, entry.info.role])).toEqual(expect.arrayContaining([
+      [first.binding.sessionID, 'msg_user_1', 'user'],
+      [first.binding.sessionID, 'msg_reply_1', 'assistant'],
+    ]));
+    expect(archivedPages).toBe(2);
+    const after = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(after.prepare('SELECT covered FROM assistant_message_mirror WHERE session_id=? AND message_id=?').get(first.binding.sessionID, 'msg_reply_1')).toEqual({ covered: 1 });
+    after.close();
+    service.close();
+  });
+
+  it.each([
+    ['message.updated', (sessionID) => ({ type: 'message.updated', properties: { info: { id: 'msg_late', sessionID, role: 'assistant', time: { created: 99 } } } })],
+    ['message.part.updated', (sessionID) => ({ type: 'message.part.updated', properties: { sessionID, part: { id: 'part_late', sessionID, messageID: 'msg_1', type: 'text', text: 'late' } } })],
+    ['session.idle', (sessionID) => ({ type: 'session.idle', properties: { sessionID } })],
+    ['session.error', (sessionID) => ({ type: 'session.error', properties: { sessionID } })],
+    ['session.status busy', (sessionID) => ({ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } })],
+    ['session.status retry via info', (sessionID) => ({ type: 'session.status', properties: { sessionID, info: { type: 'retry' } } })],
+    ['session.status idle', (sessionID) => ({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } })],
+  ])('reopens archived backfill on %s while preserving covered rows', async (_label, buildEvent) => {
+    const directory = root();
+    let creates = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      messages: async ({ sessionID }) => ({
+        data: [{ info: { id: 'msg_1', sessionID, role: 'assistant', time: { created: 1 } }, parts: [{ id: 'part_1', sessionID, messageID: 'msg_1', type: 'text', text: 'hello' }] }],
+        response: { headers: { get: () => null } },
+      }),
+    });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const first = await service.ensure(assistant.id);
+    await service.createNew(assistant.id);
+    await service.historicalMessages(assistant.id, { limit: 10 });
+    const Database = require('better-sqlite3');
+    const before = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(before.prepare('SELECT covered FROM assistant_message_mirror WHERE session_id=? AND message_id=?').get(first.sessionID, 'msg_1')).toEqual({ covered: 1 });
+    expect(before.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE session_id=?').get(first.sessionID)).toEqual({ cursor: null, complete: 1 });
+    before.close();
+    expect(service.processEvent(buildEvent(first.sessionID))).toBe(true);
+    const after = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(after.prepare('SELECT covered FROM assistant_message_mirror WHERE session_id=? AND message_id=?').get(first.sessionID, 'msg_1')).toEqual({ covered: 1 });
+    expect(after.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE session_id=?').get(first.sessionID)).toEqual({ cursor: null, complete: 0 });
+    after.close();
     service.close();
   });
 
