@@ -586,6 +586,7 @@ describe('assistants service', () => {
       [first.binding.sessionID, 'msg_user_1', 'user'],
       [first.binding.sessionID, 'msg_reply_1', 'assistant'],
     ]));
+    expect(page.complete).toBe(true);
     expect(archivedPages).toBe(1);
     const Database = require('better-sqlite3');
     const persisted = new Database(path.join(directory, 'assistants.sqlite'));

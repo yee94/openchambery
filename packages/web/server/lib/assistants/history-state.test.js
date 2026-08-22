@@ -45,6 +45,12 @@ describe('reduceBackfillState', () => {
       event: { type: 'session-missing' },
       expected: { cursor: null, complete: true, disposition: 'discard-provisional' },
     },
+    {
+      name: 'unknown event preserves state',
+      state: { cursor: 'opaque-6', complete: true },
+      event: { type: 'unknown' },
+      expected: { cursor: 'opaque-6', complete: true, disposition: 'preserve' },
+    },
   ])('$name', ({ state, event, expected }) => {
     expect(reduceBackfillState(state, event)).toEqual(expected);
   });
