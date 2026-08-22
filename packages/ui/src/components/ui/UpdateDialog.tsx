@@ -309,13 +309,13 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={isWebUpdating ? undefined : onOpenChange}>
-      <DialogContent className="max-w-4xl p-5 bg-background border-[var(--interactive-border)]" showCloseButton={true}>
+      <DialogContent className="max-w-4xl gap-0 p-4 sm:p-5 bg-background border-[var(--interactive-border)]" showCloseButton={true}>
         
         {/* Header Section */}
-        <div className="flex items-center mb-1">
-          <DialogTitle className="flex items-center gap-2.5">
+        <div className="mb-3 pr-8 sm:mb-4">
+          <DialogTitle className="flex items-center gap-2">
             <Icon name="download-cloud" className="h-5 w-5 text-[var(--primary-base)]" />
-            <span className="text-lg font-semibold text-foreground">
+            <span className="text-base font-semibold text-foreground sm:text-lg">
               {webUpdateState === 'restarting' || webUpdateState === 'reconnecting'
                 ? t('updateDialog.header.updating')
                 : t('updateDialog.header.updateAvailable')}
@@ -324,22 +324,22 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
           {/* Version Diff */}
           {(info?.currentVersion || info?.version) && (
-            <div className="flex items-center gap-2 font-mono text-sm ml-3">
+            <div className="mt-1.5 flex items-center gap-1.5 pl-7 font-mono text-[11px] leading-4 tracking-[-0.01em] tabular-nums sm:text-xs">
               {info?.currentVersion && (
-                <span className="text-muted-foreground">{info.currentVersion}</span>
+                <span className="text-muted-foreground/75">{info.currentVersion}</span>
               )}
               {info?.currentVersion && info?.version && (
-                <span className="text-muted-foreground/50">→</span>
+                <span className="text-muted-foreground/40">→</span>
               )}
               {info?.version && (
-                <span className="text-[var(--primary-base)] font-medium">{info.version}</span>
+                <span className="font-medium text-[var(--primary-base)]">{info.version}</span>
               )}
             </div>
           )}
         </div>
 
         {/* Content Body */}
-        <div className="space-y-2">
+        <div className="space-y-3 sm:space-y-4">
 
           {/* Web update progress */}
           {isWebRuntime && isWebUpdating && (
@@ -360,14 +360,20 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
           {/* Changelog Rendering */}
           {changelog && !isWebUpdating && (
-            <div className="rounded-lg border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20 overflow-hidden">
+            <section className="overflow-hidden rounded-xl border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20">
+              <div className="flex items-center gap-2 border-b border-[var(--surface-subtle)] px-3.5 py-2.5 sm:px-4 sm:py-3">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary-base)]" aria-hidden="true" />
+                <h3 className="typography-ui-caption font-medium text-muted-foreground">
+                  {changelog.title}
+                </h3>
+              </div>
               <ScrollableOverlay
-                className="max-h-[400px] p-0"
+                className="max-h-[min(42dvh,22rem)] p-0 sm:max-h-[400px]"
                 fillContainer={false}
               >
                 {changelog.kind === 'raw' ? (
                   <div
-                    className="p-4 typography-markdown-body text-foreground leading-relaxed break-words [&_a]:!text-[var(--primary-base)] [&_a]:!no-underline [&_a:hover]:!underline"
+                    className="break-words p-3.5 text-[13px] leading-[1.65] text-foreground sm:p-4 sm:text-sm [&_.markdown-content]:leading-[1.65] [&_a]:!text-[var(--primary-base)] [&_a]:!no-underline [&_a:hover]:!underline"
                     onClickCapture={(e) => {
                       const target = e.target as HTMLElement;
                       const a = target.closest('a');
@@ -383,17 +389,17 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
                 ) : (
                   <div className="divide-y divide-[var(--surface-subtle)]">
                     {changelog.sections.map((section) => (
-                      <div key={section.version} className="p-4">
-                        <div className="flex items-center gap-3 mb-3">
-                          <span className="typography-ui-label font-mono text-[var(--primary-base)] bg-[var(--primary-base)]/10 px-1.5 py-0.5 rounded">
+                      <div key={section.version} className="p-3.5 sm:p-4">
+                        <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 sm:mb-3">
+                          <span className="rounded-md bg-[var(--primary-base)]/10 px-1.5 py-0.5 font-mono text-[11px] font-medium leading-4 text-[var(--primary-base)] tabular-nums sm:text-xs">
                             v{section.version}
                           </span>
-                          <span className="text-sm font-medium text-muted-foreground">
+                          <span className="text-[11px] leading-4 text-muted-foreground/75 sm:text-xs">
                             {section.dateLabel}
                           </span>
                         </div>
                         <div
-                          className="typography-markdown-body text-foreground leading-relaxed break-words [&_a]:!text-[var(--primary-base)] [&_a]:!no-underline [&_a:hover]:!underline"
+                          className="break-words text-[13px] leading-[1.65] text-foreground sm:text-sm [&_.markdown-content]:leading-[1.65] [&_a]:!text-[var(--primary-base)] [&_a]:!no-underline [&_a:hover]:!underline"
                           onClickCapture={(e) => {
                             const target = e.target as HTMLElement;
                             const a = target.closest('a');
@@ -411,7 +417,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
                   </div>
                 )}
               </ScrollableOverlay>
-            </div>
+            </section>
           )}
 
           {/* Web runtime fallback command */}
@@ -447,14 +453,14 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
           {/* Desktop / in-app mobile OTA progress bar */}
           {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading && (
-            <div className="space-y-2 mt-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{t('updateDialog.status.downloadingPayload')}</span>
-                <span className="font-mono text-foreground">{progressPercent}%</span>
+            <div className="mt-3 space-y-2 rounded-lg border border-[var(--surface-subtle)] bg-[var(--surface-elevated)]/20 px-3.5 py-3 sm:mt-4 sm:px-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-muted-foreground sm:text-[13px]">{t('updateDialog.status.downloadingPayload')}</span>
+                <span className="shrink-0 font-mono text-[11px] leading-4 text-foreground tabular-nums sm:text-xs">{progressPercent}%</span>
               </div>
-              <div className="h-1.5 bg-[var(--surface-subtle)] rounded-full overflow-hidden">
+              <div className="h-1 overflow-hidden rounded-full bg-[var(--surface-subtle)] sm:h-1.5">
                 <div
-                  className="h-full bg-[var(--primary-base)] transition-all duration-300"
+                  className="h-full rounded-full bg-[var(--primary-base)] transition-all duration-300"
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>

@@ -109,11 +109,15 @@ Required JSON fields:
   "primaryAction": "none | apply_ota | install_native_required",
   "ota": { "state": "current | available | outside_rollout | incompatible", "bundle": { } },
   "native": { "state": "current | available | required", "version": "", "build": 0, "installUrl": "" },
-  "nextCheckInSec": 3600
+  "nextCheckInSec": 3600,
+  "releaseNotes": "optional markdown between nativeVersion and OTA releaseVersion"
 }
 ```
 
 Relative `bundle.url` values are resolved to absolute URLs against the request origin.
+When `primaryAction` is `apply_ota`, the handler loads `/CHANGELOG.md` from the same
+origin and attaches filtered `releaseNotes` (same extraction as `/v1/update/check`).
+Missing or empty changelog content omits the field.
 
 ### Capgo response (`/v1/ota/check`)
 

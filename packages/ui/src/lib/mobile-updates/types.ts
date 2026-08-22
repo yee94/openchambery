@@ -42,6 +42,8 @@ export interface MobileUpdateDecision {
     installUrl?: string;
   };
   nextCheckInSec: number;
+  /** Changelog markdown between the current native version and the OTA release. */
+  releaseNotes?: string;
 }
 
 export type MobileUpdatesPhase =

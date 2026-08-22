@@ -1,5 +1,6 @@
 import { loadOtaChannelManifest } from './ota-manifest.js';
 import { resolveMobileUpdate } from './ota-resolver.js';
+import { loadReleaseNotes } from './release-notes.js';
 
 const ALLOWED_CHANNELS = new Set(['beta', 'stable']);
 const ALLOWED_PLATFORMS = new Set(['ios', 'android']);
@@ -209,6 +210,20 @@ function toCapgoResponse(decision) {
   };
 }
 
+async function withReleaseNotes(decision, request, parsedRequest) {
+  if (decision.primaryAction !== 'apply_ota' || !decision.ota?.bundle?.releaseVersion) {
+    return decision;
+  }
+
+  const releaseNotes = await loadReleaseNotes(
+    request.url,
+    parsedRequest.nativeVersion,
+    decision.ota.bundle.releaseVersion,
+  );
+  if (!releaseNotes) return decision;
+  return { ...decision, releaseNotes };
+}
+
 async function runUpdateCheck(request, parsedRequest, manifestBaseUrl) {
   // By default manifests load relative to the request origin (fast on Vercel,
   // where they are static files). EdgeOne deployments must override this with
@@ -225,9 +240,13 @@ async function runUpdateCheck(request, parsedRequest, manifestBaseUrl) {
     return jsonResponse({ error: 'ota_manifest_unavailable' }, { status: 503 });
   }
 
-  const decision = withAbsoluteBundleUrl(
-    resolveMobileUpdate(manifest, parsedRequest),
-    request.url,
+  const decision = await withReleaseNotes(
+    withAbsoluteBundleUrl(
+      resolveMobileUpdate(manifest, parsedRequest),
+      request.url,
+    ),
+    request,
+    parsedRequest,
   );
   return jsonResponse(decision);
 }

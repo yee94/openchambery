@@ -44,7 +44,13 @@ function channelManifest(overrides = {}) {
   };
 }
 
-function stubChannel({ manifest, status = 200, channel = 'beta' }) {
+function stubChannel({
+  manifest,
+  status = 200,
+  channel = 'beta',
+  changelog = '',
+  changelogStatus = 200,
+}) {
   const originalFetch = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (input) => {
@@ -62,6 +68,9 @@ function stubChannel({ manifest, status = 200, channel = 'beta' }) {
         status,
         headers: { 'content-type': 'application/json' },
       });
+    }
+    if (url.pathname === '/CHANGELOG.md') {
+      return new Response(changelog, { status: changelogStatus });
     }
     throw new Error(`Unexpected static asset request: ${url.pathname}`);
   };
@@ -100,6 +109,50 @@ test('mobile update check returns apply_ota with absolute bundle URL', async () 
   assert.equal(body.ota.bundle.url, 'https://updates.example.com/ota/bundles/34ab092a8e7f6d21.zip');
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
+});
+
+test('mobile update check attaches releaseNotes for apply_ota from CHANGELOG.md', async () => {
+  const requests = stubChannel({
+    manifest: channelManifest(),
+    changelog: [
+      '# Changelog',
+      '',
+      '## [1.18.2-beta.23] - 2026-08-20',
+      '',
+      '- OTA bundle fix',
+      '',
+      '## [1.18.2-beta.22] - 2026-08-19',
+      '',
+      '- Native baseline',
+      '',
+      '## [1.18.1] - 2026-08-01',
+      '',
+      '- Older change',
+    ].join('\n'),
+  });
+  const response = await handleMobileUpdateCheck(mobileRequest(validBody));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'apply_ota');
+  assert.equal(
+    body.releaseNotes,
+    '## [1.18.2-beta.23] - 2026-08-20\n\n- OTA bundle fix',
+  );
+  assert.ok(requests.some((href) => new URL(href).pathname === '/CHANGELOG.md'));
+});
+
+test('mobile update check omits releaseNotes when CHANGELOG is unavailable', async () => {
+  stubChannel({
+    manifest: channelManifest(),
+    changelogStatus: 404,
+  });
+  const response = await handleMobileUpdateCheck(mobileRequest(validBody));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'apply_ota');
+  assert.equal(body.releaseNotes, undefined);
 });
 
 test('mobile update check returns 400 on bad body', async () => {

@@ -79,7 +79,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 ## Install (beta)
 
-Shipping a beta: choose the artifact first (`docs/RELEASING.md` § 先选产物). Web/UI-only updates go out as `mobile-beta/v*` OTA; native shell, TestFlight, or APK still need a `v*` tag.
+Shipping a beta: default to a `v*` tag so macOS and APK installers exist (`docs/RELEASING.md` § 先选产物). Use `mobile-beta/v*` only when the user wants mobile-web-only OTA and no installers.
 
 - **iOS TestFlight (public link):** https://testflight.apple.com/join/ZCENBHtm  
   External group: `OpenChamber Beta`. New CI uploads are attached to this group after processing; first-time external builds require Apple Beta App Review.

@@ -1,8 +1,8 @@
 # 发布运行手册
 
-本手册覆盖 OpenChamber 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传，iOS IPA 会上传到 TestFlight。
+本手册覆盖 OpenChamber 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传。iOS 外测打板（关联外测组 + Beta App Review）不是默认新版本的一部分。
 
-用户说「发 beta / 更新 beta / 推新版本」时，**先选产物，再打 tag**。不要默认推 `v*`。
+用户说「发 beta / 更新 beta / 推新版本」时，**默认打 `v*`**，保证 macOS / Windows / Linux / APK 等安装包都在。不要因为 `mobile-release-plan` 是 `ota` 就改打 `mobile-beta/v*`——那条流水线只有 web bundle，没有桌面和 APK。
 
 ## 先选产物
 
@@ -13,17 +13,19 @@
    node scripts/mobile-release-plan.mjs --json
    ```
 
+   这份计划用来判断 iOS 要不要上 TestFlight，**不是**用来丢掉桌面或 APK。
 3. 按结果选 tag：
 
 | 情况 | 产物 | Tag | 触发 |
 |---|---|---|---|
-| 仅 web/UI（`packages/ui`、移动端页面、样式、文案），且 `mode: "ota"` | 移动端 web bundle OTA | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
-| 原生壳 / 桥接变更（`mode: "native"`），或用户要 TestFlight / APK / 桌面安装包 / npm | 完整原生 + 桌面发布 | `vX.Y.Z-beta.N` | `release.yml` |
-| 稳定通道同等判定 | 上两行把 `beta` 换成 `stable`，tag 用 `mobile-stable/vX.Y.Z` 或无后缀 `vX.Y.Z` | 同上 | 同上 |
+| 默认新版本（含 web/UI，即使 `mode: "ota"`） | 桌面 macOS/Win/Linux + Android APK/AAB + npm + 同版本 OTA。**不**提交 TestFlight 外测打板（beta 只进内测）。 | `vX.Y.Z-beta.N` | `release.yml`（含 `mobile-native-targets`） |
+| 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
+| 原生壳 / 桥接变更（`mode: "native"`），或用户明确要 TestFlight | 完整原生 + 桌面；iOS 上传 TestFlight | `vX.Y.Z-beta.N` | `release.yml` |
+| 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
 
-OTA 只更新已安装 App 里的 Web 层。桌面 Electron、VS Code、`@openchambery/web` npm、iOS/Android 原生壳都不会变。用户明确要装包时走 `v*`。
+默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。
 
-OTA 版本必须**高于**当前通道 `activeBundle.releaseVersion`（通常是最近一次 `v*` 或 `mobile-beta/*`）。`version:bump` 与 `CHANGELOG.md` 两路都要写；OTA 提交用 `release: mobile-beta/v$VERSION`，只推该 OTA tag，**不要**同时打 `v$VERSION`。
+仅当用户明确只要 OTA、不要安装包时，才只打 OTA tag，且不要同时打 `v$VERSION`。OTA 版本必须**高于**当前通道 `activeBundle.releaseVersion`。`version:bump` 与 `CHANGELOG.md` 两路都要写。
 
 资格细则与 OTA 步骤见下文 `Mobile OTA releases`。
 
@@ -76,7 +78,7 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。iOS 流程会上传 IPA 到 TestFlight：稳定版关联外测群组并提交 Beta App Review；prerelease 只进内测，不走已有外测组。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。默认新版本要的是这些安装包，不是 TestFlight 外测打板：prerelease 若上传 iOS，只进内测；稳定版仍可按现有开关关联外测组。
 
 npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@openchambery/web`。
 

@@ -108,6 +108,18 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(mocks.legacyCheck).not.toHaveBeenCalled();
   });
 
+  test('apply_ota maps releaseNotes onto UpdateInfo.body', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
+      ...otaAvailableDecision(),
+      releaseNotes: '## [1.18.3] - 2026-08-20\n\n- OTA changelog',
+    });
+
+    await useUpdateStore.getState().checkForUpdates();
+    const state = useUpdateStore.getState();
+
+    expect(state.info?.body).toBe('## [1.18.3] - 2026-08-20\n\n- OTA changelog');
+  });
+
   test('apply_ota download queues the bundle for in-app restart', async () => {
     mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(otaAvailableDecision());
     mocks.mobileUpdates.downloadOtaUpdate.mockResolvedValue(undefined);

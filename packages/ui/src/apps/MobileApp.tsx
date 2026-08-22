@@ -10,6 +10,7 @@ import { McpDropdownContent } from '@/components/mcp/McpDropdown';
 import { AboutSettings } from '@/components/sections/openchamber/AboutSettings';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { MobileAppUpdateToast } from '@/components/update/MobileAppUpdateToast';
+import { MobileOtaUpdateNotice } from '@/components/update/MobileOtaUpdateNotice';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { Button } from '@/components/ui/button';
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
@@ -4288,6 +4289,7 @@ export function MobileApp({ apis }: MobileAppProps) {
               <SyncAppEffects embeddedBackgroundWorkEnabled={isInitialized} />
               <OpenCodeUpdateToast />
               <MobileAppUpdateToast />
+              <MobileOtaUpdateNotice />
               <MobileShell connection={pairingConnection} onActiveConnectionDeleted={() => {
                 switchRuntimeEndpoint({ apiBaseUrl: '', clientToken: null, runtimeKey: 'mobile-disconnected' });
                 useMobileNavigationStore.getState().reset();

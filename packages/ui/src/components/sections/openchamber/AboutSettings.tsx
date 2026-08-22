@@ -10,7 +10,7 @@ import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getMobileClientVersion } from '@/lib/mobileAppVersion';
+import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber } from '@/lib/mobileAppVersion';
 import {
   exportAndDownloadClientDiagnostics,
   isTranscriptDiagnosticsEnabled,
@@ -33,6 +33,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(initialUpdateDialogOpen);
   const [showChecking, setShowChecking] = React.useState(false);
   const [clientVersion, setClientVersion] = React.useState<string | null>(null);
+  const [clientBuildNumber, setClientBuildNumber] = React.useState<number | null>(null);
   const [openChamberVersion, setOpenChamberVersion] = React.useState<string | null>(null);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
   const updateStore = useUpdateStore(useShallow((s) => ({
@@ -44,7 +45,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     downloaded: s.downloaded,
     progress: s.progress,
     runtimeType: s.runtimeType,
-    otaDecision: s.otaDecision,
     checkForUpdates: s.checkForUpdates,
     downloadUpdate: s.downloadUpdate,
     restartToUpdate: s.restartToUpdate,
@@ -52,7 +52,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const { isMobile } = useDeviceInfo();
   const [exportingDiagnostics, setExportingDiagnostics] = React.useState(false);
   const [diagnosticsEnabled, setDiagnosticsEnabled] = React.useState(() => isTranscriptDiagnosticsEnabled());
-  const [webBundleLabel, setWebBundleLabel] = React.useState<string | null>(null);
 
   const handleDiagnosticsEnabledChange = useEvent((enabled: boolean) => {
     setTranscriptDiagnosticsEnabled(enabled);
@@ -89,45 +88,19 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     void getMobileClientVersion().then((version) => {
       if (!cancelled) setClientVersion(version);
     });
+    void getMobileClientBuildNumber().then((build) => {
+      if (!cancelled) setClientBuildNumber(build);
+    });
 
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const otaBundleVersion = updateStore.otaDecision?.ota.bundle?.releaseVersion
-    ?? updateStore.otaDecision?.ota.bundle?.bundleId
-    ?? null;
-
-  React.useEffect(() => {
-    if (otaBundleVersion) {
-      setWebBundleLabel(otaBundleVersion);
-      return;
-    }
-
-    let cancelled = false;
-    void import('@/lib/mobile-updates/capgoAdapter').then(async ({ getCapgoUpdater }) => {
-      const updater = await getCapgoUpdater();
-      if (!updater || cancelled) return;
-      try {
-        const current = await updater.current();
-        const id = typeof current.bundle?.id === 'string' ? current.bundle.id.trim() : '';
-        if (!id || id === 'builtin') {
-          if (!cancelled) setWebBundleLabel(null);
-          return;
-        }
-        // Prefer a short hex prefix when Capgo returns a long content hash.
-        const short = /^[0-9a-f]{8,}$/i.test(id) ? id.slice(0, 8) : id;
-        if (!cancelled) setWebBundleLabel(short);
-      } catch {
-        if (!cancelled) setWebBundleLabel(null);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [otaBundleVersion]);
+  // iOS marketing versions strip `-beta.N`, so append the native build number
+  // (the only stable per-shell identity there), e.g. 1.18.2 (370).
+  const currentVersionLabel = formatMobileClientVersionLabel(clientVersion, clientBuildNumber)
+    ?? currentVersion;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -221,12 +194,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
 
         <SettingsGroup>
           <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
-            <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
-          </SettingsRow>
-          <SettingsRow label={t('settings.openchamber.about.field.webBundle')}>
-            <span className="typography-ui-label font-mono text-foreground text-right">
-              {webBundleLabel || t('settings.openchamber.about.state.builtin')}
-            </span>
+            <span className="typography-ui-label font-mono text-foreground text-right">{currentVersionLabel}</span>
           </SettingsRow>
           <SettingsRow label={t('settings.openchamber.about.field.instanceOpenChamberVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">

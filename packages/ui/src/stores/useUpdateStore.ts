@@ -234,6 +234,7 @@ function mapOtaDecisionToUpdateInfo(
         downloadUrl: decision.ota.bundle.url,
         nextSuggestedCheckInSec: decision.nextCheckInSec,
         inAppApply: true,
+        ...(decision.releaseNotes ? { body: decision.releaseNotes } : {}),
       },
     };
   }
@@ -249,6 +250,7 @@ function mapOtaDecisionToUpdateInfo(
         downloadUrl: decision.native.installUrl,
         nextSuggestedCheckInSec: decision.nextCheckInSec,
         manualUpdate: true,
+        ...(decision.releaseNotes ? { body: decision.releaseNotes } : {}),
       },
     };
   }

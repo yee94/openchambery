@@ -261,6 +261,46 @@ test('applied newer bundle version name must not roll back to an older activeBun
   assert.equal(decision.ota.state, 'current');
 });
 
+test('fresh iOS shell on the native target does not re-apply the same web bundle', () => {
+  // iOS strips `-beta` from the marketing version, so a freshly installed shell
+  // reports nativeVersion 1.18.2 (stripped) and currentBundleId 'builtin'. Its
+  // nativeBuild already reached nativeTarget.build and the shell embeds the
+  // active web bundle — the resolver must not re-offer apply_ota every check.
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.33' }),
+    nativeTargets: {
+      ios: { version: '1.18.2-beta.33', build: 370, installUrl: 'https://testflight.apple.com/join/xxx' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2', // stripped iOS marketing version
+    nativeBuild: 370,
+  }));
+  assert.equal(decision.primaryAction, 'none');
+  assert.equal(decision.ota.state, 'current');
+});
+
+test('older activeBundle still applies OTA when the shell is older than the native target', () => {
+  // Pure web OTA bumps activeBundle.releaseVersion without changing the shell.
+  // The device nativeBuild stays below nativeTarget.build, so the shell does
+  // not already embed the active web bundle → apply_ota.
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.33' }),
+    nativeTargets: {
+      ios: { version: '1.18.2-beta.30', build: 350, installUrl: 'https://testflight.apple.com/join/xxx' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2', // stripped iOS marketing version
+    nativeBuild: 350,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.state, 'available');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.2-beta.33');
+});
+
 test('same-version different bundleId is still apply_ota (content correction)', () => {
   const manifest = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.23' }),

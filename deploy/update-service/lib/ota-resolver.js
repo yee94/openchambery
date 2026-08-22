@@ -159,6 +159,25 @@ export function resolveMobileUpdate(manifest, request) {
     };
   }
 
+  // Shell already ships this (or a newer) web bundle: when the device's
+  // nativeBuild has reached nativeTarget.build and nativeTarget.version is not
+  // older than activeBundle.releaseVersion, the installed shell already embeds
+  // the active web bundle. This matters on iOS, whose marketing version strips
+  // `-beta.N` (1.18.2-beta.33 → 1.18.2), so a fresh shell reports
+  // currentBundleId 'builtin' and a stripped nativeVersion — neither identity
+  // matches, which would otherwise re-offer apply_ota on every check.
+  const nativeTargetVersion = parseReleaseVersion(nativeTarget?.version);
+  const activeReleaseVersion = parseReleaseVersion(activeBundle.releaseVersion);
+  const shellEmbeddedActiveWeb = Boolean(
+    nativeTarget
+    && nativeTargetVersion
+    && activeReleaseVersion
+    && Number.isInteger(request.nativeBuild)
+    && Number.isInteger(nativeTarget.build)
+    && request.nativeBuild >= nativeTarget.build
+    && compareReleaseVersions(nativeTarget.version, activeBundle.releaseVersion) >= 0
+  );
+
   // 4. Different active bundle → apply OTA.
   // The on-device client reports its current bundle either as the manifest
   // bundleId (content hash) or as the bundle version name (the Capgo plugin
@@ -167,7 +186,7 @@ export function resolveMobileUpdate(manifest, request) {
   const onCurrentBundle = request.currentBundleId === activeBundle.bundleId
     || request.currentBundleId === activeBundle.releaseVersion;
   const floorVersion = resolveCurrentFloorVersion(request, nativeTarget);
-  if (!onCurrentBundle && !isOtaDowngrade(activeBundle.releaseVersion, floorVersion)) {
+  if (!onCurrentBundle && !shellEmbeddedActiveWeb && !isOtaDowngrade(activeBundle.releaseVersion, floorVersion)) {
     return {
       status: 'ok',
       primaryAction: 'apply_ota',

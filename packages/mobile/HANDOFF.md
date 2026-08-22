@@ -278,7 +278,7 @@ iOS pods / Android Gradle plugin registration for Capgo is **not** checked in fr
 
 ### Related endpoints / CI
 
-- Choose OTA vs native before tagging: `docs/RELEASING.md` § 先选产物 (`node scripts/mobile-release-plan.mjs --json`).
+- Default new version is `v*` (desktop + APK + OTA). `mobile-beta/*` is mobile-web-only. See `docs/RELEASING.md` § 先选产物 (`node scripts/mobile-release-plan.mjs --json`).
 - Update-service OTA routes: `deploy/update-service` (check / bundle delivery; seeds for both `beta` and `stable` channels).
 - Mobile OTA Release workflow: `.github/workflows/mobile-beta-ota.yml` (tags `mobile-beta/*` + `mobile-stable/*`).
 - Rollout / promote-channel: `.github/workflows/mobile-beta-rollout.yml`.
