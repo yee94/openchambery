@@ -97,12 +97,11 @@ describe('projectTurnDiffStats L1 marker contract', () => {
 });
 
 describe('Turn Changes preview contract', () => {
-  test('keeps L1 count on the wire and fills inline file rows from L2', () => {
-    // L1 marker still drives visibility / header count before L2 resolves.
+  test('renders inline file rows from the L1 thin list on the wire', () => {
     expect(messageBodySource).toContain('fileCount={turnGroupingContext.diffStats.files}');
-    expect(messageBodySource).toContain('useSessionTurnChangesQuery');
-    expect(messageBodySource).toContain('enabled: shouldLoadTurnChangeFiles');
-    // Inline head restores file rows (first N) once L2 summaries arrive.
+    expect(messageBodySource).toContain('changedFiles={turnGroupingContext.changedFiles}');
+    // The thin list rides the message wire; there is no async list load.
+    expect(messageBodySource).not.toContain('useSessionTurnChangesQuery');
     expect(messageBodySource).toContain('data-turn-change-file="true"');
     expect(messageBodySource).toContain('TURN_CHANGES_PREVIEW_VISIBLE_LIMIT');
     expect(messageBodySource).toContain("mode: 'diff'");
@@ -114,22 +113,13 @@ describe('Turn Changes preview contract', () => {
 });
 
 describe('DiffView staged turn changes queries', () => {
-  test('renders turn file rows from sync thin diffs without an L2 request', () => {
+  test('renders turn file rows from sync thin diffs without any list request', () => {
     expect(diffViewSource).toContain('const thinDiffs = listTurnDiffs(message.summary?.diffs);');
-    expect(diffViewSource).toContain('const hasSyncTurnDiffs = turnChangesMarker.thinDiffs.length > 0;');
-    expect(diffViewSource).toContain('if (hasSyncTurnDiffs) return turnChangesMarker.thinDiffs;');
-    expect(diffViewSource).toContain('&& !hasSyncTurnDiffs');
-    expect(diffViewSource).toContain('enabled: shouldLoadTurnChanges');
+    expect(diffViewSource).toContain('return turnChangesMarker.thinDiffs;');
+    // No async list query for turn scope — the L1 thin list is authoritative.
+    expect(diffViewSource).not.toContain('useSessionTurnChangesQuery');
     expect(diffViewSource).not.toContain('getSessionDiff');
     expect(diffViewSource).not.toContain('mergeTurnDiffSummariesWithFull');
-  });
-
-  test('falls back to L2 only when hasDiffs is true but the sync array is missing', () => {
-    expect(diffViewSource).toContain('useSessionTurnChangesQuery');
-    expect(diffViewSource).toContain("activeDiffScope === 'turn'");
-    expect(diffViewSource).toContain('&& turnChangesMarker.hasDiffs');
-    expect(diffViewSource).toContain('&& !hasSyncTurnDiffs');
-    expect(diffViewSource).toContain('return turnChangesQuery.data?.files ?? [];');
   });
 
   test('loads L3 only for an expanded mounted file row', () => {

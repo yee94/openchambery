@@ -49,7 +49,6 @@ import {
 } from './diffPatchUtils';
 import {
     useSessionTurnChangeFileQuery,
-    useSessionTurnChangesQuery,
 } from '@/queries/sessionTurnChangesQueries';
 import type { FileDiffMetadata } from '@pierre/diffs';
 
@@ -1196,7 +1195,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
     );
 
     const usesToolPatches = selectedToolTurnDiffs.length > 0;
-    const hasSyncTurnDiffs = turnChangesMarker.thinDiffs.length > 0;
     const turnChangesRequest = React.useMemo<TurnChangesRequest | null>(() => {
         if (!resolvedSessionId || !effectiveDirectory || !turnChangesMarker.messageID) return null;
         return {
@@ -1206,33 +1204,14 @@ export const DiffView: React.FC<DiffViewProps> = ({
             diffCount: turnChangesMarker.count,
         };
     }, [effectiveDirectory, resolvedSessionId, turnChangesMarker.count, turnChangesMarker.messageID]);
-    // Prefer the L1 thin file list on the turn user message. Fall back to L2 only
-    // when hasDiffs is true but the sync array is missing/empty (legacy markers).
-    const shouldLoadTurnChanges = activeDiffScope === 'turn'
-        && !usesToolPatches
-        && turnChangesMarker.hasDiffs
-        && !hasSyncTurnDiffs
-        && Boolean(turnChangesRequest);
-    const turnChangesQuery = useSessionTurnChangesQuery({
-        sessionID: turnChangesRequest?.sessionID ?? '',
-        directory: turnChangesRequest?.directory ?? '',
-        messageID: turnChangesRequest?.messageID ?? '',
-        diffCount: turnChangesRequest?.diffCount,
-    }, {
-        enabled: shouldLoadTurnChanges,
-    });
 
+    // L1 carries the thin file list on the turn user message; render it
+    // synchronously. There is no async list load for turn scope — only the
+    // per-file L3 patch query below fetches on demand.
     const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(() => {
         if (usesToolPatches) return selectedToolTurnDiffs;
-        if (hasSyncTurnDiffs) return turnChangesMarker.thinDiffs;
-        return turnChangesQuery.data?.files ?? [];
-    }, [
-        hasSyncTurnDiffs,
-        selectedToolTurnDiffs,
-        turnChangesMarker.thinDiffs,
-        turnChangesQuery.data,
-        usesToolPatches,
-    ]);
+        return turnChangesMarker.thinDiffs;
+    }, [selectedToolTurnDiffs, turnChangesMarker.thinDiffs, usesToolPatches]);
 
     const lastTurnDiffData = React.useMemo(() => {
         const map = new Map<string, DiffData>();
@@ -1891,40 +1870,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return (
                 <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                     {t('diffView.state.notGitRepository')}
-                </div>
-            );
-        }
-
-        if (shouldLoadTurnChanges && turnChangesQuery.isPending) {
-            return (
-                <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="loader-4" className="size-4 animate-spin" />
-                    {t('diffView.state.loadingDiff')}
-                </div>
-            );
-        }
-
-        if (shouldLoadTurnChanges && turnChangesQuery.error) {
-            const errorMessage = turnChangesQuery.error instanceof Error
-                ? turnChangesQuery.error.message
-                : String(turnChangesQuery.error);
-            return (
-                <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-sm text-muted-foreground">
-                    <div className="typography-ui-label font-semibold text-foreground">
-                        {t('diffView.state.failedToLoadDiff')}
-                    </div>
-                    <div className="typography-meta max-w-[32rem] text-center text-muted-foreground">
-                        {errorMessage}
-                    </div>
-                    <button
-                        type="button"
-                        className="typography-ui-label text-primary hover:underline"
-                        onClick={() => {
-                            void turnChangesQuery.refetch();
-                        }}
-                    >
-                        {t('diffView.actions.retry')}
-                    </button>
                 </div>
             );
         }

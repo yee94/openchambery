@@ -67,7 +67,6 @@ import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { parseSubagentNotification, type SubagentNotification } from './parts/taskToolModel';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { openTurnChangedFilePreview } from '../openTurnChangedFile';
-import { useSessionTurnChangesQuery } from '@/queries/sessionTurnChangesQueries';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const };
@@ -203,38 +202,7 @@ const TurnChangesPreview = React.memo(({
     const mobileActions = useMobileAppActions();
     const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
     // L1 carries the thin file list on the message wire; render it synchronously.
-    // L2 only fills the inline file head when the sync list is missing (legacy
-    // markers). DiffView reuses the same query key when the user opens the tab.
-    const hasSyncFiles = Boolean(changedFiles && changedFiles.length > 0);
-    const shouldLoadTurnChangeFiles = !hasSyncFiles
-        && Boolean(diffSessionId && diffDirectory && turnId && fileCount > 0);
-    const turnChangesQuery = useSessionTurnChangesQuery({
-        sessionID: diffSessionId ?? '',
-        directory: diffDirectory ?? '',
-        messageID: turnId,
-        diffCount: fileCount,
-    }, {
-        enabled: shouldLoadTurnChangeFiles,
-    });
-    const files = React.useMemo<TurnChangedFile[]>(() => {
-        if (hasSyncFiles) return changedFiles ?? [];
-        const summaries = turnChangesQuery.data?.files;
-        if (!Array.isArray(summaries) || summaries.length === 0) return [];
-        const next: TurnChangedFile[] = [];
-        for (const entry of summaries) {
-            if (!entry || typeof entry.file !== 'string' || entry.file.trim().length === 0) continue;
-            next.push({
-                file: entry.file,
-                additions: typeof entry.additions === 'number' && Number.isFinite(entry.additions)
-                    ? entry.additions
-                    : 0,
-                deletions: typeof entry.deletions === 'number' && Number.isFinite(entry.deletions)
-                    ? entry.deletions
-                    : 0,
-            });
-        }
-        return next;
-    }, [changedFiles, hasSyncFiles, turnChangesQuery.data?.files]);
+    const files = React.useMemo<TurnChangedFile[]>(() => changedFiles ?? [], [changedFiles]);
     const visibleFiles = files.slice(0, TURN_CHANGES_PREVIEW_VISIBLE_LIMIT);
     const hiddenCount = Math.max(0, files.length - visibleFiles.length);
     const displayFileCount = files.length > 0 ? files.length : fileCount;
@@ -347,11 +315,7 @@ const TurnChangesPreview = React.memo(({
                     {t('chat.changedFiles.title')}
                 </span>
                 <span className={metaClass}>{fileCountLabel}</span>
-                {shouldLoadTurnChangeFiles && turnChangesQuery.isPending && files.length === 0 ? (
-                    <Icon name="loader-4" className={cn(iconClass, 'animate-spin opacity-60')} />
-                ) : (
-                    <Icon name="arrow-right-s" className={cn(iconClass, 'opacity-60')} />
-                )}
+                <Icon name="arrow-right-s" className={cn(iconClass, 'opacity-60')} />
             </Button>
             {visibleFiles.length > 0 ? (
                 <div className={cn('flex min-w-0 flex-col', isMobile ? 'gap-0' : 'gap-0.5')}>

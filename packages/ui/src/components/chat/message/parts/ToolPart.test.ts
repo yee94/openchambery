@@ -244,7 +244,8 @@ describe('apply_patch navigation', () => {
         expect(diffViewSource).toContain('const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(');
         expect(diffViewSource).toContain('const usesToolPatches = selectedToolTurnDiffs.length > 0;');
         expect(diffViewSource).toContain('if (usesToolPatches) return selectedToolTurnDiffs;');
-        expect(diffViewSource).toContain('return turnChangesQuery.data?.files ?? [];');
+        expect(diffViewSource).toContain('return turnChangesMarker.thinDiffs;');
+        expect(diffViewSource).not.toContain('useSessionTurnChangesQuery');
         expect(diffViewSource).toContain('useSessionTurnChangeFileQuery');
         expect(diffViewSource).not.toContain('getSessionDiff');
         expect(diffViewSource).toContain('stackedToolPatchesRef.current !== toolPatches');

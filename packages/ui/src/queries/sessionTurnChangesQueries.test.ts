@@ -28,25 +28,7 @@ describe('sessionTurnChangesQueries', () => {
     getSessionDiffMock.mockReset();
   });
 
-  test('summary query key includes transport, directory, session, message, and diffCount', async () => {
-    const { sessionTurnChangesQueryKey } = await import('./sessionTurnChangesQueries');
-    expect(sessionTurnChangesQueryKey({
-      sessionID: 'ses_1',
-      directory: '/repo',
-      messageID: 'msg_1',
-      diffCount: 3,
-    })).toEqual([
-      'transport-test',
-      'sessionTurnChanges',
-      'summary',
-      '/repo',
-      'ses_1',
-      'msg_1',
-      3,
-    ]);
-  });
-
-  test('file query key includes file path', async () => {
+  test('file query key includes transport, directory, session, message, file, and diffCount', async () => {
     const { sessionTurnChangeFileQueryKey } = await import('./sessionTurnChangesQueries');
     expect(sessionTurnChangeFileQueryKey({
       sessionID: 'ses_1',
@@ -67,19 +49,20 @@ describe('sessionTurnChangesQueries', () => {
   });
 
   test('uses OpenChamber changes route on success and passes signal', async () => {
-    const { sessionTurnChangesQueryOptions } = await import('./sessionTurnChangesQueries');
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     const signal = new AbortController().signal;
     runtimeFetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
-      files: [{ file: 'a.ts', additions: 1, deletions: 0 }],
+      diff: { file: 'a.ts', patch: '@@ host @@' },
     }), { status: 200 }));
 
-    const result = await sessionTurnChangesQueryOptions({
+    const result = await sessionTurnChangeFileQueryOptions({
       sessionID: 'ses_1',
       directory: '/repo',
       messageID: 'msg_1',
+      file: 'a.ts',
     }).queryFn({ signal });
 
-    expect(result).toEqual({ files: [{ file: 'a.ts', additions: 1, deletions: 0 }] });
+    expect(result).toEqual({ diff: { file: 'a.ts', patch: '@@ host @@' } });
     expect(runtimeFetchMock).toHaveBeenCalledWith(
       '/api/openchamber/sessions/ses_1/changes',
       expect.objectContaining({
@@ -88,44 +71,46 @@ describe('sessionTurnChangesQueries', () => {
         query: expect.objectContaining({
           messageID: 'msg_1',
           directory: '/repo',
+          file: 'a.ts',
         }),
       }),
     );
     expect(getSessionDiffMock).not.toHaveBeenCalled();
   });
 
-  test('falls back to getSessionDiff only for 404/405/501', async () => {
-    const { sessionTurnChangesQueryOptions } = await import('./sessionTurnChangesQueries');
+  test('file query falls back to getSessionDiff only for 404/405/501', async () => {
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     for (const status of [404, 405, 501]) {
       runtimeFetchMock.mockResolvedValueOnce(new Response('missing', { status }));
       getSessionDiffMock.mockResolvedValueOnce([
-        { file: 'legacy.ts', additions: 2, deletions: 1, patch: '@@' },
+        { file: 'a.ts', additions: 2, deletions: 1, patch: '@@ legacy @@' },
+        { file: 'b.ts', additions: 0, deletions: 0, patch: '@@ other @@' },
       ]);
 
-      const result = await sessionTurnChangesQueryOptions({
+      const result = await sessionTurnChangeFileQueryOptions({
         sessionID: 'ses_1',
         directory: '/repo',
         messageID: 'msg_1',
+        file: 'a.ts',
       }).queryFn({ signal: new AbortController().signal });
 
-      expect(result).toEqual({
-        files: [{ file: 'legacy.ts', additions: 2, deletions: 1 }],
-      });
+      expect(result).toEqual({ diff: { file: 'a.ts', additions: 2, deletions: 1, patch: '@@ legacy @@' } });
     }
   });
 
   test('fallback passes the same AbortSignal to getSessionDiff', async () => {
-    const { sessionTurnChangesQueryOptions } = await import('./sessionTurnChangesQueries');
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     const signal = new AbortController().signal;
     runtimeFetchMock.mockResolvedValueOnce(new Response('missing', { status: 404 }));
     getSessionDiffMock.mockResolvedValueOnce([
-      { file: 'legacy.ts', additions: 1, deletions: 0 },
+      { file: 'a.ts', additions: 1, deletions: 0 },
     ]);
 
-    await sessionTurnChangesQueryOptions({
+    await sessionTurnChangeFileQueryOptions({
       sessionID: 'ses_1',
       directory: '/repo',
       messageID: 'msg_1',
+      file: 'a.ts',
     }).queryFn({ signal });
 
     expect(getSessionDiffMock).toHaveBeenCalledWith(
@@ -139,15 +124,16 @@ describe('sessionTurnChangesQueries', () => {
   });
 
   test('does not start fallback when signal is already aborted', async () => {
-    const { sessionTurnChangesQueryOptions } = await import('./sessionTurnChangesQueries');
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     const controller = new AbortController();
     controller.abort();
     runtimeFetchMock.mockResolvedValueOnce(new Response('missing', { status: 404 }));
 
-    await expect(sessionTurnChangesQueryOptions({
+    await expect(sessionTurnChangeFileQueryOptions({
       sessionID: 'ses_1',
       directory: '/repo',
       messageID: 'msg_1',
+      file: 'a.ts',
     }).queryFn({ signal: controller.signal })).rejects.toMatchObject({
       name: 'AbortError',
     });
@@ -155,65 +141,46 @@ describe('sessionTurnChangesQueries', () => {
   });
 
   test('keeps non-fallback HTTP errors as failures', async () => {
-    const { sessionTurnChangesQueryOptions } = await import('./sessionTurnChangesQueries');
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     runtimeFetchMock.mockResolvedValueOnce(new Response('boom', { status: 500 }));
 
-    await expect(sessionTurnChangesQueryOptions({
+    await expect(sessionTurnChangeFileQueryOptions({
       sessionID: 'ses_1',
       directory: '/repo',
       messageID: 'msg_1',
+      file: 'a.ts',
     }).queryFn({ signal: new AbortController().signal })).rejects.toThrow(/500/);
     expect(getSessionDiffMock).not.toHaveBeenCalled();
   });
 
-  test('file query returns exact diff and falls back with file filter', async () => {
+  test('legacy fallback miss throws change file not found', async () => {
     const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
-    runtimeFetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
-      diff: { file: 'a.ts', patch: '@@ host @@' },
-    }), { status: 200 }));
-
-    const host = await sessionTurnChangeFileQueryOptions({
-      sessionID: 'ses_1',
-      directory: '/repo',
-      messageID: 'msg_1',
-      file: 'a.ts',
-    }).queryFn({ signal: new AbortController().signal });
-    expect(host).toEqual({ diff: { file: 'a.ts', patch: '@@ host @@' } });
-
     runtimeFetchMock.mockResolvedValueOnce(new Response('missing', { status: 404 }));
     getSessionDiffMock.mockResolvedValueOnce([
-      { file: 'a.ts', patch: '@@ legacy @@' },
       { file: 'b.ts', patch: '@@ other @@' },
     ]);
-    const legacy = await sessionTurnChangeFileQueryOptions({
+
+    await expect(sessionTurnChangeFileQueryOptions({
       sessionID: 'ses_1',
       directory: '/repo',
       messageID: 'msg_1',
       file: 'a.ts',
-    }).queryFn({ signal: new AbortController().signal });
-    expect(legacy).toEqual({ diff: { file: 'a.ts', patch: '@@ legacy @@' } });
+    }).queryFn({ signal: new AbortController().signal })).rejects.toThrow('change file not found');
   });
 
-  test('summary gcTime is 5 minutes and file gcTime is 60 seconds', async () => {
-    const {
-      sessionTurnChangesQueryOptions,
-      sessionTurnChangeFileQueryOptions,
-    } = await import('./sessionTurnChangesQueries');
-    expect(sessionTurnChangesQueryOptions({
-      sessionID: 'ses_1',
-      directory: '/repo',
-      messageID: 'msg_1',
-    }).gcTime).toBe(5 * 60_000);
+  test('file query gcTime is 60 seconds and retry is disabled', async () => {
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     expect(sessionTurnChangeFileQueryOptions({
       sessionID: 'ses_1',
       directory: '/repo',
       messageID: 'msg_1',
       file: 'a.ts',
     }).gcTime).toBe(60_000);
-    expect(sessionTurnChangesQueryOptions({
+    expect(sessionTurnChangeFileQueryOptions({
       sessionID: 'ses_1',
       directory: '/repo',
       messageID: 'msg_1',
+      file: 'a.ts',
     }).retry).toBe(false);
   });
 });

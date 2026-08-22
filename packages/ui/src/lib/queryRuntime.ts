@@ -63,21 +63,6 @@ export const queryKeys = {
     snapshot: (directory: string, transport = getRuntimeTransportIdentity()): readonly [string, 'sessionStatus', 'snapshot', string | null] => [transport, 'sessionStatus', 'snapshot', normalizeQueryDirectory(directory)],
   },
   sessionTurnChanges: {
-    summary: (
-      directory: string | null | undefined,
-      sessionID: string,
-      messageID: string,
-      diffCount: number | undefined,
-      transport = getRuntimeTransportIdentity(),
-    ): readonly [string, 'sessionTurnChanges', 'summary', string | null, string, string, number | null] => [
-      transport,
-      'sessionTurnChanges',
-      'summary',
-      normalizeQueryDirectory(directory),
-      sessionID,
-      messageID,
-      typeof diffCount === 'number' && Number.isFinite(diffCount) ? Math.max(0, Math.trunc(diffCount)) : null,
-    ],
     file: (
       directory: string | null | undefined,
       sessionID: string,
