@@ -19,7 +19,7 @@ import { toast } from '@/components/ui';
 import { IdentityDropdown } from '@/components/views/git/GitHeader';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useDeviceInfo } from '@/lib/device';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { Icon } from "@/components/icon/Icon";
 import { opencodeClient } from '@/lib/opencode/client';
 import { useI18n } from '@/lib/i18n';
@@ -694,19 +694,28 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
 
   if (isMobile) {
     return (
-      <MobileOverlayPanel
+      <MobileResizableSheet
+        id="mobile-directory-explorer-sheet"
         open={open}
-        onClose={handleClose}
-        title={t('directoryExplorerDialog.title')}
-        className="h-[88dvh] max-h-[720px] max-w-full"
-        contentMaxHeightClassName="flex-1"
-        footer={<div className="flex flex-col gap-2">{renderFooter()}</div>}
+        onOpenChange={onOpenChange}
+        title={(
+          <h2 className="truncate typography-ui-label font-semibold text-foreground">
+            {t('directoryExplorerDialog.title')}
+          </h2>
+        )}
+        ariaLabel={t('directoryExplorerDialog.title')}
+        closeAriaLabel={t('mobile.surface.closeAria')}
+        resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+        initiallyExpanded
       >
         <div className="flex h-full min-h-0 flex-col gap-3">
-          <div className="flex justify-end">{showHiddenToggle}</div>
-          {content}
+          <div className="flex shrink-0 justify-end px-3">{showHiddenToggle}</div>
+          <div className="flex min-h-0 flex-1 flex-col px-2">{content}</div>
+          <div className="shrink-0 border-t border-border/40 px-3 pb-4 pt-2">
+            <div className="flex flex-col gap-2">{renderFooter()}</div>
+          </div>
         </div>
-      </MobileOverlayPanel>
+      </MobileResizableSheet>
     );
   }
 

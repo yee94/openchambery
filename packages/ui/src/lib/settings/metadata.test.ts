@@ -72,7 +72,7 @@ describe('settings navigation metadata', () => {
     expect(MOBILE_SETTINGS_PAGE_SLUGS).toContain('instances');
   });
 
-  test('keeps native instance switching inside Settings and out of the main mobile surface', async () => {
+  test('keeps native instance switching inside Settings and out of root tabs', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
     const [mobileApp, settingsView, phoneShell, settingsTab] = await Promise.all([
       readFile(join(directory, '../../apps/MobileApp.tsx'), 'utf8'),
@@ -93,7 +93,11 @@ describe('settings navigation metadata', () => {
     expect(settingsView).toContain('return mobileInstancesPage ?? renderUnavailable();');
     expect(settingsTab).toContain('mobileInstancesPage={instancesPage}');
     expect(settingsTab).toContain('autoOpenMobilePage');
-    expect(phoneShell).not.toContain('instances-secondary');
-    expect(phoneShell).not.toContain('openInstances');
+    // The home quick-action menu may push instance management as a secondary
+    // page above the Projects tab, but it never becomes a root surface: the
+    // shell renders it only through the secondary-pages contract.
+    expect(phoneShell).toContain('instancesSecondaryPage');
+    expect(phoneShell).toContain("secondaryKind === 'instances'");
+    expect(phoneShell).not.toContain('instances: (');
   });
 });

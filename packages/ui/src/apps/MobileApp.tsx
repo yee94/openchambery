@@ -82,6 +82,7 @@ import { MobileFilesSurface } from './MobileFilesSurface';
 import { BusyDots } from '@/components/chat/message/parts/BusyDots';
 import { MobileSessionsSheet } from './MobileSessionsSheet';
 import { MobilePhoneShell } from '@/mobile/MobilePhoneShell';
+import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 import {
   buildMobileContextDisplay,
   ContextProgressIcon,
@@ -1298,8 +1299,8 @@ const MobileInstancesSurface: React.FC<{
   connection: UseMobileConnection;
   onConnect: () => void;
   onActiveConnectionDeleted: () => void;
-  scanRequest?: number;
-}> = ({ connection, onActiveConnectionDeleted, onConnect, scanRequest = 0 }) => {
+  consumePendingScanRequest?: () => boolean;
+}> = ({ connection, onActiveConnectionDeleted, onConnect, consumePendingScanRequest }) => {
   const { t } = useI18n();
   const conn = connection;
   const {
@@ -1314,7 +1315,6 @@ const MobileInstancesSurface: React.FC<{
   const [clientToken, setClientToken] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [isScanning, setIsScanning] = React.useState(false);
-  const handledScanRequestRef = React.useRef(0);
   const qrScanSupported = React.useMemo(() => isQrScanSupported(), []);
   // The manual add/edit form is hidden until asked for — the sheet leads with
   // the list of instances (with live status), not a wall of inputs.
@@ -1400,11 +1400,11 @@ const MobileInstancesSurface: React.FC<{
     }
   });
 
+  const consumePendingScan = useEvent(() => consumePendingScanRequest?.() ?? false);
   React.useEffect(() => {
-    if (scanRequest <= handledScanRequestRef.current) return;
-    handledScanRequestRef.current = scanRequest;
+    if (!consumePendingScan()) return;
     void handleScanInstance();
-  }, [scanRequest]);
+  }, []);
 
   const handlePasswordSubmit = useEvent((event: React.FormEvent) => {
     event.preventDefault();
@@ -2465,7 +2465,7 @@ const MobileShell: React.FC<{
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [updateOpen, setUpdateOpen] = React.useState(false);
   const [directoryDialogOpen, setDirectoryDialogOpen] = React.useState(false);
-  const [instanceScanRequest, setInstanceScanRequest] = React.useState(0);
+  const pendingInstanceScanRef = React.useRef(false);
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
   const [isTranscriptRefreshing, setIsTranscriptRefreshing] = React.useState(false);
@@ -2512,9 +2512,23 @@ const MobileShell: React.FC<{
     openSettingsSurface('instances');
   });
 
+  const openInstancesSecondary = useEvent(() => {
+    useMobileNavigationStore.getState().openInstances();
+  });
+
+  const closeInstancesSecondary = useEvent(() => {
+    useMobileNavigationStore.getState().closeSecondary();
+  });
+
+  const consumePendingInstanceScan = useEvent(() => {
+    if (!pendingInstanceScanRef.current) return false;
+    pendingInstanceScanRef.current = false;
+    return true;
+  });
+
   const scanInstanceFromProjects = useEvent(() => {
-    openInstancesSettingsPage();
-    setInstanceScanRequest((current) => current + 1);
+    pendingInstanceScanRef.current = true;
+    useMobileNavigationStore.getState().openInstances();
   });
 
   const rootBackRoutesBlocked = mobileSessionPanelOpen
@@ -3204,7 +3218,7 @@ const MobileShell: React.FC<{
               className="min-h-0 flex-1"
               onAddProject={() => setDirectoryDialogOpen(true)}
               onScanQr={showCapacitorOnlyFeatures && qrScanSupported ? scanInstanceFromProjects : undefined}
-              onSwitchInstance={showCapacitorOnlyFeatures ? openInstancesSettingsPage : undefined}
+              onSwitchInstance={showCapacitorOnlyFeatures ? openInstancesSecondary : undefined}
               onEnableAssistants={() => {
                 openSettingsSurface('assistants');
               }}
@@ -3213,8 +3227,24 @@ const MobileShell: React.FC<{
                   connection={connection}
                   onConnect={() => undefined}
                   onActiveConnectionDeleted={onActiveConnectionDeleted}
-                  scanRequest={instanceScanRequest}
                 />
+              ) : undefined}
+              instancesSecondaryPage={showCapacitorOnlyFeatures ? (
+                <div className="flex h-full min-h-0 flex-col bg-[var(--surface-background)]">
+                  <MobileDetailNavigation
+                    title={t('mobile.settings.switchInstance')}
+                    backAriaLabel={t('header.actions.backAria')}
+                    onBack={closeInstancesSecondary}
+                  />
+                  <div className="oc-mobile-settings-detail-card min-h-0 flex-1 overflow-y-auto px-[var(--oc-mobile-page-inline-inset)]">
+                    <MobileInstancesSurface
+                      connection={connection}
+                      onConnect={() => undefined}
+                      onActiveConnectionDeleted={onActiveConnectionDeleted}
+                      consumePendingScanRequest={consumePendingInstanceScan}
+                    />
+                  </div>
+                </div>
               ) : undefined}
               parentSessionTarget={
                 parentSessionTarget

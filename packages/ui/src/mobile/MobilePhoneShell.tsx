@@ -25,6 +25,8 @@ export type MobilePhoneShellProps = {
   onEnableAssistants: () => void;
   /** Saved-instance management content for the Settings secondary page. */
   instancesPage?: React.ReactNode;
+  /** Saved-instance management content opened above the Projects root tab. */
+  instancesSecondaryPage?: React.ReactNode;
   /**
    * Authoritative parent of the current chat session (child.parentID). When set
    * on a chat secondary page, back navigates to the parent without closing
@@ -62,6 +64,7 @@ export function MobilePhoneShell({
   onSwitchInstance,
   onEnableAssistants,
   instancesPage,
+  instancesSecondaryPage,
   parentSessionTarget = null,
   registerSecondaryBackHandler,
   scheduledContent,
@@ -214,6 +217,15 @@ export function MobilePhoneShell({
         ),
       }];
     }
+    if (secondaryKind === 'instances') {
+      return [{
+        key: 'instances-secondary',
+        depth: 1,
+        ariaLabel: t('mobile.settings.switchInstance'),
+        onBack: handleSecondaryBack,
+        content: instancesSecondaryPage,
+      }];
+    }
     // Project the render target from the authoritative session store: once a
     // draft's first prompt materializes the real session, the header/status
     // switch to the live entity while the stable host key keeps the ChatView
@@ -246,7 +258,7 @@ export function MobilePhoneShell({
         }),
       };
     });
-  }, [secondaryKind, navigation.secondary, handleSecondaryBack, renderChat, t]);
+  }, [secondaryKind, navigation.secondary, handleSecondaryBack, instancesSecondaryPage, renderChat, t]);
 
   return (
     <MobileTabsRoot
