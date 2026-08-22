@@ -129,7 +129,7 @@ Capgo clients typically send `platform`, `device_id`, `app_id`, `version_build`,
 
 ### Channel manifest
 
-Static file: `ota/channels/<channel>.json` (seed: `ota/channels/beta.json`).
+Static file: `ota/channels/<channel>.json` (seeds: `ota/channels/beta.json` and `ota/channels/stable.json`). Both beta and stable channels are served the same way.
 
 Schema summary (`schemaVersion: 1`):
 
@@ -138,7 +138,7 @@ Schema summary (`schemaVersion: 1`):
 - `nativeTargets.ios|android`: optional `{ version, build, status?, installUrl? }`
 - `rollbackBundleIds`: 0–2 hex bundle ids
 
-Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne) and fails if `ota/channels/beta.json` is missing or invalid.
+Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne) and fails if either `ota/channels/beta.json` or `ota/channels/stable.json` is missing or invalid.
 
 ### Cache rules
 

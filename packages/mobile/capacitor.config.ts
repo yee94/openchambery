@@ -3,6 +3,11 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // OTA channel / shellApiVersion literals must stay in sync with
 // src/openchamber-ota.ts (OPENCHAMBER_OTA_CHANNEL, OPENCHAMBER_SHELL_API_VERSION).
 // Do not import that module here — Cap CLI loads this file and would execute registerPlugin.
+// OTA channel baked into the shell at build time. Beta builds (TestFlight /
+// sideloaded APK) keep the default; stable store builds pass
+// OPENCHAMBER_OTA_CHANNEL=stable during `mobile:sync`. Keep in sync with
+// packages/mobile/src/openchamber-ota.ts defaults.
+const otaChannel = process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta';
 const config: CapacitorConfig & {
   OpenChamberOTA: {
     channel: string;
@@ -28,7 +33,7 @@ const config: CapacitorConfig & {
   // Capacitor plugin method surface changes; OTA manifests declare minShellApiVersion
   // and older shells get `install_native_required` instead of a broken bundle.
   OpenChamberOTA: {
-    channel: 'beta',
+    channel: otaChannel,
     shellApiVersion: 1,
   },
   plugins: {
@@ -58,7 +63,7 @@ const config: CapacitorConfig & {
       updateUrl: process.env.OPENCHAMBER_OTA_UPDATE_URL ?? 'https://openchamber.xiaobe.top/v1/ota/check',
       // Empty string disables Capgo cloud stats reporting (self-hosted only).
       statsUrl: '',
-      defaultChannel: 'beta',
+      defaultChannel: otaChannel,
       // Check+download in foreground; apply on next background (Capgo autoUpdate: true).
       autoUpdate: true,
       // Raised above Capgo's 10s default: mobile splash + remote-config-free cold start

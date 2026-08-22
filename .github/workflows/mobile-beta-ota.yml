@@ -1,14 +1,38 @@
-name: Mobile Beta OTA
+name: Mobile OTA Release
 
-# Tag namespace: mobile-beta/vX.Y.Z-beta.N → web-bundle OTA only.
+# Tag namespaces:
+#   mobile-beta/vX.Y.Z-beta.N  → beta-channel web-bundle OTA
+#   mobile-stable/vX.Y.Z       → stable-channel web-bundle OTA
 # Native shell changes must use a normal v* tag (mobile-release via release.yml).
 on:
   push:
     tags:
       - 'mobile-beta/v*-beta.*'
+      - 'mobile-stable/v*'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: OTA channel (manual runs only; tag pushes derive channel from the tag)
+        required: false
+        type: choice
+        default: beta
+        options:
+          - beta
+          - stable
+      version:
+        description: Release version for manual runs (e.g. 1.18.3-beta.1 or 1.18.3)
+        required: false
+        type: string
+      rollout_percent:
+        description: Override rollout percent (default beta=100, stable=10)
+        required: false
+        type: string
 
+# Serialise ALL OTA production deploys (release + rollout). Each deploy is a
+# full snapshot of both channels; running them in parallel can let a stale
+# snapshot overwrite a newer channel manifest.
 concurrency:
-  group: mobile-beta-ota-${{ github.ref }}
+  group: mobile-ota-production
   cancel-in-progress: false
 
 permissions:
@@ -26,6 +50,7 @@ jobs:
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
       shell_api_version: ${{ steps.plan.outputs.shell_api_version }}
     steps:
       - uses: actions/checkout@v4
@@ -39,14 +64,48 @@ jobs:
       - name: Run mobile release plan
         id: plan
         shell: bash
+        env:
+          DISPATCH_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || '' }}
+          DISPATCH_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF#refs/tags/}"
-          # mobile-beta/v1.18.2-beta.25 → 1.18.2-beta.25
-          VERSION="${TAG#mobile-beta/v}"
-          if [[ -z "$VERSION" || "$VERSION" == "$TAG" ]]; then
-            echo "Unexpected OTA tag format: $TAG (expected mobile-beta/vX.Y.Z-beta.N)"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            CHANNEL="${DISPATCH_CHANNEL:-beta}"
+            VERSION="${DISPATCH_VERSION:-}"
+            if [[ -z "$VERSION" ]]; then
+              echo "workflow_dispatch requires a version input"
+              exit 1
+            fi
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            if [[ "$TAG" == mobile-beta/v* ]]; then
+              CHANNEL=beta
+              VERSION="${TAG#mobile-beta/v}"
+            elif [[ "$TAG" == mobile-stable/v* ]]; then
+              CHANNEL=stable
+              VERSION="${TAG#mobile-stable/v}"
+            else
+              echo "Unexpected OTA tag format: $TAG (expected mobile-beta/v… or mobile-stable/v…)"
+              exit 1
+            fi
+          fi
+
+          if [[ -z "$VERSION" ]]; then
+            echo "Empty version derived from tag/inputs"
             exit 1
+          fi
+
+          # Beta tags keep a -beta prerelease suffix; stable tags are plain semver.
+          if [[ "$CHANNEL" == "beta" ]]; then
+            if [[ "$VERSION" != *-* ]]; then
+              echo "Beta OTA version must include a prerelease suffix (got $VERSION)"
+              exit 1
+            fi
+          else
+            if [[ "$VERSION" == *-* ]]; then
+              echo "Stable OTA version must be plain semver without prerelease (got $VERSION)"
+              exit 1
+            fi
           fi
 
           node scripts/mobile-release-plan.mjs --json > /tmp/mobile-release-plan.json
@@ -58,12 +117,13 @@ jobs:
           {
             echo "mode=$MODE"
             echo "version=$VERSION"
+            echo "channel=$CHANNEL"
             echo "shell_api_version=$SHELL"
           } >> "$GITHUB_OUTPUT"
 
           if [[ "$MODE" != "ota" ]]; then
             echo "::error::OTA tag rejected: mode=$MODE reason=$REASON"
-            echo "Native fingerprint or bridge contract changed. Use a native v* tag instead of mobile-beta/*."
+            echo "Native fingerprint or bridge contract changed. Use a native v* tag instead of mobile-beta/* / mobile-stable/*."
             node -e "
               const p = JSON.parse(require('fs').readFileSync('/tmp/mobile-release-plan.json','utf8'));
               console.log('changedNativePaths:', p.changedNativePaths.join(', ') || '(none)');
@@ -80,6 +140,7 @@ jobs:
       bundle_id: ${{ steps.assemble.outputs.bundle_id }}
       checksum: ${{ steps.assemble.outputs.checksum }}
       generation: ${{ steps.assemble.outputs.generation }}
+      encrypted: ${{ steps.zip.outputs.encrypted }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -207,21 +268,32 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.release-plan.outputs.version }}
+          CHANNEL: ${{ needs.release-plan.outputs.channel }}
           ZIP_PATH: ${{ steps.zip.outputs.zip_path }}
           CHECKSUM: ${{ steps.zip.outputs.checksum }}
           SESSION_KEY_FILE: ${{ steps.zip.outputs.session_key_file }}
           OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
-          ROLLOUT_PERCENT: '100'
+          ROLLOUT_PERCENT_OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && inputs.rollout_percent || '' }}
         run: |
           set -euo pipefail
           # Keep snapshot under the workspace so upload-artifact can collect it.
           OUT="${GITHUB_WORKSPACE}/.ota-snapshot"
           rm -rf "$OUT"
+
+          if [[ -n "${ROLLOUT_PERCENT_OVERRIDE:-}" ]]; then
+            ROLLOUT_PERCENT="$ROLLOUT_PERCENT_OVERRIDE"
+          elif [[ "$CHANNEL" == "stable" ]]; then
+            ROLLOUT_PERCENT=10
+          else
+            ROLLOUT_PERCENT=100
+          fi
+          export ROLLOUT_PERCENT
+
           ARGS=(
             --zip "$ZIP_PATH"
             --version "$VERSION"
             --checksum "$CHECKSUM"
-            --channel beta
+            --channel "$CHANNEL"
             --out "$OUT"
           )
           if [[ -s "${SESSION_KEY_FILE:-}" ]]; then
@@ -319,19 +391,30 @@ jobs:
         shell: bash
         env:
           OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+          CHANNEL: ${{ needs.release-plan.outputs.channel }}
           BUNDLE_ID: ${{ needs.build-ota.outputs.bundle_id }}
           EXPECTED_CHECKSUM: ${{ needs.build-ota.outputs.checksum }}
           EXPECTED_GENERATION: ${{ needs.build-ota.outputs.generation }}
           ENCRYPTED: ${{ needs.build-ota.outputs.encrypted }}
         run: |
           set -euo pipefail
-          MANIFEST_URL="${OTA_BASE_URL}/ota/channels/beta.json"
-          BUNDLE_URL="${OTA_BASE_URL}/ota/bundles/${BUNDLE_ID}.zip"
+          # Full-snapshot invariant: BOTH channel manifests must remain reachable.
+          for ch in beta stable; do
+            curl -fsS "${OTA_BASE_URL}/ota/channels/${ch}.json" -o "/tmp/${ch}.json"
+            node -e "
+              const fs = require('fs');
+              const m = JSON.parse(fs.readFileSync('/tmp/' + process.argv[1] + '.json','utf8'));
+              if (m.channel !== process.argv[1]) throw new Error('channel field mismatch for ' + process.argv[1]);
+              console.log(process.argv[1] + '.json ok generation=' + m.generation);
+            " "$ch"
+          done
 
-          curl -fsS "$MANIFEST_URL" -o /tmp/beta.json
+          MANIFEST_URL="${OTA_BASE_URL}/ota/channels/${CHANNEL}.json"
+          BUNDLE_URL="${OTA_BASE_URL}/ota/bundles/${BUNDLE_ID}.zip"
+          curl -fsS "$MANIFEST_URL" -o /tmp/active-channel.json
           node -e "
             const fs = require('fs');
-            const m = JSON.parse(fs.readFileSync('/tmp/beta.json','utf8'));
+            const m = JSON.parse(fs.readFileSync('/tmp/active-channel.json','utf8'));
             if (m.generation !== Number(process.env.EXPECTED_GENERATION)) {
               throw new Error('generation mismatch: ' + m.generation + ' !== ' + process.env.EXPECTED_GENERATION);
             }
@@ -343,7 +426,7 @@ jobs:
 
           curl -fsS "$BUNDLE_URL" -o /tmp/bundle.zip
           ACTUAL_SIZE="$(node -e "process.stdout.write(String(require('fs').statSync('/tmp/bundle.zip').size))")"
-          META_SIZE="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/beta.json','utf8')).activeBundle.size")"
+          META_SIZE="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/active-channel.json','utf8')).activeBundle.size")"
           if [[ "$ACTUAL_SIZE" != "$META_SIZE" ]]; then
             echo "content-length/size mismatch: actual=$ACTUAL_SIZE meta=$META_SIZE"
             exit 1
@@ -381,9 +464,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.release-plan.outputs.version }}
+          CHANNEL: ${{ needs.release-plan.outputs.channel }}
         run: |
           set -euo pipefail
-          TAG="mobile-beta/v${VERSION}"
+          if [[ "$CHANNEL" == "stable" ]]; then
+            TAG="mobile-stable/v${VERSION}"
+            CHANNEL_LABEL="stable"
+          else
+            TAG="mobile-beta/v${VERSION}"
+            CHANNEL_LABEL="beta"
+          fi
           SNAPSHOT_DIR="$(find /tmp/ota-artifacts -type d -name "mobile-ota-snapshot-${VERSION}" -print -quit)"
           ZIP_DIR="$(find /tmp/ota-artifacts -type d -name "mobile-ota-zip-${VERSION}" -print -quit)"
           if [[ -z "$SNAPSHOT_DIR" || -z "$ZIP_DIR" ]]; then
@@ -391,7 +481,7 @@ jobs:
             find /tmp/ota-artifacts -maxdepth 3 -print || true
             exit 1
           fi
-          MANIFEST="$SNAPSHOT_DIR/ota/channels/beta.json"
+          MANIFEST="$SNAPSHOT_DIR/ota/channels/${CHANNEL}.json"
           ZIP_FILE="$(find "$ZIP_DIR" -type f -name '*.zip' -print -quit)"
           if [[ ! -f "$MANIFEST" || ! -f "$ZIP_FILE" ]]; then
             echo "Missing manifest or zip file"
@@ -400,13 +490,14 @@ jobs:
 
           NOTES="$(mktemp)"
           cat > "$NOTES" <<EOF
-          Mobile OTA beta archive for ${TAG}.
+          Mobile OTA ${CHANNEL_LABEL} archive for ${TAG}.
 
           This prerelease is a disaster-recovery archive of the web bundle and
           channel manifest. It must never become GitHub Latest and never enters
           the stable desktop/Android auto-update feeds.
 
-          Use workflow mobile-beta-rollout.yml for promote / pause / rollback.
+          Use workflow mobile-beta-rollout.yml for promote / pause / rollback /
+          promote-channel.
           EOF
 
           # Tag already exists (workflow trigger). Create a prerelease on it.

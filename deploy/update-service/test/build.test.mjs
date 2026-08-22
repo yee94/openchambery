@@ -32,6 +32,11 @@ test('build emits an update manifest from the published release manifest and cha
     assert.equal(betaChannel.schemaVersion, 1);
     assert.equal(betaChannel.channel, 'beta');
     assert.equal(betaChannel.activeBundle, null);
+
+    const stableChannel = JSON.parse(readFileSync(path.join(outputPath, 'ota', 'channels', 'stable.json'), 'utf8'));
+    assert.equal(stableChannel.schemaVersion, 1);
+    assert.equal(stableChannel.channel, 'stable');
+    assert.equal(stableChannel.activeBundle, null);
   } finally {
     rmSync(outputPath, { recursive: true, force: true });
   }

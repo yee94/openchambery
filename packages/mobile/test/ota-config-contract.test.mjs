@@ -30,7 +30,11 @@ test('capacitor.config.ts declares CapacitorUpdater and OpenChamberOTA OTA contr
 
   assert.match(config, /CapacitorUpdater:\s*\{/);
   assert.match(config, /updateUrl:\s*process\.env\.OPENCHAMBER_OTA_UPDATE_URL\s*\?\?/);
-  assert.match(config, /defaultChannel:\s*'beta'/);
+  assert.match(
+    config,
+    /const otaChannel\s*=\s*process\.env\.OPENCHAMBER_OTA_CHANNEL\s*===\s*'stable'\s*\?\s*'stable'\s*:\s*'beta'/,
+  );
+  assert.match(config, /defaultChannel:\s*otaChannel/);
   assert.match(config, /statsUrl:\s*''/);
   assert.match(config, /appReadyTimeout:\s*20000/);
   assert.match(config, /autoUpdate:\s*true/);
@@ -40,7 +44,7 @@ test('capacitor.config.ts declares CapacitorUpdater and OpenChamberOTA OTA contr
   assert.match(config, /publicKey:\s*process\.env\.OPENCHAMBER_OTA_PUBLIC_KEY\s*\?\?\s*''/);
 
   assert.match(config, /OpenChamberOTA:\s*\{/);
-  assert.match(config, /channel:\s*'beta'/);
+  assert.match(config, /channel:\s*otaChannel/);
   assert.match(config, /shellApiVersion:\s*1/);
 });
 
@@ -94,15 +98,18 @@ test('OTA channel and shellApiVersion constants match capacitor.config.ts', asyn
   const shellConst = ota.match(/export const OPENCHAMBER_SHELL_API_VERSION\s*=\s*(\d+)/)?.[1];
   assert.ok(channelConst, 'OPENCHAMBER_OTA_CHANNEL missing');
   assert.ok(shellConst, 'OPENCHAMBER_SHELL_API_VERSION missing');
+  assert.equal(channelConst, 'beta', 'OPENCHAMBER_OTA_CHANNEL build default must be beta');
 
-  // Value object (not the CapacitorConfig intersection type annotation).
-  const openChamberBlock = config.match(/OpenChamberOTA:\s*\{\s*channel:\s*'([^']+)',\s*shellApiVersion:\s*(\d+),\s*\}/);
+  // Value object uses otaChannel derived from OPENCHAMBER_OTA_CHANNEL env.
+  assert.match(
+    config,
+    /const otaChannel\s*=\s*process\.env\.OPENCHAMBER_OTA_CHANNEL\s*===\s*'stable'\s*\?\s*'stable'\s*:\s*'beta'/,
+  );
+  const openChamberBlock = config.match(/OpenChamberOTA:\s*\{\s*channel:\s*otaChannel,\s*shellApiVersion:\s*(\d+),\s*\}/);
   assert.ok(openChamberBlock, 'OpenChamberOTA value block missing');
-  assert.equal(openChamberBlock[1], channelConst);
-  assert.equal(openChamberBlock[2], shellConst);
+  assert.equal(openChamberBlock[1], shellConst);
 
   const updaterBlock = config.match(/CapacitorUpdater:\s*\{([\s\S]*?)\n\s*\},/)?.[1];
   assert.ok(updaterBlock, 'CapacitorUpdater block missing');
-  const defaultChannel = updaterBlock.match(/defaultChannel:\s*'([^']+)'/)?.[1];
-  assert.equal(defaultChannel, channelConst);
+  assert.match(updaterBlock, /defaultChannel:\s*otaChannel/);
 });

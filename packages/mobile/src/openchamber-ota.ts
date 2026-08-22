@@ -1,6 +1,10 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
-/** Default Capgo channel for self-hosted OTA (must match capacitor.config.ts OpenChamberOTA.channel / CapacitorUpdater.defaultChannel). */
+/**
+ * Build-default Capgo channel for self-hosted OTA.
+ * Overridable at sync time via OPENCHAMBER_OTA_CHANNEL=stable (mirrors
+ * capacitor.config.ts `otaChannel`); keep the default in sync with that gating.
+ */
 export const OPENCHAMBER_OTA_CHANNEL = 'beta';
 
 /**

@@ -11,7 +11,7 @@ const outputDirectory = path.resolve(projectRoot, configuredOutputDirectory);
 const projectRootPrefix = `${projectRoot}${path.sep}`;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const GITHUB_CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/openchamber/main/CHANGELOG.md';
-const OTA_CHANNEL_BETA = path.join(projectRoot, 'ota', 'channels', 'beta.json');
+const OTA_CHANNELS = ['beta', 'stable'];
 
 if (!outputDirectory.startsWith(projectRootPrefix)) {
   throw new Error('OPENCHAMBER_UPDATE_OUTPUT_DIR must stay inside deploy/update-service.');
@@ -32,13 +32,19 @@ if (!VERSION_PATTERN.test(latestVersion) || !releaseNotesUrl.startsWith('https:/
   throw new Error('release-manifest.json must contain a version and HTTPS releaseNotesUrl.');
 }
 
-if (!existsSync(OTA_CHANNEL_BETA)) {
-  throw new Error('ota/channels/beta.json is required.');
-}
-const betaChannel = JSON.parse(readFileSync(OTA_CHANNEL_BETA, 'utf8'));
-const betaParsed = parseOtaManifest(betaChannel);
-if (!betaParsed.ok) {
-  throw new Error(`ota/channels/beta.json failed schema validation: ${betaParsed.errors.join('; ')}`);
+for (const channel of OTA_CHANNELS) {
+  const channelPath = path.join(projectRoot, 'ota', 'channels', `${channel}.json`);
+  if (!existsSync(channelPath)) {
+    throw new Error(`ota/channels/${channel}.json is required.`);
+  }
+  const channelManifest = JSON.parse(readFileSync(channelPath, 'utf8'));
+  const parsed = parseOtaManifest(channelManifest);
+  if (!parsed.ok) {
+    throw new Error(`ota/channels/${channel}.json failed schema validation: ${parsed.errors.join('; ')}`);
+  }
+  if (parsed.manifest.channel !== channel) {
+    throw new Error(`ota/channels/${channel}.json channel field must be "${channel}" (got "${parsed.manifest.channel}")`);
+  }
 }
 
 const outputManifest = {

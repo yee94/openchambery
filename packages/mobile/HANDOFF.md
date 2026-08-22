@@ -251,8 +251,8 @@ Self-hosted live updates use `@capgo/capacitor-updater` (plugin config key `Capa
 
 ### What was added
 
-- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel: 'beta'`, `autoUpdate: true`, `appReadyTimeout: 20000`, explicit delete/reset flags, optional `publicKey`) plus top-level `OpenChamberOTA` (`channel`, `shellApiVersion`) for the web layer.
-- `src/openchamber-ota.ts` — local typed bridge (`CapacitorUpdaterBridge` via `registerPlugin('CapacitorUpdater')`); does **not** import `@capgo/capacitor-updater`. Canonical constants: `OPENCHAMBER_OTA_CHANNEL`, `OPENCHAMBER_SHELL_API_VERSION` (mirrored as literals in `capacitor.config.ts` so Cap CLI does not execute `registerPlugin` when loading config).
+- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel` from build-time `otaChannel`, `autoUpdate: true`, `appReadyTimeout: 20000`, explicit delete/reset flags, optional `publicKey`) plus top-level `OpenChamberOTA` (`channel` / `shellApiVersion`) for the web layer. `otaChannel` = `process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta'` (baked at `mobile:sync`; stable store builds pass `OPENCHAMBER_OTA_CHANNEL=stable`).
+- `src/openchamber-ota.ts` — local typed bridge (`CapacitorUpdaterBridge` via `registerPlugin('CapacitorUpdater')`); does **not** import `@capgo/capacitor-updater`. Canonical constants: `OPENCHAMBER_OTA_CHANNEL` (build default `'beta'`, overridable at sync via env — mirrors `capacitor.config.ts`), `OPENCHAMBER_SHELL_API_VERSION` (literal mirrored in config so Cap CLI does not execute `registerPlugin` when loading config).
 - `test/ota-config-contract.test.mjs` — source-regex contract for config + bridge surface.
 
 ### Native wiring
@@ -263,6 +263,7 @@ iOS pods / Android Gradle plugin registration for Capgo is **not** checked in fr
 
 | Env | Purpose |
 |---|---|
+| `OPENCHAMBER_OTA_CHANNEL` | Bake shell channel at `mobile:sync` (`stable` or default `beta`) |
 | `OPENCHAMBER_OTA_UPDATE_URL` | Override the Capgo check endpoint (default `https://openchamber.xiaobe.top/v1/ota/check`) |
 | `OPENCHAMBER_OTA_PUBLIC_KEY` | Optional E2E encryption public key; empty / unset = unencrypted bundles |
 
@@ -272,5 +273,6 @@ iOS pods / Android Gradle plugin registration for Capgo is **not** checked in fr
 
 ### Related endpoints / CI
 
-- Update-service OTA routes: `deploy/update-service` (check / bundle delivery).
-- Mobile beta OTA workflow: `.github/workflows/mobile-beta-ota.yml`.
+- Update-service OTA routes: `deploy/update-service` (check / bundle delivery; seeds for both `beta` and `stable` channels).
+- Mobile OTA Release workflow: `.github/workflows/mobile-beta-ota.yml` (tags `mobile-beta/*` + `mobile-stable/*`).
+- Rollout / promote-channel: `.github/workflows/mobile-beta-rollout.yml`.

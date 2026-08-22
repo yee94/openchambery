@@ -5,11 +5,15 @@
  * Writes:
  *   <out>/ota/bundles/<bundleId>.zip
  *   <out>/ota/channels/<channel>.json
+ *   <out>/ota/channels/<other>.json   (full-snapshot mirror)
  *   <out>/ota-meta.json
  *
  * Fetches the live channel manifest from OTA_BASE_URL (default EdgeOne host).
  * 404 → start generation 1 with empty rollbacks.
  * Other HTTP errors → abort (never silently reset a live channel).
+ *
+ * FULL-SNAPSHOT: every deploy replaces static output, so the snapshot always
+ * includes BOTH channel manifests and all referenced bundles.
  */
 import { createHash } from 'node:crypto'
 import {
@@ -22,7 +26,7 @@ import {
 } from 'node:fs'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -30,6 +34,11 @@ const ROOT = path.resolve(__dirname, '../..')
 
 const DEFAULT_OTA_BASE = 'https://openchamber.xiaobe.top'
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
+const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
+
+const { parseOtaManifest } = await import(
+  pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/ota-manifest.js')).href
+)
 
 function parseArgs(argv) {
   const out = {
@@ -73,7 +82,7 @@ function parseArgs(argv) {
       case '--help':
       case '-h':
         console.log(
-          'Usage: node scripts/mobile-ota/assemble-snapshot.mjs --zip <path> --version <semver> --checksum <hex> --out <dir> [--channel beta] [--session-key <key>] [--dist-dir <dir>]',
+          'Usage: node scripts/mobile-ota/assemble-snapshot.mjs --zip <path> --version <semver> --checksum <hex> --out <dir> [--channel beta|stable] [--session-key <key>] [--dist-dir <dir>]',
         )
         process.exit(0)
         break
@@ -83,6 +92,9 @@ function parseArgs(argv) {
   }
   if (!out.zip || !out.version || !out.checksum || !out.out) {
     throw new Error('--zip, --version, --checksum, and --out are required')
+  }
+  if (!ALLOWED_CHANNELS.has(out.channel)) {
+    throw new Error(`--channel must be beta or stable (got "${out.channel}")`)
   }
   // Encrypted bundles carry the opaque encrypted checksum from the Capgo CLI;
   // plain bundles must be 64-char hex (optionally sha256:-prefixed) because the
@@ -126,6 +138,10 @@ function emptyManifest(channel) {
   }
 }
 
+function otherChannel(channel) {
+  return channel === 'beta' ? 'stable' : 'beta'
+}
+
 async function fetchProductionManifest(baseUrl, channel) {
   const url = `${baseUrl.replace(/\/$/, '')}/ota/channels/${channel}.json`
   let response
@@ -146,7 +162,14 @@ async function fetchProductionManifest(baseUrl, channel) {
   if (!body || typeof body !== 'object') {
     throw new Error(`Aborting: production channel manifest is not a JSON object (${url})`)
   }
-  return { kind: 'ok', manifest: body }
+  const parsed = parseOtaManifest(body)
+  if (!parsed.ok) {
+    throw new Error(`Aborting: production channel manifest invalid (${url}): ${parsed.errors.join('; ')}`)
+  }
+  if (parsed.manifest.channel !== channel) {
+    throw new Error(`Aborting: production channel field mismatch (${url}): expected ${channel}, got ${parsed.manifest.channel}`)
+  }
+  return { kind: 'ok', manifest: parsed.manifest }
 }
 
 async function downloadBundle(baseUrl, bundleId, destPath) {
@@ -161,6 +184,39 @@ async function downloadBundle(baseUrl, bundleId, destPath) {
     return
   }
   await pipeline(Readable.fromWeb(response.body), createWriteStream(destPath))
+}
+
+/** Fetch active + rollback zips for a channel manifest into bundlesDir (skip existing). */
+async function ensureChannelBundles(manifest, baseUrl, bundlesDir) {
+  const ids = []
+  if (manifest.activeBundle?.bundleId) ids.push(manifest.activeBundle.bundleId)
+  if (Array.isArray(manifest.rollbackBundleIds)) {
+    for (const id of manifest.rollbackBundleIds) {
+      if (typeof id === 'string' && BUNDLE_ID_PATTERN.test(id)) ids.push(id)
+    }
+  }
+  for (const id of [...new Set(ids)]) {
+    const dest = path.join(bundlesDir, `${id}.zip`)
+    if (existsSync(dest)) continue
+    await downloadBundle(baseUrl, id, dest)
+  }
+}
+
+/**
+ * Mirror the OTHER channel into the snapshot so a full static replace does not
+ * delete it. 404 → write null-seed; other errors → abort; success → validate + write.
+ */
+async function mirrorOtherChannel(baseUrl, targetChannel, channelsDir, bundlesDir) {
+  const other = otherChannel(targetChannel)
+  const { kind, manifest } = await fetchProductionManifest(baseUrl, other)
+  writeFileSync(
+    path.join(channelsDir, `${other}.json`),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  )
+  if (kind === 'ok') {
+    await ensureChannelBundles(manifest, baseUrl, bundlesDir)
+  }
+  return { other, kind, generation: manifest.generation }
 }
 
 function resolveMinNativeBuild(envKey, previousActive, platform) {
@@ -253,16 +309,18 @@ async function main() {
 
   copyFileSync(zipPath, path.join(bundlesDir, `${bundleId}.zip`))
 
-  for (const id of trimmedRollbacks) {
-    const dest = path.join(bundlesDir, `${id}.zip`)
-    if (existsSync(dest)) continue
-    await downloadBundle(baseUrl, id, dest)
-  }
+  await ensureChannelBundles(
+    { activeBundle: null, rollbackBundleIds: trimmedRollbacks },
+    baseUrl,
+    bundlesDir,
+  )
 
   writeFileSync(
     path.join(channelsDir, `${args.channel}.json`),
     `${JSON.stringify(nextManifest, null, 2)}\n`,
   )
+
+  const mirrored = await mirrorOtherChannel(baseUrl, args.channel, channelsDir, bundlesDir)
 
   const meta = {
     bundleId,
@@ -274,11 +332,14 @@ async function main() {
     rollbackBundleIds: trimmedRollbacks,
     previousGeneration,
     sessionKeyPresent: Boolean(args.sessionKey),
+    mirroredChannel: mirrored.other,
+    mirroredKind: mirrored.kind,
   }
   writeFileSync(path.join(outRoot, 'ota-meta.json'), `${JSON.stringify(meta, null, 2)}\n`)
 
   console.log(`Assembled OTA snapshot at ${outRoot}`)
   console.log(`  bundleId=${bundleId} generation=${generation} rollbacks=${trimmedRollbacks.join(',') || '(none)'}`)
+  console.log(`  mirrored ${mirrored.other} (${mirrored.kind}, generation=${mirrored.generation})`)
 }
 
 main().catch((error) => {

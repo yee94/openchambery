@@ -12,11 +12,12 @@ on:
           - pause
           - rollback
           - set-native-target
+          - promote-channel
       percent:
-        description: Rollout percent (promote only, 0-100)
+        description: Rollout percent 0-100 (promote default 100; promote-channel default 10)
         required: false
         type: string
-        default: '100'
+        default: ''
       platform:
         description: Platform for set-native-target (ios|android; ignore for other actions)
         required: false
@@ -38,13 +39,33 @@ on:
         required: false
         type: string
       channel:
-        description: OTA channel name
+        description: OTA channel (promote/pause/rollback/set-native-target)
         required: false
-        type: string
+        type: choice
         default: beta
+        options:
+          - beta
+          - stable
+      from:
+        description: Source channel for promote-channel
+        required: false
+        type: choice
+        default: beta
+        options:
+          - beta
+          - stable
+      to:
+        description: Target channel for promote-channel
+        required: false
+        type: choice
+        default: stable
+        options:
+          - beta
+          - stable
 
+# Serialise with Mobile OTA Release — each deploy is a full dual-channel snapshot.
 concurrency:
-  group: mobile-beta-rollout-${{ inputs.channel || 'beta' }}
+  group: mobile-ota-production
   cancel-in-progress: false
 
 permissions:
@@ -75,28 +96,39 @@ jobs:
           BUILD: ${{ inputs.build }}
           URL: ${{ inputs.url }}
           CHANNEL: ${{ inputs.channel }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
           OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
         run: |
           set -euo pipefail
           OUT="$RUNNER_TEMP/ota-rollout-snapshot"
-          ARGS=(--action "$ACTION" --channel "$CHANNEL" --out "$OUT")
           case "$ACTION" in
+            promote-channel)
+              ARGS=(--action promote-channel --from "$FROM" --to "$TO" --percent "${PERCENT:-10}" --out "$OUT")
+              WRITE_CHANNEL="$TO"
+              ;;
             promote)
-              ARGS+=(--percent "$PERCENT")
+              ARGS=(--action promote --channel "$CHANNEL" --percent "${PERCENT:-100}" --out "$OUT")
+              WRITE_CHANNEL="$CHANNEL"
               ;;
             pause)
+              ARGS=(--action pause --channel "$CHANNEL" --out "$OUT")
+              WRITE_CHANNEL="$CHANNEL"
               ;;
             rollback)
+              ARGS=(--action rollback --channel "$CHANNEL" --out "$OUT")
+              WRITE_CHANNEL="$CHANNEL"
               ;;
             set-native-target)
               if [[ -z "${PLATFORM:-}" || -z "${VERSION:-}" || -z "${BUILD:-}" ]]; then
                 echo "set-native-target requires platform, version, and build"
                 exit 1
               fi
-              ARGS+=(--platform "$PLATFORM" --version "$VERSION" --build "$BUILD" --status published)
+              ARGS=(--action set-native-target --channel "$CHANNEL" --platform "$PLATFORM" --version "$VERSION" --build "$BUILD" --status published --out "$OUT")
               if [[ -n "${URL:-}" ]]; then
                 ARGS+=(--url "$URL")
               fi
+              WRITE_CHANNEL="$CHANNEL"
               ;;
             *)
               echo "Unknown action: $ACTION"
@@ -113,6 +145,7 @@ jobs:
             echo "generation=$GENERATION"
             echo "previous_generation=$PREV"
             echo "active_bundle_id=$ACTIVE"
+            echo "write_channel=$WRITE_CHANNEL"
           } >> "$GITHUB_OUTPUT"
 
       - name: Vercel pull + prebuilt build + overlay OTA
@@ -160,13 +193,24 @@ jobs:
         shell: bash
         env:
           OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
-          CHANNEL: ${{ inputs.channel }}
+          CHANNEL: ${{ steps.prepare.outputs.write_channel }}
           EXPECTED_GENERATION: ${{ steps.prepare.outputs.generation }}
           PREVIOUS_GENERATION: ${{ steps.prepare.outputs.previous_generation }}
           ACTION: ${{ inputs.action }}
           ACTIVE_BUNDLE_ID: ${{ steps.prepare.outputs.active_bundle_id }}
         run: |
           set -euo pipefail
+          # Full-snapshot invariant: BOTH channel manifests must remain reachable.
+          for ch in beta stable; do
+            curl -fsS "${OTA_BASE_URL}/ota/channels/${ch}.json" -o "/tmp/${ch}.json"
+            node -e "
+              const fs = require('fs');
+              const m = JSON.parse(fs.readFileSync('/tmp/' + process.argv[1] + '.json','utf8'));
+              if (m.channel !== process.argv[1]) throw new Error('channel field mismatch for ' + process.argv[1]);
+              console.log(process.argv[1] + '.json ok generation=' + m.generation);
+            " "$ch"
+          done
+
           MANIFEST_URL="${OTA_BASE_URL}/ota/channels/${CHANNEL}.json"
           curl -fsS "$MANIFEST_URL" -o /tmp/channel.json
           node -e "

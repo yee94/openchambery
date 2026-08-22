@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 /**
- * Mutate the production beta (or named) OTA channel manifest and write a
- * deployable snapshot. Bundle zip files are content-addressed; this script
- * re-fetches active + rollback zips into <out>/ota/bundles/ so a full Vercel
- * static replace still serves them.
+ * Mutate a production OTA channel manifest and write a deployable snapshot.
+ * Bundle zip files are content-addressed; this script re-fetches active +
+ * rollback zips into <out>/ota/bundles/ so a full Vercel static replace still
+ * serves them.
+ *
+ * FULL-SNAPSHOT: every deploy replaces static output, so the snapshot always
+ * includes BOTH channel manifests and all referenced bundles.
  *
  * Actions:
- *   --action promote --percent N
- *   --action pause
- *   --action rollback
+ *   --action promote --percent N [--channel beta|stable]
+ *   --action pause [--channel beta|stable]
+ *   --action rollback [--channel beta|stable]
  *   --action set-native-target --platform ios|android --version V --build N
- *     [--status published] [--url U]
+ *     [--status published] [--url U] [--channel beta|stable]
+ *   --action promote-channel --from beta --to stable [--percent 10]
  */
 import {
   createWriteStream,
@@ -20,7 +24,7 @@ import {
 } from 'node:fs'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -29,6 +33,11 @@ const ROOT = path.resolve(__dirname, '../..')
 const DEFAULT_OTA_BASE = 'https://openchamber.xiaobe.top'
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
+
+const { parseOtaManifest } = await import(
+  pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/ota-manifest.js')).href
+)
 
 function parseArgs(argv) {
   const out = {
@@ -40,6 +49,8 @@ function parseArgs(argv) {
     status: 'published',
     url: null,
     channel: 'beta',
+    from: null,
+    to: null,
     out: null,
   }
   for (let i = 0; i < argv.length; i += 1) {
@@ -74,16 +85,23 @@ function parseArgs(argv) {
       case '--channel':
         out.channel = next()
         break
+      case '--from':
+        out.from = next()
+        break
+      case '--to':
+        out.to = next()
+        break
       case '--out':
         out.out = next()
         break
       case '--help':
       case '-h':
         console.log(`Usage:
-  node scripts/mobile-ota/rollout.mjs --action promote --percent N --out <dir>
-  node scripts/mobile-ota/rollout.mjs --action pause --out <dir>
-  node scripts/mobile-ota/rollout.mjs --action rollback --out <dir>
-  node scripts/mobile-ota/rollout.mjs --action set-native-target --platform ios|android --version V --build N [--url U] --out <dir>`)
+  node scripts/mobile-ota/rollout.mjs --action promote --percent N --out <dir> [--channel beta|stable]
+  node scripts/mobile-ota/rollout.mjs --action pause --out <dir> [--channel beta|stable]
+  node scripts/mobile-ota/rollout.mjs --action rollback --out <dir> [--channel beta|stable]
+  node scripts/mobile-ota/rollout.mjs --action set-native-target --platform ios|android --version V --build N [--url U] --out <dir> [--channel beta|stable]
+  node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable [--percent 10] --out <dir>`)
         process.exit(0)
         break
       default:
@@ -92,6 +110,15 @@ function parseArgs(argv) {
   }
   if (!out.action) throw new Error('--action is required')
   if (!out.out) throw new Error('--out is required')
+  if (out.action === 'promote-channel') {
+    if (!out.from || !out.to) throw new Error('promote-channel requires --from and --to')
+    if (!ALLOWED_CHANNELS.has(out.from) || !ALLOWED_CHANNELS.has(out.to)) {
+      throw new Error('--from and --to must be beta or stable')
+    }
+    if (out.from === out.to) throw new Error('--from and --to must differ')
+  } else if (!ALLOWED_CHANNELS.has(out.channel)) {
+    throw new Error(`--channel must be beta or stable (got "${out.channel}")`)
+  }
   return out
 }
 
@@ -106,6 +133,10 @@ function emptyManifest(channel) {
   }
 }
 
+function otherChannel(channel) {
+  return channel === 'beta' ? 'stable' : 'beta'
+}
+
 async function fetchProductionManifest(baseUrl, channel) {
   const url = `${baseUrl.replace(/\/$/, '')}/ota/channels/${channel}.json`
   let response
@@ -116,7 +147,7 @@ async function fetchProductionManifest(baseUrl, channel) {
   }
 
   if (response.status === 404) {
-    return emptyManifest(channel)
+    return { kind: 'missing', manifest: emptyManifest(channel) }
   }
   if (!response.ok) {
     throw new Error(`Aborting: production channel fetch returned HTTP ${response.status} for ${url}`)
@@ -125,7 +156,14 @@ async function fetchProductionManifest(baseUrl, channel) {
   if (!body || typeof body !== 'object') {
     throw new Error(`Aborting: production channel manifest is not a JSON object (${url})`)
   }
-  return body
+  const parsed = parseOtaManifest(body)
+  if (!parsed.ok) {
+    throw new Error(`Aborting: production channel manifest invalid (${url}): ${parsed.errors.join('; ')}`)
+  }
+  if (parsed.manifest.channel !== channel) {
+    throw new Error(`Aborting: production channel field mismatch (${url}): expected ${channel}, got ${parsed.manifest.channel}`)
+  }
+  return { kind: 'ok', manifest: parsed.manifest }
 }
 
 async function downloadBundle(baseUrl, bundleId, destPath) {
@@ -212,6 +250,50 @@ function applySetNativeTarget(manifest, args) {
   return next
 }
 
+function applyPromoteChannel(sourceManifest, targetManifest, percent) {
+  if (!sourceManifest.activeBundle) {
+    throw new Error('Cannot promote-channel: source activeBundle is null')
+  }
+  const resolvedPercent = percent === null || percent === undefined ? 10 : percent
+  if (!Number.isInteger(resolvedPercent) || resolvedPercent < 0 || resolvedPercent > 100) {
+    throw new Error('--percent must be an integer from 0 to 100')
+  }
+
+  const sourceActive = sourceManifest.activeBundle
+  const previousGeneration = Number.isInteger(targetManifest.generation) ? targetManifest.generation : 0
+  const generation = previousGeneration + 1
+
+  const rollbackBundleIds = []
+  if (targetManifest.activeBundle?.bundleId) {
+    rollbackBundleIds.push(targetManifest.activeBundle.bundleId)
+  }
+  if (Array.isArray(targetManifest.rollbackBundleIds)) {
+    for (const id of targetManifest.rollbackBundleIds) {
+      if (typeof id === 'string' && BUNDLE_ID_PATTERN.test(id) && !rollbackBundleIds.includes(id)) {
+        rollbackBundleIds.push(id)
+      }
+    }
+  }
+
+  // Copy source activeBundle VERBATIM, then override rollout salt/percent only.
+  const activeBundle = {
+    ...structuredClone(sourceActive),
+    rolloutPercent: resolvedPercent,
+    rolloutSalt: `${targetManifest.channel}-${generation}`,
+  }
+
+  return {
+    schemaVersion: 1,
+    channel: targetManifest.channel,
+    generation,
+    activeBundle,
+    nativeTargets: targetManifest.nativeTargets && typeof targetManifest.nativeTargets === 'object'
+      ? structuredClone(targetManifest.nativeTargets)
+      : {},
+    rollbackBundleIds: rollbackBundleIds.slice(0, 2),
+  }
+}
+
 async function finalizeRollback(next, baseUrl, bundlesDir) {
   const targetId = next._rollbackTargetId
   const demoted = next._demotedActive
@@ -268,34 +350,70 @@ async function ensureBundles(manifest, baseUrl, bundlesDir) {
   }
 }
 
+async function mirrorOtherChannel(baseUrl, targetChannel, channelsDir, bundlesDir) {
+  const other = otherChannel(targetChannel)
+  const { kind, manifest } = await fetchProductionManifest(baseUrl, other)
+  writeFileSync(
+    path.join(channelsDir, `${other}.json`),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  )
+  if (kind === 'ok') {
+    await ensureBundles(manifest, baseUrl, bundlesDir)
+  }
+  return { other, kind, generation: manifest.generation }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const baseUrl = process.env.OTA_BASE_URL || DEFAULT_OTA_BASE
-  const previous = await fetchProductionManifest(baseUrl, args.channel)
-
-  let next
-  switch (args.action) {
-    case 'promote':
-      next = applyPromote(previous, args.percent)
-      break
-    case 'pause':
-      next = applyPause(previous)
-      break
-    case 'rollback':
-      next = applyRollback(previous)
-      break
-    case 'set-native-target':
-      next = applySetNativeTarget(previous, args)
-      break
-    default:
-      throw new Error(`Unknown action: ${args.action}`)
-  }
 
   const outRoot = path.resolve(args.out)
   const bundlesDir = path.join(outRoot, 'ota', 'bundles')
   const channelsDir = path.join(outRoot, 'ota', 'channels')
   mkdirSync(bundlesDir, { recursive: true })
   mkdirSync(channelsDir, { recursive: true })
+
+  let next
+  let previous
+  let writeChannel
+
+  if (args.action === 'promote-channel') {
+    const source = await fetchProductionManifest(baseUrl, args.from)
+    const target = await fetchProductionManifest(baseUrl, args.to)
+    previous = target.manifest
+    next = applyPromoteChannel(source.manifest, target.manifest, args.percent)
+    writeChannel = args.to
+
+    // Source channel is the "other" relative to the written target — mirror it
+    // from the already-fetched source (not a second production fetch) so the
+    // snapshot keeps the proven beta (or from) channel intact.
+    writeFileSync(
+      path.join(channelsDir, `${args.from}.json`),
+      `${JSON.stringify(source.manifest, null, 2)}\n`,
+    )
+    await ensureBundles(source.manifest, baseUrl, bundlesDir)
+  } else {
+    const fetched = await fetchProductionManifest(baseUrl, args.channel)
+    previous = fetched.manifest
+    writeChannel = args.channel
+
+    switch (args.action) {
+      case 'promote':
+        next = applyPromote(previous, args.percent)
+        break
+      case 'pause':
+        next = applyPause(previous)
+        break
+      case 'rollback':
+        next = applyRollback(previous)
+        break
+      case 'set-native-target':
+        next = applySetNativeTarget(previous, args)
+        break
+      default:
+        throw new Error(`Unknown action: ${args.action}`)
+    }
+  }
 
   if (args.action === 'rollback') {
     next = await finalizeRollback(next, baseUrl, bundlesDir)
@@ -304,23 +422,36 @@ async function main() {
   await ensureBundles(next, baseUrl, bundlesDir)
 
   writeFileSync(
-    path.join(channelsDir, `${args.channel}.json`),
+    path.join(channelsDir, `${writeChannel}.json`),
     `${JSON.stringify(next, null, 2)}\n`,
   )
 
+  let mirrored = null
+  if (args.action !== 'promote-channel') {
+    mirrored = await mirrorOtherChannel(baseUrl, writeChannel, channelsDir, bundlesDir)
+  }
+
   const meta = {
     action: args.action,
-    channel: args.channel,
+    channel: writeChannel,
     generation: next.generation,
     previousGeneration: previous.generation ?? 0,
     activeBundleId: next.activeBundle?.bundleId ?? null,
     rolloutPercent: next.activeBundle?.rolloutPercent ?? null,
     nativeTargets: next.nativeTargets,
+    ...(args.action === 'promote-channel'
+      ? { from: args.from, to: args.to }
+      : { mirroredChannel: mirrored?.other, mirroredKind: mirrored?.kind }),
   }
   writeFileSync(path.join(outRoot, 'ota-meta.json'), `${JSON.stringify(meta, null, 2)}\n`)
 
   console.log(`Wrote rollout snapshot at ${outRoot}`)
-  console.log(`  action=${args.action} generation=${next.generation}`)
+  console.log(`  action=${args.action} channel=${writeChannel} generation=${next.generation}`)
+  if (args.action === 'promote-channel') {
+    console.log(`  promoted ${args.from} → ${args.to} bundleId=${next.activeBundle?.bundleId} percent=${next.activeBundle?.rolloutPercent}`)
+  } else if (mirrored) {
+    console.log(`  mirrored ${mirrored.other} (${mirrored.kind}, generation=${mirrored.generation})`)
+  }
 }
 
 main().catch((error) => {
