@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.26] - 2026-08-22
+
+### 移动端
+
+- **撤回 Android 显示大小钉死，修复键盘把输入框顶偏：** beta.24 把 `densityDpi` 钉到出厂密度后，原生键盘 inset 与 WebView CSS 像素不再同一套密度，输入框上弹对不齐键盘。现在只钉系统「字体大小」（`fontScale=1` + `textZoom(100)`），显示大小仍跟随系统，键盘几何恢复。
+
 ## [1.18.2-beta.25] - 2026-08-22
 
 ### 聊天
