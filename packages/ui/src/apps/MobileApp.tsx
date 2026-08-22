@@ -76,6 +76,7 @@ import {
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
+  shouldCorrectArmedImeLift,
   shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 import { MobileChangesSurface } from './MobileChangesSurface';
@@ -644,6 +645,19 @@ const useNativeMobileChrome = (): void => {
             // a focus/intent lift is armed, this event only refreshes next-open
             // cache data and leaves its transform untouched.
             if (action === 'open') markOpen(document.activeElement, 'ime');
+            if (action === 'cache' && shouldCorrectArmedImeLift(armedImeHeight || imeHeight, measured)) {
+              // The estimate that armed this lift under-cleared the keyboard;
+              // re-lift from the measured height so the composer is not covered
+              // for the rest of the keyboard session.
+              armedImeHeight = measured;
+              const slide = liftMovers(
+                measured,
+                CORRECT_MS,
+                SHOW_EASING,
+                isComposerKeyboardTarget(document.activeElement) ? document.activeElement : undefined,
+              );
+              dispatchKb('oc:keyboard-anim', { phase: 'show', slide, durationMs: CORRECT_MS, easing: SHOW_EASING });
+            }
             if (action === 'field') reserveFieldScrollInset(measured || imeHeight);
           }
           if (detail?.open === false) markClosed(true);

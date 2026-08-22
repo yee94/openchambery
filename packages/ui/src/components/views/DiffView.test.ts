@@ -127,6 +127,8 @@ describe('DiffView staged turn changes queries', () => {
     expect(diffViewSource).toContain('useSessionTurnChangeFileQuery');
     expect(diffViewSource).toContain('enabled: loadTurnChangeFile && Boolean(turnChangesRequest) && isExpanded && isMounted');
     expect(diffViewSource).toContain("loadTurnChangeFile={activeDiffScope === 'turn' && !usesToolPatches}");
+    // A failed L3 refresh must not cover an already-rendered snapshot.
+    expect(diffViewSource).toContain('const visibleDiffLoadError = diffData');
   });
 
   test('short-circuits tool patches and protects turn scope from expand-all fanout', () => {

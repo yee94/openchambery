@@ -78,6 +78,45 @@ describe('sessionTurnChangesQueries', () => {
     expect(getSessionDiffMock).not.toHaveBeenCalled();
   });
 
+  test('file query falls back to getSessionDiff when 200 is L2 files-only', async () => {
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
+    runtimeFetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      files: [{ file: 'a.ts', additions: 2, deletions: 1 }],
+    }), { status: 200 }));
+    getSessionDiffMock.mockResolvedValueOnce([
+      { file: 'a.ts', additions: 2, deletions: 1, patch: '@@ legacy @@' },
+    ]);
+
+    const result = await sessionTurnChangeFileQueryOptions({
+      sessionID: 'ses_1',
+      directory: '/repo',
+      messageID: 'msg_1',
+      file: 'a.ts',
+    }).queryFn({ signal: new AbortController().signal });
+
+    expect(result).toEqual({
+      diff: { file: 'a.ts', additions: 2, deletions: 1, patch: '@@ legacy @@' },
+    });
+    expect(getSessionDiffMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('file query falls back to getSessionDiff when 200 body is not L3', async () => {
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
+    runtimeFetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    getSessionDiffMock.mockResolvedValueOnce([
+      { file: 'a.ts', patch: '@@ legacy @@' },
+    ]);
+
+    const result = await sessionTurnChangeFileQueryOptions({
+      sessionID: 'ses_1',
+      directory: '/repo',
+      messageID: 'msg_1',
+      file: 'a.ts',
+    }).queryFn({ signal: new AbortController().signal });
+
+    expect(result).toEqual({ diff: { file: 'a.ts', patch: '@@ legacy @@' } });
+  });
+
   test('file query falls back to getSessionDiff only for 404/405/501', async () => {
     const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
     for (const status of [404, 405, 501]) {
@@ -151,6 +190,23 @@ describe('sessionTurnChangesQueries', () => {
       file: 'a.ts',
     }).queryFn({ signal: new AbortController().signal })).rejects.toThrow(/500/);
     expect(getSessionDiffMock).not.toHaveBeenCalled();
+  });
+
+  test('L2-only 200 plus legacy miss throws change file not found', async () => {
+    const { sessionTurnChangeFileQueryOptions } = await import('./sessionTurnChangesQueries');
+    runtimeFetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      files: [{ file: 'b.ts', additions: 0, deletions: 0 }],
+    }), { status: 200 }));
+    getSessionDiffMock.mockResolvedValueOnce([
+      { file: 'b.ts', patch: '@@ other @@' },
+    ]);
+
+    await expect(sessionTurnChangeFileQueryOptions({
+      sessionID: 'ses_1',
+      directory: '/repo',
+      messageID: 'msg_1',
+      file: 'a.ts',
+    }).queryFn({ signal: new AbortController().signal })).rejects.toThrow('change file not found');
   });
 
   test('legacy fallback miss throws change file not found', async () => {
