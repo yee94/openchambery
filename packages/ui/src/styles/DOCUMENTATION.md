@@ -121,6 +121,17 @@ Do not hardcode `rounded-[var(--oc-mobile-inset-radius)]` on segmented pills in 
 
 Track total height may differ when a trailing action is present; pad/gap/item height stay identical so selected pills center the same way.
 
+## Composer clip shells vs the overflow-hidden rewrite
+
+Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `overflow-y: auto` so ordinary page columns can pan. Composer clip shells are not page columns:
+
+| Surface | Why it must stay `overflow: hidden` |
+|---|---|
+| `[data-composer-content="true"] .overflow-hidden` | Input column clipper |
+| `[data-composer-input-shell="true"]` and its `.overflow-hidden` child | Highlight overlay + textarea host |
+
+If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` also opts out of `:root.mobile-pointer .flex.flex-col { min-height: 0 }` with `min-height: min-content`, so the fixed stage viewport cannot shrink the card below its content.
+
 ## Related owners
 
 - Detection / root classes: `packages/ui/src/lib/device.ts`

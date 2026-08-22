@@ -205,9 +205,9 @@ import {
     stripComposerTriggerIconSlotsForPlainText,
 } from '@/composer/inline-visual';
 import { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } from './chatComposerDelivery';
+import { resolveComposerTextareaAutosize } from './composerTextareaAutosize';
 import { queueModeAllowsMutations, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
 
-const MAX_VISIBLE_TEXTAREA_LINES = 8;
 const COMPOSER_TEXT_LAYOUT_CLASS = 'box-border w-full whitespace-pre-wrap break-words px-3 typography-markdown [font-family:inherit] [font-style:inherit] [font-weight:inherit] leading-[inherit] tracking-[inherit] md:typography-ui-label';
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutputDialog'));
 const EMPTY_QUEUE: QueueItem[] = [];
@@ -4613,6 +4613,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return;
         }
 
+        // Measure with overflow clipped so scrollHeight is content height,
+        // not a leftover scrollport from the collapsed pill or a previous cap.
+        textarea.style.overflow = 'hidden';
+        textarea.style.overflowX = 'hidden';
+        textarea.style.overflowY = 'hidden';
+
         if (options?.allowShrink ?? true) {
             textarea.style.height = 'auto';
         }
@@ -4628,25 +4634,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             ? fallbackPadding
             : paddingTop + paddingBottom;
         const targetLineHeight = Number.isNaN(lineHeight) ? fallbackLineHeight : lineHeight;
-        const maxHeight = targetLineHeight * MAX_VISIBLE_TEXTAREA_LINES + paddingTotal;
-        const scrollHeight = textarea.scrollHeight || textarea.offsetHeight;
-        const dictationHeight = dictationContentHeightRef.current ?? 0;
-        const nextHeight = Math.min(Math.max(scrollHeight, dictationHeight), maxHeight);
+        const sized = resolveComposerTextareaAutosize({
+            scrollHeight: textarea.scrollHeight || textarea.offsetHeight,
+            dictationHeight: dictationContentHeightRef.current ?? 0,
+            lineHeight: targetLineHeight,
+            paddingTotal,
+        });
 
-        textarea.style.height = `${nextHeight}px`;
-        textarea.style.maxHeight = `${maxHeight}px`;
-        // Collapsed mobile pill state sets an inline hidden overflow. Restore
-        // textarea scrolling as soon as the full composer measures its content.
-        textarea.style.overflowY = 'auto';
+        textarea.style.height = `${sized.height}px`;
+        textarea.style.maxHeight = `${sized.maxHeight}px`;
+        textarea.style.overflowY = sized.overflowY;
         if (textarea.scrollTop !== previousScrollTop) {
             textarea.scrollTop = previousScrollTop;
         }
 
         setTextareaSize((prev) => {
-            if (prev && prev.height === nextHeight && prev.maxHeight === maxHeight) {
+            if (prev && prev.height === sized.height && prev.maxHeight === sized.maxHeight) {
                 return prev;
             }
-            return { height: nextHeight, maxHeight };
+            return { height: sized.height, maxHeight: sized.maxHeight };
         });
     }, [isComposerExpanded, isMobile, mobileComposerExpanded]);
 

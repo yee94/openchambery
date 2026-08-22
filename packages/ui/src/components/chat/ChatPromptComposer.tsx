@@ -246,7 +246,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               enterKeyHint={isMobile ? 'send' : textareaProps?.enterKeyHint}
               outerClassName={cn('ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0', expanded && 'min-h-0 flex-1', inputOuterClassName)}
               className={cn(
-                'relative z-10 min-h-[52px] max-h-40 resize-none appearance-none rounded-b-none border-0 bg-transparent px-3 pb-2 pt-4 typography-markdown hover:border-transparent md:typography-ui-label',
+                'relative z-10 min-h-[52px] max-h-40 resize-none overflow-y-hidden appearance-none rounded-b-none border-0 bg-transparent px-3 pb-2 pt-4 typography-markdown hover:border-transparent md:typography-ui-label',
                 textLayoutClassName,
                 inputClassName,
                 highlightedContent && 'text-transparent caret-[var(--surface-foreground)]',

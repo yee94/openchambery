@@ -1397,6 +1397,7 @@ export function createQueryTranscriptRepository(
           request: repository.getRequestState?.(scope),
           hydration: repository.getHydrationState?.(scope),
           error: result.error,
+          changed: result.changed,
         })
         recordHydrationPaint(scope, identity)
       }
