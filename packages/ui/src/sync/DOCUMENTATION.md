@@ -136,16 +136,17 @@ directory event reducer never inserts them into live child-store session lists,
 and `aggregateLiveSessions` excludes them so sidebar/mobile merges cannot flash
 them before `session.deleted` arrives. The same title blacklist is shared with
 `useGlobalSessionsStore` and the server session index. System sessions are also
-hidden from ordinary active/archived lists by authoritative metadata only: a
-non-empty `metadata.openchamber.assistant.assistantID` or
-`metadata.openchamber.scheduledTask.taskID`. Sessions with a non-empty
-`parentID` are also excluded from the root catalog (`isVisibleGlobalSession`
-and `aggregateLiveSessions`); they never promote to sidebar roots when the
-parent is missing, archived, or system-owned. Title prefixes never participate
-in this check. Metadata is ownership/isolation; `time.archived` is archive
-state; titles are human labels. Direct open by sessionID+directory is
-unaffected. Assistant history and scheduled-task source surfaces remain the
-entry points.
+  hidden from ordinary active/archived lists by authoritative metadata only: a
+  non-empty `metadata.openchamber.assistant.assistantID`,
+  `metadata.openchamber.scheduledTask.taskID`, or
+  `metadata.openchamber.smallModel.purpose`. Sessions with a non-empty
+  `parentID` are also excluded from the root catalog (`isVisibleGlobalSession`
+  and `aggregateLiveSessions`); they never promote to sidebar roots when the
+  parent is missing, archived, or system-owned. Title prefixes never participate
+  in this check. Metadata is ownership/isolation; `time.archived` is archive
+  state; titles are human labels. Direct open by sessionID+directory is
+  unaffected. Assistant history and scheduled-task source surfaces remain the
+  entry points.
 
 Catalog visibility must not destroy live transcript caches. `session.created` /
 `session.updated` remove system, subagent, and archived sessions from the live

@@ -133,8 +133,16 @@ describe('listGlobalSessionPages', () => {
       metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
     } as never)).toBe(false)
     expect(isVisibleGlobalSession({
+      title: 'Title refresh helper',
+      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+    } as never)).toBe(false)
+    expect(isVisibleGlobalSession({
       title: '[Assistant] Looks system',
       metadata: { openchamber: { assistant: { name: 'no-id' } } },
+    } as never)).toBe(true)
+    expect(isVisibleGlobalSession({
+      title: 'Looks like small model',
+      metadata: { openchamber: { smallModel: { purpose: '' } } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({
       title: 'Ordinary chat',

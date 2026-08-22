@@ -19,8 +19,14 @@ vi.mock('./call.js', () => ({
   callSmallModel: vi.fn(async () => 'Generated summary'),
 }));
 
+vi.mock('./opencode-session.js', () => ({
+  generateViaOpenCodeSession: vi.fn(async () => 'Session path summary'),
+  stop: vi.fn(async () => {}),
+}));
+
 const { createSmallModelService } = await import('./index.js');
 const { callSmallModel } = await import('./call.js');
+const { generateViaOpenCodeSession } = await import('./opencode-session.js');
 const { readAuthFile } = await import('../opencode/auth.js');
 
 const createService = (catalog = {}) => createSmallModelService({
@@ -32,6 +38,7 @@ const createService = (catalog = {}) => createSmallModelService({
 describe('summary AI settings', () => {
   beforeEach(async () => {
     vi.mocked(callSmallModel).mockClear();
+    vi.mocked(generateViaOpenCodeSession).mockClear();
     vi.mocked(readAuthFile).mockReturnValue({});
     await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
       summaryModelMode: 'custom',
@@ -195,10 +202,11 @@ describe('summary AI settings', () => {
     expect(await listCallableModels()).toEqual({ openai: ['gpt-5.4-mini'] });
   });
 
-  it('does not list other providers without a catalog model api.url', async () => {
+  it('lists logged-in providers with catalog models even without api.url', async () => {
     vi.mocked(readAuthFile).mockReturnValue({
       mistral: { type: 'api', key: 'mistral-key' },
       deepseek: { type: 'api', key: 'deepseek-key' },
+      emptyplug: { type: 'api', key: 'empty-key' },
     });
 
     const catalog = {
@@ -219,10 +227,59 @@ describe('summary AI settings', () => {
           },
         },
       },
+      emptyplug: {
+        id: 'emptyplug',
+        name: 'Empty',
+        models: {},
+      },
     };
 
     const { listCallableProviders, listCallableModels } = createService(catalog);
-    expect(await listCallableProviders()).toEqual(['deepseek']);
-    expect(await listCallableModels()).toEqual({ deepseek: ['deepseek-chat'] });
+    expect((await listCallableProviders()).sort()).toEqual(['deepseek', 'mistral']);
+    expect(await listCallableModels()).toEqual({
+      mistral: ['mistral-small'],
+      deepseek: ['deepseek-chat'],
+    });
+  });
+
+  it('routes non-dedicated providers through the OpenCode session path', async () => {
+    vi.mocked(readAuthFile).mockReturnValue({
+      codebuddy: { type: 'api', key: 'codebuddy-key' },
+    });
+    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
+      summaryModelMode: 'provider',
+      summaryProviderID: 'codebuddy',
+      summaryModelID: 'codebuddy-flash',
+    }), 'utf8');
+
+    const catalog = {
+      codebuddy: {
+        id: 'codebuddy',
+        name: 'CodeBuddy',
+        models: {
+          'codebuddy-flash': { id: 'codebuddy-flash' },
+        },
+      },
+    };
+
+    const { generateSmallModelText } = createService(catalog);
+    const result = await generateSmallModelText({
+      purpose: 'commit',
+      prompt: 'Diff content',
+      system: 'Fallback system prompt',
+    });
+
+    expect(callSmallModel).not.toHaveBeenCalled();
+    expect(generateViaOpenCodeSession).toHaveBeenCalledWith(expect.objectContaining({
+      providerID: 'codebuddy',
+      modelID: 'codebuddy-flash',
+      purpose: 'commit',
+    }));
+    expect(result).toEqual({
+      text: 'Session path summary',
+      providerID: 'codebuddy',
+      modelID: 'codebuddy-flash',
+      source: 'summary-provider',
+    });
   });
 });

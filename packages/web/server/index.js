@@ -1714,6 +1714,13 @@ async function main(options = {}) {
       } catch {
         // best-effort shutdown of the dictation worker
       }
+      try {
+        if (smallModelServiceInstance?.stop) {
+          await smallModelServiceInstance.stop();
+        }
+      } catch {
+        // best-effort cleanup of the small-model temp OpenCode directory
+      }
       return gracefulShutdown({
         exitProcess: shutdownOptions.exitProcess ?? false,
         forceCloseConnections: shutdownOptions.forceCloseConnections === true,

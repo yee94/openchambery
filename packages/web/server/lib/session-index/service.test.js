@@ -68,7 +68,7 @@ describe('Electron session index', () => {
     service.close();
   });
 
-  it('excludes Assistant and Scheduled system sessions from ordinary sidebar summaries', () => {
+  it('excludes Assistant, Scheduled, and smallModel system sessions from ordinary sidebar summaries', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);
     const assistantSession = {
@@ -79,11 +79,15 @@ describe('Electron session index', () => {
       ...session('ses_scheduled', 99),
       metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
     };
+    const smallModelSession = {
+      ...session('ses_small_model', 97),
+      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+    };
     const ordinary = session('ses_ordinary', 98);
 
     service.replaceDirectory({
       directory: '/repo',
-      sessions: [assistantSession, scheduledSession, ordinary],
+      sessions: [assistantSession, scheduledSession, smallModelSession, ordinary],
       cursor: null,
       hasMore: false,
     });
@@ -91,6 +95,7 @@ describe('Electron session index', () => {
 
     service.upsert(assistantSession);
     service.upsert(scheduledSession);
+    service.upsert(smallModelSession);
     expect(service.snapshot().directories[0].sessions.map((item) => item.id)).toEqual(['ses_ordinary']);
     service.close();
   });

@@ -48,8 +48,9 @@ const isRecord = (value) => value !== null && typeof value === 'object' && !Arra
 
 /**
  * Convert the official SDK provider list into the internal small-model catalog
- * shape. Keeps family / release_date / limit / model.api.url / provider name
- * for resolve + call; does not project the client-safe catalog allowlist.
+ * shape. Keeps family / release_date / limit / cost.input|output /
+ * model.api.url / provider name for resolve + call; does not project the
+ * client-safe catalog allowlist.
  */
 export function toSmallModelCatalog(source) {
   if (!isRecord(source) || !Array.isArray(source.providers)) {
@@ -76,6 +77,13 @@ export function toSmallModelCatalog(source) {
           if (Number.isFinite(model.limit.context)) limit.context = model.limit.context;
           if (Number.isFinite(model.limit.output)) limit.output = model.limit.output;
           if (Object.keys(limit).length > 0) entry.limit = limit;
+        }
+        // cost.input/output feed default small-model ranking (cheapest first).
+        if (isRecord(model.cost)) {
+          const cost = Object.create(null);
+          if (Number.isFinite(model.cost.input)) cost.input = model.cost.input;
+          if (Number.isFinite(model.cost.output)) cost.output = model.cost.output;
+          if (Object.keys(cost).length > 0) entry.cost = cost;
         }
         if (isRecord(model.api) && typeof model.api.url === 'string' && model.api.url.trim()) {
           entry.api = { url: model.api.url.trim() };

@@ -15,6 +15,7 @@ const isSystemSession = (session) => {
   if (!openchamber || typeof openchamber !== 'object') return false;
   if (nonEmptySystemID(openchamber.assistant?.assistantID)) return true;
   if (nonEmptySystemID(openchamber.scheduledTask?.taskID)) return true;
+  if (nonEmptySystemID(openchamber.smallModel?.purpose)) return true;
   return false;
 };
 

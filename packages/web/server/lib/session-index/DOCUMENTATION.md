@@ -13,11 +13,12 @@ newest 20 root-session summaries per runtime and directory. It never stores
 messages, attachments, permissions, provider data, or model metadata.
 Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls;
 the index excludes them from every snapshot and clears prior summaries when a
-matching session update arrives. System-owned sessions are excluded by
-authoritative metadata only: a non-empty
-`metadata.openchamber.assistant.assistantID` or
-`metadata.openchamber.scheduledTask.taskID`. Title prefixes are human labels and
-never participate in this filter. Metadata is the ownership/isolation signal;
+  matching session update arrives. System-owned sessions are excluded by
+  authoritative metadata only: a non-empty
+  `metadata.openchamber.assistant.assistantID`,
+  `metadata.openchamber.scheduledTask.taskID`, or
+  `metadata.openchamber.smallModel.purpose`. Title prefixes are human labels and
+  never participate in this filter. Metadata is the ownership/isolation signal;
 `time.archived` is archive state; `time.pinned` is OpenChamber-owned pin state
 (persisted as `pinned_at`, rescued across directory rebuilds, never overwritten
 by live OpenCode upserts); titles are for recognition. The index does

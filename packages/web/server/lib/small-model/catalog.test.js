@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createModelCatalogLoader, toSmallModelCatalog, MINIMAL_FALLBACK_CATALOG } from './catalog.js';
 
 describe('toSmallModelCatalog', () => {
-  it('keeps family, release_date, limit, model.api.url, and provider name', () => {
+  it('keeps family, release_date, limit, cost, model.api.url, and provider name', () => {
     const catalog = toSmallModelCatalog({
       providers: [{
         id: 'google',
@@ -14,6 +14,7 @@ describe('toSmallModelCatalog', () => {
             family: 'gemini-flash',
             release_date: '2025-06-01',
             limit: { context: 1_000_000, output: 8192 },
+            cost: { input: 0.15, output: 0.6, cache_read: 0.01 },
             api: { id: 'gemini-2.5-flash', url: 'https://generativelanguage.googleapis.com', npm: '@ai-sdk/google' },
           },
         },
@@ -30,6 +31,7 @@ describe('toSmallModelCatalog', () => {
           family: 'gemini-flash',
           release_date: '2025-06-01',
           limit: { context: 1_000_000, output: 8192 },
+          cost: { input: 0.15, output: 0.6 },
           api: { url: 'https://generativelanguage.googleapis.com' },
         },
       },

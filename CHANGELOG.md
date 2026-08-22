@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.18] - 2026-08-22
+
+### AI 总结
+
+- **总结模型开放全部已登录供应商：** 会话标题 / commit 信息等小模型总结不再限于四大直连供应商——任何在 OpenCode 里完成登录的 provider（codebuddy、cursor、grok-build、deepseek 等插件供应商）都可直接在设置 → Summary AI 中选用。非直连供应商的总结请求改经 OpenCode 运行时的一次性临时会话调度（临时目录 + 隐藏无工具 agent，认证、token 刷新与端点改写全部由 provider 运行时自行处理），用完即删；四大供应商与自定义 baseURL 模式保持原直连快速通道不变。
+- **默认总结模型按小模型优先 + 价格排序：** 未显式指定总结模型时，默认解析改为关键词分档（gemini-flash / gpt-nano / claude-haiku 家族最高档，flash / mini / nano / haiku / lite 等次档），档内优先单价更低的新模型，便宜的小模型（如 DeepSeek 系列）会自然胜出。
+- **总结用临时会话全程不可见：** 临时会话携带系统标记并即刻归档，不进入任何会话列表、项目首页、切换器、未读角标与 SQLite 索引，也不触发桌面通知、toast 与移动推送；会话标题自动生成同样跳过这些系统会话。
+
 ## [1.18.2-beta.17] - 2026-08-22
 
 ### 移动端

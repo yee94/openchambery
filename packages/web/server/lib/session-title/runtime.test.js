@@ -233,8 +233,14 @@ describe('session-title helpers', () => {
       metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
     })).toBe(true);
     expect(isSystemOwnedSession({
+      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+    })).toBe(true);
+    expect(isSystemOwnedSession({
       title: '[Assistant] Looks system',
       metadata: { openchamber: { assistant: { name: 'no-id' } } },
+    })).toBe(false);
+    expect(isSystemOwnedSession({
+      metadata: { openchamber: { smallModel: { purpose: '' } } },
     })).toBe(false);
     expect(isSystemOwnedSession({ title: 'Ordinary' })).toBe(false);
   });

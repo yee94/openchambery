@@ -29,9 +29,11 @@ export const isSystemOwnedSession = (
     const record = openchamber as {
         assistant?: { assistantID?: unknown };
         scheduledTask?: { taskID?: unknown };
+        smallModel?: { purpose?: unknown };
     };
     if (nonEmptySystemID(record.assistant?.assistantID)) return true;
     if (nonEmptySystemID(record.scheduledTask?.taskID)) return true;
+    if (nonEmptySystemID(record.smallModel?.purpose)) return true;
     return false;
 };
 
