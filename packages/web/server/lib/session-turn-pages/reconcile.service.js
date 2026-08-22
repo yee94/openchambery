@@ -14,6 +14,8 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
+import { projectMessageDiffSummaries } from './service.js';
+
 /** Host-owned signed reconcile continuation version prefix. */
 const CONTINUATION_PREFIX = 'ocr2.';
 
@@ -666,7 +668,7 @@ export const createSessionReconcileService = ({
         state.scannedRecords += records.length;
         state.scannedBytes += measureRecordsBytes(records);
 
-        candidates.unshift(...prepend);
+        candidates.unshift(...projectMessageDiffSummaries(prepend));
 
         if (state.returnedThroughID) {
           applyReturnedBoundary();

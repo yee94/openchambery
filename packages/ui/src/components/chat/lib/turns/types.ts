@@ -41,6 +41,7 @@ export interface TurnDiffStats {
     additions: number;
     deletions: number;
     files: number;
+    hasDiffs: boolean;
 }
 
 export interface TurnChangedFile {

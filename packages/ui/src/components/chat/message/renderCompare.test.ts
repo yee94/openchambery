@@ -55,6 +55,18 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
   test('ignores turn context expansion for a user message', () => {
     expectExpansionChange(createContext({ activityOwnerMessageId: 'assistant-owner' }), 'user-1', true);
   });
+
+  test('treats a count-only changes marker as relevant to the last assistant', () => {
+    const before = createContext({
+      isLastAssistantInTurn: true,
+      diffStats: { additions: 0, deletions: 0, files: 0, hasDiffs: false },
+    });
+    const after = {
+      ...before,
+      diffStats: { additions: 0, deletions: 0, files: 463, hasDiffs: true },
+    };
+    expect(areRelevantTurnGroupingContextsEqual(before, after, 'assistant-last', false)).toBe(false);
+  });
 });
 
 describe('areRenderRelevantMessagesEqual — token counts', () => {

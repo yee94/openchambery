@@ -45,12 +45,12 @@ import { useSessionMessages } from '@/sync/sync-context';
 import {
     createToolPatchTurnDiffs,
     getFirstChangedModifiedLineFromPatch,
-    mergeTurnDiffSummariesWithFull,
-    turnDiffSummariesNeedFullBody,
     type ToolPatchFile,
-    type TurnDiffEntry,
 } from './diffPatchUtils';
-import { opencodeClient } from '@/lib/opencode/client';
+import {
+    useSessionTurnChangeFileQuery,
+    useSessionTurnChangesQuery,
+} from '@/queries/sessionTurnChangesQueries';
 import type { FileDiffMetadata } from '@pierre/diffs';
 
 // Minimum width for side-by-side diff view (px)
@@ -95,6 +95,13 @@ type TurnSnapshotDiff = {
     patch?: string;
     additions?: number;
     deletions?: number;
+};
+
+type TurnChangesRequest = {
+    sessionID: string;
+    directory: string;
+    messageID: string;
+    diffCount?: number;
 };
 
 const BinaryDiffPlaceholder = React.memo(() => {
@@ -590,6 +597,8 @@ interface MultiFileDiffEntryProps {
     showFileActions?: boolean;
     /** When true, never call git for file body (turn snapshot / tool patches). */
     disableGitFetch?: boolean;
+    turnChangesRequest?: TurnChangesRequest | null;
+    loadTurnChangeFile?: boolean;
 }
 
 const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
@@ -613,6 +622,8 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
     focusLine = null,
     showFileActions = true,
     disableGitFetch = false,
+    turnChangesRequest = null,
+    loadTurnChangeFile = false,
 }) => {
     const { t } = useI18n();
     const { git } = useRuntimeAPIs();
@@ -638,14 +649,48 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
     const renderSideBySide = layout === 'side-by-side';
     const desiredContextMode: DiffContextMode = loadFullFiles ? 'full' : 'patch';
     const fileStatusKey = `${file.index}:${file.working_dir}:${file.insertions}:${file.deletions}`;
+    const turnChangeFileQuery = useSessionTurnChangeFileQuery({
+        sessionID: turnChangesRequest?.sessionID ?? '',
+        directory: turnChangesRequest?.directory ?? '',
+        messageID: turnChangesRequest?.messageID ?? '',
+        diffCount: turnChangesRequest?.diffCount,
+        file: file.path,
+    }, {
+        enabled: loadTurnChangeFile && Boolean(turnChangesRequest) && isExpanded && isMounted,
+    });
+
+    const turnChangeDiffData = React.useMemo<DiffData | null>(() => {
+        const diff = turnChangeFileQuery.data?.diff;
+        if (!diff) return null;
+        if (typeof diff.patch === 'string' && diff.patch.length > 0) {
+            return createTextDiffDataFromPatch(file.path, diff.patch, 'patch');
+        }
+        if (typeof diff.before === 'string' || typeof diff.after === 'string') {
+            return {
+                original: diff.before ?? '',
+                modified: diff.after ?? '',
+                contextMode: 'full',
+            };
+        }
+        return null;
+    }, [file.path, turnChangeFileQuery.data]);
 
     const diffData = React.useMemo<DiffData | null>(() => {
         if (initialDiffData) return initialDiffData;
+        if (turnChangeDiffData) return turnChangeDiffData;
         if (staged) return stagedDiffData;
         if (localDiffData) return localDiffData;
         if (!cachedDiff) return null;
         return { original: cachedDiff.original, modified: cachedDiff.modified, isBinary: cachedDiff.isBinary, contextMode: 'full' };
-    }, [cachedDiff, initialDiffData, localDiffData, staged, stagedDiffData]);
+    }, [cachedDiff, initialDiffData, localDiffData, staged, stagedDiffData, turnChangeDiffData]);
+
+    const turnChangeError = turnChangeFileQuery.error instanceof Error
+        ? turnChangeFileQuery.error.message
+        : turnChangeFileQuery.error
+            ? String(turnChangeFileQuery.error)
+            : null;
+    const visibleDiffLoadError = turnChangeError ?? diffLoadError;
+    const visibleIsLoading = (loadTurnChangeFile && turnChangeFileQuery.isPending) || isLoading;
 
     const diffDataMatchesContextMode = diffData?.contextMode === desiredContextMode;
 
@@ -898,27 +943,33 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
             </div>
             {isExpanded && (
                 <div className="relative bg-background overflow-hidden">
-                    {!isMounted && !diffLoadError ? (
+                    {!isMounted && !visibleDiffLoadError ? (
                         <div className="h-40 border border-border/40 bg-background/40" />
                     ) : null}
-                    {diffLoadError ? (
+                    {visibleDiffLoadError ? (
                         <div className="flex flex-col items-center gap-2 px-4 py-8 text-sm text-muted-foreground">
                             <div className="typography-ui-label font-semibold text-foreground">
                                 {t('diffView.state.failedToLoadDiff')}
                             </div>
                             <div className="typography-meta text-muted-foreground max-w-[32rem] text-center">
-                                {diffLoadError}
+                                {visibleDiffLoadError}
                             </div>
                             <button
                                 type="button"
                                 className="typography-ui-label text-primary hover:underline"
-                                onClick={() => setDiffRetryNonce((nonce) => nonce + 1)}
+                                onClick={() => {
+                                    if (loadTurnChangeFile) {
+                                        void turnChangeFileQuery.refetch();
+                                        return;
+                                    }
+                                    setDiffRetryNonce((nonce) => nonce + 1);
+                                }}
                             >
                                 {t('diffView.actions.retry')}
                             </button>
                         </div>
                     ) : null}
-                    {isMounted && isLoading && !diffData && !diffLoadError ? (
+                    {isMounted && visibleIsLoading && !diffData && !visibleDiffLoadError ? (
                         <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground">
                             <Icon name="loader-4" className="size-4 animate-spin" />
                             {t('diffView.state.loadingDiff')}
@@ -1110,34 +1161,30 @@ export const DiffView: React.FC<DiffViewProps> = ({
         });
     }, []);
 
-    const lastTurnDiffs = React.useMemo(() => {
+    const turnChangesMarker = React.useMemo(() => {
         let startIndex = sessionMessages.length - 1;
         if (turnMessageId) {
             startIndex = sessionMessages.findIndex((message) => message.id === turnMessageId);
-            if (startIndex < 0) return [];
+            if (startIndex < 0) return { messageID: null, count: 0, hasDiffs: false };
         }
         for (let index = startIndex; index >= 0; index -= 1) {
-            const message = sessionMessages[index] as { id?: string; role?: string; summary?: { diffs?: unknown } };
+            const message = sessionMessages[index] as {
+                id?: string;
+                role?: string;
+                summary?: { diffs?: unknown; diffCount?: unknown; hasDiffs?: unknown };
+            };
             if (message.role !== 'user') continue;
-            return listTurnDiffs(message.summary?.diffs);
+            const legacyDiffs = listTurnDiffs(message.summary?.diffs);
+            const markerCount = typeof message.summary?.diffCount === 'number' && Number.isFinite(message.summary.diffCount)
+                ? Math.max(0, Math.trunc(message.summary.diffCount))
+                : legacyDiffs.length;
+            return {
+                messageID: typeof message.id === 'string' && message.id ? message.id : null,
+                count: markerCount,
+                hasDiffs: message.summary?.hasDiffs === true || markerCount > 0 || legacyDiffs.length > 0,
+            };
         }
-        return [];
-    }, [sessionMessages, turnMessageId]);
-
-    /** User message that owns summary.diffs for session.diff messageID scoping. */
-    const resolvedTurnUserMessageId = React.useMemo(() => {
-        let startIndex = sessionMessages.length - 1;
-        if (turnMessageId) {
-            startIndex = sessionMessages.findIndex((message) => message.id === turnMessageId);
-            if (startIndex < 0) return null;
-        }
-        for (let index = startIndex; index >= 0; index -= 1) {
-            const message = sessionMessages[index] as { id?: string; role?: string };
-            if (message.role === 'user' && typeof message.id === 'string' && message.id) {
-                return message.id;
-            }
-        }
-        return null;
+        return { messageID: null, count: 0, hasDiffs: false };
     }, [sessionMessages, turnMessageId]);
 
     const selectedToolTurnDiffs = React.useMemo(
@@ -1146,74 +1193,32 @@ export const DiffView: React.FC<DiffViewProps> = ({
     );
 
     const usesToolPatches = selectedToolTurnDiffs.length > 0;
-
-    const [fetchedTurnFullDiffs, setFetchedTurnFullDiffs] = React.useState<TurnDiffEntry[] | null>(null);
-    const [turnDiffError, setTurnDiffError] = React.useState<string | null>(null);
-    const [turnDiffRetryNonce, setTurnDiffRetryNonce] = React.useState(0);
-    const turnDiffFetchGenerationRef = React.useRef(0);
+    const turnChangesRequest = React.useMemo<TurnChangesRequest | null>(() => {
+        if (!resolvedSessionId || !effectiveDirectory || !turnChangesMarker.messageID) return null;
+        return {
+            sessionID: resolvedSessionId,
+            directory: effectiveDirectory,
+            messageID: turnChangesMarker.messageID,
+            diffCount: turnChangesMarker.count,
+        };
+    }, [effectiveDirectory, resolvedSessionId, turnChangesMarker.count, turnChangesMarker.messageID]);
+    const shouldLoadTurnChanges = activeDiffScope === 'turn'
+        && !usesToolPatches
+        && turnChangesMarker.hasDiffs
+        && Boolean(turnChangesRequest);
+    const turnChangesQuery = useSessionTurnChangesQuery({
+        sessionID: turnChangesRequest?.sessionID ?? '',
+        directory: turnChangesRequest?.directory ?? '',
+        messageID: turnChangesRequest?.messageID ?? '',
+        diffCount: turnChangesRequest?.diffCount,
+    }, {
+        enabled: shouldLoadTurnChanges,
+    });
 
     const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(() => {
         if (usesToolPatches) return selectedToolTurnDiffs;
-        if (fetchedTurnFullDiffs) {
-            return mergeTurnDiffSummariesWithFull(lastTurnDiffs, fetchedTurnFullDiffs);
-        }
-        return lastTurnDiffs;
-    }, [fetchedTurnFullDiffs, lastTurnDiffs, selectedToolTurnDiffs, usesToolPatches]);
-
-    // On-demand full patches for turn scope (summary.diffs no longer carry patch bodies).
-    React.useEffect(() => {
-        if (activeDiffScope !== 'turn' || usesToolPatches) {
-            setFetchedTurnFullDiffs(null);
-            setTurnDiffError(null);
-            return;
-        }
-
-        if (!resolvedSessionId || lastTurnDiffs.length === 0) {
-            setFetchedTurnFullDiffs(null);
-            setTurnDiffError(null);
-            return;
-        }
-
-        if (!turnDiffSummariesNeedFullBody(lastTurnDiffs)) {
-            setFetchedTurnFullDiffs(null);
-            setTurnDiffError(null);
-            return;
-        }
-
-        const generation = ++turnDiffFetchGenerationRef.current;
-        setTurnDiffError(null);
-        setFetchedTurnFullDiffs(null);
-
-        void opencodeClient
-            .getSessionDiff({
-                sessionID: resolvedSessionId,
-                directory: effectiveDirectory,
-                messageID: resolvedTurnUserMessageId,
-            })
-            .then((fullDiffs) => {
-                if (generation !== turnDiffFetchGenerationRef.current) return;
-                setFetchedTurnFullDiffs(fullDiffs as TurnDiffEntry[]);
-            })
-            .catch((error: unknown) => {
-                if (generation !== turnDiffFetchGenerationRef.current) return;
-                const message = error instanceof Error ? error.message : String(error);
-                setTurnDiffError(message);
-                // Keep summary list; do not clear with empty success.
-                setFetchedTurnFullDiffs(null);
-            });
-
-        return () => {
-            turnDiffFetchGenerationRef.current += 1;
-        };
-    }, [
-        activeDiffScope,
-        resolvedSessionId,
-        effectiveDirectory,
-        lastTurnDiffs,
-        resolvedTurnUserMessageId,
-        turnDiffRetryNonce,
-        usesToolPatches,
-    ]);
+        return turnChangesQuery.data?.files ?? [];
+    }, [selectedToolTurnDiffs, turnChangesQuery.data, usesToolPatches]);
 
     const lastTurnDiffData = React.useMemo(() => {
         const map = new Map<string, DiffData>();
@@ -1283,7 +1288,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         return status.files.filter(isStagedStatusFile).length;
     }, [status]);
 
-    const turnFileCount = activeTurnDiffs.length;
+    const turnFileCount = usesToolPatches ? activeTurnDiffs.length : turnChangesMarker.count;
 
     const changedFilePathsKey = React.useMemo(
         () => changedFiles.map((file) => file.path).join('\0'),
@@ -1306,7 +1311,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     React.useEffect(() => {
         const paths = changedFilePathsKey ? changedFilePathsKey.split('\0') : [];
         const pathSet = new Set(paths);
-        const scopeKey = `${effectiveDirectory ?? ''}:${activeDiffScope}:${stackedDefaultCollapsedAll ? 'collapsed' : 'default'}`;
+        const scopeKey = `${effectiveDirectory ?? ''}:${activeDiffScope}:${turnMessageId ?? ''}:${stackedDefaultCollapsedAll ? 'collapsed' : 'default'}`;
         const toolPatchesChanged = toolPatches !== null && stackedToolPatchesRef.current !== toolPatches;
         const shouldInitialize = stackedStateScopeRef.current !== scopeKey || toolPatchesChanged;
         stackedStateScopeRef.current = scopeKey;
@@ -1314,7 +1319,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
 
         setExpandedFiles((previous) => {
             if (shouldInitialize) {
-                const defaultExpandedCount = stackedDefaultCollapsedAll
+                const defaultExpandedCount = stackedDefaultCollapsedAll || (activeDiffScope === 'turn' && !usesToolPatches)
                     ? 0
                     : getStackedViewDefaultExpandedCount(paths.length);
                 return new Set(paths.slice(0, defaultExpandedCount));
@@ -1348,7 +1353,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             }
             return changed ? next : previous;
         });
-    }, [activeDiffScope, changedFilePathsKey, effectiveDirectory, stackedDefaultCollapsedAll, toolPatches]);
+    }, [activeDiffScope, changedFilePathsKey, effectiveDirectory, stackedDefaultCollapsedAll, toolPatches, turnMessageId, usesToolPatches]);
 
     const syncVisibleStackedFiles = React.useCallback(() => {
         visibleSyncFrameRef.current = null;
@@ -1838,6 +1843,8 @@ export const DiffView: React.FC<DiffViewProps> = ({
                                     focusLine={file.path === (targetFilePath?.trim() || displayFile) ? (targetLine ?? displayFocusLine) : null}
                                     showFileActions={activeDiffScope !== 'turn'}
                                     disableGitFetch={activeDiffScope === 'turn'}
+                                    turnChangesRequest={turnChangesRequest}
+                                    loadTurnChangeFile={activeDiffScope === 'turn' && !usesToolPatches}
                                 />
                             ))}
                         </div>
@@ -1874,56 +1881,44 @@ export const DiffView: React.FC<DiffViewProps> = ({
             );
         }
 
-        if (visibleDiffFiles.length === 0) {
+        if (shouldLoadTurnChanges && turnChangesQuery.isPending) {
             return (
-                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                    {activeDiffScope === 'turn' ? t('diffView.state.noLastTurnChanges') : t('diffView.state.cleanWorkingTree')}
+                <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Icon name="loader-4" className="size-4 animate-spin" />
+                    {t('diffView.state.loadingDiff')}
                 </div>
             );
         }
 
-        const turnNeedsFullBody = activeDiffScope === 'turn'
-            && !usesToolPatches
-            && turnDiffSummariesNeedFullBody(lastTurnDiffs);
-        const turnFullBodyReady = !turnNeedsFullBody || fetchedTurnFullDiffs !== null;
-
-        if (activeDiffScope === 'turn' && turnNeedsFullBody && turnDiffError && !turnFullBodyReady) {
+        if (shouldLoadTurnChanges && turnChangesQuery.error) {
+            const errorMessage = turnChangesQuery.error instanceof Error
+                ? turnChangesQuery.error.message
+                : String(turnChangesQuery.error);
             return (
                 <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-sm text-muted-foreground">
                     <div className="typography-ui-label font-semibold text-foreground">
                         {t('diffView.state.failedToLoadDiff')}
                     </div>
                     <div className="typography-meta max-w-[32rem] text-center text-muted-foreground">
-                        {turnDiffError}
+                        {errorMessage}
                     </div>
                     <button
                         type="button"
                         className="typography-ui-label text-primary hover:underline"
-                        onClick={() => setTurnDiffRetryNonce((nonce) => nonce + 1)}
+                        onClick={() => {
+                            void turnChangesQuery.refetch();
+                        }}
                     >
                         {t('diffView.actions.retry')}
                     </button>
-                    {/* Summary file list remains available; do not pretend empty success. */}
-                    <div className="mt-4 w-full max-w-md space-y-1">
-                        {changedFiles.map((file) => (
-                            <div
-                                key={file.path}
-                                className="flex items-center justify-between gap-2 rounded-md px-2 py-1 typography-code"
-                            >
-                                <span className="min-w-0 truncate text-foreground">{file.path}</span>
-                                {formatDiffTotals(file.insertions, file.deletions)}
-                            </div>
-                        ))}
-                    </div>
                 </div>
             );
         }
 
-        if (activeDiffScope === 'turn' && turnNeedsFullBody && !turnFullBodyReady) {
+        if (visibleDiffFiles.length === 0) {
             return (
-                <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="loader-4" className="size-4 animate-spin" />
-                    {t('diffView.state.loadingDiff')}
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                    {activeDiffScope === 'turn' ? t('diffView.state.noLastTurnChanges') : t('diffView.state.cleanWorkingTree')}
                 </div>
             );
         }
@@ -1958,7 +1953,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         </div>
                     )
                 )}
-                {!singleFileView && changedFiles.length > 0 && (
+                {!singleFileView && changedFiles.length > 0 && (activeDiffScope !== 'turn' || usesToolPatches) && (
                     <Button
                         variant="ghost"
                         size="sm"

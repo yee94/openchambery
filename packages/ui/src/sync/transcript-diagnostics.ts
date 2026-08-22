@@ -17,9 +17,10 @@ export type TranscriptDiagnosticsHydration = {
  * Client diagnostics hub. Each domain reports through a named feat
  * (`transcript` and `task` today; more feats can join the same export).
  *
- * Events never carry message bodies, part text, URLs, tokens, titles,
- * prompts, agent names, or attachment payloads — only identities and
- * lifecycle facts.
+ * User-message text is kept (bounded, credential-shaped values redacted)
+ * so duplicate/optimistic rows can be located. Assistant/system bodies,
+ * URLs, tokens, titles, prompts, agent names, and attachment payloads
+ * stay out. SSE part.delta / unchanged connection batches are not recorded.
  */
 export type ClientDiagnosticsFeat = "transcript" | "task"
 
@@ -71,6 +72,10 @@ export type TranscriptMessageSnapshot = {
   /** True when `time.completed` is a positive number. Used only for optimisticLost. */
   readonly completed: boolean
   readonly role?: "user" | "assistant" | "system"
+  /**
+   * Bounded user-authored text only. Assistant/system bodies are never copied.
+   */
+  readonly text?: string
   /**
    * True when an assistant message lacks agent/mode identity or model
    * identity. Assistant-header display depends on these; recording the fact
@@ -169,8 +174,10 @@ export type TranscriptDiagnosticsSink = {
 
 export const TRANSCRIPT_DIAGNOSTICS_LIMIT = 500
 export const TRANSCRIPT_DIAGNOSTICS_TAIL_IDS = 4
+export const TRANSCRIPT_DIAGNOSTICS_USER_TEXT_LIMIT = 400
 
 const SENSITIVE_ERROR = /bearer|token|authorization|password|secret|cookie/i
+const DIAGNOSTICS_SSE_NOISE_TYPES = new Set(["message.part.delta"])
 
 export function isPrereleaseClientVersion(version: string | null | undefined): boolean {
   return typeof version === "string" && version.includes("-")
@@ -371,14 +378,18 @@ export function createTranscriptDiagnosticsRecorder(input: {
   }
 }
 
+export function isDiagnosticsSseNoiseType(type: string | undefined): boolean {
+  return typeof type === "string" && DIAGNOSTICS_SSE_NOISE_TYPES.has(type)
+}
+
 export function diagnosticsKindForCommand(command: TranscriptCommand): TranscriptDiagnosticsKind | null {
   switch (command.type) {
     case "http-page":
       return "http-page"
     case "sse-event":
-      return command.event.type === "message.part.delta" ? null : "sse-event"
+      return isDiagnosticsSseNoiseType(command.event.type) ? null : "sse-event"
     case "sse-event-batch":
-      return "sse-event"
+      return command.events.every((event) => isDiagnosticsSseNoiseType(event.type)) ? null : "sse-event"
     case "reset":
       return "reset"
     case "materialize-snapshots":
@@ -424,6 +435,20 @@ function isOptimisticPart(part: Part): boolean {
   return (part as { __openchamberOptimistic?: unknown }).__openchamberOptimistic === true
 }
 
+export function extractDiagnosticsUserText(parts: readonly Part[]): string | undefined {
+  const chunks: string[] = []
+  for (const part of parts) {
+    if (part.type !== "text") continue
+    const text = typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text.trim() : ""
+    if (text) chunks.push(text)
+  }
+  const joined = chunks.join("\n").trim()
+  if (!joined) return undefined
+  if (SENSITIVE_ERROR.test(joined)) return "redacted-text"
+  if (joined.length <= TRANSCRIPT_DIAGNOSTICS_USER_TEXT_LIMIT) return joined
+  return `${joined.slice(0, TRANSCRIPT_DIAGNOSTICS_USER_TEXT_LIMIT)}…`
+}
+
 function snapshotMessageRole(info: Message | undefined): TranscriptMessageSnapshot["role"] | undefined {
   if (!info) return undefined
   const raw = (info as { clientRole?: unknown; role?: unknown }).clientRole ?? info.role
@@ -459,7 +484,8 @@ function toPartCountSnapshot(message: TranscriptMessageSnapshot): TranscriptPart
 }
 
 /**
- * Read-only identity/count snapshot. Never copies text, URLs, or payloads.
+ * Read-only identity/count snapshot. User text is bounded; assistant bodies
+ * and attachment payloads are never copied.
  */
 export function captureTranscriptCanonicalSnapshot(
   transcript: TranscriptData,
@@ -477,6 +503,7 @@ export function captureTranscriptCanonicalSnapshot(
     const info = transcript.messagesByID[id]
     const role = snapshotMessageRole(info)
     const identityMissing = snapshotMessageIdentityMissing(info)
+    const text = role === "user" ? extractDiagnosticsUserText(parts) : undefined
     return {
       id,
       partCount: parts.length,
@@ -485,6 +512,7 @@ export function captureTranscriptCanonicalSnapshot(
       optimistic,
       completed: snapshotMessageCompleted(info),
       ...(role ? { role } : {}),
+      ...(text ? { text } : {}),
       ...(identityMissing !== undefined ? { identityMissing } : {}),
     }
   })

@@ -11,6 +11,8 @@ Exposed as:
 
 - `GET /api/openchamber/sessions/:sessionID/messages`
 - `GET /api/openchamber/sessions/:sessionID/messages/reconcile`
+- `GET /api/openchamber/sessions/:sessionID/changes` (L2 file list / L3 single-file patch)
+- `GET /api/session/:sessionID/message/:messageID` (exact message with L1 summary projection; registered before the generic OpenCode proxy)
 
 ## Why this exists
 
@@ -69,9 +71,22 @@ Success `200`:
 - `complete`: `upstreamComplete && selected.length === accumulated.length`. True when upstream history is exhausted **and** `selectTurnRecords` did not trim any older scanned rows (nothing left for the client). When the scan window held more than N turns and older rows were trimmed, `complete` stays `false` with a `cursor` so the client can fetch the trimmed history.
 - `partsProjection`: `"slim-v1"` on every turn-page response (first packet and prepend). Names the projection applied to `records`; see below. Reconcile responses omit this field and keep full parts.
 
-### Turn-page parts projection
+### Turn-page payload projection
 
-Every turn-page response summarizes `tool`, `reasoning`, and `file` parts so it does not have to carry the bodies of a long tool-heavy turn or inline attachment data URLs. Projection runs **after** `selectTurnRecords`, so `turnCount`, `complete`, and cursor encoding are all derived from unprojected records and cannot shift.
+Every turn-page response summarizes `tool`, `reasoning`, and `file` parts plus message `summary.diffs` so it does not have to carry the bodies of a long tool-heavy turn, inline attachment data URLs, or full file patches. Projection runs **after** `selectTurnRecords`, so `turnCount`, `complete`, and cursor encoding are all derived from unprojected records and cannot shift.
+
+### Changes Host contract (L1 / L2 / L3)
+
+| Layer | Surface | Payload |
+|---|---|---|
+| **L1** | Turn pages, reconcile response pages, message/session SSE fan-out, exact `GET /api/session/:sessionID/message/:messageID` | Any `info.summary.diffs` **array** is projected to `summary.diffCount: number` + `summary.hasDiffs: boolean` and **`summary.diffs` is removed**. Other lightweight summary fields are preserved. `diffCount` is the original array length; `hasDiffs === diffCount > 0`. L1 never retains a file array. |
+| **L2** | `GET /api/openchamber/sessions/:sessionID/changes?messageID=` (no `file`) | Host reads official `session.message` locally, returns only `{ files: [{ file, status?, additions, deletions }] }`. Never returns patch/before/after/from/to or the full message envelope. |
+| **L3** | Same route with `file=` | Host calls official `session.diff({ sessionID, messageID, directory })`, returns `{ diff: SnapshotFileDiff }` for the exact `file` string match (includes that file's patch). No match → HTTP 404 `{ error: 'change file not found', code: 'change_not_found' }`. |
+
+Exact message GET keeps the official `{ info, parts }` response shape and only applies L1 summary projection so materialize/recovery never relays a raw multi-megabyte `summary.diffs` array through the generic proxy. Abort/45s timeout semantics match the turn-page routes. Global `/api` auth still applies.
+
+Changes query guards: `sessionID` / `messageID` length `1..512`; optional `file` length `1..4096` and rejects control characters / NUL. Failures: invalid params → 400, abort → 499, upstream/malformed → 502. Logs carry only safe flags and ids — never paths, patch bodies, or tokens.
+
 
 | Kept | Dropped |
 |---|---|
@@ -85,6 +100,7 @@ Rules:
 - Slim tool input keeps only short locator and task-identity fields (path, pattern, query, command, `subagent_type`, `description`, skill `name` / `id`). Slim metadata keeps `sessionId`, skill `name`, plus edit `additions`/`deletions`. Projection still drops result bodies, task prompts, patches, and large write payloads.
 - Assistant `text` stays intact. User rows are no longer wholesale pass-through: their `file` parts are projected; other user parts stay as-is.
 - `file` projection keeps already-present size/width/height (top-level or `metadata`). `byteSize` is derived from a data URL when present. PNG/GIF/JPEG/WebP headers may fill missing `width`/`height`. Unknown dimensions omit those fields.
+- Message `info.summary.diffs` is L1-projected to `diffCount` / `hasDiffs` (file array removed). Reconcile preserves full parts and applies this same L1 summary projection to response-page byte budgeting and serialization; raw upstream scan budgets retain raw bytes. Clients that need file rows or patches use the Changes L2/L3 API.
 - A slim `file` part is a reference, not renderable content. Clients must hydrate the full message (`session.message` by `messageID`) before painting or editing the attachment. Do not treat slim file metadata as a complete part.
 - Records that gain nothing from projection keep their original object reference, so identity-based change detection downstream still works.
 - Projection applies to every turn-page response, including first packet, prepend, and explicit cursors (`before` present). Reconcile routes return full parts, unchanged.
@@ -242,10 +258,11 @@ When the per-page budget fills before the gap is complete, the host returns `con
 
 ## Files
 
-- `service.js` — `isUserAuthoredTurnBoundary`, `selectTurnRecords`, `encodeHostCursor`, `decodeHostCursor`, `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`
+- `service.js` — `isUserAuthoredTurnBoundary`, `selectTurnRecords`, `encodeHostCursor`, `decodeHostCursor`, `projectMessageDiffSummaries` (L1), `projectSlimParts`, `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`
 - `reconcile.service.js` — `encodeReconcileContinuation`, `decodeReconcileContinuation`, `createSessionReconcileService({ fetchPage, runtimeKey?, page/total budgets?, continuationSecret?, clock?, continuationTtlMs? })`
-- `routes.js` — Express registration for both turn-page and reconcile; optional injected `sessionTurnPageService` / `sessionReconcileService` for tests; default wires SDK `session.messages` via `buildOpenCodeUrl` + `getOpenCodeAuthHeaders`
-- `service.test.js` / `routes.test.js` / `reconcile.service.test.js` / `reconcile.routes.test.js` — unit contracts
+- `changes.service.js` — `createSessionChangesService({ fetchMessage, fetchDiff })` for L2/L3; injectable for unit tests
+- `routes.js` — Express registration for turn-page, reconcile, Changes, and exact message GET; optional injected `sessionTurnPageService` / `sessionReconcileService` / `sessionChangesService` / `fetchExactMessage` for tests; default wires SDK `session.messages` / `session.message` / `session.diff` via `buildOpenCodeUrl` + `getOpenCodeAuthHeaders`
+- `service.test.js` / `routes.test.js` / `reconcile.service.test.js` / `reconcile.routes.test.js` / `changes.service.test.js` — unit contracts
 
 ## Registration
 
@@ -257,14 +274,17 @@ registerSessionTurnPageRoutes(app, {
 });
 ```
 
-Reconcile is registered on the more-specific path **before** the generic messages path inside `registerSessionTurnPageRoutes`.
+Inside `registerSessionTurnPageRoutes`, registration order is: reconcile → turn-page messages → exact `GET /api/session/:sessionID/message/:messageID` → Changes. All of these register before the generic OpenCode proxy in `feature-routes-runtime.js`. Electron reuses this same Host composition in-process.
 
 ## Error HTTP map
 
 | Condition | Status |
 |---|---|
 | Invalid turns / scanLimit / sessionID / cursor | 400 |
+| Invalid messageID / file (Changes / exact message) | 400 |
 | Invalid anchor / continuation / reconcile params | 400 |
+| Change file not found (`change_not_found`) | 404 |
+| Exact message not found | 404 |
 | max_scan_pages / max_scan_messages | 413 |
 | Client abort | 499 |
 | Server exception (reconcile) | 500 (stack logged; safe client body) |

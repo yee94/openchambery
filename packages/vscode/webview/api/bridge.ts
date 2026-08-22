@@ -31,6 +31,40 @@ interface BridgeResponse {
   error?: string;
 }
 
+/** Optional structured failure payload from a BridgeResponse (`data: { code, status }`). */
+export type BridgeErrorData = {
+  code?: string;
+  status?: number;
+};
+
+/**
+ * Error rejected by `sendBridgeMessage*` when `success: false`.
+ * Remains an `Error` for callers that only read `.message`; optional `.data` carries code/status.
+ */
+export class BridgeError extends Error {
+  readonly data?: BridgeErrorData;
+
+  constructor(message: string, data?: BridgeErrorData) {
+    super(message);
+    this.name = 'BridgeError';
+    Object.setPrototypeOf(this, new.target.prototype);
+    if (data !== undefined) {
+      this.data = data;
+    }
+  }
+}
+
+const normalizeBridgeErrorData = (data: unknown): BridgeErrorData | undefined => {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined;
+  const record = data as Record<string, unknown>;
+  const out: BridgeErrorData = {};
+  if (typeof record.code === 'string') out.code = record.code;
+  if (typeof record.status === 'number' && Number.isFinite(record.status)) {
+    out.status = record.status;
+  }
+  return out.code !== undefined || out.status !== undefined ? out : undefined;
+};
+
 const pendingRequests = new Map<string, {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
@@ -61,7 +95,9 @@ window.addEventListener('message', (event: MessageEvent<BridgeResponse>) => {
     if (response.success) {
       pending.resolve(response.data);
     } else {
-      pending.reject(new Error(response.error || 'Unknown error'));
+      const message = response.error || 'Unknown error';
+      const data = normalizeBridgeErrorData(response.data);
+      pending.reject(data ? new BridgeError(message, data) : new Error(message));
     }
   }
 });

@@ -27,10 +27,19 @@ describe('feature routes runtime composition', () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toContain("import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';");
     expect(source).toMatch(/registerSessionTurnPageRoutes\(app, \{[\s\S]*buildOpenCodeUrl,[\s\S]*getOpenCodeAuthHeaders,/);
-    // OpenChamber-owned turn-page/reconcile registration comment + call stay before end of feature composition.
+    // OpenChamber-owned turn-page/reconcile/changes/exact-message registration stays before end of feature composition.
     expect(source).toContain('// OpenChamber-owned turn-window messages API — must register before generic proxy.');
     const turnIdx = source.indexOf('registerSessionTurnPageRoutes(app,');
     expect(turnIdx).toBeGreaterThan(-1);
+    // Exact message + Changes live inside registerSessionTurnPageRoutes (same Host composition Electron reuses).
+    const routesSource = await fs.readFile(new URL('../session-turn-pages/routes.js', import.meta.url), 'utf8');
+    expect(routesSource).toContain("app.get('/api/session/:sessionID/message/:messageID'");
+    expect(routesSource).toContain("app.get('/api/openchamber/sessions/:sessionID/changes'");
+    const exactIdx = routesSource.indexOf("app.get('/api/session/:sessionID/message/:messageID'");
+    const changesIdx = routesSource.indexOf("app.get('/api/openchamber/sessions/:sessionID/changes'");
+    const messagesIdx = routesSource.indexOf("app.get('/api/openchamber/sessions/:sessionID/messages'");
+    expect(exactIdx).toBeGreaterThan(messagesIdx);
+    expect(changesIdx).toBeGreaterThan(exactIdx);
   });
 
   it('removes broken SSE clients while continuing worktree topology broadcasts', () => {
