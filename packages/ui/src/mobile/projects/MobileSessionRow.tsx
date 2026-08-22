@@ -85,7 +85,6 @@ export function MobileSessionRow({
 }: MobileSessionRowProps) {
   const { t } = useI18n();
   const [offset, setOffset] = React.useState(0);
-  const [pressed, setPressed] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);
   const gestureRef = React.useRef<ActiveGesture | null>(null);
   const suppressClickRef = React.useRef(false);
@@ -93,9 +92,7 @@ export function MobileSessionRow({
   const longPressRef = React.useRef<MobileLongPressController | null>(null);
 
   if (!longPressRef.current) {
-    longPressRef.current = createMobileLongPressController({
-      onPressedKeyChange: (key) => setPressed(key === session.id),
-    });
+    longPressRef.current = createMobileLongPressController();
   }
 
   React.useEffect(() => () => longPressRef.current?.reset(), []);
@@ -112,25 +109,6 @@ export function MobileSessionRow({
   React.useEffect(() => {
     setOffset(0);
   }, [session.id]);
-
-  // Press feedback must never stick after the finger leaves. Ordinary taps do
-  // not setPointerCapture, so pointerup can miss the row button when the
-  // finger drifts or navigation remounts the page — clear from window instead.
-  React.useEffect(() => {
-    if (!pressed) return;
-    const clearPressed = () => {
-      longPressRef.current?.reset();
-      setPressed(false);
-    };
-    window.addEventListener('pointerup', clearPressed);
-    window.addEventListener('pointercancel', clearPressed);
-    window.addEventListener('blur', clearPressed);
-    return () => {
-      window.removeEventListener('pointerup', clearPressed);
-      window.removeEventListener('pointercancel', clearPressed);
-      window.removeEventListener('blur', clearPressed);
-    };
-  }, [pressed]);
 
   const closeActions = useEvent(() => setOffset(0));
   const revealed = offset !== 0;
@@ -160,20 +138,9 @@ export function MobileSessionRow({
       clientX: event.clientX,
       clientY: event.clientY,
       onTrigger: () => {
-        setPressed(false);
         onOpenActions(session);
       },
     });
-  });
-
-  const handlePaginationPointerDown = useEvent((event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
-    setPressed(true);
-  });
-
-  const handlePaginationPointerEnd = useEvent(() => {
-    setPressed(false);
   });
 
   const handlePointerMove = useEvent((event: React.PointerEvent<HTMLElement>) => {
@@ -234,9 +201,6 @@ export function MobileSessionRow({
   });
 
   const handleSelect = useEvent(() => {
-    // Clear visual press before navigation, but do not reset() first —
-    // consumeClick still needs the long-press suppression key.
-    setPressed(false);
     if (longPressRef.current?.consumeClick(session.id)) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
@@ -254,7 +218,6 @@ export function MobileSessionRow({
     event.preventDefault();
     event.stopPropagation();
     longPressRef.current?.openFromContextMenu(session.id, () => {
-      setPressed(false);
       onOpenActions(session);
     });
   });
@@ -300,13 +263,10 @@ export function MobileSessionRow({
         <button
           type="button"
           data-mobile-press-feedback="soft"
-          data-pressed={pressed ? 'true' : undefined}
           className="oc-mobile-session-pagination-row"
           style={{ touchAction: 'pan-y' }}
           onClick={handleSelect}
-          onPointerDown={handlePaginationPointerDown}
-          onPointerUp={handlePaginationPointerEnd}
-          onPointerCancel={handlePaginationPointerEnd}
+          onPointerDown={() => undefined}
         >
           <span className="min-w-0 flex-1 truncate text-left font-medium text-foreground">
             {session.title}
@@ -369,8 +329,7 @@ export function MobileSessionRow({
           dragging ? 'transition-none' : 'transition-[transform,background-color] duration-150',
           session.archived && 'opacity-55',
         )}
-        data-active={session.active ? 'true' : undefined}
-        data-pressed={pressed ? 'true' : undefined}
+        data-dragging={dragging ? 'true' : undefined}
         style={{
           transform: `translate3d(${offset}px, 0, 0)`,
           willChange: offset === 0 ? undefined : 'transform',

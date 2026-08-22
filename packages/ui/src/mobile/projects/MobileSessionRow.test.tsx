@@ -34,18 +34,17 @@ describe('Mobile project group chrome', () => {
     expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child {\n  box-shadow: none;');
   });
 
-  test('uses explicit session-row state selectors after the transparent base', () => {
+  test('uses momentary :active press fill instead of a persisted selected background', () => {
     const transparentIndex = mobileStyles.indexOf('.oc-mobile-session-row-content,\n.oc-mobile-session-pagination-row {');
-    const activeIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-active="true"]');
-    const pressedIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-pressed="true"],\n.oc-mobile-session-pagination-row[data-pressed="true"]');
-    const activePressedIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-active="true"][data-pressed="true"]');
+    const pressIndex = mobileStyles.indexOf('.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"])');
+    const paginationPressIndex = mobileStyles.indexOf('.oc-mobile-session-pagination-row:active');
 
     expect(transparentIndex).toBeGreaterThan(-1);
-    expect(activeIndex).toBeGreaterThan(transparentIndex);
-    expect(pressedIndex).toBeGreaterThan(activeIndex);
-    expect(activePressedIndex).toBeGreaterThan(pressedIndex);
-    expect(mobileStyles.slice(pressedIndex, activePressedIndex)).toContain('background: var(--interactive-hover)');
-    expect(mobileStyles.slice(activePressedIndex)).toContain('background: var(--interactive-active)');
+    expect(pressIndex).toBeGreaterThan(transparentIndex);
+    expect(paginationPressIndex).toBeGreaterThan(pressIndex);
+    expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-active="true"]');
+    expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-pressed="true"]');
+    expect(mobileStyles.slice(pressIndex)).toContain('background: var(--interactive-hover)');
   });
 });
 
@@ -85,16 +84,14 @@ describe('resolveMobileSessionIndicator', () => {
 });
 
 describe('MobileSessionRow status placement', () => {
-  test('exposes active and pressed state hooks on the row foreground', () => {
+  test('does not persist selected or JS pressed backgrounds on the row', () => {
     const source = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionRow.tsx'),
       'utf8',
     );
-    expect(source).toContain("data-active={session.active ? 'true' : undefined}");
-    expect(source).toContain("data-pressed={pressed ? 'true' : undefined}");
-    expect(source).toContain('setPressed(false)');
-    expect(source).toContain("window.addEventListener('pointerup', clearPressed)");
-    expect(source).toContain('handlePaginationPointerDown');
+    expect(source).not.toContain('data-active=');
+    expect(source).not.toContain('data-pressed=');
+    expect(source).toContain('data-dragging={dragging ? \'true\' : undefined}');
     expect(source).toContain('oc-mobile-session-pagination-row');
   });
 

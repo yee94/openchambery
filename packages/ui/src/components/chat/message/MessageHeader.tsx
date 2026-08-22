@@ -26,7 +26,9 @@ const resolveVariantSuffix = (variant?: string) => {
 };
 
 const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, providerID, modelID, agentName, modelName, variant }) => {
-    const variantSuffix = !isUser ? resolveVariantSuffix(variant) : null;
+    // Mobile omits the suffix: per-turn variant is not in the message snapshot,
+    // so a local-only badge would disappear after switching devices.
+    const variantSuffix = !isUser && !isMobile ? resolveVariantSuffix(variant) : null;
     const displayModelName = modelName || 'Assistant';
 
     return (

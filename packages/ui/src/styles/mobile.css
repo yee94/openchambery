@@ -739,17 +739,11 @@ button.oc-mobile-worktree-label-trigger:active,
   background: transparent;
 }
 
-.oc-mobile-session-row-content[data-active="true"] {
-  background: color-mix(in srgb, var(--interactive-selection) 50%, transparent);
-}
-
-.oc-mobile-session-row-content[data-pressed="true"],
-.oc-mobile-session-pagination-row[data-pressed="true"] {
+/* Momentary press only. Do not persist a selected/active session fill —
+   that looked like a stuck tap highlight after returning to Home. */
+.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"]),
+.oc-mobile-session-pagination-row:active {
   background: var(--interactive-hover);
-}
-
-.oc-mobile-session-row-content[data-active="true"][data-pressed="true"] {
-  background: var(--interactive-active);
 }
 
 .oc-mobile-session-row-main {

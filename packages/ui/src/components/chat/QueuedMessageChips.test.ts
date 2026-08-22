@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, buildQueuedMessagePreviewParts, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, isServerQueueItemHiddenFromChips, isServerQueueSendPendingTimedOut, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperation, selectPendingServerQueueOperations, SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, buildQueuedMessagePreviewParts, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isLegacyQueueItemDispatchPending, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, isServerQueueItemHiddenFromChips, isServerQueueSendPendingTimedOut, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperation, selectPendingServerQueueOperations, SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
 import type { ServerQueueCommittedSendShadow, ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT, sessionDraftKey } from '@/sync/input-draft-types';
@@ -169,6 +169,34 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(isServerQueueSendPendingTimedOut(Number.NaN, 9_000)).toBe(false);
         expect(isServerQueueSendPendingTimedOut(1_000, Number.POSITIVE_INFINITY)).toBe(false);
         expect(isServerQueueSendPendingTimedOut(1_000, 2_000, Number.NaN)).toBe(false);
+    });
+
+    test('isLegacyQueueItemDispatchPending is true only for sending/reconciling rows', () => {
+        const queued = add(scope, 'legacy-queued');
+        expect(isLegacyQueueItemDispatchPending(queued)).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'retrying' })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'failed' })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'unresolved' })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: undefined })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'sending' })).toBe(true);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'reconciling' })).toBe(true);
+    });
+
+    test('selectLegacyQueueDisplayItemsForScope keeps legacy sending rows visible for Sending… chip presentation', () => {
+        const durable = add(scope, 'durable');
+        const started = useMessageQueueStore.getState().beginQueueItemDispatch(
+            scope,
+            { queueItemID: durable.queueItemID!, operationID: durable.operationID!, messageID: durable.messageID! },
+            'msg_ffffffffffffABCDEFGHIJKLMN',
+            false,
+        );
+        expect(started?.status).toBe('sending');
+        const display = selectLegacyQueueDisplayItemsForScope(useMessageQueueStore.getState(), scope);
+        expect(display).toHaveLength(1);
+        const row = display[0] as QueueItem;
+        expect(row.id).toBe(durable.id);
+        expect(row.status).toBe('sending');
+        expect(isLegacyQueueItemDispatchPending(row)).toBe(true);
     });
 
     test('an active server attempt does not globally disable waiting-row send', () => {

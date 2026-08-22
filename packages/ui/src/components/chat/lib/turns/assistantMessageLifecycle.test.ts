@@ -179,18 +179,51 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
         expect(shouldStreamSortedFinalBody(input)).toBe(true);
     });
 
-    test('continuation tools keep intermediate text deferred', () => {
+    test('live stream keeps revealed body text when continuation tools arrive', () => {
+        // Sorted 模式的乐观揭示无法预知模型写完正文后是否跟工具调用（文本
+        // 先于工具是常态）。正文一旦开始流式就不能因工具 part 到达而中途
+        // 撤回，否则用户看到"出来一段然后又消失"；撤回只发生在步骤边界。
         const input = {
             finish: undefined,
             parts: [
+                textPart('p1', 'partial answer before tools'),
                 toolPart({ id: 't1', status: 'completed' }),
+            ],
+            streamPhase: 'streaming' as const,
+            isLastAssistantInTurn: true,
+        };
+        expect(canRevealSortedFinalBody(input)).toBe(true);
+        expect(shouldStreamSortedFinalBody(input)).toBe(true);
+    });
+
+    test('step boundary folds intermediate text back into Activity', () => {
+        // finish 打上 tool-calls（步骤结束、下一 assistant 未到）即整理进
+        // Activity，正文不再揭示。
+        const input = {
+            finish: 'tool-calls',
+            parts: [
                 textPart('p1', 'working...'),
+                toolPart({ id: 't1', status: 'completed' }),
             ],
             streamPhase: 'streaming' as const,
             isLastAssistantInTurn: true,
         };
         expect(canRevealSortedFinalBody(input)).toBe(false);
         expect(shouldStreamSortedFinalBody(input)).toBe(false);
+    });
+
+    test('non-live messages with continuation tools stay deferred', () => {
+        // 非 live 阶段只认 confirmed terminal stop：工具未清偿的已完成消息
+        // 的文本保持在 Activity。
+        expect(canRevealSortedFinalBody({
+            finish: undefined,
+            parts: [
+                toolPart({ id: 't1', status: 'completed' }),
+                textPart('p1', 'working...'),
+            ],
+            streamPhase: 'completed',
+            isLastAssistantInTurn: true,
+        })).toBe(false);
     });
 
     test('non-stop finish and non-last assistants never reveal as final body', () => {

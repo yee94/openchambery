@@ -136,7 +136,8 @@ If those become scrollports, a short mention shows **two** scrollbars (parent + 
 
 `--dpt` is `1px` everywhere except Capacitor Android, where
 `packages/ui/src/lib/designPtScale.ts` overwrites it from
-`DisplayMetrics.xdpi/ydpi` so `1dpt ≈ 1/163in` (iPhone pt). iOS stays `1`.
+`DisplayMetrics.xdpi/ydpi` so `1dpt ≈ 1/163in` (iPhone pt), then caps
+Android at `0.9` as a visibility experiment. iOS stays `1`.
 
 `scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.

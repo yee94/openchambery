@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
 import { MessageReferenceChip } from './MessageReferenceChip';
-import { canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, buildQueuedMessagePreviewParts, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperations, SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueCommittedSendShadow, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, buildQueuedMessagePreviewParts, isLegacyQueueItemDispatchPending, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperations, SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueCommittedSendShadow, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { isQueueItemHiddenByAbortOptimistic, subscribeQueueAbortOptimistic, getQueueAbortOptimisticRevision } from '@/sync/queue-abort-optimistic';
 import { enqueueServerQueueScopeMutation, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
@@ -85,9 +85,11 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     const editPending = server && pendingOperationKinds.has('edit');
     const removePending = server && pendingOperationKinds.has('remove');
     const reorderPending = server && pendingOperationKinds.has('reorder');
+    const legacyMessage = server || pendingAdmission ? undefined : message as QueuedMessage;
     const authoritativeDispatchPending = server && !pendingAdmission && isServerQueueItemDispatchPending(message as MessageQueueItem);
+    const legacyDispatchPending = Boolean(legacyMessage && isLegacyQueueItemDispatchPending(legacyMessage));
     const activeAttempt = server && !pendingAdmission && isServerQueueItemActiveAttempt(message as MessageQueueItem);
-    const rawSendPending = (server && pendingOperationKinds.has('send')) || authoritativeDispatchPending;
+    const rawSendPending = (server && pendingOperationKinds.has('send')) || authoritativeDispatchPending || legacyDispatchPending;
     const sendPending = rawSendPending && !sendPendingTimedOut;
     // Client edit/remove remains authoritative even when delivery tracking is
     // stale. Sending and dragging an already-started attempt stay unavailable
@@ -95,7 +97,6 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     const clientMutationBlocked = frozen || pendingAdmission;
     const canEdit = canEditQueuedMessage(message, { frozen });
     const canRemove = canRemoveQueuedMessage(message, { frozen });
-    const legacyMessage = server ? undefined : message as QueuedMessage;
     const isDragDisabled = legacyMessage?.owner?.state === 'unbound-legacy' || clientMutationBlocked || activeAttempt;
     const canSend = !clientMutationBlocked && !sendPending && (server
         ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock, { allowManualDispatchRetry: sendPendingTimedOut })
@@ -477,20 +478,28 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         }
         return result;
     }, [chipOverlayOperations]);
-    // queueItemIDs currently in optimistic/manual send-pending presentation.
+    // queueItemIDs currently in optimistic/manual/legacy send-pending presentation.
     const sendPendingItemIDs = React.useMemo(() => {
         const ids = new Set<string>();
-        if (serverQueue.mode !== 'server') return ids;
-        for (const operation of chipOverlayOperations) {
-            if (operation.kind === 'send') ids.add(operation.queueItemID);
+        if (serverQueue.mode === 'server') {
+            for (const operation of chipOverlayOperations) {
+                if (operation.kind === 'send') ids.add(operation.queueItemID);
+            }
+            for (const item of queuedMessages) {
+                if (isMessageQueuePendingAdmissionItem(item)) continue;
+                const queueItemID = item.queueItemID;
+                if (!queueItemID) continue;
+                if (isServerQueueItemDispatchPending(item as MessageQueueItem)) {
+                    ids.add(queueItemID);
+                }
+            }
+            return ids;
         }
         for (const item of queuedMessages) {
             if (isMessageQueuePendingAdmissionItem(item)) continue;
-            const queueItemID = item.queueItemID;
-            if (!queueItemID) continue;
-            if (isServerQueueItemDispatchPending(item as MessageQueueItem)) {
-                ids.add(queueItemID);
-            }
+            const legacy = item as QueuedMessage;
+            if (!isLegacyQueueItemDispatchPending(legacy)) continue;
+            ids.add(legacy.queueItemID || legacy.id);
         }
         return ids;
     }, [chipOverlayOperations, queuedMessages, serverQueue.mode]);
@@ -704,7 +713,16 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         if (!queueScope) return;
         const legacyMessage = message as QueuedMessage;
         if (!queuedMessageItemScope(legacyMessage, queueScope)) return;
-        onSendMessage(legacyMessage.queueItemID ?? legacyMessage.id);
+        // Fresh send cycle after a client timeout: clear timed-out flag and restart the 8s clock.
+        const retryID = legacyMessage.queueItemID ?? legacyMessage.id;
+        sendPendingStartedAtRef.current.delete(retryID);
+        setSendPendingTimedOutIDs((previous) => {
+            if (!previous.has(retryID)) return previous;
+            const next = new Set(previous);
+            next.delete(retryID);
+            return next;
+        });
+        onSendMessage(retryID);
     });
 
     const handleRemove = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {

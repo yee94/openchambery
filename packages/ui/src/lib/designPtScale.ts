@@ -2,6 +2,8 @@
 export const DESIGN_PT_PER_INCH = 163;
 export const DESIGN_PT_SCALE_MIN = 0.85;
 export const DESIGN_PT_SCALE_MAX = 1.2;
+/** Temporary Android experiment: never let --dpt exceed 0.9. iOS stays 1. */
+export const ANDROID_DESIGN_PT_SCALE_MAX = 0.9;
 export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v1';
 
 export interface PhysicalScaleMetrics {
@@ -20,11 +22,14 @@ export function clampDesignPtScale(value: number): number {
  * Scale so 1 design pt ≈ 1/163 inch. iOS stays 1.
  */
 export function computeDesignPtScale(metrics: PhysicalScaleMetrics | null | undefined): number {
-  if (!metrics) return 1;
+  if (!metrics) return ANDROID_DESIGN_PT_SCALE_MAX;
   const density = metrics.density;
   const ppi = (metrics.xdpi + metrics.ydpi) / 2;
-  if (!(density > 0) || !(ppi >= 50) || ppi > 800) return 1;
-  return clampDesignPtScale((ppi / density) / DESIGN_PT_PER_INCH);
+  if (!(density > 0) || !(ppi >= 50) || ppi > 800) return ANDROID_DESIGN_PT_SCALE_MAX;
+  return Math.min(
+    ANDROID_DESIGN_PT_SCALE_MAX,
+    clampDesignPtScale((ppi / density) / DESIGN_PT_PER_INCH),
+  );
 }
 
 export function readCachedDesignPtScale(): number {
@@ -60,7 +65,9 @@ export async function applyDesignPtScaleFromNative(): Promise<number> {
     return 1;
   }
   if (!Capacitor.isPluginAvailable('OpenChamberPhysicalScale')) {
-    return cached;
+    applyDesignPtScaleToRoot(ANDROID_DESIGN_PT_SCALE_MAX);
+    writeCachedDesignPtScale(ANDROID_DESIGN_PT_SCALE_MAX);
+    return ANDROID_DESIGN_PT_SCALE_MAX;
   }
   try {
     const PhysicalScale = registerPlugin<{ getMetrics: () => Promise<PhysicalScaleMetrics> }>(
@@ -72,6 +79,8 @@ export async function applyDesignPtScaleFromNative(): Promise<number> {
     applyDesignPtScaleToRoot(scale);
     return scale;
   } catch {
-    return cached;
+    applyDesignPtScaleToRoot(ANDROID_DESIGN_PT_SCALE_MAX);
+    writeCachedDesignPtScale(ANDROID_DESIGN_PT_SCALE_MAX);
+    return ANDROID_DESIGN_PT_SCALE_MAX;
   }
 }

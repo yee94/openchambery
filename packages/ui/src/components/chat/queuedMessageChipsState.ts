@@ -94,6 +94,9 @@ export const canRemoveQueuedMessage = (
 
 export const isServerQueueItemActiveAttempt = (item: Pick<MessageQueueItem, 'status'>): boolean => item.status === 'sending' || item.status === 'reconciling';
 
+/** Legacy queue row is dispatch-pending while an optimistic/in-flight attempt owns the transcript paint. */
+export const isLegacyQueueItemDispatchPending = (item: QueuedMessage): boolean => item.status === 'sending' || item.status === 'reconciling';
+
 // Authoritative server item is dispatch-pending when an explicit manual dispatch
 // was requested (POST ack acknowledged but the worker has not yet started) or the
 // worker has begun the attempt (sending/reconciling). Pending admission rows are
