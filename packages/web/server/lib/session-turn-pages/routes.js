@@ -307,7 +307,7 @@ const createSdkFetchDiff = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }
 
 /**
  * Project exact message GET payload: keep original `{ info, parts }` shape,
- * only L1-project `info.summary.diffs` → diffCount/hasDiffs.
+ * only L1-project `info.summary.diffs` → slim file list + diffCount/hasDiffs.
  */
 export const projectExactMessagePayload = (payload) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -625,8 +625,8 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
 
   /**
    * Exact message GET — registered before generic `/api` proxy so materialize /
-   * recovery never relay a raw 14MB `summary.diffs` array. Returns the official
-   * `{ info, parts }` shape with L1 summary projection only.
+   * recovery never relay raw multi-megabyte patch bodies in `summary.diffs`.
+   * Returns the official `{ info, parts }` shape with L1 slim-list projection.
    */
   app.get('/api/session/:sessionID/message/:messageID', async (req, res) => {
     const sessionID = req.params?.sessionID;

@@ -2,8 +2,9 @@
 // Outbound FileDiff summarization for message-stream fan-out and Host L1.
 //
 // L1 (ordinary first-packet / SSE / exact message GET):
-//   project `info.summary.diffs` arrays to `{ diffCount, hasDiffs }` and remove
-//   the file array entirely. Never ship patch bodies on these paths.
+//   keep `info.summary.diffs` as a slim file list
+//   `{ file, status?, additions, deletions }` plus additive
+//   `diffCount` / `hasDiffs` markers. Never ship patch bodies on these paths.
 //
 // Explicit L2/L3 APIs may still use summarizeFileDiff(s) for file-list / patch
 // responses. Pure JS — do not import UI TypeScript from the server package.
@@ -28,9 +29,6 @@ const hasHeavyDiffBody = (diff) => {
  * Reduce a FileDiff / SnapshotFileDiff to preview-safe scalars only.
  * Drops patch / before / after / from / to and any other large body fields.
  * Already-summary objects keep identity.
- *
- * Retained for explicit L2 file-list APIs; L1 message paths must use
- * `projectMessageSummaryDiffCounts` instead and never keep a file array.
  */
 export function summarizeFileDiff(diff) {
   if (!diff || typeof diff !== 'object' || Array.isArray(diff)) {
@@ -69,13 +67,14 @@ export function summarizeFileDiffs(diffs) {
 }
 
 /**
- * L1 projection: replace `summary.diffs` with count/marker scalars.
+ * L1 projection: keep `summary.diffs` as a slim file-list array and set
+ * additive `diffCount` / `hasDiffs` markers. Drops patch/before/after/from/to.
  * Keeps every other lightweight summary field. Identity when unchanged.
  *
  * @param {unknown} owner message info / session info / summary-bearing object
  * @returns {unknown}
  */
-export const projectMessageSummaryDiffCounts = (owner) => {
+export const projectMessageSummaryDiffSlim = (owner) => {
   if (!owner || typeof owner !== 'object' || Array.isArray(owner)) {
     return owner;
   }
@@ -89,23 +88,33 @@ export const projectMessageSummaryDiffCounts = (owner) => {
     return owner;
   }
 
-  const diffs = summary.diffs;
-  const diffCount = Array.isArray(diffs) ? diffs.length : 0;
+  const rawDiffs = summary.diffs;
+  const slimDiffs = Array.isArray(rawDiffs) ? summarizeFileDiffs(rawDiffs) : [];
+  const diffCount = slimDiffs.length;
   const hasDiffs = diffCount > 0;
 
-  const nextSummary = { ...summary };
-  delete nextSummary.diffs;
-  nextSummary.diffCount = diffCount;
-  nextSummary.hasDiffs = hasDiffs;
+  const diffsUnchanged = slimDiffs === rawDiffs;
+  const markersMatch = summary.diffCount === diffCount && summary.hasDiffs === hasDiffs;
+  if (diffsUnchanged && markersMatch) {
+    return owner;
+  }
 
   return {
     ...owner,
-    summary: nextSummary,
+    summary: {
+      ...summary,
+      diffs: slimDiffs,
+      diffCount,
+      hasDiffs,
+    },
   };
 };
 
-/** @deprecated Prefer projectMessageSummaryDiffCounts — L1 removes the file array. */
-export const summarizeMessageDiffSnapshots = projectMessageSummaryDiffCounts;
+/** @deprecated Prefer projectMessageSummaryDiffSlim — same L1 slim-list behavior. */
+export const projectMessageSummaryDiffCounts = projectMessageSummaryDiffSlim;
+
+/** @deprecated Prefer projectMessageSummaryDiffSlim — L1 keeps slim file list + markers. */
+export const summarizeMessageDiffSnapshots = projectMessageSummaryDiffSlim;
 
 /**
  * Summarize FileDiff bodies on outbound event payloads.
@@ -114,7 +123,7 @@ export const summarizeMessageDiffSnapshots = projectMessageSummaryDiffCounts;
  * - `session.diff` with legacy `properties.diff` or current `data.diff`
  *   (keeps file/status/additions/deletions; drops patch bodies)
  * - message/session objects carrying `summary.diffs` under properties/data info
- *   (L1: projects to diffCount/hasDiffs and removes the array)
+ *   (L1: slim file list + diffCount/hasDiffs; never patch bodies)
  *
  * Non-diff events keep identity.
  */
@@ -173,7 +182,7 @@ export function summarizeOutboundEventPayload(payload) {
 
       // Common shape: properties.info.summary.diffs
       if (body.info && typeof body.info === 'object' && !Array.isArray(body.info)) {
-        const nextInfo = projectMessageSummaryDiffCounts(body.info);
+        const nextInfo = projectMessageSummaryDiffSlim(body.info);
         if (nextInfo !== body.info) {
           next = {
             ...next,
@@ -188,7 +197,7 @@ export function summarizeOutboundEventPayload(payload) {
       }
 
       // Rare: properties.summary.diffs directly on the properties/data body
-      const nextBody = projectMessageSummaryDiffCounts(body);
+      const nextBody = projectMessageSummaryDiffSlim(body);
       if (nextBody !== body) {
         next = {
           ...next,

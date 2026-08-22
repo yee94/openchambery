@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.13] - 2026-08-22
+
+### 会话
+
+- **Changes 文件列表恢复随消息同步携带：** 消息线上的变更摘要重新携带轻量文件列表（文件名 / 状态 / 增删行数，463 文件约 46KB），打开 Changes 或查看回合预览即时渲染、零额外请求与等待；此前 beta.7 的纯计数方案把文件列表也变成了按需异步，引入了不必要的转圈。patch 正文仍绝不随消息传输——展开具体文件时才拉取该文件的单文件 patch（原本 14MB 级传输的元凶始终是 patch 正文，列表本身不是问题）。列表接口仅保留为旧数据 / 异常标记的兜底，Web、桌面、VS Code 与 relay 链路一致。
+
 ## [1.18.2-beta.12] - 2026-08-22
 
 ### 聊天

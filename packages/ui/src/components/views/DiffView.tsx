@@ -1165,7 +1165,9 @@ export const DiffView: React.FC<DiffViewProps> = ({
         let startIndex = sessionMessages.length - 1;
         if (turnMessageId) {
             startIndex = sessionMessages.findIndex((message) => message.id === turnMessageId);
-            if (startIndex < 0) return { messageID: null, count: 0, hasDiffs: false };
+            if (startIndex < 0) {
+                return { messageID: null, count: 0, hasDiffs: false, thinDiffs: [] as TurnSnapshotDiff[] };
+            }
         }
         for (let index = startIndex; index >= 0; index -= 1) {
             const message = sessionMessages[index] as {
@@ -1174,17 +1176,18 @@ export const DiffView: React.FC<DiffViewProps> = ({
                 summary?: { diffs?: unknown; diffCount?: unknown; hasDiffs?: unknown };
             };
             if (message.role !== 'user') continue;
-            const legacyDiffs = listTurnDiffs(message.summary?.diffs);
+            const thinDiffs = listTurnDiffs(message.summary?.diffs);
             const markerCount = typeof message.summary?.diffCount === 'number' && Number.isFinite(message.summary.diffCount)
                 ? Math.max(0, Math.trunc(message.summary.diffCount))
-                : legacyDiffs.length;
+                : thinDiffs.length;
             return {
                 messageID: typeof message.id === 'string' && message.id ? message.id : null,
                 count: markerCount,
-                hasDiffs: message.summary?.hasDiffs === true || markerCount > 0 || legacyDiffs.length > 0,
+                hasDiffs: message.summary?.hasDiffs === true || markerCount > 0 || thinDiffs.length > 0,
+                thinDiffs,
             };
         }
-        return { messageID: null, count: 0, hasDiffs: false };
+        return { messageID: null, count: 0, hasDiffs: false, thinDiffs: [] as TurnSnapshotDiff[] };
     }, [sessionMessages, turnMessageId]);
 
     const selectedToolTurnDiffs = React.useMemo(
@@ -1193,6 +1196,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     );
 
     const usesToolPatches = selectedToolTurnDiffs.length > 0;
+    const hasSyncTurnDiffs = turnChangesMarker.thinDiffs.length > 0;
     const turnChangesRequest = React.useMemo<TurnChangesRequest | null>(() => {
         if (!resolvedSessionId || !effectiveDirectory || !turnChangesMarker.messageID) return null;
         return {
@@ -1202,9 +1206,12 @@ export const DiffView: React.FC<DiffViewProps> = ({
             diffCount: turnChangesMarker.count,
         };
     }, [effectiveDirectory, resolvedSessionId, turnChangesMarker.count, turnChangesMarker.messageID]);
+    // Prefer the L1 thin file list on the turn user message. Fall back to L2 only
+    // when hasDiffs is true but the sync array is missing/empty (legacy markers).
     const shouldLoadTurnChanges = activeDiffScope === 'turn'
         && !usesToolPatches
         && turnChangesMarker.hasDiffs
+        && !hasSyncTurnDiffs
         && Boolean(turnChangesRequest);
     const turnChangesQuery = useSessionTurnChangesQuery({
         sessionID: turnChangesRequest?.sessionID ?? '',
@@ -1217,8 +1224,15 @@ export const DiffView: React.FC<DiffViewProps> = ({
 
     const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(() => {
         if (usesToolPatches) return selectedToolTurnDiffs;
+        if (hasSyncTurnDiffs) return turnChangesMarker.thinDiffs;
         return turnChangesQuery.data?.files ?? [];
-    }, [selectedToolTurnDiffs, turnChangesQuery.data, usesToolPatches]);
+    }, [
+        hasSyncTurnDiffs,
+        selectedToolTurnDiffs,
+        turnChangesMarker.thinDiffs,
+        turnChangesQuery.data,
+        usesToolPatches,
+    ]);
 
     const lastTurnDiffData = React.useMemo(() => {
         const map = new Map<string, DiffData>();

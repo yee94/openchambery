@@ -127,9 +127,11 @@ export function summarizeFileDiffs<T>(diffs: T): T {
 }
 
 /**
- * L1 Host-parity: replace `summary.diffs` with `diffCount` / `hasDiffs`.
- * Raw / legacy Host payloads that still carry the file array converge to the
- * same marker fields after sanitize. Identity when `diffs` is absent.
+ * L1 Host-parity: keep a thin `summary.diffs` file list (file / status /
+ * additions / deletions only) and stamp `diffCount` / `hasDiffs`.
+ * Raw / legacy Host payloads that still carry patch bodies converge to the
+ * same thin shape after sanitize. Identity when `diffs` is absent, or when the
+ * list is already thin with matching markers.
  */
 export function projectSummaryDiffMarkers<T>(owner: T): T {
   if (!owner || typeof owner !== "object" || Array.isArray(owner)) {
@@ -147,14 +149,33 @@ export function projectSummaryDiffMarkers<T>(owner: T): T {
   }
 
   const diffs = summary.diffs
-  const diffCount = Array.isArray(diffs) ? diffs.length : 0
-  const nextSummary: SessionSummary = {
-    ...summary,
-    diffCount,
-    hasDiffs: diffCount > 0,
+  if (!Array.isArray(diffs)) {
+    const nextSummary: SessionSummary = {
+      ...summary,
+      diffCount: 0,
+      hasDiffs: false,
+    }
+    delete nextSummary.diffs
+    return { ...record, summary: nextSummary } as T
   }
-  delete nextSummary.diffs
-  return { ...record, summary: nextSummary } as T
+
+  const thinDiffs = summarizeFileDiffs(diffs) as DiffEntry[]
+  const diffCount = thinDiffs.length
+  const hasDiffs = diffCount > 0
+  const markersMatch = summary.diffCount === diffCount && summary.hasDiffs === hasDiffs
+  if (thinDiffs === diffs && markersMatch) {
+    return owner
+  }
+
+  return {
+    ...record,
+    summary: {
+      ...summary,
+      diffs: thinDiffs,
+      diffCount,
+      hasDiffs,
+    },
+  } as T
 }
 
 /** Strip oversized snapshot fields from summary.diffs on a session object */

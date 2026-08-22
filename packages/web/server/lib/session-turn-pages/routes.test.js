@@ -320,7 +320,7 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(part.state.output).toBeUndefined();
   });
 
-  it('projects message summary.diffs to L1 count/marker before serializing a turn-page response', async () => {
+  it('projects message summary.diffs to L1 slim list + markers before serializing a turn-page response', async () => {
     const patch = 'diff-body-'.repeat(20_000);
     const loadPage = vi.fn(async () => ({
       ok: true,
@@ -335,6 +335,8 @@ describe('registerSessionTurnPageRoutes', () => {
               additions: 9,
               deletions: 3,
               patch,
+              before: 'old',
+              after: 'new',
             }],
           },
         },
@@ -356,15 +358,21 @@ describe('registerSessionTurnPageRoutes', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.records[0].info.summary).toEqual({
+      diffs: [{
+        file: 'src/large.ts',
+        status: 'modified',
+        additions: 9,
+        deletions: 3,
+      }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(res.body.records[0].info.summary.diffs).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain(patch);
-    expect(JSON.stringify(res.body)).not.toContain('src/large.ts');
+    expect(JSON.stringify(res.body)).not.toContain('"before"');
+    expect(JSON.stringify(res.body)).not.toContain('"after"');
   });
 
-  it('keeps L1 turn-page serialization under 64KiB for a 463-file / ~14MB patch summary', async () => {
+  it('keeps L1 turn-page serialization under 256KiB for a 463-file / ~14MB patch summary', async () => {
     const patchBody = 'P'.repeat(Math.floor((14 * 1024 * 1024) / 463));
     const diffs = Array.from({ length: 463 }, (_, i) => ({
       file: `src/generated/file-${i}.ts`,
@@ -374,6 +382,8 @@ describe('registerSessionTurnPageRoutes', () => {
       patch: `${patchBody}-${i}`,
       before: `before-${i}`,
       after: `after-${i}`,
+      from: `from-${i}`,
+      to: `to-${i}`,
     }));
     const loadPage = vi.fn(async () => ({
       ok: true,
@@ -401,16 +411,29 @@ describe('registerSessionTurnPageRoutes', () => {
 
     expect(res.statusCode).toBe(200);
     const serialized = JSON.stringify(res.body);
-    expect(res.body.records[0].info.summary).toEqual({
-      title: 'huge',
-      diffCount: 463,
-      hasDiffs: true,
+    const summary = res.body.records[0].info.summary;
+    expect(summary.diffCount).toBe(463);
+    expect(summary.hasDiffs).toBe(true);
+    expect(summary.diffs).toHaveLength(463);
+    expect(summary.diffs[0]).toEqual({
+      file: 'src/generated/file-0.ts',
+      status: 'modified',
+      additions: 0,
+      deletions: 0,
     });
-    expect(res.body.records[0].info.summary.diffs).toBeUndefined();
-    expect(serialized).not.toContain('"diffs"');
+    expect(summary.diffs[462]).toEqual({
+      file: 'src/generated/file-462.ts',
+      status: 'modified',
+      additions: 462 % 7,
+      deletions: 462 % 3,
+    });
     expect(serialized).not.toContain(patchBody.slice(0, 64));
-    expect(serialized).not.toContain('src/generated/file-0.ts');
-    expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(64 * 1024);
+    expect(serialized).not.toContain('"patch"');
+    expect(serialized).not.toContain('"before"');
+    expect(serialized).not.toContain('"after"');
+    expect(serialized).not.toContain('"from"');
+    expect(serialized).not.toContain('"to"');
+    expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(256 * 1024);
   });
 
   it('projects file parts on first packet and prepend the same way', async () => {
@@ -630,6 +653,12 @@ describe('registerSessionTurnPageRoutes — exact message GET', () => {
         role: 'user',
         summary: {
           title: 'turn',
+          diffs: [{
+            file: 'a.ts',
+            status: 'modified',
+            additions: 2,
+            deletions: 1,
+          }],
           diffCount: 1,
           hasDiffs: true,
         },
@@ -637,7 +666,6 @@ describe('registerSessionTurnPageRoutes — exact message GET', () => {
       parts: [{ id: 'prt_1', type: 'text', text: 'hello' }],
     });
     expect(JSON.stringify(res.body)).not.toContain(patch);
-    expect(JSON.stringify(res.body)).not.toContain('a.ts');
   });
 
   it('rejects oversize messageID / sessionID with 400', async () => {

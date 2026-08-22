@@ -81,10 +81,18 @@ describe('projectTurnDiffStats L1 marker contract', () => {
     });
   });
 
-  test('keeps legacy summary diffs compatible', () => {
+  test('keeps thin summary diffs compatible', () => {
     expect(projectTurnDiffStats(userMessage({
       diffs: [{ file: 'a.ts', additions: 2, deletions: 1 }],
     }))).toEqual({ additions: 2, deletions: 1, files: 1, hasDiffs: true });
+  });
+
+  test('prefers diffCount when thin diffs and markers are both present', () => {
+    expect(projectTurnDiffStats(userMessage({
+      diffs: [{ file: 'a.ts', additions: 2, deletions: 1 }],
+      diffCount: 3,
+      hasDiffs: true,
+    }))).toEqual({ additions: 2, deletions: 1, files: 3, hasDiffs: true });
   });
 });
 
@@ -106,12 +114,22 @@ describe('Turn Changes preview contract', () => {
 });
 
 describe('DiffView staged turn changes queries', () => {
-  test('loads L2 on an opened turn scope and removes the whole-turn session diff path', () => {
-    expect(diffViewSource).toContain('useSessionTurnChangesQuery');
-    expect(diffViewSource).toContain("activeDiffScope === 'turn'");
+  test('renders turn file rows from sync thin diffs without an L2 request', () => {
+    expect(diffViewSource).toContain('const thinDiffs = listTurnDiffs(message.summary?.diffs);');
+    expect(diffViewSource).toContain('const hasSyncTurnDiffs = turnChangesMarker.thinDiffs.length > 0;');
+    expect(diffViewSource).toContain('if (hasSyncTurnDiffs) return turnChangesMarker.thinDiffs;');
+    expect(diffViewSource).toContain('&& !hasSyncTurnDiffs');
     expect(diffViewSource).toContain('enabled: shouldLoadTurnChanges');
     expect(diffViewSource).not.toContain('getSessionDiff');
     expect(diffViewSource).not.toContain('mergeTurnDiffSummariesWithFull');
+  });
+
+  test('falls back to L2 only when hasDiffs is true but the sync array is missing', () => {
+    expect(diffViewSource).toContain('useSessionTurnChangesQuery');
+    expect(diffViewSource).toContain("activeDiffScope === 'turn'");
+    expect(diffViewSource).toContain('&& turnChangesMarker.hasDiffs');
+    expect(diffViewSource).toContain('&& !hasSyncTurnDiffs');
+    expect(diffViewSource).toContain('return turnChangesQuery.data?.files ?? [];');
   });
 
   test('loads L3 only for an expanded mounted file row', () => {

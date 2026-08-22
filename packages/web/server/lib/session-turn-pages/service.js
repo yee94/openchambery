@@ -459,8 +459,10 @@ const isUserRecord = (record) => {
 };
 
 /**
- * L1: project message `summary.diffs` arrays to `{ diffCount, hasDiffs }` and
- * remove the file array. Preserves every other message / summary field.
+ * L1: project message `summary.diffs` to a slim file list
+ * `{ file, status?, additions, deletions }` plus additive `diffCount` /
+ * `hasDiffs`. Never retains patch/before/after/from/to. Preserves every other
+ * message / summary field.
  */
 export const projectMessageDiffSummaries = (records) => {
   if (!Array.isArray(records) || records.length === 0) return records;

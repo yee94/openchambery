@@ -183,11 +183,13 @@ const TurnChangedFilePreviewButton = React.memo(({
 
 const TurnChangesPreview = React.memo(({
     fileCount,
+    changedFiles,
     turnId,
     isLatestTurn,
     isMobile,
 }: {
     fileCount: number;
+    changedFiles?: TurnChangedFile[];
     turnId: string;
     isLatestTurn: boolean;
     isMobile: boolean;
@@ -200,9 +202,12 @@ const TurnChangesPreview = React.memo(({
     const diffSessionId = sessionSurface.sessionId;
     const mobileActions = useMobileAppActions();
     const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
-    // L1 keeps only the count on the message wire; L2 fills the inline file head when this
-    // preview mounts. DiffView reuses the same query key when the user opens the full tab.
-    const shouldLoadTurnChangeFiles = Boolean(diffSessionId && diffDirectory && turnId && fileCount > 0);
+    // L1 carries the thin file list on the message wire; render it synchronously.
+    // L2 only fills the inline file head when the sync list is missing (legacy
+    // markers). DiffView reuses the same query key when the user opens the tab.
+    const hasSyncFiles = Boolean(changedFiles && changedFiles.length > 0);
+    const shouldLoadTurnChangeFiles = !hasSyncFiles
+        && Boolean(diffSessionId && diffDirectory && turnId && fileCount > 0);
     const turnChangesQuery = useSessionTurnChangesQuery({
         sessionID: diffSessionId ?? '',
         directory: diffDirectory ?? '',
@@ -212,6 +217,7 @@ const TurnChangesPreview = React.memo(({
         enabled: shouldLoadTurnChangeFiles,
     });
     const files = React.useMemo<TurnChangedFile[]>(() => {
+        if (hasSyncFiles) return changedFiles ?? [];
         const summaries = turnChangesQuery.data?.files;
         if (!Array.isArray(summaries) || summaries.length === 0) return [];
         const next: TurnChangedFile[] = [];
@@ -228,7 +234,7 @@ const TurnChangesPreview = React.memo(({
             });
         }
         return next;
-    }, [turnChangesQuery.data?.files]);
+    }, [changedFiles, hasSyncFiles, turnChangesQuery.data?.files]);
     const visibleFiles = files.slice(0, TURN_CHANGES_PREVIEW_VISIBLE_LIMIT);
     const hiddenCount = Math.max(0, files.length - visibleFiles.length);
     const displayFileCount = files.length > 0 ? files.length : fileCount;
@@ -2499,6 +2505,7 @@ const AssistantMessageBody = React.memo(({
                 {shouldShowChangesPreview && turnGroupingContext?.diffStats ? (
                     <TurnChangesPreview
                         fileCount={turnGroupingContext.diffStats.files}
+                        changedFiles={turnGroupingContext.changedFiles}
                         turnId={turnGroupingContext.turnId}
                         isLatestTurn={turnGroupingContext.isLatestTurn}
                         isMobile={isMobile}

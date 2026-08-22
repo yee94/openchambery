@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   projectMessageSummaryDiffCounts,
+  projectMessageSummaryDiffSlim,
   summarizeFileDiff,
   summarizeFileDiffs,
   summarizeOutboundEventPayload,
@@ -49,34 +50,41 @@ describe('summarizeFileDiffs', () => {
   });
 });
 
-describe('projectMessageSummaryDiffCounts', () => {
-  it('replaces summary.diffs with diffCount/hasDiffs and drops the array', () => {
+describe('projectMessageSummaryDiffSlim', () => {
+  it('keeps slim summary.diffs and sets diffCount/hasDiffs', () => {
     const owner = {
       id: 'msg_1',
       summary: {
         title: 'turn',
         diffs: [
           { file: 'a.ts', additions: 1, deletions: 0, patch: '@@' },
-          { file: 'b.ts', additions: 2, deletions: 1 },
+          { file: 'b.ts', additions: 2, deletions: 1, before: 'x', after: 'y' },
         ],
       },
     };
 
-    const next = projectMessageSummaryDiffCounts(owner);
+    const next = projectMessageSummaryDiffSlim(owner);
     expect(next).not.toBe(owner);
     expect(next.summary).toEqual({
       title: 'turn',
+      diffs: [
+        { file: 'a.ts', additions: 1, deletions: 0 },
+        { file: 'b.ts', additions: 2, deletions: 1 },
+      ],
       diffCount: 2,
       hasDiffs: true,
     });
-    expect(next.summary.diffs).toBeUndefined();
+    expect(JSON.stringify(next)).not.toContain('patch');
+    expect(JSON.stringify(next)).not.toContain('"before"');
+    expect(JSON.stringify(next)).not.toContain('"after"');
   });
 
-  it('projects empty arrays to diffCount 0 / hasDiffs false', () => {
+  it('projects empty arrays to slim list + diffCount 0 / hasDiffs false', () => {
     const owner = {
       summary: { diffs: [] },
     };
-    expect(projectMessageSummaryDiffCounts(owner).summary).toEqual({
+    expect(projectMessageSummaryDiffSlim(owner).summary).toEqual({
+      diffs: [],
       diffCount: 0,
       hasDiffs: false,
     });
@@ -84,7 +92,22 @@ describe('projectMessageSummaryDiffCounts', () => {
 
   it('keeps identity when summary has no diffs key', () => {
     const owner = { summary: { title: 'x', diffCount: 3, hasDiffs: true } };
-    expect(projectMessageSummaryDiffCounts(owner)).toBe(owner);
+    expect(projectMessageSummaryDiffSlim(owner)).toBe(owner);
+  });
+
+  it('keeps identity when diffs already slim and markers match', () => {
+    const owner = {
+      summary: {
+        diffs: [{ file: 'a.ts', additions: 1, deletions: 0 }],
+        diffCount: 1,
+        hasDiffs: true,
+      },
+    };
+    expect(projectMessageSummaryDiffSlim(owner)).toBe(owner);
+  });
+
+  it('exports projectMessageSummaryDiffCounts as a compatible alias', () => {
+    expect(projectMessageSummaryDiffCounts).toBe(projectMessageSummaryDiffSlim);
   });
 });
 
@@ -137,7 +160,7 @@ describe('summarizeOutboundEventPayload', () => {
     }]);
   });
 
-  it('projects message.updated info.summary.diffs to L1 count/marker', () => {
+  it('projects message.updated info.summary.diffs to L1 slim list + markers', () => {
     const payload = {
       type: 'message.updated',
       properties: {
@@ -149,6 +172,8 @@ describe('summarizeOutboundEventPayload', () => {
               additions: 1,
               deletions: 0,
               patch: '@@',
+              from: 'blob-a',
+              to: 'blob-b',
             }],
           },
         },
@@ -157,10 +182,12 @@ describe('summarizeOutboundEventPayload', () => {
 
     const next = summarizeOutboundEventPayload(payload);
     expect(next.properties.info.summary).toEqual({
+      diffs: [{ file: 'a.ts', additions: 1, deletions: 0 }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(next.properties.info.summary.diffs).toBeUndefined();
+    expect(JSON.stringify(next)).not.toContain('patch');
+    expect(JSON.stringify(next)).not.toContain('blob-a');
   });
 
   it('returns identity for session.status', () => {
