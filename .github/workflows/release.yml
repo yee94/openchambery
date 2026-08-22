@@ -549,11 +549,10 @@ jobs:
       release_tag: v${{ needs.create-release.outputs.version }}
       upload_github_release: true
       build_android: true
-      # Beta still uploads iOS for Internal TestFlight. Prerelease marketing
-      # version strips the suffix in mobile-release.yml (1.16.134-beta.10 →
-      # 1.16.134). Do not attach prereleases to the existing external group
-      # or submit Beta App Review.
-      build_ios: true
+      # Beta / prerelease skips iOS entirely so TestFlight upload limits cannot
+      # block desktop + APK + OTA. Stable still builds iOS and may publish the
+      # external group. Opt back into a beta IPA via mobile-release.yml.
+      build_ios: ${{ !contains(needs.create-release.outputs.version, '-') }}
       publish_external_testflight: ${{ !contains(needs.create-release.outputs.version, '-') }}
       # Bake OTA channel into the native shell at mobile:sync. Prerelease tags
       # stay on beta; plain semver store builds use stable.
@@ -693,14 +692,18 @@ jobs:
           set -euo pipefail
           OUT="$RUNNER_TEMP/ota-native-targets"
           ANDROID_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
-          # Fixed TestFlight public link (stable external group). Beta builds still
-          # land on Internal TestFlight; the install URL remains the public join link.
+          # Fixed TestFlight public link (stable external group). Beta v* skips
+          # iOS, so do not advertise a native iOS target that was never uploaded.
           IOS_URL="https://testflight.apple.com/join/ZCENBHtm"
+          BUILD_IOS="${{ !contains(needs.create-release.outputs.version, '-') }}"
 
           # Publish the same-version web bundle first so a fresh native install
           # cannot be rolled back to the previous activeBundle. minNativeBuild
-          # matches this release's versionCode / CFBundleVersion.
-          export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
+          # matches this release's versionCode / CFBundleVersion. Skip iOS when
+          # this release did not ship an IPA.
+          if [[ "$BUILD_IOS" == "true" ]]; then
+            export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
+          fi
           export MIN_NATIVE_BUILD_ANDROID="$BUILD_NUMBER"
           ASSEMBLE_ARGS=(
             --zip "$ZIP_PATH"
@@ -714,7 +717,7 @@ jobs:
           fi
           node scripts/mobile-ota/assemble-snapshot.mjs "${ASSEMBLE_ARGS[@]}"
 
-          OUT="$OUT" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" IOS_URL="$IOS_URL" ANDROID_URL="$ANDROID_URL" OTA_CHANNEL="$OTA_CHANNEL" \
+          OUT="$OUT" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" IOS_URL="$IOS_URL" ANDROID_URL="$ANDROID_URL" OTA_CHANNEL="$OTA_CHANNEL" BUILD_IOS="$BUILD_IOS" \
             node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           import path from 'node:path';
@@ -724,6 +727,7 @@ jobs:
           const iosUrl = process.env.IOS_URL;
           const androidUrl = process.env.ANDROID_URL;
           const channel = process.env.OTA_CHANNEL;
+          const buildIos = process.env.BUILD_IOS === 'true';
           const channelPath = path.join(out, 'ota', 'channels', `${channel}.json`);
           const manifest = JSON.parse(readFileSync(channelPath, 'utf8'));
           if (!manifest.activeBundle || manifest.activeBundle.releaseVersion !== version) {
@@ -736,12 +740,14 @@ jobs:
             status: 'published',
             installUrl: androidUrl,
           };
-          manifest.nativeTargets.ios = {
-            version,
-            build,
-            status: 'published',
-            installUrl: iosUrl,
-          };
+          if (buildIos) {
+            manifest.nativeTargets.ios = {
+              version,
+              build,
+              status: 'published',
+              installUrl: iosUrl,
+            };
+          }
           writeFileSync(channelPath, `${JSON.stringify(manifest, null, 2)}\n`);
           writeFileSync(path.join(out, 'ota-meta.json'), `${JSON.stringify({
             action: 'native-release-ota',

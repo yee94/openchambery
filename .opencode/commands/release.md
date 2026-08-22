@@ -14,9 +14,9 @@ Accept an optional semantic version in `X.Y.Z` or `X.Y.Z-prerelease.N` form, fol
 Workflow:
 
 1. Inspect the worktree and recent release/tag state. Run `node scripts/mobile-release-plan.mjs --json`. Choose the artifact:
-   - **Default new version** (including `mode: "ota"`) → **native**: tag `v$VERSION`. This builds desktop + APK + npm and publishes the same-version OTA via `mobile-native-targets`. Skip TestFlight 打板 (external group + Beta App Review) unless the user asks or `packages/mobile/ios/` is in the native fingerprint.
+   - **Default new version** (including `mode: "ota"`) → **native**: tag `v$VERSION`. This builds desktop + APK + npm and publishes the same-version OTA via `mobile-native-targets`, so first-time downloaders still get installers. Beta / prerelease skips iOS / TestFlight. Stable still uploads iOS.
    - **OTA-only** `mobile-beta/v$VERSION` (or `mobile-stable/v$VERSION`) only when the user explicitly wants an installed-app web update and no installers.
-   - `mode: "native"` or an explicit TestFlight request still uses `v$VERSION`, and iOS upload stays on.
+   - An explicit TestFlight request still uses `v$VERSION`; dispatch `mobile-release.yml` with `build_ios=true` if a beta must go to Internal TestFlight.
 2. Set `VERSION` from the argument or the rule above. Include all current worktree changes in the release commit.
 3. Classify the channel:
    - **Stable:** `X.Y.Z` with no `-` suffix.
@@ -46,7 +46,7 @@ Stable packaged clients must never be offered a beta through auto-update. When r
 - **Must not** point desktop updater feeds, Discord “latest”, or Android “latest APK” at a beta. Desktop Vercel `/desktop/latest*.yml` proxies GitHub `/releases/latest`; Android also uses `/releases/latest`.
 - **Must** leave `autoUpdater.allowPrerelease = false` alone unless the user explicitly requests prerelease auto-update.
 - After pushing a beta tag, if a previous beta was accidentally published as Latest, immediately restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` / Vercel `latest-mac.yml` still show that stable version.
-- Default `v*` still uploads iOS to Internal TestFlight only. Strip the prerelease suffix for Apple marketing versions (`1.16.134-beta.10` → `1.16.134`); build number still increments. Do not attach beta builds to the existing external TestFlight group or submit Beta App Review.
+- Default beta `v*` skips iOS / TestFlight so upload limits cannot block desktop + APK + OTA. Do not attach beta builds to the existing external TestFlight group or submit Beta App Review.
 
 Constraints:
 
