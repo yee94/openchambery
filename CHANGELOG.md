@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.10] - 2026-08-22
+
+### 聊天
+
+- **移动端模型选择器收藏 / 最近分区显示供应商：** 模型名上方增加供应商小字，同名模型（如不同供应商下的 glm-4.7）可直接区分；按供应商分组的列表不加，避免与分区头重复。
+
 ## [1.18.2-beta.9] - 2026-08-22
 
 ### 供应商

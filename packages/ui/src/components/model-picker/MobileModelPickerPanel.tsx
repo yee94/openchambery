@@ -215,7 +215,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         },
     };
 
-    const renderModelRow = (entry: ModelPickerEntry) => {
+    const renderModelRow = (entry: ModelPickerEntry, options: { showProvider?: boolean } = {}) => {
         const { model, providerID, modelID } = entry;
         const rowKey = `${providerID}:${modelID}`;
         const selected = providerID === selectedProviderID && modelID === selectedModelID;
@@ -236,6 +236,9 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                 <div className="flex items-center gap-2 px-2 py-1.5">
                     <button type="button" {...matchingPressProps} onClick={() => onSelect(providerID, modelID, selectedVariant)} className="flex min-w-0 flex-1 items-start gap-2 rounded-lg text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary">
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            {options.showProvider ? (
+                                <span className="truncate typography-micro text-muted-foreground">{providerByID.get(providerID)?.name || providerID}</span>
+                            ) : null}
                             <div className="flex min-w-0 items-center gap-1.5">
                                 <ModelLogo modelId={modelID} providerId={providerID} className="size-3.5 flex-shrink-0" />
                                 <span className="truncate typography-meta font-medium text-foreground">{getModelDisplayName(model, modelID, { maxLength: 40 })}</span>
@@ -403,7 +406,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                                             <Icon name="star-fill" className="mr-1.5 inline-block size-3 text-primary" />
                                             {t('chat.modelControls.favorites')}
                                         </div>
-                                        <div className="flex flex-col border-t border-border/30">{filteredFavorites.map(renderModelRow)}</div>
+                                        <div className="flex flex-col border-t border-border/30">{filteredFavorites.map((entry) => renderModelRow(entry, { showProvider: true }))}</div>
                                     </div>
                                 ) : null}
                                 {filteredRecents.length > 0 ? (
@@ -412,7 +415,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                                             <Icon name="time" className="mr-1.5 inline-block size-3" />
                                             {t('chat.modelControls.recent')}
                                         </div>
-                                        <div className="flex flex-col border-t border-border/30">{filteredRecents.map(renderModelRow)}</div>
+                                        <div className="flex flex-col border-t border-border/30">{filteredRecents.map((entry) => renderModelRow(entry, { showProvider: true }))}</div>
                                     </div>
                                 ) : null}
                                 {filteredProviders.map(({ provider, models }) => {
