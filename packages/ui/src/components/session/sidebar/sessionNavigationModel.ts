@@ -47,21 +47,42 @@ const resolveNodeDirectory = (node: SessionNode, group: SessionGroup): string | 
 // further remote pages remain user-driven through "Show more sessions".
 export const getDefaultProjectGroupVisibleCount = (): number => 3;
 
-export const selectVisibleSessionNodes = (
-  nodes: readonly SessionNode[],
+/**
+ * Compact slice of the first N items, then append any always-visible items
+ * that sit past the fold boundary (busy/retry + current viewing session).
+ */
+export const selectVisibleById = <T>(
+  items: readonly T[],
   visibleCount: number,
   alwaysVisibleSessionIds: ReadonlySet<string>,
-): SessionNode[] => {
-  const boundary = Math.min(nodes.length, Math.max(0, visibleCount));
-  const visible = nodes.slice(0, boundary);
-  for (let index = boundary; index < nodes.length; index += 1) {
-    const node = nodes[index];
-    if (node && alwaysVisibleSessionIds.has(node.session.id)) {
-      visible.push(node);
+  getId: (item: T) => string,
+): T[] => {
+  const boundary = Math.min(items.length, Math.max(0, visibleCount));
+  const visible = items.slice(0, boundary);
+  for (let index = boundary; index < items.length; index += 1) {
+    const item = items[index];
+    if (item && alwaysVisibleSessionIds.has(getId(item))) {
+      visible.push(item);
     }
   }
   return visible;
 };
+
+export const selectVisibleSessionNodes = (
+  nodes: readonly SessionNode[],
+  visibleCount: number,
+  alwaysVisibleSessionIds: ReadonlySet<string>,
+): SessionNode[] => (
+  selectVisibleById(nodes, visibleCount, alwaysVisibleSessionIds, (node) => node.session.id)
+);
+
+export const selectVisibleSessions = (
+  sessions: readonly Session[],
+  visibleCount: number,
+  alwaysVisibleSessionIds: ReadonlySet<string>,
+): Session[] => (
+  selectVisibleById(sessions, visibleCount, alwaysVisibleSessionIds, (session) => session.id)
+);
 
 /**
  * Keep only project rows that are logically rendered by the sidebar. This is

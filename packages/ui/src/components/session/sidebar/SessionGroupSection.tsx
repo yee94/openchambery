@@ -110,7 +110,7 @@ type Props = {
   editTitle: string;
   openSidebarMenuKey: string | null;
   liveSessionById: Map<string, Session>;
-  runningSessionIds: ReadonlySet<string>;
+  alwaysVisibleSessionIds: ReadonlySet<string>;
   prVisualStateByDirectoryBranch: Map<string, {
     visualState: 'draft' | 'open' | 'blocked' | 'merged' | 'closed';
     number: number;
@@ -164,14 +164,14 @@ const groupHasPinnedMembershipChange = (
   return group.sessions.some(visit);
 };
 
-const groupHasRunningMembershipChange = (
+const groupHasAlwaysVisibleMembershipChange = (
   group: SessionGroup,
-  prevRunningSessionIds: ReadonlySet<string>,
-  nextRunningSessionIds: ReadonlySet<string>,
+  prevAlwaysVisibleSessionIds: ReadonlySet<string>,
+  nextAlwaysVisibleSessionIds: ReadonlySet<string>,
 ): boolean => {
   const visit = (node: SessionNode): boolean => {
     const sessionId = node.session.id;
-    if (prevRunningSessionIds.has(sessionId) !== nextRunningSessionIds.has(sessionId)) return true;
+    if (prevAlwaysVisibleSessionIds.has(sessionId) !== nextAlwaysVisibleSessionIds.has(sessionId)) return true;
     return node.children.some(visit);
   };
   return group.sessions.some(visit);
@@ -334,8 +334,8 @@ const areGroupPropsEqual = (prev: Props, next: Props): boolean => {
     return false;
   }
 
-  if (prev.runningSessionIds !== next.runningSessionIds
-    && groupHasRunningMembershipChange(next.group, prev.runningSessionIds, next.runningSessionIds)) {
+  if (prev.alwaysVisibleSessionIds !== next.alwaysVisibleSessionIds
+    && groupHasAlwaysVisibleMembershipChange(next.group, prev.alwaysVisibleSessionIds, next.alwaysVisibleSessionIds)) {
     return false;
   }
 
@@ -442,7 +442,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     dragHandleProps,
     compactBodyPadding = false,
     scrollContainerRef,
-    runningSessionIds,
+    alwaysVisibleSessionIds,
   } = props;
 
   const folderScopeKey = group.folderScopeKey ?? normalizePath(group.directory ?? null);
@@ -635,7 +635,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     ? ungroupedSessions
     : hasSessionSearchQuery
       ? ungroupedSessions
-      : selectVisibleSessionNodes(ungroupedSessions, nonArchivedVisibleCount, runningSessionIds);
+      : selectVisibleSessionNodes(ungroupedSessions, nonArchivedVisibleCount, alwaysVisibleSessionIds);
   const remainingCount = totalSessions - visibleSessions.length;
   const visibleSortableSessionOrder = React.useMemo(() => buildVisibleSortableSessionOrder({
     folders: allFoldersForGroup,

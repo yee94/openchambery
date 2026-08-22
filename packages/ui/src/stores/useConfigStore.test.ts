@@ -615,6 +615,39 @@ describe('useConfigStore provider persistence', () => {
     expect(persisted.directoryScoped[DIRECTORY].lastUserSelection).toEqual({ agentName: 'build', providerId: 'stale', modelId: 'stale-model' });
   });
 
+  test('loadProviders 空响应不写 store 与 directoryScoped 快照', async () => {
+    getProvidersForConfigImpl = async () => ({ providers: [], default: {} });
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:empty-no-write' });
+    expect(useConfigStore.getState().providers).toEqual([]);
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.providers).toBe(undefined);
+  });
+
+  test('loadProviders 空响应不覆盖已有非空列表', async () => {
+    liveProviderId = 'warm';
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:warm-then-empty' });
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['warm']);
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.providers.map((entry) => entry.id)).toEqual(['warm']);
+
+    getProvidersForConfigImpl = async () => ({ providers: [], default: {} });
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:empty-soft-fail', forceRefresh: true });
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['warm']);
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.providers.map((entry) => entry.id)).toEqual(['warm']);
+  });
+
+  test('partialize 在 providers 为空时以 providerCatalogPartial=true 落盘', () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [],
+      defaultProviders: {},
+      directoryScoped: {},
+    });
+    const persisted = useConfigStore.persist.getOptions().partialize?.(useConfigStore.getState()) as {
+      directoryScoped: Record<string, { providers: unknown[]; providerCatalogPartial?: boolean }>;
+    };
+    expect(persisted.directoryScoped[DIRECTORY].providers).toEqual([]);
+    expect(persisted.directoryScoped[DIRECTORY].providerCatalogPartial).toBe(true);
+  });
+
   test('rehydrate migrates legacy per-agent picks into lastUserSelection and rejects bad keys', async () => {
     const oversized = 'x'.repeat(257);
     storage.set(STORAGE_KEY, JSON.stringify({

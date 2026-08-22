@@ -43,12 +43,17 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useAllLiveSessions, useAllSessionStatuses } from '@/sync/sync-context';
+import { useAllLiveSessions } from '@/sync/sync-context';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { abortCurrentOperation } from '@/sync/session-actions';
 import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
+import {
+  useAlwaysVisibleSessionIds,
+  useRunningSessionIds,
+} from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 
 import { MobileProjectEditSurface } from './MobileProjectEditSurface';
 import { MobileDeleteWorktreeDialog } from './MobileDeleteWorktreeDialog';
@@ -546,16 +551,8 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   // Key: `${projectId}::${bucketKey}`.
   const [visibleCountByBucket, setVisibleCountByBucket] = React.useState<Map<string, number>>(new Map());
 
-  const allStatuses = useAllSessionStatuses();
-
-  // Single-pass running session map: session ID → true if busy or retry.
-  const runningSessionMap = React.useMemo<Record<string, boolean>>(() => {
-    const map: Record<string, boolean> = {};
-    for (const [id, status] of Object.entries(allStatuses)) {
-      map[id] = status.type === 'busy' || status.type === 'retry';
-    }
-    return map;
-  }, [allStatuses]);
+  const runningSessionIds = useRunningSessionIds();
+  const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds();
 
   // Abort helpers retain stable event identities for prop passing.
   const handleStopSession = useEvent((sessionId: string) => {
@@ -913,7 +910,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     });
 
     const visibleCount = visibleCountByBucket.get(bucketKey) ?? defaultVisible;
-    const visibleRoots = roots.slice(0, visibleCount);
+    const visibleRoots = selectVisibleSessions(roots, visibleCount, alwaysVisibleSessionIds);
     const remaining = roots.length - visibleRoots.length;
     const pagination = activePaginationByDirectory.get(normalizePath(bucket.path));
     const hasRemoteSessions = pagination?.hasMore === true;
@@ -926,8 +923,8 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
       const children = childrenByParent.get(session.id) ?? [];
       const hasChildren = children.length > 0;
       const expanded = Boolean(expandedParents[session.id]);
-      const isRunning = runningSessionMap[session.id] || false;
-      const runningChildIds = hasChildren && !expanded ? (children.filter((c) => runningSessionMap[c.id]).map((c) => c.id)) : [];
+      const isRunning = runningSessionIds.has(session.id);
+      const runningChildIds = hasChildren && !expanded ? (children.filter((c) => runningSessionIds.has(c.id)).map((c) => c.id)) : [];
       const hasRunningHiddenChildren = runningChildIds.length > 0;
       const stopIds = isRunning
         ? [session.id, ...runningChildIds]
@@ -970,7 +967,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           showMore={remaining > 0 || hasRemoteSessions}
           showFewer={canShowFewer}
           loadingMore={isLoadingRemoteSessions}
-          onShowMore={() => showMoreBucketSessions(bucketKey, bucket.path, visibleRoots.length, roots.length)}
+          onShowMore={() => showMoreBucketSessions(bucketKey, bucket.path, visibleCount, roots.length)}
           onShowFewer={() => resetBucketVisibleCount(bucketKey)}
         />
       </div>
@@ -1483,7 +1480,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                   </div>
                   <div className="overflow-hidden rounded-2xl border border-border/40 bg-[var(--surface-elevated)]">
                     {searchSessionMatches.map((session, index) => {
-                       const isRunning = runningSessionMap[session.id] || false;
+                       const isRunning = runningSessionIds.has(session.id);
                        const title = session.title?.trim() || t('mobile.sessions.untitled');
                        return (
                        <div key={session.id} className={cn(index > 0 && 'border-t border-border/30')}>
@@ -1616,7 +1613,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                       </button>
                       {(() => {
                         const projectRunningIds = !projectExpanded
-                          ? [...new Set(node.buckets.flatMap((b) => b.sessions.filter((s) => runningSessionMap[s.id]).map((s) => s.id)))]
+                          ? [...new Set(node.buckets.flatMap((b) => b.sessions.filter((s) => runningSessionIds.has(s.id)).map((s) => s.id)))]
                           : [];
                         return projectRunningIds.length > 0 ? (
                           <button
@@ -1707,7 +1704,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                                       ) : null}
                                       {(() => {
                                         const worktreeRunningIds = !worktreeExpanded
-                                          ? bucket.sessions.filter((s) => runningSessionMap[s.id]).map((s) => s.id)
+                                          ? bucket.sessions.filter((s) => runningSessionIds.has(s.id)).map((s) => s.id)
                                           : [];
                                         return worktreeRunningIds.length > 0 ? (
                                           <button

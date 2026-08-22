@@ -745,13 +745,18 @@ export async function createGitWorktree(
   payload: import('./api/types').CreateGitWorktreePayload
 ): Promise<import('./api/types').GitWorktreeCreateResult> {
   const runtime = getRuntimeGit();
+  let created: import('./api/types').GitWorktreeCreateResult;
   if (runtime?.worktree?.create) {
-    return runtime.worktree.create(directory, payload);
+    created = await runtime.worktree.create(directory, payload);
+  } else if (runtime?.createGitWorktree) {
+    created = await runtime.createGitWorktree(directory, payload);
+  } else {
+    created = await gitHttp.createGitWorktree(directory, payload);
   }
-  if (runtime?.createGitWorktree) {
-    return runtime.createGitWorktree(directory, payload);
-  }
-  return gitHttp.createGitWorktree(directory, payload);
+  // Runtime bridges may bypass gitApiHttp; always drop the shared HTTP list cache
+  // so a concurrent forceRefresh cannot reseat a pre-create listing.
+  gitHttp.invalidateGitWorktreesCache(directory);
+  return created;
 }
 
 export async function deleteGitWorktree(
@@ -759,13 +764,18 @@ export async function deleteGitWorktree(
   payload: import('./api/types').RemoveGitWorktreePayload
 ): Promise<{ success: boolean }> {
   const runtime = getRuntimeGit();
+  let removed: { success: boolean };
   if (runtime?.worktree?.remove) {
-    return runtime.worktree.remove(directory, payload);
+    removed = await runtime.worktree.remove(directory, payload);
+  } else if (runtime?.deleteGitWorktree) {
+    removed = await runtime.deleteGitWorktree(directory, payload);
+  } else {
+    removed = await gitHttp.deleteGitWorktree(directory, payload);
   }
-  if (runtime?.deleteGitWorktree) {
-    return runtime.deleteGitWorktree(directory, payload);
-  }
-  return gitHttp.deleteGitWorktree(directory, payload);
+  // Same as create: keep HTTP discovery cache coherent even when remove ran on
+  // a native/runtime bridge that never touched gitApiHttp.
+  gitHttp.invalidateGitWorktreesCache(directory);
+  return removed;
 }
 
 export const git = {

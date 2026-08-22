@@ -22,6 +22,8 @@ import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrder
 import { useNotificationStore } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
+import { useAlwaysVisibleSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 import type { WorktreeMetadata } from '@/types/worktree';
 
 import type {
@@ -145,6 +147,7 @@ const projectMatchesExactDirectory = (
 
 export type MobileProjectsHomeModel = {
   projects: MobileProjectHomeItem[];
+  pinnedSessions: MobileSessionTreeNode[];
   sessionById: Map<string, Session>;
   projectMetaById: Map<string, ProjectMeta>;
   allSessions: Session[];
@@ -181,6 +184,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const unseenBySession = useNotificationStore((state) => state.index.session.unseenCount);
   // Ephemeral per-bucket visible root count (mirrors MobileSessionsSheet).
   const [visibleCountByBucket, setVisibleCountByBucket] = React.useState<Map<string, number>>(new Map());
+  const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds();
 
   const projectsMeta = React.useMemo<ProjectMeta[]>(
     () =>
@@ -291,6 +295,33 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     return map;
   }, [projectsMeta]);
 
+  const pinnedSessions = React.useMemo<MobileSessionTreeNode[]>(() => {
+    const getCreatedAt = (session: Session): number => {
+      const created = session.time?.created;
+      return typeof created === 'number' && Number.isFinite(created) ? created : 0;
+    };
+
+    return sessions
+      .filter((session) => pinnedSessionIds.has(session.id) && !getParentId(session))
+      .sort((a, b) => getCreatedAt(b) - getCreatedAt(a))
+      .flatMap((session) => {
+        const directory = getSessionDirectory(session);
+        const project = projectsMeta.find((entry) => projectMatchesExactDirectory(entry, directory));
+        if (!project) return [];
+        return [{
+          id: session.id,
+          directory,
+          title: session.title?.trim() || t('mobile.sessions.untitled'),
+          subtitle: project.label,
+          activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
+          unread: (unseenBySession[session.id] ?? 0) > 0,
+          pinned: true,
+          archived: isSessionArchived(session),
+          active: currentSessionId === session.id,
+        }];
+      });
+  }, [currentSessionId, pinnedSessionIds, projectsMeta, sessions, t, unseenBySession]);
+
   const bucketIndex = React.useMemo(() => {
     const map = new Map<string, { path: string; rootCount: number; hasWorktrees: boolean }>();
     for (const node of projectNodes) {
@@ -345,7 +376,11 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           };
         };
 
-        const visibleRoots = rootSessions.slice(0, visibleCount).map(toNode);
+        const visibleRoots = selectVisibleSessions(
+          rootSessions,
+          visibleCount,
+          alwaysVisibleSessionIds,
+        ).map(toNode);
         const remaining = rootSessions.length - visibleRoots.length;
         const pagination = activePaginationByDirectory.get(normalizePath(bucket.path));
         const hasRemoteSessions = pagination?.hasMore === true;
@@ -417,6 +452,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     });
   }, [
     activePaginationByDirectory,
+    alwaysVisibleSessionIds,
     currentDirectory,
     currentSessionId,
     pinnedSessionIds,
@@ -496,6 +532,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
 
   return {
     projects: homeProjects,
+    pinnedSessions,
     sessionById,
     projectMetaById,
     allSessions: sessions,

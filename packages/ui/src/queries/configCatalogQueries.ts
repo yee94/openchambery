@@ -12,6 +12,14 @@ const catalogStaleTime = (isPopulated: (data: unknown) => boolean) => (
   ((query: { state: { data: unknown } }) => (isPopulated(query.state.data) ? Infinity : 0)) as () => number
 );
 
+// 空 catalog 不得被信任：staleTime 0 保证下一次 ensure 必然重拉（见上方 catalogStaleTime）。
+// TQ 运行期 gcTime 仅支持 number，不解析函数形式；空结果的实际约束靠
+// staleTime 0 + loadProviders 不写 store + seed 拒绝 + partialize 落 partial 这几道闸门。
+const isProviderCatalogPopulated = (data: unknown): boolean => {
+  const catalog = data as ProviderCatalog | undefined;
+  return Boolean(catalog && catalog.providers.length > 0);
+};
+
 export const normalizeConfigCatalogDirectory = (directory: string | null | undefined): string | null => {
   if (typeof directory !== 'string') return null;
   const normalized = directory.trim().replace(/\\/g, '/');
@@ -65,10 +73,7 @@ export const providerCatalogQueryOptions = (
       }
       return catalog;
     },
-    staleTime: catalogStaleTime((data) => {
-      const catalog = data as ProviderCatalog | undefined;
-      return Boolean(catalog && catalog.providers.length > 0);
-    }),
+    staleTime: catalogStaleTime(isProviderCatalogPopulated),
     gcTime: Infinity,
     retry: 2,
     retryDelay: 100,
@@ -123,6 +128,8 @@ export const seedProviderCatalogQuery = (
       : snapshot.providers;
     const catalog = parseProviderCatalog({ schemaVersion: 1, providers, default: snapshot.defaultProviders, partial: false });
     if (catalog.partial) return;
+    // 空列表不是可信快照，不 seed。
+    if (catalog.providers.length === 0) return;
     queryClient.setQueryData(options.queryKey, catalog);
   } catch {
     // Persisted startup snapshots are optional and isolated from network loading.

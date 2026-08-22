@@ -84,6 +84,7 @@ export type MobileProjectHomeItem = MobileProjectCardModel & {
 
 export type MobileProjectsHomeProps = {
   projects: MobileProjectHomeItem[];
+  pinnedSessions: MobileSessionTreeNode[];
   onAddProject: () => void;
   onNewSession: () => void;
   onScanQr?: () => void;
@@ -537,22 +538,9 @@ function MobileWorktreeGroupLabel({
   );
 }
 
-/** Collect root-level sessions from a tree (for pinned extraction). */
-const collectRootSessions = (sessions: MobileSessionTreeNode[]): MobileSessionTreeNode[] =>
-  sessions.filter((session) => !session.id.startsWith('__show_'));
-
-const stripPinned = (sessions: MobileSessionTreeNode[]): {
-  pinned: MobileSessionTreeNode[];
-  rest: MobileSessionTreeNode[];
-} => {
-  const roots = collectRootSessions(sessions);
-  const pinned = roots.filter((session) => session.pinned);
-  const rest = sessions.filter((session) => !session.pinned);
-  return { pinned, rest };
-};
-
 export function MobileProjectsHome({
   projects,
+  pinnedSessions,
   onAddProject,
   onNewSession,
   onScanQr,
@@ -570,7 +558,7 @@ export function MobileProjectsHome({
   className,
 }: MobileProjectsHomeProps) {
   const { t } = useI18n();
-  const [pinnedExpandedByProject, setPinnedExpandedByProject] = React.useState<Record<string, boolean>>({});
+  const [pinnedExpanded, setPinnedExpanded] = React.useState(true);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -711,6 +699,33 @@ export function MobileProjectsHome({
         </div>
       ) : null}
 
+      {!searching && pinnedSessions.length > 0 ? (
+        <MobileFloatingSurface>
+          <MobileLabeledSurfaceGroup
+            ariaLabel={t('mobile.sessions.section.pinned')}
+            label={(
+              <WorkspaceGroupLabel
+                icon={<Icon name="pushpin" className="size-3.5" />}
+                label={t('mobile.sessions.section.pinned')}
+                count={pinnedSessions.length}
+                expanded={pinnedExpanded}
+                onToggle={() => setPinnedExpanded((expanded) => !expanded)}
+              />
+            )}
+          >
+            {pinnedExpanded ? (
+              <SessionList
+                sessions={pinnedSessions}
+                onSelectSession={onSelectSession}
+                onPinSession={onPinSession}
+                onArchiveSession={onArchiveSession}
+                onOpenSessionActions={onOpenSessionActions}
+              />
+            ) : null}
+          </MobileLabeledSurfaceGroup>
+        </MobileFloatingSurface>
+      ) : null}
+
       {projects.length === 0 ? (
         <section className="flex min-h-[52dvh] flex-col items-center justify-center px-6 text-center">
           <span className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-[var(--surface-muted)] text-muted-foreground">
@@ -737,13 +752,6 @@ export function MobileProjectsHome({
           const linkedWorktrees = project.worktrees.filter((entry) => entry !== mainWorkspace);
 
           const mainSessions = mainWorkspace?.sessions ?? [];
-          const { pinned: pinnedFromMain, rest: mainRest } = stripPinned(mainSessions);
-          // Also surface pinned sessions that live inside worktrees at the top.
-          const pinnedFromWorktrees = linkedWorktrees.flatMap((worktree) =>
-            collectRootSessions(worktree.sessions).filter((session) => session.pinned),
-          );
-          const pinnedSessions = [...pinnedFromMain, ...pinnedFromWorktrees];
-          const pinnedExpanded = searching || (pinnedExpandedByProject[project.id] ?? true);
 
           return (
             <MobileFloatingSurface key={project.id} asChild>
@@ -761,42 +769,11 @@ export function MobileProjectsHome({
 
               {projectExpanded ? (
                 <div className="oc-mobile-project-groups" role="group" aria-label={project.name}>
-                  {/* Pinned group */}
-                  {pinnedSessions.length > 0 ? (
-                    <MobileLabeledSurfaceGroup
-                      ariaLabel={t('mobile.sessions.section.pinned')}
-                      label={(
-                        <WorkspaceGroupLabel
-                          icon={<Icon name="pushpin" className="size-3.5" />}
-                          label={t('mobile.sessions.section.pinned')}
-                          count={pinnedSessions.length}
-                          expanded={pinnedExpanded}
-                          onToggle={searching ? undefined : () => {
-                            setPinnedExpandedByProject((previous) => ({
-                              ...previous,
-                              [project.id]: !(previous[project.id] ?? true),
-                            }));
-                          }}
-                        />
-                      )}
-                    >
-                      {pinnedExpanded ? (
-                        <SessionList
-                          sessions={pinnedSessions}
-                          onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
-                          onPinSession={onPinSession}
-                          onArchiveSession={onArchiveSession}
-                          onOpenSessionActions={onOpenSessionActions}
-                        />
-                      ) : null}
-                    </MobileLabeledSurfaceGroup>
-                  ) : null}
-
                   {/* Main workspace sessions flow directly below the project header. */}
-                  {mainRest.length > 0 ? (
+                  {mainSessions.length > 0 ? (
                     <div className="oc-mobile-labeled-surface-group">
                       <SessionList
-                        sessions={mainRest}
+                        sessions={mainSessions}
                         onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                         onPinSession={onPinSession}
                         onArchiveSession={onArchiveSession}
@@ -807,7 +784,6 @@ export function MobileProjectsHome({
 
                   {/* Every linked worktree gets an independent label + session card. */}
                   {linkedWorktrees.map((worktree) => {
-                    const worktreeRest = worktree.sessions.filter((session) => !session.pinned);
                     const worktreeExpanded = searching || Boolean(worktree.expanded);
                     return (
                       <MobileLabeledSurfaceGroup
@@ -828,9 +804,9 @@ export function MobileProjectsHome({
                           />
                         )}
                       >
-                        {worktreeExpanded && worktreeRest.length > 0 ? (
+                        {worktreeExpanded && worktree.sessions.length > 0 ? (
                           <SessionList
-                            sessions={worktreeRest}
+                            sessions={worktree.sessions}
                             onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                             onPinSession={onPinSession}
                             onArchiveSession={onArchiveSession}

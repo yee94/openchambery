@@ -562,6 +562,7 @@ export function MobileProjectsHomeContainer({
       <MobileProjectsHome
         className={className}
         projects={model.projects}
+        pinnedSessions={model.pinnedSessions}
         onAddProject={onAddProject}
         onNewSession={handleNewSession}
         onScanQr={onScanQr}

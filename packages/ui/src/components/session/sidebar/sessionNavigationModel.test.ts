@@ -8,6 +8,7 @@ import {
   getDefaultProjectGroupVisibleCount,
   resolveProjectVirtualSessionIndex,
   selectVisibleSessionNodes,
+  selectVisibleSessions,
 } from './sessionNavigationModel';
 import type { SessionNavigationTarget } from '@/sync/session-navigation';
 
@@ -21,6 +22,12 @@ const node = (id: string, updated: number, directory = '/project'): SessionNode 
   worktree: null,
 });
 
+const session = (id: string): Session => ({
+  id,
+  directory: '/project',
+  time: { created: 1, updated: 1 },
+} as Session);
+
 const group = (id: string, sessions: SessionNode[], options?: { main?: boolean; directory?: string }): SessionGroup => ({
   id,
   label: id,
@@ -33,7 +40,7 @@ const group = (id: string, sessions: SessionNode[], options?: { main?: boolean; 
   sessions,
 });
 
-describe('buildProjectNavigationTargets', () => {
+describe('selectVisibleSessionNodes / selectVisibleSessions', () => {
   test('keeps running sessions visible beyond the compact boundary', () => {
     const nodes = [
       node('first', 500),
@@ -46,6 +53,35 @@ describe('buildProjectNavigationTargets', () => {
     expect(selectVisibleSessionNodes(nodes, 3, new Set(['running'])).map((item) => item.session.id))
       .toEqual(['first', 'second', 'third', 'running']);
   });
+
+  test('keeps the current viewing session visible beyond the compact boundary', () => {
+    const nodes = [
+      node('first', 500),
+      node('second', 400),
+      node('third', 300),
+      node('viewing', 200),
+      node('hidden', 100),
+    ];
+
+    expect(selectVisibleSessionNodes(nodes, 3, new Set(['viewing'])).map((item) => item.session.id))
+      .toEqual(['first', 'second', 'third', 'viewing']);
+  });
+
+  test('selectVisibleSessions pins always-visible flat sessions past the boundary', () => {
+    const sessions = [
+      session('first'),
+      session('second'),
+      session('third'),
+      session('running'),
+      session('hidden'),
+    ];
+
+    expect(selectVisibleSessions(sessions, 3, new Set(['running'])).map((item) => item.id))
+      .toEqual(['first', 'second', 'third', 'running']);
+  });
+});
+
+describe('buildProjectNavigationTargets', () => {
 
   test('follows visual project, root-group, folder, and row order', () => {
     const rootA = node('root-a', 100);

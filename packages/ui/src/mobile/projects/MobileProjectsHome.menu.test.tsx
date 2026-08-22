@@ -24,6 +24,7 @@ const projects: MobileProjectHomeItem[] = [{
 
 const baseProps: MobileProjectsHomeProps = {
   projects,
+  pinnedSessions: [],
   onAddProject: noop,
   onNewSession: noop,
   onToggleProject: noop,
@@ -129,6 +130,36 @@ describe('MobileProjectsHome header menu', () => {
     expect(bodyText).toContain('Scan QR code');
     expect(bodyText).toContain('Switch instance');
 
+    root.unmount();
+    document.body.innerHTML = '';
+  });
+});
+
+describe('MobileProjectsHome global pinned group', () => {
+  test('hides the global group while filtering projects', () => {
+    const { root, container } = mount({
+      ...baseProps,
+      pinnedSessions: [{
+        id: 'pinned-session',
+        kind: 'pagination',
+        title: 'Global pinned session',
+      }],
+    });
+
+    expect(container.textContent).toContain('Global pinned session');
+    const searchTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="Search sessions"]');
+    expect(searchTrigger).not.toBeNull();
+    act(() => searchTrigger!.click());
+
+    const input = container.querySelector<HTMLInputElement>('input[type="text"]');
+    expect(input).not.toBeNull();
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, 'open');
+      input!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(container.textContent).not.toContain('Global pinned session');
     root.unmount();
     document.body.innerHTML = '';
   });

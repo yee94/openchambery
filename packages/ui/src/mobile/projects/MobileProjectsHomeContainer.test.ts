@@ -37,6 +37,7 @@ describe('MobileProjectsHomeContainer session actions', () => {
   });
 
   test('header menu callbacks pass through to the presentational home', () => {
+    expect(containerSource).toContain('pinnedSessions={model.pinnedSessions}');
     expect(containerSource).toContain('onScanQr={onScanQr}');
     expect(containerSource).toContain('onSwitchInstance={onSwitchInstance}');
   });

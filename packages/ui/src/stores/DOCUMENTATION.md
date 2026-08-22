@@ -118,33 +118,41 @@ the cache is runtime-scoped through each view's geometry key and is cleared for
 all nested views when its tab closes.
 
 `configCatalogQueries.ts` owns the safe Provider catalog and the composer Agent
-catalog by transport identity. Both catalogs are one global cache per transport
-(LAN vs relay); project directory is only an OpenCode request hint
-(`x-opencode-directory` / `listAgents(directory)`) and must not appear in the
-Query key. New OpenChamber hosts always use the safe
+catalog by transport identity. Provider catalog Query keys are sharded by
+normalized config directory (different projects/instances must not share one
+cache); Agent composer catalog remains one global cache per transport, where
+directory is only an OpenCode request hint (`listAgents(directory)`). New
+OpenChamber hosts always use the safe
 projection from `GET /api/config/catalog/providers` via `runtimeFetch`, with directory and AbortSignal
 propagation. Older OpenChamber hosts that answer 404 or 501 use one compatibility read through the
 official SDK's `/api/config/providers` network path; its raw response is parsed immediately into the
 safe DTO. The Provider DTO admits only provider/model display and capability fields;
 the parser constructs each field, drops unknown keys, bounds collections, and accepts
 partial catalogs with invalid individual entities removed. TanStack Query owns the sole
-network retry policy, infinite freshness/retention, exact invalidation, and single-flight.
-`useConfigStore.ts` owns the global Provider and Agent UI projections, per-project selection (including directory-scoped `lastUserSelection` plus cross-project `globalLastUserSelection` for new-draft unit inherit of agent+model+variant; legacy `agentModelSelections` / `lastSelectedAgentName` are hydrate-only), and mutation
-orchestration. It applies the Provider DTO allowlist again when projecting Query
-results into the store. TanStack Query remains the Provider/Agent network SWR
-owner. `config-store` localStorage keeps one bounded safe Provider/default DTO
-startup snapshot on the active configuration directory (persist vehicle for the
-global catalog), seeds an empty Provider
-Query from that complete snapshot, and Agent catalogs remain memory-only.
-Startup and config-change still force-refresh Providers and Agents; new-draft and
-project switch reuse the already-loaded global catalogs immediately and only
-restore that project's last agent+model ID. Project-only agents are rare and
-arrive later via force-refresh or Agents settings metadata (`agentQueries.ts`,
-still directory-scoped). A new directory must not clear the in-memory Agent list
-or raise `agentConfigLoading` when the global catalog is already present.
-Failed refreshes retain the
-previous snapshot. A successful empty Provider or Agent catalog is still a valid
-success response, but empty catalogs use `staleTime: 0` so the next `ensure`/`fetchQuery`
+network retry policy, exact invalidation, and single-flight. Populated Provider
+catalogs use infinite freshness/retention; empty Provider catalogs use
+`staleTime: 0` (every later `ensure`/`fetchQuery` refetches) and are never
+seeded into Query, written into the store, or trusted as a
+persist snapshot. `useConfigStore.ts` owns Provider and Agent UI projections
+(Provider cache and directoryScoped snapshots are per config directory),
+per-project selection (including directory-scoped `lastUserSelection` plus
+cross-project `globalLastUserSelection` for new-draft unit inherit of
+agent+model+variant; legacy `agentModelSelections` / `lastSelectedAgentName` are
+hydrate-only), and mutation orchestration. It applies the Provider DTO allowlist
+again when projecting Query results into the store. TanStack Query remains the
+Provider/Agent network SWR owner. `config-store` localStorage keeps one bounded
+safe Provider/default DTO startup snapshot on the active configuration
+directory; empty Provider responses are soft failures (retain prior non-empty
+data, do not write store/snapshot) and persist with
+`providerCatalogPartial: true` so hydrate will not seed them. Agent catalogs
+remain memory-only. Startup and config-change still force-refresh Providers and
+Agents; project switch restores that project's last agent+model ID and uses the
+directory-scoped Provider cache. Project-only agents are rare and arrive later
+via force-refresh or Agents settings metadata (`agentQueries.ts`, still
+directory-scoped). A new directory must not clear the in-memory Agent list or
+raise `agentConfigLoading` when the global Agent catalog is already present.
+Failed refreshes retain the previous snapshot. An empty Agent catalog is still a
+valid success response but uses `staleTime: 0` so the next `ensure`/`fetchQuery`
 refetches instead of treating the empty list as infinitely fresh. Cold-start
   recovery still uses `refreshMissingCatalogs`, which re-reads the authoritative
   store and force-refreshes only missing catalogs over the network so a temporary

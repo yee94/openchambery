@@ -38,6 +38,13 @@ const projects: MobileProjectHomeItem[] = [{
 
 const props: MobileProjectsHomeProps = {
   projects,
+  pinnedSessions: [{
+    id: 'global-pinned-session',
+    kind: 'pagination',
+    title: 'Global pinned session',
+    subtitle: 'OpenChamber',
+    pinned: true,
+  }],
   onAddProject: noop,
   onNewSession: noop,
   onToggleProject: noop,
@@ -53,6 +60,27 @@ const props: MobileProjectsHomeProps = {
 };
 
 describe('MobileProjectsHome workspace groups', () => {
+  test('renders one global pinned group before projects and keeps pinned rows in project lists', () => {
+    const pinnedProjects: MobileProjectHomeItem[] = [{
+      ...projects[0]!,
+      worktrees: [{
+        ...projects[0]!.worktrees[0]!,
+        sessions: [{ id: 'project-pinned-session', kind: 'pagination', title: 'Project pinned session', pinned: true }],
+      }],
+    }];
+    const html = renderToString(
+      <I18nProvider>
+        <MobileProjectsHome {...props} projects={pinnedProjects} />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Global pinned session');
+    expect(html).toContain('OpenChamber');
+    expect(html).toContain('Project pinned session');
+    expect(html.indexOf('Global pinned session')).toBeLessThan(html.indexOf('Project pinned session'));
+    expect(html.match(/aria-label="Pinned"/g)).toHaveLength(1);
+  });
+
   test('renders main sessions directly and keeps linked worktree headers', () => {
     const html = renderToString(
       <I18nProvider>

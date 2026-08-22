@@ -63,6 +63,7 @@ const gitPrimaryRootCache = new Map<string, { value: { root: string }; expiresAt
 const gitPrimaryRootInFlight = new Map<string, Promise<{ root: string }>>();
 const gitWorktreesCache = new Map<string, { value: GitWorktreeInfo[]; expiresAt: number }>();
 const gitWorktreesInFlight = new Map<string, Promise<GitWorktreeInfo[]>>();
+const gitWorktreesCacheVersions = new Map<string, number>();
 const pendingQueueActivationRepairs = new Set<string>();
 let gitDiscoveryNetworkActive = 0;
 const gitDiscoveryNetworkWaiters: Array<() => void> = [];
@@ -130,6 +131,18 @@ const invalidateGitStatusCache = (directory: string): void => {
       gitStatusInFlight.delete(cacheKey);
     }
   }
+};
+
+const getWorktreesCacheVersion = (directory: string): number =>
+  gitWorktreesCacheVersions.get(normalizeDirectoryKey(directory)) ?? 0;
+
+/** Drop TTL + in-flight worktree listings after topology-changing create/delete. */
+export const invalidateGitWorktreesCache = (directory: string): void => {
+  const key = normalizeDirectoryKey(directory);
+  if (!key) return;
+  gitWorktreesCacheVersions.set(key, getWorktreesCacheVersion(directory) + 1);
+  gitWorktreesCache.delete(key);
+  gitWorktreesInFlight.delete(key);
 };
 
 function buildUrl(
@@ -788,6 +801,7 @@ export async function listGitWorktrees(directory: string): Promise<GitWorktreeIn
   const inFlight = gitWorktreesInFlight.get(key);
   if (inFlight) return inFlight;
 
+  const startedVersion = getWorktreesCacheVersion(directory);
   const task = withGitDiscoveryNetworkSlot(async () => {
     const response = await runtimeFetch(buildUrl(`${API_BASE}/worktrees`, directory));
     if (!response.ok) {
@@ -795,10 +809,13 @@ export async function listGitWorktrees(directory: string): Promise<GitWorktreeIn
       throw new Error(error.error || 'Failed to list worktrees');
     }
     const value = await response.json() as GitWorktreeInfo[];
-    gitWorktreesCache.set(key, {
-      value,
-      expiresAt: Date.now() + GIT_DISCOVERY_CACHE_TTL_MS,
-    });
+    // Drop stale completions that raced a create/delete invalidation.
+    if (startedVersion === getWorktreesCacheVersion(directory)) {
+      gitWorktreesCache.set(key, {
+        value,
+        expiresAt: Date.now() + GIT_DISCOVERY_CACHE_TTL_MS,
+      });
+    }
     return value;
   });
 
@@ -1011,8 +1028,12 @@ export async function createGitWorktree(directory: string, payload: CreateGitWor
 
   if (response.ok) {
     const created = parseGitWorktreeCreateResult(payloadJson);
-    if (created) return created;
+    if (created) {
+      invalidateGitWorktreesCache(directory);
+      return created;
+    }
     if (payloadJson && typeof payloadJson === 'object') {
+      invalidateGitWorktreesCache(directory);
       return payloadJson as GitWorktreeCreateResult;
     }
     throw new Error('Failed to create worktree');
@@ -1020,6 +1041,7 @@ export async function createGitWorktree(directory: string, payload: CreateGitWor
 
   const pendingWorktree = parseMessageQueueActivationPending(response.status, payloadJson, directory);
   if (pendingWorktree) {
+    invalidateGitWorktreesCache(directory);
     scheduleQueueActivationRepair(directory, pendingWorktree.path);
     return pendingWorktree;
   }
@@ -1042,7 +1064,9 @@ export async function deleteGitWorktree(directory: string, payload: RemoveGitWor
     throw new Error(error.error || 'Failed to delete worktree');
   }
 
-  return response.json();
+  const result = await response.json();
+  invalidateGitWorktreesCache(directory);
+  return result;
 }
 
 export async function createGitCommit(

@@ -330,10 +330,10 @@ export function MobileSessionRow({
           'text-foreground',
           'ease-out motion-reduce:transition-none',
           dragging ? 'transition-none' : 'transition-[transform,background-color] duration-150',
-          session.active && 'bg-interactive-selection/50',
           session.archived && 'opacity-55',
-          pressed && !session.active && 'bg-interactive-hover',
         )}
+        data-active={session.active ? 'true' : undefined}
+        data-pressed={pressed ? 'true' : undefined}
         style={{
           transform: `translate3d(${offset}px, 0, 0)`,
           willChange: offset === 0 ? undefined : 'transform',

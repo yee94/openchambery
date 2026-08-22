@@ -1023,6 +1023,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(false);
     const [mobileComposerMotion, setMobileComposerMotion] = React.useState<'idle' | 'expanding' | 'collapsing'>('idle');
     const [mobileComposerStageHeight, setMobileComposerStageHeight] = React.useState(112);
+    const mobileComposerMeasuredStageScopeRef = React.useRef<string | null>(null);
     const [mobileFullChromePrewarmed, setMobileFullChromePrewarmed] = React.useState(false);
     const mobileComposerMotionTimerRef = React.useRef<number | null>(null);
     // Footer/chrome phase for the mobile composer, deliberately separate from the
@@ -6224,11 +6225,20 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 // its FINAL height immediately — no chrome='none' intermediate
                 // frame for ResizeObserver to capture as a bogus stage height.
                 // Measure once before the reveal starts so the 180ms transform
-                // runs against the true target, not a stale cached stage.
-                const surface = dropZoneRef.current;
-                if (surface) {
-                    const nextHeight = Math.max(44, Math.ceil(surface.offsetHeight));
-                    setMobileComposerStageHeight((height) => Math.abs(height - nextHeight) <= 2 ? height : nextHeight);
+                // runs against the true target, not a stale cached stage —
+                // EXCEPT while streaming: the transcript is continuously dirty
+                // and this forced read would lay out the whole document at the
+                // interaction boundary. A same-scope cached stage is reused and
+                // the idle ResizeObserver effect re-measures once it settles.
+                const stageCacheValid = sessionIsRunning
+                    && mobileComposerMeasuredStageScopeRef.current === mobileComposerStageScope;
+                if (!stageCacheValid) {
+                    const surface = dropZoneRef.current;
+                    if (surface) {
+                        const nextHeight = Math.max(44, Math.ceil(surface.offsetHeight));
+                        mobileComposerMeasuredStageScopeRef.current = mobileComposerStageScope;
+                        setMobileComposerStageHeight((height) => Math.abs(height - nextHeight) <= 2 ? height : nextHeight);
+                    }
                 }
                 if (!reduceMotion) armMobileComposerMotionFallback();
             } else {
@@ -6553,6 +6563,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return () => window.removeEventListener('oc:keyboard-intent', handleIntent);
     }, [isMobile, collapseMobileComposer]);
 
+    const mobileComposerStageScope = draftKey ? draftKeyString(draftKey) : surface.surfaceID;
     React.useLayoutEffect(() => {
         // Stage height is frozen while a reveal/conceal motion is running: the
         // mask must hold ONE stable height for the whole transform, and chrome
@@ -6560,17 +6571,22 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // viewport height mid-flight (the "third height" glitch). Idle re-runs
         // publish the settled height and keep tracking later autosize growth.
         if (!isMobile || !mobileComposerExpanded || mobileComposerMotion !== 'idle') return;
-        const surface = dropZoneRef.current;
-        if (!surface) return;
+        // Streaming dirties the transcript continuously. A same-draft cached
+        // stage avoids forcing that document-wide layout at the interaction
+        // boundary; the effect re-arms and measures when activity settles.
+        if (sessionIsRunning && mobileComposerMeasuredStageScopeRef.current === mobileComposerStageScope) return;
+        const composerSurface = dropZoneRef.current;
+        if (!composerSurface) return;
         const publishHeight = () => {
-            const nextHeight = Math.max(44, Math.ceil(surface.offsetHeight));
+            const nextHeight = Math.max(44, Math.ceil(composerSurface.offsetHeight));
+            mobileComposerMeasuredStageScopeRef.current = mobileComposerStageScope;
             setMobileComposerStageHeight((height) => height === nextHeight ? height : nextHeight);
         };
         publishHeight();
         const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(publishHeight) : null;
-        observer?.observe(surface);
+        observer?.observe(composerSurface);
         return () => observer?.disconnect();
-    }, [isMobile, mobileComposerExpanded, mobileComposerMotion, textareaSize]);
+    }, [isMobile, mobileComposerExpanded, mobileComposerMotion, mobileComposerStageScope, sessionIsRunning, textareaSize]);
 
     const handleMobileComposerAnimationEnd = useEvent((event: React.AnimationEvent<HTMLDivElement>) => {
         if (event.currentTarget !== event.target) return;

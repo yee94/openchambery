@@ -33,6 +33,20 @@ describe('Mobile project group chrome', () => {
     expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child');
     expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child {\n  box-shadow: none;');
   });
+
+  test('uses explicit session-row state selectors after the transparent base', () => {
+    const transparentIndex = mobileStyles.indexOf('.oc-mobile-session-row-content {');
+    const activeIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-active="true"]');
+    const pressedIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-pressed="true"]');
+    const activePressedIndex = mobileStyles.indexOf('.oc-mobile-session-row-content[data-active="true"][data-pressed="true"]');
+
+    expect(transparentIndex).toBeGreaterThan(-1);
+    expect(activeIndex).toBeGreaterThan(transparentIndex);
+    expect(pressedIndex).toBeGreaterThan(activeIndex);
+    expect(activePressedIndex).toBeGreaterThan(pressedIndex);
+    expect(mobileStyles.slice(pressedIndex, activePressedIndex)).toContain('background: var(--interactive-hover)');
+    expect(mobileStyles.slice(activePressedIndex)).toContain('background: var(--interactive-active)');
+  });
 });
 
 describe('resolveMobileSessionIndicator', () => {
@@ -71,6 +85,15 @@ describe('resolveMobileSessionIndicator', () => {
 });
 
 describe('MobileSessionRow status placement', () => {
+  test('exposes active and pressed state hooks on the row foreground', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionRow.tsx'),
+      'utf8',
+    );
+    expect(source).toContain("data-active={session.active ? 'true' : undefined}");
+    expect(source).toContain("data-pressed={pressed ? 'true' : undefined}");
+  });
+
   test('renders the running indicator in the leading status slot', () => {
     const html = renderToString(
       <I18nProvider>

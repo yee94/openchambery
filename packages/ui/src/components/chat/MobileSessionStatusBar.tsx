@@ -2,6 +2,8 @@ import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllSessionStatuses, useAllLiveSessions } from '@/sync/sync-context';
+import { useAlwaysVisibleSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 import {
   loadMoreGlobalSessionsForDirectory,
   mergeLiveSessionWithGlobalSession,
@@ -673,6 +675,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const getProjectStatus = useProjectStatus(sessions, sessionStatus, currentSessionId);
   const resolveProjectRoots = useProjectRootsResolver();
   const [visibleCountByGroup, setVisibleCountByGroup] = React.useState<Map<string, number>>(new Map());
+  const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds();
   const [rootBranchesByProject, setRootBranchesByProject] = React.useState<Map<string, string>>(new Map());
   const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
   const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
@@ -1215,7 +1218,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     const isRoot = group.worktree === null;
     const expanded = isRoot || expandedWorktreeGroups[group.key] === true;
     const visibleCount = visibleCountByGroup.get(group.key) ?? DEFAULT_GROUP_SESSION_COUNT;
-    const visibleSessions = group.sessions.slice(0, visibleCount);
+    const visibleSessions = selectVisibleSessions(
+      group.sessions,
+      visibleCount,
+      alwaysVisibleSessionIds,
+    );
     const pagination = activePaginationByDirectory.get(group.directory);
     const showMore = visibleSessions.length < group.sessions.length || pagination?.hasMore === true;
     const showFewer = group.sessions.length > DEFAULT_GROUP_SESSION_COUNT

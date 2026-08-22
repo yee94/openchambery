@@ -738,6 +738,18 @@ button.oc-mobile-worktree-label-trigger:active,
   background: transparent;
 }
 
+.oc-mobile-session-row-content[data-active="true"] {
+  background: color-mix(in srgb, var(--interactive-selection) 50%, transparent);
+}
+
+.oc-mobile-session-row-content[data-pressed="true"] {
+  background: var(--interactive-hover);
+}
+
+.oc-mobile-session-row-content[data-active="true"][data-pressed="true"] {
+  background: var(--interactive-active);
+}
+
 .oc-mobile-session-row-main {
   gap: 0.5625rem;
   padding-block: 0.4375rem;
@@ -2136,10 +2148,20 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-catalog,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-card-shell,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-scheduled-task-card,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel,
   :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-message-text-export-root="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-chat-message="true"] {
     container-type: inline-size;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel {
+    --oc-press-edge-inset: 2px;
+    --oc-press-soft-scale: clamp(
+      0.985,
+      calc(1 - (2 * var(--oc-press-edge-inset)) / 100cqi),
+      0.994
+    );
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
@@ -3069,6 +3091,16 @@ button.oc-mobile-worktree-label-trigger:active,
   width: 100%;
   align-items: flex-end;
   overflow: visible;
+  contain: layout;
+}
+
+/* Streaming turns relayout continuously while loading; layout containment on
+   each turn wrapper keeps that damage — and composer height commits — inside
+   the row instead of the whole document. Paint containment is deliberately
+   NOT used: selection halos, sticky headers, and horizontally scrollable code
+   must keep overflowing the row bounds. Mobile touch surfaces only. */
+.mobile-pointer:not(.desktop-runtime) .oc-chat-message-layout-boundary {
+  contain: layout;
 }
 
 .oc-mobile-composer-motion-active,

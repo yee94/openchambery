@@ -1627,6 +1627,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
                     <div
                         key={entry.key}
                         data-turn-entry={entry.key}
+                        className="oc-chat-message-layout-boundary"
                     >
                         {renderEntry(entry)}
                     </div>
@@ -1657,6 +1658,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
                                 data-index={item.index}
                                 ref={tanstackVirtualizer.measureElement}
                                 data-turn-entry={entry.key}
+                                className="oc-chat-message-layout-boundary"
                             >
                                 {renderEntry(
                                     entry,
@@ -1701,7 +1703,11 @@ const TailEntry = React.memo<{
     activeStreamingMessageId?: string | null;
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
-}>((props) => <MessageListEntry {...props} />);
+}>((props) => (
+    <div className="oc-chat-message-layout-boundary">
+        <MessageListEntry {...props} />
+    </div>
+));
 
 TailEntry.displayName = 'TailEntry';
 
