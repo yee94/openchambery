@@ -160,12 +160,15 @@ jobs:
       - name: Package Capgo zip
         id: zip
         shell: bash
+        # The Capgo CLI resolves @capgo/capacitor-updater from CWD; the plugin
+        # only exists in packages/mobile's node_modules (bun workspace hoisting).
+        working-directory: packages/mobile
         env:
           CAPGO_PRIVATE_KEY_V2: ${{ secrets.CAPGO_PRIVATE_KEY_V2 }}
           VERSION: ${{ needs.release-plan.outputs.version }}
         run: |
           set -euo pipefail
-          DIST="packages/mobile/dist"
+          DIST="dist"
           ZIP_NAME="openchamber-${VERSION}.zip"
           ZIP_PATH="$RUNNER_TEMP/$ZIP_NAME"
 
