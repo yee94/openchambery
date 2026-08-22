@@ -89,13 +89,19 @@ describe('projectTurnDiffStats L1 marker contract', () => {
 });
 
 describe('Turn Changes preview contract', () => {
-  test('renders a count-only entry and opens a stable turn diff tab on desktop', () => {
+  test('keeps L1 count on the wire and fills inline file rows from L2', () => {
+    // L1 marker still drives visibility / header count before L2 resolves.
     expect(messageBodySource).toContain('fileCount={turnGroupingContext.diffStats.files}');
-    expect(messageBodySource).not.toContain('data-turn-change-file');
+    expect(messageBodySource).toContain('useSessionTurnChangesQuery');
+    expect(messageBodySource).toContain('enabled: shouldLoadTurnChangeFiles');
+    // Inline head restores file rows (first N) once L2 summaries arrive.
+    expect(messageBodySource).toContain('data-turn-change-file="true"');
+    expect(messageBodySource).toContain('TURN_CHANGES_PREVIEW_VISIBLE_LIMIT');
     expect(messageBodySource).toContain("mode: 'diff'");
     expect(messageBodySource).toContain("diffScope: 'turn'");
     expect(messageBodySource).toContain("dedupeKey: `turn-diff:${diffSessionId || 'session'}:${turnId}`");
     expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId)');
+    expect(messageBodySource).toContain('openTurnChangedFilePreview');
   });
 });
 

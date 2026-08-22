@@ -340,46 +340,6 @@ interface FileChipProps {
   onRemove: () => void;
 }
 
-const FileChip = memo(({ file, onRemove }: FileChipProps) => {
-  const { t } = useI18n();
-  const { displayName, fileSize, extension } = useFileDetails(file);
-  const isDirectory = isDirectoryAttachmentMime(file.mimeType)
-    || isDirectoryAttachmentPath(file.filename)
-    || isDirectoryAttachmentPath(file.serverPath);
-
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        // Prevent click from bubbling if clicking the remove button
-        if ((e.target as HTMLElement).closest('[data-remove-button]')) {
-          return;
-        }
-      }}
-      className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-opacity text-left h-5"
-    >
-      <FileTypeIcon filePath={file.filename} extension={extension} isDirectory={isDirectory} className="h-4 w-4" />
-      <span className="text-foreground truncate max-w-[200px]">
-        {displayName}
-        {fileSize && <span className="text-muted-foreground ml-1">({fileSize})</span>}
-      </span>
-      <span
-        data-remove-button
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        className="flex items-center justify-center h-5 w-5 flex-shrink-0 hover:bg-[var(--interactive-hover)] rounded-full transition-colors cursor-pointer"
-        aria-label={t('chat.fileAttachment.actions.removeNamed', { name: displayName })}
-      >
-        <Icon name="close" className="h-4 w-4 text-muted-foreground" />
-      </span>
-    </button>
-  );
-});
-
-FileChip.displayName = 'FileChip';
-
 const VSCodeFileChip = memo(({ file, onRemove }: FileChipProps) => {
   const { t } = useI18n();
   const { displayName, extension } = useFileDetails(file);
@@ -459,12 +419,12 @@ AttachedVSCodeFileChips.displayName = 'AttachedVSCodeFileChips';
 
 export const AttachedFilesList = memo(({ attachments, onShowPopup, onRemoveAttachedFile }: AttachedFilesListProps) => {
   const attachedFiles = attachments;
-  const localFiles = attachedFiles.filter((file) => file.source !== 'server' && file.source !== 'vscode');
+  const images = attachedFiles.filter(
+    (file) => file.source !== 'server' && file.source !== 'vscode' && file.mimeType.startsWith('image/'),
+  );
 
-  if (localFiles.length === 0) return null;
+  if (images.length === 0) return null;
 
-  const images = localFiles.filter((f) => f.mimeType.startsWith('image/'));
-  const otherFiles = localFiles.filter((f) => !f.mimeType.startsWith('image/'));
   const imageGallery = images.map((file) => ({
     url: file.dataUrl || file.serverPath || '',
     mimeType: file.mimeType,
@@ -473,35 +433,19 @@ export const AttachedFilesList = memo(({ attachments, onShowPopup, onRemoveAttac
   })).filter((image) => image.url);
 
   return (
-    <div className="pb-4 w-full px-1 space-y-3">
-      {/* Images row - inline with previews */}
-      {images.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {images.map((file, index) => (
-            <ImagePreview
-              key={file.id}
-              file={file}
-              onRemove={() => onRemoveAttachedFile(file)}
-              onShowPopup={onShowPopup}
-              gallery={imageGallery}
-              index={index}
-            />
-          ))}
-        </div>
-      )}
-      
-      {/* Other files row - inline text-only */}
-      {otherFiles.length > 0 && (
-        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
-          {otherFiles.map((file) => (
-            <FileChip
-              key={file.id}
-              file={file}
-              onRemove={() => onRemoveAttachedFile(file)}
-            />
-          ))}
-        </div>
-      )}
+    <div className="pb-4 w-full px-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {images.map((file, index) => (
+          <ImagePreview
+            key={file.id}
+            file={file}
+            onRemove={() => onRemoveAttachedFile(file)}
+            onShowPopup={onShowPopup}
+            gallery={imageGallery}
+            index={index}
+          />
+        ))}
+      </div>
     </div>
   );
 });

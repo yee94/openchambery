@@ -237,7 +237,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                     <button type="button" {...matchingPressProps} onClick={() => onSelect(providerID, modelID, selectedVariant)} className="flex min-w-0 flex-1 items-start gap-2 rounded-lg text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary">
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                             {options.showProvider ? (
-                                <span className="truncate typography-micro text-muted-foreground">{providerByID.get(providerID)?.name || providerID}</span>
+                                <span className="truncate text-[10px] leading-none text-muted-foreground/60">{providerByID.get(providerID)?.name || providerID}</span>
                             ) : null}
                             <div className="flex min-w-0 items-center gap-1.5">
                                 <ModelLogo modelId={modelID} providerId={providerID} className="size-3.5 flex-shrink-0" />

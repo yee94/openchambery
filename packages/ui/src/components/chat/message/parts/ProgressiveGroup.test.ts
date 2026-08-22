@@ -417,6 +417,7 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain("diffScope: 'turn'");
         expect(messageBodySource).toContain('const diffSessionId = sessionSurface.sessionId;');
         expect(messageBodySource).toContain('fileCount={turnGroupingContext.diffStats.files}');
+        expect(messageBodySource).toContain('isLatestTurn={turnGroupingContext.isLatestTurn}');
         expect(messageBodySource).toContain('&& !hasAuthoritativeChangesMarker');
     });
 
@@ -427,7 +428,9 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain("const TURN_CHANGES_ROW_DESKTOP_CLASS = 'h-7 gap-1.5';");
         expect(messageBodySource).toContain("const TURN_CHANGES_ROW_MOBILE_CLASS = 'h-6 gap-1';");
         expect(messageBodySource).toContain('mt-4 flex min-w-0 flex-col rounded-[var(--radius-lg)] border bg-muted/20');
-        expect(messageBodySource).not.toContain('data-turn-change-file="true"');
+        // L2 file head restores per-file rows under the count header.
+        expect(messageBodySource).toContain('data-turn-change-file="true"');
+        expect(messageBodySource).toContain('useSessionTurnChangesQuery');
         expect(messageBodySource).toContain('TURN_CHANGES_ROW_CLASS');
         expect(messageBodySource).toContain('TURN_CHANGES_ROW_DESKTOP_CLASS');
         expect(messageBodySource).toContain('TURN_CHANGES_ROW_MOBILE_CLASS');
