@@ -412,6 +412,8 @@ describe('progressive activity presentation', () => {
     });
 
     test('turn changes preview carries historical turn identity across desktop and dedicated mobile', () => {
+        // File row passes the clicked path so mobile expands that file; header opens the whole turn.
+        expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId, file);');
         expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId);');
         expect(messageBodySource).toContain("dedupeKey: `turn-diff:${diffSessionId || 'session'}:${turnId}`");
         expect(messageBodySource).toContain("diffScope: 'turn'");

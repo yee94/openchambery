@@ -1028,12 +1028,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // Footer/chrome phase for the mobile composer, deliberately separate from the
     // silhouette state: 'collapsed' = pill footer (attach + stop), 'full' =
     // expanded footer with all controls, 'none' = transient frame with no footer
-    // while the silhouette flips first. Native shells commit the silhouette
-    // synchronously (flushSync) but defer the costly footer tree by one frame so
-    // the tap frame stays light; the footer fade-in (oc-mobile-composer-footer-in)
-    // masks the one-frame delay.
+    // during collapse. Native shells commit 'full' synchronously (flushSync) with
+    // the prewarmed footer tree, so the tap frame carries only a visibility flip
+    // and the silhouette settles at its final height before the reveal starts.
     const [mobileComposerChrome, setMobileComposerChrome] = React.useState<'collapsed' | 'none' | 'full'>('collapsed');
-    const mobileComposerChromeFrameRef = React.useRef<number | null>(null);
     const prewarmMobileFullChrome = useEvent(() => setMobileFullChromePrewarmed(true));
     const [mobileTextareaFocused, setMobileTextareaFocused] = React.useState(false);
     // Mobile browser / installed PWA: tapping a composer control while the
@@ -6171,10 +6169,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (!mobileComposerExpandedRef.current) return;
         mobileComposerExpandedRef.current = false;
         mobileExpandIntentRef.current = null;
-        if (mobileComposerChromeFrameRef.current !== null) {
-            window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
-            mobileComposerChromeFrameRef.current = null;
-        }
         setMobileComposerChrome('none');
         if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
             setMobileComposerExpanded(false);
@@ -6188,28 +6182,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     });
 
     React.useEffect(() => () => clearMobileComposerMotionTimer(), [clearMobileComposerMotionTimer]);
-
-    const scheduleMobileComposerChrome = React.useCallback((phase: 'collapsed' | 'full') => {
-        if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-            setMobileComposerChrome(phase);
-            return;
-        }
-        if (mobileComposerChromeFrameRef.current !== null) {
-            window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
-        }
-        mobileComposerChromeFrameRef.current = window.requestAnimationFrame(() => {
-            mobileComposerChromeFrameRef.current = null;
-            setMobileComposerChrome(phase);
-        });
-    }, []);
-    React.useEffect(() => {
-        return () => {
-            if (mobileComposerChromeFrameRef.current !== null) {
-                window.cancelAnimationFrame(mobileComposerChromeFrameRef.current);
-                mobileComposerChromeFrameRef.current = null;
-            }
-        };
-    }, []);
 
     const expandMobileComposer = useEvent((intent: 'focus') => {
         // Action buttons set this window — do not steal focus / open the IME.

@@ -231,7 +231,8 @@ const TurnChangesPreview = React.memo(({
 
     const openTurnFile = useEvent((file: string) => {
         if (mobileActions) {
-            mobileActions.openTurnDiff(turnId, diffSessionId);
+            // Pass the clicked file so the sheet expands/scrolls to it (desktop parity).
+            mobileActions.openTurnDiff(turnId, diffSessionId, file);
             return;
         }
 

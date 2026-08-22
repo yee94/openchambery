@@ -2460,6 +2460,9 @@ const MobileShell: React.FC<{
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
   // Owning session for the turn-diff sheet; null = primary chat session.
   const [turnDiffSessionId, setTurnDiffSessionId] = React.useState<string | null>(null);
+  /** Optional file to expand/scroll when the turn-diff sheet opens (from Changes preview row). */
+  const [turnDiffTargetFilePath, setTurnDiffTargetFilePath] = React.useState<string | null>(null);
+  const [turnDiffNavigationKey, setTurnDiffNavigationKey] = React.useState(0);
   const [mcpOpen, setMcpOpen] = React.useState(false);
   const [isMcpRefreshing, setIsMcpRefreshing] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -2630,6 +2633,7 @@ const MobileShell: React.FC<{
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
     setTurnDiffSessionId(null);
+    setTurnDiffTargetFilePath(null);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setPendingChangesDiff(diff);
@@ -2641,13 +2645,20 @@ const MobileShell: React.FC<{
     setChangesOpen(true);
   });
 
-  const openTurnDiffSurface = useEvent((messageId?: string, sessionId?: string | null) => {
+  const openTurnDiffSurface = useEvent((
+    messageId?: string,
+    sessionId?: string | null,
+    filePath?: string | null,
+  ) => {
     setPendingChangesDiff(null);
     setChangesOpen(false);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setTurnDiffMessageId(messageId ?? null);
     setTurnDiffSessionId(typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null);
+    const normalizedFile = typeof filePath === 'string' && filePath.trim() ? filePath.trim() : null;
+    setTurnDiffTargetFilePath(normalizedFile);
+    setTurnDiffNavigationKey((key) => key + 1);
     if (isIPad) {
       setIpadRightPanel('turn-diff');
       if (isPortrait) setIpadSidebarOpen(false);
@@ -2659,6 +2670,7 @@ const MobileShell: React.FC<{
   const closeIpadRightPanel = useEvent(() => {
     setIpadRightPanel(null);
     setPendingChangesDiff(null);
+    setTurnDiffTargetFilePath(null);
   });
 
   const toggleIpadRightPanel = useEvent((panel: 'files' | 'changes') => {
@@ -2716,6 +2728,7 @@ const MobileShell: React.FC<{
 
   const closeTurnDiff = useEvent(() => {
     setTurnDiffOpen(false);
+    setTurnDiffTargetFilePath(null);
   });
 
   // Expose the shell's panel-opening actions to the deep-link layer so openchamber:// URLs
@@ -3385,9 +3398,12 @@ const MobileShell: React.FC<{
                       <div className="min-h-0 flex-1 overflow-hidden">
                         <DiffView
                           hideStackedFileSidebar
+                          pinSelectedFileHeaderToTopOnNavigate
                           diffScope="turn"
                           turnMessageId={turnDiffMessageId}
                           sessionId={turnDiffSessionId}
+                          targetFilePath={turnDiffTargetFilePath}
+                          navigationRequestKey={turnDiffNavigationKey}
                           flushContent
                         />
                       </div>
@@ -3523,9 +3539,12 @@ const MobileShell: React.FC<{
             <ErrorBoundary>
               <DiffView
                 hideStackedFileSidebar
+                pinSelectedFileHeaderToTopOnNavigate
                 diffScope="turn"
                 turnMessageId={turnDiffMessageId}
                 sessionId={turnDiffSessionId}
+                targetFilePath={turnDiffTargetFilePath}
+                navigationRequestKey={turnDiffNavigationKey}
                 flushContent
               />
             </ErrorBoundary>

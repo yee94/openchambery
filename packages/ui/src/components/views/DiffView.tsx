@@ -1480,15 +1480,22 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return;
         }
 
+        // Always mark the target expanded so L2 arrival does not leave it collapsed.
+        expandStackedFile(normalizedTarget);
         setDisplayFile(normalizedTarget);
         setDisplayFileStaged(activeDiffScope === 'staged');
         setDisplayFocusLine(targetLine);
 
+        // Wait until the file row exists in the list (turn L2 / git status) before
+        // scrolling/pinning — otherwise rAF retries exhaust before the DOM mounts.
+        if (!changedFiles.some((file) => file.path === normalizedTarget)) {
+            return;
+        }
+
         shouldPinAfterAlignRef.current = true;
         pendingScrollTargetRef.current = normalizedTarget;
-        expandStackedFile(normalizedTarget);
         setScrollRequestNonce((value) => value + 1);
-    }, [activeDiffScope, expandStackedFile, navigationRequestKey, targetFilePath, targetLine]);
+    }, [activeDiffScope, changedFiles, expandStackedFile, navigationRequestKey, targetFilePath, targetLine]);
 
     React.useEffect(() => {
         if (!displayFile) {

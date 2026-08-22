@@ -215,7 +215,9 @@ describe('apply_patch navigation', () => {
         expect(fileNavigation).toContain('patches: toolPatches,');
         expect(fileNavigation).toContain("else if (normalizedPartTool === 'apply_patch')");
         expect(toolPartSource).toContain('mobileActions.openTurnDiff(messageId, sessionSurface.sessionId);');
-        expect(mobileAppSource).toContain('const openTurnDiffSurface = useEvent((messageId?: string, sessionId?: string | null) => {');
+        expect(mobileAppSource).toContain('filePath?: string | null');
+        expect(mobileAppSource).toContain('setTurnDiffTargetFilePath(normalizedFile)');
+        expect(mobileAppSource).toContain('targetFilePath={turnDiffTargetFilePath}');
         expect(mobileAppSource).toContain('setTurnDiffMessageId(messageId ?? null);');
         expect(mobileAppSource).toContain("setTurnDiffSessionId(typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null);");
         expect(mobileAppSource).toContain('openToolDiff: ({ diffPath, patches, targetLine }) => {');
@@ -334,6 +336,6 @@ describe('context diff navigation', () => {
         expect(diffViewSource).toContain('navigationRequestKey?: number;');
         expect(diffViewSource).toContain('sessionId?: string | null;');
         expect(diffViewSource).toContain('directory?: string | null;');
-        expect(diffViewSource).toContain('[activeDiffScope, expandStackedFile, navigationRequestKey, targetFilePath, targetLine]');
+        expect(diffViewSource).toContain('[activeDiffScope, changedFiles, expandStackedFile, navigationRequestKey, targetFilePath, targetLine]');
     });
 });

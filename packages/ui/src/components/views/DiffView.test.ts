@@ -107,6 +107,7 @@ describe('Turn Changes preview contract', () => {
     expect(messageBodySource).toContain("mode: 'diff'");
     expect(messageBodySource).toContain("diffScope: 'turn'");
     expect(messageBodySource).toContain("dedupeKey: `turn-diff:${diffSessionId || 'session'}:${turnId}`");
+    expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId, file)');
     expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId)');
     expect(messageBodySource).toContain('openTurnChangedFilePreview');
   });
