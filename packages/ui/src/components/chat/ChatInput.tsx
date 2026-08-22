@@ -6244,13 +6244,21 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (isCapacitorApp() && (platform === 'ios' || platform === 'android')) {
                 flushSync(() => {
                     setMobileComposerExpanded(true);
-                    setMobileComposerChrome(reduceMotion ? 'full' : 'none');
+                    setMobileComposerChrome('full');
                     setMobileComposerMotion(reduceMotion ? 'idle' : 'expanding');
                 });
-                if (!reduceMotion) {
-                    scheduleMobileComposerChrome('full');
-                    armMobileComposerMotionFallback();
+                // The prewarmed footer makes the 'full' flip a cheap visibility
+                // switch inside the sync commit, so the silhouette lays out at
+                // its FINAL height immediately — no chrome='none' intermediate
+                // frame for ResizeObserver to capture as a bogus stage height.
+                // Measure once before the reveal starts so the 180ms transform
+                // runs against the true target, not a stale cached stage.
+                const surface = dropZoneRef.current;
+                if (surface) {
+                    const nextHeight = Math.max(44, Math.ceil(surface.offsetHeight));
+                    setMobileComposerStageHeight((height) => Math.abs(height - nextHeight) <= 2 ? height : nextHeight);
                 }
+                if (!reduceMotion) armMobileComposerMotionFallback();
             } else {
                 React.startTransition(() => {
                     setMobileComposerExpanded(true);
@@ -6574,7 +6582,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, [isMobile, collapseMobileComposer]);
 
     React.useLayoutEffect(() => {
-        if (!isMobile || !mobileComposerExpanded || mobileComposerMotion === 'collapsing') return;
+        // Stage height is frozen while a reveal/conceal motion is running: the
+        // mask must hold ONE stable height for the whole transform, and chrome
+        // visibility flips or autosize mid-motion would otherwise rewrite the
+        // viewport height mid-flight (the "third height" glitch). Idle re-runs
+        // publish the settled height and keep tracking later autosize growth.
+        if (!isMobile || !mobileComposerExpanded || mobileComposerMotion !== 'idle') return;
         const surface = dropZoneRef.current;
         if (!surface) return;
         const publishHeight = () => {
