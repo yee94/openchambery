@@ -280,7 +280,7 @@ jobs:
         run: |
           set -euo pipefail
           # Keep snapshot under the workspace so upload-artifact can collect it.
-          OUT="${GITHUB_WORKSPACE}/.ota-snapshot"
+          OUT="${GITHUB_WORKSPACE}/ota-snapshot"
           rm -rf "$OUT"
 
           if [[ -n "${ROLLOUT_PERCENT_OVERRIDE:-}" ]]; then
@@ -302,8 +302,8 @@ jobs:
           fi
           node scripts/mobile-ota/assemble-snapshot.mjs "${ARGS[@]}"
           # Copy zip beside snapshot for a stable artifact path.
-          mkdir -p "${GITHUB_WORKSPACE}/.ota-zip"
-          cp "$ZIP_PATH" "${GITHUB_WORKSPACE}/.ota-zip/bundle.zip"
+          mkdir -p "${GITHUB_WORKSPACE}/ota-zip"
+          cp "$ZIP_PATH" "${GITHUB_WORKSPACE}/ota-zip/bundle.zip"
           BUNDLE_ID="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).bundleId")"
           GENERATION="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).generation")"
           {
@@ -316,7 +316,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mobile-ota-snapshot-${{ needs.release-plan.outputs.version }}
-          path: .ota-snapshot
+          path: ota-snapshot
           if-no-files-found: error
           retention-days: 14
 
@@ -324,7 +324,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mobile-ota-zip-${{ needs.release-plan.outputs.version }}
-          path: .ota-zip/bundle.zip
+          path: ota-zip/bundle.zip
           if-no-files-found: error
           retention-days: 14
 
