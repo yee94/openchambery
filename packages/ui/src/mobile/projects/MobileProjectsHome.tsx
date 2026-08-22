@@ -655,7 +655,7 @@ export function MobileProjectsHome({
                   {t('mobile.projects.menu.newChat')}
                 </DropdownMenuItem>
                 <DropdownMenuItem className="min-h-11" onSelect={handleAddProject}>
-                  <Icon name="folder-add" className="size-4" />
+                  <Icon name="folder" className="size-4" />
                   {t('mobile.projects.menu.newProject')}
                 </DropdownMenuItem>
                 {onScanQr ? (

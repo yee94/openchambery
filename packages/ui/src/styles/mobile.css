@@ -2143,7 +2143,7 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"]):not(:disabled):not(
+    :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
     ):not([data-mobile-press-feedback="none"]) {
     -webkit-tap-highlight-color: transparent;
@@ -2156,21 +2156,21 @@ button.oc-mobile-worktree-label-trigger:active,
      settings nav, and ordinary buttons all stay here — never the punchy
      compact scale that reads as a full-card shrink. */
   :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"]):not(:disabled):not(
+    :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
     ):not([data-mobile-press-feedback="none"]):not(
       [data-mobile-press-feedback="compact"]
-    ):active:not(:has(:where(button, [role="button"]):active)) {
+    ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active)) {
     scale: var(--oc-press-soft-scale);
     transition-duration: 0ms;
   }
 
   /* Compact: opt-in only for particularly small controls (icon buttons). */
   :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"])[data-mobile-press-feedback="compact"]:not(
+    :where(button, [role="button"], [role="menuitem"])[data-mobile-press-feedback="compact"]:not(
       :disabled
     ):not([aria-disabled="true"]):active:not(
-      :has(:where(button, [role="button"]):active)
+      :has(:where(button, [role="button"], [role="menuitem"]):active)
     ) {
     scale: var(--oc-press-compact-scale);
     transition-duration: 0ms;
@@ -2199,7 +2199,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
   @media (prefers-reduced-motion: reduce) {
     :root.mobile-pointer:not(.desktop-runtime)
-      :where(button, [role="button"]):not(:disabled):not(
+      :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
         [aria-disabled="true"]
       ):not([data-mobile-press-feedback="none"]),
     :root.mobile-pointer:not(.desktop-runtime)

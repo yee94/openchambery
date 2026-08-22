@@ -93,6 +93,11 @@ describe('MobileProjectsHome header menu', () => {
     expect(bodyText).not.toContain('Scan QR code');
     expect(bodyText).not.toContain('Switch instance');
 
+    const newProjectItem = findMenuItem('New project');
+    expect(newProjectItem).not.toBeNull();
+    expect(newProjectItem!.querySelector('use')?.getAttribute('href')).toBe('#oc-folder');
+    expect(newProjectItem!.getAttribute('role')).toBe('menuitem');
+
     const newChatItem = findMenuItem('New chat');
     expect(newChatItem).not.toBeNull();
     act(() => {
