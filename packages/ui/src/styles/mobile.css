@@ -2899,7 +2899,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
   [data-chat-input-footer="true"] {
-  animation: oc-mobile-composer-footer-in 160ms ease-out 40ms both;
+  animation: oc-mobile-composer-footer-in 120ms ease-out both;
 }
 
 @keyframes oc-mobile-composer-footer-in {

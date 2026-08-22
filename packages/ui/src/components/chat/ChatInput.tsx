@@ -1023,6 +1023,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(false);
     const [mobileComposerMotion, setMobileComposerMotion] = React.useState<'idle' | 'expanding' | 'collapsing'>('idle');
     const [mobileComposerStageHeight, setMobileComposerStageHeight] = React.useState(112);
+    const [mobileFullChromePrewarmed, setMobileFullChromePrewarmed] = React.useState(false);
     const mobileComposerMotionTimerRef = React.useRef<number | null>(null);
     // Footer/chrome phase for the mobile composer, deliberately separate from the
     // silhouette state: 'collapsed' = pill footer (attach + stop), 'full' =
@@ -1033,6 +1034,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // masks the one-frame delay.
     const [mobileComposerChrome, setMobileComposerChrome] = React.useState<'collapsed' | 'none' | 'full'>('collapsed');
     const mobileComposerChromeFrameRef = React.useRef<number | null>(null);
+    const prewarmMobileFullChrome = useEvent(() => setMobileFullChromePrewarmed(true));
     const [mobileTextareaFocused, setMobileTextareaFocused] = React.useState(false);
     // Mobile browser / installed PWA: tapping a composer control while the
     // keyboard is up blurs the textarea first, and the keyboard-resize reflow
@@ -6214,19 +6216,19 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (Date.now() < suppressComposerFocusUntilRef.current) {
             return;
         }
+        // Pointer activation normally mounts this tree during press. Keyboard
+        // and VoiceOver activation arrive here directly and use this fallback.
+        prewarmMobileFullChrome();
         mobileExpandIntentRef.current = intent;
         // Capacitor freezes chat geometry chase before the silhouette starts
         // moving, ahead of keyboardWillShow marking the IME.
         if (isCapacitorApp() && typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
         }
-        // The full-state tree adds attachment/footer controls and can be costly
-        // under a large development transcript. iOS must commit the expanded
-        // silhouette before UIKit starts presenting the keyboard; a concurrent
-        // update can otherwise leave the pill behind until the keyboard is already
-        // visible. Other runtimes keep the yielding transition.
-        // The heavy footer tree mounts one frame later (scheduleMobileComposerChrome)
-        // so the sync commit carries only the silhouette flip.
+        // iOS must commit the expanded silhouette before UIKit starts presenting
+        // the keyboard; a concurrent update can otherwise leave the pill behind
+        // until the keyboard is already visible. The prewarmed footer stays
+        // mounted, and the next frame only flips its hidden presentation.
         // Update the ref immediately so a same-stack onFocus (after focus())
         // does not re-enter expand before the effect mirrors state.
         if (!mobileComposerExpandedRef.current) {
@@ -6242,11 +6244,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (isCapacitorApp() && (platform === 'ios' || platform === 'android')) {
                 flushSync(() => {
                     setMobileComposerExpanded(true);
-                    setMobileComposerChrome('none');
+                    setMobileComposerChrome(reduceMotion ? 'full' : 'none');
                     setMobileComposerMotion(reduceMotion ? 'idle' : 'expanding');
                 });
-                scheduleMobileComposerChrome('full');
-                if (!reduceMotion) armMobileComposerMotionFallback();
+                if (!reduceMotion) {
+                    scheduleMobileComposerChrome('full');
+                    armMobileComposerMotionFallback();
+                }
             } else {
                 React.startTransition(() => {
                     setMobileComposerExpanded(true);
@@ -6289,6 +6293,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // switch straight into the voice variant of the full composer.
             if (!mobileComposerExpandedRef.current) {
                 mobileComposerExpandedRef.current = true;
+                prewarmMobileFullChrome();
                 setMobileComposerExpanded(true);
                 setMobileComposerChrome('full');
             }
@@ -6789,7 +6794,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     ));
 
     const composerFooterContent = isMobile ? (
-        mobileComposerChrome === 'collapsed' ? (
+        <>
+        {mobileComposerChrome === 'collapsed' ? (
             <>
                 <div
                     data-mobile-composer-collapsed-slot="attach"
@@ -6836,8 +6842,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     </div>
                 ) : null}
             </>
-        ) : mobileComposerChrome === 'full' ? (
-            <div className="flex w-full min-w-0 items-center gap-x-1.5" data-composer-action="true">
+        ) : null}
+        {mobileFullChromePrewarmed ? (
+            <div
+                className={cn(
+                    'w-full min-w-0 items-center gap-x-1.5',
+                    mobileComposerChrome === 'full' ? 'flex' : 'hidden',
+                )}
+                data-composer-action="true"
+                aria-hidden={mobileComposerChrome === 'full' ? undefined : true}
+                inert={mobileComposerChrome === 'full' ? undefined : true}
+            >
                 <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
                     <ComposerAttachmentControls
                         isVSCode={isVSCode}
@@ -6895,7 +6910,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     />
                 </div>
             </div>
-        ) : null
+        ) : null}
+        </>
     ) : (
         <>
             <div className={cn('flex flex-shrink-0 items-center', footerGapClass)}>
@@ -7055,6 +7071,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 if (!isMobile) return;
                 const target = event.target;
                 if (!(target instanceof Element)) return;
+                if (
+                    !mobileComposerExpandedRef.current
+                    && target.closest('[data-mobile-composer-surface="true"]')
+                ) {
+                    prewarmMobileFullChrome();
+                }
                 // Only the textarea (and its highlight overlay) may claim focus /
                 // expand the pill. Footer chrome (attach, agent, model, send, …)
                 // is an explicit action — preventDefault so the browser never
