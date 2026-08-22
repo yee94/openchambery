@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.9] - 2026-08-22
+
+### 供应商
+
+- **修正 OpenCode 与 DeepSeek 供应商图标：** OpenCode 改用官网 favicon 的方形 O 标（单色化并保留官方双色调层次，随主题黑白切换），DeepSeek 品牌标由官方蓝改为黑白单色，与其它供应商图标一致；`opencode-go` 别名供应商同样命中新图标。
+
 ## [1.18.2-beta.8] - 2026-08-22
 
 ### 聊天
