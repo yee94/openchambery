@@ -16,6 +16,8 @@
     --oc-scrollbar-thumb: oklch(0.32 0.03 50 / 0.4);
     --oc-scrollbar-thumb-hover: oklch(0.32 0.03 50 / 0.6);
     --padding-scale: 1;
+    /* 1 design pt. Android Capacitor overwrites this from physical xdpi. */
+    --dpt: 1px;
 
     /* Semantic typography defaults (must match SEMANTIC_TYPOGRAPHY) */
     /* Codex App chat body defaults to 14px (--text-base / --codex-chat-font-size). */

@@ -3,7 +3,6 @@ package com.openchamber.app;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.os.Bundle;
-import android.util.DisplayMetrics;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -15,14 +14,10 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void attachBaseContext(Context newBase) {
-        // iOS WKWebView ignores system font size and display size. Android
-        // multiplies fontScale into textZoom and display size into DIP scale.
-        // Pin both on a Configuration copy. IME height must be converted with
-        // WebView devicePixelRatio (not this context's density) or the composer
-        // will miss the keyboard.
+        // Pin fontScale only. WebView CSS density ignores Activity densityDpi;
+        // physical size uses --dpt from OpenChamberPhysicalScale instead.
         Configuration config = new Configuration(newBase.getResources().getConfiguration());
         config.fontScale = 1.0f;
-        config.densityDpi = DisplayMetrics.DENSITY_DEVICE_STABLE;
         super.attachBaseContext(newBase.createConfigurationContext(config));
     }
 
@@ -34,6 +29,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OpenChamberExternalBrowserPlugin.class);
         registerPlugin(OpenChamberVirtualAssetPlugin.class);
         registerPlugin(OpenChamberMediaPlugin.class);
+        registerPlugin(OpenChamberPhysicalScalePlugin.class);
         super.onCreate(savedInstanceState);
         dispatchShare(getIntent());
         // After the Keyboard plugin installs its root animation callback, remove

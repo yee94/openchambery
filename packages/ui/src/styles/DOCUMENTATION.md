@@ -132,9 +132,21 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 
 If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` also opts out of `:root.mobile-pointer .flex.flex-col { min-height: 0 }` with `min-height: min-content`, so the fixed stage viewport cannot shrink the card below its content.
 
+## Design pt (`--dpt`)
+
+`--dpt` is `1px` everywhere except Capacitor Android, where
+`packages/ui/src/lib/designPtScale.ts` overwrites it from
+`DisplayMetrics.xdpi/ydpi` so `1dpt ≈ 1/163in` (iPhone pt). iOS stays `1`.
+
+`scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
+`line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.
+It does not touch `1px` hairlines, media queries, safe-area, or keyboard
+insets. Layout spacing stays CSS px/rem.
+
 ## Related owners
 
 - Detection / root classes: `packages/ui/src/lib/device.ts`
+- Design pt scale: `packages/ui/src/lib/designPtScale.ts`
 - Touch CSS: `packages/ui/src/styles/mobile.css`
 - Design-system components: `packages/ui/src/styles/design-system.css` (`.oc-segmented-selected-pill`)
 - Queued message chip layout: `packages/ui/src/components/chat/QueuedMessageChips.tsx` (root class `oc-composer-queue`)

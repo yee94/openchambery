@@ -55,7 +55,7 @@ function stubChannel({ manifest, status = 200, channel = 'beta' }) {
           ? input.href
           : input.url,
     );
-    requests.push(url.pathname);
+    requests.push(url.href);
 
     if (url.pathname === `/ota/channels/${channel}.json`) {
       return new Response(JSON.stringify(manifest), {
@@ -297,6 +297,21 @@ test('activeBundle null seed yields none/current without 503', async () => {
   assert.equal(response.status, 200);
   assert.equal(body.primaryAction, 'none');
   assert.equal(body.ota.state, 'current');
+});
+
+test('manifestBaseUrl override loads manifests from the Vercel origin while bundle URLs stay request-relative', async () => {
+  const requests = stubChannel({ manifest: channelManifest() });
+  const response = await handleMobileUpdateCheck(mobileRequest(validBody), {
+    manifestBaseUrl: 'https://openchamber-update.vercel.app',
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'apply_ota');
+  // Manifest fetched from the override origin...
+  assert.ok(requests[0].includes('openchamber-update.vercel.app'));
+  // ...but bundle URLs resolve against the client-facing request origin.
+  assert.equal(body.ota.bundle.url, 'https://updates.example.com/ota/bundles/34ab092a8e7f6d21.zip');
 });
 
 test('answers CORS preflight for mobile update check', async () => {

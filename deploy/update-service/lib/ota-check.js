@@ -209,8 +209,13 @@ function toCapgoResponse(decision) {
   };
 }
 
-async function runUpdateCheck(request, parsedRequest) {
-  const manifest = await loadOtaChannelManifest(request.url, parsedRequest.channel);
+async function runUpdateCheck(request, parsedRequest, manifestBaseUrl) {
+  // By default manifests load relative to the request origin (fast on Vercel,
+  // where they are static files). EdgeOne deployments must override this with
+  // the Vercel origin: /ota/* on EdgeOne is served by the reverse-proxy
+  // function, and fetching it from an edge endpoint would loop back into the
+  // edge runtime and fail.
+  const manifest = await loadOtaChannelManifest(manifestBaseUrl ?? request.url, parsedRequest.channel);
   if (manifest === null) {
     // Distinguish missing channel file (null from fetch miss) vs load failure:
     // loadOtaChannelManifest returns null for both fetch failure and invalid JSON.
@@ -227,7 +232,7 @@ async function runUpdateCheck(request, parsedRequest) {
   return jsonResponse(decision);
 }
 
-export async function handleMobileUpdateCheck(request) {
+export async function handleMobileUpdateCheck(request, options = {}) {
   const gated = methodGate(request);
   if (gated) return gated;
 
@@ -237,10 +242,10 @@ export async function handleMobileUpdateCheck(request) {
   const parsed = parseMobileUpdateRequest(body.payload);
   if (!parsed.ok) return parsed.response;
 
-  return runUpdateCheck(request, parsed.request);
+  return runUpdateCheck(request, parsed.request, options.manifestBaseUrl);
 }
 
-export async function handleCapgoOtaCheck(request) {
+export async function handleCapgoOtaCheck(request, options = {}) {
   const gated = methodGate(request);
   if (gated) return gated;
 
@@ -250,7 +255,10 @@ export async function handleCapgoOtaCheck(request) {
   const parsed = parseCapgoRequest(body.payload);
   if (!parsed.ok) return parsed.response;
 
-  const manifest = await loadOtaChannelManifest(request.url, parsed.request.channel);
+  const manifest = await loadOtaChannelManifest(
+    options.manifestBaseUrl ?? request.url,
+    parsed.request.channel,
+  );
   if (manifest === null) {
     return jsonResponse({ error: 'ota_manifest_unavailable' }, { status: 503 });
   }

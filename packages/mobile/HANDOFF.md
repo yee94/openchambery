@@ -163,6 +163,11 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 - **iOS Simulator + MLKit**: `GoogleMLKit` barcode has no arm64-simulator slice, so
   `scripts/ios-sim-build.mjs` temporarily strips the `CapacitorMlkitBarcodeScanning` pod, builds,
   then restores it. Device builds include it normally.
+- **Android design pt (`--dpt`)**: WebView CSS px is 1 dp, not 1 iOS pt. Capacitor
+  plugin `OpenChamberPhysicalScale` reads `DisplayMetrics.xdpi/ydpi` and the web
+  layer sets `--dpt` so compiled font sizes (`calc(N * var(--dpt))`) track ~1/163
+  inch. Do not pin Activity `densityDpi` to shrink the page — WebView ignores it
+  and IME geometry breaks. Keep `setTextZoom(100)` + `fontScale=1`.
 - **Android WebView version**: the UI uses `color-mix()` (Tailwind v4 + theme) which needs
   Chromium **111+**. An outdated Android System WebView renders translucency/selection wrong — tell
   testers to keep Android System WebView updated (or use a device with a current one). Floating
