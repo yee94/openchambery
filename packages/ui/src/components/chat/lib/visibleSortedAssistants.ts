@@ -1,4 +1,4 @@
-import { canRevealSortedFinalBody } from './turns/assistantMessageLifecycle';
+import { canRevealSortedFinalBody, resolveSortedRevealStreamPhase } from './turns/assistantMessageLifecycle';
 import type { TurnActivityRecord } from './turns/types';
 import type { ChatMessageEntry } from './turns/types';
 
@@ -66,9 +66,9 @@ export const resolveVisibleSortedAssistants = (
  * renders twice: once in the body of the streaming message and once in the
  * Activity group hosted on the turn's first assistant.
  *
- * The phase mirrors what ChatMessage/MessageBody derive for the streaming
- * message: `completed` when the message is done, `stop` forces `completed`
- * (hasStopFinish), otherwise the live phase with a `streaming` fallback.
+ * The phase derivation is owned by `resolveSortedRevealStreamPhase` — the
+ * same single derivation the reveal predicate consumes — so the Activity
+ * dedup cannot drift from what the body render decides.
  */
 export const resolveLiveRevealBodyMessageId = (input: {
   chatRenderMode: 'sorted' | 'live';
@@ -86,10 +86,11 @@ export const resolveLiveRevealBodyMessageId = (input: {
   if (!streaming) return null;
 
   const info = streaming.info as { finish?: unknown; error?: unknown };
-  const hasStopFinish = info.finish === 'stop';
-  const completed = isAssistantMessageCompleted(streaming);
-  const rawPhase = completed ? 'completed' : (input.activeStreamingPhase ?? 'streaming');
-  const streamPhase = hasStopFinish ? 'completed' : rawPhase;
+  const streamPhase = resolveSortedRevealStreamPhase({
+    finish: info.finish,
+    isMessageCompleted: isAssistantMessageCompleted(streaming),
+    activeStreamingPhase: input.activeStreamingPhase,
+  });
 
   const reveal = canRevealSortedFinalBody({
     finish: info.finish,
@@ -116,4 +117,27 @@ export const dropLiveRevealJustificationParts = <T extends Pick<TurnActivityReco
     (part) => !(part.kind === 'justification' && part.messageId === liveRevealBodyMessageId),
   );
   return filtered.length === parts.length ? (parts as T[]) : filtered;
+};
+
+/**
+ * Withhold the live-reveal message's justification rows across an Activity
+ * segment list. Segment identity (and every segment whose parts are
+ * untouched) keeps its original reference, so downstream memo/renderCompare
+ * keys stay stable while the reveal is active.
+ */
+export const withholdLiveRevealActivitySegments = <
+  T extends { parts: readonly TurnActivityRecord[] },
+>(
+  segments: readonly T[],
+  liveRevealBodyMessageId: string | null,
+): T[] => {
+  if (!liveRevealBodyMessageId) return segments as T[];
+  let changed = false;
+  const withheld = segments.map((segment) => {
+    const parts = dropLiveRevealJustificationParts(segment.parts, liveRevealBodyMessageId);
+    if (parts === segment.parts) return segment;
+    changed = true;
+    return { ...segment, parts };
+  });
+  return changed ? withheld : (segments as T[]);
 };

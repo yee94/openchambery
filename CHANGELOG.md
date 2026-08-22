@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.36] - 2026-08-23
+
+### 聊天
+
+- **sorted 去重逻辑加固：** 正文显示与 Activity 去重改为共用同一处流式状态推导，避免两处判断各自为政、将来漂移后文字再次重复或消失。行为与 beta.35 一致。
+
 ## [1.18.2-beta.35] - 2026-08-23
 
 ### 聊天

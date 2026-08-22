@@ -49,7 +49,7 @@ import {
     getShellBridgeAssistantDetails,
     type ShellBridgeDetails,
 } from './lib/shellBridge';
-import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
+import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants, withholdLiveRevealActivitySegments } from './lib/visibleSortedAssistants';
 import {
     resolveActivityExpansionDisposition,
     resolveDefaultActivityExpanded,
@@ -899,15 +899,7 @@ const TurnBlock = React.memo(({
             return turn.activitySegments;
         }
         if (liveRevealBodyMessageId) {
-            const withheld = turn.activitySegments.map((segment) => ({
-                ...segment,
-                parts: dropLiveRevealJustificationParts(segment.parts, liveRevealBodyMessageId),
-            }));
-            const changed = withheld.some((segment, index) => segment.parts !== turn.activitySegments[index]?.parts);
-            if (!changed) {
-                return turn.activitySegments;
-            }
-            return withheld;
+            return withholdLiveRevealActivitySegments(turn.activitySegments, liveRevealBodyMessageId);
         }
         if (visibleActivityMessageIdSet.size === turn.assistantMessages.length) {
             return turn.activitySegments;
