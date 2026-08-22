@@ -335,7 +335,7 @@ node scripts/mobile-release-plan.mjs --json
 
 3. `mobile-beta-ota.yml`（Mobile OTA Release）：
    - `release-plan`：从 tag 推导 `CHANNEL`（`mobile-beta/` → beta，`mobile-stable/` → stable）与 `VERSION`；再次校验资格；非 ota 则失败并提示改用 `v*`。
-   - `build-ota`：`bun run --cwd packages/mobile build`（web 构建 + prepare，**不含** `cap sync`）→ `@capgo/cli bundle zip` → 可选 `CAPGO_PRIVATE_KEY_V2` 加密 → 24 MiB 上限 → `scripts/mobile-ota/assemble-snapshot.mjs --channel $CHANNEL`。默认灰度：`beta=100`，`stable=10`（可 `workflow_dispatch` 覆盖 `rollout_percent`）。
+   - `build-ota`：`bun run --cwd packages/mobile build`（web 构建 + prepare，**不含** `cap sync`）→ `@capgo/cli bundle zip` → 可选 `CAPGO_PRIVATE_KEY_V2` 加密 → 24 MiB 上限 → `scripts/mobile-ota/assemble-snapshot.mjs --channel $CHANNEL`。默认灰度：双通道均 `100`（可 `workflow_dispatch` 覆盖 `rollout_percent`）。
    - `deploy`：对 `deploy/update-service` 做 Vercel pull / `vercel build --prod` / 将 **完整** snapshot 的 `ota/` 覆盖进 `.vercel/output/static/ota/` / `vercel deploy --prebuilt --prod`，再 curl 校验 **两个** channel manifest（`beta.json` + `stable.json`）以及目标 channel 的 bundle。
    - `archive`：GitHub **prerelease** 挂 zip 与对应 channel json。
 
@@ -360,7 +360,7 @@ GitHub Actions → **Mobile Beta OTA Rollout**（`mobile-beta-rollout.yml`）`wo
 | `pause` | `rolloutPercent = 0` |
 | `rollback` | 将 `rollbackBundleIds[0]` 升为 active，当前 active 退入 rollback 队列（最多保留 2 个） |
 | `set-native-target` | 更新 `nativeTargets.ios|android` |
-| `promote-channel` | 将 `--from`（通常 beta）已验证的 activeBundle **原样**拷到 `--to`（通常 stable），仅换 `rolloutSalt` / `rolloutPercent`（默认 10）；内容寻址 zip 可复用 |
+| `promote-channel` | 将 `--from`（通常 beta）已验证的 activeBundle **原样**拷到 `--to`（通常 stable），仅换 `rolloutSalt` / `rolloutPercent`（默认 100）；内容寻址 zip 可复用 |
 
 本地等价（写出 snapshot，再由 CI/人工部署）：
 
@@ -368,7 +368,7 @@ GitHub Actions → **Mobile Beta OTA Rollout**（`mobile-beta-rollout.yml`）`wo
 node scripts/mobile-ota/rollout.mjs --action pause --channel beta --out /tmp/ota-snap
 node scripts/mobile-ota/rollout.mjs --action promote --channel stable --percent 25 --out /tmp/ota-snap
 node scripts/mobile-ota/rollout.mjs --action rollback --channel beta --out /tmp/ota-snap
-node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 10 --out /tmp/ota-snap
+node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 100 --out /tmp/ota-snap
 ```
 
 `release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`，把本轮 Android/iOS 版本写入 beta 通道的 `nativeTargets`（稳定版与 beta `v*` 都会前移指针）。

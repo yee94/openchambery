@@ -14,7 +14,7 @@ on:
           - set-native-target
           - promote-channel
       percent:
-        description: Rollout percent 0-100 (promote default 100; promote-channel default 10)
+        description: Rollout percent 0-100 (default 100)
         required: false
         type: string
         default: ''
@@ -104,7 +104,7 @@ jobs:
           OUT="$RUNNER_TEMP/ota-rollout-snapshot"
           case "$ACTION" in
             promote-channel)
-              ARGS=(--action promote-channel --from "$FROM" --to "$TO" --percent "${PERCENT:-10}" --out "$OUT")
+              ARGS=(--action promote-channel --from "$FROM" --to "$TO" --percent "${PERCENT:-100}" --out "$OUT")
               WRITE_CHANNEL="$TO"
               ;;
             promote)

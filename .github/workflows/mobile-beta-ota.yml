@@ -24,7 +24,7 @@ on:
         required: false
         type: string
       rollout_percent:
-        description: Override rollout percent (default beta=100, stable=10)
+        description: Override rollout percent (default 100 for both channels)
         required: false
         type: string
 
@@ -282,8 +282,6 @@ jobs:
 
           if [[ -n "${ROLLOUT_PERCENT_OVERRIDE:-}" ]]; then
             ROLLOUT_PERCENT="$ROLLOUT_PERCENT_OVERRIDE"
-          elif [[ "$CHANNEL" == "stable" ]]; then
-            ROLLOUT_PERCENT=10
           else
             ROLLOUT_PERCENT=100
           fi

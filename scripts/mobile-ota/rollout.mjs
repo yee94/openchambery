@@ -14,7 +14,7 @@
  *   --action rollback [--channel beta|stable]
  *   --action set-native-target --platform ios|android --version V --build N
  *     [--status published] [--url U] [--channel beta|stable]
- *   --action promote-channel --from beta --to stable [--percent 10]
+ *   --action promote-channel --from beta --to stable [--percent 100]
  */
 import {
   createWriteStream,
@@ -103,7 +103,7 @@ function parseArgs(argv) {
   node scripts/mobile-ota/rollout.mjs --action pause --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action rollback --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action set-native-target --platform ios|android --version V --build N [--url U] --out <dir> [--channel beta|stable]
-  node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable [--percent 10] --out <dir>`)
+  node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable [--percent 100] --out <dir>`)
         process.exit(0)
         break
       default:
@@ -256,7 +256,7 @@ function applyPromoteChannel(sourceManifest, targetManifest, percent) {
   if (!sourceManifest.activeBundle) {
     throw new Error('Cannot promote-channel: source activeBundle is null')
   }
-  const resolvedPercent = percent === null || percent === undefined ? 10 : percent
+  const resolvedPercent = percent === null || percent === undefined ? 100 : percent
   if (!Number.isInteger(resolvedPercent) || resolvedPercent < 0 || resolvedPercent > 100) {
     throw new Error('--percent must be an integer from 0 to 100')
   }
