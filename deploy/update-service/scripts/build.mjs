@@ -84,5 +84,11 @@ writeFileSync(path.join(outputDirectory, 'health.json'), `${JSON.stringify({
   latestVersion,
 }, null, 2)}\n`);
 
-const otaSource = path.join(projectRoot, 'ota');
-cpSync(otaSource, path.join(outputDirectory, 'ota'), { recursive: true });
+// EdgeOne serves /ota/* through the edge reverse proxy (edge-functions/ota)
+// and static assets shadow edge functions there — so the EdgeOne build must
+// not emit the seed tree. Vercel serves /ota/* as real static files.
+const skipOtaCopy = process.env.OPENCHAMBER_UPDATE_SKIP_OTA_COPY === '1';
+if (!skipOtaCopy) {
+  const otaSource = path.join(projectRoot, 'ota');
+  cpSync(otaSource, path.join(outputDirectory, 'ota'), { recursive: true });
+}

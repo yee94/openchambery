@@ -1,5 +1,5 @@
 {
-  "buildCommand": "OPENCHAMBER_UPDATE_OUTPUT_DIR=dist node scripts/build.mjs",
+  "buildCommand": "OPENCHAMBER_UPDATE_OUTPUT_DIR=dist OPENCHAMBER_UPDATE_SKIP_OTA_COPY=1 node scripts/build.mjs",
   "installCommand": "echo 'no package dependencies'",
   "outputDirectory": "dist",
   "headers": [
