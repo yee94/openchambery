@@ -277,3 +277,118 @@ gh api --method PATCH "repos/yee94/openchamber/releases/<draft-id>" -F draft=fal
 桌面构建偶发在 `bun install` 阶段失败，日志常见从 `mirrors.tencent.com/npm/...` 拉取 `app-builder-bin` 后解包失败。这会导致该平台产物缺失，`finalize-release` 被跳过，Draft 保留。
 
 处理：对**同一次** run 执行 `gh run rerun <run-id> --failed`。若 Android 已上传成功，这种同 run 重跑不会改 `run_number`，一般不会触发上一节的资产膨胀问题。
+
+## Mobile OTA releases (beta + stable)
+
+Capacitor 移动端支持 **web bundle OTA**（Capgo-style，自托管在 update-service / EdgeOne）。原生壳变更仍走完整 `v*` 发布。**beta 与 stable 两个通道均已 OTA 可用**：各自独立 manifest，壳在 `mobile:sync` 时通过 `OPENCHAMBER_OTA_CHANNEL` 烘焙通道。
+
+### Tag 命名空间
+
+| Tag | 含义 | Workflow |
+|---|---|---|
+| `mobile-beta/vX.Y.Z-beta.N` | 仅发布 **beta** 通道 web bundle OTA | `.github/workflows/mobile-beta-ota.yml`（name: Mobile OTA Release） |
+| `mobile-stable/vX.Y.Z` | 仅发布 **stable** 通道 web bundle OTA | 同上 |
+| `vX.Y.Z-beta.N` / `vX.Y.Z` | 完整原生壳 + 桌面等正式发布 | `.github/workflows/release.yml` → `mobile-release`（`ota_channel`：beta / stable） |
+
+OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/v…`），仅作灾难恢复归档（zip + 对应 channel json）。**禁止**成为 `/releases/latest`，也**禁止**写入稳定桌面/Android 自动更新 feed。
+
+### 通道烘焙（shell channel）
+
+- `packages/mobile/capacitor.config.ts` 在构建时读 `OPENCHAMBER_OTA_CHANNEL`：`stable` → stable，其它/缺省 → beta。写入 `OpenChamberOTA.channel` 与 `CapacitorUpdater.defaultChannel`。
+- `release.yml` 调用 `mobile-release` 时：含 `-` 的 prerelease → `ota_channel: beta`；纯 semver → `ota_channel: stable`。
+- 默认构建（TestFlight / 侧载）保持 beta；商店稳定壳走 stable。
+
+### OTA 资格（eligibility）
+
+打 `mobile-beta/*` / `mobile-stable/*` 前在仓库根目录运行：
+
+```bash
+node scripts/mobile-release-plan.mjs --json
+```
+
+- `mode: "ota"`：允许 OTA。
+- `mode: "native"`：必须改用普通 `v*` tag。
+
+判定规则：
+
+1. **Native fingerprint**：相对最近的 `vX.Y.Z` / `vX.Y.Z-beta.N` tag，`packages/mobile/ios/**` 与 `packages/mobile/android/**` 是否有变更。下列 **生成物** 不计入 fingerprint：
+   - `ios/App/App/capacitor.config.json`
+   - `ios/App/Podfile.lock`
+   - `android/app/src/main/assets/capacitor.config.json`
+   - `android/capacitor.settings.gradle`
+   - `android/app/capacitor.build.gradle`
+   - `capacitor.config.ts` **也不**计入（可热更新 OTA 配置）；桥接安全由 contracts 保证。`android/variables.gradle` **计入** fingerprint（手写配置）。
+2. **Bridge contracts**：`packages/mobile/contracts/` 声明各自定义插件的 method/event 表面，脚本会与 Swift/Java 源码比对。任一缺失/多余 → `bridge_contract_changed` → 必须原生发布。
+
+### OTA 发布流程
+
+1. 确认 `mobile-release-plan` 为 `ota`。
+2. 打并推送 tag（示例）：
+
+   ```bash
+   git tag "mobile-beta/v1.18.2-beta.26"
+   git push origin "mobile-beta/v1.18.2-beta.26"
+   # 或 stable：
+   git tag "mobile-stable/v1.18.3"
+   git push origin "mobile-stable/v1.18.3"
+   ```
+
+3. `mobile-beta-ota.yml`（Mobile OTA Release）：
+   - `release-plan`：从 tag 推导 `CHANNEL`（`mobile-beta/` → beta，`mobile-stable/` → stable）与 `VERSION`；再次校验资格；非 ota 则失败并提示改用 `v*`。
+   - `build-ota`：`bun run --cwd packages/mobile build`（web 构建 + prepare，**不含** `cap sync`）→ `@capgo/cli bundle zip` → 可选 `CAPGO_PRIVATE_KEY_V2` 加密 → 24 MiB 上限 → `scripts/mobile-ota/assemble-snapshot.mjs --channel $CHANNEL`。默认灰度：`beta=100`，`stable=10`（可 `workflow_dispatch` 覆盖 `rollout_percent`）。
+   - `deploy`：对 `deploy/update-service` 做 Vercel pull / `vercel build --prod` / 将 **完整** snapshot 的 `ota/` 覆盖进 `.vercel/output/static/ota/` / `vercel deploy --prebuilt --prod`，再 curl 校验 **两个** channel manifest（`beta.json` + `stable.json`）以及目标 channel 的 bundle。
+   - `archive`：GitHub **prerelease** 挂 zip 与对应 channel json。
+
+端点契约见 `deploy/update-service/README.md`（`/ota/channels/{beta,stable}.json`、`/ota/bundles/<id>.zip`、`POST /v1/mobile/update/check`）。仓库内种子：`deploy/update-service/ota/channels/beta.json` 与 `stable.json`。
+
+### Full-snapshot 部署与并发
+
+Vercel/EdgeOne 部署会 **整包替换** 静态输出。因此每次 assemble / rollout snapshot 必须包含：
+
+- 目标通道的新 manifest + 其 active/rollback zip
+- **另一通道** 的线上 manifest 镜像（404 → 写入 null-seed，避免删掉对方通道）+ 其引用的 zip
+
+OTA release 与 rollout 共用 concurrency group `mobile-ota-production`（`cancel-in-progress: false`），串行化所有生产 OTA 部署，避免 beta/stable 交错部署时用过期镜像覆盖新近写入的另一通道。
+
+### 灰度 / 暂停 / 回滚 / 跨通道 promote
+
+GitHub Actions → **Mobile Beta OTA Rollout**（`mobile-beta-rollout.yml`）`workflow_dispatch`：
+
+| action | 作用 |
+|---|---|
+| `promote` | 设置指定 `channel` 的 `activeBundle.rolloutPercent` |
+| `pause` | `rolloutPercent = 0` |
+| `rollback` | 将 `rollbackBundleIds[0]` 升为 active，当前 active 退入 rollback 队列（最多保留 2 个） |
+| `set-native-target` | 更新 `nativeTargets.ios|android` |
+| `promote-channel` | 将 `--from`（通常 beta）已验证的 activeBundle **原样**拷到 `--to`（通常 stable），仅换 `rolloutSalt` / `rolloutPercent`（默认 10）；内容寻址 zip 可复用 |
+
+本地等价（写出 snapshot，再由 CI/人工部署）：
+
+```bash
+node scripts/mobile-ota/rollout.mjs --action pause --channel beta --out /tmp/ota-snap
+node scripts/mobile-ota/rollout.mjs --action promote --channel stable --percent 25 --out /tmp/ota-snap
+node scripts/mobile-ota/rollout.mjs --action rollback --channel beta --out /tmp/ota-snap
+node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 10 --out /tmp/ota-snap
+```
+
+`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`，把本轮 Android/iOS 版本写入 beta 通道的 `nativeTargets`（稳定版与 beta `v*` 都会前移指针）。
+
+### 加密与体积门禁
+
+- 可选 Secret `CAPGO_PRIVATE_KEY_V2`：存在时对 zip 做 Capgo encryption v2，manifest 写入 `sessionKey` + 加密载荷 checksum（CLI 产出的 opaque 字符串，不可重算）。
+- 无密钥时走明文 zip，`checksum` 为 **纯 64 位 hex（无 `sha256:` 前缀）**——原生插件按字面值比较自身摘要，带前缀会导致下载校验失败。脚本会自动剥掉输入的前缀。
+- 检查端点对加密 bundle 同时返回 `session_key` 与 `sessionKey` 两个键：Android 解析 `sessionKey`，iOS 解析 `session_key`。
+- 回滚加密 bundle 属于已知限制：回滚 zip 只能携带明文摘要，配置了公钥的壳无法校验，会自动回退到上一个成功 bundle。
+- zip **必须 < 24 MiB**；超限失败并提示迁移 COS。当前静态托管在 Vercel/EdgeOne。
+
+### 通道隔离保证
+
+- OTA 只写 `/ota/channels/{beta,stable}.json` 与 `/ota/bundles/*`，不修改 `release-manifest.json` 或 `/desktop/latest*.yml`。
+- `mobile-beta/*` / `mobile-stable/*` GitHub Release 始终 `prerelease: true`，不会成为 Latest。
+- 拉取线上 manifest 时：HTTP **404** 可从 generation 0 起步（并仍镜像另一通道）；**5xx / 其它错误必须中止**，禁止静默清空线上通道。
+
+### 灾难恢复
+
+1. GitHub prerelease `mobile-beta/v…` / `mobile-stable/v…` 上的 zip + channel json 可重新 assemble / 手动 overlay。
+2. `mobile-beta-rollout.yml` → `rollback` 将上一 generation 的 bundle 重新激活（内容寻址 zip 会从生产拉回 snapshot）。
+3. 若 Vercel 部署把旧 bundle 冲掉，assemble/rollout 脚本都会把 **双通道** active + rollback zip 重新拉进 snapshot 再 deploy。

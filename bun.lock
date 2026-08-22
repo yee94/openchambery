@@ -101,7 +101,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.17.1-beta.6",
+      "version": "1.18.2-beta.24",
       "dependencies": {
         "@openchambery/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
@@ -116,7 +116,7 @@
     },
     "packages/mobile": {
       "name": "@openchamber/mobile",
-      "version": "1.17.1-beta.6",
+      "version": "1.18.2-beta.24",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@capacitor-mlkit/barcode-scanning": "^8.1.0",
@@ -125,6 +125,7 @@
         "@capacitor/keyboard": "^8.0.0",
         "@capacitor/push-notifications": "^8.1.1",
         "@capacitor/status-bar": "^8.0.0",
+        "@capgo/capacitor-updater": "^8.51.14",
       },
       "devDependencies": {
         "@capacitor/android": "^8.4.1",
@@ -137,7 +138,7 @@
     },
     "packages/relay-server": {
       "name": "@openchambery/relay-server",
-      "version": "1.17.1-beta.6",
+      "version": "1.18.2-beta.24",
       "bin": {
         "openchamber-relay": "./bin/openchamber-relay.js",
       },
@@ -147,7 +148,7 @@
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.17.1-beta.6",
+      "version": "1.18.2-beta.24",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@base-ui/react": "^1.4.0",
@@ -255,7 +256,7 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "1.17.1-beta.6",
+      "version": "1.18.2-beta.24",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode-ai/sdk": "1.18.4",
@@ -281,7 +282,7 @@
     },
     "packages/web": {
       "name": "@openchambery/web",
-      "version": "1.17.1-beta.6",
+      "version": "1.18.2-beta.24",
       "bin": {
         "openchamber": "./bin/cli.js",
       },
@@ -613,6 +614,8 @@
     "@capacitor/push-notifications": ["@capacitor/push-notifications@8.1.1", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-WqzjPKIbYbARMN+GC0XMAJcxJpUUzqgzS/Ny8RODLrro38pQhm3GXYwX2Mwd+LZlLY39rGImkCkrKyQSNfuikA=="],
 
     "@capacitor/status-bar": ["@capacitor/status-bar@8.0.2", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-WXs8YB8B9eEaPZz+bcdY6t2nForF1FLoj/JU0Dl9RRgQnddnS98FEEyDooQhaY7wivr000j4+SC1FyeJkrFO7A=="],
+
+    "@capgo/capacitor-updater": ["@capgo/capacitor-updater@8.51.14", "", { "peerDependencies": { "@capacitor/core": "^8.0.0" } }, "sha512-2x4xEiS9nv3KSviSYKGS94yrZFoi12GYtn5vwv90BsEv7zc2dDh+Imk/F5eWAsSu20sHx5TBq3Hu/8BtWUA9JQ=="],
 
     "@clack/core": ["@clack/core@1.1.0", "", { "dependencies": { "sisteransi": "^1.0.5" } }, "sha512-SVcm4Dqm2ukn64/8Gub2wnlA5nS2iWJyCkdNHcvNHPIeBTGojpdJ+9cZKwLfmqy7irD4N5qLteSilJlE0WLAtA=="],
 

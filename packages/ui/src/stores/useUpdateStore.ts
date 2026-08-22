@@ -17,7 +17,11 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 import { getMobileClientVersion } from '@/lib/mobileAppVersion';
 import { checkForMobileClientUpdates } from '@/lib/mobileClientUpdateCheck';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import type { MobileUpdateDecision } from '@/lib/mobile-updates/types';
+import { MobileUpdatesUnsupportedError } from '@/lib/mobile-updates/types';
 
+type OtaPhase = 'idle' | 'checking' | 'available' | 'downloading' | 'pending_restart' | 'error';
 
 type UpdateState = {
   checking: boolean;
@@ -30,6 +34,10 @@ type UpdateState = {
   runtimeType: 'desktop' | 'web' | 'vscode' | 'mobile' | null;
   lastChecked: number | null;
   nextCheckInSec: number | null;
+  /** Latest Capgo OTA decision from the mobile update service (Capacitor only). */
+  otaDecision: MobileUpdateDecision | null;
+  /** Capgo download / apply lifecycle phase (Capacitor only). */
+  otaPhase: OtaPhase;
 };
 
 interface UpdateStore extends UpdateState {
@@ -38,6 +46,7 @@ interface UpdateStore extends UpdateState {
   restartToUpdate: () => Promise<void>;
   /** Wire main-process idle/manual download events into store state. */
   subscribeDesktopUpdateEvents: () => Promise<() => void>;
+  setOtaPhase: (phase: OtaPhase, error?: string | null) => void;
   dismiss: () => void;
   reset: () => void;
 }
@@ -206,7 +215,53 @@ const initialState: UpdateState = {
   runtimeType: null,
   lastChecked: null,
   nextCheckInSec: null,
+  otaDecision: null,
+  otaPhase: 'idle',
 };
+
+function mapOtaDecisionToUpdateInfo(
+  decision: MobileUpdateDecision,
+  currentVersion: string,
+): { info: UpdateInfo; available: boolean; otaPhase: OtaPhase } {
+  if (decision.primaryAction === 'apply_ota' && decision.ota.bundle) {
+    return {
+      available: true,
+      otaPhase: 'available',
+      info: {
+        available: true,
+        version: decision.ota.bundle.releaseVersion,
+        currentVersion,
+        downloadUrl: decision.ota.bundle.url,
+        nextSuggestedCheckInSec: decision.nextCheckInSec,
+      },
+    };
+  }
+
+  if (decision.primaryAction === 'install_native_required') {
+    return {
+      available: decision.native.state === 'required' || decision.native.state === 'available',
+      otaPhase: 'idle',
+      info: {
+        available: decision.native.state === 'required' || decision.native.state === 'available',
+        version: decision.native.version,
+        currentVersion,
+        downloadUrl: decision.native.installUrl,
+        nextSuggestedCheckInSec: decision.nextCheckInSec,
+        manualUpdate: true,
+      },
+    };
+  }
+
+  return {
+    available: false,
+    otaPhase: 'idle',
+    info: {
+      available: false,
+      currentVersion,
+      nextSuggestedCheckInSec: decision.nextCheckInSec,
+    },
+  };
+}
 
 export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   ...initialState,
@@ -247,17 +302,81 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         suggestedSec = vscodeInfo?.nextSuggestedCheckInSec ?? null;
       } else if (runtime === 'mobile') {
         const appVersion = await getMobileClientVersion();
+        const currentVersion = appVersion ?? 'unknown';
+        const mobileUpdates = isCapacitorApp()
+          ? getRegisteredRuntimeAPIs()?.mobileUpdates
+          : undefined;
+
+        if (mobileUpdates) {
+          try {
+            set({ otaPhase: 'checking' });
+            const decision = await mobileUpdates.checkForOtaUpdate();
+            const mapped = mapOtaDecisionToUpdateInfo(decision, currentVersion);
+
+            // Native-required keeps the legacy GitHub/release check for install URLs
+            // when the OTA decision did not include one.
+            if (
+              decision.primaryAction === 'install_native_required'
+              && !mapped.info.downloadUrl
+            ) {
+              const legacy = await checkForMobileClientUpdates({
+                currentVersion,
+                platform: detectPlatform() === 'ios' ? 'ios' : 'android',
+                deviceClass: detectDeviceClass(),
+                arch: detectArch(),
+                reportUsage: useUIStore.getState().reportUsage,
+              });
+              mapped.info = {
+                ...mapped.info,
+                ...legacy,
+                available: true,
+                manualUpdate: true,
+                nextSuggestedCheckInSec: decision.nextCheckInSec,
+              };
+              mapped.available = true;
+            }
+
+            set({
+              checking: false,
+              available: mapped.available,
+              info: mapped.info,
+              error: mapped.info.error ?? null,
+              lastChecked: Date.now(),
+              nextCheckInSec: decision.nextCheckInSec,
+              otaDecision: decision,
+              otaPhase: mapped.otaPhase,
+            });
+            return decision.nextCheckInSec;
+          } catch (error) {
+            if (!(error instanceof MobileUpdatesUnsupportedError)) {
+              // Network / service failure: fall back to the existing stable-channel check.
+              console.warn('[OTA] check failed, falling back to legacy mobile update check:', error);
+            }
+          }
+        }
+
         // Capacitor client updates compare the native APK/IPA version against
         // public update feeds directly. Do not route this through the connected
         // OpenChamber Server — that instance's network and version are unrelated.
         info = await checkForMobileClientUpdates({
-          currentVersion: appVersion ?? 'unknown',
+          currentVersion,
           platform: detectPlatform() === 'ios' ? 'ios' : 'android',
           deviceClass: detectDeviceClass(),
           arch: detectArch(),
           reportUsage: useUIStore.getState().reportUsage,
         });
         suggestedSec = info?.nextSuggestedCheckInSec ?? null;
+        set({
+          checking: false,
+          available: info?.available ?? false,
+          info,
+          error: info?.error ?? null,
+          lastChecked: Date.now(),
+          nextCheckInSec: suggestedSec,
+          otaDecision: null,
+          otaPhase: 'idle',
+        });
+        return suggestedSec;
       }
 
       set({
@@ -419,8 +538,15 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
     }
   },
 
+  setOtaPhase: (phase, error = null) => {
+    set({
+      otaPhase: phase,
+      ...(error !== undefined ? { error } : {}),
+    });
+  },
+
   dismiss: () => {
-    set({ available: false, downloaded: false, info: null });
+    set({ available: false, downloaded: false, info: null, otaDecision: null, otaPhase: 'idle' });
   },
 
   reset: () => {

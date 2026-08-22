@@ -244,3 +244,35 @@ quality. Done in-repo vs. to-do at release time:
 - **Guideline 4.2 (minimum functionality)** — WebView-wrapper apps can be scrutinized; cite the
   native features (push, widgets, Control Center, QR pairing) in the review notes.
 - Signing/upload as covered in the CI section above (all three iOS targets; signed Android AAB).
+
+## OTA (Capgo self-hosted)
+
+Self-hosted live updates use `@capgo/capacitor-updater` (plugin config key `CapacitorUpdater`).
+
+### What was added
+
+- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel` from build-time `otaChannel`, `autoUpdate: true`, `appReadyTimeout: 20000`, explicit delete/reset flags, optional `publicKey`) plus top-level `OpenChamberOTA` (`channel` / `shellApiVersion`) for the web layer. `otaChannel` = `process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta'` (baked at `mobile:sync`; stable store builds pass `OPENCHAMBER_OTA_CHANNEL=stable`).
+- `src/openchamber-ota.ts` — local typed bridge (`CapacitorUpdaterBridge` via `registerPlugin('CapacitorUpdater')`); does **not** import `@capgo/capacitor-updater`. Canonical constants: `OPENCHAMBER_OTA_CHANNEL` (build default `'beta'`, overridable at sync via env — mirrors `capacitor.config.ts`), `OPENCHAMBER_SHELL_API_VERSION` (literal mirrored in config so Cap CLI does not execute `registerPlugin` when loading config).
+- `test/ota-config-contract.test.mjs` — source-regex contract for config + bridge surface.
+
+### Native wiring
+
+iOS pods / Android Gradle plugin registration for Capgo is **not** checked in from this change. It lands when CI (or a local machine) runs `bun run mobile:sync` (`cap sync`). Do not hand-edit `ios/**` or `android/**` for updater wiring.
+
+### Env overrides
+
+| Env | Purpose |
+|---|---|
+| `OPENCHAMBER_OTA_CHANNEL` | Bake shell channel at `mobile:sync` (`stable` or default `beta`) |
+| `OPENCHAMBER_OTA_UPDATE_URL` | Override the Capgo check endpoint (default `https://openchamber.xiaobe.top/v1/ota/check`) |
+| `OPENCHAMBER_OTA_PUBLIC_KEY` | Optional E2E encryption public key; empty / unset = unencrypted bundles |
+
+### `shellApiVersion` bump rule
+
+`OpenChamberOTA.shellApiVersion` / `OPENCHAMBER_SHELL_API_VERSION` is the native bridge contract version. **Bump it when any custom Capacitor plugin method surface changes.** OTA manifests declare `minShellApiVersion`; older shells should receive `install_native_required` instead of a JS bundle that would call missing native APIs.
+
+### Related endpoints / CI
+
+- Update-service OTA routes: `deploy/update-service` (check / bundle delivery; seeds for both `beta` and `stable` channels).
+- Mobile OTA Release workflow: `.github/workflows/mobile-beta-ota.yml` (tags `mobile-beta/*` + `mobile-stable/*`).
+- Rollout / promote-channel: `.github/workflows/mobile-beta-rollout.yml`.

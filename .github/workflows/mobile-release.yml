@@ -35,6 +35,11 @@ on:
         required: false
         default: true
         type: boolean
+      ota_channel:
+        description: OTA channel baked into the native shell at mobile:sync (beta or stable).
+        required: false
+        default: beta
+        type: string
   workflow_call:
     inputs:
       version_name:
@@ -69,6 +74,11 @@ on:
         required: false
         default: true
         type: boolean
+      ota_channel:
+        description: OTA channel baked into the native shell at mobile:sync (beta or stable).
+        required: false
+        default: beta
+        type: string
 
 concurrency:
   group: mobile-release-${{ inputs.release_tag != '' && inputs.release_tag || github.run_id }}
@@ -170,6 +180,7 @@ jobs:
           OPENCHAMBER_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           OPENCHAMBER_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           OPENCHAMBER_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          OPENCHAMBER_OTA_CHANNEL: ${{ inputs.ota_channel }}
         run: |
           bun run mobile:sync
           ./packages/mobile/android/gradlew -p packages/mobile/android bundleRelease assembleRelease
@@ -276,6 +287,8 @@ jobs:
           install_profile "$share_profile" IOS_SHARE_PROFILE_UUID
 
       - name: Prepare mobile assets
+        env:
+          OPENCHAMBER_OTA_CHANNEL: ${{ inputs.ota_channel }}
         run: bun run mobile:sync
 
       - name: Set TestFlight entitlement and versions
