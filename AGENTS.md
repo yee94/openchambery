@@ -34,7 +34,7 @@ Shared contracts must define intentional behavior for every applicable runtime: 
 
 Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH management. The desktop runtime imports `@openchambery/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
 
-Release artifacts and repository links use `yee94/openchamber`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, Vercel `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`).
+Release artifacts and repository links use `yee94/openchamber`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. When the user asks to ship or update a beta, classify the artifact first (`docs/RELEASING.md` § 先选产物): mobile web-only + `mobile-release-plan` `ota` → `mobile-beta/v*` OTA; native shell, TestFlight/APK, desktop, or npm → `v*`. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, Vercel `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`).
 
 ## Native Module Runtime
 
@@ -98,7 +98,7 @@ High-value anchors:
 - VS Code runtime: `packages/vscode/src/DOCUMENTATION.md`
 - Electron: `packages/electron/README.md`
 - Mobile: `packages/mobile/README.md`
-- Releases (stable + beta isolation): `docs/RELEASING.md`, agent command `.opencode/commands/release.md`
+- Releases (choose OTA vs native first; stable + beta isolation): `docs/RELEASING.md`, agent command `.opencode/commands/release.md`
 - Update feed: `deploy/update-service/README.md`
 - Tests (Vitest projects): `vitest.config.ts`
 

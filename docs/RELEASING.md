@@ -2,6 +2,31 @@
 
 本手册覆盖 OpenChamber 的正式 GitHub Release。正式 Release 由 `.github/workflows/release.yml` 创建，Android APK/AAB 由它调用的 `.github/workflows/mobile-release.yml` 上传，iOS IPA 会上传到 TestFlight。
 
+用户说「发 beta / 更新 beta / 推新版本」时，**先选产物，再打 tag**。不要默认推 `v*`。
+
+## 先选产物
+
+1. 看工作区与最近 tag：改动落在哪些包，用户要更新的是手机、桌面，还是两边。
+2. 在仓库根目录跑：
+
+   ```bash
+   node scripts/mobile-release-plan.mjs --json
+   ```
+
+3. 按结果选 tag：
+
+| 情况 | 产物 | Tag | 触发 |
+|---|---|---|---|
+| 仅 web/UI（`packages/ui`、移动端页面、样式、文案），且 `mode: "ota"` | 移动端 web bundle OTA | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
+| 原生壳 / 桥接变更（`mode: "native"`），或用户要 TestFlight / APK / 桌面安装包 / npm | 完整原生 + 桌面发布 | `vX.Y.Z-beta.N` | `release.yml` |
+| 稳定通道同等判定 | 上两行把 `beta` 换成 `stable`，tag 用 `mobile-stable/vX.Y.Z` 或无后缀 `vX.Y.Z` | 同上 | 同上 |
+
+OTA 只更新已安装 App 里的 Web 层。桌面 Electron、VS Code、`@openchambery/web` npm、iOS/Android 原生壳都不会变。用户明确要装包时走 `v*`。
+
+OTA 版本必须**高于**当前通道 `activeBundle.releaseVersion`（通常是最近一次 `v*` 或 `mobile-beta/*`）。`version:bump` 与 `CHANGELOG.md` 两路都要写；OTA 提交用 `release: mobile-beta/v$VERSION`，只推该 OTA tag，**不要**同时打 `v$VERSION`。
+
+资格细则与 OTA 步骤见下文 `Mobile OTA releases`。
+
 ## 发布前检查
 
 设定版本号：

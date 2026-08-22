@@ -3,23 +3,30 @@ description: Publish an OpenChamber GitHub Release; usage: /release [version] [d
 agent: build
 ---
 
-You are releasing OpenChamber from this repository. Follow @docs/RELEASING.md and treat @.github/workflows/release.yml as the authoritative workflow contract. Beta / prerelease rules in @docs/RELEASING.md section `Beta / prerelease` are mandatory.
+You are releasing OpenChamber from this repository. Follow @docs/RELEASING.md. Treat @.github/workflows/release.yml as the native-release contract and @.github/workflows/mobile-beta-ota.yml as the mobile web-bundle OTA contract. Beta / prerelease rules in @docs/RELEASING.md section `Beta / prerelease` are mandatory.
 
 Arguments: `$ARGUMENTS.opencode/commands/release.md`
 
-Accept an optional semantic version in `X.Y.Z` or `X.Y.Z-prerelease.N` form, followed by an optional `dry-run` token. When no version is provided, read the highest **stable** (`X.Y.Z`) version from the five release manifests and increment its patch component by one. Proceed automatically with that version. Do not auto-increment into a `-beta` / prerelease unless the user explicitly asked for a beta or prerelease version.
+When the user asks to ship, update, or push a **beta**, classify the artifact first (`docs/RELEASING.md` § 先选产物). Do not default to a `v*` tag.
+
+Accept an optional semantic version in `X.Y.Z` or `X.Y.Z-prerelease.N` form, followed by an optional `dry-run` token. When no version is provided: for an explicit beta request, increment the highest existing `X.Y.Z-beta.N` (must be newer than the live OTA `activeBundle.releaseVersion`); otherwise read the highest **stable** (`X.Y.Z`) version from the five release manifests and increment its patch component by one. Do not auto-increment into a `-beta` / prerelease unless the user explicitly asked for a beta or prerelease version.
 
 Workflow:
 
-1. Set `VERSION` from the argument or automatically calculate the next stable patch version. Inspect the worktree and recent release/tag state before making changes. Include all current worktree changes in the release commit.
-2. Classify the release:
+1. Inspect the worktree and recent release/tag state. Run `node scripts/mobile-release-plan.mjs --json`. Choose the artifact:
+   - `mode: "ota"` and the user only needs the installed mobile app updated → **OTA**: tag `mobile-beta/v$VERSION` (or `mobile-stable/v$VERSION`).
+   - `mode: "native"`, or the user wants TestFlight / APK / desktop / npm → **native**: tag `v$VERSION`.
+2. Set `VERSION` from the argument or the rule above. Include all current worktree changes in the release commit.
+3. Classify the channel:
    - **Stable:** `X.Y.Z` with no `-` suffix.
    - **Beta / prerelease:** any semver with a `-` suffix (e.g. `1.16.94-beta.2`). Prefer `-beta.N` for intentional betas.
-3. Run `bun run version:bump -- "$VERSION"`.
-4. Add the matching `## [$VERSION] - YYYY-MM-DD` section below `[Unreleased]` in @CHANGELOG.md. Draft user-facing release notes from the changes since the latest release tag and use the existing changelog style.
-5. Stage all current changes, create commit `release: v$VERSION`, and create tag `v$VERSION`.
-6. Push `main` and only tag `v$VERSION`. A tag push triggers the full desktop and Android Release workflow.
-7. When `dry-run` was requested, dispatch the workflow manually instead of creating or pushing a tag:
+4. Run `bun run version:bump -- "$VERSION"`.
+5. Add the matching `## [$VERSION] - YYYY-MM-DD` section below `[Unreleased]` in @CHANGELOG.md. Draft user-facing release notes from the changes since the latest release tag and use the existing changelog style.
+6. Stage all current changes and commit:
+   - OTA: `release: mobile-beta/v$VERSION` (or `mobile-stable/v$VERSION`), tag only that OTA tag.
+   - Native: `release: v$VERSION`, tag `v$VERSION`.
+7. Push `main` and only the tag from step 6. A `v*` tag triggers the full desktop and Android Release workflow. An OTA tag triggers Mobile OTA Release only.
+8. When `dry-run` was requested, dispatch the workflow manually instead of creating or pushing a tag:
 
    ```bash
    gh workflow run release.yml --repo yee94/openchamber --ref main -f version="$VERSION" -f dry_run=true
