@@ -114,6 +114,60 @@ export const SLIM_PARTS_PROJECTION = 'slim-v1';
 
 type LoosePart = Record<string, unknown>;
 
+/**
+ * L1 Host-parity projection: replace `summary.diffs` with `{ diffCount, hasDiffs }`
+ * and remove the file array. Identity when `diffs` is absent.
+ */
+export const projectMessageSummaryDiffCounts = (owner: unknown): unknown => {
+  if (!owner || typeof owner !== 'object' || Array.isArray(owner)) return owner;
+  const record = owner as LoosePart;
+  const summary = record.summary;
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return owner;
+
+  const summaryRecord = summary as LoosePart;
+  if (!Object.prototype.hasOwnProperty.call(summaryRecord, 'diffs')) return owner;
+
+  const diffs = summaryRecord.diffs;
+  const diffCount = Array.isArray(diffs) ? diffs.length : 0;
+  const nextSummary: LoosePart = { ...summaryRecord, diffCount, hasDiffs: diffCount > 0 };
+  delete nextSummary.diffs;
+  return { ...record, summary: nextSummary };
+};
+
+/**
+ * Project exact message GET payload: keep original `{ info, parts }` shape,
+ * only L1-project `info.summary.diffs` → diffCount/hasDiffs.
+ */
+export const projectExactMessagePayload = (payload: unknown): unknown => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const record = payload as LoosePart;
+  if (record.info && typeof record.info === 'object' && !Array.isArray(record.info)) {
+    const nextInfo = projectMessageSummaryDiffCounts(record.info);
+    if (nextInfo === record.info) return payload;
+    return { ...record, info: nextInfo };
+  }
+  return projectMessageSummaryDiffCounts(payload);
+};
+
+/** @deprecated Prefer projectMessageSummaryDiffCounts. */
+export const projectSummaryDiffMarkers = projectMessageSummaryDiffCounts;
+export const projectMessageDiffMarkers = projectMessageSummaryDiffCounts;
+
+const projectMessageDiffSummaries = <T>(records: T[]): T[] => {
+  if (!Array.isArray(records) || records.length === 0) return records;
+
+  let changedAny = false;
+  const projected = records.map((record) => {
+    if (!record || typeof record !== 'object') return record;
+    const loose = record as LoosePart;
+    const info = projectMessageSummaryDiffCounts(loose.info);
+    if (info === loose.info) return record;
+    changedAny = true;
+    return { ...loose, info } as T;
+  });
+  return changedAny ? projected : records;
+};
+
 /** Locator fields the first-packet UI needs. Never copy result bodies. */
 const SLIM_TOOL_INPUT_KEYS = [
   'path',
@@ -478,17 +532,19 @@ const isUserRecord = (record: LoosePart): boolean => {
 };
 
 /**
- * Summarize tool/reasoning parts so a first packet does not have to carry the
- * bodies of a long tool-heavy turn. Parity with the web host `service.js`.
+ * Summarize message diff snapshots and tool/reasoning parts so a first packet
+ * does not have to carry bodies from a long tool-heavy turn. Parity with the
+ * web host `service.js`.
  *
  * Runs after `selectTurnRecords`, so `turnCount`, `complete`, and cursor
  * encoding are all derived from unprojected records and cannot shift.
  */
 export const projectSlimParts = <T>(records: T[]): T[] => {
-  if (!Array.isArray(records) || records.length === 0) return records;
+  const summaryProjected = projectMessageDiffSummaries(records);
+  if (!Array.isArray(summaryProjected) || summaryProjected.length === 0) return summaryProjected;
 
   let changedAny = false;
-  const projected = records.map((record) => {
+  const projected = summaryProjected.map((record) => {
     if (!record || typeof record !== 'object') return record;
     const loose = record as LoosePart;
     const userRow = isUserRecord(loose);
@@ -521,7 +577,7 @@ export const projectSlimParts = <T>(records: T[]): T[] => {
     return { ...loose, parts: nextParts } as T;
   });
 
-  return changedAny ? projected : records;
+  return changedAny ? projected : summaryProjected;
 };
 
 export type HostCursorPayload = {

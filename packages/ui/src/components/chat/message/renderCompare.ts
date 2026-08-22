@@ -171,7 +171,8 @@ const areTurnDiffStatsEqual = (left?: TurnDiffStats, right?: TurnDiffStats): boo
 
   return left.additions === right.additions
     && left.deletions === right.deletions
-    && left.files === right.files;
+    && left.files === right.files
+    && left.hasDiffs === right.hasDiffs;
 };
 
 const areTurnChangedFilesEqual = (left?: TurnChangedFile[], right?: TurnChangedFile[]): boolean => {
@@ -343,7 +344,7 @@ export const areRelevantTurnGroupingContextsEqual = (
     return false;
   }
 
-  if ((ownerRelevant || segmentsRelevant) && !areTurnDiffStatsEqual(left.diffStats, right.diffStats)) {
+  if ((ownerRelevant || segmentsRelevant || left.isLastAssistantInTurn || right.isLastAssistantInTurn) && !areTurnDiffStatsEqual(left.diffStats, right.diffStats)) {
     return false;
   }
 

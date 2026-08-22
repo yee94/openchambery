@@ -16,6 +16,8 @@
  * (true only when nothing older was trimmed from the scanned window).
  */
 
+import { projectMessageSummaryDiffCounts } from '../event-stream/diff-summary.js';
+
 const ASSISTANT_SESSION_DIVIDER_PREFIX = 'oc_asst_session_divider:';
 
 const DEFAULT_MAX_SCAN_PAGES = 50;
@@ -457,22 +459,42 @@ const isUserRecord = (record) => {
 };
 
 /**
- * Summarize tool/reasoning parts so a first packet does not have to carry the
- * bodies of a long tool-heavy turn.
+ * L1: project message `summary.diffs` arrays to `{ diffCount, hasDiffs }` and
+ * remove the file array. Preserves every other message / summary field.
+ */
+export const projectMessageDiffSummaries = (records) => {
+  if (!Array.isArray(records) || records.length === 0) return records;
+
+  let changedAny = false;
+  const projected = records.map((record) => {
+    if (!record || typeof record !== 'object') return record;
+    const info = projectMessageSummaryDiffCounts(record.info);
+    if (info === record.info) return record;
+    changedAny = true;
+    return { ...record, info };
+  });
+
+  return changedAny ? projected : records;
+};
+
+/**
+ * Summarize message diff snapshots and tool/reasoning parts so a first packet
+ * does not have to carry bodies from a long tool-heavy turn.
  *
  * Runs after `selectTurnRecords`, so `turnCount`, `complete`, and cursor
- * encoding are all derived from unprojected records and cannot shift. User rows
- * and assistant text pass through untouched, and records that gain nothing from
+ * encoding are all derived from unprojected records and cannot shift. User and
+ * assistant text pass through untouched, and records that gain nothing from
  * projection keep their original object reference.
  *
  * @param {unknown[]} records
  * @returns {unknown[]}
  */
 export const projectSlimParts = (records) => {
-  if (!Array.isArray(records) || records.length === 0) return records;
+  const summaryProjected = projectMessageDiffSummaries(records);
+  if (!Array.isArray(summaryProjected) || summaryProjected.length === 0) return summaryProjected;
 
   let changedAny = false;
-  const projected = records.map((record) => {
+  const projected = summaryProjected.map((record) => {
     if (!record || typeof record !== 'object') return record;
     const userRow = isUserRecord(record);
 
@@ -503,7 +525,7 @@ export const projectSlimParts = (records) => {
     return { ...record, parts: nextParts };
   });
 
-  return changedAny ? projected : records;
+  return changedAny ? projected : summaryProjected;
 };
 
 const countAuthoredBoundaries = (records) =>

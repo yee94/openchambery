@@ -39,15 +39,21 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
+  - Exact `GET /session/:sessionID/message/:messageID` responses are L1-projected
+    (`summary.diffs` → `diffCount` / `hasDiffs`) on the Extension Host before the
+    payload enters the webview. Full `parts` behavior is preserved.
 
 - `session-turn-page-runtime.ts`
   - Pure turn-window aggregation over official OpenCode `session.messages` pages.
   - Exports `isUserAuthoredTurnBoundary`, `selectTurnRecords`,
     `encodeHostCursor` / `decodeHostCursor`, `projectSlimParts`,
+    `projectMessageSummaryDiffCounts`, `projectExactMessagePayload`,
     `SLIM_PARTS_PROJECTION`, and
     `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`.
-  - Turn-page `slim-v1` projection is Host-parity (first packet and prepend): tool / reasoning / file
-    summaries after `selectTurnRecords`. Slim tools keep short locator input
+  - Turn-page `slim-v1` projection is Host-parity (first packet and prepend): message
+    `summary.diffs` is replaced with L1 markers `diffCount` / `hasDiffs` (file array
+    removed); tool / reasoning / file summaries after `selectTurnRecords`. Slim tools
+    keep short locator input
     (path / pattern / query / command / `subagent_type` / `description` / skill `name` / `id`),
     `metadata.sessionId`, skill `metadata.name`, and edit `additions`/`deletions`, and drop result bodies. Slim `file` parts keep identity, mime,
     filename, and size metadata only — never `url` or base64. Clients must
@@ -85,6 +91,17 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Whole aggregation uses a 45s AbortController timeout (signal forwarded; cleared
     in `finally`).
   - Delegated from `bridge.ts` before the generic proxy handler.
+
+- `session-turn-changes-runtime.ts`
+  - Pure L2/L3 helpers matching web host `changes.service.js`.
+  - L2: project `summary.diffs` → `{ files: [{ file, status?, additions, deletions }] }`.
+  - L3: exact `file` match from official `session.diff` → `{ diff }`.
+
+- `bridge-session-turn-changes-runtime.ts`
+  - Bridge handler for `api:session-turn-changes`.
+  - L2 uses official legacy `/session/:id/message/:messageID`; L3 uses
+    `/session/:id/diff?messageID=`. Extension Host filters before returning to
+    the webview. Delegated from `bridge.ts` before the generic proxy handler.
 
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
@@ -132,6 +149,12 @@ matched ahead of the generic OpenCode proxy, validates `turns` (1..10) and
 and returns the same unified JSON contract as the web host module
 (`packages/web/server/lib/session-turn-pages/`), including opaque Host cursors
 (`oc1.` tokens). Non-GET → 405; illegal query → 400.
+
+Session turn-changes (`GET /api/openchamber/sessions/:sessionID/changes`) is an
+OpenChamber-owned webview route (`webview/sessionTurnChangesRoute.ts`). It is
+matched ahead of the generic OpenCode proxy, requires `messageID`, optionally
+accepts `file` and `directory`, dispatches `api:session-turn-changes`, and
+returns `{ files }` (L2) or `{ diff }` (L3). Non-GET → 405; illegal query → 400.
 
 The exact `GET /api/config/settings/bootstrap` webview route dispatches to
 `api:config/settings:bootstrap` before the generic settings route. The legacy

@@ -413,10 +413,11 @@ describe('progressive activity presentation', () => {
 
     test('turn changes preview carries historical turn identity across desktop and dedicated mobile', () => {
         expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId);');
-        expect(messageBodySource).toContain("openContextDiff(diffDirectory, file, false, 'turn', undefined, turnId, diffSessionId);");
+        expect(messageBodySource).toContain("dedupeKey: `turn-diff:${diffSessionId || 'session'}:${turnId}`");
+        expect(messageBodySource).toContain("diffScope: 'turn'");
         expect(messageBodySource).toContain('const diffSessionId = sessionSurface.sessionId;');
-        expect(messageBodySource).toContain('const visibleFiles = files.slice(0, 5);');
-        expect(messageBodySource).toContain('&& !hasAuthoritativeChangedFiles');
+        expect(messageBodySource).toContain('fileCount={turnGroupingContext.diffStats.files}');
+        expect(messageBodySource).toContain('&& !hasAuthoritativeChangesMarker');
     });
 
     test('turn changes preview uses a lightweight bordered card with tokenized interactive rows', () => {
@@ -426,11 +427,11 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain("const TURN_CHANGES_ROW_DESKTOP_CLASS = 'h-7 gap-1.5';");
         expect(messageBodySource).toContain("const TURN_CHANGES_ROW_MOBILE_CLASS = 'h-6 gap-1';");
         expect(messageBodySource).toContain('mt-4 flex min-w-0 flex-col rounded-[var(--radius-lg)] border bg-muted/20');
-        expect(messageBodySource).toContain('data-turn-change-file="true"');
+        expect(messageBodySource).not.toContain('data-turn-change-file="true"');
         expect(messageBodySource).toContain('TURN_CHANGES_ROW_CLASS');
         expect(messageBodySource).toContain('TURN_CHANGES_ROW_DESKTOP_CLASS');
         expect(messageBodySource).toContain('TURN_CHANGES_ROW_MOBILE_CLASS');
-        expect(messageBodySource).toContain('min-w-0 flex-1 truncate text-left');
+        expect(messageBodySource).toContain("t('chat.changedFiles.title')");
         expect(messageBodySource).not.toContain('mt-4 rounded-xl border border-border/50 bg-muted/15 p-3');
         expect(messageBodySource).not.toContain('gap-1.5 sm:grid-cols-2');
         expect(messageBodySource).not.toContain('rounded-lg border border-border/30 bg-muted/30');

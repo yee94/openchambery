@@ -172,6 +172,36 @@ describe('projectSlimParts', () => {
     },
   });
 
+  it('projects message summary.diffs to L1 count/marker even when parts are empty', () => {
+    const patch = 'diff-body-'.repeat(20_000);
+    const [projected] = projectSlimParts([{
+      info: {
+        id: 'msg_diff',
+        role: 'user',
+        summary: {
+          title: 'kept',
+          diffs: [{
+            file: 'src/large.ts',
+            status: 'modified',
+            additions: 12,
+            deletions: 4,
+            patch,
+          }],
+        },
+      },
+      parts: [],
+    }]);
+
+    expect(projected.info.summary).toEqual({
+      title: 'kept',
+      diffCount: 1,
+      hasDiffs: true,
+    });
+    expect(projected.info.summary.diffs).toBeUndefined();
+    expect(JSON.stringify(projected)).not.toContain(patch);
+    expect(JSON.stringify(projected)).not.toContain('src/large.ts');
+  });
+
   it('drops tool output and metadata but keeps identity and status', () => {
     const [record] = projectSlimParts([
       { info: { id: 'msg_a1', role: 'assistant' }, parts: [toolPart('prt_1', 'x'.repeat(5000))] },

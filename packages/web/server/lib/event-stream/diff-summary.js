@@ -1,9 +1,12 @@
 // ---------------------------------------------------------------------------
-// Outbound FileDiff summarization for message-stream fan-out.
+// Outbound FileDiff summarization for message-stream fan-out and Host L1.
 //
-// Mirrors packages/ui/src/sync/sanitize.ts summarizeFileDiff(s) so Host never
-// pushes full patch/before/after/from/to blobs over Relay/WS (>64KB frames).
-// Pure JS — do not import UI TypeScript from the server package.
+// L1 (ordinary first-packet / SSE / exact message GET):
+//   project `info.summary.diffs` arrays to `{ diffCount, hasDiffs }` and remove
+//   the file array entirely. Never ship patch bodies on these paths.
+//
+// Explicit L2/L3 APIs may still use summarizeFileDiff(s) for file-list / patch
+// responses. Pure JS — do not import UI TypeScript from the server package.
 // ---------------------------------------------------------------------------
 
 /** Lightweight FileDiff fields safe for outbound event frames (preview only). */
@@ -25,6 +28,9 @@ const hasHeavyDiffBody = (diff) => {
  * Reduce a FileDiff / SnapshotFileDiff to preview-safe scalars only.
  * Drops patch / before / after / from / to and any other large body fields.
  * Already-summary objects keep identity.
+ *
+ * Retained for explicit L2 file-list APIs; L1 message paths must use
+ * `projectMessageSummaryDiffCounts` instead and never keep a file array.
  */
 export function summarizeFileDiff(diff) {
   if (!diff || typeof diff !== 'object' || Array.isArray(diff)) {
@@ -62,7 +68,14 @@ export function summarizeFileDiffs(diffs) {
   return changed ? next : diffs;
 }
 
-const summarizeSummaryDiffs = (owner) => {
+/**
+ * L1 projection: replace `summary.diffs` with count/marker scalars.
+ * Keeps every other lightweight summary field. Identity when unchanged.
+ *
+ * @param {unknown} owner message info / session info / summary-bearing object
+ * @returns {unknown}
+ */
+export const projectMessageSummaryDiffCounts = (owner) => {
   if (!owner || typeof owner !== 'object' || Array.isArray(owner)) {
     return owner;
   }
@@ -72,30 +85,36 @@ const summarizeSummaryDiffs = (owner) => {
     return owner;
   }
 
-  if (!Array.isArray(summary.diffs)) {
+  if (!Object.prototype.hasOwnProperty.call(summary, 'diffs')) {
     return owner;
   }
 
-  const stripped = summarizeFileDiffs(summary.diffs);
-  if (stripped === summary.diffs) {
-    return owner;
-  }
+  const diffs = summary.diffs;
+  const diffCount = Array.isArray(diffs) ? diffs.length : 0;
+  const hasDiffs = diffCount > 0;
+
+  const nextSummary = { ...summary };
+  delete nextSummary.diffs;
+  nextSummary.diffCount = diffCount;
+  nextSummary.hasDiffs = hasDiffs;
 
   return {
     ...owner,
-    summary: {
-      ...summary,
-      diffs: stripped,
-    },
+    summary: nextSummary,
   };
 };
+
+/** @deprecated Prefer projectMessageSummaryDiffCounts — L1 removes the file array. */
+export const summarizeMessageDiffSnapshots = projectMessageSummaryDiffCounts;
 
 /**
  * Summarize FileDiff bodies on outbound event payloads.
  *
  * Handles:
  * - `session.diff` with legacy `properties.diff` or current `data.diff`
+ *   (keeps file/status/additions/deletions; drops patch bodies)
  * - message/session objects carrying `summary.diffs` under properties/data info
+ *   (L1: projects to diffCount/hasDiffs and removes the array)
  *
  * Non-diff events keep identity.
  */
@@ -154,7 +173,7 @@ export function summarizeOutboundEventPayload(payload) {
 
       // Common shape: properties.info.summary.diffs
       if (body.info && typeof body.info === 'object' && !Array.isArray(body.info)) {
-        const nextInfo = summarizeSummaryDiffs(body.info);
+        const nextInfo = projectMessageSummaryDiffCounts(body.info);
         if (nextInfo !== body.info) {
           next = {
             ...next,
@@ -169,7 +188,7 @@ export function summarizeOutboundEventPayload(payload) {
       }
 
       // Rare: properties.summary.diffs directly on the properties/data body
-      const nextBody = summarizeSummaryDiffs(body);
+      const nextBody = projectMessageSummaryDiffCounts(body);
       if (nextBody !== body) {
         next = {
           ...next,

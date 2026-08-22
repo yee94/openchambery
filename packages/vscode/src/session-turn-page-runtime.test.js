@@ -840,4 +840,52 @@ describe('projectSlimParts (VS Code parity with web host)', () => {
     expect(JSON.stringify(record.parts[0])).not.toContain('SECRET BODY');
     expect(JSON.stringify(record.parts[0])).not.toContain('/tmp/skills/sync');
   });
+
+  it('L1-projects summary.diffs to diffCount/hasDiffs and drops the file array', async () => {
+    const { projectSlimParts, projectExactMessagePayload } = await loadRuntime();
+    const patch = '@@ huge @@';
+    const [record] = projectSlimParts([
+      {
+        info: {
+          id: 'msg_u1',
+          role: 'user',
+          summary: {
+            title: 'turn',
+            diffs: [{
+              file: 'src/a.ts',
+              status: 'modified',
+              additions: 2,
+              deletions: 1,
+              patch,
+            }],
+          },
+        },
+        parts: [],
+      },
+    ]);
+
+    expect(record.info.summary).toEqual({
+      title: 'turn',
+      diffCount: 1,
+      hasDiffs: true,
+    });
+    expect(record.info.summary.diffs).toBeUndefined();
+    expect(JSON.stringify(record)).not.toContain(patch);
+    expect(JSON.stringify(record)).not.toContain('src/a.ts');
+
+    const exact = projectExactMessagePayload({
+      info: {
+        id: 'msg_1',
+        summary: { diffs: [{ file: 'a.ts', patch }] },
+      },
+      parts: [{ id: 'prt_1', type: 'text', text: 'hello' }],
+    });
+    expect(exact).toEqual({
+      info: {
+        id: 'msg_1',
+        summary: { diffCount: 1, hasDiffs: true },
+      },
+      parts: [{ id: 'prt_1', type: 'text', text: 'hello' }],
+    });
+  });
 });

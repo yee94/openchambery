@@ -727,20 +727,26 @@ class OpencodeService {
    * Uses OpenCode `GET /session/{sessionID}/diff` (optional `messageID` scopes to a user turn).
    * Throws on transport/SDK failure — never returns an empty list as a silent success.
    */
-  async getSessionDiff(params: {
-    sessionID: string;
-    directory?: string | null;
-    messageID?: string | null;
-  }): Promise<SnapshotFileDiff[]> {
+  async getSessionDiff(
+    params: {
+      sessionID: string;
+      directory?: string | null;
+      messageID?: string | null;
+    },
+    options?: { signal?: AbortSignal },
+  ): Promise<SnapshotFileDiff[]> {
     const requestDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
     const messageID = typeof params.messageID === 'string' && params.messageID.trim().length > 0
       ? params.messageID.trim()
       : undefined;
-    const response = await this.client.session.diff({
+    const request = {
       sessionID: params.sessionID,
       ...(requestDirectory ? { directory: requestDirectory } : {}),
       ...(messageID ? { messageID } : {}),
-    });
+    };
+    const response = options?.signal
+      ? await this.client.session.diff(request, { signal: options.signal })
+      : await this.client.session.diff(request);
     return unwrapSdkData(response, 'session.diff');
   }
 

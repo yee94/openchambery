@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,11 +6,12 @@ import { fileURLToPath } from 'node:url';
 import {
   createToolPatchTurnDiffs,
   getFirstChangedModifiedLineFromPatch,
-  mergeTurnDiffSummariesWithFull,
-  turnDiffSummariesNeedFullBody,
 } from './diffPatchUtils';
+import { projectTurnDiffStats } from '../chat/lib/turns/projectTurnSummary';
+import type { ChatMessageEntry } from '../chat/lib/turns/types';
 
 const diffViewSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'DiffView.tsx'), 'utf-8');
+const messageBodySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../chat/message/MessageBody.tsx'), 'utf-8');
 
 describe('getFirstChangedModifiedLineFromPatch', () => {
   test('returns the first added line instead of the hunk context start', () => {
@@ -65,94 +66,58 @@ describe('createToolPatchTurnDiffs', () => {
   });
 });
 
-describe('mergeTurnDiffSummariesWithFull', () => {
-  test('fills patch from full diffs while keeping summary stats', () => {
-    const summaries = [
-      { file: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 },
-      { file: 'src/b.ts', status: 'added', additions: 5, deletions: 0 },
-    ];
-    const full = [
-      {
-        file: 'src/a.ts',
-        status: 'modified',
-        additions: 99,
-        deletions: 99,
-        patch: '@@ -1 +1 @@\n-old\n+new',
-      },
-      {
-        file: 'src/extra.ts',
-        status: 'modified',
-        additions: 1,
-        deletions: 0,
-        patch: '@@ -1 +1 @@\n-x\n+y',
-      },
-    ];
-
-    const merged = mergeTurnDiffSummariesWithFull(summaries, full);
-
-    expect(merged).toHaveLength(2);
-    expect(merged[0]).toEqual({
-      file: 'src/a.ts',
-      status: 'modified',
-      additions: 2,
-      deletions: 1,
-      patch: '@@ -1 +1 @@\n-old\n+new',
-      before: undefined,
-      after: undefined,
-    });
-    expect(merged[1]).toEqual(summaries[1]);
+describe('projectTurnDiffStats L1 marker contract', () => {
+  const userMessage = (summary: object): ChatMessageEntry => ({
+    info: { id: 'user-1', role: 'user', sessionID: 'session-1', summary } as ChatMessageEntry['info'],
+    parts: [],
   });
 
-  test('leaves summaries unchanged when full fetch is empty', () => {
-    const summaries = [{ file: 'src/a.ts', additions: 1, deletions: 0 }];
-    const merged = mergeTurnDiffSummariesWithFull(summaries, []);
-    expect(merged).toEqual(summaries);
-    expect(merged).not.toBe(summaries);
+  test('projects a count-only changes marker', () => {
+    expect(projectTurnDiffStats(userMessage({ diffCount: 463, hasDiffs: true }))).toEqual({
+      additions: 0,
+      deletions: 0,
+      files: 463,
+      hasDiffs: true,
+    });
   });
 
-  test('prefers full before/after when patch is absent', () => {
-    const summaries = [{ file: 'src/a.ts', additions: 1, deletions: 1 }];
-    const full = [{ file: 'src/a.ts', before: 'old', after: 'new' }];
-    expect(mergeTurnDiffSummariesWithFull(summaries, full)[0]).toEqual({
-      file: 'src/a.ts',
-      additions: 1,
-      deletions: 1,
-      patch: undefined,
-      before: 'old',
-      after: 'new',
-      status: undefined,
-    });
+  test('keeps legacy summary diffs compatible', () => {
+    expect(projectTurnDiffStats(userMessage({
+      diffs: [{ file: 'a.ts', additions: 2, deletions: 1 }],
+    }))).toEqual({ additions: 2, deletions: 1, files: 1, hasDiffs: true });
   });
 });
 
-describe('turnDiffSummariesNeedFullBody', () => {
-  test('detects summary-only rows without patch body', () => {
-    expect(turnDiffSummariesNeedFullBody([
-      { file: 'a.ts', additions: 1, deletions: 0 },
-    ])).toBe(true);
-  });
-
-  test('returns false when every row already has a body', () => {
-    expect(turnDiffSummariesNeedFullBody([
-      { file: 'a.ts', patch: '@@ -1 +1 @@\n-x\n+y' },
-      { file: 'b.ts', before: '', after: 'created' },
-    ])).toBe(false);
+describe('Turn Changes preview contract', () => {
+  test('renders a count-only entry and opens a stable turn diff tab on desktop', () => {
+    expect(messageBodySource).toContain('fileCount={turnGroupingContext.diffStats.files}');
+    expect(messageBodySource).not.toContain('data-turn-change-file');
+    expect(messageBodySource).toContain("mode: 'diff'");
+    expect(messageBodySource).toContain("diffScope: 'turn'");
+    expect(messageBodySource).toContain("dedupeKey: `turn-diff:${diffSessionId || 'session'}:${turnId}`");
+    expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId)');
   });
 });
 
-describe('DiffView turn-scope on-demand session.diff contract', () => {
-  test('fetches full turn patches via getSessionDiff and skips toolPatches path', () => {
-    expect(diffViewSource).toContain('opencodeClient');
-    expect(diffViewSource).toContain('getSessionDiff');
-    expect(diffViewSource).toContain('mergeTurnDiffSummariesWithFull');
-    expect(diffViewSource).toContain('turnDiffSummariesNeedFullBody');
-    expect(diffViewSource).toContain('usesToolPatches');
-    expect(diffViewSource).toContain("disableGitFetch={activeDiffScope === 'turn'}");
-    // toolPatches path must short-circuit without session.diff
-    expect(diffViewSource).toContain("if (activeDiffScope !== 'turn' || usesToolPatches)");
-    // failure must not clear summary list as empty success
-    expect(diffViewSource).toContain('setFetchedTurnFullDiffs(null)');
-    expect(diffViewSource).toContain('turnDiffError');
+describe('DiffView staged turn changes queries', () => {
+  test('loads L2 on an opened turn scope and removes the whole-turn session diff path', () => {
+    expect(diffViewSource).toContain('useSessionTurnChangesQuery');
+    expect(diffViewSource).toContain("activeDiffScope === 'turn'");
+    expect(diffViewSource).toContain('enabled: shouldLoadTurnChanges');
+    expect(diffViewSource).not.toContain('getSessionDiff');
+    expect(diffViewSource).not.toContain('mergeTurnDiffSummariesWithFull');
+  });
+
+  test('loads L3 only for an expanded mounted file row', () => {
+    expect(diffViewSource).toContain('useSessionTurnChangeFileQuery');
+    expect(diffViewSource).toContain('enabled: loadTurnChangeFile && Boolean(turnChangesRequest) && isExpanded && isMounted');
+    expect(diffViewSource).toContain("loadTurnChangeFile={activeDiffScope === 'turn' && !usesToolPatches}");
+  });
+
+  test('short-circuits tool patches and protects turn scope from expand-all fanout', () => {
+    expect(diffViewSource).toContain('if (usesToolPatches) return selectedToolTurnDiffs;');
+    expect(diffViewSource).toContain("stackedDefaultCollapsedAll || (activeDiffScope === 'turn' && !usesToolPatches)");
+    expect(diffViewSource).toContain("(activeDiffScope !== 'turn' || usesToolPatches)");
   });
 
   test('scopes turn diffs to the owning session instead of the global current session', () => {
@@ -160,7 +125,7 @@ describe('DiffView turn-scope on-demand session.diff contract', () => {
     expect(diffViewSource).toContain("const resolvedSessionId = (typeof sessionId === 'string' && sessionId.trim())");
     expect(diffViewSource).toContain('        ? sessionId.trim()');
     expect(diffViewSource).toContain('        : globalSessionId;');
-    // Transcript scan and session.diff fetch must both use the resolved session…
+    // Transcript scan and staged queries both use the resolved session.
     expect(diffViewSource).toContain("useSessionMessages(resolvedSessionId ?? ''");
     expect(diffViewSource).toContain('sessionID: resolvedSessionId,');
     // …while review stays attached to the primary chat session.

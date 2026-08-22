@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.7] - 2026-08-22
+
+### 会话
+
+- **大会话 Changes 改为分层按需加载：** 消息首包、实时事件与精确消息拉取不再携带回合变更的文件列表与 patch 正文，只保留变更数量标记；打开 Changes 时才拉取文件摘要列表，展开具体文件时才取该文件的单文件 patch。数百文件、约 14MB patch 的大会话首包体积恢复正常，Web、桌面、VS Code 与 relay 链路一致生效；连接旧版 Host 时自动回退官方 diff 接口，行为不回退。
+- **聊天回合变更预览改为计数入口：** 回合底部只显示变更文件数，点击后在 Diff 面板按需加载文件列表与逐文件 patch，不再随消息流预取整回合 diff。
+
+### Git
+
+- **超大变更集降级兼容旧 Host：** 连接尚未下发 `oversized` 标记的旧版 Host 时，Web 运行时对异常庞大的未标记变更集（超过 5000 文件）也提供降级渲染入口，作为渲染保护的最后防线；新版 Host 的服务端声明始终优先，VS Code 本地 git 行为不变。
+
 ## [1.18.2-beta.6] - 2026-08-22
 
 ### 聊天

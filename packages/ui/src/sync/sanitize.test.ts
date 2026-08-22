@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { Message, Session } from '@opencode-ai/sdk/v2'
 
 import {
+  projectSummaryDiffMarkers,
   stripMessageDiffSnapshots,
   stripSessionDiffSnapshots,
   stripSessionListDetails,
@@ -82,8 +83,40 @@ describe('summarizeFileDiffs', () => {
   })
 })
 
+describe('projectSummaryDiffMarkers', () => {
+  test('replaces diffs array with diffCount/hasDiffs', () => {
+    const owner = {
+      summary: {
+        title: 'turn',
+        diffs: [{ file: 'a.ts', patch: '@@' }, { file: 'b.ts' }],
+      },
+    }
+    const next = projectSummaryDiffMarkers(owner)
+    expect(next).toEqual({
+      summary: {
+        title: 'turn',
+        diffCount: 2,
+        hasDiffs: true,
+      },
+    })
+    expect((next.summary as { diffs?: unknown }).diffs).toBeUndefined()
+  })
+
+  test('projects empty diffs to zero markers', () => {
+    const owner = { summary: { diffs: [] } }
+    expect(projectSummaryDiffMarkers(owner)).toEqual({
+      summary: { diffCount: 0, hasDiffs: false },
+    })
+  })
+
+  test('keeps identity when diffs key is absent', () => {
+    const owner = { summary: { title: 'x', diffCount: 3, hasDiffs: true } }
+    expect(projectSummaryDiffMarkers(owner)).toBe(owner)
+  })
+})
+
 describe('stripSessionDiffSnapshots', () => {
-  test('removes oversized revert and summary diff payloads', () => {
+  test('removes oversized revert payloads and L1-projects summary diffs', () => {
     const session = {
       id: 'ses_1',
       slug: 'session-one',
@@ -108,15 +141,18 @@ describe('stripSessionDiffSnapshots', () => {
 
     const next = stripSessionDiffSnapshots(session) as Session & {
       revert?: { messageID?: string; partID?: string; snapshot?: string; diff?: string }
-      summary?: { diffs?: Array<{ before?: string; after?: string; patch?: string }> }
+      summary?: { diffs?: unknown; diffCount?: number; hasDiffs?: boolean; additions?: number }
     }
 
     expect(next).not.toBe(session)
     expect(next.revert).toEqual({ messageID: 'msg_2', partID: 'part_3' })
-    expect(next.summary?.diffs).toEqual([{ additions: 2, deletions: 1 }])
+    expect(next.summary?.diffs).toBeUndefined()
+    expect(next.summary?.diffCount).toBe(1)
+    expect(next.summary?.hasDiffs).toBe(true)
+    expect(next.summary?.additions).toBe(2)
   })
 
-  test('preserves object identity when nothing changes', () => {
+  test('preserves object identity when diffs key is absent', () => {
     const session = {
       id: 'ses_1',
       slug: 'session-one',
@@ -126,7 +162,7 @@ describe('stripSessionDiffSnapshots', () => {
       version: '1.0.0',
       time: { created: 1, updated: 2 },
       revert: { messageID: 'msg_2', partID: 'part_3' },
-      summary: { additions: 2, deletions: 1, diffs: [{ additions: 2, deletions: 1 }] },
+      summary: { additions: 2, deletions: 1, diffCount: 1, hasDiffs: true },
     } as unknown as Session
 
     expect(stripSessionDiffSnapshots(session)).toBe(session)
@@ -134,7 +170,7 @@ describe('stripSessionDiffSnapshots', () => {
 })
 
 describe('stripMessageDiffSnapshots', () => {
-  test('strips patch and snapshot bodies from message summary diffs', () => {
+  test('projects message summary diffs to diffCount/hasDiffs', () => {
     const message = {
       id: 'msg_1',
       sessionID: 'ses_1',
@@ -161,33 +197,29 @@ describe('stripMessageDiffSnapshots', () => {
 
     const next = stripMessageDiffSnapshots(message) as Message & {
       summary?: {
-        diffs?: Array<{
-          file?: string
-          status?: string
-          additions?: number
-          deletions?: number
-          patch?: string
-          before?: string
-          after?: string
-        }>
+        diffs?: unknown
+        diffCount?: number
+        hasDiffs?: boolean
+        additions?: number
       }
     }
 
     expect(next).not.toBe(message)
-    expect(next.summary?.diffs).toEqual([
-      { file: 'src/a.ts', status: 'modified', additions: 4, deletions: 2 },
-    ])
-    expect(next.summary?.diffs?.[0]?.patch).toBeUndefined()
+    expect(next.summary?.diffs).toBeUndefined()
+    expect(next.summary?.diffCount).toBe(1)
+    expect(next.summary?.hasDiffs).toBe(true)
+    expect(next.summary?.additions).toBe(4)
   })
 
-  test('preserves message identity when diffs are already summaries', () => {
+  test('preserves message identity when diffs key is absent', () => {
     const message = {
       id: 'msg_1',
       sessionID: 'ses_1',
       role: 'assistant',
       time: { created: 1 },
       summary: {
-        diffs: [{ file: 'a.ts', additions: 1, deletions: 0 }],
+        diffCount: 1,
+        hasDiffs: true,
       },
     } as unknown as Message
 

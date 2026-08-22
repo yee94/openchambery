@@ -1,4 +1,8 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { projectMessageSummaryDiffCounts } from '../event-stream/diff-summary.js';
+import {
+  createSessionChangesService,
+} from './changes.service.js';
 import {
   createSessionReconcileService,
   MAX_ANCHOR_LENGTH,
@@ -6,6 +10,7 @@ import {
 } from './reconcile.service.js';
 import {
   createSessionTurnPageService,
+  projectMessageDiffSummaries,
   projectSlimParts,
   SLIM_PARTS_PROJECTION,
 } from './service.js';
@@ -76,15 +81,27 @@ const RECONCILE_TOTAL_BYTE_LIMIT = (() => {
 /** Test/inspect helper — resolved host-local scan chunk. */
 export const getInnerSessionTurnScanLimit = () => _inner_scanLimit;
 
+const MESSAGE_ID_MIN = 1;
+const MESSAGE_ID_MAX = 512;
+const SESSION_ID_MIN = 1;
+const SESSION_ID_MAX = 512;
+const FILE_PATH_MIN = 1;
+const FILE_PATH_MAX = 4096;
+const EXACT_MESSAGE_TIMEOUT_MS = 45_000;
+const CHANGES_TIMEOUT_MS = 45_000;
+
 /** Safe client-facing error strings — no paths, tokens, or upstream bodies. */
 const SAFE_ERRORS = {
   invalid_turns: 'turns must be an integer between 1 and 10',
   invalid_scan_limit: 'scanLimit must be an integer between 10 and 200',
   invalid_session: 'sessionID is required',
+  invalid_message: 'messageID is required',
+  invalid_file: 'file is invalid',
   invalid_cursor: 'invalid cursor',
   invalid_anchor: 'anchor is required and must be a non-empty message id',
   invalid_continuation: 'invalid continuation',
   invalid_reconcile_params: 'provide exactly one of anchor or continuation',
+  change_not_found: 'change file not found',
   upstream: 'upstream',
   unavailable: 'upstream unavailable',
   aborted: 'aborted',
@@ -96,6 +113,23 @@ const SAFE_ERRORS = {
   too_large: 'payload too large',
   internal: 'internal error',
 };
+
+/** Reject control characters / NUL in change file selectors. */
+const hasControlOrNul = (value) => {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code === 0 || (code >= 1 && code <= 31) || code === 127) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const isBoundedId = (value, { min = MESSAGE_ID_MIN, max = MESSAGE_ID_MAX } = {}) => (
+  typeof value === 'string'
+  && value.length >= min
+  && value.length <= max
+);
 
 const parsePositiveInt = (value) => {
   if (value === undefined || value === null || value === '') return null;
@@ -172,11 +206,22 @@ const requestSignal = (req, res) => {
   return controller.signal;
 };
 
+const createSdkClient = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders }) => {
+  const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
+  const headers = typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders() : {};
+  return createOpencodeClient({ baseUrl, headers });
+};
+
+const throwUpstream = (logger, label) => {
+  logger?.warn?.(label);
+  const error = new Error('upstream');
+  error.code = 'upstream';
+  throw error;
+};
+
 const createSdkFetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
   return async ({ sessionID, directory, before, limit, signal }) => {
-    const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
-    const headers = typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders() : {};
-    const client = createOpencodeClient({ baseUrl, headers });
+    const client = createSdkClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders });
 
     const result = await client.session.messages({
       sessionID,
@@ -186,10 +231,7 @@ const createSdkFetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }
     }, { signal });
 
     if (result?.error) {
-      logger?.warn?.('[session-turn-pages] session.messages SDK error');
-      const error = new Error('upstream');
-      error.code = 'upstream';
-      throw error;
+      throwUpstream(logger, '[session-turn-pages] session.messages SDK error');
     }
 
     const data = result?.data;
@@ -199,10 +241,7 @@ const createSdkFetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }
         ? data.items
         : null;
     if (!records) {
-      logger?.warn?.('[session-turn-pages] session.messages malformed payload');
-      const error = new Error('upstream');
-      error.code = 'upstream';
-      throw error;
+      throwUpstream(logger, '[session-turn-pages] session.messages malformed payload');
     }
 
     const headerCursor = result?.response?.headers?.get?.('x-next-cursor');
@@ -216,6 +255,70 @@ const createSdkFetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }
       complete: nextCursor == null,
     };
   };
+};
+
+const createSdkFetchMessage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
+  return async ({ sessionID, messageID, directory, signal }) => {
+    const client = createSdkClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders });
+    const result = await client.session.message({
+      sessionID,
+      messageID,
+      ...(typeof directory === 'string' && directory.length > 0 ? { directory } : {}),
+    }, { signal });
+
+    if (result?.error) {
+      const status = result?.response?.status;
+      if (status === 404) {
+        const error = new Error('not_found');
+        error.code = 'not_found';
+        throw error;
+      }
+      throwUpstream(logger, '[session-turn-pages] session.message SDK error');
+    }
+
+    const data = result?.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throwUpstream(logger, '[session-turn-pages] session.message malformed payload');
+    }
+    return data;
+  };
+};
+
+const createSdkFetchDiff = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
+  return async ({ sessionID, messageID, directory, signal }) => {
+    const client = createSdkClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders });
+    const result = await client.session.diff({
+      sessionID,
+      messageID,
+      ...(typeof directory === 'string' && directory.length > 0 ? { directory } : {}),
+    }, { signal });
+
+    if (result?.error) {
+      throwUpstream(logger, '[session-changes] session.diff SDK error');
+    }
+
+    const data = result?.data;
+    if (!Array.isArray(data)) {
+      throwUpstream(logger, '[session-changes] session.diff malformed payload');
+    }
+    return data;
+  };
+};
+
+/**
+ * Project exact message GET payload: keep original `{ info, parts }` shape,
+ * only L1-project `info.summary.diffs` → diffCount/hasDiffs.
+ */
+export const projectExactMessagePayload = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+  if (payload.info && typeof payload.info === 'object' && !Array.isArray(payload.info)) {
+    const nextInfo = projectMessageSummaryDiffCounts(payload.info);
+    if (nextInfo === payload.info) return payload;
+    return { ...payload, info: nextInfo };
+  }
+  return projectMessageSummaryDiffCounts(payload);
 };
 
 const mapServiceError = (error) => {
@@ -265,6 +368,21 @@ const mapServiceError = (error) => {
   if (code === 'invalid_reconcile_params') {
     return { status: 400, body: { error: SAFE_ERRORS.invalid_reconcile_params } };
   }
+  if (code === 'invalid_message' || code === 'invalid_params') {
+    return { status: 400, body: { error: SAFE_ERRORS.invalid_message, code: 'invalid_message' } };
+  }
+  if (code === 'invalid_file') {
+    return { status: 400, body: { error: SAFE_ERRORS.invalid_file, code: 'invalid_file' } };
+  }
+  if (code === 'change_not_found') {
+    return {
+      status: 404,
+      body: { error: SAFE_ERRORS.change_not_found, code: 'change_not_found' },
+    };
+  }
+  if (code === 'not_found') {
+    return { status: 404, body: { error: 'not found', code: 'not_found' } };
+  }
   return { status: 502, body: { error: SAFE_ERRORS.upstream } };
 };
 
@@ -291,6 +409,8 @@ const logInternalError = (logger, error, context = {}) => {
  * Register OpenChamber-owned session message routes:
  * - GET /api/openchamber/sessions/:sessionID/messages
  * - GET /api/openchamber/sessions/:sessionID/messages/reconcile
+ * - GET /api/openchamber/sessions/:sessionID/changes
+ * - GET /api/session/:sessionID/message/:messageID  (L1 exact message; before proxy)
  *
  * Global /api auth is enforced by core-routes requireApiAuth before feature
  * routes. This module does not add redundant auth middleware.
@@ -303,6 +423,8 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
   const {
     sessionTurnPageService: injectedService,
     sessionReconcileService: injectedReconcileService,
+    sessionChangesService: injectedChangesService,
+    fetchExactMessage: injectedFetchExactMessage,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     logger = console,
@@ -330,6 +452,15 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
     totalPageLimit: RECONCILE_TOTAL_PAGE_LIMIT,
     totalByteLimit: RECONCILE_TOTAL_BYTE_LIMIT,
     scanLimit: _inner_scanLimit,
+  });
+
+  const fetchExactMessage = injectedFetchExactMessage
+    ?? createSdkFetchMessage({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger });
+
+  const changesService = injectedChangesService ?? createSessionChangesService({
+    fetchMessage: fetchExactMessage,
+    fetchDiff: createSdkFetchDiff({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }),
+    logger,
   });
 
   // More-specific path first (before generic messages route).
@@ -379,7 +510,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       }
 
       return res.status(200).json({
-        records: Array.isArray(result.records) ? result.records : [],
+        records: projectMessageDiffSummaries(Array.isArray(result.records) ? result.records : []),
         anchorFound: result.anchorFound === true,
         capturedHeadMessageID: result.capturedHeadMessageID ?? null,
         latestHeadMessageID: result.latestHeadMessageID ?? null,
@@ -483,6 +614,136 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         return undefined;
       }
       logger?.warn?.('[session-turn-pages] loadPage failed');
+      if (!res.headersSent) {
+        return res.status(502).json({ error: SAFE_ERRORS.upstream });
+      }
+      return undefined;
+    } finally {
+      timed.clear();
+    }
+  });
+
+  /**
+   * Exact message GET — registered before generic `/api` proxy so materialize /
+   * recovery never relay a raw 14MB `summary.diffs` array. Returns the official
+   * `{ info, parts }` shape with L1 summary projection only.
+   */
+  app.get('/api/session/:sessionID/message/:messageID', async (req, res) => {
+    const sessionID = req.params?.sessionID;
+    const messageID = req.params?.messageID;
+    if (!isBoundedId(sessionID, { min: SESSION_ID_MIN, max: SESSION_ID_MAX })) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_session, code: 'invalid_session' });
+    }
+    if (!isBoundedId(messageID, { min: MESSAGE_ID_MIN, max: MESSAGE_ID_MAX })) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_message, code: 'invalid_message' });
+    }
+
+    const directory = typeof req.query?.directory === 'string' && req.query.directory.length > 0
+      ? req.query.directory
+      : undefined;
+
+    const parentSignal = requestSignal(req, res);
+    const timed = timeoutSignal(EXACT_MESSAGE_TIMEOUT_MS, parentSignal);
+
+    try {
+      const payload = await fetchExactMessage({
+        sessionID,
+        messageID,
+        directory,
+        signal: timed.signal,
+      });
+      return res.status(200).json(projectExactMessagePayload(payload));
+    } catch (error) {
+      if (error?.name === 'AbortError' || error?.code === 'aborted') {
+        if (!res.headersSent) {
+          return res.status(499).json({ error: SAFE_ERRORS.aborted });
+        }
+        return undefined;
+      }
+      if (error?.code === 'not_found') {
+        if (!res.headersSent) {
+          return res.status(404).json({ error: 'not found', code: 'not_found' });
+        }
+        return undefined;
+      }
+      logger?.warn?.('[session-turn-pages] exact message failed', {
+        sessionID,
+        messageID,
+        hasDirectory: directory != null,
+      });
+      if (!res.headersSent) {
+        return res.status(502).json({ error: SAFE_ERRORS.upstream });
+      }
+      return undefined;
+    } finally {
+      timed.clear();
+    }
+  });
+
+  /**
+   * Changes API — L2 file list (no `file`) or L3 single-file patch (`file=`).
+   * Never returns the full message envelope or unrelated file patches.
+   */
+  app.get('/api/openchamber/sessions/:sessionID/changes', async (req, res) => {
+    const sessionID = req.params?.sessionID;
+    if (!isBoundedId(sessionID, { min: SESSION_ID_MIN, max: SESSION_ID_MAX })) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_session, code: 'invalid_session' });
+    }
+
+    const messageIDRaw = req.query?.messageID;
+    if (!isBoundedId(messageIDRaw, { min: MESSAGE_ID_MIN, max: MESSAGE_ID_MAX })) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_message, code: 'invalid_message' });
+    }
+
+    const fileRaw = req.query?.file;
+    let file;
+    if (fileRaw !== undefined && fileRaw !== null && fileRaw !== '') {
+      if (
+        typeof fileRaw !== 'string'
+        || fileRaw.length < FILE_PATH_MIN
+        || fileRaw.length > FILE_PATH_MAX
+        || hasControlOrNul(fileRaw)
+      ) {
+        return res.status(400).json({ error: SAFE_ERRORS.invalid_file, code: 'invalid_file' });
+      }
+      file = fileRaw;
+    }
+
+    const directory = typeof req.query?.directory === 'string' && req.query.directory.length > 0
+      ? req.query.directory
+      : undefined;
+
+    const parentSignal = requestSignal(req, res);
+    const timed = timeoutSignal(CHANGES_TIMEOUT_MS, parentSignal);
+
+    try {
+      const result = await changesService.loadChanges({
+        sessionID,
+        messageID: messageIDRaw,
+        directory,
+        file,
+        signal: timed.signal,
+      });
+
+      if (!result?.ok) {
+        const mapped = mapServiceError(result?.error);
+        return res.status(mapped.status).json(mapped.body);
+      }
+
+      return res.status(200).json(result.body);
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        if (!res.headersSent) {
+          return res.status(499).json({ error: SAFE_ERRORS.aborted });
+        }
+        return undefined;
+      }
+      logger?.warn?.('[session-changes] loadChanges failed', {
+        sessionID,
+        messageID: messageIDRaw,
+        hasDirectory: directory != null,
+        hasFile: file != null,
+      });
       if (!res.headersSent) {
         return res.status(502).json({ error: SAFE_ERRORS.upstream });
       }

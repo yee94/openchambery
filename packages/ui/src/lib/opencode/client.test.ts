@@ -307,6 +307,22 @@ describe('opencodeClient getSessionDiff', () => {
     expect(thrown instanceof Error).toBe(true);
     expect((thrown as Error).message).toContain('empty response');
   });
+
+  test('passes AbortSignal as SDK request options', async () => {
+    const signal = new AbortController().signal;
+    sessionDiffResults.push({
+      data: [],
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    await opencodeClient.getSessionDiff({ sessionID: 'ses_1' }, { signal });
+
+    expect(sessionDiffSdkCalls[0]).toEqual([
+      { sessionID: 'ses_1' },
+      { signal },
+    ]);
+  });
 });
 
 describe('opencodeClient getSessionActive', () => {
