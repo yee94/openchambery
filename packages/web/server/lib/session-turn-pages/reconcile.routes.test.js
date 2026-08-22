@@ -209,6 +209,54 @@ describe('registerSessionTurnPageRoutes — reconcile', () => {
     });
   });
 
+  it('summarizes message diff snapshots while preserving full reconcile parts', async () => {
+    const patch = 'diff-body-'.repeat(20_000);
+    const reconcile = vi.fn(async () => successPage({
+      records: [{
+        info: {
+          id: 'msg_u2',
+          role: 'user',
+          summary: {
+            diffs: [{
+              file: 'src/large.ts',
+              status: 'modified',
+              additions: 5,
+              deletions: 1,
+              patch,
+            }],
+          },
+        },
+        parts: [{ id: 'prt_1', type: 'text', text: 'full recovery text' }],
+      }],
+    }));
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      sessionTurnPageService: { loadPage: vi.fn() },
+      sessionReconcileService: { reconcile },
+    });
+    const res = response();
+
+    await route('GET', RECONCILE_ROUTE)({
+      params: { sessionID: 'ses_42' },
+      query: { anchor: 'msg_u2' },
+      headers: {},
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.records[0].info.summary).toEqual({
+      diffCount: 1,
+      hasDiffs: true,
+    });
+    expect(res.body.records[0].info.summary.diffs).toBeUndefined();
+    expect(res.body.records[0].parts[0]).toEqual({
+      id: 'prt_1',
+      type: 'text',
+      text: 'full recovery text',
+    });
+    expect(JSON.stringify(res.body)).not.toContain(patch);
+    expect(JSON.stringify(res.body)).not.toContain('src/large.ts');
+  });
+
   it('returns HTTP 200 for resetRequired (anchor lost / budget rebuild)', async () => {
     const reconcile = vi.fn(async () => successPage({
       records: [],

@@ -1997,6 +1997,17 @@ button.oc-mobile-worktree-label-trigger:active,
     overscroll-behavior: none;
   }
 
+  /* Composer clip shells must stay clippers. The generic rewrite above
+     would open a second scrollport beside the textarea (two scrollbars)
+     and absorb growth so the field no longer auto-expands. */
+  :root.mobile-pointer:not(.desktop-runtime) [data-composer-content="true"] .overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden {
+    overflow: hidden !important;
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
+  }
+
   /* Keep markdown code blocks horizontally scrollable on mobile. */
   :root.mobile-pointer:not(.desktop-runtime)
     .markdown-content
@@ -2876,6 +2887,14 @@ button.oc-mobile-worktree-label-trigger:active,
   /* Popovers (CommandAutocomplete etc.) render as absolute children above
      the card; the motion viewport releases clipping after expand settles. */
   overflow: visible;
+}
+
+/* Beat :root.mobile-pointer .flex.flex-col { min-height: 0 }. That rule
+   lets the surface shrink inside the fixed stage viewport, so a mention
+   or extra line scrolls instead of growing the card. */
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed) {
+  min-height: min-content !important;
 }
 
 .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)

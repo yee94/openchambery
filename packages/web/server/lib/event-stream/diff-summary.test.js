@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  projectMessageSummaryDiffCounts,
   summarizeFileDiff,
   summarizeFileDiffs,
   summarizeOutboundEventPayload,
@@ -45,6 +46,45 @@ describe('summarizeFileDiffs', () => {
       { file: 'a.ts', additions: 1, deletions: 0 },
     ];
     expect(summarizeFileDiffs(already)).toBe(already);
+  });
+});
+
+describe('projectMessageSummaryDiffCounts', () => {
+  it('replaces summary.diffs with diffCount/hasDiffs and drops the array', () => {
+    const owner = {
+      id: 'msg_1',
+      summary: {
+        title: 'turn',
+        diffs: [
+          { file: 'a.ts', additions: 1, deletions: 0, patch: '@@' },
+          { file: 'b.ts', additions: 2, deletions: 1 },
+        ],
+      },
+    };
+
+    const next = projectMessageSummaryDiffCounts(owner);
+    expect(next).not.toBe(owner);
+    expect(next.summary).toEqual({
+      title: 'turn',
+      diffCount: 2,
+      hasDiffs: true,
+    });
+    expect(next.summary.diffs).toBeUndefined();
+  });
+
+  it('projects empty arrays to diffCount 0 / hasDiffs false', () => {
+    const owner = {
+      summary: { diffs: [] },
+    };
+    expect(projectMessageSummaryDiffCounts(owner).summary).toEqual({
+      diffCount: 0,
+      hasDiffs: false,
+    });
+  });
+
+  it('keeps identity when summary has no diffs key', () => {
+    const owner = { summary: { title: 'x', diffCount: 3, hasDiffs: true } };
+    expect(projectMessageSummaryDiffCounts(owner)).toBe(owner);
   });
 });
 
@@ -97,7 +137,7 @@ describe('summarizeOutboundEventPayload', () => {
     }]);
   });
 
-  it('summarizes message.updated info.summary.diffs', () => {
+  it('projects message.updated info.summary.diffs to L1 count/marker', () => {
     const payload = {
       type: 'message.updated',
       properties: {
@@ -116,11 +156,11 @@ describe('summarizeOutboundEventPayload', () => {
     };
 
     const next = summarizeOutboundEventPayload(payload);
-    expect(next.properties.info.summary.diffs).toEqual([{
-      file: 'a.ts',
-      additions: 1,
-      deletions: 0,
-    }]);
+    expect(next.properties.info.summary).toEqual({
+      diffCount: 1,
+      hasDiffs: true,
+    });
+    expect(next.properties.info.summary.diffs).toBeUndefined();
   });
 
   it('returns identity for session.status', () => {

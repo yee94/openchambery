@@ -481,6 +481,46 @@ describe('createSessionReconcileService', () => {
     expect(result.records.length).toBeLessThan(5);
   });
 
+  it('counts summarized message diff snapshots against the reconcile byte budget', async () => {
+    const patch = 'diff-body-'.repeat(20_000);
+    const fetchPage = vi.fn(async () => pageResult([
+      user('msg_u1', [], {
+        summary: {
+          diffs: [{
+            file: 'src/large.ts',
+            status: 'modified',
+            additions: 7,
+            deletions: 2,
+            patch,
+          }],
+        },
+      }),
+      assistant('msg_a1'),
+    ]));
+    const service = createSessionReconcileService(serviceOptions(fetchPage, {
+      pageRecordLimit: 10,
+      pageByteLimit: 1024,
+      totalPageLimit: 10,
+      totalByteLimit: 10_000,
+    }));
+
+    const result = await service.reconcile({
+      sessionID: 'ses_1',
+      directory: '/repo',
+      anchor: 'msg_u1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.records[0].info.summary).toEqual({
+      diffCount: 1,
+      hasDiffs: true,
+    });
+    expect(result.records[0].info.summary.diffs).toBeUndefined();
+    expect(result.responseBytes).toBeLessThanOrEqual(1024);
+    expect(JSON.stringify(result.records)).not.toContain(patch);
+    expect(JSON.stringify(result.records)).not.toContain('src/large.ts');
+  });
+
   it('rejects continuation that does not bind runtime/directory/session/anchor/head', async () => {
     const fetchPage = vi.fn(async () => pageResult([user('msg_u1')], null));
     const service = createSessionReconcileService(serviceOptions(fetchPage));

@@ -11,6 +11,8 @@ interface SummaryDiff {
 interface UserSummaryPayload {
     body?: string | null;
     diffs?: SummaryDiff[] | null;
+    diffCount?: number | null;
+    hasDiffs?: boolean | null;
 }
 
 const getTextFromPart = (part: unknown): string | undefined => {
@@ -79,29 +81,32 @@ export const projectTurnSummary = (assistantMessages: ChatMessageEntry[]): TurnS
 export const projectTurnDiffStats = (userMessage: ChatMessageEntry): TurnDiffStats | undefined => {
     const summary = (userMessage.info as { summary?: UserSummaryPayload | null }).summary;
     const diffs = summary?.diffs;
-    if (!Array.isArray(diffs) || diffs.length === 0) {
-        return undefined;
-    }
+    const legacyDiffs = Array.isArray(diffs) ? diffs : [];
+    const markerCount = typeof summary?.diffCount === 'number' && Number.isFinite(summary.diffCount)
+        ? Math.max(0, Math.trunc(summary.diffCount))
+        : undefined;
 
     let additions = 0;
     let deletions = 0;
-    let files = 0;
+    let legacyFileCount = 0;
 
-    diffs.forEach((diff) => {
+    legacyDiffs.forEach((diff) => {
         if (!diff) return;
 
         const diffAdditions = typeof diff.additions === 'number' ? diff.additions : 0;
         const diffDeletions = typeof diff.deletions === 'number' ? diff.deletions : 0;
 
         if (diffAdditions !== 0 || diffDeletions !== 0) {
-            files += 1;
+            legacyFileCount += 1;
         }
 
         additions += diffAdditions;
         deletions += diffDeletions;
     });
 
-    if (files === 0) {
+    const files = markerCount ?? legacyFileCount;
+    const hasDiffs = summary?.hasDiffs === true || files > 0 || legacyDiffs.length > 0;
+    if (!hasDiffs) {
         return undefined;
     }
 
@@ -109,6 +114,7 @@ export const projectTurnDiffStats = (userMessage: ChatMessageEntry): TurnDiffSta
         additions,
         deletions,
         files,
+        hasDiffs,
     };
 };
 

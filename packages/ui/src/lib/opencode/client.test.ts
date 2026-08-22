@@ -197,20 +197,32 @@ describe('opencodeClient V2 runtime base', () => {
 });
 
 describe('opencodeClient getSessionDiff', () => {
-  test('fails closed because v2 has no session.diff client method', async () => {
-    let thrown: unknown;
-    try {
-      await opencodeClient.getSessionDiff({
-        sessionID: 'ses_1',
-        directory: '/workspace/project',
-        messageID: 'msg_user',
-      });
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown instanceof Error).toBe(true);
-    expect((thrown as Error).name).toBe('V2CapabilityUnavailableError');
-    expect((thrown as Error).message).toContain('session.diff');
+  test('fetches the v2 session diff route through runtimeFetch', async () => {
+    healthFetchResults.push(new Response(JSON.stringify({ data: [{ file: 'a.ts' }] }), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    const diffs = await opencodeClient.getSessionDiff({
+      sessionID: 'ses_1',
+      directory: '/workspace/project',
+      messageID: 'msg_user',
+    });
+
+    expect(diffs).toEqual([{ file: 'a.ts' }]);
+    const [url] = healthFetchCalls.at(-1) as [string];
+    expect(url).toContain('/session/ses_1/diff');
+    expect(url).toContain('directory=');
+    expect(url).toContain('messageID=msg_user');
+  });
+
+  test('passes AbortSignal to the transport and fails closed on non-2xx', async () => {
+    const signal = new AbortController().signal;
+    healthFetchResults.push(new Response(null, { status: 500 }));
+
+    await expect(opencodeClient.getSessionDiff({ sessionID: 'ses_1' }, { signal })).rejects.toThrow('session.diff failed (500)');
+
+    const [, init] = healthFetchCalls.at(-1) as [string, RequestInit];
+    expect(init.signal).toBe(signal);
   });
 });
 

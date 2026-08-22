@@ -9,11 +9,11 @@ import {
 import type { TranscriptData } from "./transcript-repository"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
-function textPart(id: string, options: { slim?: boolean; optimistic?: boolean } = {}): Part {
+function textPart(id: string, options: { slim?: boolean; optimistic?: boolean; text?: string } = {}): Part {
   return {
     id,
     type: "text",
-    text: "SECRET BODY",
+    text: options.text ?? "SECRET BODY",
     ...(options.slim ? { slim: true } : {}),
     ...(options.optimistic ? { __openchamberOptimistic: true } : {}),
   } as unknown as Part
@@ -45,7 +45,7 @@ function transcript(input: {
 }
 
 describe("captureTranscriptCanonicalSnapshot", () => {
-  test("extracts IDs, part counts, slim/full, optimistic, and role without bodies", () => {
+  test("extracts IDs, part counts, slim/full, optimistic, role, and user text only", () => {
     const snapshot = captureTranscriptCanonicalSnapshot(transcript({
       order: ["m1", "m2"],
       messages: {
@@ -53,7 +53,7 @@ describe("captureTranscriptCanonicalSnapshot", () => {
         m2: message("m2", "assistant", 0),
       },
       parts: {
-        m1: [textPart("p1", { optimistic: true }), textPart("p2")],
+        m1: [textPart("p1", { optimistic: true, text: "确保已经完成修复了" }), textPart("p2", { text: "然后提交推送" })],
         m2: [textPart("p3", { slim: true }), textPart("p4"), textPart("p5", { slim: true })],
       },
       liveRevision: 7,
@@ -72,6 +72,7 @@ describe("captureTranscriptCanonicalSnapshot", () => {
         optimistic: true,
         completed: true,
         role: "user",
+        text: "确保已经完成修复了\n然后提交推送",
       },
       {
         id: "m2",
@@ -206,11 +207,11 @@ describe("diffTranscriptCanonicalSnapshots", () => {
 })
 
 describe("snapshotTranscriptDiff", () => {
-  test("builds a transcript-diff event with identities only", () => {
+  test("builds a transcript-diff event with identities and user text", () => {
     const before = captureTranscriptCanonicalSnapshot(transcript({
       order: ["m1"],
       messages: { m1: message("m1", "user", 0) },
-      parts: { m1: [textPart("p1", { optimistic: true })] },
+      parts: { m1: [textPart("p1", { optimistic: true, text: "你来搞吧" })] },
     }))
     const after = captureTranscriptCanonicalSnapshot(transcript({
       order: [],
@@ -226,6 +227,7 @@ describe("snapshotTranscriptDiff", () => {
       now: () => 42,
     })
     const serialized = JSON.stringify(event)
+    expect(serialized).toContain("你来搞吧")
     expect(serialized).not.toContain("SECRET BODY")
     expect(event.kind).toBe("transcript-diff")
     expect(event.trigger).toBe("reconnect-compensation-reconcile")

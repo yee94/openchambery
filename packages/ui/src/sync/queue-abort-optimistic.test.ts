@@ -4,9 +4,10 @@ const beginCalls: Array<{ sessionId: string; messageID?: string; content: string
 const rollbackCalls: string[] = [];
 let directory: string | null = '/project';
 let ownership = 'server-active';
-let serverItems: Array<{ queueItemID: string; status: string; content: string; sendConfig?: { providerID: string; modelID: string }; deliveryTarget?: { kind: string } }> = [];
-let legacyItems: Array<{ queueItemID: string; operationID: string; status: string; content: string; sendConfig?: { providerID: string; modelID: string }; owner: { state: string } }> = [];
+let serverItems: Array<{ queueItemID: string; status: string; content: string; messageID?: string; sendConfig?: { providerID: string; modelID: string }; deliveryTarget?: { kind: string } }> = [];
+let legacyItems: Array<{ queueItemID: string; operationID: string; status: string; content: string; messageID?: string; sendConfig?: { providerID: string; modelID: string }; owner: { state: string } }> = [];
 let syncMessages: Array<{ id: string; role?: string }> = [];
+const partsByMessageID: Record<string, Array<{ id?: string; __openchamberOptimistic?: boolean }>> = {};
 
 mock.module('@/sync/session-actions', () => ({
   beginOptimisticSend: (input: { sessionId: string; messageID?: string; content: string }) => {
@@ -57,6 +58,17 @@ mock.module('@/sync/sync-refs', () => ({
   getSyncMessages: () => syncMessages,
 }));
 
+mock.module('@/sync/transcript-repository-runtime', () => ({
+  getTranscriptRepository: () => ({
+    getTranscript: () => ({ partsByMessageID }),
+  }),
+  transcriptScope: (directory: string, sessionID: string) => ({ directory, sessionID }),
+}));
+
+mock.module('@/sync/transcript-repository-observers', () => ({
+  subscribeTranscriptScopes: () => () => {},
+}));
+
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => 'runtime-a',
   subscribeRuntimeEndpointChanged: () => () => {},
@@ -65,6 +77,7 @@ mock.module('@/lib/runtime-switch', () => ({
 const {
   confirmQueueAbortOptimistic,
   getQueueAbortOptimisticPresentation,
+  inspectQueueAbortOptimisticTranscript,
   isQueueItemHiddenByAbortOptimistic,
   planQueueAbortOptimisticReconcile,
   promoteQueueHeadOnAbort,
@@ -82,6 +95,7 @@ describe('queue abort optimistic presentation', () => {
     serverItems = [];
     legacyItems = [];
     syncMessages = [];
+    for (const key of Object.keys(partsByMessageID)) delete partsByMessageID[key];
     resetQueueAbortOptimisticForTests();
   });
 
@@ -92,6 +106,24 @@ describe('queue abort optimistic presentation', () => {
     expect(planQueueAbortOptimisticReconcile(null, { hasPinnedMessage: true, hasLaterUserMessage: false })).toBe('confirm');
     expect(planQueueAbortOptimisticReconcile(null, { hasPinnedMessage: false, hasLaterUserMessage: true })).toBe('rollback');
     expect(planQueueAbortOptimisticReconcile(null, { hasPinnedMessage: false, hasLaterUserMessage: false })).toBe('keep');
+    expect(planQueueAbortOptimisticReconcile(
+      { queueItemID: 'q', status: 'sending', messageID: 'msg_dispatch' },
+      { hasPinnedMessage: false, hasLaterUserMessage: false },
+      'msg_local',
+    )).toBe('rebind');
+  });
+
+  test('transcript inspector ignores the optimistic paint and later optimistic rows', () => {
+    expect(inspectQueueAbortOptimisticTranscript('msg_local', [
+      { id: 'msg_local', role: 'user', optimistic: true },
+    ])).toEqual({ hasPinnedMessage: false, hasLaterUserMessage: false });
+    expect(inspectQueueAbortOptimisticTranscript('msg_local', [
+      { id: 'msg_local', role: 'user', optimistic: true },
+      { id: 'msg_zzz', role: 'user', optimistic: false },
+    ])).toEqual({ hasPinnedMessage: false, hasLaterUserMessage: true });
+    expect(inspectQueueAbortOptimisticTranscript('msg_local', [
+      { id: 'msg_local', role: 'user', optimistic: false },
+    ])).toEqual({ hasPinnedMessage: true, hasLaterUserMessage: false });
   });
 
   test('promote paints the server head and hides only that chip', () => {
@@ -99,12 +131,14 @@ describe('queue abort optimistic presentation', () => {
       queueItemID: 'queue-a',
       status: 'queued',
       content: 'follow up',
+      messageID: 'msg_admission',
       sendConfig: { providerID: 'openai', modelID: 'gpt' },
     }];
     const presentation = promoteQueueHeadOnAbort('session-a');
     expect(presentation?.queueItemID).toBe('queue-a');
     expect(beginCalls).toHaveLength(1);
     expect(beginCalls[0]?.content).toBe('follow up');
+    expect(beginCalls[0]?.messageID).toBe('msg_admission');
     expect(isQueueItemHiddenByAbortOptimistic('session-a', 'queue-a')).toBe(true);
     expect(isQueueItemHiddenByAbortOptimistic('session-a', 'queue-b')).toBe(false);
     expect(promoteQueueHeadOnAbort('session-a')?.messageID).toBe(presentation?.messageID);
@@ -158,19 +192,56 @@ describe('queue abort optimistic presentation', () => {
     expect(isQueueItemHiddenByAbortOptimistic('session-a', 'queue-a')).toBe(false);
   });
 
-  test('reconcile confirms when the pinned message is already in the transcript', () => {
+  test('reconcile keeps the paint when only the optimistic row exists', () => {
     serverItems = [{
       queueItemID: 'queue-a',
       status: 'queued',
       content: 'follow up',
+      messageID: 'msg_admission',
       sendConfig: { providerID: 'openai', modelID: 'gpt' },
     }];
     const presentation = promoteQueueHeadOnAbort('session-a')!;
-    serverItems = [{ ...serverItems[0]!, status: 'sending' }];
+    serverItems = [{ ...serverItems[0]!, status: 'sending', messageID: 'msg_admission' }];
     syncMessages = [{ id: presentation.messageID, role: 'user' }];
+    partsByMessageID[presentation.messageID] = [{ id: 'prt', __openchamberOptimistic: true }];
+    reconcileQueueAbortOptimistic('session-a');
+    expect(getQueueAbortOptimisticPresentation('session-a')?.messageID).toBe(presentation.messageID);
+    expect(rollbackCalls).toEqual([]);
+  });
+
+  test('reconcile confirms when an authoritative row owns the pinned id', () => {
+    serverItems = [{
+      queueItemID: 'queue-a',
+      status: 'queued',
+      content: 'follow up',
+      messageID: 'msg_admission',
+      sendConfig: { providerID: 'openai', modelID: 'gpt' },
+    }];
+    const presentation = promoteQueueHeadOnAbort('session-a')!;
+    serverItems = [{ ...serverItems[0]!, status: 'sending', messageID: presentation.messageID }];
+    syncMessages = [{ id: presentation.messageID, role: 'user' }];
+    partsByMessageID[presentation.messageID] = [{ id: 'prt' }];
     reconcileQueueAbortOptimistic('session-a');
     expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
     expect(rollbackCalls).toEqual([]);
+  });
+
+  test('reconcile rebinds the optimistic row to the server dispatch message id', () => {
+    serverItems = [{
+      queueItemID: 'queue-a',
+      status: 'queued',
+      content: 'follow up',
+      messageID: 'msg_admission',
+      sendConfig: { providerID: 'openai', modelID: 'gpt' },
+    }];
+    const presentation = promoteQueueHeadOnAbort('session-a')!;
+    serverItems = [{ ...serverItems[0]!, status: 'sending', messageID: 'msg_dispatch' }];
+    syncMessages = [{ id: presentation.messageID, role: 'user' }];
+    partsByMessageID[presentation.messageID] = [{ id: 'prt', __openchamberOptimistic: true }];
+    reconcileQueueAbortOptimistic('session-a');
+    expect(rollbackCalls).toEqual([presentation.messageID]);
+    expect(beginCalls.map((entry) => entry.messageID)).toEqual(['msg_admission', 'msg_dispatch']);
+    expect(getQueueAbortOptimisticPresentation('session-a')?.messageID).toBe('msg_dispatch');
   });
 
   test('reconcile rolls back a failed head and a completed dispatch that used another id', () => {
@@ -194,6 +265,7 @@ describe('queue abort optimistic presentation', () => {
     const second = promoteQueueHeadOnAbort('session-a')!;
     serverItems = [];
     syncMessages = [{ id: 'msg_later_user_zzzzzzzzzzzzABCDEFGHIJKLMN', role: 'user' }];
+    partsByMessageID['msg_later_user_zzzzzzzzzzzzABCDEFGHIJKLMN'] = [{ id: 'prt' }];
     reconcileQueueAbortOptimistic('session-a');
     expect(rollbackCalls).toEqual([first.messageID, second.messageID]);
   });

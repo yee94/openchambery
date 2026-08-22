@@ -8,6 +8,7 @@ import { handleConfigBridgeMessage } from './bridge-config-runtime';
 import { handleSystemBridgeMessage } from './bridge-system-runtime';
 import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
 import { handleSessionTurnPageBridgeMessage } from './bridge-session-turn-page-runtime';
+import { handleSessionTurnChangesBridgeMessage } from './bridge-session-turn-changes-runtime';
 import {
   fetchOpenCodeSkillsFromApi,
   fetchOpenCodeCommandsFromApi,
@@ -143,6 +144,13 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
     );
     if (sessionTurnPageResponse) {
       return sessionTurnPageResponse;
+    }
+    const sessionTurnChangesResponse = await handleSessionTurnChangesBridgeMessage(
+      { id, type, payload },
+      ctx,
+    );
+    if (sessionTurnChangesResponse) {
+      return sessionTurnChangesResponse;
     }
     const proxyResponse = await handleProxyBridgeMessage(
       { id, type, payload },

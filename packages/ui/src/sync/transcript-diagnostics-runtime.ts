@@ -207,9 +207,16 @@ export function recordTranscriptCommandDiagnostics(input: {
   request?: TranscriptRequestState
   hydration?: TranscriptDiagnosticsHydration
   error?: unknown
+  changed?: boolean
 }): void {
   const kind = diagnosticsKindForCommand(input.command)
   if (!kind) return
+  if (
+    input.changed === false
+    && (input.command.type === "sse-event" || input.command.type === "sse-event-batch")
+  ) {
+    return
+  }
   recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
     kind,
     sessionID: input.sessionID,

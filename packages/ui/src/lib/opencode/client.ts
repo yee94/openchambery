@@ -766,13 +766,41 @@ class OpencodeService {
    * Uses OpenCode `GET /session/{sessionID}/diff` (optional `messageID` scopes to a user turn).
    * Throws on transport/SDK failure — never returns an empty list as a silent success.
    */
-  async getSessionDiff(params: {
-    sessionID: string;
-    directory?: string | null;
-    messageID?: string | null;
-  }): Promise<SnapshotFileDiff[]> {
-    void params;
-    throw v2CapabilityUnavailable('session.diff');
+  async getSessionDiff(
+    params: {
+      sessionID: string;
+      directory?: string | null;
+      messageID?: string | null;
+    },
+    options?: { signal?: AbortSignal },
+  ): Promise<SnapshotFileDiff[]> {
+    // The pinned @opencode-ai/client preview does not expose `session.diff`
+    // yet; call the v2 route directly (Host proxies /api/* to the runtime).
+    const requestDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
+    const messageID = typeof params.messageID === 'string' && params.messageID.trim().length > 0
+      ? params.messageID.trim()
+      : undefined;
+    const query = new URLSearchParams();
+    if (requestDirectory) query.set('directory', requestDirectory);
+    if (messageID) query.set('messageID', messageID);
+    const queryString = query.toString();
+    const response = await runtimeFetch(
+      `${this.baseUrl}/session/${encodeURIComponent(params.sessionID)}/diff${queryString ? `?${queryString}` : ''}`,
+      { method: 'GET', headers: { Accept: 'application/json' }, signal: options?.signal },
+    );
+    if (!response.ok) {
+      const error = new Error(`session.diff failed (${response.status})`) as Error & { status?: number };
+      error.status = response.status;
+      throw error;
+    }
+    const payload: unknown = await response.json().catch(() => null);
+    const data = payload !== null && typeof payload === 'object' && Array.isArray((payload as { data?: unknown }).data)
+      ? (payload as { data: SnapshotFileDiff[] }).data
+      : null;
+    if (!data) {
+      throw new Error('session.diff failed: empty response');
+    }
+    return data;
   }
 
   async getSessionTodos(sessionId: string): Promise<Array<{ id: string; content: string; status: string; priority: string }>> {

@@ -244,9 +244,9 @@ describe('apply_patch navigation', () => {
         expect(diffViewSource).toContain('const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(');
         expect(diffViewSource).toContain('const usesToolPatches = selectedToolTurnDiffs.length > 0;');
         expect(diffViewSource).toContain('if (usesToolPatches) return selectedToolTurnDiffs;');
-        expect(diffViewSource).toContain('return mergeTurnDiffSummariesWithFull(lastTurnDiffs, fetchedTurnFullDiffs);');
-        expect(diffViewSource).toContain('return lastTurnDiffs;');
-        expect(diffViewSource).toContain("if (activeDiffScope !== 'turn' || usesToolPatches)");
+        expect(diffViewSource).toContain('return turnChangesQuery.data?.files ?? [];');
+        expect(diffViewSource).toContain('useSessionTurnChangeFileQuery');
+        expect(diffViewSource).not.toContain('getSessionDiff');
         expect(diffViewSource).toContain('stackedToolPatchesRef.current !== toolPatches');
         expect(diffViewSource).toContain('const resolvedSessionId = (typeof sessionId === \'string\' && sessionId.trim())');
         expect(diffViewSource).toContain('sessionID: resolvedSessionId');

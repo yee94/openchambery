@@ -1,5 +1,6 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { waitForApiUrl } from './opencode-ready';
+import { projectExactMessagePayload } from './session-turn-page-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -210,6 +211,36 @@ export async function handleProxyBridgeMessage(
           abortController.signal,
           deps,
         );
+
+        // Exact GET /session/:id/message/:messageID must L1-project
+        // summary.diffs → diffCount/hasDiffs before the payload enters the webview.
+        // Full parts behavior is preserved.
+        if (
+          normalizedMethod === 'GET'
+          && /^\/session\/[^/]+\/message\/[^/]+(?:\?.*)?$/.test(normalizedPath)
+          && typeof data.bodyText === 'string'
+          && data.status >= 200
+          && data.status < 300
+        ) {
+          try {
+            const parsed = JSON.parse(data.bodyText) as unknown;
+            const projected = projectExactMessagePayload(parsed);
+            if (projected !== parsed) {
+              return {
+                id,
+                type,
+                success: true,
+                data: {
+                  ...data,
+                  bodyText: JSON.stringify(projected),
+                },
+              };
+            }
+          } catch {
+            // Malformed JSON — pass through unchanged.
+          }
+        }
+
         return { id, type, success: true, data };
       } finally {
         proxyAbortControllers.delete(id);

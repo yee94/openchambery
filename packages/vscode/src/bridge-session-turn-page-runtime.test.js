@@ -547,4 +547,43 @@ describe('bridge session turn-page runtime', () => {
     expect(prepend.data.records[0].parts[0].url).toBeUndefined();
     expect(JSON.stringify(prepend.data.records[0].parts[0])).not.toContain('base64');
   });
+
+  it('summarizes message diff snapshots in the turn-page bridge response', async () => {
+    const patch = 'diff-body-'.repeat(20_000);
+    responseImpl = async () => new Response(
+      JSON.stringify([{
+        info: {
+          id: 'msg_u1',
+          role: 'user',
+          time: { created: 1 },
+          summary: {
+            diffs: [{
+              file: 'src/large.ts',
+              status: 'modified',
+              additions: 6,
+              deletions: 2,
+              patch,
+            }],
+          },
+        },
+        parts: [],
+      }]),
+      { status: 200, headers: { 'content-type': 'application/json', 'x-next-cursor': '' } },
+    );
+
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    const result = await handleSessionTurnPageBridgeMessage(
+      { id: 'req_diff_1', type: 'api:session-turn-page', payload: { sessionID: 'ses_1', turns: 3 } },
+      defaultCtx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data.records[0].info.summary).toEqual({
+      diffCount: 1,
+      hasDiffs: true,
+    });
+    expect(result.data.records[0].info.summary.diffs).toBeUndefined();
+    expect(JSON.stringify(result.data)).not.toContain(patch);
+    expect(JSON.stringify(result.data)).not.toContain('src/large.ts');
+  });
 });

@@ -223,7 +223,7 @@ describe('event stream protocol helpers', () => {
     expect(rawPayload.length).toBeLessThan(64 * 1024);
   });
 
-  it('summarizes message.updated summary.diffs patches on outbound frames', () => {
+  it('projects message.updated summary.diffs to L1 count/marker on outbound frames', () => {
     let rawPayload = null;
     const socket = {
       readyState: 1,
@@ -254,13 +254,13 @@ describe('event stream protocol helpers', () => {
 
     expect(sent).toBe(true);
     const frame = JSON.parse(rawPayload);
-    expect(frame.payload.properties.info.summary.diffs).toEqual([{
-      file: 'a.ts',
-      status: 'modified',
-      additions: 2,
-      deletions: 1,
-    }]);
+    expect(frame.payload.properties.info.summary).toEqual({
+      diffCount: 1,
+      hasDiffs: true,
+    });
+    expect(frame.payload.properties.info.summary.diffs).toBeUndefined();
     expect(JSON.stringify(frame)).not.toContain('patch');
+    expect(JSON.stringify(frame)).not.toContain('a.ts');
   });
 
   it('leaves ordinary session.status events unchanged', () => {

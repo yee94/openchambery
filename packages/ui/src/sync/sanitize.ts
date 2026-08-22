@@ -34,6 +34,8 @@ const FILE_DIFF_SUMMARY_KEYS = ["file", "status", "additions", "deletions"] as c
 
 type SessionSummary = {
   diffs?: DiffEntry[]
+  diffCount?: number
+  hasDiffs?: boolean
   [key: string]: unknown
 }
 
@@ -124,9 +126,39 @@ export function summarizeFileDiffs<T>(diffs: T): T {
   return (changed ? next : diffs) as T
 }
 
+/**
+ * L1 Host-parity: replace `summary.diffs` with `diffCount` / `hasDiffs`.
+ * Raw / legacy Host payloads that still carry the file array converge to the
+ * same marker fields after sanitize. Identity when `diffs` is absent.
+ */
+export function projectSummaryDiffMarkers<T>(owner: T): T {
+  if (!owner || typeof owner !== "object" || Array.isArray(owner)) {
+    return owner
+  }
+
+  const record = owner as { summary?: SessionSummary }
+  const summary = record.summary
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    return owner
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(summary, "diffs")) {
+    return owner
+  }
+
+  const diffs = summary.diffs
+  const diffCount = Array.isArray(diffs) ? diffs.length : 0
+  const nextSummary: SessionSummary = {
+    ...summary,
+    diffCount,
+    hasDiffs: diffCount > 0,
+  }
+  delete nextSummary.diffs
+  return { ...record, summary: nextSummary } as T
+}
+
 /** Strip oversized snapshot fields from summary.diffs on a session object */
 export function stripSessionDiffSnapshots(session: Session): Session {
-  const summary = (session as { summary?: SessionSummary }).summary
   const revert = (session as { revert?: SessionRevert }).revert
 
   let nextSession: Session = session
@@ -140,15 +172,13 @@ export function stripSessionDiffSnapshots(session: Session): Session {
     changed = true
   }
 
-  if (!summary?.diffs || !Array.isArray(summary.diffs)) return nextSession
-
-  const stripped = summarizeFileDiffs(summary.diffs)
-  if (stripped !== summary.diffs) {
-    changed = true
+  const projected = projectSummaryDiffMarkers(
+    changed ? nextSession : session,
+  ) as Session
+  if (projected !== (changed ? nextSession : session)) {
+    return projected
   }
-
-  if (!changed) return nextSession
-  return { ...nextSession, summary: { ...summary, diffs: stripped } } as Session
+  return nextSession
 }
 
 /** Strip detail-only fields from session list records before storing them. */
@@ -161,6 +191,8 @@ export function stripSessionListDetails(session: Session): Session {
 
   const shouldStrip = hasSessionListRevertDetails(record.revert)
     || Array.isArray(record.summary?.diffs)
+    || typeof record.summary?.diffCount === "number"
+    || typeof record.summary?.hasDiffs === "boolean"
     || "permission" in record
 
   if (!shouldStrip) {
@@ -180,9 +212,11 @@ export function stripSessionListDetails(session: Session): Session {
 
   const summary = stripped.summary
   if (summary && typeof summary === "object" && !Array.isArray(summary)) {
-    const summaryWithoutDiffs = { ...summary }
-    delete summaryWithoutDiffs.diffs
-    next.summary = summaryWithoutDiffs
+    const summaryWithoutDiffMarkers = { ...summary }
+    delete summaryWithoutDiffMarkers.diffs
+    delete summaryWithoutDiffMarkers.diffCount
+    delete summaryWithoutDiffMarkers.hasDiffs
+    next.summary = summaryWithoutDiffMarkers
   }
 
   return next as unknown as Session
@@ -190,10 +224,5 @@ export function stripSessionListDetails(session: Session): Session {
 
 /** Strip oversized snapshot fields from summary.diffs on a message object */
 export function stripMessageDiffSnapshots(message: Message): Message {
-  const summary = (message as { summary?: SessionSummary }).summary
-  if (!summary?.diffs || !Array.isArray(summary.diffs)) return message
-
-  const stripped = summarizeFileDiffs(summary.diffs)
-  if (stripped === summary.diffs) return message
-  return { ...message, summary: { ...summary, diffs: stripped } } as Message
+  return projectSummaryDiffMarkers(message)
 }

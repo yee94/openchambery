@@ -7,6 +7,10 @@ import {
   handleSessionTurnPageRoute,
   isSessionTurnPageRoute,
 } from './sessionTurnPageRoute';
+import {
+  handleSessionTurnChangesRoute,
+  isSessionTurnChangesRoute,
+} from './sessionTurnChangesRoute';
 import { getSettingsBridgeMessageType, isSettingsBootstrapRequest } from '../src/settings-bootstrap-runtime';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
 import { opencodeClient } from '@openchamber/ui/lib/opencode/client';
@@ -409,6 +413,16 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     return handleSessionTurnPageRoute({
       method,
       pathname: isSessionTurnPageRoute(normalizedPathname) ? normalizedPathname : pathname,
+      searchParams: url.searchParams,
+      sendBridgeMessage,
+    });
+  }
+
+  // OpenChamber-owned turn-changes route (L2 file list / L3 single-file patch).
+  if (isSessionTurnChangesRoute(normalizedPathname) || isSessionTurnChangesRoute(pathname)) {
+    return handleSessionTurnChangesRoute({
+      method,
+      pathname: isSessionTurnChangesRoute(normalizedPathname) ? normalizedPathname : pathname,
       searchParams: url.searchParams,
       sendBridgeMessage,
     });

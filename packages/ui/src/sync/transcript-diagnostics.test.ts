@@ -12,6 +12,7 @@ import {
   diagnosticsSessionStatusType,
   diffTranscriptCanonicalSnapshots,
   isPrereleaseClientVersion,
+  extractDiagnosticsUserText,
   lastTranscriptMessageIDs,
   parseTranscriptDiagnosticsPreference,
   resolveTaskClickOutcome,
@@ -54,7 +55,7 @@ describe("transcript diagnostics", () => {
     expect(diagnosticsHttpStatus("plain timeout")).toBeUndefined()
   })
 
-  test("snapshots identities and completeness without message bodies", () => {
+  test("snapshots identities and completeness without assistant bodies", () => {
     const event = snapshotTranscriptDiagnostics({
       kind: "http-page",
       sessionID: "ses_1",
@@ -95,6 +96,14 @@ describe("transcript diagnostics", () => {
       event: { type: "message.part.delta" } as never,
     })).toBeNull()
     expect(diagnosticsKindForCommand({
+      type: "sse-event-batch",
+      events: [{ type: "message.part.delta" } as never, { type: "message.part.delta" } as never],
+    })).toBeNull()
+    expect(diagnosticsKindForCommand({
+      type: "sse-event-batch",
+      events: [{ type: "message.part.delta" } as never, { type: "message.updated" } as never],
+    })).toBe("sse-event")
+    expect(diagnosticsKindForCommand({
       type: "sse-event",
       event: { type: "message.updated" } as never,
     })).toBe("sse-event")
@@ -131,6 +140,19 @@ describe("transcript diagnostics", () => {
     expect(report.schema).toBe("openchamber.client-diagnostics.v1")
     expect(report.eventCount).toBe(2)
     expect(report.feats).toEqual(["transcript"])
+  })
+
+  test("keeps bounded user text and redacts credential-shaped user text", () => {
+    expect(extractDiagnosticsUserText([
+      { id: "p1", type: "text", text: "确保已经完成修复了" } as never,
+      { id: "p2", type: "file", filename: "a.png" } as never,
+    ])).toBe("确保已经完成修复了")
+    expect(extractDiagnosticsUserText([
+      { id: "p1", type: "text", text: "Bearer abc.def" } as never,
+    ])).toBe("redacted-text")
+    expect(extractDiagnosticsUserText([
+      { id: "p1", type: "text", text: "a".repeat(401) } as never,
+    ])).toBe(`${"a".repeat(400)}…`)
   })
 
   test("lastTranscriptMessageIDs keeps the newest tail", () => {
