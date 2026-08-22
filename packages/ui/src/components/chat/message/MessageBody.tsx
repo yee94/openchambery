@@ -1930,7 +1930,7 @@ const AssistantMessageBody = React.memo(({
                 continue;
             }
             const activity = activityByPart.get(part);
-            if (activity?.kind === 'justification' && !streamSortedFinalBody) {
+            if (activity?.kind === 'justification') {
                 continue;
             }
             lastIndex = index;
@@ -1978,17 +1978,9 @@ const AssistantMessageBody = React.memo(({
 
             if (activityGroupSegmentsForMessage.length > 0) {
                 activityGroupSegmentsForMessage.forEach((segment) => {
-                    // While the live final body streams on this message, its
-                    // justification rows yield to the body render so the same
-                    // paragraph cannot appear twice (body + Activity). Once the
-                    // reveal ends (step boundary), the filter lifts and the text
-                    // folds back into Activity.
-                    const segmentPartsExcludingStreamingBody = segment.parts.filter(
-                        (activity) => !(streamSortedFinalBody && activity.kind === 'justification' && activity.messageId === messageId),
-                    );
                     const visibleSegmentParts = showReasoningTraces
-                        ? segmentPartsExcludingStreamingBody
-                        : segmentPartsExcludingStreamingBody.filter((activity) => activity.kind !== 'reasoning');
+                        ? segment.parts
+                        : segment.parts.filter((activity) => activity.kind !== 'reasoning');
                     // Always keep the Activity chrome once a segment exists.
                     // Dropping the header when filtered parts are briefly empty
                     // (reasoning-only mid-reconcile, lagging tool materialize)
@@ -2019,7 +2011,7 @@ const AssistantMessageBody = React.memo(({
                     i += 1;
                     continue;
                 }
-                if (activity?.kind === 'justification' && !streamSortedFinalBody) {
+                if (activity?.kind === 'justification') {
                     i += 1;
                     continue;
                 }

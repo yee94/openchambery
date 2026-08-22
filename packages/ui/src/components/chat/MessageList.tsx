@@ -49,7 +49,7 @@ import {
     getShellBridgeAssistantDetails,
     type ShellBridgeDetails,
 } from './lib/shellBridge';
-import { isAssistantMessageCompleted, resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
+import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
 import {
     resolveActivityExpansionDisposition,
     resolveDefaultActivityExpanded,
@@ -841,6 +841,19 @@ const TurnBlock = React.memo(({
         return null;
     }, [activeStreamingMessageId, turn.assistantMessages]);
 
+    // Sorted live-body reveal owner: while the streaming last assistant keeps
+    // streaming its body (tools do not fold it mid-message), its justification
+    // rows must be withheld from Activity or the same paragraph renders twice
+    // (body of the streaming message + Activity group on the anchor).
+    const liveRevealBodyMessageId = React.useMemo(() => {
+        return resolveLiveRevealBodyMessageId({
+            chatRenderMode,
+            assistants: turn.assistantMessages,
+            streamingAssistantMessageId,
+            activeStreamingPhase,
+        });
+    }, [activeStreamingPhase, chatRenderMode, streamingAssistantMessageId, turn.assistantMessages]);
+
     const visibleAssistantMessages = React.useMemo(() => {
         if (chatRenderMode === 'live') {
             return turn.assistantMessages;
@@ -875,15 +888,26 @@ const TurnBlock = React.memo(({
         if (chatRenderMode !== 'sorted') {
             return turn.activityParts;
         }
-        if (visibleActivityMessageIdSet.size === turn.assistantMessages.length) {
-            return turn.activityParts;
-        }
-        return turn.activityParts.filter((activity) => visibleActivityMessageIdSet.has(activity.messageId));
-    }, [chatRenderMode, visibleActivityMessageIdSet, turn.activityParts, turn.assistantMessages.length]);
+        const scoped = visibleActivityMessageIdSet.size === turn.assistantMessages.length
+            ? turn.activityParts
+            : turn.activityParts.filter((activity) => visibleActivityMessageIdSet.has(activity.messageId));
+        return dropLiveRevealJustificationParts(scoped, liveRevealBodyMessageId);
+    }, [chatRenderMode, liveRevealBodyMessageId, visibleActivityMessageIdSet, turn.activityParts, turn.assistantMessages.length]);
 
     const visibleActivitySegments = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
             return turn.activitySegments;
+        }
+        if (liveRevealBodyMessageId) {
+            const withheld = turn.activitySegments.map((segment) => ({
+                ...segment,
+                parts: dropLiveRevealJustificationParts(segment.parts, liveRevealBodyMessageId),
+            }));
+            const changed = withheld.some((segment, index) => segment.parts !== turn.activitySegments[index]?.parts);
+            if (!changed) {
+                return turn.activitySegments;
+            }
+            return withheld;
         }
         if (visibleActivityMessageIdSet.size === turn.assistantMessages.length) {
             return turn.activitySegments;
@@ -907,7 +931,7 @@ const TurnBlock = React.memo(({
                 };
             })
             .filter((segment): segment is NonNullable<typeof segment> => segment !== null);
-    }, [chatRenderMode, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
+    }, [chatRenderMode, liveRevealBodyMessageId, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
 
     const turnGroupingContextBase = React.useMemo(() => {
         const userCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
