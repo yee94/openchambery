@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.25] - 2026-08-22
+
+### 聊天
+
+- **修复 Android 键盘弹出时输入框被挡住一部分：** 键盘实测高度到达时，若本次弹起用的预估高度明显不足（密度钉死或缓存比例偏差），立即以 60ms 短校正补升到实测高度，不再整个键盘会话被遮挡；关闭动画同步从正确位置收回。
+
 ## [1.18.2-beta.24] - 2026-08-22
 
 ### 移动端

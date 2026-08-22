@@ -4,6 +4,7 @@ import {
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
+  shouldCorrectArmedImeLift,
   shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 
@@ -99,5 +100,15 @@ describe('composerKeyboardLift', () => {
     expect(getAndroidComposerImeStateAction(true, outside)).toBe('cache');
     expect(getAndroidComposerImeStateAction(false, outside)).toBe('field');
     expect(getAndroidComposerImeStateAction(false, createElement('button'))).toBe('ignore');
+  });
+
+  test('corrects an armed lift only when the measured IME clearly under-cleared it', () => {
+    expect(shouldCorrectArmedImeLift(300, 360)).toBe(true);
+    expect(shouldCorrectArmedImeLift(300, 325)).toBe(true);
+    expect(shouldCorrectArmedImeLift(300, 324)).toBe(false);
+    expect(shouldCorrectArmedImeLift(300, 318)).toBe(false);
+    expect(shouldCorrectArmedImeLift(300, 280)).toBe(false);
+    expect(shouldCorrectArmedImeLift(300, 0)).toBe(false);
+    expect(shouldCorrectArmedImeLift(0, 360)).toBe(true);
   });
 });
