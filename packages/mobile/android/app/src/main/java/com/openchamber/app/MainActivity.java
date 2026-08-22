@@ -3,6 +3,7 @@ package com.openchamber.app;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.os.Bundle;
+import android.util.DisplayMetrics;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -14,12 +15,14 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void attachBaseContext(Context newBase) {
-        // Pin fontScale only. iOS WKWebView ignores Dynamic Type for ordinary
-        // CSS px; Android WebView multiplies fontScale into textZoom. Do not
-        // pin densityDpi here — that desyncs WindowInsets px from WebView CSS
-        // px and misplaces the composer above the IME.
+        // iOS WKWebView ignores system font size and display size. Android
+        // multiplies fontScale into textZoom and display size into DIP scale.
+        // Pin both on a Configuration copy. IME height must be converted with
+        // WebView devicePixelRatio (not this context's density) or the composer
+        // will miss the keyboard.
         Configuration config = new Configuration(newBase.getResources().getConfiguration());
         config.fontScale = 1.0f;
+        config.densityDpi = DisplayMetrics.DENSITY_DEVICE_STABLE;
         super.attachBaseContext(newBase.createConfigurationContext(config));
     }
 

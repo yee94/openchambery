@@ -72,6 +72,7 @@ import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
 import {
+  cssPxFromNativeImeHeight,
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
@@ -413,7 +414,7 @@ const useNativeMobileChrome = (): void => {
 
       // ── Android: pre-focus CSS FLIP from cached IME height ────────────────
       if (isAndroid) {
-        const IME_RATIO_STORAGE_KEY = 'openchamber.androidImeHeightRatio.v1';
+        const IME_RATIO_STORAGE_KEY = 'openchamber.androidImeHeightRatio.v2';
         // Open starts from intent/focus before the IME moves; keep it short.
         // Close usually begins after the system IME has already started (or
         // finished) dismissing, so a long hide leaves the composer hanging.
@@ -632,7 +633,7 @@ const useNativeMobileChrome = (): void => {
           // CustomEvent detail remains supported for browser/test dispatches.
           const detail = nativeEvent.detail ?? nativeEvent;
           if (detail?.open === true) {
-            const measured = Math.max(0, Math.round(detail.height ?? 0));
+            const measured = cssPxFromNativeImeHeight(detail.height ?? 0, window.devicePixelRatio || 1);
             const action = getAndroidComposerImeStateAction(composerLiftArmed, document.activeElement);
             if (measured > 0 && (action === 'open' || action === 'cache')) {
               // A model-picker search field can have a different IME silhouette

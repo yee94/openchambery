@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.28] - 2026-08-22
+
+### 移动端
+
+- **恢复 Android 与 iOS 的整页密度对齐，并修好键盘高度：** 再次钉死系统「显示大小」（`densityDpi`）让整体视觉回到 iOS 密度；键盘 inset 改为按 WebView `devicePixelRatio` 换算 CSS 像素，不再用 Activity 密度，避免输入框对不齐键盘。
+
 ## [1.18.2-beta.27] - 2026-08-22
 
 ### 变更

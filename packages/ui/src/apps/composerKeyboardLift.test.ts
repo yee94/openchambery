@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  cssPxFromNativeImeHeight,
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
@@ -110,5 +111,12 @@ describe('composerKeyboardLift', () => {
     expect(shouldCorrectArmedImeLift(300, 280)).toBe(false);
     expect(shouldCorrectArmedImeLift(300, 0)).toBe(false);
     expect(shouldCorrectArmedImeLift(0, 360)).toBe(true);
+  });
+
+  test('converts native IME window px with the WebView device pixel ratio', () => {
+    expect(cssPxFromNativeImeHeight(800, 2.625)).toBe(305);
+    expect(cssPxFromNativeImeHeight(800, 3.25)).toBe(246);
+    expect(cssPxFromNativeImeHeight(800, 0)).toBe(800);
+    expect(cssPxFromNativeImeHeight(0, 3)).toBe(0);
   });
 });

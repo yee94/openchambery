@@ -55,3 +55,10 @@ export function shouldCorrectArmedImeLift(armedHeight: number, measuredHeight: n
   if (!(armedHeight >= 0)) return false;
   return measuredHeight > armedHeight + 24;
 }
+
+/** Convert a native WindowInsets IME height (window px) into WebView CSS px. */
+export function cssPxFromNativeImeHeight(heightPx: number, devicePixelRatio: number): number {
+  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  if (!(heightPx > 0)) return 0;
+  return Math.max(0, Math.round(heightPx / dpr));
+}
