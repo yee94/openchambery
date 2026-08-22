@@ -284,8 +284,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id IN (SELECT message_id FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0)').run(assistantID, sessionID, assistantID, sessionID);
     db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0').run(assistantID, sessionID);
   };
-  const markSessionBackfillComplete = (assistantID, sessionID) => {
-    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 1, now());
+  const writeBackfillState = (assistantID, sessionID, next) => {
+    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(assistantID, sessionID, next.cursor, next.complete ? 1 : 0, now());
   };
   // Authoritative 404 means this session ID is gone from OpenCode. Converge its
   // backfill so one deleted archive cannot block demand scans of other sessions.
@@ -295,8 +295,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const completeMissingSessionBackfill = (assistantID, sessionID) => {
     db.exec('BEGIN IMMEDIATE');
     try {
-      clearUncoveredSessionMirror(assistantID, sessionID);
-      markSessionBackfillComplete(assistantID, sessionID);
+      const current = db.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').get(assistantID, sessionID);
+      const next = reduceBackfillState({ cursor: current?.cursor ?? null, complete: Boolean(current?.complete) }, 'session-missing');
+      if (next.disposition === 'discard-provisional') clearUncoveredSessionMirror(assistantID, sessionID);
+      writeBackfillState(assistantID, sessionID, next);
       db.exec('COMMIT');
       return true;
     } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -337,11 +339,13 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     try {
       entries.forEach((entry) => { const info = entry?.info ?? entry; if (nonEmptyString(info?.sessionID) && info.sessionID !== history.session_id) return; const parts = Array.isArray(entry?.parts) ? entry.parts : []; const messageOrdinal = Number.isSafeInteger(info?.time?.created) ? info.time.created : undefined; mirrorMessage(history.assistant_id, history.session_id, info, messageOrdinal, true); const partIDs = parts.filter((part) => nonEmptyString(part?.id)).map((part) => part.id); if (partIDs.length) db.prepare(`DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id NOT IN (${partIDs.map(() => '?').join(',')})`).run(history.assistant_id, history.session_id, info?.id, ...partIDs); else db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(history.assistant_id, history.session_id, info?.id); parts.forEach((part, partIndex) => mirrorPart(history.assistant_id, history.session_id, part, partIndex + 1)); });
       const nextCursor = result?.response?.headers?.get('x-next-cursor') ?? null;
-      const complete = !nextCursor;
-      if (complete) clearUncoveredSessionMirror(history.assistant_id, history.session_id);
-      db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(history.assistant_id, history.session_id, nextCursor, complete ? 1 : 0, now());
+      const next = reduceBackfillState({ cursor, complete: false }, { type: 'page', nextCursor });
+      // Successful pages only upsert authoritative rows; never delete provisional
+      // event mirrors that the snapshot omitted — only 404 / message.removed /
+      // assistant deletion may shrink the message set.
+      writeBackfillState(history.assistant_id, history.session_id, next);
       db.exec('COMMIT');
-      return complete;
+      return next.complete;
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   };
   const decodeCursor = (value) => { if (value == null || value === '') return null; try { const parsed = parse(Buffer.from(String(value), 'base64url').toString('utf8')); return Number.isSafeInteger(parsed?.sessionOrdinal) && Number.isSafeInteger(parsed?.messageOrdinal) && nonEmptyString(parsed?.messageID) && (parsed.scanSessionOrdinal == null || Number.isSafeInteger(parsed.scanSessionOrdinal)) ? parsed : fail('validation_error'); } catch (error) { if (error instanceof AssistantError) throw error; fail('validation_error'); } };
@@ -352,7 +356,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const currentIsArchived = row.current_session_id != null && Boolean(db.prepare('SELECT 1 FROM assistant_session_history WHERE assistant_id=? AND session_id=?').get(row.assistant_id, row.current_session_id));
     const beforeIncludes = (sessionOrdinal, messageOrdinal, messageID) => before == null || sessionOrdinal < before.sessionOrdinal || (sessionOrdinal === before.sessionOrdinal && (messageOrdinal < before.messageOrdinal || (messageOrdinal === before.messageOrdinal && messageID < before.messageID)));
     const pageRows = () => {
-      const historical = db.prepare(`SELECT h.ordinal AS session_ordinal,h.directory,m.ordinal AS message_ordinal,m.message_id,m.info_json,m.session_id FROM assistant_session_history h JOIN assistant_message_mirror m ON m.assistant_id=h.assistant_id AND m.session_id=h.session_id WHERE h.assistant_id=? AND m.covered=1 AND (? IS NULL OR h.ordinal<? OR (h.ordinal=? AND (m.ordinal<? OR (m.ordinal=? AND m.message_id<?)))) ORDER BY h.ordinal DESC,m.ordinal DESC,m.message_id DESC LIMIT ?`).all(row.assistant_id, before?.sessionOrdinal ?? null, before?.sessionOrdinal ?? 0, before?.sessionOrdinal ?? 0, before?.messageOrdinal ?? 0, before?.messageOrdinal ?? 0, before?.messageID ?? '', limit + 1);
+      // Archived mirrors include covered=1 authoritative rows and covered=0
+      // provisional event mirrors so a partial REST snapshot cannot hide a reply
+      // already observed on the live channel.
+      const historical = db.prepare(`SELECT h.ordinal AS session_ordinal,h.directory,m.ordinal AS message_ordinal,m.message_id,m.info_json,m.session_id FROM assistant_session_history h JOIN assistant_message_mirror m ON m.assistant_id=h.assistant_id AND m.session_id=h.session_id WHERE h.assistant_id=? AND (? IS NULL OR h.ordinal<? OR (h.ordinal=? AND (m.ordinal<? OR (m.ordinal=? AND m.message_id<?)))) ORDER BY h.ordinal DESC,m.ordinal DESC,m.message_id DESC LIMIT ?`).all(row.assistant_id, before?.sessionOrdinal ?? null, before?.sessionOrdinal ?? 0, before?.sessionOrdinal ?? 0, before?.messageOrdinal ?? 0, before?.messageOrdinal ?? 0, before?.messageID ?? '', limit + 1);
       const current = row.current_session_id && !currentIsArchived
         ? db.prepare('SELECT ? AS session_ordinal,? AS directory,ordinal AS message_ordinal,message_id,info_json,session_id FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=1 ORDER BY ordinal DESC,message_id DESC LIMIT ?').all(currentSessionOrdinal, effectiveWorkspace(row), row.assistant_id, row.current_session_id, limit + 1).filter((message) => beforeIncludes(message.session_ordinal, message.message_ordinal, message.message_id))
         : [];
