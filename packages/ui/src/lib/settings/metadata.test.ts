@@ -99,5 +99,15 @@ describe('settings navigation metadata', () => {
     expect(phoneShell).toContain('instancesSecondaryPage');
     expect(phoneShell).toContain("secondaryKind === 'instances'");
     expect(phoneShell).not.toContain('instances: (');
+    // Secondary instances page must carry Settings workspace tokens so
+    // SettingsGroup cards keep their chrome outside the Settings tab.
+    expect(mobileApp).toContain('oc-settings-workspace oc-settings-workspace-mobile');
+    expect(mobileApp).toContain('MobileFloatingSurface className="oc-mobile-settings-detail-card"');
+    // Home-menu scan is a global Capacitor capability — never routed through
+    // the instances secondary page via a pending-scan mount effect.
+    expect(mobileApp).toContain('scanConnectionFromHome');
+    expect(mobileApp).not.toContain('pendingInstanceScanRef');
+    expect(mobileApp).not.toContain('consumePendingScanRequest');
+    expect(mobileApp).not.toContain('scanInstanceFromProjects');
   });
 });

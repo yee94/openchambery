@@ -148,6 +148,17 @@ describe('Assistant UI product contract', () => {
     expect(view).not.toContain('mobileSelectorOpen');
   });
 
+  test('separates mobile disabled guidance, empty onboarding, and unavailable states', async () => {
+    const mobileTab = await read('../../mobile/assistant/MobileAssistantTab.tsx');
+    expect(mobileTab).toContain("assistant-guide/assistant-guide-hero.jpg");
+    expect(mobileTab).toContain('oc-mobile-assistant-guide-steps');
+    expect(mobileTab).toContain("t('assistants.shareWelcome.description')");
+    expect(mobileTab).toContain('instanceDisabled && !unavailable');
+    expect(mobileTab).toContain('snapshot.data.assistants.length === 0');
+    expect(mobileTab).toContain('requestCreate();');
+    expect(mobileTab).toContain("t('assistants.onboarding.action')");
+  });
+
   test('offers edit and delete from assistant list context menu and long-press', async () => {
     const [view, mobileTab, deleteDialog, store, settingsView, english] = await Promise.all([
       read('AssistantView.tsx'),
