@@ -57,6 +57,8 @@ export type MobileProjectsHomeContainerProps = {
   /** Optional override for the header new-session button; defaults to opening
       a plain new-session draft without navigation. */
   onNewSession?: () => void;
+  onScanQr?: () => void;
+  onSwitchInstance?: () => void;
   className?: string;
 };
 
@@ -68,6 +70,8 @@ export function MobileProjectsHomeContainer({
   onOpenChat,
   onAddProject,
   onNewSession,
+  onScanQr,
+  onSwitchInstance,
   className,
 }: MobileProjectsHomeContainerProps) {
   const { t } = useI18n();
@@ -560,6 +564,8 @@ export function MobileProjectsHomeContainer({
         projects={model.projects}
         onAddProject={onAddProject}
         onNewSession={handleNewSession}
+        onScanQr={onScanQr}
+        onSwitchInstance={onSwitchInstance}
         onToggleProject={handleToggleProject}
         onOpenProjectActions={handleOpenProjectActions}
         onToggleWorktree={handleToggleWorktree}

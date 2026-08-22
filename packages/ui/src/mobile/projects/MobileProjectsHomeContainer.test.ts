@@ -35,6 +35,11 @@ describe('MobileProjectsHomeContainer session actions', () => {
     expect(containerSource).toContain('<MobileProjectEditSurface');
     expect(containerSource).not.toContain('onEditProject: undefined');
   });
+
+  test('header menu callbacks pass through to the presentational home', () => {
+    expect(containerSource).toContain('onScanQr={onScanQr}');
+    expect(containerSource).toContain('onSwitchInstance={onSwitchInstance}');
+  });
 });
 
 describe('MobileProjectsHomeContainer git probe', () => {

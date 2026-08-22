@@ -4,6 +4,12 @@ import { useEvent } from '@reactuses/core';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   createMobileLongPressController,
   type MobileLongPressController,
 } from '@/components/ui/mobileLongPress';
@@ -80,6 +86,8 @@ export type MobileProjectsHomeProps = {
   projects: MobileProjectHomeItem[];
   onAddProject: () => void;
   onNewSession: () => void;
+  onScanQr?: () => void;
+  onSwitchInstance?: () => void;
   onToggleProject: (project: MobileProjectHomeItem) => void;
   onOpenProjectActions: (project: MobileProjectHomeItem) => void;
   onToggleWorktree: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
@@ -547,6 +555,8 @@ export function MobileProjectsHome({
   projects,
   onAddProject,
   onNewSession,
+  onScanQr,
+  onSwitchInstance,
   onToggleProject,
   onOpenProjectActions,
   onToggleWorktree,
@@ -562,6 +572,7 @@ export function MobileProjectsHome({
   const { t } = useI18n();
   const [pinnedExpandedByProject, setPinnedExpandedByProject] = React.useState<Record<string, boolean>>({});
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const searching = normalizedSearchQuery.length > 0;
@@ -572,6 +583,9 @@ export function MobileProjectsHome({
 
   const handleAddProject = useEvent(onAddProject);
   const handleNewSession = useEvent(onNewSession);
+  const handleScanQr = useEvent(() => onScanQr?.());
+  const handleSwitchInstance = useEvent(() => onSwitchInstance?.());
+  const handleMenuOpenChange = useEvent((open: boolean) => setMenuOpen(open));
   const closeSearch = useEvent(() => {
     setSearchQuery('');
     setSearchOpen(false);
@@ -618,15 +632,46 @@ export function MobileProjectsHome({
             >
               <Icon name={searchOpen ? 'close' : 'search'} className="size-5" />
             </Button>
-            <Button
-              type="button"
-              size="mobileIcon"
-              className="oc-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
-              aria-label={t('mobile.sessions.newChat')}
-              onClick={handleNewSession}
-            >
-              <Icon name="add" className="size-5" />
-            </Button>
+            <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="mobileIcon"
+                  className="oc-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
+                  aria-label={t('mobile.projects.menu.label')}
+                >
+                  <Icon
+                    name="add"
+                    className={cn(
+                      'size-5 transition-transform duration-150 motion-reduce:transition-none',
+                      menuOpen ? 'rotate-45' : 'rotate-0',
+                    )}
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="bottom" className="min-w-44">
+                <DropdownMenuItem className="min-h-11" onSelect={handleNewSession}>
+                  <Icon name="chat-new" className="size-4" />
+                  {t('mobile.projects.menu.newChat')}
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-11" onSelect={handleAddProject}>
+                  <Icon name="folder-add" className="size-4" />
+                  {t('mobile.projects.menu.newProject')}
+                </DropdownMenuItem>
+                {onScanQr ? (
+                  <DropdownMenuItem className="min-h-11" onSelect={handleScanQr}>
+                    <Icon name="scan-2" className="size-4" />
+                    {t('mobile.projects.menu.scanQr')}
+                  </DropdownMenuItem>
+                ) : null}
+                {onSwitchInstance ? (
+                  <DropdownMenuItem className="min-h-11" onSelect={handleSwitchInstance}>
+                    <Icon name="server" className="size-4" />
+                    {t('mobile.projects.menu.switchInstance')}
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         )}
       />

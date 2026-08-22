@@ -1298,7 +1298,8 @@ const MobileInstancesSurface: React.FC<{
   connection: UseMobileConnection;
   onConnect: () => void;
   onActiveConnectionDeleted: () => void;
-}> = ({ connection, onActiveConnectionDeleted, onConnect }) => {
+  scanRequest?: number;
+}> = ({ connection, onActiveConnectionDeleted, onConnect, scanRequest = 0 }) => {
   const { t } = useI18n();
   const conn = connection;
   const {
@@ -1313,6 +1314,7 @@ const MobileInstancesSurface: React.FC<{
   const [clientToken, setClientToken] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [isScanning, setIsScanning] = React.useState(false);
+  const handledScanRequestRef = React.useRef(0);
   const qrScanSupported = React.useMemo(() => isQrScanSupported(), []);
   // The manual add/edit form is hidden until asked for — the sheet leads with
   // the list of instances (with live status), not a wall of inputs.
@@ -1397,6 +1399,12 @@ const MobileInstancesSurface: React.FC<{
       setIsScanning(false);
     }
   });
+
+  React.useEffect(() => {
+    if (scanRequest <= handledScanRequestRef.current) return;
+    handledScanRequestRef.current = scanRequest;
+    void handleScanInstance();
+  }, [scanRequest]);
 
   const handlePasswordSubmit = useEvent((event: React.FormEvent) => {
     event.preventDefault();
@@ -2457,6 +2465,7 @@ const MobileShell: React.FC<{
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [updateOpen, setUpdateOpen] = React.useState(false);
   const [directoryDialogOpen, setDirectoryDialogOpen] = React.useState(false);
+  const [instanceScanRequest, setInstanceScanRequest] = React.useState(0);
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
   const [isTranscriptRefreshing, setIsTranscriptRefreshing] = React.useState(false);
@@ -2469,6 +2478,7 @@ const MobileShell: React.FC<{
   const updateAvailable = useUpdateStore((state) => state.available);
   const updateRuntimeType = useUpdateStore((state) => state.runtimeType);
   const showCapacitorOnlyFeatures = React.useMemo(() => isCapacitorMobileApp(), []);
+  const qrScanSupported = React.useMemo(() => isQrScanSupported(), []);
   const { data: mcpServers = [], refetch: refetchMcpConfigs } = useMcpConfigsQuery(currentDirectory ?? null, { enabled: mcpOpen });
   const { refetch: refetchMcpStatus } = useMcpStatusQuery(currentDirectory ?? null, { enabled: mcpOpen });
   const setMcpDraft = useMcpConfigStore((state) => state.setMcpDraft);
@@ -2500,6 +2510,11 @@ const MobileShell: React.FC<{
 
   const openInstancesSettingsPage = useEvent(() => {
     openSettingsSurface('instances');
+  });
+
+  const scanInstanceFromProjects = useEvent(() => {
+    openInstancesSettingsPage();
+    setInstanceScanRequest((current) => current + 1);
   });
 
   const rootBackRoutesBlocked = mobileSessionPanelOpen
@@ -3188,6 +3203,8 @@ const MobileShell: React.FC<{
             <MobilePhoneShell
               className="min-h-0 flex-1"
               onAddProject={() => setDirectoryDialogOpen(true)}
+              onScanQr={showCapacitorOnlyFeatures && qrScanSupported ? scanInstanceFromProjects : undefined}
+              onSwitchInstance={showCapacitorOnlyFeatures ? openInstancesSettingsPage : undefined}
               onEnableAssistants={() => {
                 openSettingsSurface('assistants');
               }}
@@ -3196,6 +3213,7 @@ const MobileShell: React.FC<{
                   connection={connection}
                   onConnect={() => undefined}
                   onActiveConnectionDeleted={onActiveConnectionDeleted}
+                  scanRequest={instanceScanRequest}
                 />
               ) : undefined}
               parentSessionTarget={

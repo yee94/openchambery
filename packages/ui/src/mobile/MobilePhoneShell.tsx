@@ -19,6 +19,8 @@ import { acknowledgeMobileSessionMirror, useMobileNavigationStore } from './useM
 export type MobilePhoneShellProps = {
   /** Opens the directory explorer so the user can add a project. */
   onAddProject: () => void;
+  onScanQr?: () => void;
+  onSwitchInstance?: () => void;
   /** Enables assistants (opens settings at the assistants section). */
   onEnableAssistants: () => void;
   /** Saved-instance management content for the Settings secondary page. */
@@ -56,6 +58,8 @@ export type MobilePhoneShellProps = {
  */
 export function MobilePhoneShell({
   onAddProject,
+  onScanQr,
+  onSwitchInstance,
   onEnableAssistants,
   instancesPage,
   parentSessionTarget = null,
@@ -182,13 +186,15 @@ export function MobilePhoneShell({
           onOpenChat={openChat}
           onAddProject={onAddProject}
           onNewSession={handleNewSessionDraft}
+          onScanQr={onScanQr}
+          onSwitchInstance={onSwitchInstance}
         />
       ),
       assistant: <MobileAssistantTab onEnable={onEnableAssistants} onOpenAssistant={openAssistant} />,
       scheduled: <MobileScheduledTab showHeader={false}>{scheduledTabBody}</MobileScheduledTab>,
       settings: <MobileSettingsTab instancesPage={instancesPage} />,
     }),
-    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, instancesPage, scheduledTabBody],
+    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onScanQr, onSwitchInstance, onEnableAssistants, instancesPage, scheduledTabBody],
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;
