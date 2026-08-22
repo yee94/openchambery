@@ -1,6 +1,8 @@
 ext {
     minSdkVersion = 24
-    compileSdkVersion = 35
+    // OkHttp 5.x (pulled in by @capgo/capacitor-updater) requires compileSdk 36.
+    // targetSdk stays at 35 to avoid Android 16 behavior changes until tested.
+    compileSdkVersion = 36
     targetSdkVersion = 35
     androidxActivityVersion = '1.9.2'
     androidxAppCompatVersion = '1.7.0'
