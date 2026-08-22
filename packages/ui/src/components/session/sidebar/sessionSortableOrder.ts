@@ -37,7 +37,7 @@ export const createSessionNodeComparator = (
   nodes: readonly SessionNodeLike[],
   sessionOrder: readonly string[] | undefined,
   savedActivity: Readonly<Record<string, number>> | undefined,
-  pinnedSessionIds: Set<string>,
+  pinnedSessionIds: ReadonlySet<string>,
 ): ((a: SessionNodeLike, b: SessionNodeLike) => number) => {
   const sessionOrderIndex = buildEffectiveSessionOrderIndex(nodes, sessionOrder, savedActivity);
   return (a, b) => {

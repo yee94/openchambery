@@ -11,7 +11,7 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import { useSessionStatusBarCollapseStore } from '@/stores/useSessionStatusBarCollapseStore';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import type { Session } from '@opencode-ai/sdk/v2';
@@ -660,8 +660,8 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
   const removeProject = useProjectsStore((state) => state.removeProject);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
-  const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
+  const pinnedSessionIds = usePinnedSessionIds();
+  const togglePinnedSession = useTogglePinnedSession();
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const worktreeOrderByProject = useWorktreeOrderStore((state) => state.orderByProject);
   const activePaginationByDirectory = useGlobalSessionsStore((state) => state.activePaginationByDirectory);

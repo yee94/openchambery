@@ -292,6 +292,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.rename.smartTitle': 'Generuj tytuły automatycznie',
   'sessions.sidebar.session.menu.unpin': 'Odepnij',
   'sessions.sidebar.session.menu.pin': 'Przypnij',
+  'sessions.sidebar.session.pin.error': 'Nie udało się przypiąć sesji',
+  'sessions.sidebar.session.unpin.error': 'Nie udało się odpiąć sesji',
   'sessions.sidebar.session.menu.share': 'Udostępnij',
   'sessions.sidebar.session.menu.copied': 'Skopiowano',
   'sessions.sidebar.session.menu.copyLink': 'Kopiuj link',

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.15] - 2026-08-22
+
+### 会话
+
+- **置顶改为服务端全局同步：** 置顶状态从各设备浏览器本地存储迁移到 OpenChamber server（session-index SQLite `pinned_at`，目录重建时随行保留），PC 与移动端连接同一 server 后置顶集合实时互通（复用 session-index revision + SSE 变更推送，其他设备自动重取快照）。置顶/取消走乐观更新，失败回滚并提示。排序保持「置顶优先 + 创建时间倒序」，会话归档即自动取消置顶；本地置顶 store 与失效 ID 剪枝逻辑退役，旧本地数据不迁移、以服务端为准。external OpenCode 直连、VS Code 及连接非 OpenChamber server 的移动端不提供置顶（入口静默无效）。
+
 ## [1.18.2-beta.14] - 2026-08-22
 
 ### 会话

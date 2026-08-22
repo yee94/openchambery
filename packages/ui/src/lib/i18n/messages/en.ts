@@ -537,6 +537,8 @@ export const dict = {
   'sessions.sidebar.session.rename.smartTitle': 'Generate titles automatically',
   'sessions.sidebar.session.menu.unpin': 'Unpin',
   'sessions.sidebar.session.menu.pin': 'Pin',
+  'sessions.sidebar.session.pin.error': 'Failed to pin session',
+  'sessions.sidebar.session.unpin.error': 'Failed to unpin session',
   'sessions.sidebar.session.menu.share': 'Share',
   'sessions.sidebar.session.menu.copied': 'Copied',
   'sessions.sidebar.session.menu.copyLink': 'Copy link',

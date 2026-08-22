@@ -16,7 +16,7 @@ import { useI18n } from '@/lib/i18n';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import { syncGlobalSessionsForDirectories } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useLiveSessionStatus } from '@/sync/sync-context';
@@ -76,8 +76,8 @@ export function MobileProjectsHomeContainer({
 
   const setProjectExpanded = useMobileSessionTreeStore((state) => state.setProjectExpanded);
   const setWorktreeExpanded = useMobileSessionTreeStore((state) => state.setWorktreeExpanded);
-  const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
+  const togglePinnedSession = useTogglePinnedSession();
+  const pinnedSessionIds = usePinnedSessionIds();
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
   const updateSessionTitle = useSessionUIStore((state) => state.updateSessionTitle);
   const requestSessionSmartTitle = useSessionUIStore((state) => state.requestSessionSmartTitle);

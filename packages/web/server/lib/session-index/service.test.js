@@ -318,4 +318,69 @@ describe('Electron session index', () => {
     expect(rebuilt.snapshot().directories).toEqual([]);
     rebuilt.close();
   });
+
+  it('exposes time.pinned in snapshots and clears it on unpin', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+
+    expect(service.setPinned('ses_a', 55)).toBe(true);
+    expect(service.snapshot().directories[0].sessions[0].time).toMatchObject({
+      created: 9,
+      updated: 10,
+      pinned: 55,
+    });
+
+    expect(service.clearPinned('ses_a')).toBe(true);
+    expect(service.snapshot().directories[0].sessions[0].time).toEqual({
+      created: 9,
+      updated: 10,
+    });
+    service.close();
+  });
+
+  it('rescues pinned_at across replaceDirectory rebuilds', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+    expect(service.setPinned('ses_a', 77)).toBe(true);
+
+    service.replaceDirectory({
+      directory: '/repo',
+      sessions: [session('ses_a', 20)],
+      cursor: null,
+      hasMore: false,
+      now: 2000,
+    });
+
+    expect(service.snapshot().directories[0].sessions[0].time).toMatchObject({
+      updated: 20,
+      pinned: 77,
+    });
+    service.close();
+  });
+
+  it('does not let live upsert overwrite pinned_at', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+    expect(service.setPinned('ses_a', 88)).toBe(true);
+
+    service.upsert(session('ses_a', 30));
+
+    expect(service.snapshot().directories[0].sessions[0].time.pinned).toBe(88);
+    service.close();
+  });
+
+  it('removes pinned rows when an archived upsert deletes the session', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+    expect(service.setPinned('ses_a', 99)).toBe(true);
+
+    expect(service.upsert({ ...session('ses_a', 11), time: { created: 9, updated: 11, archived: 12 } })).toBe(true);
+    expect(service.snapshot().directories[0].sessions).toEqual([]);
+    expect(service.clearPinned('ses_a')).toBe(false);
+    service.close();
+  });
 });

@@ -537,6 +537,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.rename.smartTitle": "Gerar títulos automaticamente",
   "sessions.sidebar.session.menu.unpin": "Desfixar",
   "sessions.sidebar.session.menu.pin": "Fixar",
+  "sessions.sidebar.session.pin.error": "Falha ao fixar a sessão",
+  "sessions.sidebar.session.unpin.error": "Falha ao desafixar a sessão",
   "sessions.sidebar.session.menu.share": "Compartilhar",
   "sessions.sidebar.session.menu.copied": "Copiado",
   "sessions.sidebar.session.menu.copyLink": "Copiar link",

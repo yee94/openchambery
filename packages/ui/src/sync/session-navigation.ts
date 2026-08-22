@@ -5,7 +5,7 @@ import {
   isSessionRelatedToProject,
   normalizePath,
 } from '@/components/session/sidebar/utils';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { readPinnedSessionIds } from '@/queries/sessionIndexPinQueries';
 import {
   type SessionFocusIdentity,
   type SessionFocusScope,
@@ -133,7 +133,7 @@ export const resolveRootSessionId = (sessionId: string | null, sessions: Session
  * (non-archived, non-subtask) sessions with the sidebar's pinned+time sort.
  */
 export const getNavigableRootSessions = (): Session[] => {
-  const pinnedSessionIds = useSessionPinnedStore.getState().ids;
+  const pinnedSessionIds = readPinnedSessionIds();
   const projects = useProjectsStore.getState().projects;
 
   // Prefer the global active list (matches the multi-project sidebar). Fall

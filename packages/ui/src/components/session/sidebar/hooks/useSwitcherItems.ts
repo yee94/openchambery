@@ -3,7 +3,7 @@ import type { Session } from '@opencode-ai/sdk/v2';
 
 import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds } from '@/queries/sessionIndexPinQueries';
 import { useGitStore } from '@/stores/useGitStore';
 import type { SessionNode } from '../types';
 import { compareSessionsByPinnedAndTime, isPathWithinProject } from '../utils';
@@ -41,7 +41,7 @@ export const useSwitcherItems = (enabled: boolean, options: SwitcherItemsOptions
   const { scopeProjectId = null } = options;
   const activeSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const projects = useProjectsStore((state) => state.projects);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
+  const pinnedSessionIds = usePinnedSessionIds();
 
   const normalizedProjects = React.useMemo(
     () => projects

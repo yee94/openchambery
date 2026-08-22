@@ -35,7 +35,6 @@ const {
 import { opencodeClient } from '@/lib/opencode/client';
 import { resetOpenCodeReadiness } from '@/lib/runtime-readiness';
 import { useSessionFoldersStore } from './useSessionFoldersStore';
-import { prunePinnedSessionIdsByKnownIds } from '@/components/session/sidebar/hooks/pinnedSessionCleanup';
 
 type SessionExtra = Partial<Session> & {
   directory?: string | null;
@@ -1657,7 +1656,6 @@ describe('useGlobalSessionsStore', () => {
     expect(useGlobalSessionsStore.getState().activeSessions).toHaveLength(20);
     expect(useGlobalSessionsStore.getState().fullCatalogSessionIds).toBe(completeIds);
     expect(useGlobalSessionsStore.getState().fullCatalogGeneration).toBe(generation);
-    expect(prunePinnedSessionIdsByKnownIds(completeIds, new Set(['ses_1', 'ses_25']))).toEqual(new Set(['ses_1', 'ses_25']));
 
     useSessionFoldersStore.setState({
       foldersMap: { '/repo/app': [{ id: 'folder', name: 'Folder', sessionIds: ['ses_25'], createdAt: 1 }] },

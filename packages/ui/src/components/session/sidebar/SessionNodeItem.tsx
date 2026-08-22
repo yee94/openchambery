@@ -81,7 +81,7 @@ type Props = {
   projectId?: string | null;
   archivedBucket?: boolean;
   currentSessionId: string | null;
-  pinnedSessionIds: Set<string>;
+  pinnedSessionIds: ReadonlySet<string>;
   expandedParents: Set<string>;
   hasSessionSearchQuery: boolean;
   normalizedSessionSearchQuery: string;
@@ -1578,8 +1578,8 @@ const subtreeContainsSession = (
 const hasSetMembershipChangeInNode = (
   prevNode: SessionNode,
   nextNode: SessionNode,
-  prevSet: Set<string>,
-  nextSet: Set<string>,
+  prevSet: ReadonlySet<string>,
+  nextSet: ReadonlySet<string>,
   getKey: (node: SessionNode) => string,
 ): boolean => {
   if (prevNode.session.id !== nextNode.session.id) return true;

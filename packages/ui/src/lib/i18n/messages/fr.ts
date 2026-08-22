@@ -352,6 +352,8 @@ export const dict = {
   'sessions.sidebar.session.rename.smartTitle': 'Générer les titres automatiquement',
   'sessions.sidebar.session.menu.unpin': 'Désépingler',
   'sessions.sidebar.session.menu.pin': 'Épingler',
+  'sessions.sidebar.session.pin.error': 'Échec de l\'épinglage de la session',
+  'sessions.sidebar.session.unpin.error': 'Échec du désépinglage de la session',
   'sessions.sidebar.session.menu.share': 'Partager',
   'sessions.sidebar.session.menu.copied': 'Copié',
   'sessions.sidebar.session.menu.copyLink': 'Copier le lien',

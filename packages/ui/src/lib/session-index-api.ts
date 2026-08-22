@@ -3,6 +3,14 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from './runtime-fetch';
 
+/** Session-index summary row. `time.pinned` is ISO/null (null or absent = unpinned). */
+export type SessionIndexSession = Session & {
+  hasChildren?: boolean;
+  time: Session['time'] & {
+    pinned?: string | number | null;
+  };
+};
+
 export type SessionIndexDirectory = {
   directory: string;
   cursor: number | null;
@@ -10,7 +18,7 @@ export type SessionIndexDirectory = {
   lastSyncedAt: number;
   lastFullSyncedAt: number;
   lastAccessedAt: number;
-  sessions: Array<Session & { hasChildren?: boolean }>;
+  sessions: SessionIndexSession[];
 };
 
 export type SessionIndexSnapshot = {
@@ -216,6 +224,46 @@ export const waitForSessionIndexInvalidation = (
   });
   signal.addEventListener('abort', onAbort, { once: true });
 });
+
+/**
+ * Pin a session in the server session-index.
+ * 404 = session not in the index; 501 = capability unsupported.
+ */
+export const pinSession = async (
+  sessionId: string,
+  options?: { signal?: AbortSignal },
+): Promise<void> => {
+  const id = sessionId.trim();
+  if (!id) throw new Error('session index pin requires a session id');
+  const response = await runtimeFetch(
+    `/api/openchamber/session-index/session/${encodeURIComponent(id)}/pin`,
+    { method: 'POST', signal: options?.signal },
+  );
+  if (response.status === 501) {
+    throw new Error('session index pin is unsupported');
+  }
+  await ensureOk(response);
+};
+
+/**
+ * Unpin a session in the server session-index.
+ * 404 = session not in the index; 501 = capability unsupported.
+ */
+export const unpinSession = async (
+  sessionId: string,
+  options?: { signal?: AbortSignal },
+): Promise<void> => {
+  const id = sessionId.trim();
+  if (!id) throw new Error('session index unpin requires a session id');
+  const response = await runtimeFetch(
+    `/api/openchamber/session-index/session/${encodeURIComponent(id)}/pin`,
+    { method: 'DELETE', signal: options?.signal },
+  );
+  if (response.status === 501) {
+    throw new Error('session index unpin is unsupported');
+  }
+  await ensureOk(response);
+};
 
 export const persistSessionIndexDirectory = async (input: {
   directory: string;

@@ -537,6 +537,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.rename.smartTitle': '제목 자동 생성',
   'sessions.sidebar.session.menu.unpin': '고정 해제',
   'sessions.sidebar.session.menu.pin': '고정',
+  'sessions.sidebar.session.pin.error': '세션 고정에 실패했습니다',
+  'sessions.sidebar.session.unpin.error': '세션 고정 해제에 실패했습니다',
   'sessions.sidebar.session.menu.share': '공유',
   'sessions.sidebar.session.menu.copied': '복사됨',
   'sessions.sidebar.session.menu.copyLink': '링크 복사',

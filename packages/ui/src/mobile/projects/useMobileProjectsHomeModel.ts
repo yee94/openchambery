@@ -17,7 +17,7 @@ import {
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds } from '@/queries/sessionIndexPinQueries';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -175,7 +175,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   // session-ui-store). Do not re-probe git/worktrees here — that was an unbounded cold-start cost.
   const worktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const worktreeOrderByProject = useWorktreeOrderStore((state) => state.orderByProject);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
+  const pinnedSessionIds = usePinnedSessionIds();
   const projectExpandedMap = useMobileSessionTreeStore((state) => state.projectExpanded);
   const worktreeExpandedMap = useMobileSessionTreeStore((state) => state.worktreeExpanded);
   const unseenBySession = useNotificationStore((state) => state.index.session.unseenCount);

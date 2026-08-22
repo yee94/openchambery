@@ -537,6 +537,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.rename.smartTitle": "Автоматично створювати назви",
   "sessions.sidebar.session.menu.unpin": "Відкріпити",
   "sessions.sidebar.session.menu.pin": "Закріпити",
+  "sessions.sidebar.session.pin.error": "Не вдалося закріпити сесію",
+  "sessions.sidebar.session.unpin.error": "Не вдалося відкріпити сесію",
   "sessions.sidebar.session.menu.share": "Поділитися",
   "sessions.sidebar.session.menu.copied": "Скопійовано",
   "sessions.sidebar.session.menu.copyLink": "Копіювати посилання",

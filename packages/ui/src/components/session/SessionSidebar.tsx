@@ -77,7 +77,7 @@ import {
 } from '@/stores/useSessionFocusStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
 import { derivePinnedSessions } from './sidebar/pinnedSessions';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import {
   compareSessionsByPinnedAndTime,
   normalizePath,
@@ -133,7 +133,6 @@ const PROJECT_ACTIVE_SESSION_STORAGE_KEY = "oc.sessions.activeSessionByProject";
 // id into all four context combinations.
 const SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents.v2";
 const LEGACY_SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents";
-const SESSION_PINNED_STORAGE_KEY = "oc.sessions.pinned";
 
 const instanceSafeStorage = createInstanceScopedStorageAdapter(getDeferredSafeStorage());
 
@@ -331,9 +330,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     React.useState<DeleteFolderConfirmState>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] =
     React.useState<BulkDeleteSessionsConfirmState>(null);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
-  const setPinnedSessionIds = useSessionPinnedStore((state) => state.setIds);
-  const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
+  const pinnedSessionIds = usePinnedSessionIds();
+  const togglePinnedSession = useTogglePinnedSession();
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
     () => readStoredStringSet(GROUP_COLLAPSE_STORAGE_KEY),
   );
@@ -681,20 +679,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const { scheduleCollapsedProjectsPersist, hasRestoredProjectCollapse } = useSidebarPersistence({
     isVSCode,
-    fullCatalogSessionIds,
-    fullCatalogGeneration,
     safeStorage,
     keys: {
       sessionExpanded: SESSION_EXPANDED_STORAGE_KEY,
       sessionExpandedLegacy: LEGACY_SESSION_EXPANDED_STORAGE_KEY,
       projectCollapse: PROJECT_COLLAPSE_STORAGE_KEY,
-      sessionPinned: SESSION_PINNED_STORAGE_KEY,
       groupOrder: GROUP_ORDER_STORAGE_KEY,
       projectActiveSession: PROJECT_ACTIVE_SESSION_STORAGE_KEY,
       groupCollapse: GROUP_COLLAPSE_STORAGE_KEY,
     },
-    pinnedSessionIds,
-    setPinnedSessionIds,
     groupOrderByProject,
     activeSessionByProject,
     collapsedGroups,

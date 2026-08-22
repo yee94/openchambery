@@ -98,7 +98,7 @@ type Props = {
   renameFolderDraft: string;
   setRenameFolderDraft: React.Dispatch<React.SetStateAction<string>>;
   setRenamingFolderId: React.Dispatch<React.SetStateAction<string | null>>;
-  pinnedSessionIds: Set<string>;
+  pinnedSessionIds: ReadonlySet<string>;
   expandedParents: Set<string>;
   sessionOrderByScope: SessionOrderMap;
   sessionOrderActivityByScope: SessionOrderActivityMap;
@@ -153,8 +153,8 @@ const groupContainsSessionId = (group: SessionGroup, sessionId: string | null): 
 
 const groupHasPinnedMembershipChange = (
   group: SessionGroup,
-  prevPinnedSessionIds: Set<string>,
-  nextPinnedSessionIds: Set<string>,
+  prevPinnedSessionIds: ReadonlySet<string>,
+  nextPinnedSessionIds: ReadonlySet<string>,
 ): boolean => {
   const visit = (node: SessionNode): boolean => {
     const sessionId = node.session.id;

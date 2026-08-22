@@ -550,6 +550,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.rename.smartTitle': '智慧生成標題',
   'sessions.sidebar.session.menu.unpin': '取消釘選',
   'sessions.sidebar.session.menu.pin': '釘選',
+  'sessions.sidebar.session.pin.error': '釘選會話失敗',
+  'sessions.sidebar.session.unpin.error': '取消釘選失敗',
   'sessions.sidebar.session.menu.share': '分享',
   'sessions.sidebar.session.menu.copied': '已複製',
   'sessions.sidebar.session.menu.copyLink': '複製連結',

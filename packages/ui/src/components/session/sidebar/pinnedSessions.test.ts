@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { Session } from '@opencode-ai/sdk/v2';
 
 import { derivePinnedSessions } from './pinnedSessions';

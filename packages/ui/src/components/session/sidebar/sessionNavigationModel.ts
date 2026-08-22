@@ -17,7 +17,7 @@ type BuildProjectNavigationTargetsArgs = {
   sections: ProjectSection[];
   foldersMap: SessionFoldersMap;
   getOrderedGroups: (projectId: string, groups: SessionGroup[]) => SessionGroup[];
-  pinnedSessionIds: Set<string>;
+  pinnedSessionIds: ReadonlySet<string>;
   sessionOrderByScope: SessionOrderMap;
   sessionOrderActivityByScope: SessionOrderActivityMap;
 };

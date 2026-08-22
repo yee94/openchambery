@@ -116,6 +116,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       updated_at INTEGER NOT NULL,
       activity_updated_at INTEGER NOT NULL,
       archived_at INTEGER NOT NULL DEFAULT 0,
+      pinned_at INTEGER,
       status TEXT,
       status_changed_at INTEGER NOT NULL DEFAULT 0,
       parent_id TEXT,
@@ -139,6 +140,12 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     CREATE INDEX IF NOT EXISTS session_child_parent
       ON session_child(runtime_key, directory, parent_id);
   `);
+  const sessionSummaryColumns = new Set(
+    db.prepare("SELECT name FROM pragma_table_info('session_summary')").all().map((column) => column.name),
+  );
+  if (!sessionSummaryColumns.has('pinned_at')) {
+    db.exec('ALTER TABLE session_summary ADD COLUMN pinned_at INTEGER');
+  }
   db.prepare('INSERT OR REPLACE INTO session_index_meta(key, value) VALUES (?, ?)')
     .run('schema_version', String(SCHEMA_VERSION));
 
@@ -165,7 +172,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
   const deleteDirectoryRows = db.prepare('DELETE FROM session_summary WHERE runtime_key = ? AND directory = ?');
   const existingSummaryState = db.prepare(`
     SELECT session_id, has_children AS hasChildren, activity_updated_at AS activityUpdatedAt,
-      status, status_changed_at AS statusChangedAt
+      status, status_changed_at AS statusChangedAt, pinned_at AS pinnedAt
     FROM session_summary WHERE runtime_key = ? AND directory = ?
   `);
   const readSummary = db.prepare(`
@@ -183,8 +190,8 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     LIMIT 1 OFFSET ?
   `);
   const insertSummary = db.prepare(`
-    INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, status, status_changed_at, parent_id, has_children, assistant_id, assistant_name)
-    VALUES (@runtimeKey, @directory, @id, @title, @createdAt, @updatedAt, @activityUpdatedAt, @archivedAt, @status, @statusChangedAt, @parentID, @hasChildren, @assistantID, @assistantName)
+    INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, pinned_at, status, status_changed_at, parent_id, has_children, assistant_id, assistant_name)
+    VALUES (@runtimeKey, @directory, @id, @title, @createdAt, @updatedAt, @activityUpdatedAt, @archivedAt, @pinnedAt, @status, @statusChangedAt, @parentID, @hasChildren, @assistantID, @assistantName)
   `);
   const upsertSummary = db.prepare(`
     INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, status, status_changed_at, parent_id, has_children, assistant_id, assistant_name)
@@ -259,6 +266,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       insertSummary.run({
         ...summary,
         activityUpdatedAt: Math.max(summary.activityUpdatedAt, toTimestamp(previous?.activityUpdatedAt)),
+        pinnedAt: previous?.pinnedAt != null ? toTimestamp(previous.pinnedAt) : null,
         status: typeof previous?.status === 'string' ? previous.status : null,
         statusChangedAt: toTimestamp(previous?.statusChangedAt),
         hasChildren: toBooleanInt(summary.hasChildren ?? Boolean(previous?.hasChildren)),
@@ -364,6 +372,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       sessions: db.prepare(`
         SELECT session_id AS id, title, created_at AS createdAt, updated_at AS updatedAt,
           activity_updated_at AS activityUpdatedAt, archived_at AS archivedAt,
+          pinned_at AS pinnedAt,
           status, status_changed_at AS statusChangedAt, parent_id AS parentID,
           has_children AS hasChildren, assistant_id AS assistantID, assistant_name AS assistantName
         FROM session_summary WHERE runtime_key = ? AND directory = ?
@@ -373,7 +382,12 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
           id: session.id,
           title: session.title,
           directory: directory.directory,
-          time: { created: session.createdAt, updated: session.updatedAt, ...(session.archivedAt ? { archived: session.archivedAt } : {}) },
+          time: {
+            created: session.createdAt,
+            updated: session.updatedAt,
+            ...(session.archivedAt ? { archived: session.archivedAt } : {}),
+            ...(session.pinnedAt ? { pinned: session.pinnedAt } : {}),
+          },
           metadata: {
             openchamber: {
               titleRefresh: { activityUpdatedAt: session.activityUpdatedAt },
@@ -465,6 +479,38 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     return result.changes > 0;
   };
 
+  const summaryExists = db.prepare(`
+    SELECT 1 AS present FROM session_summary
+    WHERE runtime_key = ? AND session_id = ?
+    LIMIT 1
+  `);
+
+  const setPinned = (sessionID, pinnedAt = Date.now()) => {
+    if (typeof sessionID !== 'string' || !sessionID) return false;
+    const timestamp = toTimestamp(pinnedAt);
+    if (!timestamp) return false;
+    const key = runtimeKey();
+    if (!summaryExists.get(key, sessionID)) return false;
+    db.prepare(`
+      UPDATE session_summary
+      SET pinned_at = ?
+      WHERE runtime_key = ? AND session_id = ?
+    `).run(timestamp, key, sessionID);
+    return true;
+  };
+
+  const clearPinned = (sessionID) => {
+    if (typeof sessionID !== 'string' || !sessionID) return false;
+    const key = runtimeKey();
+    if (!summaryExists.get(key, sessionID)) return false;
+    db.prepare(`
+      UPDATE session_summary
+      SET pinned_at = NULL
+      WHERE runtime_key = ? AND session_id = ?
+    `).run(key, sessionID);
+    return true;
+  };
+
   const replaceChildSessions = db.transaction((directory, parentSessionID, children) => {
     const normalizedDirectory = normalizeDirectory(directory);
     if (!normalizedDirectory || typeof parentSessionID !== 'string' || !parentSessionID) return false;
@@ -487,6 +533,8 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     upsertAndReportChange,
     touchActivity,
     updateStatus,
+    setPinned,
+    clearPinned,
     remove,
     findBySessionId,
     replaceChildSessions,

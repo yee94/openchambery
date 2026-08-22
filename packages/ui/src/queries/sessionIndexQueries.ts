@@ -13,6 +13,16 @@ import {
   type SessionIndexStartupStorage,
 } from './sessionIndexStartupCache';
 
+export {
+  derivePinnedSessionIdsFromSnapshot,
+  isSessionIndexPinned,
+  patchSessionIndexPinned,
+  readPinnedSessionIds,
+  togglePinnedSession,
+  usePinnedSessionIds,
+  useTogglePinnedSession,
+} from './sessionIndexPinQueries';
+
 type SessionIndexSnapshotLoader = (options?: { signal?: AbortSignal }) => Promise<SessionIndexSnapshot | null>;
 
 const snapshotKey = (transport = getRuntimeTransportIdentity()) => queryKeys.sessionIndex.snapshot(transport);

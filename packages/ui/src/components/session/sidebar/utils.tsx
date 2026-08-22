@@ -127,7 +127,7 @@ const getSessionCreatedAt = (session: Session): number => {
 export const compareSessionsByPinnedAndTime = (
   a: Session,
   b: Session,
-  pinnedSessionIds: Set<string>,
+  pinnedSessionIds: ReadonlySet<string>,
 ): number => {
   const aPinned = pinnedSessionIds.has(a.id);
   const bPinned = pinnedSessionIds.has(b.id);

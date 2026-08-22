@@ -16,7 +16,7 @@ import { buildSessionTree } from '../sessionTree';
 type Args = {
   homeDirectory: string | null;
   worktreeMetadata: Map<string, WorktreeMetadata>;
-  pinnedSessionIds: Set<string>;
+  pinnedSessionIds: ReadonlySet<string>;
   gitBranches: Map<string, string | null>;
   isVSCode: boolean;
 };
