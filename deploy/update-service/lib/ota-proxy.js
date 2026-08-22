@@ -55,11 +55,13 @@ export async function handleOtaProxyRequest(request, options = {}) {
 
   let upstream;
   let upstreamError = 'unknown';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
     upstream = await fetchImpl(origin + path, {
       method,
       headers: { Accept: '*/*' },
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      signal: controller.signal,
     });
   } catch (error) {
     upstreamError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -73,6 +75,8 @@ export async function handleOtaProxyRequest(request, options = {}) {
         'cache-control': 'no-store',
       },
     });
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!upstream.ok) {
