@@ -403,4 +403,229 @@ describe('session-title helpers', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('refreshes a new session on first idle, then ignores later idle transitions', async () => {
+    const originalFetch = globalThis.fetch;
+    const session = {
+      id: 'ses-new',
+      title: 'New session - 2026-07-10T12:00:00.000Z',
+      metadata: {},
+    };
+    const messages = [
+      { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'Add rate limiting' }] },
+      { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'text', text: 'Implemented rate limit' }] },
+    ];
+    let generationCalls = 0;
+    let patchedTitle = session.title;
+
+    globalThis.fetch = async (input, init = {}) => {
+      const url = String(input);
+      if (url.includes('/message')) {
+        return new Response(JSON.stringify(messages), { status: 200 });
+      }
+      if (init.method === 'PATCH') {
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+        if (typeof body?.title === 'string') {
+          patchedTitle = body.title;
+          session.title = body.title;
+          session.metadata = body.metadata || session.metadata;
+        } else if (body?.metadata) {
+          session.metadata = body.metadata;
+        }
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ...session, title: patchedTitle }), { status: 200 });
+    };
+
+    try {
+      const runtime = createSessionTitleRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => {
+            generationCalls += 1;
+            return { text: 'Rate limiting', providerID: 'test', modelID: 'test' };
+          },
+        }),
+        now: () => 1_000,
+        isTitleRefreshEnabled: () => true,
+      });
+
+      runtime.processPayload({
+        type: 'session.created',
+        properties: {
+          directory: '/repo',
+          info: { id: 'ses-new', title: session.title, time: { created: 100 } },
+        },
+      });
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-new', directory: '/repo', status: { type: 'idle' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(generationCalls).toBe(1);
+
+      // Later conversation progress + idle must not auto-refresh again.
+      messages.push(
+        { info: { id: 'u2', role: 'user' }, parts: [{ type: 'text', text: 'Also add retries' }] },
+        { info: { id: 'a2', role: 'assistant' }, parts: [{ type: 'text', text: 'Retries added' }] },
+      );
+      runtime.processPayload({
+        type: 'message.updated',
+        properties: { directory: '/repo', info: { sessionID: 'ses-new', role: 'user', time: { created: 200 } } },
+      });
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-new', directory: '/repo', status: { type: 'busy' } },
+      });
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-new', directory: '/repo', status: { type: 'idle' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(generationCalls).toBe(1);
+
+      runtime.stop();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('still runs an explicit smart-title forced refresh after initial title', async () => {
+    const originalFetch = globalThis.fetch;
+    const session = {
+      id: 'ses-forced',
+      title: 'Rate limiting',
+      metadata: {
+        openchamber: {
+          titleRefresh: {
+            lastAutoTitle: 'Rate limiting',
+            generatedAt: 500,
+            forMessageID: 'a1',
+          },
+        },
+      },
+    };
+    const messages = [
+      { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'Add rate limiting' }] },
+      { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'text', text: 'Implemented rate limit' }] },
+      { info: { id: 'u2', role: 'user' }, parts: [{ type: 'text', text: 'Switch to token bucket' }] },
+      { info: { id: 'a2', role: 'assistant' }, parts: [{ type: 'text', text: 'Token bucket ready' }] },
+    ];
+    let generationCalls = 0;
+
+    globalThis.fetch = async (input, init = {}) => {
+      const url = String(input);
+      if (url.includes('/message')) {
+        return new Response(JSON.stringify(messages), { status: 200 });
+      }
+      if (init.method === 'PATCH') {
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    try {
+      const runtime = createSessionTitleRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => {
+            generationCalls += 1;
+            return { text: 'Token bucket rate limiting', providerID: 'test', modelID: 'test' };
+          },
+        }),
+        now: () => 1_000,
+        isTitleRefreshEnabled: () => true,
+      });
+
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-forced', directory: '/repo', status: { type: 'idle' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(generationCalls).toBe(0);
+
+      runtime.processPayload({
+        type: 'session.updated',
+        properties: {
+          directory: '/repo',
+          info: {
+            id: 'ses-forced',
+            title: session.title,
+            metadata: {
+              openchamber: {
+                titleRefresh: {
+                  ...session.metadata.openchamber.titleRefresh,
+                  requestedAt: 1_000,
+                },
+              },
+            },
+          },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(generationCalls).toBe(1);
+
+      runtime.stop();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('skips automatic initial refresh when session title refresh is disabled', async () => {
+    const originalFetch = globalThis.fetch;
+    const session = {
+      id: 'ses-disabled',
+      title: 'New session - 2026-07-10T12:00:00.000Z',
+      metadata: {},
+    };
+    let generationCalls = 0;
+
+    globalThis.fetch = async (input, init = {}) => {
+      if (String(input).includes('/message')) {
+        return new Response(JSON.stringify([
+          { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'hello' }] },
+          { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'text', text: 'world' }] },
+        ]), { status: 200 });
+      }
+      if (init.method === 'PATCH') {
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    try {
+      const runtime = createSessionTitleRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => {
+            generationCalls += 1;
+            return { text: 'Should not run', providerID: 'test', modelID: 'test' };
+          },
+        }),
+        now: () => 1_000,
+        isTitleRefreshEnabled: () => false,
+      });
+
+      runtime.processPayload({
+        type: 'session.created',
+        properties: {
+          directory: '/repo',
+          info: { id: 'ses-disabled', title: session.title, time: { created: 100 } },
+        },
+      });
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-disabled', directory: '/repo', status: { type: 'idle' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(generationCalls).toBe(0);
+
+      runtime.stop();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -5,10 +5,11 @@ conversation's **main subject** (overall feature / goal) with the small model
 (`lib/small-model`), then PATCHes `title` plus `metadata.openchamber.titleRefresh`.
 
 OpenCode only auto-titles once from the first user message
-(`SessionPrompt.ensureTitle`). Long sessions often need a refresh; this module
-keeps the sidebar title aligned with the durable work being done — not the last
-wrap-up utterance like "commit and push" — throttled to at most once per 5
-minutes per session.
+(`SessionPrompt.ensureTitle`). This module auto-refreshes sparsely (first idle
+of a new session, first newly-sent reply on a fork) and on explicit smart-title
+requests, naming the durable work being done — not the last wrap-up utterance
+like "commit and push". Background auto refreshes still respect a 5-minute
+throttle (`TITLE_THROTTLE_MS`) when a refresh is armed.
 
 ## Flow
 
@@ -16,14 +17,17 @@ minutes per session.
    fan-out (`index.js` → `globalMessageStreamHub.subscribeEvent`), same
    pattern as session-assist. Purely event-driven — dormant sessions never
    generate anything.
-2. A newly observed root `session.created` generates its first title immediately
-   on the first `session.status: idle`. A fork title (`(fork #n)`) waits for its
-   first newly-created user message; the matching assistant completion triggers
-   an immediate title refresh that bypasses inherited title metadata and throttle.
-   Later idle transitions arm a 15-second quiet timer; any `busy`/`retry` status
-   or a fresh user `message.updated` clears it.
-   A sidebar smart-title request sets `titleRefresh.requestedAt`; its
-   `session.updated` event arms the same flow immediately.
+  2. Auto title refresh is intentionally sparse (title stability first). A newly
+    observed root `session.created` generates its first title immediately on the
+    first `session.status: idle`. A fork title (`(fork #n)`) waits for its first
+    newly-created user message; the matching assistant completion triggers an
+    immediate title refresh that bypasses inherited title metadata and throttle.
+    Ordinary later idle transitions do **not** arm another refresh. Any
+    `busy`/`retry` status or a fresh user `message.updated` still clears an
+    already-armed timer (so initial/fork timers cancel if the user keeps going).
+    A sidebar smart-title request sets `titleRefresh.requestedAt`; its
+    `session.updated` event arms the same flow immediately (forced / manual
+    refresh is unaffected by the background gate).
   3. On fire:
     - Skip when Settings → Chat → session title refresh is off.
     - Skip system-owned sessions whose metadata carries a non-empty

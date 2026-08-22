@@ -1,13 +1,14 @@
-// Session title refresh: after a session goes idle, regenerate the sidebar
-// title from the conversation's MAIN SUBJECT (overall feature / goal), not
-// just the last wrap-up utterance. OpenCode only titles once from the first
-// user message; long sessions need refresh, but continuing the same work
+// Session title refresh: regenerate the sidebar title from the conversation's
+// MAIN SUBJECT (overall feature / goal), not just the last wrap-up utterance.
+// OpenCode only titles once from the first user message. Auto refresh is sparse
+// for title stability: first idle of a new session, first newly-sent reply on a
+// fork, plus explicit smart-title / forced refresh. Continuing the same work
 // should keep naming the thing being done — not "commit and push". This
 // watcher throttles to at most one refresh per session every TITLE_THROTTLE_MS
 // and never overwrites a user-renamed title.
 //
-// Purely event-driven: only sessions that transition busy→idle while the
-// server is running ever generate anything. No backfill, no session scans.
+// Purely event-driven: only sessions that arm a refresh while the server is
+// running ever generate anything. No backfill, no session scans.
 
 import fs from 'fs';
 import os from 'os';
@@ -742,8 +743,6 @@ export const createSessionTitleRuntime = ({
         if (newSessions.delete(status.sessionId)) {
           initialRefreshes.add(status.sessionId);
           armTimer(status.sessionId, status.directory || directoryHint, 0);
-        } else {
-          armTimer(status.sessionId, status.directory || directoryHint, quietMs);
         }
       } else {
         clearTimer(status.sessionId);
