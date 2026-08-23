@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.51] - 2026-08-23
+
+### 聊天
+
+- **修复移动端输入框文字与 placeholder 不随密度缩放：** 排版兼容块的 `font-size: unset !important`（specificity 0,4,0）压过了输入框的 16px 缩放规则（0,3,1），导致带 `typography-markdown` 类的 textarea 回落到继承的根节点 16px 固定值——正文缩小、输入框纹丝不动。输入框规则改用 `:is()` 后代选择器提升到 (0,4,1)，Android 上输入框与 placeholder 随 `--dpt` 缩放（16×0.9=14.4px，仍比正文略大，保留 iOS 防 focus 缩放地板语义；iOS 不变）。
+
 ## [1.18.2-beta.50] - 2026-08-23
 
 ### 移动端

@@ -2078,13 +2078,21 @@ button.oc-mobile-worktree-label-trigger:active,
     min-height: 36px;
   }
 
-  /* Fix mobile text inputs */
-  :root.mobile-pointer:not(.desktop-runtime) input[type="text"],
-  :root.mobile-pointer:not(.desktop-runtime) input[type="search"],
-  :root.mobile-pointer:not(.desktop-runtime) input[type="email"],
-  :root.mobile-pointer:not(.desktop-runtime) input[type="password"],
-  :root.mobile-pointer:not(.desktop-runtime) textarea {
-    font-size: 16px !important; /* Prevents iOS zoom */
+  /* Fix mobile text inputs. The :is() descendant takes its most specific
+     argument (input[type="text"] → 0,1,1), lifting this rule to (0,4,1) so it
+     beats the typography `unset !important` compat block above (0,4,0) —
+     without that, textareas with typography-* classes fell back to inherited
+     root 16px and ignored this iOS-zoom-safe calc size entirely. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    :is(
+      input[type="text"],
+      input[type="search"],
+      input[type="email"],
+      input[type="password"],
+      textarea
+    ),
+  :root.mobile-pointer:not(.desktop-runtime) [data-chat-input-highlight="true"] {
+    font-size: calc(16 * var(--dpt)) !important; /* Prevents iOS zoom */
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
