@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.56] - 2026-08-23
+
+### 移动端
+
+- **精简助手停用页：** 去掉分享教程、步骤卡和「当前实例」口吻，改成插画 + 一句说明 + 开启。
+
 ## [1.18.2-beta.55] - 2026-08-23
 
 ### 聊天

@@ -2,9 +2,6 @@ import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 
 import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero-wide.jpg';
-import androidDirectShareImage from '@/assets/assistant-share-welcome/android-direct-share.jpg';
-import iosShareSheetImage from '@/assets/assistant-share-welcome/ios-share-sheet.jpg';
-import selectAssistantImage from '@/assets/assistant-share-welcome/select-assistant.jpg';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { AssistantDeleteConfirmDialog } from '@/components/assistants/AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
@@ -39,24 +36,6 @@ export type MobileAssistantTabProps = {
   className?: string;
 };
 
-const assistantShareSteps = [
-  {
-    image: iosShareSheetImage,
-    titleKey: 'assistants.shareWelcome.example.chat.title',
-    descriptionKey: 'assistants.shareWelcome.example.chat.description',
-  },
-  {
-    image: androidDirectShareImage,
-    titleKey: 'assistants.shareWelcome.example.article.title',
-    descriptionKey: 'assistants.shareWelcome.example.article.description',
-  },
-  {
-    image: selectAssistantImage,
-    titleKey: 'assistants.shareWelcome.example.note.title',
-    descriptionKey: 'assistants.shareWelcome.example.note.description',
-  },
-] as const;
-
 function MobileAssistantSkeleton() {
   const { t } = useI18n();
 
@@ -84,51 +63,15 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
       </div>
 
       <div className="oc-mobile-assistant-guide-body">
-        <div className="oc-mobile-assistant-guide-heading">
-          <span className="oc-mobile-assistant-guide-kicker">
-            {t('assistants.subtitle')}
-          </span>
-          <h2 className="oc-mobile-assistant-guide-title">
-            {t('assistants.state.instanceDisabled')}
-          </h2>
-          <p className="oc-mobile-assistant-guide-description">
-            {t('assistants.onboarding.description')}
-          </p>
-        </div>
-
-        <Button type="button" size="lg" className="w-full" onClick={onEnable}>
-          <Icon name="sparkling" className="size-[18px]" />
-          {t('assistants.settings.instanceEnabled')}
+        <h2 className="oc-mobile-assistant-guide-title">
+          {t('assistants.guide.disabledTitle')}
+        </h2>
+        <p className="oc-mobile-assistant-guide-description">
+          {t('assistants.guide.disabledDescription')}
+        </p>
+        <Button type="button" size="lg" onClick={onEnable}>
+          {t('assistants.guide.enableAction')}
         </Button>
-
-        <section className="oc-mobile-assistant-guide-share" aria-labelledby="assistant-share-guide-title">
-          <div className="oc-mobile-assistant-guide-share-heading">
-            <Icon name="share-2" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0">
-              <h3 id="assistant-share-guide-title" className="typography-ui-label font-semibold text-foreground">
-                {t('assistants.shareWelcome.title')}
-              </h3>
-              <p className="mt-1 typography-meta leading-5 text-muted-foreground">
-                {t('assistants.shareWelcome.description')}
-              </p>
-            </div>
-          </div>
-
-          <div className="oc-mobile-assistant-guide-steps" aria-label={t('assistants.shareWelcome.examplesAria')}>
-            {assistantShareSteps.map((step, index) => (
-              <article key={step.titleKey} className="oc-mobile-assistant-guide-step">
-                <div className="oc-mobile-assistant-guide-step-image">
-                  <img src={step.image} alt="" />
-                  <span aria-hidden="true">{index + 1}</span>
-                </div>
-                <div className="oc-mobile-assistant-guide-step-copy">
-                  <h4>{t(step.titleKey)}</h4>
-                  <p>{t(step.descriptionKey)}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
       </div>
     </article>
   );
@@ -415,7 +358,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
         title={pageTitle}
         className={className}
         surface={false}
-        scrollsWithPage
+        surfaceClassName="oc-mobile-assistant-guide-host"
       >
         <MobileAssistantDisabledGuide onEnable={handleEnable} />
       </MobileTabPageScaffold>

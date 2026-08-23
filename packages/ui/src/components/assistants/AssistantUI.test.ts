@@ -205,8 +205,11 @@ describe('Assistant UI product contract', () => {
       read('../../styles/mobile.css'),
     ]);
     expect(mobileTab).toContain("assistant-guide/assistant-guide-hero-wide.jpg");
-    expect(mobileTab).toContain('oc-mobile-assistant-guide-steps');
-    expect(mobileTab).toContain("t('assistants.shareWelcome.description')");
+    expect(mobileTab).not.toContain('oc-mobile-assistant-guide-steps');
+    expect(mobileTab).not.toContain("t('assistants.shareWelcome.description')");
+    expect(mobileTab).toContain("t('assistants.guide.disabledTitle')");
+    expect(mobileTab).toContain("t('assistants.guide.disabledDescription')");
+    expect(mobileTab).toContain("t('assistants.guide.enableAction')");
     expect(mobileTab).toContain('instanceDisabled && !unavailable');
     expect(mobileTab).toContain('snapshot.data.assistants.length === 0');
     expect(mobileTab).toContain('requestCreate();');
@@ -217,7 +220,7 @@ describe('Assistant UI product contract', () => {
     );
     expect(guideStyles).toContain('aspect-ratio: 16 / 9');
     expect(guideStyles).toContain('object-fit: contain');
-    expect(guideStyles).toContain('.oc-mobile-assistant-guide-step + .oc-mobile-assistant-guide-step');
+    expect(guideStyles).not.toContain('.oc-mobile-assistant-guide-step');
     expect(guideStyles).not.toContain('grid-auto-flow: column');
     expect(guideStyles).not.toContain('overflow-x: auto');
   });
