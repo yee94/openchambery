@@ -52,7 +52,7 @@ function mountStyledFixture(html: string): HTMLElement {
         min-height: 0;
       }
       :root.mobile-pointer:not(.desktop-runtime)
-        .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed) {
+        .oc-mobile-composer-surface {
         min-height: min-content !important;
       }
     `;
@@ -72,7 +72,7 @@ describe('mobile composer overflow contract', () => {
         expect(mobileCss).toContain('[data-attachment-preview="true"]');
         expect(mobileCss).toContain('Composer clip shells must stay clippers');
         expect(mobileCss).toContain('min-height: min-content');
-        expect(mobileCss).toContain('.oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)');
+        expect(mobileCss).toContain('.oc-mobile-composer-surface');
         expect(mobileCss).toContain('[data-composer-highlight="true"]');
         expect(mobileCss).toContain('font-size: calc(16 * var(--dpt)) !important');
         expect(mobileCss).not.toContain('[data-chat-input-highlight="true"]');

@@ -1,5 +1,4 @@
 import React from 'react';
-import { flushSync } from 'react-dom';
 import { useEvent } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
@@ -1017,34 +1016,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [snippetQuery, setSnippetQuery] = React.useState('');
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
     const [mobileControlsPanel, setMobileControlsPanel] = React.useState<MobileControlsPanel>(null);
-    // DEBUG（临时）: 移动端 composer 永远保持完整展开态，跳过 pill 收起，
-    // 用于真机排查完整输入框的渲染/显示问题。测试完删掉此开关即恢复。
-    const MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED = true;
-    // Mobile pill composer keeps the SAME textarea/DOM across both silhouettes.
-    // A fixed-height viewport masks the full surface while transform-only motion
-    // reveals or conceals it, keeping transcript layout out of animation frames.
-    const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED);
-    const [mobileComposerMotion, setMobileComposerMotion] = React.useState<'idle' | 'expanding' | 'collapsing'>('idle');
     const [mobileComposerStageHeight, setMobileComposerStageHeight] = React.useState(112);
     const mobileComposerMeasuredStageScopeRef = React.useRef<string | null>(null);
-    const [mobileFullChromePrewarmed, setMobileFullChromePrewarmed] = React.useState(MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED);
-    const mobileComposerMotionTimerRef = React.useRef<number | null>(null);
-    // Dictation-end collapse probe (30ms) and PWA overlay keyboard-reveal
-    // retries (300/650ms). Cleared on re-arm and unmount so long sessions do
-    // not accumulate orphaned callbacks.
-    const mobileDictationCollapseTimerRef = React.useRef<number | null>(null);
+    // PWA overlay keyboard-reveal retries (300/650ms). Cleared on unmount so
+    // long sessions do not accumulate orphaned callbacks.
     const mobileOverlayRevealEarlyTimerRef = React.useRef<number | null>(null);
     const mobileOverlayRevealLateTimerRef = React.useRef<number | null>(null);
-    // Footer/chrome phase for the mobile composer, deliberately separate from the
-    // silhouette state: 'collapsed' = pill footer (attach + stop), 'full' =
-    // expanded footer with all controls, 'none' = transient frame with no footer
-    // during collapse. Native shells commit 'full' synchronously (flushSync) with
-    // the prewarmed footer tree, so the tap frame carries only a visibility flip
-    // and the silhouette settles at its final height before the reveal starts.
-    const [mobileComposerChrome, setMobileComposerChrome] = React.useState<'collapsed' | 'none' | 'full'>(
-        MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED ? 'full' : 'collapsed',
-    );
-    const prewarmMobileFullChrome = useEvent(() => setMobileFullChromePrewarmed(true));
     const [mobileTextareaFocused, setMobileTextareaFocused] = React.useState(false);
     // Mobile browser / installed PWA: tapping a composer control while the
     // keyboard is up blurs the textarea first, and the keyboard-resize reflow
@@ -1058,9 +1035,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (mobileBlurTimerRef.current !== null) {
             window.clearTimeout(mobileBlurTimerRef.current);
         }
-        if (mobileDictationCollapseTimerRef.current !== null) {
-            window.clearTimeout(mobileDictationCollapseTimerRef.current);
-        }
         if (mobileOverlayRevealEarlyTimerRef.current !== null) {
             window.clearTimeout(mobileOverlayRevealEarlyTimerRef.current);
         }
@@ -1068,7 +1042,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             window.clearTimeout(mobileOverlayRevealLateTimerRef.current);
         }
     }, []);
-    const [mobileDictationActive, setMobileDictationActive] = React.useState(false);
     const [mobileAttachMenuOpen, setMobileAttachMenuOpen] = React.useState(false);
     const [androidMediaPickSheetOpen, setAndroidMediaPickSheetOpen] = React.useState(false);
     const [mobileDraftPicker, setMobileDraftPicker] = React.useState<'project' | null>(null);
@@ -1077,12 +1050,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [desktopDraftProjectQuery, setDesktopDraftProjectQuery] = React.useState('');
     const [desktopDraftProjectPickerOpen, setDesktopDraftProjectPickerOpen] = React.useState(false);
     // True while ANY MobileOverlayPanel is open (sessions sheet, model/agent
-    // panels, pickers...). Opening one closes the keyboard, which must not
-    // collapse the composer into the pill under the overlay.
+    // panels, pickers...).
     const [mobileOverlayHostBusy, setMobileOverlayHostBusy] = React.useState(false);
-    // Set while an expansion is settling (focus/dictation not yet active) so the
-    // collapse watcher doesn't immediately fold the composer back into the pill.
-    const mobileExpandIntentRef = React.useRef<'focus' | null>(null);
     // Timestamp until which a footer/chrome action (attach, agent, model, …)
     // owns the gesture. Textarea focus during that window is accidental and must
     // not expand the pill or open the soft keyboard.
@@ -1090,7 +1059,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const markComposerActionGesture = React.useCallback(() => {
         // Footer/chrome actions must never be treated as "tap the input".
         suppressComposerFocusUntilRef.current = Date.now() + 500;
-        mobileExpandIntentRef.current = null;
     }, []);
     // Keyboard restore across overlays: opening an overlay closes the keyboard;
     // if it was open at that moment, reopen it when the overlay closes.
@@ -4610,32 +4578,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return;
         }
 
-        // Mobile pill silhouette: keep a single-line field so the shared
-        // textarea matches the collapsed chrome without remounting.
-        // Never leave a scrollable surface — caret/swipe must not pan content.
-        if (isMobile && !mobileComposerExpanded) {
-            const view = textarea.ownerDocument?.defaultView;
-            const computedStyle = view ? view.getComputedStyle(textarea) : null;
-            const lineHeight = computedStyle ? parseFloat(computedStyle.lineHeight) : NaN;
-            const nextHeight = Number.isNaN(lineHeight) ? 20 : lineHeight;
-            textarea.style.height = `${nextHeight}px`;
-            textarea.style.maxHeight = `${nextHeight}px`;
-            textarea.style.overflow = 'hidden';
-            textarea.style.overflowX = 'hidden';
-            textarea.style.overflowY = 'hidden';
-            if (textarea.scrollTop !== 0) textarea.scrollTop = 0;
-            if (textarea.scrollLeft !== 0) textarea.scrollLeft = 0;
-            setTextareaSize((prev) => {
-                if (prev && prev.height === nextHeight && prev.maxHeight === nextHeight) {
-                    return prev;
-                }
-                return { height: nextHeight, maxHeight: nextHeight };
-            });
-            return;
-        }
-
         // Measure with overflow clipped so scrollHeight is content height,
-        // not a leftover scrollport from the collapsed pill or a previous cap.
+        // not a leftover scrollport from a previous cap.
         textarea.style.overflow = 'hidden';
         textarea.style.overflowX = 'hidden';
         textarea.style.overflowY = 'hidden';
@@ -4675,13 +4619,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             }
             return { height: sized.height, maxHeight: sized.maxHeight };
         });
-    }, [isComposerExpanded, isMobile, mobileComposerExpanded]);
+    }, [isComposerExpanded]);
 
     React.useLayoutEffect(() => {
         const allowShrink = message.length < previousMessageLengthRef.current;
         previousMessageLengthRef.current = message.length;
         adjustTextareaHeight({ allowShrink });
-    }, [adjustTextareaHeight, message, isMobile, mobileComposerExpanded]);
+    }, [adjustTextareaHeight, message, isMobile]);
 
     React.useLayoutEffect(() => {
         dictationContentHeightRef.current = dictationContentHeight;
@@ -6155,140 +6099,33 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         });
     }, [draftBranchItems, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, newSessionDraft?.preserveDirectoryOverride, selectedDraftDirectory, selectedDraftProject, setNewSessionDraftTarget, showDraftTargetSelectors]);
 
-    // ── Mobile pill composer state machine ─────────────────────────────────
-    // Same textarea node for collapsed + expanded. Expand only changes layout
-    // chrome; focus is continuous so the soft keyboard can stay tied to one field.
-    const mobileComposerExpandedRef = React.useRef(mobileComposerExpanded);
-    React.useEffect(() => {
-        if (mobileComposerMotion === 'idle') {
-            mobileComposerExpandedRef.current = mobileComposerExpanded;
-        }
-    }, [mobileComposerExpanded, mobileComposerMotion]);
-
-    const clearMobileComposerMotionTimer = useEvent(() => {
-        if (mobileComposerMotionTimerRef.current === null) return;
-        window.clearTimeout(mobileComposerMotionTimerRef.current);
-        mobileComposerMotionTimerRef.current = null;
-    });
-
-    const finishMobileComposerMotion = useEvent(() => {
-        clearMobileComposerMotionTimer();
-        if (mobileComposerMotion === 'collapsing') {
-            setMobileComposerExpanded(false);
-            setMobileComposerChrome('collapsed');
-            setExpandedInput(false);
-        }
-        setMobileComposerMotion('idle');
-    });
-
-    const armMobileComposerMotionFallback = useEvent(() => {
-        clearMobileComposerMotionTimer();
-        mobileComposerMotionTimerRef.current = window.setTimeout(finishMobileComposerMotion, 240);
-    });
-
-    const collapseMobileComposer = useEvent(() => {
-        // DEBUG（临时）: 调试开关开启时禁用一切收起路径，composer 保持完整态。
-        if (MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED) return;
-        if (!mobileComposerExpandedRef.current) return;
-        mobileComposerExpandedRef.current = false;
-        mobileExpandIntentRef.current = null;
-        setMobileComposerChrome('none');
-        // Native shells collapse without the conceal motion: the tween sat
-        // behind busy main-thread frames (streaming merge + render) and read
-        // as a ~500ms lag, so the pill must land in the same frame instead.
-        // The browser PWA keeps the animated path (resize-driven keyboards).
-        if (isCapacitorApp() || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-            setMobileComposerExpanded(false);
-            setMobileComposerChrome('collapsed');
-            setExpandedInput(false);
-            setMobileComposerMotion('idle');
-            return;
-        }
-        setMobileComposerMotion('collapsing');
-        armMobileComposerMotionFallback();
-    });
-
-    React.useEffect(() => () => clearMobileComposerMotionTimer(), [clearMobileComposerMotionTimer]);
-
-    const expandMobileComposer = useEvent((intent: 'focus') => {
+    const pinMobileComposerFull = useEvent((focusTextarea = true) => {
         // Action buttons set this window — do not steal focus / open the IME.
         if (Date.now() < suppressComposerFocusUntilRef.current) {
             return;
         }
-        // Pointer activation normally mounts this tree during press. Keyboard
-        // and VoiceOver activation arrive here directly and use this fallback.
-        prewarmMobileFullChrome();
-        mobileExpandIntentRef.current = intent;
-        // Capacitor freezes chat geometry chase before the silhouette starts
-        // moving, ahead of keyboardWillShow marking the IME.
-        if (isCapacitorApp() && typeof window !== 'undefined') {
+        const root = document.documentElement;
+        const wasPinned = root.classList.contains('oc-mobile-composer-pinned-full');
+        root.classList.add('oc-mobile-composer-pinned-full');
+        root.classList.remove('oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
+        root.style.setProperty('--oc-mobile-composer-shrink', '0');
+        if (isCapacitorApp() && typeof window !== 'undefined' && (focusTextarea || !wasPinned)) {
             window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
         }
-        // iOS must commit the expanded silhouette before UIKit starts presenting
-        // the keyboard; a concurrent update can otherwise leave the pill behind
-        // until the keyboard is already visible. The prewarmed footer stays
-        // mounted, and the next frame only flips its hidden presentation.
-        // Update the ref immediately so a same-stack onFocus (after focus())
-        // does not re-enter expand before the effect mirrors state.
-        if (!mobileComposerExpandedRef.current) {
-            clearMobileComposerMotionTimer();
-            mobileComposerExpandedRef.current = true;
-            const platform = typeof window !== 'undefined'
-                ? (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.()
-                : undefined;
-            const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-            // Native shells choreograph the IME + composer together; commit the
-            // expanded silhouette in this frame (iOS UIKit + Android CSS FLIP).
-            // Deferring with startTransition leaves the pill behind the keyboard.
-            if (isCapacitorApp() && (platform === 'ios' || platform === 'android')) {
-                flushSync(() => {
-                    setMobileComposerExpanded(true);
-                    setMobileComposerChrome('full');
-                    setMobileComposerMotion(reduceMotion ? 'idle' : 'expanding');
-                });
-                // The prewarmed footer makes the 'full' flip a cheap visibility
-                // switch inside the sync commit, so the silhouette lays out at
-                // its FINAL height immediately — no chrome='none' intermediate
-                // frame for ResizeObserver to capture as a bogus stage height.
-                // Measure once before the reveal starts so the 180ms transform
-                // runs against the true target, not a stale cached stage —
-                // EXCEPT while streaming: the transcript is continuously dirty
-                // and this forced read would lay out the whole document at the
-                // interaction boundary. A same-scope cached stage is reused and
-                // the idle ResizeObserver effect re-measures once it settles.
-                const stageCacheValid = sessionIsRunning
-                    && mobileComposerMeasuredStageScopeRef.current === mobileComposerStageScope;
-                if (!stageCacheValid) {
-                    const surface = dropZoneRef.current;
-                    if (surface) {
-                        const nextHeight = Math.max(44, Math.ceil(surface.offsetHeight));
-                        mobileComposerMeasuredStageScopeRef.current = mobileComposerStageScope;
-                        setMobileComposerStageHeight((height) => Math.abs(height - nextHeight) <= 2 ? height : nextHeight);
-                    }
-                }
-                if (!reduceMotion) armMobileComposerMotionFallback();
-            } else {
-                React.startTransition(() => {
-                    setMobileComposerExpanded(true);
-                    setMobileComposerChrome('full');
-                    setMobileComposerMotion(reduceMotion ? 'idle' : 'expanding');
-                });
-                if (!reduceMotion) armMobileComposerMotionFallback();
-            }
-        }
-        // Capacitor: our keyboard choreography positions everything, so the
-        // browser's own scroll-into-view must stay off. Mobile BROWSERS have no
-        // choreography — the native reveal (viewport pan that lifts the focused
-        // field above the keyboard) is the only thing that moves the composer.
-        // Same DOM node as the collapsed pill — focus continues rather than remounts.
-        textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
+        if (focusTextarea) textareaRef.current?.focus({ preventScroll: true });
     });
 
+    React.useEffect(() => () => {
+        if (typeof document === 'undefined') return;
+        const root = document.documentElement;
+        root.classList.remove('oc-mobile-composer-pinned-full', 'oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
+        root.style.removeProperty('--oc-mobile-composer-shrink');
+    }, []);
+
     const openMobileAttachSheet = React.useCallback(() => {
-        // Same order as handleOpenMobilePanel: mark the sheet open BEFORE the
-        // blur so the collapse watcher sees an overlay when the keyboard-close
-        // lands. The trigger button blocks the tap's own focus transfer, so
-        // the keyboard must be dismissed explicitly here.
+        // Mark the sheet open BEFORE blur so overlay-busy is true when the
+        // keyboard-close lands. The trigger button blocks the tap's own focus
+        // transfer, so the keyboard must be dismissed explicitly here.
         markComposerActionGesture();
         setMobileAttachMenuOpen(true);
         textareaRef.current?.blur();
@@ -6301,35 +6138,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         textareaRef.current?.blur();
     }, [markComposerActionGesture]);
 
-    const handleMobileDictationActiveChange = React.useCallback((active: boolean) => {
-        setMobileDictationActive(active);
-        if (mobileDictationCollapseTimerRef.current !== null) {
-            window.clearTimeout(mobileDictationCollapseTimerRef.current);
-            mobileDictationCollapseTimerRef.current = null;
-        }
+    const handleMobileDictationActiveChange = useEvent((active: boolean) => {
         if (active) {
-            mobileExpandIntentRef.current = null;
-            // Dictation engine went live (possibly started from the pill):
-            // switch straight into the voice variant of the full composer.
-            if (!mobileComposerExpandedRef.current) {
-                mobileComposerExpandedRef.current = true;
-                prewarmMobileFullChrome();
-                setMobileComposerExpanded(true);
-                setMobileComposerChrome('full');
-            }
-            return;
+            pinMobileComposerFull(false);
         }
-        // Dictation ended. The insert flow hands focus back to the textarea a
-        // tick later — if that happened, stay expanded; otherwise (cancel,
-        // discard, insert-and-send) collapse straight back to the pill without
-        // parking on the normal composer for the usual grace period.
-        mobileDictationCollapseTimerRef.current = window.setTimeout(() => {
-            mobileDictationCollapseTimerRef.current = null;
-            if (!mobileComposerExpandedRef.current) return;
-            if (document.activeElement === textareaRef.current) return;
-            collapseMobileComposer();
-        }, 30);
-    }, [collapseMobileComposer]);
+    });
 
     // Watch the shared overlay portal root: active panels (sessions sheet,
     // model/agent panels, draft pickers, ...) count as busy. Retained hidden
@@ -6518,7 +6331,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // A session switch closed the overlay — the pending restore was
             // armed for the previous conversation's composer.
             if (isMobileOverlayFocusRestoreSuppressed()) return;
-            // Browsers need their native scroll-into-view (see expandMobileComposer).
             const textarea = textareaRef.current;
             if (textarea && document.activeElement !== textarea) {
                 textarea.focus({ preventScroll: isCapacitorApp() });
@@ -6526,44 +6338,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }, 180);
         return () => window.clearTimeout(timer);
     }, [isMobile, mobileOverlayOpen, mobileTextareaFocused]);
-
-    // Fold the full composer chrome back into the compact pill once nothing
-    // keeps it open: keyboard closed (textarea blurred), no dictation, no
-    // sheet/menu/dialog. The short delay bridges focus moving between controls.
-    // Collapse is visual only — the same textarea stays mounted.
-    const mobileComposerBusy = mobileTextareaFocused
-        || mobileOverlayHostBusy
-        || mobileDictationActive
-        || Boolean(mobileControlsPanel)
-        || mobileAttachMenuOpen
-        || androidMediaPickSheetOpen
-        || mobileDraftPicker !== null
-        || issuePickerOpen
-        || prPickerOpen
-        || isDragging;
-    const mobileComposerHoldOpen = mobileOverlayHostBusy
-        || mobileDictationActive
-        || Boolean(mobileControlsPanel)
-        || mobileAttachMenuOpen
-        || androidMediaPickSheetOpen
-        || mobileDraftPicker !== null
-        || issuePickerOpen
-        || prPickerOpen
-        || isDragging;
-    React.useEffect(() => {
-        if (!isMobile || !mobileComposerExpanded || mobileComposerBusy) return;
-        const timer = window.setTimeout(() => {
-            // Authoritative DOM check: the React focus state can lag a
-            // programmatic refocus (overlay-close keyboard restore). Do not
-            // shrink chrome while the field is still focused.
-            if (document.activeElement === textareaRef.current) return;
-            collapseMobileComposer();
-        }, 250);
-        return () => window.clearTimeout(timer);
-    }, [isMobile, mobileComposerExpanded, mobileComposerBusy, collapseMobileComposer]);
-
-    const mobileComposerHoldOpenRef = React.useRef(false);
-    mobileComposerHoldOpenRef.current = mobileComposerHoldOpen;
 
     // Browser counterpart of Capacitor's oc-keyboard-open root class (which is
     // driven by native keyboard events): the focused composer textarea is the
@@ -6593,37 +6367,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return () => root.classList.remove('oc-browser-keyboard-open');
     }, [isMobile, mobileTextareaFocused]);
 
-    // Capacitor starts the transform-only conceal in the SAME frame the keyboard
-    // starts hiding. Keyboard lift stays on the form while this motion stays on
-    // the nested surface, so both compositor transforms can run together.
-    // The delayed effect above stays as the fallback for non-Capacitor and for
-    // overlays closing without a keyboard transition.
-    React.useEffect(() => {
-        if (!isMobile || typeof window === 'undefined') return;
-        const handleIntent = (event: Event) => {
-            const detail = (event as CustomEvent<{ open?: boolean }>).detail;
-            if (!detail || detail.open !== false) return;
-            if (!mobileComposerExpandedRef.current) return;
-            // Native blur has already started, while React's focused state can
-            // remain true for this frame. Only durable surfaces such as
-            // dictation or an overlay keep the expanded composer alive.
-            if (mobileComposerHoldOpenRef.current) return;
-            flushSync(() => {
-                collapseMobileComposer();
-            });
-        };
-        window.addEventListener('oc:keyboard-intent', handleIntent);
-        return () => window.removeEventListener('oc:keyboard-intent', handleIntent);
-    }, [isMobile, collapseMobileComposer]);
-
     const mobileComposerStageScope = draftKey ? draftKeyString(draftKey) : surface.surfaceID;
     React.useLayoutEffect(() => {
-        // Stage height is frozen while a reveal/conceal motion is running: the
-        // mask must hold ONE stable height for the whole transform, and chrome
-        // visibility flips or autosize mid-motion would otherwise rewrite the
-        // viewport height mid-flight (the "third height" glitch). Idle re-runs
-        // publish the settled height and keep tracking later autosize growth.
-        if (!isMobile || !mobileComposerExpanded || mobileComposerMotion !== 'idle') return;
+        if (!isMobile) return;
         // Streaming dirties the transcript continuously. A same-draft cached
         // stage avoids forcing that document-wide layout at the interaction
         // boundary; the observer must still attach so autosize growth mid-run
@@ -6633,7 +6379,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const composerSurface = dropZoneRef.current;
         if (!composerSurface) return;
         const publishHeight = () => {
-            const nextHeight = Math.max(44, Math.ceil(composerSurface.offsetHeight));
+            const shrink = Number.parseFloat(document.documentElement.style.getPropertyValue('--oc-mobile-composer-shrink')) || 0;
+            if (shrink > 0.001) return;
+            const nextHeight = Math.max(44, Math.ceil(composerSurface.scrollHeight));
             mobileComposerMeasuredStageScopeRef.current = mobileComposerStageScope;
             setMobileComposerStageHeight((height) => height === nextHeight ? height : nextHeight);
         };
@@ -6641,13 +6389,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(publishHeight) : null;
         observer?.observe(composerSurface);
         return () => observer?.disconnect();
-    }, [isMobile, mobileComposerExpanded, mobileComposerMotion, mobileComposerStageScope, sessionIsRunning, textareaSize]);
-
-    const handleMobileComposerAnimationEnd = useEvent((event: React.AnimationEvent<HTMLDivElement>) => {
-        if (event.currentTarget !== event.target) return;
-        if (!event.animationName.startsWith('oc-mobile-composer-motion-')) return;
-        finishMobileComposerMotion();
-    });
+    }, [isMobile, mobileComposerStageScope, sessionIsRunning, textareaSize]);
 
     // Reset the picker search whenever a draft picker sheet opens/closes.
     React.useEffect(() => {
@@ -6824,7 +6566,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     ) : null;
 
     const composerAttachmentContent = (
-        <div className="relative z-10 flex flex-wrap items-center gap-1 px-3 pt-1">
+        <div className="oc-mobile-composer-attachment-content relative z-10 flex flex-wrap items-center gap-1 px-3 pt-1">
             <AttachedVSCodeFileChips attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
             {surface.kind === 'primary' ? (
                 <ActiveEditorFileSuggestion
@@ -6851,10 +6593,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     const composerFooterContent = isMobile ? (
         <>
-        {mobileComposerChrome === 'collapsed' ? (
-            <>
+            <div className="oc-mobile-composer-compact-chrome">
                 <div
-                    data-mobile-composer-collapsed-slot="attach"
+                    data-mobile-composer-compact-slot="attach"
                     data-composer-action="true"
                     className="composer-mobile-actions flex shrink-0 items-center"
                 >
@@ -6872,7 +6613,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 </div>
                 {canAbort ? (
                     <div
-                        data-mobile-composer-collapsed-slot="action"
+                        data-mobile-composer-compact-slot="action"
                         data-composer-action="true"
                         className="flex shrink-0 items-center justify-end"
                     >
@@ -6897,17 +6638,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         />
                     </div>
                 ) : null}
-            </>
-        ) : null}
-        {mobileFullChromePrewarmed ? (
+            </div>
             <div
-                className={cn(
-                    'w-full min-w-0 items-center gap-x-1.5',
-                    mobileComposerChrome === 'full' ? 'flex' : 'hidden',
-                )}
+                className="oc-mobile-composer-full-chrome flex w-full min-w-0 items-center gap-x-1.5"
                 data-composer-action="true"
-                aria-hidden={mobileComposerChrome === 'full' ? undefined : true}
-                inert={mobileComposerChrome === 'full' ? undefined : true}
             >
                 <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
                     <ComposerAttachmentControls
@@ -6966,7 +6700,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     />
                 </div>
             </div>
-        ) : null}
         </>
     ) : (
         <>
@@ -7050,7 +6783,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const focusComposerAfterQueueEdit = useEvent(() => {
         if (isMobile) {
             holdComposerFocusUntilRef.current = Date.now() + 600;
-            expandMobileComposer('focus');
+            pinMobileComposerFull();
             const assertMobileFocus = () => {
                 textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
                 if (document.activeElement === textareaRef.current) {
@@ -7127,14 +6860,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 if (!isMobile) return;
                 const target = event.target;
                 if (!(target instanceof Element)) return;
-                if (
-                    !mobileComposerExpandedRef.current
-                    && target.closest('[data-mobile-composer-surface="true"]')
-                ) {
-                    prewarmMobileFullChrome();
-                }
                 // Only the textarea (and its highlight overlay) may claim focus /
-                // expand the pill. Footer chrome (attach, agent, model, send, …)
+                // expand the composer. Footer chrome (attach, agent, model, send, …)
                 // is an explicit action — preventDefault so the browser never
                 // focuses the field as a side effect of the tap.
                 if (target.closest('textarea[data-chat-input="true"]')) return;
@@ -7348,12 +7075,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     sessionId={currentSessionId}
                     directory={currentSessionDirectoryForSync ?? currentDirectory}
                 />
+                <div className={isMobile ? 'oc-mobile-composer-status' : undefined}>
                 <MemoStatusRow
                     showAbortStatus={showAbortStatus}
                     showAssistantStatus={false}
                     showTodos
                     leftAccessory={newSessionDraftOpen || !hasPendingChanges ? null : <PendingChangesBar />}
                 />
+                </div>
                 {!isMobile && showDraftTargetSelectors ? (
                     <div className="mb-1.5 flex min-w-0 items-center gap-1.5 px-0.5">
                         {selectedDraftProject ? (
@@ -7492,17 +7221,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     // the wrapper-level dictation overlay across pill/full states.
                     className={cn(
                         !isMobile && 'contents',
-                        isMobile && 'relative',
+                        isMobile && 'relative oc-mobile-composer-stack',
                         isMobileExpanded && 'flex min-h-0 flex-1 flex-col',
                     )}
                 >
                 {queuedMessageSurface}
                 <div
-                    className={cn(
-                        isMobile ? 'oc-mobile-composer-motion-viewport' : 'contents',
-                        isMobile && mobileComposerMotion !== 'idle' && 'oc-mobile-composer-motion-active',
-                        isMobile && !mobileComposerExpanded && mobileComposerMotion === 'idle' && 'oc-mobile-composer-motion-collapsed',
-                    )}
+                    className={isMobile ? 'oc-mobile-composer-motion-viewport' : 'contents'}
                     style={isMobile ? ({
                         '--oc-mobile-composer-stage-height': `${mobileComposerStageHeight}px`,
                     } as React.CSSProperties) : undefined}
@@ -7518,7 +7243,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     isMobile={isMobile}
                     onSubmit={handlePrimaryAction}
                     data-mobile-composer-surface={isMobile ? 'true' : undefined}
-                    data-mobile-composer-collapsed={isMobile && !mobileComposerExpanded ? 'true' : undefined}
                     data-session-swipe-surface={isMobile ? 'true' : undefined}
                     expanded={isComposerExpanded}
                     focusedTone={inputMode === 'shell' ? 'info' : 'primary'}
@@ -7527,22 +7251,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isDragging && "ring-2 ring-primary ring-offset-2",
                         // Ctrl+X leader pending: subtle selection ring while waiting for M/A/N/C.
                         isLeaderKeyPending && "ring-1 ring-[var(--interactive-selection)] border-[var(--interactive-selection)]",
-                        // Mobile collapsed: pill silhouette — same textarea DOM, compact chrome.
-                        isMobile && !mobileComposerExpanded && 'oc-mobile-composer-collapsed',
-                        // Solid floating card; ambient frosted glass lives on the host.
                         isMobile && 'oc-mobile-composer-surface',
-                        isMobile && mobileComposerMotion === 'expanding' && 'oc-mobile-composer-motion-expanding',
-                        isMobile && mobileComposerMotion === 'collapsing' && 'oc-mobile-composer-motion-collapsing',
-                        isMobile && mobileComposerMotion !== 'idle' && 'oc-mobile-composer-effects-reduced',
                     )}
                     style={{
-                        // Same radius collapsed and expanded. Collapsed height
-                        // (2.75rem) is < 2×1.5rem, so CSS clamps this into a
-                        // pill without swapping 9999px — that interpolation
-                        // leaves dirty corners on iOS WKWebView.
                         borderRadius: chatInputRadius,
-                        // Solid elevated surface for the floating input card.
-                        backgroundColor: currentTheme?.colors?.surface?.subtle,
                     }}
                     ref={dropZoneRef}
                     onDropCapture={handleDropCapture}
@@ -7551,17 +7263,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onDragEnd={handleDragEnd}
-                    onAnimationEnd={handleMobileComposerAnimationEnd}
                     autoResize={false}
                     disableInputWhilePending={false}
                     contentClassName={cn(
                         'transition-opacity duration-200',
                         composerChromeOpacityClass,
                         isComposerExpanded && 'flex-1 min-h-0',
-                        isMobile && !mobileComposerExpanded && 'oc-mobile-composer-collapsed-content',
                     )}
                     inputHeader={composerInputHeader}
-                    attachmentContent={isMobile && mobileComposerChrome !== 'full' ? undefined : composerAttachmentContent}
+                    attachmentContent={composerAttachmentContent}
                     highlightedContent={composerHighlightedContent}
                     highlightRef={composerHighlightRef}
                     inputRef={textareaRef}
@@ -7570,33 +7280,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isComposerExpanded
                             ? cn('h-full min-h-0', isMobile ? 'py-2.5' : 'py-4')
                             : isMobile
-                                ? (mobileComposerExpanded ? 'py-2.5' : 'py-0')
+                                ? 'py-2.5'
                                 : 'pt-4 pb-2',
                         inputMode === 'shell' ? 'font-mono' : 'typography-markdown md:typography-ui-label',
-                        isMobile && !mobileComposerExpanded && 'oc-mobile-composer-collapsed-text',
                     )}
-                    inputOuterClassName={cn(
-                        isComposerExpanded && 'flex-1 min-h-0',
-                        isMobile && !mobileComposerExpanded && 'min-h-0 flex-1',
-                    )}
+                    inputOuterClassName={cn(isComposerExpanded && 'flex-1 min-h-0')}
                     inputStyle={{
-                        flex: isComposerExpanded || (isMobile && !mobileComposerExpanded) ? '1 1 auto' : 'none',
-                        height: isMobile && !mobileComposerExpanded
-                            ? '100%'
-                            : (!isComposerExpanded && textareaSize ? `${textareaSize.height}px` : undefined),
-                        maxHeight: isMobile && !mobileComposerExpanded
-                            ? '100%'
-                            : (!isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : undefined),
+                        flex: isComposerExpanded ? '1 1 auto' : 'none',
+                        height: !isComposerExpanded && textareaSize ? `${textareaSize.height}px` : undefined,
+                        maxHeight: !isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : undefined,
                         borderTopLeftRadius: chatInputRadius,
                         borderTopRightRadius: chatInputRadius,
                     }}
                     footerClassName={cn(
                         // Keep footer chrome (and the floating follow-up send control)
                         // above the textarea highlight stack (z-10).
-                        'relative z-30 bg-transparent flex-shrink-0',
-                        isMobile && !mobileComposerExpanded
-                            ? 'oc-mobile-composer-collapsed-footer px-0 py-0'
-                            : footerPaddingClass,
+                        'z-30 bg-transparent flex-shrink-0',
+                        footerPaddingClass,
                         isMobile ? 'flex items-center gap-x-1.5' : cn('flex items-center justify-between', footerGapClass),
                     )}
                     footerStyle={{
@@ -7636,33 +7336,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onDragEnd: handleDragEnd,
                         onKeyUp: updateAutocompleteOverlayPosition,
                         onClick: () => {
-                            // Collapsed pill: first tap expands chrome in the same
-                            // gesture; the field is already focused (or will be).
-                            // Never expand from a residual focus after an action tap.
-                            // Keyboard intent is armed once from onFocus /
-                            // expandMobileComposer — do not re-dispatch here or
-                            // Android can restart the composer FLIP mid-flight.
-                            if (
-                                isMobile
-                                && !mobileComposerExpandedRef.current
-                                && Date.now() >= suppressComposerFocusUntilRef.current
-                            ) {
-                                expandMobileComposer('focus');
+                            if (isMobile && Date.now() >= suppressComposerFocusUntilRef.current) {
+                                pinMobileComposerFull(false);
                             }
                             updateAutocompleteOverlayPosition();
                         },
                         onScroll: (event) => {
-                            // Collapsed mobile pill must stay non-scrollable even when
-                            // the browser tries to pan to the caret on a long line.
-                            if (isMobile && !mobileComposerExpandedRef.current) {
-                                const textarea = event.currentTarget;
-                                if (textarea.scrollTop !== 0) textarea.scrollTop = 0;
-                                if (textarea.scrollLeft !== 0) textarea.scrollLeft = 0;
-                                if (composerHighlightRef.current) {
-                                    composerHighlightRef.current.style.transform = '';
-                                }
-                                return;
-                            }
                             updateAutocompleteOverlayPosition();
                             const scrollTop = event.currentTarget.scrollTop;
                             if (composerHighlightRef.current) {
@@ -7703,8 +7382,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                 return;
                             }
                             // Footer action just ran (attach / agent / model / …):
-                            // drop accidental focus so we never open the IME or
-                            // expand the pill as if the user tapped the field.
+                            // drop accidental focus so we never open the IME as
+                            // if the user tapped the field.
                             if (Date.now() < suppressComposerFocusUntilRef.current) {
                                 const textarea = textareaRef.current;
                                 if (textarea) {
@@ -7716,21 +7395,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                 window.clearTimeout(mobileBlurTimerRef.current);
                                 mobileBlurTimerRef.current = null;
                             }
-                            // Same-node focus from the collapsed pill: grow chrome
-                            // without remounting so IME continuity is preserved.
-                            // expandMobileComposer is a no-op height-wise if already
-                            // expanded (click path may have expanded first).
-                            if (!mobileComposerExpandedRef.current) {
-                                expandMobileComposer('focus');
-                            } else {
-                                mobileExpandIntentRef.current = null;
-                                // Already expanded: still arm a single keyboard
-                                // intent so Android can FLIP before IME movement.
-                                // expandMobileComposer would re-focus the same node.
-                                if (isCapacitorApp() && typeof window !== 'undefined') {
-                                    window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
-                                }
-                            }
+                            pinMobileComposerFull(false);
                             setMobileTextareaFocused(true);
                         },
                         onBlur: (event) => {
@@ -7776,7 +7441,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         autoCorrect: isMobile ? 'on' : 'off',
                         autoCapitalize: isMobile ? 'sentences' : 'off',
                         spellCheck: isMobile || inputSpellcheckEnabled,
-                        fillContainer: isComposerExpanded || (isMobile && !mobileComposerExpanded),
+                        fillContainer: isComposerExpanded,
                         rows: 1,
                     }}
                 >

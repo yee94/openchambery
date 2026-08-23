@@ -3,6 +3,7 @@ import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
+import { resolveMobileComposerShrink } from '@/components/chat/mobileComposerScrollShrink';
 import { getViewportSessionMemory, useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
 
 type AutoFollowState = 'following' | 'released';
@@ -272,6 +273,8 @@ export const useChatAutoFollow = ({
     // handler so the bottom-zone re-engage only fires when arriving at the bottom
     // by scrolling down — never when a user scrolling UP merely lands in the zone.
     const lastScrollTopRef = React.useRef(0);
+    const lastMobileComposerDistanceRef = React.useRef(0);
+    const lastMobileComposerShrinkRef = React.useRef(0);
 
     // Entry-stick window state (see ENTRY_STICK_* above).
     const entryStickRef = React.useRef(false);
@@ -694,6 +697,42 @@ export const useChatAutoFollow = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- container/session identity is the real input; restoreSnapshot is useEvent-stable.
     }, [containerEl, currentSessionId, viewportKey]);
 
+    const publishMobileComposerShrink = useEvent((geometry: ScrollGeometry) => {
+        if (!isMobileRef.current || typeof document === 'undefined') return;
+        const root = document.documentElement;
+        const distanceFromBottom = distanceFromBottomOf(geometry);
+        const keyboardOpen = keyboardOpenRef.current
+            || root.classList.contains('oc-keyboard-open')
+            || root.classList.contains('oc-browser-keyboard-open');
+        let pinnedFull = root.classList.contains('oc-mobile-composer-pinned-full');
+        if (
+            pinnedFull
+            && !keyboardOpen
+            && distanceFromBottom > lastMobileComposerDistanceRef.current + 0.5
+        ) {
+            root.classList.remove('oc-mobile-composer-pinned-full');
+            pinnedFull = false;
+        }
+        const shrink = resolveMobileComposerShrink({
+            distanceFromBottom,
+            keyboardOpen,
+            pinnedFull,
+        });
+        if (shrink !== lastMobileComposerShrinkRef.current) {
+            root.style.setProperty('--oc-mobile-composer-shrink', String(shrink));
+            lastMobileComposerShrinkRef.current = shrink;
+        }
+        const shrinking = shrink > 0.001;
+        const shrunk = shrink >= 0.999;
+        if (root.classList.contains('oc-mobile-composer-shrinking') !== shrinking) {
+            root.classList.toggle('oc-mobile-composer-shrinking', shrinking);
+        }
+        if (root.classList.contains('oc-mobile-composer-shrunk') !== shrunk) {
+            root.classList.toggle('oc-mobile-composer-shrunk', shrunk);
+        }
+        lastMobileComposerDistanceRef.current = distanceFromBottom;
+    });
+
     // ── scroll event handling ────────────────────────────────────────────────
     const handleScrollEvent = useEvent(() => {
         const el = scrollRef.current;
@@ -703,6 +742,7 @@ export const useChatAutoFollow = ({
         const previousTop = lastScrollTopRef.current;
         lastScrollTopRef.current = geometry.scrollTop;
         const scrollingDown = geometry.scrollTop > previousTop + 0.5;
+        publishMobileComposerShrink(geometry);
         // Pure content growth (history paint / remeasure) often fires `scroll`
         // without changing scrollTop. That must re-pin, not release — otherwise
         // a cold load leaves following stranded mid-timeline.
@@ -761,6 +801,7 @@ export const useChatAutoFollow = ({
     React.useEffect(() => {
         if (!enabled || !containerEl) return;
         lastScrollTopRef.current = containerEl.scrollTop;
+        publishMobileComposerShrink(readScrollGeometry(containerEl));
     }, [containerEl, enabled]);
 
     const touchLastYRef = React.useRef<number | null>(null);
@@ -982,8 +1023,23 @@ export const useChatAutoFollow = ({
         if (detail?.open === true) {
             keyboardOpenRef.current = true;
             keyboardGeometryFreezeRef.current = true;
+            if (typeof document !== 'undefined') {
+                document.documentElement.style.setProperty('--oc-mobile-composer-shrink', '0');
+                document.documentElement.classList.remove('oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
+                lastMobileComposerShrinkRef.current = 0;
+            }
         } else {
             keyboardOpenRef.current = false;
+            // Blur / keyboard hide must not collapse the composer. Pin full
+            // until the next upward scroll so streaming content-growth
+            // scroll events cannot snap it to the compact bar.
+            if (isMobileRef.current && typeof document !== 'undefined') {
+                const root = document.documentElement;
+                root.classList.add('oc-mobile-composer-pinned-full');
+                root.classList.remove('oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
+                root.style.setProperty('--oc-mobile-composer-shrink', '0');
+                lastMobileComposerShrinkRef.current = 0;
+            }
             // Keep freeze briefly after hide so residual shell/composer
             // ResizeObserver callbacks cannot re-pin when the viewport grows.
             keyboardGeometryFreezeRef.current = true;

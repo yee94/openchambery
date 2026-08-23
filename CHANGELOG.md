@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.70] - 2026-08-23
+
+### 聊天
+
+- **iOS 键盘改为整页上顶：** 去掉 transform FLIP。键盘出现时立刻缩短 shell，header 钉住，聊天列表跟着上移；顶起范围是整块输入框（附件/模型/发送和底部空隙），不是只露出光标。安卓仍走原来的 FLIP。
+- **移动端输入框随上滑收成紧凑条：** 聊天上滑前 100px 连续把输入框收成居中紧凑行（附件 + 单行 + 停止）；点按或聚焦钉回完整工具栏，键盘打开时保持完整高度。
+
 ## [1.18.2-beta.69] - 2026-08-23
 
 ### 移动端

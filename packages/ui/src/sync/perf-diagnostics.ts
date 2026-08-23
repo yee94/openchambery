@@ -181,8 +181,6 @@ export function createPerfWindowAggregator() {
   }
 }
 
-type PerfWindowAggregator = ReturnType<typeof createPerfWindowAggregator>
-
 export type PerfDiagnosticsControllerDeps = {
   isEnabled?: () => boolean
   record?: (event: TranscriptDiagnosticsEvent) => void

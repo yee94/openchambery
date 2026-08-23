@@ -134,6 +134,8 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 
 If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` also opts out of `:root.mobile-pointer .flex.flex-col { min-height: 0 }` with `min-height: min-content`, so the fixed stage viewport cannot shrink the card below its content.
 
+The mobile Composer's flow slot reads `--oc-mobile-composer-shrink` (`0..1`) from `useChatAutoFollow`. CSS interpolates stage height and the shared queue/composer column width (100% → 80%) through the first 100px of chat distance from the bottom; the status/changes row and page-foot fill fade on the same variable. Root classes only control clipping and the terminal one-line presentation. Keyboard and input-pin overrides publish zero without introducing a React scroll-frame state path.
+
 ## Design pt (`--dpt`)
 
 `--dpt` is `1px` everywhere except Capacitor Android, where
