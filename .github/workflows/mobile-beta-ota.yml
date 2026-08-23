@@ -448,6 +448,16 @@ jobs:
             echo "encrypted bundle verified by size only ($ACTUAL_SIZE bytes); checksum is CLI-encrypted"
           fi
 
+      - name: Verify client update detectability
+        env:
+          OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+          CHANNEL: ${{ needs.release-plan.outputs.channel }}
+          VERSION: ${{ needs.release-plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/mobile-ota/verify-detectability.mjs \
+            --channel "$CHANNEL" --version "$VERSION" --mode ota --base "$OTA_BASE_URL"
+
   archive:
     name: Archive OTA prerelease
     needs: [release-plan, build-ota, deploy]

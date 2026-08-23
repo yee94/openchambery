@@ -834,6 +834,23 @@ jobs:
             --cwd deploy/update-service
           rm -rf deploy/update-service/.vercel
 
+      - name: Verify client update detectability
+        env:
+          OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+          PLAN_MODE: ${{ needs.create-release.outputs.plan_mode }}
+          OTA_CHANNEL: ${{ contains(needs.create-release.outputs.version, '-') && 'beta' || 'stable' }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Deploy is skipped when Vercel secrets are absent; nothing to verify then.
+          if [[ -z "${VERCEL_TOKEN}" ]]; then
+            echo "Skipping detectability verify; Vercel secrets are not configured."
+            exit 0
+          fi
+          node scripts/mobile-ota/verify-detectability.mjs \
+            --channel "$OTA_CHANNEL" --version "$VERSION" --mode "$PLAN_MODE" --base "$OTA_BASE_URL"
+
   publish-relay-docker-manual:
     name: Publish only the Relay Docker image
     if: ${{ inputs.relay_only }}

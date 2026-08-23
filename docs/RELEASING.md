@@ -322,6 +322,16 @@ Capacitor 移动端支持 **web bundle OTA**（Capgo-style，自托管在 update
 
 OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/v…`），仅作灾难恢复归档（zip + 对应 channel json）。**禁止**成为 `/releases/latest`，也**禁止**写入稳定桌面/Android 自动更新 feed。
 
+### 客户端可检测性验证（detectability probe）
+
+每次 OTA 发布部署后，CI 会用 `scripts/mobile-ota/verify-detectability.mjs` 以三种设备画像探活 `POST /v1/mobile/update/check`，任一失败即让发布 fail（带 ~3 分钟边缘缓存重试）：
+
+1. **旧 iOS 壳**：剥离 `-beta.N` 的版本号 + `currentBundleId: builtin` —— `mode: ota` 必须返回 `apply_ota` 且指向新版本；`mode: native` 必须返回 `install_native_required`。
+2. **旧 Android 壳**：完整版本号 + `builtin` —— 同上。
+3. **已在包上的设备**：`currentBundleId` = 发布版本 —— 必须返回 `none`（防无限重推）。
+
+这保证「发布了」等于「客户端检测得到」：灰度桶、下限抬升、降级保护、iOS 剥离版本号等任一环节回归都会在发布时暴露，而不是等用户设备发现。本地可手动跑同款验证。
+
 ### 通道烘焙（shell channel）
 
 - `packages/mobile/capacitor.config.ts` 在构建时读 `OPENCHAMBER_OTA_CHANNEL`：`stable` → stable，其它/缺省 → beta。写入 `OpenChamberOTA.channel` 与 `CapacitorUpdater.defaultChannel`。
