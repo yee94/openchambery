@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.72] - 2026-08-23
+
+### 聊天
+
+- **移动端输入框滚动收起改为纯 CSS scroll timeline 驱动：** 移除 scroll 监听、rAF、`useEffect` 与 `ResizeObserver` 动画/测量，进度由命名 `--oc-chat-bottom` 时间轴 + `animation-range: calc(100% - 100px) 100%` 提供，只在支持 scroll-driven animation 的引擎（iOS 26+ / Android WebView 115+）启用收起，旧版保持完整展开；底部预留恒定，队列 / changes / todo 由 reveal 区连续收进，输入卡全程完整可见，终态为居中 80% 半透明单行条，键盘/聚焦/听写锁定完整工具栏。移除 `compensateMobileComposerDistance` 几何反馈补偿及相关测试。
+
 ## [1.18.2-beta.71] - 2026-08-23
 
 ### 聊天

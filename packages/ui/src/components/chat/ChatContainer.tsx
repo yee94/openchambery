@@ -434,7 +434,7 @@ const ChatViewport = React.memo(({
         >
             <div className="absolute inset-0">
                 <ScrollShadow
-                    className="absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll overlay-scrollbar-target"
+                    className="absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll oc-chat-composer-scroll-source overlay-scrollbar-target"
                     ref={scrollRef}
                     style={CHAT_SCROLL_STYLE}
                     observeMutations={false}
@@ -448,7 +448,7 @@ const ChatViewport = React.memo(({
                     data-scroll-shadow="true"
                     data-scrollbar="chat"
                 >
-                    <div className="relative z-0 min-h-full">
+                    <div className={cn('relative z-0 min-h-full', isMobile && 'chat-scroll-foot-inset')}>
                         {showLoadOlderButton && (
                             <div className="flex justify-center pt-3 pb-1">
                                 <Button
@@ -1876,7 +1876,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
 	if (isSessionHydrating) {
 		return (
-			<div className="relative flex flex-col h-full bg-background">
+			<div className="oc-chat-composer-timeline-scope relative flex flex-col h-full bg-background">
 				{returnToParentButton}
 				<div
 					className={cn(
@@ -1887,8 +1887,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     )}
                     aria-hidden={isDesktopExpandedInput}
                 >
-                    <div className="absolute inset-0 overflow-y-auto overflow-x-hidden bg-background pt-6" style={CHAT_SCROLL_STYLE}>
-                        <div className="space-y-4">
+                    <div className="absolute inset-0 overflow-y-auto overflow-x-hidden bg-background pt-6 chat-scroll oc-chat-composer-scroll-source" style={CHAT_SCROLL_STYLE}>
+                        <div className="space-y-4 chat-scroll-foot-inset">
                             {HYDRATING_SKELETON_ITEMS.map((item) => (
                                 <div key={item.id} className="group w-full">
                                     <div className="chat-message-column">
@@ -1919,7 +1919,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 <div
                     className={cn(
                         'relative z-10',
-                        isMobile && 'oc-mobile-composer-foot',
+                        isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
 							: 'bg-background'
@@ -1969,7 +1969,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }
 
 	return (
-		<div className="relative flex flex-col h-full bg-background">
+		<div className="oc-chat-composer-timeline-scope relative flex flex-col h-full bg-background">
 			{warning ? (
 				<div className="shrink-0 border-b border-border bg-[var(--status-warning-background)] px-4 py-2.5 typography-meta text-[var(--status-warning-foreground)]">
 					{warning}
@@ -2014,7 +2014,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             <div
                 className={cn(
                     'relative z-10',
-                    isMobile && 'oc-mobile-composer-foot',
+                    isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
                     isDesktopExpandedInput
                         ? 'flex-1 min-h-0 bg-background'
                         : 'bg-background'

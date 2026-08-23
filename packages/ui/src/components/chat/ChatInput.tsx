@@ -1016,8 +1016,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [snippetQuery, setSnippetQuery] = React.useState('');
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
     const [mobileControlsPanel, setMobileControlsPanel] = React.useState<MobileControlsPanel>(null);
-    const [mobileComposerStageHeight, setMobileComposerStageHeight] = React.useState(112);
-    const mobileComposerMeasuredStageScopeRef = React.useRef<string | null>(null);
     // PWA overlay keyboard-reveal retries (300/650ms). Cleared on unmount so
     // long sessions do not accumulate orphaned callbacks.
     const mobileOverlayRevealEarlyTimerRef = React.useRef<number | null>(null);
@@ -6099,47 +6097,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         });
     }, [draftBranchItems, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, newSessionDraft?.preserveDirectoryOverride, selectedDraftDirectory, selectedDraftProject, setNewSessionDraftTarget, showDraftTargetSelectors]);
 
-    const pinMobileComposerFull = useEvent((focusTextarea = true) => {
-        // Action buttons set this window — do not steal focus / open the IME.
-        if (Date.now() < suppressComposerFocusUntilRef.current) {
-            return;
-        }
-        const root = document.documentElement;
-        const wasPinned = root.classList.contains('oc-mobile-composer-pinned-full');
-        root.classList.add('oc-mobile-composer-pinned-full');
-        root.classList.remove('oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
-        root.style.setProperty('--oc-mobile-composer-shrink', '0');
-        if (isCapacitorApp() && typeof window !== 'undefined' && (focusTextarea || !wasPinned)) {
-            window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
-        }
-        if (focusTextarea) textareaRef.current?.focus({ preventScroll: true });
-    });
-
-    React.useEffect(() => () => {
-        if (typeof document === 'undefined') return;
-        const root = document.documentElement;
-        root.classList.remove('oc-mobile-composer-pinned-full', 'oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
-        root.style.removeProperty('--oc-mobile-composer-shrink');
-    }, []);
-
-    // First tap on a scroll-shrunk composer: restore the full-width layout
-    // only — no focus, no IME. The tap's native textarea focus is dropped
-    // through the same gesture window the chrome actions use (pointerdown
-    // arms it before focus lands), so a SECOND tap is what focuses. Further
-    // shrink re-arms through the normal upward-scroll release of the pin.
-    const restoreMobileComposerFullWidth = useEvent(() => {
-        if (!isMobile || typeof document === 'undefined') return false;
-        const root = document.documentElement;
-        const wasShrunk = root.classList.contains('oc-mobile-composer-shrinking')
-            || root.classList.contains('oc-mobile-composer-shrunk');
-        if (!wasShrunk) return false;
-        markComposerActionGesture();
-        root.classList.add('oc-mobile-composer-pinned-full');
-        root.classList.remove('oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
-        root.style.setProperty('--oc-mobile-composer-shrink', '0');
-        return true;
-    });
-
     const openMobileAttachSheet = React.useCallback(() => {
         // Mark the sheet open BEFORE blur so overlay-busy is true when the
         // keyboard-close lands. The trigger button blocks the tap's own focus
@@ -6155,12 +6112,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         setAndroidMediaPickSheetOpen(true);
         textareaRef.current?.blur();
     }, [markComposerActionGesture]);
-
-    const handleMobileDictationActiveChange = useEvent((active: boolean) => {
-        if (active) {
-            pinMobileComposerFull(false);
-        }
-    });
 
     // Watch the shared overlay portal root: active panels (sessions sheet,
     // model/agent panels, draft pickers, ...) count as busy. Retained hidden
@@ -6357,69 +6308,22 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return () => window.clearTimeout(timer);
     }, [isMobile, mobileOverlayOpen, mobileTextareaFocused]);
 
-    // Browser counterpart of Capacitor's oc-keyboard-open root class (which is
-    // driven by native keyboard events): the focused composer textarea is the
-    // best keyboard proxy a browser has. CSS keyed on it hides the draft
-    // starters while typing, mirroring the native app.
+    // Installed PWA viewport repair after the browser keyboard closes. Composer
+    // expansion and keyboard chrome are CSS :has(:focus)-owned; this effect only
+    // synchronizes WebKit's external visual viewport after its exit animation.
     React.useEffect(() => {
         if (!isMobile || isCapacitorApp() || typeof document === 'undefined') return;
+        if (mobileTextareaFocused) return;
+        if (!window.matchMedia?.('(display-mode: standalone)')?.matches) return;
         const root = document.documentElement;
-        if (mobileTextareaFocused) {
-            root.classList.add('oc-browser-keyboard-open');
-        } else {
-            root.classList.remove('oc-browser-keyboard-open');
-            // Installed PWA (standalone): after the keyboard dismisses, WebKit
-            // can leave the layout viewport stuck smaller / panned (content
-            // shifted up with a dead strip at the bottom) until something
-            // forces it to recompute. A zero scroll after the keyboard's exit
-            // animation settles snaps it back; harmless when nothing is stuck.
-            if (window.matchMedia?.('(display-mode: standalone)')?.matches) {
-                window.setTimeout(() => {
-                    if (root.classList.contains('oc-browser-keyboard-open')) return;
-                    window.scrollTo(0, 0);
-                    document.body.scrollTop = 0;
-                    root.scrollTop = 0;
-                }, 350);
-            }
-        }
-        return () => root.classList.remove('oc-browser-keyboard-open');
+        const timer = window.setTimeout(() => {
+            if (document.activeElement === textareaRef.current) return;
+            window.scrollTo(0, 0);
+            document.body.scrollTop = 0;
+            root.scrollTop = 0;
+        }, 350);
+        return () => window.clearTimeout(timer);
     }, [isMobile, mobileTextareaFocused]);
-
-    const mobileComposerStageScope = draftKey ? draftKeyString(draftKey) : surface.surfaceID;
-    React.useLayoutEffect(() => {
-        if (!isMobile) return;
-        // Streaming dirties the transcript continuously. A same-draft cached
-        // stage avoids forcing that document-wide layout at the interaction
-        // boundary; the observer must still attach so autosize growth mid-run
-        // keeps publishing (ResizeObserver delivers sizes without a forced
-        // synchronous layout, so observing stays cheap while cached).
-        const cachedStage = sessionIsRunning && mobileComposerMeasuredStageScopeRef.current === mobileComposerStageScope;
-        const composerSurface = dropZoneRef.current;
-        if (!composerSurface) return;
-        const publishHeight = () => {
-            const shrink = Number.parseFloat(document.documentElement.style.getPropertyValue('--oc-mobile-composer-shrink')) || 0;
-            if (shrink > 0.001) return;
-            const nextHeight = Math.max(44, Math.ceil(composerSurface.scrollHeight));
-            mobileComposerMeasuredStageScopeRef.current = mobileComposerStageScope;
-            setMobileComposerStageHeight((height) => height === nextHeight ? height : nextHeight);
-        };
-        if (!cachedStage) publishHeight();
-        const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(publishHeight) : null;
-        observer?.observe(composerSurface);
-        return () => observer?.disconnect();
-    }, [isMobile, mobileComposerStageScope, sessionIsRunning, textareaSize]);
-
-    // Mirror the measured stage height onto the root so useChatAutoFollow can
-    // compensate the shrink feedback (retracted px grow the scroll viewport)
-    // without a per-frame element lookup. Inline element var keeps winning for
-    // the viewport itself.
-    React.useEffect(() => {
-        if (!isMobile || typeof document === 'undefined') return;
-        document.documentElement.style.setProperty('--oc-mobile-composer-stage-height', `${mobileComposerStageHeight}px`);
-        return () => {
-            document.documentElement.style.removeProperty('--oc-mobile-composer-stage-height');
-        };
-    }, [isMobile, mobileComposerStageHeight]);
 
     // Reset the picker search whenever a draft picker sheet opens/closes.
     React.useEffect(() => {
@@ -6784,6 +6688,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     onInsertAndSend={handleDictationInsertAndSend}
                     onContentHeightChange={handleDictationContentHeightChange}
                     renderTrigger={false}
+                    topAccessory={<span data-oc-composer-dictation-active="true" className="hidden" aria-hidden="true" />}
                 />
                 <ComposerActionButtons
                     isMobile={isMobile}
@@ -6813,7 +6718,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const focusComposerAfterQueueEdit = useEvent(() => {
         if (isMobile) {
             holdComposerFocusUntilRef.current = Date.now() + 600;
-            pinMobileComposerFull();
             const assertMobileFocus = () => {
                 textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
                 if (document.activeElement === textareaRef.current) {
@@ -7258,9 +7162,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 >
                 <div
                     className={isMobile ? 'oc-mobile-composer-motion-viewport' : 'contents'}
-                    style={isMobile ? ({
-                        '--oc-mobile-composer-stage-height': `${mobileComposerStageHeight}px`,
-                    } as React.CSSProperties) : undefined}
                 >
                 <ChatPromptComposer
                     value={message}
@@ -7319,9 +7220,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         flex: isComposerExpanded ? '1 1 auto' : 'none',
                         height: !isComposerExpanded && textareaSize ? `${textareaSize.height}px` : undefined,
                         maxHeight: !isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : undefined,
+                        '--oc-composer-textarea-resting-height': isComposerExpanded
+                            ? '100%'
+                            : textareaSize
+                                ? `${textareaSize.height}px`
+                                : 'auto',
+                        '--oc-composer-textarea-resting-max-height': !isComposerExpanded && textareaSize ? `${textareaSize.maxHeight}px` : 'none',
                         borderTopLeftRadius: chatInputRadius,
                         borderTopRightRadius: chatInputRadius,
-                    }}
+                    } as React.CSSProperties}
                     footerClassName={cn(
                         // Keep footer chrome (and the floating follow-up send control)
                         // above the textarea highlight stack (z-10).
@@ -7365,16 +7272,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onDrop: handleDrop,
                         onDragEnd: handleDragEnd,
                         onKeyUp: updateAutocompleteOverlayPosition,
-                        onPointerDown: () => {
-                            // Tap #1 on a shrunk composer expands without
-                            // focusing; tap #2 (not shrunk) is a no-op here
-                            // and focuses normally.
-                            restoreMobileComposerFullWidth();
-                        },
                         onClick: () => {
-                            if (isMobile && Date.now() >= suppressComposerFocusUntilRef.current) {
-                                pinMobileComposerFull(false);
-                            }
                             updateAutocompleteOverlayPosition();
                         },
                         onScroll: (event) => {
@@ -7431,7 +7329,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                 window.clearTimeout(mobileBlurTimerRef.current);
                                 mobileBlurTimerRef.current = null;
                             }
-                            pinMobileComposerFull(false);
                             setMobileTextareaFocused(true);
                         },
                         onBlur: (event) => {
@@ -7602,9 +7499,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         sendIconSizeClass={sendIconSizeClass}
                         onInsert={handleDictationInsert}
                         onInsertAndSend={handleDictationInsertAndSend}
-                        onActiveChange={handleMobileDictationActiveChange}
                         onContentHeightChange={handleDictationContentHeightChange}
                         renderTrigger={false}
+                        topAccessory={<span data-oc-composer-dictation-active="true" className="hidden" aria-hidden="true" />}
                     />
                 ) : null}
                 </div>
