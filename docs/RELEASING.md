@@ -398,7 +398,7 @@ node scripts/mobile-ota/rollout.mjs --action rollback --channel beta --out /tmp/
 node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 100 --out /tmp/ota-snap
 ```
 
-`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`（Android `minNativeBuild` = 本轮 `run_number`），再写入 Android `nativeTargets`。beta 没发 iOS 时**不**改 `nativeTargets.ios` / iOS `minNativeBuild`，避免指向一个从未上传的壳。稳定版会同时写入 iOS。这样刚装完的原生 N 不会被仍停在 N-1 的 OTA 包打回去。OTA 解析器也禁止把设备降到比当前 native / 已应用 bundle 更旧的 `releaseVersion`。
+`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`。`mobile-release-plan` 为 `ota` 时**不抬** Android `minNativeBuild` / `nativeTargets`，已装 APK 继续走 `apply_ota`，不要被赶去 GitHub。只有 `mode: native` 才把 Android `minNativeBuild` 和 `nativeTargets.android` 写成这一轮 `run_number`。beta 没发 iOS 时**不**改 `nativeTargets.ios` / iOS `minNativeBuild`。客户端是否打开外链只看检查协议的 `primaryAction` + `native.installUrl`，不要本地拼 GitHub。
 
 稳定版与 beta `v*` 都会前移指针。后续纯 web 的 `mobile-beta/*` / `mobile-stable/*` 仍可单独发更高版本 OTA；assemble 会拒绝比当前 active 更旧的包。
 

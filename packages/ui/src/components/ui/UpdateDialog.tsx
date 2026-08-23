@@ -206,10 +206,10 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   const [webUpdateState, setWebUpdateState] = useState<WebUpdateState>('idle');
   const [webError, setWebError] = useState<string | null>(null);
 
-  const releaseUrl = info?.version
-    ? (info.releaseUrl || `${GITHUB_RELEASES_URL}/tag/v${info.version}`)
-    : GITHUB_RELEASES_URL;
-  const mobileUpdateUrl = info?.downloadUrl || releaseUrl;
+  const releaseUrl = info?.releaseUrl
+    || (info?.version ? `${GITHUB_RELEASES_URL}/tag/v${info.version}` : GITHUB_RELEASES_URL);
+  // Mobile follows the check protocol: only open a URL the decision provided.
+  const protocolExternalUrl = info?.downloadUrl;
 
   const progressPercent = progress?.total
     ? Math.round((progress.downloaded / progress.total) * 100)
@@ -217,6 +217,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
   const isWebRuntime = runtimeType === 'web';
   const isMobileRuntime = runtimeType === 'mobile';
+  const showProtocolExternalLink = isMobileRuntime && info?.manualUpdate === true && Boolean(protocolExternalUrl);
   const isInAppMobileOta = isMobileRuntime && info?.inAppApply === true;
   const isManualDesktopUpdate = runtimeType === 'desktop' && info?.manualUpdate === true;
   const updateCommand = info?.updateCommand || 'openchamber update';
@@ -270,8 +271,9 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   }, [info?.currentVersion, t]);
 
   const handleMobileUpdate = useCallback(() => {
-    void handleOpenExternal(mobileUpdateUrl);
-  }, [handleOpenExternal, mobileUpdateUrl]);
+    if (!protocolExternalUrl) return;
+    void handleOpenExternal(protocolExternalUrl);
+  }, [handleOpenExternal, protocolExternalUrl]);
 
   const isWebUpdating = webUpdateState !== 'idle' && webUpdateState !== 'error';
 
@@ -477,15 +479,19 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
         {/* Action Footer */}
         <div className="mt-4 flex items-center justify-between gap-4">
-          <a
-            href={releaseUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
-          >
-            <Icon name="external-link" className="h-4 w-4" />
-            GitHub
-          </a>
+          {(!isMobileRuntime || showProtocolExternalLink) ? (
+            <a
+              href={isMobileRuntime ? protocolExternalUrl : releaseUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            >
+              <Icon name="external-link" className="h-4 w-4" />
+              GitHub
+            </a>
+          ) : (
+            <span />
+          )}
 
           <div className="flex-1 flex justify-end">
             {/* Desktop / in-app mobile OTA buttons */}
@@ -528,7 +534,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               </button>
             )}
 
-            {isMobileRuntime && !isInAppMobileOta && (
+            {isMobileRuntime && !isInAppMobileOta && showProtocolExternalLink && (
               <Button
                 onClick={handleMobileUpdate}
                 size="default"

@@ -114,6 +114,10 @@ Required JSON fields:
 }
 ```
 
+Clients must follow `primaryAction`: `apply_ota` applies the bundle in-app;
+`install_native_required` opens `native.installUrl` when present; `none` hides
+the update. Do not invent a GitHub URL on the client.
+
 Relative `bundle.url` values are resolved to absolute URLs against the request origin.
 When `primaryAction` is `apply_ota`, the handler loads `/CHANGELOG.md` from the same
 origin and attaches filtered `releaseNotes` (same extraction as `/v1/update/check`).

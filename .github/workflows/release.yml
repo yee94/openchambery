@@ -576,6 +576,8 @@ jobs:
       MAX_BUNDLE_BYTES: 25165824
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
 
       - name: Setup bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -696,15 +698,20 @@ jobs:
           # iOS, so do not advertise a native iOS target that was never uploaded.
           IOS_URL="https://testflight.apple.com/join/ZCENBHtm"
           BUILD_IOS="${{ !contains(needs.create-release.outputs.version, '-') }}"
+          PLAN_JSON="$(node scripts/mobile-release-plan.mjs --json)"
+          PLAN_MODE="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).mode || '')" "$PLAN_JSON")"
+          echo "mobile-release-plan mode=$PLAN_MODE"
 
           # Publish the same-version web bundle first so a fresh native install
-          # cannot be rolled back to the previous activeBundle. minNativeBuild
-          # matches this release's versionCode / CFBundleVersion. Skip iOS when
-          # this release did not ship an IPA.
+          # cannot be rolled back to an older activeBundle. Raise minNativeBuild
+          # only when the native shell actually changed. Web-only v* must keep
+          # existing APKs on apply_ota instead of install_native_required/GitHub.
           if [[ "$BUILD_IOS" == "true" ]]; then
             export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
           fi
-          export MIN_NATIVE_BUILD_ANDROID="$BUILD_NUMBER"
+          if [[ "$PLAN_MODE" == "native" ]]; then
+            export MIN_NATIVE_BUILD_ANDROID="$BUILD_NUMBER"
+          fi
           ASSEMBLE_ARGS=(
             --zip "$ZIP_PATH"
             --version "$VERSION"
@@ -717,7 +724,7 @@ jobs:
           fi
           node scripts/mobile-ota/assemble-snapshot.mjs "${ASSEMBLE_ARGS[@]}"
 
-          OUT="$OUT" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" IOS_URL="$IOS_URL" ANDROID_URL="$ANDROID_URL" OTA_CHANNEL="$OTA_CHANNEL" BUILD_IOS="$BUILD_IOS" \
+          OUT="$OUT" VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" IOS_URL="$IOS_URL" ANDROID_URL="$ANDROID_URL" OTA_CHANNEL="$OTA_CHANNEL" BUILD_IOS="$BUILD_IOS" PLAN_MODE="$PLAN_MODE" \
             node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           import path from 'node:path';
@@ -728,18 +735,27 @@ jobs:
           const androidUrl = process.env.ANDROID_URL;
           const channel = process.env.OTA_CHANNEL;
           const buildIos = process.env.BUILD_IOS === 'true';
+          const planMode = process.env.PLAN_MODE;
           const channelPath = path.join(out, 'ota', 'channels', `${channel}.json`);
           const manifest = JSON.parse(readFileSync(channelPath, 'utf8'));
           if (!manifest.activeBundle || manifest.activeBundle.releaseVersion !== version) {
             throw new Error(`Assembled activeBundle.releaseVersion must be ${version}, got ${manifest.activeBundle?.releaseVersion ?? 'none'}`);
           }
           manifest.nativeTargets = manifest.nativeTargets || {};
-          manifest.nativeTargets.android = {
-            version,
-            build,
-            status: 'published',
-            installUrl: androidUrl,
-          };
+          if (planMode === 'ota') {
+            const iosMin = manifest.activeBundle.platforms?.ios?.minNativeBuild;
+            const androidMin = manifest.activeBundle.platforms?.android?.minNativeBuild;
+            if (Number.isInteger(iosMin) && Number.isInteger(androidMin) && androidMin > iosMin) {
+              manifest.activeBundle.platforms.android.minNativeBuild = iosMin;
+            }
+          } else {
+            manifest.nativeTargets.android = {
+              version,
+              build,
+              status: 'published',
+              installUrl: androidUrl,
+            };
+          }
           if (buildIos) {
             manifest.nativeTargets.ios = {
               version,

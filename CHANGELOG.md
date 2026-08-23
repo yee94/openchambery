@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.39] - 2026-08-23
+
+### 移动端
+
+- **安卓检查更新不再被赶去 GitHub：** 纯 web 的 beta 不再抬高 Android `minNativeBuild`。已装 APK 继续应用内 OTA。只有协议返回 `install_native_required` 且带了 `installUrl` 时才打开外链。
+
 ## [1.18.2-beta.38] - 2026-08-23
 
 ### 移动端

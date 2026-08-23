@@ -329,29 +329,6 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
             const decision = await mobileUpdates.checkForOtaUpdate();
             const mapped = mapOtaDecisionToUpdateInfo(decision, currentVersion);
 
-            // Native-required keeps the legacy GitHub/release check for install URLs
-            // when the OTA decision did not include one.
-            if (
-              decision.primaryAction === 'install_native_required'
-              && !mapped.info.downloadUrl
-            ) {
-              const legacy = await checkForMobileClientUpdates({
-                currentVersion,
-                platform: detectPlatform() === 'ios' ? 'ios' : 'android',
-                deviceClass: detectDeviceClass(),
-                arch: detectArch(),
-                reportUsage: useUIStore.getState().reportUsage,
-              });
-              mapped.info = {
-                ...mapped.info,
-                ...legacy,
-                available: true,
-                manualUpdate: true,
-                nextSuggestedCheckInSec: decision.nextCheckInSec,
-              };
-              mapped.available = true;
-            }
-
             set({
               checking: false,
               available: mapped.available,
@@ -364,9 +341,20 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
             });
             return decision.nextCheckInSec;
           } catch (error) {
-            if (!(error instanceof MobileUpdatesUnsupportedError)) {
-              // Network / service failure: fall back to the existing stable-channel check.
-              console.warn('[OTA] check failed, falling back to legacy mobile update check:', error);
+            if (error instanceof MobileUpdatesUnsupportedError) {
+              // Hosted / non-native mobile can still use the public feed below.
+            } else {
+              const message = error instanceof Error ? error.message : 'Mobile OTA check failed';
+              set({
+                checking: false,
+                available: false,
+                info: { available: false, currentVersion },
+                error: message,
+                lastChecked: Date.now(),
+                otaDecision: null,
+                otaPhase: 'error',
+              });
+              return null;
             }
           }
         }

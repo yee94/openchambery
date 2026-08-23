@@ -186,6 +186,44 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(mocks.mobileUpdates.queueOtaUpdateForNextLaunch).not.toHaveBeenCalled();
   });
 
+  test('install_native_required uses only the protocol installUrl', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
+      status: 'ok',
+      primaryAction: 'install_native_required',
+      ota: { state: 'incompatible' },
+      native: {
+        state: 'required',
+        version: '1.19.0',
+        installUrl: 'https://example.com/app.apk',
+      },
+      nextCheckInSec: 1200,
+    });
+
+    await useUpdateStore.getState().checkForUpdates();
+    const state = useUpdateStore.getState();
+
+    expect(state.info?.downloadUrl).toBe('https://example.com/app.apk');
+    expect(state.info?.manualUpdate).toBe(true);
+    expect(state.info?.inAppApply).toBeUndefined();
+    expect(mocks.legacyCheck).not.toHaveBeenCalled();
+  });
+
+  test('install_native_required without installUrl does not invent a GitHub URL', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
+      status: 'ok',
+      primaryAction: 'install_native_required',
+      ota: { state: 'incompatible' },
+      native: { state: 'required', version: '1.19.0' },
+      nextCheckInSec: 1200,
+    });
+
+    await useUpdateStore.getState().checkForUpdates();
+    const state = useUpdateStore.getState();
+
+    expect(state.info?.downloadUrl).toBeUndefined();
+    expect(mocks.legacyCheck).not.toHaveBeenCalled();
+  });
+
   test('install_native_required does not use the in-app OTA download path', async () => {
     mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
       status: 'ok',
@@ -209,24 +247,16 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(mocks.mobileUpdates.downloadOtaUpdate).not.toHaveBeenCalled();
   });
 
-  test('OTA throw falls back to legacy mobile client update check', async () => {
+  test('OTA throw does not invent a GitHub update', async () => {
     mocks.mobileUpdates.checkForOtaUpdate.mockRejectedValue(new Error('network'));
-    mocks.legacyCheck.mockResolvedValue({
-      available: true,
-      version: '1.9.0',
-      currentVersion: '1.2.3',
-      downloadUrl: 'https://github.com/yee94/openchamber/releases',
-      nextSuggestedCheckInSec: 600,
-    });
 
     const suggested = await useUpdateStore.getState().checkForUpdates();
     const state = useUpdateStore.getState();
 
-    expect(suggested).toBe(600);
-    expect(mocks.legacyCheck).toHaveBeenCalledOnce();
-    expect(state.available).toBe(true);
-    expect(state.info?.version).toBe('1.9.0');
-    expect(state.otaDecision).toBeNull();
-    expect(state.otaPhase).toBe('idle');
+    expect(suggested).toBeNull();
+    expect(mocks.legacyCheck).not.toHaveBeenCalled();
+    expect(state.available).toBe(false);
+    expect(state.error).toBe('network');
+    expect(state.otaPhase).toBe('error');
   });
 });
