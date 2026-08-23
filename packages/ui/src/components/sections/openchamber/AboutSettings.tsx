@@ -10,7 +10,8 @@ import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber } from '@/lib/mobileAppVersion';
+import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber, getMobileNativeVersion } from '@/lib/mobileAppVersion';
+import { isCapacitorApp } from '@/lib/platform';
 import {
   exportAndDownloadClientDiagnostics,
   isTranscriptDiagnosticsEnabled,
@@ -33,6 +34,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(initialUpdateDialogOpen);
   const [showChecking, setShowChecking] = React.useState(false);
   const [clientVersion, setClientVersion] = React.useState<string | null>(null);
+  const [nativeVersion, setNativeVersion] = React.useState<string | null>(null);
   const [clientBuildNumber, setClientBuildNumber] = React.useState<number | null>(null);
   const [openChamberVersion, setOpenChamberVersion] = React.useState<string | null>(null);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
@@ -88,6 +90,9 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     void getMobileClientVersion().then((version) => {
       if (!cancelled) setClientVersion(version);
     });
+    void getMobileNativeVersion().then((version) => {
+      if (!cancelled) setNativeVersion(version);
+    });
     void getMobileClientBuildNumber().then((build) => {
       if (!cancelled) setClientBuildNumber(build);
     });
@@ -101,6 +106,17 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   // (the only stable per-shell identity there), e.g. 1.18.2 (370).
   const currentVersionLabel = formatMobileClientVersionLabel(clientVersion, clientBuildNumber)
     ?? currentVersion;
+
+  // In the Capacitor shell the client-version row must identify the NATIVE
+  // shell (marketing version + build), while the running web release (updated
+  // via OTA without touching the build number) gets its own row below. Web /
+  // desktop hosts keep the single combined label.
+  const isNativeShell = isCapacitorApp();
+  const nativeShellVersionLabel = isNativeShell
+    ? (formatMobileClientVersionLabel(nativeVersion, clientBuildNumber)
+      ?? (clientBuildNumber !== null ? `Build ${clientBuildNumber}` : null)
+      ?? currentVersionLabel)
+    : currentVersionLabel;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -174,7 +190,12 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           });
           didInitiateCheck.current = false;
         } else if (didInitiateCheck.current && !updateStore.available && !updateStore.error) {
-          toast.success(t('settings.openchamber.about.toast.latestVersion'));
+          toast.success(t('settings.openchamber.about.toast.latestVersion'), {
+            // Say WHICH version is current so a stale OTA path is visible.
+            description: clientVersion
+              ? `${t('settings.openchamber.about.field.webBundle')}: ${clientVersion}`
+              : undefined,
+          });
           didInitiateCheck.current = false;
         }
       }, MIN_CHECKING_DURATION);
@@ -194,8 +215,15 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
 
         <SettingsGroup>
           <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
-            <span className="typography-ui-label font-mono text-foreground text-right">{currentVersionLabel}</span>
+            <span className="typography-ui-label font-mono text-foreground text-right">{nativeShellVersionLabel}</span>
           </SettingsRow>
+          {isNativeShell && (
+            <SettingsRow label={t('settings.openchamber.about.field.webBundle')}>
+              <span className="typography-ui-label font-mono text-foreground text-right">
+                {clientVersion || t('settings.openchamber.about.state.unknown')}
+              </span>
+            </SettingsRow>
+          )}
           <SettingsRow label={t('settings.openchamber.about.field.instanceOpenChamberVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">
               {openChamberVersion || t('settings.openchamber.about.state.unknown')}

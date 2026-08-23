@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.66] - 2026-08-23
+
+### 移动端
+
+- **关于页恢复双版本显示：** Capacitor 壳内「客户端版本」行改为显示原生壳身份（营销版本 + 构建号，如 `1.18.2 (392)`），其下新增「Web 包」行显示运行中的 OTA 界面版本；检查更新提示已是最新时，toast 会附带当前界面版本。修复 TestFlight 更新原生壳后无法判断 OTA 是否生效的问题——纯 web 的 beta 更新不改变构建号，只前进「Web 包」版本。
+- **补发 iOS 原生壳 build 392：** 内嵌 beta.66 界面包，供 TestFlight 用户覆盖安装（上一个可装壳为 391 / beta.61）。
+
 ## [1.18.2-beta.65] - 2026-08-23
 
 ### 调试
