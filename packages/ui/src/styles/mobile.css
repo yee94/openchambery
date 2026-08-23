@@ -7,7 +7,9 @@
   --font-scale: 1;
   --oc-mobile-detail-title-size: 0.9375rem;
   --oc-mobile-detail-subtitle-size: 0.625rem;
-  --oc-mobile-detail-navigation-height: 3.5rem;
+  /* Content-driven title bar height rides the density chain; the back button
+     inside keeps its own fixed touch size. */
+  --oc-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
   --oc-mobile-detail-action-edge-inset: 1rem;
 }
 
@@ -40,14 +42,16 @@
   --oc-mobile-page-inline-inset: 1.125rem;
   --oc-mobile-root-title-size: 2rem;
   --oc-mobile-project-group-gap: 0.75rem;
-  --oc-mobile-project-header-height: 5.25rem;
-  --oc-mobile-project-icon-size: 2.75rem;
-  --oc-mobile-project-action-size: 2.25rem;
+  /* Card header is title+subtitle driven; rides density (not a touch target). */
+  --oc-mobile-project-header-height: calc(5.25rem * var(--padding-scale, 1));
+  --oc-mobile-project-icon-size: calc(2.75rem * var(--padding-scale, 1));
+  --oc-mobile-project-action-size: calc(2.25rem * var(--padding-scale, 1));
   --oc-mobile-entity-title-size: 1rem;
   --oc-mobile-entity-title-line-height: 1.25rem;
   --oc-mobile-entity-meta-size: 0.8125rem;
   --oc-mobile-entity-meta-line-height: 1rem;
-  --oc-mobile-session-row-height: 2.875rem;
+  /* 2.875rem × 0.9 = 41.4px — still above the 36px touch minimum. */
+  --oc-mobile-session-row-height: calc(2.875rem * var(--padding-scale, 1));
   --oc-mobile-session-actions-width: 7rem;
   --oc-mobile-worktree-action-width: 3.5rem;
   --oc-mobile-session-action-width: calc(
@@ -1317,7 +1321,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 /* Larger, vertically centered ⋯ on scheduled task cards. */
 .oc-mobile-scheduled-task-action {
-  --oc-mobile-project-action-size: 2.75rem;
+  --oc-mobile-project-action-size: calc(2.75rem * var(--padding-scale, 1));
   align-self: center;
   margin-right: 0.375rem;
 }
