@@ -1509,7 +1509,9 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-detail-title {
   font-size: var(--oc-mobile-detail-title-size);
-  line-height: var(--oc-mobile-detail-title-size);
+  /* 1.4 leaves ascender/descender headroom for CJK; line-height == font-size
+     clips glyph extremes at every --dpt scale. Never clip — let the bar grow. */
+  line-height: calc(var(--oc-mobile-detail-title-size) * 1.4);
   font-weight: 650;
   text-align: center;
 }
@@ -1517,7 +1519,7 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-detail-subtitle {
   margin-block-start: 0.125rem;
   font-size: var(--oc-mobile-detail-subtitle-size);
-  line-height: var(--oc-mobile-detail-subtitle-size);
+  line-height: calc(var(--oc-mobile-detail-subtitle-size) * 1.4);
   font-weight: 400;
   text-align: center;
 }

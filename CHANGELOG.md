@@ -4,10 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.53] - 2026-08-23
+
+### 移动端
+
+- **标题文字不再上下截断：** 聊天页标题/副标题与消息头（模型名、变体后缀、agent 徽章）此前行高等于字号（`leading-none` / `line-height: font-size`），中文 ascender/descender 没有余量，密度缩放后上下被裁。现在标题行高 1.4 倍、消息头 1.25 倍——宁可容器长高，绝不裁字。
+
 ## [1.18.2-beta.52] - 2026-08-23
 
 ### 移动端
 
+- **标题文字不再上下截断：** 聊天页标题/副标题与消息头（模型名、变体后缀、agent 徽章）此前行高等于字号（`leading-none` / `line-height: font-size`），中文 ascender/descender 没有余量，密度缩放后上下被裁。现在标题行高 1.4 倍、消息头 1.25 倍——宁可容器长高，绝不裁字。
 - **首页 worktree 分支名与项目标题同字号：** 分支名改用 `oc-mobile-entity-title`（与项目名同一 `--oc-mobile-entity-title-size` / `--dpt` 链），不再用更小的 `typography-small`。
 
 ## [1.18.2-beta.51] - 2026-08-23
