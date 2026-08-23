@@ -15,11 +15,17 @@
     --ui-regular-font-weight: 400;
     --oc-scrollbar-thumb: oklch(0.32 0.03 50 / 0.4);
     --oc-scrollbar-thumb-hover: oklch(0.32 0.03 50 / 0.6);
-    /* User density setting (useUIStore.applyPadding writes this name). Kept
-       separate from --padding-scale so icon svgs can stack --dpt on top
-       without touching app-wide spacing elsewhere. */
+    /* User density setting (useUIStore.applyPadding writes this name).
+       --padding-scale stacks it with --dpt-n so every Tailwind spacing
+       utility (p, py, gap, size classes) rides the physical design-pt scale
+       on Android while iOS and desktop (--dpt-n = 1) stay pixel-identical.
+       Lengths cannot multiply lengths, hence the unitless --dpt-n twin.
+       Fixed-rem geometry (--oc-mobile-dock-height, --oc-settings-row-min-height,
+       --form-control-height, touch min 36px) intentionally does NOT ride this
+       so control heights, touch targets, and keyboard choreography stay
+       stable while page padding and gaps scale. */
     --user-padding-scale: 1;
-    --padding-scale: var(--user-padding-scale, 1);
+    --padding-scale: calc(var(--user-padding-scale, 1) * var(--dpt-n, 1));
     /* 1 design pt. Android Capacitor overwrites this from physical xdpi. */
     --dpt: 1px;
     --dpt-n: 1;
@@ -241,17 +247,6 @@
   *:focus-visible:not(input):not(textarea):not([data-slot="dropdown-menu-content"]):not([data-slot="dropdown-menu-sub-content"]):not([data-slot="select-content"]) {
     outline: none !important;
     box-shadow: none !important;
-  }
-}
-
-/* Icons ride the design-pt scale. Sprite `Icon` (and every `size-*`/`w-*`/`h-*`
-   on an svg) compiles to `calc(Nrem * var(--padding-scale))`, so re-declaring
-   the scale on the svg subtree scales icons with --dpt while app-wide spacing
-   and control geometry keep the user's density value untouched. Uses the
-   unitless --dpt-n twin: lengths cannot multiply lengths. */
-@layer base {
-  svg {
-    --padding-scale: calc(var(--user-padding-scale, 1) * var(--dpt-n, 1));
   }
 }
 

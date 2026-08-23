@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.43] - 2026-08-23
+
+### 移动端
+
+- **间距与图标密度全面对齐 iOS：** 所有 Tailwind 间距工具类（padding、gap、尺寸）现在通过 `--padding-scale = 用户密度 × --dpt-n` 全局叠加物理缩放——设置页、首页、项目页的内边距/行距/间距在 Android 上随 `--dpt` 一起缩放（约 −10%）。控件高度（dock、设置行最小高度、表单控件）、36px 触控最小值与键盘编排**有意保持固定**，避免触控热区缩小和键盘错位；iOS/桌面 `--dpt-n=1` 逐像素不变。
+
 ## [1.18.2-beta.42] - 2026-08-23
 
 ### 移动端
