@@ -14,6 +14,9 @@
  *   --action rollback [--channel beta|stable]
  *   --action set-native-target --platform ios|android --version V --build N
  *     [--status published] [--url U] [--channel beta|stable]
+ *   --action set-min-native-build --platform ios|android --build N [--channel beta|stable]
+ *     Sets activeBundle.platforms.<platform>.minNativeBuild. Used to repair a
+ *     wrongly raised native floor so existing shells return to apply_ota.
  *   --action promote-channel --from beta --to stable [--percent 100]
  */
 import {
@@ -103,6 +106,7 @@ function parseArgs(argv) {
   node scripts/mobile-ota/rollout.mjs --action pause --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action rollback --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action set-native-target --platform ios|android --version V --build N [--url U] --out <dir> [--channel beta|stable]
+  node scripts/mobile-ota/rollout.mjs --action set-min-native-build --platform ios|android --build N --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable [--percent 100] --out <dir>`)
         process.exit(0)
         break
@@ -249,6 +253,25 @@ function applySetNativeTarget(manifest, args) {
   if (args.status) target.status = args.status
   if (args.url) target.installUrl = args.url
   next.nativeTargets[args.platform] = target
+  return next
+}
+
+function applySetMinNativeBuild(manifest, args) {
+  if (args.platform !== 'ios' && args.platform !== 'android') {
+    throw new Error('--platform must be ios or android')
+  }
+  if (!Number.isInteger(args.build) || args.build < 1) {
+    throw new Error('--build must be a positive integer')
+  }
+  if (!manifest.activeBundle) {
+    throw new Error('Cannot set min native build: activeBundle is null')
+  }
+
+  const next = structuredClone(manifest)
+  next.generation = (Number.isInteger(manifest.generation) ? manifest.generation : 0) + 1
+  next.activeBundle.platforms = next.activeBundle.platforms || {}
+  next.activeBundle.platforms[args.platform] = next.activeBundle.platforms[args.platform] || {}
+  next.activeBundle.platforms[args.platform].minNativeBuild = args.build
   return next
 }
 
@@ -411,6 +434,9 @@ async function main() {
         break
       case 'set-native-target':
         next = applySetNativeTarget(previous, args)
+        break
+      case 'set-min-native-build':
+        next = applySetMinNativeBuild(previous, args)
         break
       default:
         throw new Error(`Unknown action: ${args.action}`)

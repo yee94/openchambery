@@ -387,6 +387,7 @@ GitHub Actions → **Mobile Beta OTA Rollout**（`mobile-beta-rollout.yml`）`wo
 | `pause` | `rolloutPercent = 0` |
 | `rollback` | 将 `rollbackBundleIds[0]` 升为 active，当前 active 退入 rollback 队列（最多保留 2 个） |
 | `set-native-target` | 更新 `nativeTargets.ios|android` |
+| `set-min-native-build` | 设置 `activeBundle.platforms.<platform>.minNativeBuild`（可升可降）。用于修复被错误抬高的原生下限，让既有壳回到 `apply_ota` |
 | `promote-channel` | 将 `--from`（通常 beta）已验证的 activeBundle **原样**拷到 `--to`（通常 stable），仅换 `rolloutSalt` / `rolloutPercent`（默认 100）；内容寻址 zip 可复用 |
 
 本地等价（写出 snapshot，再由 CI/人工部署）：
@@ -398,7 +399,7 @@ node scripts/mobile-ota/rollout.mjs --action rollback --channel beta --out /tmp/
 node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 100 --out /tmp/ota-snap
 ```
 
-`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`。`mobile-release-plan` 为 `ota` 时**不抬** Android `minNativeBuild` / `nativeTargets`，已装 APK 继续走 `apply_ota`，不要被赶去 GitHub。只有 `mode: native` 才把 Android `minNativeBuild` 和 `nativeTargets.android` 写成这一轮 `run_number`。beta 没发 iOS 时**不**改 `nativeTargets.ios` / iOS `minNativeBuild`。客户端是否打开外链只看检查协议的 `primaryAction` + `native.installUrl`，不要本地拼 GitHub。
+`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`。`mobile-release-plan` 为 `ota` 时**不抬** `minNativeBuild`，已装壳（Android / iOS 同规则）继续走 `apply_ota`，不要被赶去 GitHub / TestFlight。只有 `mode: native`（或稳定版）才把对应平台的 `minNativeBuild` 写成这一轮 `run_number`。所有 `v*` 都上传 iOS，因此 `nativeTargets.ios` 每轮前移；`nativeTargets.android` 仅 `mode: native` 时前移。客户端是否打开外链只看检查协议的 `primaryAction` + `native.installUrl`，不要本地拼 GitHub。
 
 稳定版与 beta `v*` 都会前移指针。后续纯 web 的 `mobile-beta/*` / `mobile-stable/*` 仍可单独发更高版本 OTA；assemble 会拒绝比当前 active 更旧的包。
 

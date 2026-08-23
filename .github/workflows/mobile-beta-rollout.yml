@@ -12,6 +12,7 @@ on:
           - pause
           - rollback
           - set-native-target
+          - set-min-native-build
           - promote-channel
       percent:
         description: Rollout percent 0-100 (default 100)
@@ -19,7 +20,7 @@ on:
         type: string
         default: ''
       platform:
-        description: Platform for set-native-target (ios|android; ignore for other actions)
+        description: Platform for set-native-target / set-min-native-build (ios|android; ignore for other actions)
         required: false
         type: choice
         default: ios
@@ -31,7 +32,7 @@ on:
         required: false
         type: string
       build:
-        description: Native build number for set-native-target
+        description: Native build number for set-native-target / set-min-native-build
         required: false
         type: string
       url:
@@ -128,6 +129,14 @@ jobs:
               if [[ -n "${URL:-}" ]]; then
                 ARGS+=(--url "$URL")
               fi
+              WRITE_CHANNEL="$CHANNEL"
+              ;;
+            set-min-native-build)
+              if [[ -z "${PLATFORM:-}" || -z "${BUILD:-}" ]]; then
+                echo "set-min-native-build requires platform and build"
+                exit 1
+              fi
+              ARGS=(--action set-min-native-build --channel "$CHANNEL" --platform "$PLATFORM" --build "$BUILD" --out "$OUT")
               WRITE_CHANNEL="$CHANNEL"
               ;;
             *)

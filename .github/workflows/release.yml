@@ -707,7 +707,10 @@ jobs:
           # cannot be rolled back to an older activeBundle. Raise minNativeBuild
           # only when the native shell actually changed. Web-only v* must keep
           # existing APKs on apply_ota instead of install_native_required/GitHub.
-          if [[ "$BUILD_IOS" == "true" ]]; then
+          # iOS follows the same rule as Android: native-mode releases (or
+          # stable, which historically always raised when uploading iOS) raise
+          # the floor; web-only betas keep existing iOS shells on apply_ota.
+          if [[ "$PLAN_MODE" == "native" || "$OTA_CHANNEL" == "stable" ]]; then
             export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
           fi
           if [[ "$PLAN_MODE" == "native" ]]; then
