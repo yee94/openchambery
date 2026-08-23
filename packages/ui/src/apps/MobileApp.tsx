@@ -821,9 +821,18 @@ const useNativeMobileChrome = (): void => {
         if (!keyboardOpen) return;
         keyboardOpen = false;
         clearSettle();
-        // Keyboard dismissed → blur so the expanded composer collapses with the IME.
-        blurActiveTextField();
+        // Collapse chrome first (ChatInput flushSync), then blur. Intent-before-blur
+        // lets focusout run after collapse so interactive IME dismiss is less likely
+        // to see a still-focused composer and bail. One short confirm retries if
+        // WKWebView restored focus onto the textarea without reopening the keyboard.
         dispatchKb('oc:keyboard-intent', { open: false });
+        blurActiveTextField();
+        window.setTimeout(() => {
+          if (keyboardOpen) return;
+          if (!isComposerKeyboardTarget(document.activeElement)) return;
+          blurActiveTextField();
+          dispatchKb('oc:keyboard-intent', { open: false });
+        }, 80);
         if (caretTimer !== null) {
           window.clearTimeout(caretTimer);
           caretTimer = null;

@@ -127,7 +127,7 @@ Maps the same resolver decision:
 - `install_native_required` → `{ major: true, breaking: true, message: "native update required" }`
 - otherwise → `{ message: "No new version available", version: "", url: "" }`
 
-OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 设备已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。同版本不同 `bundleId` 仍可作内容更正。
+OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 设备已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。同版本不同 `bundleId` 仍可作内容更正。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报，否则 iOS 剥离版 `nativeVersion` + 过期 `nativeTargets.ios` 会把同版本反复判成 `apply_ota`。
 
 Manifest load failure returns `503 { "error": "ota_manifest_unavailable" }` on both endpoints (never a forged no-update).
 

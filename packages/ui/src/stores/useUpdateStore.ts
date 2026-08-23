@@ -224,6 +224,19 @@ function mapOtaDecisionToUpdateInfo(
   currentVersion: string,
 ): { info: UpdateInfo; available: boolean; otaPhase: OtaPhase } {
   if (decision.primaryAction === 'apply_ota' && decision.ota.bundle) {
+    // Capgo reports builtin for the shell-embedded zip. If that zip is already
+    // this release, showing 1.18.2-beta.36 → 1.18.2-beta.36 loops forever.
+    if (decision.ota.bundle.releaseVersion === currentVersion) {
+      return {
+        available: false,
+        otaPhase: 'idle',
+        info: {
+          available: false,
+          currentVersion,
+          nextSuggestedCheckInSec: decision.nextCheckInSec,
+        },
+      };
+    }
     return {
       available: true,
       otaPhase: 'available',

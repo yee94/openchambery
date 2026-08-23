@@ -149,15 +149,33 @@ const resolveNativeInfo = async (): Promise<{ version: string; build: number }> 
   };
 };
 
+/**
+ * Capgo reports `builtin` for the shell-embedded web bundle. The update
+ * service treats `currentBundleId === activeBundle.releaseVersion` as already
+ * current, so a builtin shell must report the baked `__APP_VERSION__` or it
+ * will be offered the same zip forever (iOS 1.18.2-beta.36 → 1.18.2-beta.36).
+ */
+export const resolveReportedBundleId = (
+  capgoBundleId: string | null | undefined,
+  bundledReleaseVersion: string | null | undefined,
+): string => {
+  const id = nonEmptyString(capgoBundleId);
+  if (id && id !== 'builtin') return id;
+  return nonEmptyString(bundledReleaseVersion) ?? 'builtin';
+};
+
+const bundledReleaseVersion = (): string | null => (
+  typeof __APP_VERSION__ !== 'undefined' ? nonEmptyString(__APP_VERSION__) : null
+);
+
 const resolveCurrentBundleId = async (updater: CapgoUpdater | null): Promise<string> => {
-  if (!updater) return 'builtin';
+  const bundled = bundledReleaseVersion();
+  if (!updater) return resolveReportedBundleId(null, bundled);
   try {
     const current = await updater.current();
-    const id = nonEmptyString(current.bundle?.id);
-    if (!id || id === 'builtin') return 'builtin';
-    return id;
+    return resolveReportedBundleId(current.bundle?.id, bundled);
   } catch {
-    return 'builtin';
+    return resolveReportedBundleId(null, bundled);
   }
 };
 

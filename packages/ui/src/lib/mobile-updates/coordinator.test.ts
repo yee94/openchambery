@@ -66,6 +66,7 @@ import {
   checkMobileOtaUpdate,
   MOBILE_OTA_EDGEONE_CHECK_URL,
   MOBILE_OTA_VERCEL_CHECK_URL,
+  resolveReportedBundleId,
 } from './coordinator';
 import { resetCapgoUpdaterCache } from './capgoAdapter';
 import type { MobileUpdateDecision } from './types';
@@ -111,6 +112,13 @@ describe('mobile OTA coordinator', () => {
     const body = await assembleMobileOtaCheckRequest({ updater: mocks.updater });
     expect(body.channel).toBe('beta');
     expect(body.shellApiVersion).toBe(1);
+  });
+
+  test('builtin Capgo id reports the baked release version so same-version OTA is not re-offered', () => {
+    expect(resolveReportedBundleId('builtin', '1.18.2-beta.36')).toBe('1.18.2-beta.36');
+    expect(resolveReportedBundleId(null, '1.18.2-beta.36')).toBe('1.18.2-beta.36');
+    expect(resolveReportedBundleId('c02a8f76562d97ec', '1.18.2-beta.36')).toBe('c02a8f76562d97ec');
+    expect(resolveReportedBundleId('builtin', null)).toBe('builtin');
   });
 
   test('uses current Capgo bundle id when present', async () => {

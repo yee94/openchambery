@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.37] - 2026-08-23
+
+### 移动端
+
+- **iOS 不再对同一版本反复弹出「有可用更新」：** 壳里已经是 `1.18.2-beta.36` 时，检查更新不会再显示 `36 → 36` 并无限转圈。Capgo 报 builtin 时会带上当前 web 版本，同版本不再当成可安装 OTA。
+
+- **键盘收起后输入框更稳：** 收起键盘时先收起输入栏再失焦，并补一次确认，减少 WKWebView 把焦点抢回去的情况。
+
 ## [1.18.2-beta.36] - 2026-08-23
 
 ### 聊天

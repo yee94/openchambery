@@ -301,6 +301,41 @@ test('older activeBundle still applies OTA when the shell is older than the nati
   assert.equal(decision.ota.bundle.releaseVersion, '1.18.2-beta.33');
 });
 
+test('stale iOS nativeTarget still apply_ota when the running web is older (builtin)', () => {
+  // Live beta.json after skipping TestFlight: nativeTargets.ios stays on an
+  // older shell (1.18.2-beta.32) while activeBundle is 1.18.2-beta.36.
+  // A builtin shell that has not reported its baked web version still needs OTA.
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.36' }),
+    nativeTargets: {
+      ios: { version: '1.18.2-beta.32', build: 362, installUrl: 'https://testflight.apple.com/join/xxx' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2',
+    nativeBuild: 362,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.2-beta.36');
+});
+
+test('baked web releaseVersion as currentBundleId is current even with a stale iOS nativeTarget', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.36' }),
+    nativeTargets: {
+      ios: { version: '1.18.2-beta.32', build: 362, installUrl: 'https://testflight.apple.com/join/xxx' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.2-beta.36',
+    nativeVersion: '1.18.2',
+    nativeBuild: 362,
+  }));
+  assert.equal(decision.primaryAction, 'none');
+  assert.equal(decision.ota.state, 'current');
+});
+
 test('same-version different bundleId is still apply_ota (content correction)', () => {
   const manifest = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.23' }),

@@ -108,6 +108,26 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(mocks.legacyCheck).not.toHaveBeenCalled();
   });
 
+  test('same-version apply_ota is not an available update', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
+      ...otaAvailableDecision(),
+      ota: {
+        state: 'available',
+        bundle: {
+          ...otaAvailableDecision().ota.bundle!,
+          releaseVersion: '1.2.3',
+        },
+      },
+    });
+
+    await useUpdateStore.getState().checkForUpdates();
+    const state = useUpdateStore.getState();
+
+    expect(state.available).toBe(false);
+    expect(state.info?.available).toBe(false);
+    expect(state.otaPhase).toBe('idle');
+  });
+
   test('apply_ota maps releaseNotes onto UpdateInfo.body', async () => {
     mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
       ...otaAvailableDecision(),
