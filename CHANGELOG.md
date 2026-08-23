@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.52] - 2026-08-23
+
+### 移动端
+
+- **首页 worktree 分支名与项目标题同字号：** 分支名改用 `oc-mobile-entity-title`（与项目名同一 `--oc-mobile-entity-title-size` / `--dpt` 链），不再用更小的 `typography-small`。
+
 ## [1.18.2-beta.51] - 2026-08-23
 
 ### 聊天

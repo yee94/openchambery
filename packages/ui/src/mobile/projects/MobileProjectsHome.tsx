@@ -357,7 +357,7 @@ function MobileWorktreeGroupLabel({
       <span className="oc-mobile-group-label-icon" aria-hidden>
         <Icon name="git-branch" className="size-3.5" />
       </span>
-      <span className="min-w-0 flex-1 truncate text-left typography-small font-medium text-foreground">
+      <span className="min-w-0 flex-1 truncate text-left oc-mobile-entity-title font-semibold text-foreground">
         {worktree.name}
       </span>
       <span className="typography-small text-muted-foreground tabular-nums">

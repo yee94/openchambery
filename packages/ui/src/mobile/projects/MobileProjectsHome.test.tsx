@@ -88,8 +88,7 @@ describe('MobileProjectsHome workspace groups', () => {
     expect(html).toContain('Feature session');
     // Worktree name is secondary to the project title — not the same
     // semibold ui-label treatment, or it visually outranks the project.
-    expect(html).toMatch(/typography-small[^"]*font-medium[^"]*text-foreground[^>]*>Feature branch/);
-    expect(html).not.toMatch(/typography-ui-label font-semibold text-foreground[^>]*>Feature branch/);
+    expect(html).toMatch(/oc-mobile-entity-title[^"]*font-semibold[^"]*text-foreground[^>]*>Feature branch/);
   });
 
   test('wires worktree action affordances on linked worktree headers', () => {
