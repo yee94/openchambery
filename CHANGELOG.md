@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.62] - 2026-08-23
+
+### 聊天
+
+- **模型变体选项解析收口：** 当前选中模型完全信任选择 catalog（含 `variantsReady === false` 时等待为空）；非当前模型不再错误地借用 catalog，改从 provider 列表解析，收藏/最近使用里记住的变体仍能正确显示与应用。同时修正了回调依赖列表。
+
+### 发布
+
+- **TestFlight 规则改为跟随原生变更：** 纯 web 的 beta（`mode: ota`）不再上传 TestFlight；含原生壳变更的 beta 与正式版仍上传（beta 仅内测）。修复了 CI 在 tag 检出时把发布 tag 自身当作 diff 基线、导致「原生变更」判定从未真正生效的缺陷——端内「一键更新 vs 跳转重装」的 `minNativeBuild` 抬升现在两端一致地只在原生变更时发生。
+
 ## [1.18.2-beta.61] - 2026-08-23
 
 ### 聊天

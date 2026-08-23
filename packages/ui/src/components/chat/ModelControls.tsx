@@ -772,31 +772,32 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const getModelVariantOptions = React.useCallback((providerId: string, modelId: string) => {
         if (selectionAdapter) {
-            const fromCatalog = resolveChatInputSelectionVariantOptions(
-                selectionAdapter.selection,
-                selectionAdapter.catalog,
-                providerId,
-                modelId,
-            );
-            if (
-                fromCatalog.length > 0
-                || selectionAdapter.catalog?.variants
-                || selectionAdapter.catalog?.variantsReady === false
-                || selectionAdapter.selection.providerID !== providerId
-                || selectionAdapter.selection.modelID !== modelId
-            ) {
-                return fromCatalog;
+            const isCurrentSelection = selectionAdapter.selection.providerID === providerId
+                && selectionAdapter.selection.modelID === modelId;
+            if (isCurrentSelection) {
+                // Catalog is current-model-only: trust it fully for the live
+                // selection (including variantsReady === false → wait empty).
+                return resolveChatInputSelectionVariantOptions(
+                    selectionAdapter.selection,
+                    selectionAdapter.catalog,
+                    providerId,
+                    modelId,
+                );
             }
-            // Primary adapters may omit catalog.variants; fall back to the
-            // provider list already resolved for this control (store or surface).
-            const provider = providers.find((entry) => entry.id === providerId);
-            const model = provider?.models?.find((entry) => entry.id === modelId) as { variants?: unknown } | undefined;
-            return resolveModelVariantKeys(model);
+            // Non-current models never come from catalog.variants; resolve from
+            // the provider list so remembered favorites/recents still show and apply.
         }
         const provider = providers.find((entry) => entry.id === providerId);
         const model = provider?.models?.find((entry) => entry.id === modelId) as { variants?: unknown } | undefined;
         return resolveModelVariantKeys(model);
-    }, [currentModelId, currentProviderId, providers, selectionAdapter, selectionCatalog?.variants, selectionCatalog?.variantsReady]);
+    }, [
+        providers,
+        selectionAdapter,
+        selectionAdapter?.selection.providerID,
+        selectionAdapter?.selection.modelID,
+        selectionCatalog?.variants,
+        selectionCatalog?.variantsReady,
+    ]);
 
     const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string) => {
         const adapterOptions = selectionAdapter
