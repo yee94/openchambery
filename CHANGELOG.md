@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.68] - 2026-08-23
+
+### 移动端
+
+- **撤回「Web 包」显示项：** 关于页恢复单行客户端版本（界面版本 + 构建号），移除 beta.66 引入的独立「Web 包」行与「已是最新」提示中的版本描述。
+
 ## [1.18.2-beta.67] - 2026-08-23
 
 ### 聊天

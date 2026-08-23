@@ -47,24 +47,6 @@ export const getMobileClientVersion = async (): Promise<string | null> => {
 };
 
 /**
- * Native shell marketing version (CFBundleShortVersionString / versionName)
- * only, without the bundled web-version fallback. iOS TestFlight strips
- * `-beta.N` here; pair with the native build number for a stable shell
- * identity. Use getMobileClientVersion for the running web release version.
- */
-export const getMobileNativeVersion = async (): Promise<string | null> => {
-  if (!isCapacitorApp()) return null;
-
-  try {
-    const { App } = await import('@capacitor/app');
-    const info = await App.getInfo();
-    return nonEmptyVersion(info.version);
-  } catch {
-    return null;
-  }
-};
-
-/**
  * Native build number (CFBundleVersion / versionCode). Increments with every
  * shell release; iOS marketing versions strip `-beta.N`, so the build number is
  * the only reliable per-shell identity there. Returns null when unavailable.
