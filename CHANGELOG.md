@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.69] - 2026-08-23
+
+### 移动端
+
+- **修复 iOS TestFlight 检测不到 Beta OTA：** Capgo 内置包会把 `CFBundleShortVersionString`（正式版号 `1.18.2`）当成当前 Web 包版本上报；semver 认为正式版比任何 `1.18.2-beta.N` 都新，检查接口就返回「已是最新」。Beta 渠道现在只按运行中的 Web 包版本检查，服务端也不再把这个剥离后的营销版本当成正式版地板。安卓不受影响（`versionName` 本身带 `-beta.N`）。
+
 ## [1.18.2-beta.68] - 2026-08-23
 
 ### 移动端
