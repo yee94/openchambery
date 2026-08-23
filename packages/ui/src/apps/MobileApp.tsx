@@ -406,7 +406,6 @@ const useNativeMobileChrome = (): void => {
         for (const el of document.querySelectorAll<HTMLElement>('.oc-mobile-composer, .oc-draft-center')) {
           el.style.transition = '';
           el.style.transform = '';
-          el.style.willChange = '';
         }
       };
       const measureSafeBottom = () => {
@@ -467,7 +466,6 @@ const useNativeMobileChrome = (): void => {
           const movers = getKbMovers(anchor);
           root.classList.add('oc-kb-animating');
           for (const { el, factor } of movers) {
-            el.style.willChange = 'transform';
             el.style.transition = `transform ${durationMs}ms ${easing}`;
             el.style.transform = getAndroidTransform(slide, factor);
           }
@@ -476,7 +474,6 @@ const useNativeMobileChrome = (): void => {
             root.classList.remove('oc-kb-animating');
             for (const { el } of movers) {
               el.style.transition = '';
-              el.style.willChange = '';
             }
           }, durationMs + 20);
           return slide;
@@ -718,7 +715,6 @@ const useNativeMobileChrome = (): void => {
         measureSafeBottom();
         const slide = Math.max(0, height - safeBottomPx);
         for (const { el, factor } of getKbMovers(anchor)) {
-          el.style.willChange = 'transform';
           el.style.transition = `transform ${KB_ANIM_MS}ms ${KB_ANIM_EASING}`;
           el.style.transform = `translateY(${-slide * factor}px)`;
         }

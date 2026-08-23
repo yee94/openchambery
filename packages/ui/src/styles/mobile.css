@@ -2893,6 +2893,14 @@ button.oc-mobile-worktree-label-trigger:active,
   transition: height 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
 
+/* Keyboard FLIP movers stay layer-promoted for the Capacitor session. Toggling
+   will-change on every open/close churns WebKit compositor layers and slows
+   later animations; keep a stable promotion on the fixed movers instead. */
+:root.oc-capacitor-app .oc-mobile-composer,
+:root.oc-capacitor-app .oc-draft-center {
+  will-change: transform;
+}
+
 /* Keyboard slide choreography: the composer (and the draft title, see
    .oc-draft-center note below) are moved with INLINE transform/transition set
    by useNativeMobileChrome — WebKit does not reliably start transitions when a
@@ -3121,13 +3129,11 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-composer-motion-expanding {
   animation: oc-mobile-composer-motion-expand 180ms cubic-bezier(0.2, 0, 0, 1)
     both;
-  will-change: transform;
 }
 
 .oc-mobile-composer-motion-collapsing {
   animation: oc-mobile-composer-motion-collapse 160ms
     cubic-bezier(0.4, 0, 1, 1) both;
-  will-change: transform;
 }
 
 @keyframes oc-mobile-composer-motion-expand {
@@ -3218,7 +3224,6 @@ button.oc-mobile-worktree-label-trigger:active,
   .oc-mobile-composer-motion-collapsing {
     animation: none;
     transform: none;
-    will-change: auto;
   }
 
   .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)

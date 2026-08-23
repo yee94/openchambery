@@ -67,7 +67,10 @@ describe('resolveLiveRevealBodyMessageId', () => {
         })).toBeNull();
     });
 
-    test('live last assistant keeps revealing through tool arrival (no mid-stream fold)', () => {
+    test('continuation tool arrival withdraws the reveal (folds back into Activity)', () => {
+        // 原始消费语义：正文流式中一旦出现 continuation tool part，乐观
+        // 揭示立即撤回，文本折回 Activity justification——正文不与正在
+        // 运行的工具步骤同屏挂起。
         const streaming = assistant({
             id: 'a2',
             parts: [textPart('p1', 'partial'), toolPart('t1')],
@@ -77,7 +80,7 @@ describe('resolveLiveRevealBodyMessageId', () => {
             assistants: [assistant({ id: 'a1', finish: 'tool-calls', completed: 3, parts: [toolPart('t0')] }), streaming],
             streamingAssistantMessageId: 'a2',
             activeStreamingPhase: 'streaming',
-        })).toBe('a2');
+        })).toBeNull();
     });
 
     test('step boundary (finish=tool-calls) stops revealing so Activity shows justification again', () => {
@@ -122,8 +125,8 @@ describe('resolveLiveRevealBodyMessageId', () => {
         })).toBeNull();
     });
 
-    test('null streaming phase falls back to streaming (steer gap keeps the body)', () => {
-        const streaming = assistant({ id: 'a2', parts: [textPart('p1', 'x'), toolPart('t1')] });
+    test('null streaming phase falls back to streaming (steer gap keeps tool-less body)', () => {
+        const streaming = assistant({ id: 'a2', parts: [textPart('p1', 'x')] });
         expect(resolveLiveRevealBodyMessageId({
             chatRenderMode: 'sorted',
             assistants: [streaming],
@@ -163,14 +166,16 @@ describe('dropLiveRevealJustificationParts', () => {
 });
 
 describe('regression: live reveal renders text exactly once', () => {
-    test('multi-step turn — streaming body text is withheld from Activity while it streams in the body', () => {
+    test('multi-step turn — body streams, tool arrival folds it back into Activity exactly once', () => {
         const anchor = assistant({ id: 'a1', finish: 'tool-calls', completed: 3, parts: [toolPart('t0')] });
+
+        // Phase 1: text streaming, no tools yet — the body reveals and the
+        // Activity viewport withholds its justification row (renders once).
         const streaming = assistant({
             id: 'a2',
-            parts: [textPart('p_stream', 'REPLY TEXT'), toolPart('t1')],
+            parts: [textPart('p_stream', 'REPLY TEXT')],
         });
         const assistants = [anchor, streaming];
-
         const revealId = resolveLiveRevealBodyMessageId({
             chatRenderMode: 'sorted',
             assistants,
@@ -178,18 +183,30 @@ describe('regression: live reveal renders text exactly once', () => {
             activeStreamingPhase: 'streaming',
         });
         expect(revealId).toBe('a2');
-
-        // Turn activity rows include the streaming message's justification...
         const turnJustificationRows: TurnActivityRecord[] = [activity('justification', 'a2')];
-        // ...but the Activity viewport withholds it while the body streams it.
-        const visible = dropLiveRevealJustificationParts(turnJustificationRows, revealId);
-        expect(visible).toHaveLength(0);
+        expect(dropLiveRevealJustificationParts(turnJustificationRows, revealId)).toHaveLength(0);
 
-        // At the step boundary the reveal ends and Activity shows it again.
+        // Phase 2: a continuation tool arrives — the optimistic reveal is
+        // withdrawn, the text folds back into Activity (visible there).
+        const withTool = assistant({
+            id: 'a2',
+            parts: [textPart('p_stream', 'REPLY TEXT'), toolPart('t1')],
+        });
+        const withdrawnReveal = resolveLiveRevealBodyMessageId({
+            chatRenderMode: 'sorted',
+            assistants: [anchor, withTool],
+            streamingAssistantMessageId: 'a2',
+            activeStreamingPhase: 'streaming',
+        });
+        expect(withdrawnReveal).toBeNull();
+        expect(dropLiveRevealJustificationParts(turnJustificationRows, withdrawnReveal)).toBe(turnJustificationRows);
+
+        // Phase 3: at the step boundary (finish=tool-calls) Activity keeps
+        // showing the justification.
         const settled = assistant({
             id: 'a2',
             finish: 'tool-calls',
-            parts: streaming.parts,
+            parts: withTool.parts,
         });
         const settledReveal = resolveLiveRevealBodyMessageId({
             chatRenderMode: 'sorted',

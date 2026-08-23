@@ -179,10 +179,10 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
         expect(shouldStreamSortedFinalBody(input)).toBe(true);
     });
 
-    test('live stream keeps revealed body text when continuation tools arrive', () => {
-        // Sorted 模式的乐观揭示无法预知模型写完正文后是否跟工具调用（文本
-        // 先于工具是常态）。正文一旦开始流式就不能因工具 part 到达而中途
-        // 撤回，否则用户看到"出来一段然后又消失"；撤回只发生在步骤边界。
+    test('continuation tools arriving withdraw the optimistic reveal', () => {
+        // 正文流式中一旦出现 continuation tool part，乐观揭示立即撤回：文本
+        // 折回 Activity justification（原始消费语义）。撤回跟随工具到达而
+        // 非步骤边界——正文不得与正在运行的工具步骤同屏挂起。
         const input = {
             finish: undefined,
             parts: [
@@ -192,8 +192,8 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
             streamPhase: 'streaming' as const,
             isLastAssistantInTurn: true,
         };
-        expect(canRevealSortedFinalBody(input)).toBe(true);
-        expect(shouldStreamSortedFinalBody(input)).toBe(true);
+        expect(canRevealSortedFinalBody(input)).toBe(false);
+        expect(shouldStreamSortedFinalBody(input)).toBe(false);
     });
 
     test('step boundary folds intermediate text back into Activity', () => {

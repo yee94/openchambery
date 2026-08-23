@@ -144,17 +144,9 @@ export type SortedFinalBodyRevealInput = {
  * Intermediate tool/reasoning work stays in Activity. The message body may
  * paint only when this matches the terminal-stop shape:
  * - already a confirmed terminal stop, or
- * - a live stream with finish absent/`stop`.
+ * - a live stream with no continuation tools and finish absent/`stop`.
  *
  * Errors veto reveal so a partial abort does not promote text out of Activity.
- *
- * Continuation tools no longer veto a live reveal: the optimistic reveal
- * cannot know whether the model will call tools after the text (text usually
- * precedes tool calls within a step), and un-revealing already-streamed body
- * text mid-message made the paragraph vanish ("appeared then disappeared").
- * The fold back into Activity happens at the step boundary instead — once
- * `finish` is stamped non-`stop` (or the message leaves the live phase), the
- * message no longer reveals and its text re-classifies as justification.
  */
 export const canRevealSortedFinalBody = (input: SortedFinalBodyRevealInput): boolean => {
     if (input.error) {
@@ -169,7 +161,10 @@ export const canRevealSortedFinalBody = (input: SortedFinalBodyRevealInput): boo
     if (!isLiveStreamPhase(input.streamPhase)) {
         return false;
     }
-    return !(typeof input.finish === 'string' && input.finish !== 'stop');
+    if (typeof input.finish === 'string' && input.finish !== 'stop') {
+        return false;
+    }
+    return countContinuationToolParts(input.parts) === 0;
 };
 
 /**

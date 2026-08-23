@@ -58,13 +58,14 @@ export const resolveVisibleSortedAssistants = (
 /**
  * Which assistant message currently owns the sorted live body reveal.
  *
- * The live reveal does not fold on tool arrival (text usually precedes tool
- * calls within one step), so the streaming last assistant keeps streaming its
- * body until the step boundary — its `finish` stamps non-`stop`, or the
- * message completes/errors. While that reveal is active the Activity group
- * must withhold the SAME text (its justification row), or the paragraph
- * renders twice: once in the body of the streaming message and once in the
- * Activity group hosted on the turn's first assistant.
+ * The optimistic reveal holds only while the streaming last assistant is in a
+ * live phase with no continuation tool part yet. A continuation tool arriving
+ * mid-stream withdraws the reveal (the original consumption semantics): the
+ * text folds back into its Activity justification row and never stays on
+ * screen next to the running tool steps. While the reveal IS active the
+ * Activity group must withhold the SAME text (its justification row), or the
+ * paragraph renders twice: once in the body of the streaming message and once
+ * in the Activity group hosted on the turn's first assistant.
  *
  * The phase derivation is owned by `resolveSortedRevealStreamPhase` — the
  * same single derivation the reveal predicate consumes — so the Activity

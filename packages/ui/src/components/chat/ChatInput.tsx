@@ -1026,6 +1026,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const mobileComposerMeasuredStageScopeRef = React.useRef<string | null>(null);
     const [mobileFullChromePrewarmed, setMobileFullChromePrewarmed] = React.useState(false);
     const mobileComposerMotionTimerRef = React.useRef<number | null>(null);
+    // Dictation-end collapse probe (30ms) and PWA overlay keyboard-reveal
+    // retries (300/650ms). Cleared on re-arm and unmount so long sessions do
+    // not accumulate orphaned callbacks.
+    const mobileDictationCollapseTimerRef = React.useRef<number | null>(null);
+    const mobileOverlayRevealEarlyTimerRef = React.useRef<number | null>(null);
+    const mobileOverlayRevealLateTimerRef = React.useRef<number | null>(null);
     // Footer/chrome phase for the mobile composer, deliberately separate from the
     // silhouette state: 'collapsed' = pill footer (attach + stop), 'full' =
     // expanded footer with all controls, 'none' = transient frame with no footer
@@ -1046,6 +1052,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     React.useEffect(() => () => {
         if (mobileBlurTimerRef.current !== null) {
             window.clearTimeout(mobileBlurTimerRef.current);
+        }
+        if (mobileDictationCollapseTimerRef.current !== null) {
+            window.clearTimeout(mobileDictationCollapseTimerRef.current);
+        }
+        if (mobileOverlayRevealEarlyTimerRef.current !== null) {
+            window.clearTimeout(mobileOverlayRevealEarlyTimerRef.current);
+        }
+        if (mobileOverlayRevealLateTimerRef.current !== null) {
+            window.clearTimeout(mobileOverlayRevealLateTimerRef.current);
         }
     }, []);
     const [mobileDictationActive, setMobileDictationActive] = React.useState(false);
@@ -6277,6 +6292,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     const handleMobileDictationActiveChange = React.useCallback((active: boolean) => {
         setMobileDictationActive(active);
+        if (mobileDictationCollapseTimerRef.current !== null) {
+            window.clearTimeout(mobileDictationCollapseTimerRef.current);
+            mobileDictationCollapseTimerRef.current = null;
+        }
         if (active) {
             mobileExpandIntentRef.current = null;
             // Dictation engine went live (possibly started from the pill):
@@ -6293,7 +6312,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // tick later — if that happened, stay expanded; otherwise (cancel,
         // discard, insert-and-send) collapse straight back to the pill without
         // parking on the normal composer for the usual grace period.
-        window.setTimeout(() => {
+        mobileDictationCollapseTimerRef.current = window.setTimeout(() => {
+            mobileDictationCollapseTimerRef.current = null;
             if (!mobileComposerExpandedRef.current) return;
             if (document.activeElement === textareaRef.current) return;
             collapseMobileComposer();
@@ -6436,12 +6456,34 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 // icon row parked behind the keyboard accessory bar.
                 (composerFormRef.current ?? ta).scrollIntoView({ block: 'end' });
             };
-            window.setTimeout(reveal, 300);
-            window.setTimeout(reveal, 650);
+            if (mobileOverlayRevealEarlyTimerRef.current !== null) {
+                window.clearTimeout(mobileOverlayRevealEarlyTimerRef.current);
+                mobileOverlayRevealEarlyTimerRef.current = null;
+            }
+            if (mobileOverlayRevealLateTimerRef.current !== null) {
+                window.clearTimeout(mobileOverlayRevealLateTimerRef.current);
+                mobileOverlayRevealLateTimerRef.current = null;
+            }
+            mobileOverlayRevealEarlyTimerRef.current = window.setTimeout(() => {
+                mobileOverlayRevealEarlyTimerRef.current = null;
+                reveal();
+            }, 300);
+            mobileOverlayRevealLateTimerRef.current = window.setTimeout(() => {
+                mobileOverlayRevealLateTimerRef.current = null;
+                reveal();
+            }, 650);
         };
         window.addEventListener('oc:mobile-overlay-opened', handleOverlayOpened);
         window.addEventListener('oc:mobile-overlay-closed', handleOverlayClosed);
         return () => {
+            if (mobileOverlayRevealEarlyTimerRef.current !== null) {
+                window.clearTimeout(mobileOverlayRevealEarlyTimerRef.current);
+                mobileOverlayRevealEarlyTimerRef.current = null;
+            }
+            if (mobileOverlayRevealLateTimerRef.current !== null) {
+                window.clearTimeout(mobileOverlayRevealLateTimerRef.current);
+                mobileOverlayRevealLateTimerRef.current = null;
+            }
             window.removeEventListener('oc:mobile-overlay-opened', handleOverlayOpened);
             window.removeEventListener('oc:mobile-overlay-closed', handleOverlayClosed);
         };

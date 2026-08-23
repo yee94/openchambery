@@ -794,12 +794,15 @@ const TurnBlock = React.memo(({
     // Expansion must NOT follow sessionIsWorking demotion. Between tool steps
     // session_status often flaps busy→idle while the last assistant is still
     // open (completionDisposition active); demoting to abnormal collapses the
-    // disclosure and blanks tool rows mid-turn (user-visible flicker).
-    // Keep expanded while the turn itself is still open on the last row.
+    // disclosure and blanks tool rows mid-turn (user-visible flicker). Keep
+    // expanded while the turn itself is still open — on any turn position: a
+    // queued/steered message makes the running turn non-last while its tools
+    // still execute, and folding then hid the in-progress steps.
     const expansionDisposition = resolveActivityExpansionDisposition({
         isLastTurn,
         turnCompletionDisposition: turn.completionDisposition,
         headerPresentationDisposition: activityPresentationForDefault.completionDisposition,
+        hasAssistantMessages: turn.assistantMessages.length > 0,
     });
     const defaultExpandedForTurn = resolveTurnActivityExpandedByDefault({
         expansionDisposition,
@@ -841,10 +844,12 @@ const TurnBlock = React.memo(({
         return null;
     }, [activeStreamingMessageId, turn.assistantMessages]);
 
-    // Sorted live-body reveal owner: while the streaming last assistant keeps
-    // streaming its body (tools do not fold it mid-message), its justification
+    // Sorted live-body reveal owner: while the streaming last assistant's body
+    // is revealed (live phase, no continuation tools yet), its justification
     // rows must be withheld from Activity or the same paragraph renders twice
-    // (body of the streaming message + Activity group on the anchor).
+    // (body of the streaming message + Activity group on the anchor). Once a
+    // continuation tool arrives the reveal is withdrawn and the text folds
+    // back into Activity.
     const liveRevealBodyMessageId = React.useMemo(() => {
         return resolveLiveRevealBodyMessageId({
             chatRenderMode,
@@ -1001,7 +1006,7 @@ const TurnBlock = React.memo(({
                 isFirstAssistantInTurn: isFirstAssistant,
                 isLastAssistantInTurn: isLastAssistant,
                 isLatestTurn: isLastTurn,
-                isWorking: isLastTurn && sessionIsWorking && (
+                isWorking: (isLastTurn || turn.completionDisposition === 'active') && sessionIsWorking && (
                     chatRenderMode === 'sorted'
                         ? hasAnchoredActivitySegment
                         : message.info.id === streamingAssistantMessageId
