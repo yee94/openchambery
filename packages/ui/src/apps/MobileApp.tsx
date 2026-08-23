@@ -338,7 +338,10 @@ const useNativeMobileChrome = (): void => {
       await Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined);
 
       const KB_ANIM_MS = 250;
-      const KB_HIDE_MS = 200;
+      // How long the hide curtain stays painted after the instant fallback:
+      // roughly one UIKit keyboard fade-out, covering the seam the fade can
+      // expose below the already-resting composer.
+      const KB_HIDE_CURTAIN_MS = 260;
       const KB_ANIM_EASING = 'cubic-bezier(0.38, 0.7, 0.125, 1)';
       let settleTimer: number | null = null;
       let caretTimer: number | null = null;
@@ -842,24 +845,20 @@ const useNativeMobileChrome = (): void => {
           root.classList.remove('oc-kb-animating');
           setVar('--oc-kb-layout', 0);
           layoutApplied = false;
-          for (const { el, factor } of getKbMovers()) {
-            el.style.transition = 'none';
-            el.style.transform = `translateY(${-slide * factor}px)`;
-          }
-          void (document.querySelector('.oc-mobile-app-shell') as HTMLElement | null)?.offsetHeight;
         }
-        dispatchKb('oc:keyboard-anim', { phase: 'hide', slide, durationMs: KB_HIDE_MS, easing: KB_ANIM_EASING });
+        // Instant fallback: movers drop straight to rest with no transition so
+        // the composer answers the dismiss gesture in the same frame. The old
+        // KB_HIDE_MS tween stacked behind busy main-thread frames (streaming
+        // merge + render) and read as a ~500ms lag. UIKit still animates the
+        // keyboard itself; the curtain below keeps covering the fade-out seam.
+        clearKbMovers();
+        dispatchKb('oc:keyboard-anim', { phase: 'hide', slide, durationMs: 0, easing: KB_ANIM_EASING });
         root.classList.add('oc-kb-animating', 'oc-kb-hide');
-        for (const { el } of getKbMovers()) {
-          el.style.transition = `transform ${KB_HIDE_MS}ms ${KB_ANIM_EASING}`;
-          el.style.transform = 'translateY(0px)';
-        }
         settleTimer = window.setTimeout(() => {
           settleTimer = null;
           root.classList.remove('oc-kb-animating', 'oc-kb-hide');
-          clearKbMovers();
           dispatchKb('oc:keyboard-settled', { open: false });
-        }, KB_HIDE_MS + 20);
+        }, KB_HIDE_CURTAIN_MS);
       };
 
       const hideHandle = await Keyboard.addListener('keyboardWillHide', runHide);

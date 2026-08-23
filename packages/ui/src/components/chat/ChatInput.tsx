@@ -6186,7 +6186,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         mobileComposerExpandedRef.current = false;
         mobileExpandIntentRef.current = null;
         setMobileComposerChrome('none');
-        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        // Native shells collapse without the conceal motion: the tween sat
+        // behind busy main-thread frames (streaming merge + render) and read
+        // as a ~500ms lag, so the pill must land in the same frame instead.
+        // The browser PWA keeps the animated path (resize-driven keyboards).
+        if (isCapacitorApp() || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
             setMobileComposerExpanded(false);
             setMobileComposerChrome('collapsed');
             setExpandedInput(false);

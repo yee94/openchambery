@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.59] - 2026-08-23
+
+### 移动端
+
+- **键盘收起即时归位，不再有约 500ms 迟滞感：** 收起的 200ms 补间会排在繁忙主线程帧（流式合并 + 渲染）后面，读起来像卡顿。现在 mover 同帧直接落位，键盘本体的 UIKit 淡出缝隙由 260ms 遮罩帘盖住。
+- **原生壳内 composer 收起去掉隐藏动画：** 同样因补间排在忙帧后面造成迟滞，Capacitor 壳内 pill 与输入框同帧收起；浏览器 PWA 保留动画路径。
+
 ## [1.18.2-beta.58] - 2026-08-23
 
 ### 移动端
