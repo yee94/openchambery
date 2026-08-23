@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.60] - 2026-08-23
+
+### 移动端
+
+- **半浮层标题栏 action 不再单独占一行：** 文件预览的复制内容 / 复制路径、目录选择器的「显示隐藏」都收到 close 左侧同一行，不再在标题下再起一行图标。
+
 ## [1.18.2-beta.59] - 2026-08-23
 
 ### 移动端

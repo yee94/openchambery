@@ -31,6 +31,7 @@ const chatInputSource = readFileSync(join(__dirname, '../chat/ChatInput.tsx'), '
 const branchSelectorSource = readFileSync(join(__dirname, '../views/git/BranchSelector.tsx'), 'utf-8');
 const mobileStylesSource = readFileSync(join(__dirname, '../../styles/mobile.css'), 'utf-8');
 const mobileOverlayPanelSource = readFileSync(join(__dirname, 'MobileOverlayPanel.tsx'), 'utf-8');
+const mobileFilesSurfaceSource = readFileSync(join(__dirname, '../../apps/MobileFilesSurface.tsx'), 'utf-8');
 
 describe('MobileWindowMotion recipe', () => {
   test('maps every edge to its closed transform', () => {
@@ -116,7 +117,11 @@ describe('MobileWindowMotion recipe', () => {
   test('keeps compact resizable sheets content-sized below the collapsed maximum', () => {
     expect(mobileResizableSheetSource).toContain("? 'h-auto max-h-[72dvh]'");
     expect(mobileResizableSheetSource).toContain('trailing?: React.ReactNode;');
-    expect(mobileResizableSheetSource).toContain('{trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}');
+    expect(mobileResizableSheetSource).toContain('{trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}\n                <div ref={setHeaderActionsSlot} className="contents" />');
+    expect(mobileResizableSheetSource).toContain('export const MobileSheetHeaderActions');
+    expect(mobileResizableSheetSource).toContain('return createPortal(');
+    expect(mobileFilesSurfaceSource).toContain('<MobileSheetHeaderActions>');
+    expect(mobileFilesSurfaceSource).not.toContain('justify-end gap-1 px-3 pb-1');
     expect(mobileResizableSheetSource).not.toContain('border-b border-border/40');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('rounded-t-2xl');
   });
