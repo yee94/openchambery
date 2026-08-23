@@ -28,10 +28,25 @@ function mountStyledFixture(html: string): HTMLElement {
       }
       :root.mobile-pointer:not(.desktop-runtime) [data-composer-content="true"] .overflow-hidden,
       :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"],
-      :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden {
+      :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden,
+      :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"],
+      :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"].overflow-hidden {
         overflow: hidden !important;
         overflow-x: hidden !important;
         overflow-y: hidden !important;
+      }
+      :root.mobile-pointer:not(.desktop-runtime)
+        [data-attachment-preview="true"]
+        button,
+      :root.mobile-pointer:not(.desktop-runtime)
+        [data-attachment-preview="true"][role="button"] {
+        min-height: 0 !important;
+        min-width: 0 !important;
+      }
+      :root.mobile-pointer:not(.desktop-runtime) button,
+      :root.mobile-pointer:not(.desktop-runtime) [role="button"] {
+        min-height: 36px;
+        min-width: 36px;
       }
       :root.mobile-pointer:not(.desktop-runtime) .flex.flex-col {
         min-height: 0;
@@ -54,9 +69,13 @@ describe('mobile composer overflow contract', () => {
     test('opts composer clip shells out of the generic overflow-hidden rewrite', () => {
         expect(mobileCss).toContain('[data-composer-input-shell="true"]');
         expect(mobileCss).toContain('[data-composer-content="true"] .overflow-hidden');
+        expect(mobileCss).toContain('[data-attachment-preview="true"]');
         expect(mobileCss).toContain('Composer clip shells must stay clippers');
         expect(mobileCss).toContain('min-height: min-content');
         expect(mobileCss).toContain('.oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)');
+        expect(mobileCss).toContain('[data-composer-highlight="true"]');
+        expect(mobileCss).toContain('font-size: calc(16 * var(--dpt)) !important');
+        expect(mobileCss).not.toContain('[data-chat-input-highlight="true"]');
     });
 
     test('composer overflow-hidden wrappers stay clippers under mobile-pointer', () => {
@@ -83,5 +102,29 @@ describe('mobile composer overflow contract', () => {
             </div>
         `);
         expect(getComputedStyle(host.querySelector('[data-testid="surface"]')!).minHeight).toBe('min-content');
+    });
+
+    test('attachment preview thumbs stay clippers and keep compact close controls', () => {
+        const host = mountStyledFixture(`
+            <div data-attachment-preview="true" class="overflow-hidden" data-testid="thumb" role="button">
+                <button type="button" data-testid="close">x</button>
+            </div>
+            <div class="overflow-hidden" data-testid="unrelated"></div>
+        `);
+
+        expect(getComputedStyle(host.querySelector('[data-testid="thumb"]')!).overflowY).toBe('hidden');
+        expect(['0', '0px']).toContain(getComputedStyle(host.querySelector('[data-testid="close"]')!).minHeight);
+        expect(getComputedStyle(host.querySelector('[data-testid="unrelated"]')!).overflowY).toBe('auto');
+    });
+
+    test('composer highlight overlay shares the textarea --dpt font-size', () => {
+        const highlightRule = mobileCss.slice(
+            mobileCss.indexOf('Fix mobile text inputs'),
+            mobileCss.indexOf('Prevent keyboard on non-input elements'),
+        );
+        expect(highlightRule).toContain('[data-composer-highlight="true"]');
+        expect(highlightRule).toContain('font-size: calc(16 * var(--dpt)) !important');
+        expect(highlightRule).not.toContain('font-size: 16px');
+        expect(highlightRule).not.toContain('data-chat-input-highlight');
     });
 });

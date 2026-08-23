@@ -2084,22 +2084,20 @@ button.oc-mobile-worktree-label-trigger:active,
      argument (input[type="text"] → 0,1,1), lifting this rule to (0,4,1) so it
      beats the typography `unset !important` compat block above (0,4,0) —
      without that, textareas with typography-* classes fell back to inherited
-     root 16px and ignored this iOS-zoom-safe calc size entirely. */
+     root 16px and ignored this iOS-zoom-safe calc size entirely.
+     The highlight overlay must share this size: the textarea is
+     text-transparent and only paints the caret, so a 16px overlay against a
+     calc(16 * var(--dpt)) field puts the caret in the wrong place. */
   :root.mobile-pointer:not(.desktop-runtime)
     :is(
       input[type="text"],
       input[type="search"],
       input[type="email"],
       input[type="password"],
-      textarea
-    ),
-  :root.mobile-pointer:not(.desktop-runtime) [data-chat-input-highlight="true"] {
+      textarea,
+      [data-composer-highlight="true"]
+    ) {
     font-size: calc(16 * var(--dpt)) !important; /* Prevents iOS zoom */
-  }
-
-  :root.mobile-pointer:not(.desktop-runtime)
-    [data-chat-input-highlight="true"] {
-    font-size: 16px !important;
   }
 
   /* Prevent keyboard on non-input elements */
@@ -2290,10 +2288,24 @@ button.oc-mobile-worktree-label-trigger:active,
      and absorb growth so the field no longer auto-expands. */
   :root.mobile-pointer:not(.desktop-runtime) [data-composer-content="true"] .overflow-hidden,
   :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"],
-  :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden {
+  :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"].overflow-hidden {
     overflow: hidden !important;
     overflow-x: hidden !important;
     overflow-y: hidden !important;
+  }
+
+  /* Attachment thumbs are 40px clip frames. The generic 36px touch min
+     inflates the close control past the chip and, with the overflow
+     rewrite, paints a scrollbar on the thumbnail. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-attachment-preview="true"]
+    button,
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-attachment-preview="true"][role="button"] {
+    min-height: 0 !important;
+    min-width: 0 !important;
   }
 
   /* Keep markdown code blocks horizontally scrollable on mobile. */
@@ -3319,7 +3331,9 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-composer-collapsed [data-composer-highlight="true"] {
-  top: calc(50% - 0.625rem);
+  /* Half of the collapsed 1.25rem line; ride --padding-scale so this
+     stays centered after geometry rem rewrite on height/line-height. */
+  top: calc(50% - (0.625rem * var(--padding-scale, 1)));
   bottom: auto;
 }
 

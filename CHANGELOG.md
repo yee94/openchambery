@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.55] - 2026-08-23
+
+### 聊天
+
+- **修复加附件 chip 后输入框字突然变大、光标错位：** 附件 citation 会打开高亮层（textarea 变透明、只画光标）。高亮层此前没命中真实的 `data-composer-highlight`，还被钉死成 16px，Android 上和已缩放的 textarea（约 14.4px）对不上。现在两层共用 `calc(16 * var(--dpt))`；收起态高亮垂直居中也跟 `--padding-scale` 走。
+- **修复附件缩略图右侧出现滚动条：** 40px 预览图被通用 `.overflow-hidden → overflow-y: auto` 改成滚动容器，关闭按钮又被 36px 最小触控撑破。预览图标记为裁剪框并退出触控最小值。
+- **流式输出时输入框仍能随内容长高：** 运行中不再跳过 ResizeObserver，只跳过同步强制测量；中途长高仍会发布舞台高度。
+
+### 移动端
+
+- **OTA 已装包上报发行版本号：** 已下载的 Capgo bundle 优先报 `version`（下载时的 releaseVersion），不再只报不透明 hex id，更新检查与 changelog 区间过滤才能对上当前包。
+
 ## [1.18.2-beta.54] - 2026-08-23
 
 ### 聊天

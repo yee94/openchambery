@@ -115,19 +115,27 @@ describe('mobile OTA coordinator', () => {
   });
 
   test('builtin Capgo id reports the baked release version so same-version OTA is not re-offered', () => {
-    expect(resolveReportedBundleId('builtin', '1.18.2-beta.36')).toBe('1.18.2-beta.36');
+    expect(resolveReportedBundleId({ id: 'builtin', version: 'builtin' }, '1.18.2-beta.36')).toBe('1.18.2-beta.36');
     expect(resolveReportedBundleId(null, '1.18.2-beta.36')).toBe('1.18.2-beta.36');
-    expect(resolveReportedBundleId('c02a8f76562d97ec', '1.18.2-beta.36')).toBe('c02a8f76562d97ec');
-    expect(resolveReportedBundleId('builtin', null)).toBe('builtin');
+    expect(resolveReportedBundleId({ id: 'builtin' }, '1.18.2-beta.36')).toBe('1.18.2-beta.36');
+    expect(resolveReportedBundleId({ id: 'builtin', version: 'builtin' }, null)).toBe('builtin');
   });
 
-  test('uses current Capgo bundle id when present', async () => {
+  test('installed bundle reports its release version so changelog filtering anchors on it', () => {
+    // The plugin's `version` is the releaseVersion the bundle was downloaded
+    // with; the server parses it for "already current" and changelog ranges.
+    expect(resolveReportedBundleId({ id: 'c02a8f76562d97ec', version: '1.18.2-beta.36' }, '1.18.1')).toBe('1.18.2-beta.36');
+    // Legacy bundles without a usable version fall back to the hex id.
+    expect(resolveReportedBundleId({ id: 'c02a8f76562d97ec' }, '1.18.2-beta.36')).toBe('c02a8f76562d97ec');
+  });
+
+  test('uses current Capgo bundle version when present', async () => {
     mocks.updater.current.mockResolvedValue({
       bundle: { id: '34ab092a', version: '1.18.3' },
       native: '1.2.3',
     });
     const body = await assembleMobileOtaCheckRequest({ updater: mocks.updater });
-    expect(body.currentBundleId).toBe('34ab092a');
+    expect(body.currentBundleId).toBe('1.18.3');
   });
 
   test('dual-URL failover: first fetch fails, second succeeds', async () => {

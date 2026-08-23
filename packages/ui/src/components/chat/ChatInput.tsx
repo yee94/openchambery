@@ -6615,8 +6615,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (!isMobile || !mobileComposerExpanded || mobileComposerMotion !== 'idle') return;
         // Streaming dirties the transcript continuously. A same-draft cached
         // stage avoids forcing that document-wide layout at the interaction
-        // boundary; the effect re-arms and measures when activity settles.
-        if (sessionIsRunning && mobileComposerMeasuredStageScopeRef.current === mobileComposerStageScope) return;
+        // boundary; the observer must still attach so autosize growth mid-run
+        // keeps publishing (ResizeObserver delivers sizes without a forced
+        // synchronous layout, so observing stays cheap while cached).
+        const cachedStage = sessionIsRunning && mobileComposerMeasuredStageScopeRef.current === mobileComposerStageScope;
         const composerSurface = dropZoneRef.current;
         if (!composerSurface) return;
         const publishHeight = () => {
@@ -6624,7 +6626,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             mobileComposerMeasuredStageScopeRef.current = mobileComposerStageScope;
             setMobileComposerStageHeight((height) => height === nextHeight ? height : nextHeight);
         };
-        publishHeight();
+        if (!cachedStage) publishHeight();
         const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(publishHeight) : null;
         observer?.observe(composerSurface);
         return () => observer?.disconnect();

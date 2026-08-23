@@ -278,6 +278,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         event.stopPropagation();
         longPressRef.current.openFromContextMenu(longPressKey, openSaveActions);
       }}
+      data-attachment-preview="true"
       className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       aria-label={displayName}
     >

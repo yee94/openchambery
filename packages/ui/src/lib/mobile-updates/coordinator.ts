@@ -154,12 +154,21 @@ const resolveNativeInfo = async (): Promise<{ version: string; build: number }> 
  * service treats `currentBundleId === activeBundle.releaseVersion` as already
  * current, so a builtin shell must report the baked `__APP_VERSION__` or it
  * will be offered the same zip forever (iOS 1.18.2-beta.36 → 1.18.2-beta.36).
+ *
+ * An installed OTA bundle reports the plugin's `version` (the releaseVersion
+ * it was downloaded with) in preference to the opaque hex `id`: the update
+ * service accepts either identity for "already current", but only the
+ * releaseVersion parses server-side and anchors changelog range filtering.
+ * A hex id left iOS with no parseable current version (its marketing version
+ * strips `-beta.N`), collapsing its release notes to the latest section only.
  */
 export const resolveReportedBundleId = (
-  capgoBundleId: string | null | undefined,
+  capgoBundle: { id?: string | null; version?: string | null } | null | undefined,
   bundledReleaseVersion: string | null | undefined,
 ): string => {
-  const id = nonEmptyString(capgoBundleId);
+  const version = nonEmptyString(capgoBundle?.version);
+  if (version && version !== 'builtin') return version;
+  const id = nonEmptyString(capgoBundle?.id);
   if (id && id !== 'builtin') return id;
   return nonEmptyString(bundledReleaseVersion) ?? 'builtin';
 };
@@ -173,7 +182,7 @@ const resolveCurrentBundleId = async (updater: CapgoUpdater | null): Promise<str
   if (!updater) return resolveReportedBundleId(null, bundled);
   try {
     const current = await updater.current();
-    return resolveReportedBundleId(current.bundle?.id, bundled);
+    return resolveReportedBundleId(current.bundle, bundled);
   } catch {
     return resolveReportedBundleId(null, bundled);
   }

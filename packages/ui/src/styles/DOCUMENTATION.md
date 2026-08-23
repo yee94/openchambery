@@ -60,6 +60,7 @@ Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h
 | Composer agent + model chips | `.composer-mobile-model-controls button` | `mobile.css` |
 | Message action / footer icons | `[data-message-action-group="true"] button` | `mobile.css` |
 | Composer queued-message chips | `.oc-composer-queue button` / `[role="button"]` | `mobile.css` |
+| Composer attachment thumbs | `[data-attachment-preview="true"] button` | `mobile.css` |
 
 Typical opt-out:
 
@@ -129,6 +130,7 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 |---|---|
 | `[data-composer-content="true"] .overflow-hidden` | Input column clipper |
 | `[data-composer-input-shell="true"]` and its `.overflow-hidden` child | Highlight overlay + textarea host |
+| `[data-attachment-preview="true"]` | 40px image chip above the composer; must not become a scrollport |
 
 If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` also opts out of `:root.mobile-pointer .flex.flex-col { min-height: 0 }` with `min-height: min-content`, so the fixed stage viewport cannot shrink the card below its content.
 
@@ -143,6 +145,12 @@ Android at `0.9` as a visibility experiment. iOS stays `1`.
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.
 It does not touch `1px` hairlines, media queries, safe-area, or keyboard
 insets. Layout spacing stays CSS px/rem.
+
+The composer highlight overlay (`[data-composer-highlight="true"]`) must
+use the same `calc(16 * var(--dpt))` as the textarea. Attachment chips
+turn the overlay on (textarea becomes `text-transparent`); a 16px overlay
+against a 14.4px field looks like the font suddenly grew and puts the
+caret in the wrong place.
 
 ## Related owners
 
