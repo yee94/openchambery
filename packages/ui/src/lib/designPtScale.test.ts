@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { applyDesignPtScaleToRoot, clampDesignPtScale, computeDesignPtScale } from './designPtScale';
+import {
+  applyDesignPtScaleToRoot,
+  clampDesignPtScale,
+  computeDesignPtScale,
+  readCachedDesignPtScale,
+} from './designPtScale';
 
 describe('computeDesignPtScale', () => {
   test('returns the Android experiment cap when metrics are missing or dirty', () => {
@@ -26,5 +31,16 @@ describe('computeDesignPtScale', () => {
     applyDesignPtScaleToRoot(0.9, root);
     expect(root.style.getPropertyValue('--dpt')).toBe('0.9px');
     expect(root.style.getPropertyValue('--dpt-n')).toBe('0.9');
+  });
+
+  test('device-info resize restore never exceeds the Android cap from stale cache', () => {
+    window.localStorage.setItem('openchamber.designPtScale.v1', '1.04');
+    (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = {
+      getPlatform: () => 'android',
+    };
+    expect(readCachedDesignPtScale()).toBe(0.9);
+    window.localStorage.removeItem('openchamber.designPtScale.v1');
+    expect(readCachedDesignPtScale()).toBe(0.9);
+    (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor = undefined;
   });
 });

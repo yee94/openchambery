@@ -35,7 +35,14 @@ export function computeDesignPtScale(metrics: PhysicalScaleMetrics | null | unde
 export function readCachedDesignPtScale(): number {
   if (typeof window === 'undefined') return 1;
   try {
-    return clampDesignPtScale(Number.parseFloat(window.localStorage.getItem(DESIGN_PT_STORAGE_KEY) ?? ''));
+    const raw = Number.parseFloat(window.localStorage.getItem(DESIGN_PT_STORAGE_KEY) ?? '');
+    // Android Capacitor must never restore a pre-cap cache (e.g. 1.04 written
+    // by early physical-math builds) above the experiment ceiling.
+    const capacitor = (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+    if (capacitor?.getPlatform?.() === 'android') {
+      return Math.min(ANDROID_DESIGN_PT_SCALE_MAX, clampDesignPtScale(raw));
+    }
+    return clampDesignPtScale(raw);
   } catch {
     return 1;
   }
