@@ -18,9 +18,9 @@
 
 | 情况 | 产物 | Tag | 触发 |
 |---|---|---|---|
-| 默认新版本（含 web/UI，即使 `mode: "ota"`） | 桌面 macOS/Win/Linux + Android APK/AAB + npm + 同版本 OTA，给首次下载的人。**beta 不发 iOS / 不打 TestFlight**。 | `vX.Y.Z-beta.N` | `release.yml`（含 `mobile-native-targets`） |
-| 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
-| 稳定版，或用户明确要 TestFlight | 完整原生 + 桌面；iOS 上传 TestFlight | `vX.Y.Z` / `vX.Y.Z-beta.N` | `release.yml`（`build_ios: true`） |
+| 默认新版本（含 web/UI，即使 `mode: "ota"`） | 桌面 macOS/Win/Linux + Android APK/AAB + npm + 同版本 OTA + iOS 内测 TestFlight，给首次下载的人。 | `vX.Y.Z-beta.N` | `release.yml`（含 `mobile-native-targets`） |
+| 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA（无 iOS） | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
+| 稳定版 | 完整原生 + 桌面；iOS 上传 TestFlight 并关联外测组（Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
 | 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
 
 默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。
@@ -78,7 +78,7 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**beta / prerelease 默认不构建 iOS**，避免 TestFlight 额度挡住安装包；稳定版仍上传 TestFlight。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**所有 `v*`（含 beta）都构建并上传 iOS 到 TestFlight**：beta 走内测，不关联外测组、不提 Beta App Review；稳定版额外关联外测组。只有 `mobile-beta/*` OTA-only tag 不涉及 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
 
 npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@openchambery/web`。
 
@@ -99,7 +99,7 @@ npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publis
 2. 依赖 `release.yml`：含 `-` 的版本创建/发布 GitHub Release 时设置 `prerelease: true`，从而**不会**成为 `/releases/latest`。
 3. 依赖 finalize-release **跳过** `deploy/update-service/release-manifest.json` 写入；`write-release-manifest.mjs` 对 prerelease 直接 exit 0。Agent 不得手工把该 manifest 改成 beta 版本并推送。
 4. 保持 Electron `autoUpdater.allowPrerelease = false`（稳定客户端不订阅 prerelease）。
-5. beta / prerelease **默认不构建、不上传 iOS**，避免 TestFlight 额度挡住桌面 / APK / OTA。稳定版仍上传 TestFlight。若要把某个 beta 打进内测，单独跑 `mobile-release.yml` 并打开 `build_ios`。**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review。
+5. beta `v*` **默认构建并上传 iOS 到 TestFlight 内测**（仅 OTA-only 的 `mobile-beta/*` 无 iOS）。**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review（外测组仅稳定版）。iOS 上传失败只影响内测可见性，重跑 `--failed` 即可；桌面 / APK / npm 不受影响。
 
 **发布时禁止**
 

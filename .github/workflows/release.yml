@@ -549,10 +549,11 @@ jobs:
       release_tag: v${{ needs.create-release.outputs.version }}
       upload_github_release: true
       build_android: true
-      # Beta / prerelease skips iOS entirely so TestFlight upload limits cannot
-      # block desktop + APK + OTA. Stable still builds iOS and may publish the
-      # external group. Opt back into a beta IPA via mobile-release.yml.
-      build_ios: ${{ !contains(needs.create-release.outputs.version, '-') }}
+      # All v* releases (beta + stable) build iOS and upload to TestFlight so
+      # mobile testers get native shells too. Betas stay internal-only: the
+      # external group and Beta App Review remain stable-only so review delays
+      # cannot block a beta. Only OTA-only tags (mobile-beta/*) skip iOS.
+      build_ios: true
       publish_external_testflight: ${{ !contains(needs.create-release.outputs.version, '-') }}
       # Bake OTA channel into the native shell at mobile:sync. Prerelease tags
       # stay on beta; plain semver store builds use stable.
@@ -694,10 +695,10 @@ jobs:
           set -euo pipefail
           OUT="$RUNNER_TEMP/ota-native-targets"
           ANDROID_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
-          # Fixed TestFlight public link (stable external group). Beta v* skips
-          # iOS, so do not advertise a native iOS target that was never uploaded.
+          # Fixed TestFlight public link (stable external group). All v*
+          # releases upload iOS, so advertise the native iOS target every time.
           IOS_URL="https://testflight.apple.com/join/ZCENBHtm"
-          BUILD_IOS="${{ !contains(needs.create-release.outputs.version, '-') }}"
+          BUILD_IOS="true"
           PLAN_JSON="$(node scripts/mobile-release-plan.mjs --json)"
           PLAN_MODE="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).mode || '')" "$PLAN_JSON")"
           echo "mobile-release-plan mode=$PLAN_MODE"
