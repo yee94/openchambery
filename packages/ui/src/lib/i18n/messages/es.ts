@@ -2152,6 +2152,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.placeholder.shell": "Escribe un comando de shell...",
   "chat.chatInput.placeholder.chat": "@ para archivos/agentes; / para comandos y habilidades; ! para shell; # para snippets",
   "chat.chatInput.placeholder.chatCompact": "Usa @ / ! # para ayudas",
+  "chat.chatInput.placeholder.compactTap": "Toca para escribir",
   "chat.chatInput.placeholder.selectSession": "Selecciona o crea una sesión para comenzar a chatear",
   "chat.chatInput.pastedTextReference": "Texto pegado #{index} · {count} caracteres",
   "chat.snippetAutocomplete.action.addNew": "+ Agregar nuevo snippet",

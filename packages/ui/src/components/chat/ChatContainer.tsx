@@ -51,6 +51,7 @@ import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import { useMobileComposerSwap } from './useMobileComposerSwap';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
 import { createAssistantSessionDivider, mergeHostedCurrentSessionHistory, stitchHostedSessionHistory } from './hostedSessionHistory';
 import type { ChatMessageEntry } from './lib/turns/types';
@@ -434,7 +435,9 @@ const ChatViewport = React.memo(({
         >
             <div className="absolute inset-0">
                 <ScrollShadow
-                    className="absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll oc-chat-composer-scroll-source overlay-scrollbar-target"
+                    className={cn(
+                        'absolute inset-0 overflow-y-auto overflow-x-hidden z-0 chat-scroll overlay-scrollbar-target',
+                    )}
                     ref={scrollRef}
                     style={CHAT_SCROLL_STYLE}
                     observeMutations={false}
@@ -1218,11 +1221,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         onActiveTurnChange: handleActiveTurnChange,
         onUpwardUserIntent: handleHistoryUpwardIntentBridge,
     });
-    const promptSurface = promptAvailability.showReadOnlyBanner
-        ? readOnlyPromptBanner
-        : readOnly
-            ? null
-            : <ChatInput surface={composerSurface} scrollToBottom={scrollToBottomOnSend} submissionBlocked={promptAvailability.blockSubmission} />;
+    const composerSwapScopeRef = React.useRef<HTMLDivElement>(null);
+    useMobileComposerSwap({ enabled: isMobile, scrollRef, scopeRef: composerSwapScopeRef });
 
     const historyPrefixCacheRef = React.useRef<ChatMessageEntry[]>([]);
     const historyPrefix = React.useMemo(() => {
@@ -1411,6 +1411,21 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         scrollToMessage: timelineController.scrollToMessage,
         resumeToBottom: timelineController.resumeToBottomInstant,
     });
+    // Expanded scroll-to-bottom stays a foot sibling (original bottom-full mb-2).
+    // Compact scroll-to-bottom is mounted on the pill inside ChatInput.
+    const promptSurface = promptAvailability.showReadOnlyBanner
+        ? readOnlyPromptBanner
+        : readOnly
+            ? null
+            : (
+                <ChatInput
+                    surface={composerSurface}
+                    scrollToBottom={scrollToBottomOnSend}
+                    showScrollToBottom={isMobile && timelineController.showScrollToBottom}
+                    onScrollToBottom={navigation.resumeToLatest}
+                    submissionBlocked={promptAvailability.blockSubmission}
+                />
+            );
     const handlePromptNavigatorSelect = useEvent((turnId: string) => {
         void navigation.scrollToTurnId(turnId, { behavior: 'smooth' });
     });
@@ -1777,9 +1792,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 		}
 
 		return (
-			// No transform on this root: it would become the containing block for
-			// the fullscreen composer's position:fixed visual-viewport pinning in
-			// mobile browsers (see ChatInput's composerFormRef effect).
 			<div className="relative flex h-full flex-col bg-background">
 				{useCompactDraftLayout && !isDesktopExpandedInput ? (
 					<div className="oc-draft-center flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
@@ -1876,7 +1888,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
 	if (isSessionHydrating) {
 		return (
-			<div className="oc-chat-composer-timeline-scope relative flex flex-col h-full bg-background">
+			<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background', isMobile && 'oc-chat-composer-swap-scope')}>
 				{returnToParentButton}
 				<div
 					className={cn(
@@ -1887,7 +1899,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     )}
                     aria-hidden={isDesktopExpandedInput}
                 >
-                    <div className="absolute inset-0 overflow-y-auto overflow-x-hidden bg-background pt-6 chat-scroll oc-chat-composer-scroll-source" style={CHAT_SCROLL_STYLE}>
+                    <div ref={scrollRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden bg-background pt-6 chat-scroll" style={CHAT_SCROLL_STYLE}>
                         <div className="space-y-4 chat-scroll-foot-inset">
                             {HYDRATING_SKELETON_ITEMS.map((item) => (
                                 <div key={item.id} className="group w-full">
@@ -1969,7 +1981,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }
 
 	return (
-		<div className="oc-chat-composer-timeline-scope relative flex flex-col h-full bg-background">
+		<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background', isMobile && 'oc-chat-composer-swap-scope')}>
 			{warning ? (
 				<div className="shrink-0 border-b border-border bg-[var(--status-warning-background)] px-4 py-2.5 typography-meta text-[var(--status-warning-foreground)]">
 					{warning}
@@ -2021,10 +2033,18 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 )}
             >
                 {!isDesktopExpandedInput && renderedViewportMessages.length > 0 && (
-                    <ScrollToBottomButton
-                        visible={timelineController.showScrollToBottom}
-                        onClick={navigation.resumeToLatest}
-                    />
+                    isMobile ? (
+                        <ScrollToBottomButton
+                            placement="expanded"
+                            visible={timelineController.showScrollToBottom}
+                            onClick={navigation.resumeToLatest}
+                        />
+                    ) : (
+                        <ScrollToBottomButton
+                            visible={timelineController.showScrollToBottom}
+                            onClick={navigation.resumeToLatest}
+                        />
+                    )
                 )}
                 {promptSurface}
             </div>

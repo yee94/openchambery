@@ -2140,6 +2140,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.placeholder.shell': '输入 shell 命令...',
   'chat.chatInput.placeholder.chat': '@ 用于文件/Agent；/ 用于命令和技能；! 用于 shell；# 用于代码片段',
   'chat.chatInput.placeholder.chatCompact': '使用 @ / ! # 辅助',
+  'chat.chatInput.placeholder.compactTap': '点击输入',
   'chat.chatInput.placeholder.selectSession': '选择或创建会话以开始聊天',
   'chat.chatInput.pastedTextReference': '已粘贴文本 #{index} · {count} 个字符',
   'chat.dictation.start': '开始语音输入',

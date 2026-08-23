@@ -3065,50 +3065,29 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: none;
 }
 
-@property --oc-mobile-composer-shrink {
+@property --oc-mobile-composer-swap {
   syntax: "<number>";
   inherits: true;
   initial-value: 0;
 }
 
-/* The base contract is fully expanded. Browsers with scroll timelines enhance
-   this state below; an inactive or unsupported timeline therefore stays safe. */
-.oc-chat-composer-timeline-scope {
+/* The transcript keeps one fixed reservation while the two Composer layers
+   exchange through paint-only motion. */
+:root.mobile-pointer:not(.desktop-runtime) .oc-chat-composer-swap-scope {
   --oc-chat-foot-inset: calc(
     8rem + var(--oc-safe-area-bottom-visual, 0px)
   );
-  timeline-scope: --oc-chat-bottom;
 }
 
-.oc-chat-composer-scroll-source {
-  scroll-timeline-name: --oc-chat-bottom;
-  scroll-timeline-axis: block;
-}
-
-/* Floating input card: expanded/mid chrome stays solid. The terminal timeline
-   keyframe swaps these variables to the translucent compact material. */
 .oc-mobile-composer-surface {
-  --oc-mobile-composer-surface-fill: var(--surface-subtle);
-  --oc-mobile-composer-surface-backdrop: none;
-  --oc-mobile-composer-surface-height: auto;
-  --oc-mobile-composer-surface-min-height: min-content;
-  --oc-mobile-composer-attachment-display: flex;
-  --oc-mobile-composer-content-height: auto;
-  --oc-mobile-composer-content-justify: normal;
-  --oc-mobile-composer-footer-height: auto;
-  --oc-mobile-composer-footer-padding: 0.375rem;
-  --oc-mobile-composer-input-shell-max-height: none;
   z-index: 20;
   position: relative;
   width: 100%;
-  height: var(--oc-mobile-composer-surface-height);
-  min-height: var(--oc-mobile-composer-surface-min-height) !important;
+  min-height: min-content !important;
   max-height: min(70vh, 22rem);
   overflow: visible;
-  background: var(--oc-mobile-composer-surface-fill) !important;
-  background-color: var(--oc-mobile-composer-surface-fill) !important;
-  -webkit-backdrop-filter: var(--oc-mobile-composer-surface-backdrop) !important;
-  backdrop-filter: var(--oc-mobile-composer-surface-backdrop) !important;
+  background: var(--surface-subtle) !important;
+  background-color: var(--surface-subtle) !important;
   box-shadow: none !important;
   filter: none !important;
 }
@@ -3122,9 +3101,8 @@ button.oc-mobile-worktree-label-trigger:active,
   backdrop-filter: none !important;
 }
 
-/* Existing queue / changes / todos keep their visual chrome. Only this reveal
-   layer clips vertically; the input card and its motion viewport remain open. */
 .oc-mobile-composer-stack {
+  position: relative;
   width: 100%;
   min-width: 0;
 }
@@ -3138,12 +3116,6 @@ button.oc-mobile-worktree-label-trigger:active,
   max-height: none;
   visibility: visible;
   pointer-events: auto;
-}
-
-/* Every mobile composer starts fully expanded. The overlay modifier is reserved
-   for branches that also mount the named chat scroll source. */
-.oc-mobile-composer-foot {
-  --oc-mobile-composer-shrink: 0;
 }
 
 .oc-mobile-composer-foot--overlay {
@@ -3161,8 +3133,14 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: auto;
 }
 
+/* Expanded keeps the solid page foot fill. Compact fades the host so the
+   rising glass pill can sit over the transcript without a solid bar behind it. */
 .oc-mobile-composer {
-  --oc-mobile-composer-host-fill: var(--background);
+  --oc-mobile-composer-host-fill: color-mix(
+    in srgb,
+    var(--background) calc((1 - var(--oc-mobile-composer-swap, 0)) * 100%),
+    transparent
+  );
   background: var(--oc-mobile-composer-host-fill) !important;
   background-color: var(--oc-mobile-composer-host-fill) !important;
 }
@@ -3170,14 +3148,27 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-composer::after {
   background: var(--oc-mobile-composer-host-fill) !important;
   background-color: var(--oc-mobile-composer-host-fill) !important;
-  opacity: calc(1 - var(--oc-mobile-composer-shrink));
+  opacity: 1;
 }
 
-/* Scroll-to-bottom anchors above the fixed foot reservation. */
-.mobile-pointer:not(.desktop-runtime)
-  .oc-mobile-composer-foot--overlay
-  > button {
-  bottom: calc(var(--oc-chat-foot-inset) + 0.5rem);
+/* Expanded is a foot sibling. Overlay covers the chat, so `bottom-full` would
+   pin to the top of the overlay — keep the original foot-inset anchor + mb-2.
+   Sit above `.oc-mobile-composer::after` (z-index: 0 page-background fade) so
+   the control stays readable; that fade is background only. */
+.oc-mobile-composer-foot--overlay > .oc-scroll-to-bottom--expanded {
+  z-index: 30;
+  bottom: var(--oc-chat-foot-inset);
+  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+}
+
+/* Compact sits inside the pill trailing cluster; fade with the rise half. */
+.oc-scroll-to-bottom--compact {
+  opacity: max(0, calc(var(--oc-mobile-composer-swap) * 2 - 1));
+}
+
+.oc-scroll-to-bottom--hidden {
+  opacity: 0 !important;
+  pointer-events: none;
 }
 
 .mobile-pointer:not(.desktop-runtime) .chat-scroll-foot-inset {
@@ -3195,6 +3186,84 @@ button.oc-mobile-worktree-label-trigger:active,
   contain: layout;
 }
 
+/* Stagger the exchange so progress 0.5 never shows both layers at once:
+   0→0.5 only exits the expanded card; 0.5→1 only rises the compact pill. */
+.oc-mobile-composer-expanded-layer {
+  position: relative;
+  z-index: 20;
+  transform: translate3d(
+    0,
+    calc(min(1, var(--oc-mobile-composer-swap) * 2) * 110%),
+    0
+  );
+  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+  will-change: transform, opacity;
+}
+
+.oc-mobile-composer-compact-layer {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: var(--oc-safe-area-bottom-visual, 0px);
+  width: 80%;
+  height: 2.75rem;
+  /* Keep overflow visible so --oc-mobile-glass-shadow's outer drop can paint;
+     the preview child still clips the single-line text. */
+  overflow: visible;
+  border: 0;
+  border-radius: 1.5rem;
+  background: var(--oc-mobile-glass-fill);
+  box-shadow: var(--oc-mobile-glass-shadow);
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  transform: translate3d(
+    -50%,
+    calc((1 - max(0, var(--oc-mobile-composer-swap) * 2 - 1)) * 140%),
+    0
+  );
+  opacity: max(0, calc(var(--oc-mobile-composer-swap) * 2 - 1));
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.oc-mobile-composer-compact-preview {
+  position: absolute;
+  /* Leave room for attach (left) and trailing scroll/stop (right). */
+  inset: 0 2.75rem;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  overflow: hidden;
+  color: var(--foreground);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.oc-mobile-composer-compact-chrome--with-scroll
+  ~ .oc-mobile-composer-compact-preview {
+  right: 2.75rem;
+}
+
+.oc-mobile-composer-compact-chrome--aborting
+  ~ .oc-mobile-composer-compact-preview {
+  right: 2.75rem;
+}
+
+.oc-mobile-composer-compact-chrome--with-scroll.oc-mobile-composer-compact-chrome--aborting
+  ~ .oc-mobile-composer-compact-preview {
+  /* Attach left + scroll + stop on the right. */
+  right: 5rem;
+}
+
+.oc-mobile-composer-compact-preview--placeholder {
+  color: var(--muted-foreground);
+}
+
 /* Streaming turns relayout continuously while loading; layout containment on
    each turn wrapper keeps that damage — and composer height commits — inside
    the row instead of the whole document. Paint containment is deliberately
@@ -3204,370 +3273,72 @@ button.oc-mobile-worktree-label-trigger:active,
   contain: layout;
 }
 
-.oc-mobile-composer-full-chrome {
-  opacity: calc(1 - var(--oc-mobile-composer-shrink));
-  transform: translateY(calc(0.25rem * var(--oc-mobile-composer-shrink)));
-}
-
-.oc-mobile-composer-attachment-content {
-  display: var(--oc-mobile-composer-attachment-display);
-  opacity: calc(1 - var(--oc-mobile-composer-shrink));
-}
-
 .oc-mobile-composer-compact-chrome {
   position: absolute;
   z-index: 40;
-  right: 0.25rem;
-  bottom: 0.25rem;
-  left: 0.25rem;
+  inset: 0 0.25rem 0 0.625rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 2.25rem;
-  opacity: var(--oc-mobile-composer-shrink);
-  pointer-events: none;
-}
-
-.oc-mobile-composer-surface [data-composer-content="true"] {
-  height: var(--oc-mobile-composer-content-height);
-  justify-content: var(--oc-mobile-composer-content-justify);
-}
-
-.oc-mobile-composer-surface [data-chat-input-footer="true"] {
-  position: static;
-  height: var(--oc-mobile-composer-footer-height);
-  padding: var(--oc-mobile-composer-footer-padding) !important;
-}
-
-.oc-mobile-composer-surface [data-composer-input-shell="true"] {
-  max-height: var(--oc-mobile-composer-input-shell-max-height);
-  padding-inline: calc(2.5rem * var(--oc-mobile-composer-shrink));
+  height: 100%;
 }
 
 .oc-mobile-composer-surface textarea[data-chat-input="true"] {
-  height: var(
-    --oc-mobile-composer-textarea-height,
-    var(--oc-composer-textarea-resting-height, auto)
-  ) !important;
-  min-height: var(--oc-mobile-composer-textarea-min-height, 0) !important;
-  max-height: var(
-    --oc-mobile-composer-textarea-max-height,
-    var(--oc-composer-textarea-resting-max-height, none)
-  ) !important;
-  overflow: var(--oc-mobile-composer-textarea-overflow, auto) !important;
-  white-space: var(--oc-mobile-composer-textarea-white-space, pre-wrap) !important;
-  text-overflow: var(--oc-mobile-composer-textarea-text-overflow, clip);
-  padding-top: var(--oc-mobile-composer-textarea-padding-block, 0.625rem) !important;
-  padding-bottom: var(--oc-mobile-composer-textarea-padding-block, 0.625rem) !important;
-  padding-left: var(--oc-mobile-composer-textarea-padding-inline, 0.75rem) !important;
-  padding-right: var(--oc-mobile-composer-textarea-padding-inline, 0.75rem) !important;
-  line-height: var(--oc-mobile-composer-textarea-line-height, inherit) !important;
-  resize: var(--oc-mobile-composer-textarea-resize, none) !important;
   touch-action: manipulation;
 }
 
-.oc-mobile-composer-surface [data-composer-highlight="true"] {
-  top: var(--oc-mobile-composer-highlight-top, 0);
-  bottom: var(--oc-mobile-composer-highlight-bottom, 0);
+.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"] {
+  transition: --oc-mobile-composer-swap 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@keyframes oc-mobile-composer-progress {
-  from {
-    --oc-mobile-composer-shrink: 1;
-  }
-
-  to {
-    --oc-mobile-composer-shrink: 0;
-  }
+.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="tracking"] {
+  transition: none;
 }
 
-@keyframes oc-mobile-composer-reveal-endpoint {
-  0% {
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  0.01%,
-  99.99% {
-    overflow: hidden;
-    pointer-events: auto;
-  }
-
-  100% {
-    overflow: visible;
-    pointer-events: auto;
-  }
+/* Tracking: neither layer accepts taps mid-gesture. Snapping only disables the
+   exiting layer — the destination must stay interactive so a compact→expand
+   focus is not stolen by click-through onto the transcript scroller. */
+.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="tracking"]
+  :is(.oc-mobile-composer-expanded-layer, .oc-mobile-composer-compact-layer) {
+  pointer-events: none;
 }
 
-@keyframes oc-mobile-composer-terminal-viewport {
-  0% {
-    width: 80%;
-  }
-
-  0.01%,
-  100% {
-    width: 100%;
-  }
+.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"][data-oc-composer-swap-rest="expanded"]
+  .oc-mobile-composer-compact-layer,
+.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"][data-oc-composer-swap-rest="compact"]
+  .oc-mobile-composer-expanded-layer {
+  pointer-events: none;
 }
 
-@keyframes oc-mobile-composer-terminal-surface {
-  0% {
-    --oc-mobile-composer-surface-fill: color-mix(
-      in srgb,
-      var(--surface-subtle) 45%,
-      transparent
-    );
-    --oc-mobile-composer-surface-backdrop: blur(18px);
-    --oc-mobile-composer-surface-height: 2.75rem;
-    --oc-mobile-composer-surface-min-height: 2.75rem;
-    --oc-mobile-composer-attachment-display: none;
-    --oc-mobile-composer-content-height: 100%;
-    --oc-mobile-composer-content-justify: center;
-    --oc-mobile-composer-footer-height: 0;
-    --oc-mobile-composer-footer-padding: 0;
-    --oc-mobile-composer-input-shell-max-height: 1.25rem;
-    --oc-mobile-composer-textarea-height: 1.25rem;
-    --oc-mobile-composer-textarea-min-height: 1.25rem;
-    --oc-mobile-composer-textarea-max-height: 1.25rem;
-    --oc-mobile-composer-textarea-overflow: hidden;
-    --oc-mobile-composer-textarea-white-space: nowrap;
-    --oc-mobile-composer-textarea-text-overflow: ellipsis;
-    --oc-mobile-composer-textarea-padding-block: 0;
-    --oc-mobile-composer-textarea-padding-inline: 0.375rem;
-    --oc-mobile-composer-textarea-line-height: 1.25rem;
-    --oc-mobile-composer-textarea-resize: none;
-    --oc-mobile-composer-highlight-top: calc(
-      50% - (0.625rem * var(--padding-scale, 1))
-    );
-    --oc-mobile-composer-highlight-bottom: auto;
-  }
-
-  0.01%,
-  100% {
-    --oc-mobile-composer-surface-fill: var(--surface-subtle);
-    --oc-mobile-composer-surface-backdrop: none;
-    --oc-mobile-composer-surface-height: auto;
-    --oc-mobile-composer-surface-min-height: min-content;
-    --oc-mobile-composer-attachment-display: flex;
-    --oc-mobile-composer-content-height: auto;
-    --oc-mobile-composer-content-justify: normal;
-    --oc-mobile-composer-footer-height: auto;
-    --oc-mobile-composer-footer-padding: 0.375rem;
-    --oc-mobile-composer-input-shell-max-height: none;
-    --oc-mobile-composer-textarea-height: var(
-      --oc-composer-textarea-resting-height,
-      auto
-    );
-    --oc-mobile-composer-textarea-min-height: 0;
-    --oc-mobile-composer-textarea-max-height: var(
-      --oc-composer-textarea-resting-max-height,
-      none
-    );
-    --oc-mobile-composer-textarea-overflow: auto;
-    --oc-mobile-composer-textarea-white-space: pre-wrap;
-    --oc-mobile-composer-textarea-text-overflow: clip;
-    --oc-mobile-composer-textarea-padding-block: 0.625rem;
-    --oc-mobile-composer-textarea-padding-inline: 0.75rem;
-    --oc-mobile-composer-textarea-line-height: inherit;
-    --oc-mobile-composer-textarea-resize: none;
-    --oc-mobile-composer-highlight-top: 0;
-    --oc-mobile-composer-highlight-bottom: 0;
-  }
+.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="tracking"]
+  :is(.oc-scroll-to-bottom--expanded, .oc-scroll-to-bottom--compact),
+.oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"]
+  :is(.oc-scroll-to-bottom--expanded, .oc-scroll-to-bottom--compact) {
+  pointer-events: none;
 }
 
-@keyframes oc-mobile-composer-terminal-chrome {
-  0% {
-    visibility: hidden;
-    pointer-events: none;
-  }
-
-  0.01%,
-  100% {
-    visibility: visible;
-    pointer-events: auto;
-  }
+.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="compact"]
+  .oc-mobile-composer-expanded-layer,
+.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="expanded"]
+  .oc-mobile-composer-compact-layer {
+  pointer-events: none;
 }
 
-@keyframes oc-mobile-composer-compact-interaction {
-  0%,
-  99.99% {
-    pointer-events: auto;
-  }
-
-  100% {
-    pointer-events: none;
-  }
+.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="compact"]
+  .oc-scroll-to-bottom--expanded,
+.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="expanded"]
+  .oc-scroll-to-bottom--compact {
+  pointer-events: none;
 }
 
-@keyframes oc-mobile-composer-host-material {
-  0%,
-  99.99% {
-    --oc-mobile-composer-host-fill: transparent;
-  }
-
-  100% {
-    --oc-mobile-composer-host-fill: var(--background);
-  }
-}
-
-@keyframes oc-mobile-composer-scroll-button {
-  0% {
-    bottom: calc(
-      3.75rem + var(--oc-safe-area-bottom-visual, 0px) + 0.5rem
-    );
-  }
-
-  100% {
-    bottom: calc(var(--oc-chat-foot-inset) + 0.5rem);
-  }
-}
-
-@supports (scroll-timeline-name: --oc-chat-bottom) and
-  (animation-timeline: --oc-chat-bottom) and
-  (animation-range: calc(100% - 100px) 100%) {
-  .oc-chat-composer-timeline-scope .oc-mobile-composer-foot--overlay,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-reveal,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-motion-viewport,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-surface,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-full-chrome,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-attachment-content,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-compact-chrome,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    > button {
-    animation-duration: 1ms;
-    animation-timing-function: linear;
-    animation-fill-mode: both;
-    animation-timeline: --oc-chat-bottom;
-    animation-range: calc(100% - 100px) 100%;
-  }
-
-  .oc-chat-composer-timeline-scope .oc-mobile-composer-foot--overlay {
-    animation-name: oc-mobile-composer-progress;
-  }
-
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-reveal {
-    max-height: calc(
-      12rem * (1 - var(--oc-mobile-composer-shrink))
-    );
-    animation-name: oc-mobile-composer-reveal-endpoint;
-  }
-
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-motion-viewport {
-    animation-name: oc-mobile-composer-terminal-viewport;
-  }
-
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-surface {
-    animation-name: oc-mobile-composer-terminal-surface;
-  }
-
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-full-chrome,
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-attachment-content {
-    animation-name: oc-mobile-composer-terminal-chrome;
-  }
-
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer-compact-chrome {
-    animation-name: oc-mobile-composer-compact-interaction;
-  }
-
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    .oc-mobile-composer {
-    animation-name: oc-mobile-composer-host-material;
-  }
-
-  .oc-chat-composer-timeline-scope
-    .oc-mobile-composer-foot--overlay
-    > button {
-    animation-name: oc-mobile-composer-scroll-button;
-  }
-
-  .oc-chat-composer-timeline-scope:has(
-      .oc-mobile-composer textarea[data-chat-input="true"]:focus
-    )
-    :is(
-      .oc-mobile-composer-foot,
-      .oc-mobile-composer-reveal,
-      .oc-mobile-composer-motion-viewport,
-      .oc-mobile-composer-surface,
-      .oc-mobile-composer-full-chrome,
-      .oc-mobile-composer-attachment-content,
-      .oc-mobile-composer-compact-chrome,
-      .oc-mobile-composer,
-      .oc-mobile-composer-foot--overlay > button
-    ),
-  .oc-chat-composer-timeline-scope:has(
-      [data-oc-composer-dictation-active="true"]
-    )
-    :is(
-      .oc-mobile-composer-foot--overlay,
-      .oc-mobile-composer-reveal,
-      .oc-mobile-composer-motion-viewport,
-      .oc-mobile-composer-surface,
-      .oc-mobile-composer-full-chrome,
-      .oc-mobile-composer-attachment-content,
-      .oc-mobile-composer-compact-chrome,
-      .oc-mobile-composer,
-      .oc-mobile-composer-foot--overlay > button
-    ),
-  :root:is(.oc-keyboard-open, .oc-kb-animating)
-    .oc-chat-composer-timeline-scope
-    :is(
-      .oc-mobile-composer-foot,
-      .oc-mobile-composer-reveal,
-      .oc-mobile-composer-motion-viewport,
-      .oc-mobile-composer-surface,
-      .oc-mobile-composer-full-chrome,
-      .oc-mobile-composer-attachment-content,
-      .oc-mobile-composer-compact-chrome,
-      .oc-mobile-composer,
-      .oc-mobile-composer-foot--overlay > button
-    ) {
-    animation-name: none;
-  }
+.oc-chat-composer-swap-scope[data-oc-composer-swap-rest="compact"][data-oc-composer-swap-phase="rest"]
+  .oc-mobile-composer-compact-layer {
+  pointer-events: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-chat-composer-timeline-scope
-    :is(
-      .oc-mobile-composer-foot,
-      .oc-mobile-composer-reveal,
-      .oc-mobile-composer-motion-viewport,
-      .oc-mobile-composer-surface,
-      .oc-mobile-composer-full-chrome,
-      .oc-mobile-composer-attachment-content,
-      .oc-mobile-composer-compact-chrome,
-      .oc-mobile-composer,
-      .oc-mobile-composer-foot--overlay > button
-    ) {
-    animation-name: none !important;
+  .oc-chat-composer-swap-scope[data-oc-composer-swap-phase="snapping"] {
+    transition-duration: 0ms;
   }
 }
 
@@ -3578,10 +3349,17 @@ button.oc-mobile-worktree-label-trigger:active,
     display: none;
   }
 
-  .oc-mobile-composer-surface,
+  .oc-mobile-composer-compact-layer {
+    background: var(--surface-elevated) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    /* Keep the glass outer + top inset shadow; only drop the translucent fill. */
+  }
+
   .oc-mobile-readonly-prompt-surface {
-    --oc-mobile-composer-surface-fill: var(--surface-subtle) !important;
-    --oc-mobile-composer-surface-backdrop: none !important;
+    background: var(--surface-subtle) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
     box-shadow: none !important;
   }
 }
@@ -3606,13 +3384,6 @@ button.oc-mobile-worktree-label-trigger:active,
    list in useNativeMobileChrome. No CSS rules needed here; the class only
    marks the element for the mover query. */
 
-/* Mobile-browser fullscreen composer (visual-viewport pinned form in
-   ChatInput): the header would otherwise paint above it — the form can't
-   out-stack it from inside the composer wrapper's z-10 context. */
-:root.oc-browser-kb-fullscreen .oc-mobile-header {
-  visibility: hidden;
-}
-
 /* Installed PWA (standalone) safe areas. In the in-browser page Safari's own
    chrome covers the home indicator and status bar, and the Capacitor shell has
    its own choreography (--oc-app-bottom-safe + keyboard FLIP) — neither matches
@@ -3626,9 +3397,8 @@ button.oc-mobile-worktree-label-trigger:active,
      controls clear of the indicator / rounded corners. A fixed floor is
      required: iOS 26 standalone reports env(safe-area-inset-bottom) as 0.
      Cancel the room while the keyboard is up (the indicator area is behind the
-     keyboard, and the pinned form anchors by its offsetHeight). Textarea focus
-     selects that state directly; the transition smooths the safe-area padding
-     change. */
+     keyboard). Textarea focus selects that state directly; the transition
+     smooths the safe-area padding change. */
   :root:not(.oc-capacitor-app) .oc-mobile-composer {
     transition: padding-bottom 220ms cubic-bezier(0.33, 1, 0.68, 1);
   }
@@ -3640,16 +3410,6 @@ button.oc-mobile-worktree-label-trigger:active,
     padding-bottom: calc(
       0.75rem +
         max(16px, var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px)))
-    ) !important;
-  }
-
-  /* Fullscreen composer: ChatInput pins the form to the visual viewport from
-     y = visualViewport.offsetTop, which is 0 in standalone (no URL bar), so the
-     form's first row lands under the status bar / Dynamic Island. Pad the
-     content down into the safe region instead. */
-  :root.oc-browser-kb-fullscreen:not(.oc-capacitor-app) .oc-mobile-composer {
-    padding-top: calc(
-      var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 0.5rem
     ) !important;
   }
 

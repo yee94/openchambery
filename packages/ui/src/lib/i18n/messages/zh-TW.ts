@@ -2144,6 +2144,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.placeholder.shell': '輸入 shell 命令...',
   'chat.chatInput.placeholder.chat': '@ 用於檔案/Agent；/ 用於命令；! 用於 shell；# 用於程式片段',
   'chat.chatInput.placeholder.chatCompact': '使用 @ / ! # 輔助',
+  'chat.chatInput.placeholder.compactTap': '點一下輸入',
   'chat.chatInput.placeholder.selectSession': '選擇或建立會話以開始聊天',
   'chat.chatInput.pastedTextReference': '已貼上文字 #{index} · {count} 個字元',
   'chat.dictation.start': '開始語音輸入',

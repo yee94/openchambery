@@ -2152,6 +2152,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.placeholder.shell": "Введіть shell-команду...",
   "chat.chatInput.placeholder.chat": "@ для файлів/агентів; / для команд і навичок; ! для shell; # для сніпетів",
   "chat.chatInput.placeholder.chatCompact": "Використовуйте @ / ! # для помічників",
+  "chat.chatInput.placeholder.compactTap": "Торкніться, щоб ввести",
   "chat.chatInput.placeholder.selectSession": "Виберіть або створіть сесію, щоб розпочати спілкування",
   "chat.chatInput.pastedTextReference": "Вставлений текст №{index} · {count} символів",
   "chat.snippetAutocomplete.action.addNew": "+ Додати новий сніпет",

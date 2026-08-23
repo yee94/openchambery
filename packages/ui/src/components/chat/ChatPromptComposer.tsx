@@ -161,11 +161,11 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   const defaultRightControls = pending && onStop ? (
     <button
       type="button"
-      className="flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--status-error)] outline-none hover:bg-[var(--interactive-hover)]"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-foreground outline-none hover:bg-white hover:text-foreground"
       onClick={onStop}
       aria-label={stopLabel}
     >
-      <StopIcon className="size-5" />
+      <StopIcon className="size-4" />
     </button>
   ) : (
     <button

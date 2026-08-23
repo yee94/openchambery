@@ -1919,6 +1919,7 @@ export const dict = {
   'chat.chatInput.placeholder.shell': 'Entrez la commande shell...',
   'chat.chatInput.placeholder.chat': '@ pour les fichiers/agents ; / pour les commandes et les skills ; ! pour shell ; # pour les extraits',
   'chat.chatInput.placeholder.chatCompact': 'Utiliser @ / ! # pour les aides',
+  'chat.chatInput.placeholder.compactTap': 'Appuyez pour écrire',
   'chat.chatInput.placeholder.selectSession': 'Sélectionnez ou créez une session pour commencer à discuter',
   'chat.chatInput.pastedTextReference': 'Texte collé n°{index} · {count} caractères',
   'chat.dictation.start': 'Démarrer la dictée',

@@ -1306,6 +1306,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.permissionAutoAccept.on': 'Permission auto-accept: on',
   'chat.chatInput.placeholder.chat': '@ dla plików/agentów; / dla poleceń i umiejętności; ! dla shell; # dla fragmentów',
   'chat.chatInput.placeholder.chatCompact': 'Użyj @ / ! # dla pomocników',
+  'chat.chatInput.placeholder.compactTap': 'Dotknij, aby pisać',
   'chat.chatInput.placeholder.selectSession': 'Wybierz lub utwórz sesję, aby zacząć czatować',
   'chat.chatInput.pastedTextReference': 'Wklejony tekst #{index} · {count} znaków',
   'chat.chatInput.placeholder.shell': 'Wpisz polecenie powłoki...',

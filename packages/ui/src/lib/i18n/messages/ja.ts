@@ -2170,6 +2170,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.placeholder.shell': 'シェルコマンドを入力...',
   'chat.chatInput.placeholder.chat': '@でファイル/エージェント、/でコマンド/スキル、!でシェル、#でスニペット',
   'chat.chatInput.placeholder.chatCompact': '@ / ! # でヘルパーを使用',
+  'chat.chatInput.placeholder.compactTap': 'タップして入力',
   'chat.chatInput.placeholder.selectSession': 'セッションを選択または作成してチャットを開始',
   'chat.chatInput.pastedTextReference': '貼り付けテキスト #{index} · {count} 文字',
   'chat.dictation.start': '音声入力を開始',

@@ -2174,6 +2174,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.placeholder.shell': '셸 명령 입력…',
   'chat.chatInput.placeholder.chat': '@ 파일/에이전트; / 명령 및 스킬; ! shell; # 스니펫',
   'chat.chatInput.placeholder.chatCompact': '@ / ! # 도우미 사용',
+  'chat.chatInput.placeholder.compactTap': '탭하여 입력',
   'chat.chatInput.placeholder.selectSession': '채팅을 시작할 세션을 선택하거나 새로 만드세요',
   'chat.chatInput.pastedTextReference': '붙여넣은 텍스트 #{index} · {count}자',
   'chat.dictation.start': '받아쓰기 시작',

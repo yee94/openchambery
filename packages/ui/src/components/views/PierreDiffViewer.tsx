@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { attachmentCitationDisplay } from '@/composer/inline-visual';
+import { extractDiffSelectedCode } from '@/lib/diff/extractDiffSelectedCode';
 
 
 // Threshold (bytes) above which syntax highlighting is degraded for performance
@@ -217,30 +218,6 @@ function makeContentCacheKey(contents: string): string {
     : contents;
   return `${contents.length}:${fnv1a32(sample)}`;
 }
-
-const extractSelectedCode = (
-  original: string,
-  modified: string,
-  fileDiff: FileDiffMetadata | undefined,
-  range: SelectedLineRange,
-): string => {
-  // Default to modified if side is ambiguous, as users mostly comment on new code
-  const isOriginal = range.side === 'deletions';
-  const content = fileDiff
-    ? (isOriginal ? fileDiff.deletionLines : fileDiff.additionLines).join('')
-    : (isOriginal ? original : modified);
-  const lines = content.split('\n');
-
-  // Ensure bounds
-  const from = Math.min(range.start, range.end);
-  const to = Math.max(range.start, range.end);
-  const startLine = Math.max(1, from);
-  const endLine = Math.min(lines.length, to);
-
-  if (startLine > endLine) return '';
-
-  return lines.slice(startLine - 1, endLine).join('\n');
-};
 
 const isSameSelection = (left: SelectedLineRange | null, right: SelectedLineRange | null): boolean => {
   if (left === right) return true;
@@ -498,7 +475,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
     source: 'diff',
     fileLabel: fileName || 'unknown',
     language,
-    getCodeForRange: (range) => extractSelectedCode(original, modified, fileDiff, range),
+    getCodeForRange: (range) => extractDiffSelectedCode(original, modified, fileDiff, range),
     toStoreRange: (range) => ({
       startLine: range.start,
       endLine: range.end,
@@ -602,7 +579,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
     const start = Math.min(range.start, range.end);
     const end = Math.max(range.start, range.end);
     const lineRange = start === end ? `${start}` : `${start}-${end}`;
-    const code = extractSelectedCode(original, modified, fileDiff, range);
+    const code = extractDiffSelectedCode(original, modified, fileDiff, range);
     if (!code) return;
 
     const displayFileName = fileName.replace(/\\/g, '/').split('/').pop() || fileName;

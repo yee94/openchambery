@@ -2175,6 +2175,7 @@ export const dict = {
   'chat.chatInput.placeholder.shell': 'Enter shell command...',
   'chat.chatInput.placeholder.chat': '@ for files/agents; / for commands and skills; ! for shell; # for snippets',
   'chat.chatInput.placeholder.chatCompact': 'Use @ / ! # for helpers',
+  'chat.chatInput.placeholder.compactTap': 'Tap to type',
   'chat.chatInput.placeholder.selectSession': 'Select or create a session to start chatting',
   'chat.chatInput.pastedTextReference': 'Pasted text #{index} · {count} characters',
   'chat.dictation.start': 'Start dictation',
