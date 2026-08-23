@@ -1505,7 +1505,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-detail-title {
   font-size: var(--oc-mobile-detail-title-size);
-  line-height: 1.125rem;
+  line-height: var(--oc-mobile-detail-title-size);
   font-weight: 650;
   text-align: center;
 }
@@ -1513,7 +1513,7 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-detail-subtitle {
   margin-block-start: 0.125rem;
   font-size: var(--oc-mobile-detail-subtitle-size);
-  line-height: 0.75rem;
+  line-height: var(--oc-mobile-detail-subtitle-size);
   font-weight: 400;
   text-align: center;
 }

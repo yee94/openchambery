@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.45] - 2026-08-23
+
+### 移动端
+
+- **聊天页 header 标题与副标题行高随字号缩放：** 二级页/聊天页大标题（`.oc-mobile-detail-title`）与副标题的行高此前是固定 rem，字号缩小后行距不缩显得拥挤；现在行高与字号走同一 `--dpt` 链，Android 密度对齐覆盖到聊天 header。输入框文字 16px 规则在 beta.42 起已随 `--dpt` 缩放（iOS 保持 16px 防聚焦放大不变）。
+
 ## [1.18.2-beta.44] - 2026-08-23
 
 ### 聊天
