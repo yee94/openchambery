@@ -99,7 +99,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
   that refreshes widgets from push. All share the App Group `group.com.yee94.openchamber`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
-  keyboard handling (iOS pre-focus cached-height FLIP calibrated by Keyboard events; Android pre-focus cached-height FLIP), edge-swipe session switch,
+  keyboard handling (iOS immediate shell shrink via --oc-kb-layout; Android pre-focus cached-height FLIP), edge-swipe session switch,
   back-button handling, app-icon badge.
 - **App icons** — iOS `AppIcon`; Android adaptive launcher icon; notification small icon
   (`ic_stat_notify`).
@@ -120,10 +120,11 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 
 ### iOS (`ios/App`)
 
-- Keyboard intent commits the expanded Composer synchronously and starts a cached-height
-  transform before UIKit presents the keyboard. `keyboardWillShow` calibrates the final
-  height and persists its viewport ratio. The shared native curtain covers bridge timing
-  gaps, and the Composer removes its resting bottom-safe padding while the keyboard is open.
+- Keyboard intent shrinks the app shell immediately (`--oc-kb-layout` from the cached
+  IME height) so the header stays pinned and the full composer sits above the keyboard.
+  `keyboardWillShow` calibrates the final height and persists its viewport ratio. The
+  shared native curtain covers the gap while UIKit is still sliding. The Composer
+  removes its resting bottom-safe padding while the keyboard is open.
 - Extensions: `OpenChamberWidget` (WidgetKit, deployment 17.0) and `OpenChamberNotificationService`
   (NSE, 15.5), both hand-wired into `App.xcodeproj/project.pbxproj` and embedded via a copy phase.
 - App Group `group.com.yee94.openchamber` in all three targets' entitlements (app + widget + NSE).

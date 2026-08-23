@@ -38,7 +38,7 @@ const config: CapacitorConfig & {
   },
   plugins: {
     Keyboard: {
-      // iOS: resize none + JS composer transform FLIP. Android: adjustNothing +
+      // iOS: resize none + JS shell shrink (--oc-kb-layout). Android: adjustNothing +
       // pre-focus cached-height composer CSS FLIP; ImeSyncBridge keeps parent
       // padding zero and reports state/settled height. resizeOnFullScreen stays off.
       resize: 'none',

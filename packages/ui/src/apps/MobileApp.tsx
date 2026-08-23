@@ -323,7 +323,9 @@ const useNativeMobileChrome = (): void => {
     void import('@capacitor/keyboard').then(async ({ Keyboard }) => {
       if (disposed) return;
       // Keyboard choreography:
-      //   iOS — resize:none + transform FLIP (~250ms) from keyboardWillShow.
+      //   iOS — resize:none + immediate shell shrink (--oc-kb-layout). Header
+      //            stays pinned; the composer sits at the new shell bottom so
+      //            the full input is visible above the IME. No transform FLIP.
       //   Android — adjustNothing + an early composer-only CSS FLIP. Android's
       //            keyboardWillShow and WebView viewport signals arrive after IME
       //            movement starts, so ChatInput keyboard intent (and focusin
@@ -338,8 +340,7 @@ const useNativeMobileChrome = (): void => {
       const isAndroid = platform === 'android';
       await Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined);
 
-      const KB_ANIM_MS = 250;
-      // How long the hide curtain stays painted after the instant fallback:
+      // How long the hide curtain stays painted after the shell snaps back:
       // roughly one UIKit keyboard fade-out, covering the seam the fade can
       // expose below the already-resting composer.
       const KB_HIDE_CURTAIN_MS = 260;
@@ -694,7 +695,7 @@ const useNativeMobileChrome = (): void => {
         return;
       }
 
-      // ── iOS: fixed-duration transform FLIP (keyboardWillShow height) ──────
+      // ── iOS: shrink the shell immediately (no transform FLIP) ────────────
       const IOS_IME_RATIO_STORAGE_KEY = 'openchamber.iosImeHeightRatio.v1';
       const clampIosImeRatio = (value: number): number => (
         Number.isFinite(value) ? Math.min(0.68, Math.max(0.28, value)) : 0.39
@@ -715,13 +716,23 @@ const useNativeMobileChrome = (): void => {
           // Restricted storage keeps the current native measurement for this app run.
         }
       };
-      const liftIosMovers = (height: number, anchor?: EventTarget | null): number => {
+      // Header stays pinned. The shell height drops by the IME so the whole
+      // composer (textarea + model/attach footer + foot padding) sits in flow
+      // at the new shell bottom — not just the focused caret.
+      const applyIosKeyboardLayout = (height: number): number => {
         measureSafeBottom();
         const slide = Math.max(0, height - safeBottomPx);
-        for (const { el, factor } of getKbMovers(anchor)) {
-          el.style.transition = `transform ${KB_ANIM_MS}ms ${KB_ANIM_EASING}`;
-          el.style.transform = `translateY(${-slide * factor}px)`;
-        }
+        setInset(height);
+        setVar('--oc-kb-layout', height);
+        setVar('--oc-kb-scroll-inset', slide);
+        layoutApplied = true;
+        clearKbMovers();
+        window.scrollTo(0, 0);
+        if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+        // WebKit's default reveal is the caret. Pin the form's BOTTOM edge
+        // (footer + padding) to the visible bottom instead.
+        findVisibleKbMover<HTMLElement>('.oc-mobile-composer')
+          ?.scrollIntoView({ block: 'end', inline: 'nearest' });
         return slide;
       };
       const handleIosKeyboardIntent = (event: Event) => {
@@ -732,23 +743,18 @@ const useNativeMobileChrome = (): void => {
         if (isTextFieldLike(document.activeElement) && !isComposerKeyboardTarget(document.activeElement)) {
           return;
         }
-        const wasKeyboardOpen = keyboardOpen;
         keyboardOpen = true;
         root.classList.remove('oc-kb-hide');
         root.classList.add('oc-keyboard-open');
-        // Caret hold only masks the caret DURING a keyboard rise. When the IME
-        // is already open (soft focus return from another field), no
-        // keyboardWillShow will ever arrive to run the removal chain, and a
-        // hold added here would stick forever — keep the caret visible.
-        if (!wasKeyboardOpen) root.classList.add('oc-kb-animating', 'oc-kb-caret-hold');
         const predictedHeight = keyboardHeight > 0 ? keyboardHeight : readCachedIosImeHeight();
-        const slide = liftIosMovers(predictedHeight, event.target);
+        const slide = applyIosKeyboardLayout(predictedHeight);
         dispatchKb('oc:keyboard-anim', {
           phase: 'show',
           slide,
-          durationMs: KB_ANIM_MS,
+          durationMs: 0,
           easing: KB_ANIM_EASING,
         });
+        dispatchKb('oc:keyboard-settled', { open: true });
       };
       window.addEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
 
@@ -756,8 +762,8 @@ const useNativeMobileChrome = (): void => {
         clearSettle();
         keyboardHeight = info.keyboardHeight;
         persistIosImeHeight(keyboardHeight);
-        // Overlay portals still need the inset. Composer/draft transform + shell
-        // layout shrink are reserved for the bottom chat input only.
+        // Overlay portals still need the inset. Shell shrink is reserved for
+        // the bottom chat input only.
         const liftComposer = isComposerKeyboardTarget(document.activeElement) || (
           // Pre-focus intent may have armed the open class before focus lands.
           root.classList.contains('oc-keyboard-open')
@@ -769,14 +775,10 @@ const useNativeMobileChrome = (): void => {
           window.clearTimeout(caretTimer);
           caretTimer = null;
         }
-        root.classList.add('oc-keyboard-open');
-        setInset(keyboardHeight);
         if (!liftComposer) {
           // Question / other fields: keep the overlay and chat scroll insets
-          // without raising the bottom composer or shrinking the shell. The
-          // pre-focus intent may have armed the caret hold for this field —
-          // this early return has no removal chain of its own, so drop it or
-          // the caret stays transparent for the whole session.
+          // without shrinking the shell or moving the bottom composer.
+          setInset(keyboardHeight);
           setVar('--oc-kb-layout', 0);
           measureSafeBottom();
           setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
@@ -786,28 +788,10 @@ const useNativeMobileChrome = (): void => {
           dispatchKb('oc:keyboard-settled', { open: true });
           return;
         }
-        if (!layoutApplied) measureSafeBottom();
-        const slide = Math.max(0, keyboardHeight - safeBottomPx);
-        root.classList.add('oc-kb-animating', 'oc-kb-caret-hold');
-        for (const { el, factor } of getKbMovers()) {
-          el.style.transition = `transform ${KB_ANIM_MS}ms ${KB_ANIM_EASING}`;
-          el.style.transform = `translateY(${-slide * factor}px)`;
-        }
-        setVar('--oc-kb-scroll-inset', slide);
+        root.classList.add('oc-keyboard-open');
+        const slide = applyIosKeyboardLayout(keyboardHeight);
         dispatchKb('oc:keyboard-settled', { open: true });
-        dispatchKb('oc:keyboard-anim', { phase: 'show', slide, durationMs: KB_ANIM_MS, easing: KB_ANIM_EASING });
-        settleTimer = window.setTimeout(() => {
-          settleTimer = null;
-          root.classList.remove('oc-kb-animating');
-          setVar('--oc-kb-layout', keyboardHeight);
-          layoutApplied = true;
-          clearKbMovers();
-          dispatchKb('oc:keyboard-settled', { open: true });
-          caretTimer = window.setTimeout(() => {
-            caretTimer = null;
-            root.classList.remove('oc-kb-caret-hold');
-          }, 250);
-        }, KB_ANIM_MS + 20);
+        dispatchKb('oc:keyboard-anim', { phase: 'show', slide, durationMs: 0, easing: KB_ANIM_EASING });
       });
 
       const blurActiveTextField = () => {
@@ -837,21 +821,13 @@ const useNativeMobileChrome = (): void => {
           window.clearTimeout(caretTimer);
           caretTimer = null;
         }
-        root.classList.remove('oc-kb-caret-hold');
+        root.classList.remove('oc-kb-caret-hold', 'oc-kb-animating');
         const slide = Math.max(0, keyboardHeight - safeBottomPx);
         root.classList.remove('oc-keyboard-open');
         setInset(0);
         setVar('--oc-kb-scroll-inset', 0);
-        if (layoutApplied) {
-          root.classList.remove('oc-kb-animating');
-          setVar('--oc-kb-layout', 0);
-          layoutApplied = false;
-        }
-        // Instant fallback: movers drop straight to rest with no transition so
-        // the composer answers the dismiss gesture in the same frame. The old
-        // KB_HIDE_MS tween stacked behind busy main-thread frames (streaming
-        // merge + render) and read as a ~500ms lag. UIKit still animates the
-        // keyboard itself; the curtain below keeps covering the fade-out seam.
+        setVar('--oc-kb-layout', 0);
+        layoutApplied = false;
         clearKbMovers();
         // WKWebView pans its own scroll view to reveal the caret on focus and
         // unwinds that pan with its own ~keyboard-duration animation on hide —

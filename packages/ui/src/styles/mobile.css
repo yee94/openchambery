@@ -2801,8 +2801,9 @@ button.oc-mobile-worktree-label-trigger:active,
    Message list keeps scrollTop (auto-follow freezes geometry chase).
    Scoped to .oc-capacitor-app so the browser PWA keeps its dvh behaviour.
 
-   iOS: Keyboard resize:none + transform FLIP (~250ms); --oc-kb-layout settles
-   the shell once at the end of the rise.
+   iOS: Keyboard resize:none + immediate --oc-kb-layout shell shrink. Header
+   stays pinned; the composer sits at the new shell bottom above the IME.
+   No transform FLIP.
 
    Android: keyboard intent / composer focusin starts a short (~200ms)
    composer-only CSS FLIP before IME movement. Only the bottom chat composer
@@ -2814,7 +2815,8 @@ button.oc-mobile-worktree-label-trigger:active,
    Header stays fixed; shell keeps solid bottom-safe breathing room.
    https://developer.android.com/develop/ui/views/layout/sw-keyboard
 
-   --oc-keyboard-inset: portal overlays. --oc-kb-layout: shell settle after FLIP. */
+   --oc-keyboard-inset: portal overlays. --oc-kb-layout: iOS shell height (and
+   Android unused / kept at 0 during FLIP). */
 /* Match the tabs-root canvas so Capacitor bottom-safe padding and any
    under-filled phone shell never seam against plain --background. */
 .oc-mobile-app-shell {
@@ -2936,30 +2938,23 @@ button.oc-mobile-worktree-label-trigger:active,
   background-color: var(--background) !important;
 }
 
-/* Constant-viewport trick for the chat scroller: when the keyboard settles the
-   shell shrinks by --oc-kb-layout, but the scroller keeps its full height by
-   extending that far below its (shrunken) region — behind the composer and the
-   keyboard — and converts the covered strip into its own bottom padding. For
-   the virtualizer NOTHING resizes across keyboard transitions: clientHeight is
-   constant, every row that can become visible is already mounted, and the
-   open/close keeps clientHeight stable (padding + bottom extension) so the
-   virtualizer does not remount rows; scrollTop is intentionally left alone
-   (IM-style stable main view) instead of a settle re-pin. */
-:root.oc-capacitor-app .oc-mobile-app-shell .chat-scroll {
-  /* The shell shrinks by the keyboard height BUT also gives up its bottom
-     safe-area padding at the same moment (see the shell's padding-bottom
-     formula) — so the scroller's parent only loses (keyboard − safe). Extend
-     by exactly that, or the settle grows clientHeight by the safe inset and
-     the pinned chat clamps one row down a beat after the keyboard opens. */
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-app-shell .chat-scroll {
+  /* Android keeps the FLIP constant-viewport: shell shrinks by --oc-kb-layout
+     but the scroller extends that far below so virtualizer clientHeight stays
+     stable across the composer transform. */
   bottom: calc(
     -1 * max(var(--oc-kb-layout, 0px) - var(--oc-app-bottom-safe, 0px), 0px)
   );
-   /* The padding leg is driven by its own variable so it can be applied at the
-      very START of the keyboard rise. Auto-follow keeps scrollTop stable (no
-      re-pin) so the main chat does not jump; the bottom-extension leg still
-      tracks the shell's settle-time shrink. Both legs equal the keyboard height
-      once settled, so the settle snap is geometry-neutral for the scroller. */
   padding-bottom: var(--oc-kb-scroll-inset, var(--oc-kb-layout, 0px));
+}
+
+/* iOS: page-push layout. The scroller is a normal flex sibling above the
+   composer, so shrinking the shell lifts the transcript with the full input
+   (footer + padding included). Do not extend behind the composer — that was
+   the FLIP trick and left the page visually pinned while only the caret moved. */
+:root.oc-capacitor-app:not(.oc-platform-android) .oc-mobile-app-shell .chat-scroll {
+  bottom: 0;
+  padding-bottom: 0;
 }
 
 /* WKWebView draws the text caret as a native layer that ignores CSS transforms:
@@ -2974,7 +2969,10 @@ button.oc-mobile-worktree-label-trigger:active,
 /* Keep a small breathing gap between the input card and the IME on every
    native platform. Flush-to-keyboard reads too tight on iPhone. */
 :root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer {
-  padding-bottom: 12px;
+  /* Beat .bottom-safe-area's !important visual inset. The home indicator is
+     behind the IME; leaving that padding in place parks the model row / foot
+     padding under the keyboard (web only scrolls to the caret). */
+  padding-bottom: 12px !important;
 }
 
 /* Native keyboard curtain: UIKit/IME and WebView transforms cross separate event
