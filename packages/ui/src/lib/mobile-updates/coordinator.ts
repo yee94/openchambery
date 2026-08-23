@@ -360,6 +360,30 @@ export async function checkMobileOtaUpdate(
   throw lastError ?? new Error('Unable to check for mobile OTA updates');
 }
 
+/**
+ * Reuse a locally stored Capgo bundle when checksum + releaseVersion match and
+ * status is ready (`success` / `pending`). Returns null when there is nothing
+ * to reuse — callers then download normally. A null here is not an authoritative
+ * empty success: download itself still fails loudly if the network/plugin path fails.
+ * list() errors also yield null so a listing failure does not block a fresh download.
+ */
+export async function findDownloadedOtaBundle(bundle: MobileOtaBundleInfo): Promise<string | null> {
+  const updater = await getCapgoUpdater();
+  if (!updater) return null;
+
+  try {
+    const { bundles } = await updater.list();
+    const match = bundles.find((entry) => (
+      entry.checksum === bundle.checksum
+      && entry.version === bundle.releaseVersion
+      && (entry.status === 'success' || entry.status === 'pending')
+    ));
+    return match?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function downloadOtaBundle(bundle: MobileOtaBundleInfo): Promise<string> {
   const updater = await getCapgoUpdater();
   if (!updater) throw new MobileUpdatesUnsupportedError();

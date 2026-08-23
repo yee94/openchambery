@@ -311,6 +311,30 @@ describe('updateDesktopSettings', () => {
     expect(state.recentEfforts).toEqual(settings.recentEfforts);
   });
 
+  test('round-trips remembered model variants and keeps legacy refs without variant', async () => {
+    getWindow();
+    const settings = {
+      favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' }],
+      recentModels: [
+        { providerID: 'google', modelID: 'gemini-pro', variant: 'medium' },
+        { providerID: 'openai', modelID: 'gpt-5' },
+      ],
+    } satisfies SettingsPayload;
+    registerSettingsApi(async () => ({}), async () => ({ settings, source: 'web' }));
+
+    await syncDesktopSettings();
+
+    const state = useUIStore.getState();
+    expect(state.favoriteModels).toEqual([
+      { providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' },
+    ]);
+    expect(state.recentModels).toEqual([
+      { providerID: 'google', modelID: 'gemini-pro', variant: 'medium' },
+      { providerID: 'openai', modelID: 'gpt-5' },
+    ]);
+    expect('variant' in state.recentModels[1]).toBe(false);
+  });
+
   test('autosaves all model selector settings fields', async () => {
     getWindow();
     const saveCalls: Array<Partial<SettingsPayload>> = [];
@@ -321,12 +345,12 @@ describe('updateDesktopSettings', () => {
     const stop = startModelPrefsAutoSave();
 
     try {
-      useUIStore.setState({ favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4' }] });
+      useUIStore.setState({ favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' }] });
       await delay(20);
       useUIStore.setState({
         hiddenModels: [{ providerID: 'openai', modelID: 'gpt-5' }],
         collapsedModelProviders: ['openai'],
-        recentModels: [{ providerID: 'google', modelID: 'gemini-pro' }],
+        recentModels: [{ providerID: 'google', modelID: 'gemini-pro', variant: 'medium' }],
         recentAgents: ['build'],
         recentEfforts: { 'openai/gpt-5': ['low'] },
       });
@@ -335,10 +359,10 @@ describe('updateDesktopSettings', () => {
 
       expect(saveCalls).toHaveLength(1);
       expect(saveCalls[0]).toEqual({
-        favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4' }],
+        favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' }],
         hiddenModels: [{ providerID: 'openai', modelID: 'gpt-5' }],
         collapsedModelProviders: ['openai'],
-        recentModels: [{ providerID: 'google', modelID: 'gemini-pro' }],
+        recentModels: [{ providerID: 'google', modelID: 'gemini-pro', variant: 'medium' }],
         recentAgents: ['build'],
         recentEfforts: { 'openai/gpt-5': ['low'] },
       });

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.58] - 2026-08-23
+
+### 移动端
+
+- **聊天正文模型名随密度缩放：** 消息头 `typography-ui-header` 被排版兼容块 `font-size: unset !important` 压掉后回落到根节点 16px，正文/chrome 已缩、模型名纹丝不动。从 unset 列表去掉该类，改走 `--text-ui-header`（移动端 `calc(14 * var(--dpt))`）。
+
 ## [1.18.2-beta.57] - 2026-08-23
 
 ### 移动端

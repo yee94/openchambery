@@ -217,11 +217,15 @@ const areStringRecordsEqual = (left: Record<string, string>, right: Record<strin
 };
 
 const areModelRefsEqual = (
-  left: Array<{ providerID: string; modelID: string }>,
-  right: Array<{ providerID: string; modelID: string }>,
+  left: Array<{ providerID: string; modelID: string; variant?: string }>,
+  right: Array<{ providerID: string; modelID: string; variant?: string }>,
 ): boolean => (
   left.length === right.length &&
-  left.every((item, idx) => item.providerID === right[idx]?.providerID && item.modelID === right[idx]?.modelID)
+  left.every((item, idx) => (
+    item.providerID === right[idx]?.providerID
+    && item.modelID === right[idx]?.modelID
+    && item.variant === right[idx]?.variant
+  ))
 );
 
 const areStringArraysEqual = (left: string[], right: string[]): boolean => (
@@ -347,13 +351,18 @@ const sanitizeProjects = (value: unknown): DesktopSettings['projects'] | undefin
   return result.length > 0 ? result : undefined;
 };
 
-const sanitizeModelRefs = (value: unknown, limit: number): Array<{ providerID: string; modelID: string }> | undefined => {
+const sanitizeModelRefs = (
+  value: unknown,
+  limit: number,
+  options?: { preserveVariant?: boolean },
+): Array<{ providerID: string; modelID: string; variant?: string }> | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
   }
 
-  const result: Array<{ providerID: string; modelID: string }> = [];
+  const result: Array<{ providerID: string; modelID: string; variant?: string }> = [];
   const seen = new Set<string>();
+  const preserveVariant = options?.preserveVariant === true;
 
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') continue;
@@ -364,7 +373,11 @@ const sanitizeModelRefs = (value: unknown, limit: number): Array<{ providerID: s
     const key = `${providerID}/${modelID}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ providerID, modelID });
+    if (preserveVariant && typeof candidate.variant === 'string' && candidate.variant.trim().length > 0) {
+      result.push({ providerID, modelID, variant: candidate.variant.trim() });
+    } else {
+      result.push({ providerID, modelID });
+    }
     if (result.length >= limit) break;
   }
 
@@ -1148,7 +1161,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     }
   }
 
-  const favoriteModels = sanitizeModelRefs(candidate.favoriteModels, 64);
+  const favoriteModels = sanitizeModelRefs(candidate.favoriteModels, 64, { preserveVariant: true });
   if (favoriteModels) {
     result.favoriteModels = favoriteModels;
   }
@@ -1163,7 +1176,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     result.collapsedModelProviders = collapsedModelProviders;
   }
 
-  const recentModels = sanitizeModelRefs(candidate.recentModels, 16);
+  const recentModels = sanitizeModelRefs(candidate.recentModels, 16, { preserveVariant: true });
   if (recentModels) {
     result.recentModels = recentModels;
   }

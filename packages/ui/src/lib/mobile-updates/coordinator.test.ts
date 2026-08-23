@@ -8,6 +8,13 @@ const mocks = vi.hoisted(() => {
     reload: vi.fn(async () => undefined),
     current: vi.fn(async () => ({ bundle: { id: 'builtin', version: 'builtin' }, native: '1.2.3' })),
     getDeviceId: vi.fn(async () => ({ deviceId: 'device-abc' })),
+    list: vi.fn(async () => ({ bundles: [] as Array<{
+      id: string;
+      version: string;
+      downloaded: string;
+      checksum: string;
+      status: 'success' | 'error' | 'pending' | 'downloading' | 'deleted' | 'deleting';
+    }> })),
     addListener: vi.fn(async () => ({ remove: async () => undefined })),
   };
   const capacitorState: {
@@ -64,12 +71,13 @@ vi.mock('@/lib/platform', () => ({
 import {
   assembleMobileOtaCheckRequest,
   checkMobileOtaUpdate,
+  findDownloadedOtaBundle,
   MOBILE_OTA_EDGEONE_CHECK_URL,
   MOBILE_OTA_VERCEL_CHECK_URL,
   resolveReportedBundleId,
 } from './coordinator';
-import { resetCapgoUpdaterCache } from './capgoAdapter';
-import type { MobileUpdateDecision } from './types';
+import { getCapgoUpdater, resetCapgoUpdaterCache } from './capgoAdapter';
+import type { MobileOtaBundleInfo, MobileUpdateDecision } from './types';
 
 const sampleDecision = (overrides: Partial<MobileUpdateDecision> = {}): MobileUpdateDecision => ({
   status: 'ok',
@@ -91,6 +99,7 @@ describe('mobile OTA coordinator', () => {
     };
     mocks.updater.current.mockResolvedValue({ bundle: { id: 'builtin', version: 'builtin' }, native: '1.2.3' });
     mocks.updater.getDeviceId.mockResolvedValue({ deviceId: 'device-abc' });
+    mocks.updater.list.mockResolvedValue({ bundles: [] });
     vi.clearAllMocks();
   });
 
@@ -182,5 +191,115 @@ describe('mobile OTA coordinator', () => {
         fetchImpl: fetchImpl as unknown as typeof fetch,
       }),
     ).rejects.toThrow(/Unable to check for mobile OTA updates|Mobile OTA check failed/);
+  });
+});
+
+describe('findDownloadedOtaBundle', () => {
+  const targetBundle: MobileOtaBundleInfo = {
+    bundleId: '34ab092a8e7f6d21',
+    releaseVersion: '1.18.3',
+    url: 'https://example.com/b.zip',
+    size: 10,
+    checksum: 'abc123checksum',
+    minShellApiVersion: 1,
+  };
+
+  beforeEach(() => {
+    resetCapgoUpdaterCache();
+    mocks.capacitorState.isNativePlatform = true;
+    mocks.capacitorState.isPluginAvailable = true;
+    mocks.updater.list.mockResolvedValue({ bundles: [] });
+    vi.clearAllMocks();
+  });
+
+  test('returns id for success or pending bundles that match checksum and version', async () => {
+    mocks.updater.list.mockResolvedValue({
+      bundles: [
+        {
+          id: 'local-success',
+          version: '1.18.3',
+          downloaded: '2026-01-01',
+          checksum: 'abc123checksum',
+          status: 'success',
+        },
+      ],
+    });
+    await expect(findDownloadedOtaBundle(targetBundle)).resolves.toBe('local-success');
+
+    mocks.updater.list.mockResolvedValue({
+      bundles: [
+        {
+          id: 'local-pending',
+          version: '1.18.3',
+          downloaded: '2026-01-01',
+          checksum: 'abc123checksum',
+          status: 'pending',
+        },
+      ],
+    });
+    await expect(findDownloadedOtaBundle(targetBundle)).resolves.toBe('local-pending');
+  });
+
+  test('ignores non-reusable statuses and checksum/version mismatches', async () => {
+    mocks.updater.list.mockResolvedValue({
+      bundles: [
+        {
+          id: 'err',
+          version: '1.18.3',
+          downloaded: '2026-01-01',
+          checksum: 'abc123checksum',
+          status: 'error',
+        },
+        {
+          id: 'del',
+          version: '1.18.3',
+          downloaded: '2026-01-01',
+          checksum: 'abc123checksum',
+          status: 'deleted',
+        },
+        {
+          id: 'deling',
+          version: '1.18.3',
+          downloaded: '2026-01-01',
+          checksum: 'abc123checksum',
+          status: 'deleting',
+        },
+        {
+          id: 'dl',
+          version: '1.18.3',
+          downloaded: '2026-01-01',
+          checksum: 'abc123checksum',
+          status: 'downloading',
+        },
+        {
+          id: 'wrong-sum',
+          version: '1.18.3',
+          downloaded: '2026-01-01',
+          checksum: 'other',
+          status: 'success',
+        },
+        {
+          id: 'wrong-ver',
+          version: '9.9.9',
+          downloaded: '2026-01-01',
+          checksum: 'abc123checksum',
+          status: 'success',
+        },
+      ],
+    });
+    await expect(findDownloadedOtaBundle(targetBundle)).resolves.toBeNull();
+  });
+
+  test('returns null when updater is unavailable', async () => {
+    mocks.capacitorState.isPluginAvailable = false;
+    resetCapgoUpdaterCache();
+    await expect(getCapgoUpdater()).resolves.toBeNull();
+    await expect(findDownloadedOtaBundle(targetBundle)).resolves.toBeNull();
+    expect(mocks.updater.list).not.toHaveBeenCalled();
+  });
+
+  test('returns null when list throws (caller may still download)', async () => {
+    mocks.updater.list.mockRejectedValue(new Error('list failed'));
+    await expect(findDownloadedOtaBundle(targetBundle)).resolves.toBeNull();
   });
 });

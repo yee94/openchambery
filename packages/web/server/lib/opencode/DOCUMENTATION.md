@@ -214,7 +214,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `isUnsafeSkillRelativePath(value)`
   - `sanitizeTypographySizesPartial(input)`
   - `normalizeStringArray(input)`
-  - `sanitizeModelRefs(input, limit)`
+  - `sanitizeModelRefs(input, limit, options?)` — optional `{ preserveVariant: true }` keeps a non-empty trimmed `variant` on favorite/recent model refs; hidden models omit it
   - `sanitizeSkillCatalogs(input)`
   - `sanitizeProjects(input)`
 

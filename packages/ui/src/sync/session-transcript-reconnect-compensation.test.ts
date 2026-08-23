@@ -21,6 +21,7 @@ import {
   notifyTranscriptReconnectDisconnect,
   hasTranscriptReconnectCompensationController,
 } from "./transcript-reconnect-compensation-runtime"
+import { isTranscriptResyncInFlight } from "./transcript-resync-flight"
 import type { SessionTranscriptFetcher } from "./session-message-query"
 import { seedCanonicalTranscriptQuery } from "./session-transcript-query-cache"
 
@@ -266,6 +267,83 @@ describe("createTranscriptReconnectCompensationController", () => {
     })
     await new Promise((r) => setTimeout(r, 20))
     expect(fetches).toBe(0)
+  })
+
+  test("viewed reconcile marks resync flight in-flight; success and failure both clear it", async () => {
+    const user = msg("u1", "user")
+    let releaseFetch!: (page: SessionTranscriptReconcilePage) => void
+    const gate = new Promise<SessionTranscriptReconcilePage>((resolve) => {
+      releaseFetch = resolve
+    })
+    let fetchCalls = 0
+    const localClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createRepo(localClient, createFetcher([{ info: user, parts: [part("p1", "u1")] }]))
+    const controller = createTranscriptReconnectCompensationController({
+      client: localClient,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => ({ directory: DIRECTORY, sessionID: "ses_1" }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetchReconcile: async () => {
+        fetchCalls += 1
+        if (fetchCalls === 1) return gate
+        throw new Error("network down")
+      },
+    })
+    controllers.push(controller)
+
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+
+    // First compensation round: gated fetch holds the reconcile in flight.
+    controller.captureCheckpoints({ lastEventID: "evt_1", reason: "disconnect" })
+    controller.onCompensation({
+      lastEventId: "evt_1",
+      disconnectedAt: 1,
+      runtimeGeneration: GENERATION,
+      reason: "ready",
+      transport: "ws",
+      isReconnect: true,
+    })
+    for (let i = 0; i < 100 && !isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(true)
+
+    releaseFetch(reconcilePage())
+    for (let i = 0; i < 100 && isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(false)
+
+    // Second round: a failed fetch must clear the flight too (finally-ended).
+    controller.captureCheckpoints({ lastEventID: "evt_2", reason: "disconnect" })
+    controller.onCompensation({
+      lastEventId: "evt_2",
+      disconnectedAt: 2,
+      runtimeGeneration: GENERATION,
+      reason: "ready",
+      transport: "ws",
+      isReconnect: true,
+    })
+    for (let i = 0; i < 100 && !isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(true)
+    for (let i = 0; i < 100 && isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(false)
   })
 
   test("checkpoint is fixed before compensation; anchor is authored user", async () => {

@@ -26,6 +26,10 @@ import {
 
 import type { EventPipelineCompensationTrigger } from "./event-pipeline"
 import {
+  beginTranscriptResync,
+  endTranscriptResync,
+} from "./transcript-resync-flight"
+import {
   fetchSessionTranscriptReconcile,
   type SessionTranscriptReconcilePage,
 } from "./session-transcript-reconcile-api"
@@ -949,11 +953,13 @@ export function createTranscriptReconnectCompensationController(
     sessionAborts.set(key, abort)
 
     const flight = (async () => {
+      beginTranscriptResync(normalized, ref.sessionID)
       try {
         await runSessionReconcile(ref, identity, epoch, abort.signal)
       } catch {
         // Errors already recorded on task query; do not rethrow into queue.
       } finally {
+        endTranscriptResync(normalized, ref.sessionID)
         sessionAborts.delete(key)
         sessionFlights.delete(key)
         directoryActive.set(
@@ -1131,9 +1137,14 @@ export function createTranscriptReconnectCompensationController(
 
     try {
       assertRuntimeCurrent(identity, input)
-      const data = await repository.ensureInitial(transcriptScope)
-      clearTranscriptRecoveryCheckpoint(client, cacheScope)
-      return data
+      beginTranscriptResync(directory, scope.sessionID)
+      try {
+        const data = await repository.ensureInitial(transcriptScope)
+        clearTranscriptRecoveryCheckpoint(client, cacheScope)
+        return data
+      } finally {
+        endTranscriptResync(directory, scope.sessionID)
+      }
     } catch (error) {
       input.onError?.(error, {
         directory,

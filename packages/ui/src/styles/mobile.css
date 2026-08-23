@@ -1970,10 +1970,12 @@ button.oc-mobile-worktree-label-trigger:active,
     --text-micro: 0.75rem;
   }
 
-  /* Typography utility classes hardcode font-size; unset so they inherit --text-* */
+  /* Typography utility classes hardcode font-size; unset so they inherit --text-*.
+     Do NOT unset .typography-ui-header: MessageHeader model names would inherit
+     the root 16px and stay huge after body/chrome shrink via --dpt. The class
+     already applies var(--text-ui-header) (mobile 0.875rem → calc(14 * var(--dpt))). */
   :root.mobile-pointer:not(.desktop-runtime) .typography-markdown,
   :root.mobile-pointer:not(.desktop-runtime) .typography-code,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-ui-header,
   :root.mobile-pointer:not(.desktop-runtime) .typography-ui-label,
   :root.mobile-pointer:not(.desktop-runtime) .typography-meta,
   :root.mobile-pointer:not(.desktop-runtime) .typography-micro {

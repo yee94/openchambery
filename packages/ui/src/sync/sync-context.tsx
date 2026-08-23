@@ -42,6 +42,10 @@ import {
   notifyTranscriptReconnectDisconnect,
 } from "./transcript-reconnect-compensation-runtime"
 import {
+  beginTranscriptResync,
+  endTranscriptResync,
+} from "./transcript-resync-flight"
+import {
   applyProductionHttpPage,
   fetchProductionTranscriptTransportPage,
   mountProductionTranscriptStack,
@@ -1706,6 +1710,9 @@ export async function resyncDirectoryAfterReconnect(
       // Ticket 09: Query sole write for recovery body (raw transport → http-page).
       // When a Query compensation controller is registered it may already own
       // multi-page reconcile; this path still ensures a recovery tail page.
+      // Resync flight: this warm session's transcript is chasing the remote
+      // tail here, so the sync hint must be in flight even with a transcript.
+      beginTranscriptResync(directory, sessionId)
       try {
         const page = await fetchProductionTranscriptTransportPage({
           directory,
@@ -1756,6 +1763,8 @@ export async function resyncDirectoryAfterReconnect(
         })
       } catch {
         // Preserve prior transcript on recovery failure (same as loader error path).
+      } finally {
+        endTranscriptResync(directory, sessionId)
       }
     }))
   }

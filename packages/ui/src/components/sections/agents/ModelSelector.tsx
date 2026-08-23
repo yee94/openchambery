@@ -95,14 +95,21 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     const handleSelect = React.useCallback((entry: ModelPickerEntry) => {
         const variantOptions = getVariantOptions(entry);
-        const nextVariant = entry.providerID === providerId
-            && entry.modelID === modelId
+        const sameModel = entry.providerID === providerId && entry.modelID === modelId;
+        const rememberedVariant = entry.variant !== undefined && variantOptions.includes(entry.variant)
+            ? entry.variant
+            : undefined;
+        const nextVariant = sameModel
             && variant
             && variantOptions.includes(variant)
             ? variant
-            : '';
+            : (rememberedVariant ?? '');
         onChange(entry.providerID, entry.modelID, variantSelectionEnabled ? nextVariant : undefined);
-        addRecentModel(entry.providerID, entry.modelID);
+        addRecentModel(
+            entry.providerID,
+            entry.modelID,
+            variantSelectionEnabled ? (nextVariant || undefined) : undefined,
+        );
         closePicker();
     }, [addRecentModel, closePicker, getVariantOptions, modelId, onChange, providerId, variant, variantSelectionEnabled]);
 
@@ -114,7 +121,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const handleVariantSelect = React.useCallback((nextVariant: string) => {
         if (!variantTarget) return;
         onChange(variantTarget.providerID, variantTarget.modelID, nextVariant);
-        addRecentModel(variantTarget.providerID, variantTarget.modelID);
+        addRecentModel(variantTarget.providerID, variantTarget.modelID, nextVariant || undefined);
         closePicker();
     }, [addRecentModel, closePicker, onChange, variantTarget]);
 
@@ -148,7 +155,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     }, [modelId, providerId, variant, variantSelectionEnabled]);
     const handleMobileSelect = React.useCallback((nextProviderId: string, nextModelId: string, nextVariant: string | undefined) => {
         onChange(nextProviderId, nextModelId, variantSelectionEnabled ? (nextVariant ?? '') : undefined);
-        addRecentModel(nextProviderId, nextModelId);
+        addRecentModel(
+            nextProviderId,
+            nextModelId,
+            variantSelectionEnabled ? (nextVariant || undefined) : undefined,
+        );
         closePicker();
     }, [addRecentModel, closePicker, onChange, variantSelectionEnabled]);
 
@@ -193,7 +204,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             maxHeightClassName={isActuallyMobile ? 'max-h-none flex-1' : undefined}
             tooltipsEnabled={tooltipsEnabled && (isActuallyMobile ? isMobilePanelOpen : isDropdownOpen)}
             isFavorite={(entry) => isFavoriteModel(entry.providerID, entry.modelID)}
-            onToggleFavorite={(entry) => toggleFavoriteModel(entry.providerID, entry.modelID)}
+            onToggleFavorite={(entry) => toggleFavoriteModel(
+                entry.providerID,
+                entry.modelID,
+                entry.providerID === providerId && entry.modelID === modelId
+                    ? (variant || undefined)
+                    : entry.variant,
+            )}
             renderRowEnd={renderVariantControl}
         />
     );
@@ -282,7 +299,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     providerOrder={providerOrder}
                     variantSelectionEnabled={variantSelectionEnabled}
                     isFavorite={isFavoriteModel}
-                    onToggleFavorite={toggleFavoriteModel}
+                    onToggleFavorite={(nextProviderId, nextModelId) => toggleFavoriteModel(
+                        nextProviderId,
+                        nextModelId,
+                        nextProviderId === providerId && nextModelId === modelId
+                            ? (variant || undefined)
+                            : favoriteModelsList.find((entry) => entry.providerID === nextProviderId && entry.modelID === nextModelId)?.variant
+                                ?? recentModelsList.find((entry) => entry.providerID === nextProviderId && entry.modelID === nextModelId)?.variant,
+                    )}
                 />
             </>
         );

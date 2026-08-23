@@ -175,10 +175,10 @@ export type DesktopSettings = {
   inputBarOffset?: number;
   shortcutOverrides?: Record<string, string>;
 
-  favoriteModels?: Array<{ providerID: string; modelID: string }>;
+  favoriteModels?: Array<{ providerID: string; modelID: string; variant?: string }>;
   hiddenModels?: Array<{ providerID: string; modelID: string }>;
   collapsedModelProviders?: string[];
-  recentModels?: Array<{ providerID: string; modelID: string }>;
+  recentModels?: Array<{ providerID: string; modelID: string; variant?: string }>;
   recentAgents?: string[];
   recentEfforts?: Record<string, string[]>;
   diffLayoutPreference?: 'dynamic' | 'inline' | 'side-by-side';

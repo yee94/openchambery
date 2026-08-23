@@ -154,11 +154,12 @@ Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne)
 
 | Path | Cache-Control |
 | --- | --- |
-| `/ota/bundles/(.*)` | `public, max-age=31536000, immutable` |
+| `/ota/bundles/(.*)` (full GET) | `public, max-age=31536000, immutable` |
+| `/ota/bundles/(.*)` (client `Range` or upstream `206`) | `no-store` (never edge-cache partial bodies) |
 | `/ota/channels/(.*)` | `no-cache, max-age=0` |
 
 ### Deploying bundles and channels
 
 CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The Vercel origin (`openchamber-update.vercel.app`) is authoritative — CI deploys snapshots there via `vercel deploy --prebuilt`.
 
-The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries the seeds. To keep it current, `edge-functions/ota/[...path].js` reverse-proxies `/ota/channels/*.json` and `/ota/bundles/*.zip` to the Vercel origin with edge-friendly cache headers (channels `s-maxage=60` + stale-while-revalidate, bundles `immutable`). The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative no-update.
+The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries the seeds. To keep it current, `edge-functions/ota/[...path].js` reverse-proxies `/ota/channels/*.json` and `/ota/bundles/*.zip` to the Vercel origin with edge-friendly cache headers (channels `s-maxage=60` + stale-while-revalidate, full bundles `immutable`). For bundle paths only, the proxy forwards client `Range` and passes through `content-range` / `accept-ranges` so Capgo native resume works; channel paths never forward `Range`. Partial responses use `cache-control: no-store` so an edge never caches a byte-range body that would poison later full GETs. The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative no-update.

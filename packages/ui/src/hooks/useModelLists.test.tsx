@@ -137,4 +137,28 @@ describe('useModelLists current selection pin', () => {
       'openai/gpt-4.1',
     ]);
   });
+
+  test('passes remembered variants through favorite and recent list items', async () => {
+    useUIStore.setState({
+      favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-opus-4', variant: 'high' }],
+      recentModels: [{ providerID: 'openai', modelID: 'gpt-4.1', variant: 'low' }],
+    });
+
+    const { favoriteModelsList, recentModelsList } = await renderLists();
+
+    expect(favoriteModelsList).toEqual([
+      expect.objectContaining({
+        providerID: 'anthropic',
+        modelID: 'claude-opus-4',
+        variant: 'high',
+      }),
+    ]);
+    expect(recentModelsList).toEqual([
+      expect.objectContaining({
+        providerID: 'openai',
+        modelID: 'gpt-4.1',
+        variant: 'low',
+      }),
+    ]);
+  });
 });

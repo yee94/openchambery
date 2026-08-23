@@ -439,5 +439,47 @@ describe('settings helpers', () => {
       expect(sanitized.favoriteModels).toEqual(payload.favoriteModels);
       expect(sanitized.recentModels).toEqual(payload.recentModels);
     });
+
+    it('preserves trimmed thinking variants on favoriteModels and recentModels', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(
+        helpers.sanitizeSettingsUpdate({
+          favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4', variant: '  high  ' }],
+          recentModels: [
+            { providerID: 'openai', modelID: 'gpt-5', variant: 'medium' },
+            { providerID: 'google', modelID: 'gemini-pro' },
+          ],
+        }),
+      ).toEqual({
+        favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' }],
+        recentModels: [
+          { providerID: 'openai', modelID: 'gpt-5', variant: 'medium' },
+          { providerID: 'google', modelID: 'gemini-pro' },
+        ],
+      });
+    });
+
+    it('strips invalid favorite/recent variants and never preserves variant on hiddenModels', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+
+      expect(
+        helpers.sanitizeSettingsUpdate({
+          favoriteModels: [
+            { providerID: 'anthropic', modelID: 'claude-haiku-4', variant: '   ' },
+            { providerID: 'openai', modelID: 'gpt-5', variant: 12 },
+          ],
+          recentModels: [{ providerID: 'google', modelID: 'gemini-pro', variant: null }],
+          hiddenModels: [{ providerID: 'anthropic', modelID: 'claude-opus-4', variant: 'high' }],
+        }),
+      ).toEqual({
+        favoriteModels: [
+          { providerID: 'anthropic', modelID: 'claude-haiku-4' },
+          { providerID: 'openai', modelID: 'gpt-5' },
+        ],
+        recentModels: [{ providerID: 'google', modelID: 'gemini-pro' }],
+        hiddenModels: [{ providerID: 'anthropic', modelID: 'claude-opus-4' }],
+      });
+    });
   });
 });

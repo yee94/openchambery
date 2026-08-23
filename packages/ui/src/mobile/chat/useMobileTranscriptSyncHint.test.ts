@@ -7,6 +7,7 @@ const idle = {
   hasTranscript: true,
   loadStatus: 'ready' as const,
   userRefreshInFlight: false,
+  backgroundResyncInFlight: false,
   isConnected: true,
   connectionPhase: 'connected' as const,
 };
@@ -44,6 +45,31 @@ describe('resolveMobileTranscriptSyncHint', () => {
       hasTranscript: true,
       loadStatus: 'loading',
       userRefreshInFlight: false,
+      backgroundResyncInFlight: false,
+      isConnected: false,
+      connectionPhase: 'reconnecting',
+    })).toBeNull();
+  });
+
+  test('shows during background resync even with a warm transcript', () => {
+    expect(resolveMobileTranscriptSyncHint({
+      ...idle,
+      backgroundResyncInFlight: true,
+    })).toBe('syncing');
+
+    expect(resolveMobileTranscriptSyncHint({
+      ...idle,
+      backgroundResyncInFlight: true,
+      isConnected: false,
+      connectionPhase: 'reconnecting',
+      loadStatus: 'ready',
+    })).toBe('syncing');
+  });
+
+  test('hides once the background resync flight ends', () => {
+    expect(resolveMobileTranscriptSyncHint({
+      ...idle,
+      backgroundResyncInFlight: false,
       isConnected: false,
       connectionPhase: 'reconnecting',
     })).toBeNull();

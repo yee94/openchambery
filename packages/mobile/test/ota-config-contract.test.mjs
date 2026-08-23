@@ -38,7 +38,7 @@ test('capacitor.config.ts declares CapacitorUpdater and OpenChamberOTA OTA contr
   assert.match(config, /statsUrl:\s*''/);
   assert.match(config, /appReadyTimeout:\s*20000/);
   assert.match(config, /autoUpdate:\s*false/);
-  assert.match(config, /autoDeleteFailed:\s*true/);
+  assert.match(config, /autoDeleteFailed:\s*false/);
   assert.match(config, /autoDeletePrevious:\s*true/);
   assert.match(config, /resetWhenUpdate:\s*true/);
   assert.match(config, /publicKey:\s*process\.env\.OPENCHAMBER_OTA_PUBLIC_KEY\s*\?\?\s*''/);

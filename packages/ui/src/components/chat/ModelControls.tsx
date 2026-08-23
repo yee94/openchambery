@@ -909,10 +909,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return result;
         }
 
-        addRecentModel(providerId, modelId);
         commitVariantSelectionForModel(providerId, modelId, variant, effectiveAgentName);
+        const recordedVariant = selectionAdapter
+            ? variant
+            : useConfigStore.getState().currentVariant;
+        addRecentModel(providerId, modelId, recordedVariant);
         return 'applied';
-    }, [addRecentModel, commitVariantSelectionForModel, resolveLiveAgentName, tryApplyModelSelection]);
+    }, [addRecentModel, commitVariantSelectionForModel, resolveLiveAgentName, selectionAdapter, tryApplyModelSelection]);
 
     React.useEffect(() => {
         if (selectionAdapter) return;
@@ -1448,7 +1451,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 agent: options?.agentName ?? selectionAdapter.selection.agent,
                 variant: nextVariant,
             }).then(() => {
-                addRecentModel(providerId, modelId);
+                addRecentModel(providerId, modelId, nextVariant);
                 closeModelMenu();
             }).catch(() => undefined);
             return;
@@ -1474,7 +1477,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             );
             if (!options?.applyVariant) {
                 // Add to recent models on successful selection.
-                addRecentModel(providerId, modelId);
+                addRecentModel(providerId, modelId, useConfigStore.getState().currentVariant);
             }
             closeModelMenu();
             if (isCompact) {
@@ -1769,7 +1772,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     agent: selectionAdapter.selection.agent,
                     variant,
                 }).then(() => {
-                    addRecentModel(providerId, modelId);
+                    addRecentModel(providerId, modelId, variant);
                 }).catch(() => undefined);
                 return;
             }
@@ -1805,7 +1808,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 hiddenModels={hiddenModels}
                 providerOrder={providerOrder}
                 isFavorite={isFavoriteModel}
-                onToggleFavorite={toggleFavoriteModel}
+                onToggleFavorite={(providerID, modelID) => toggleFavoriteModel(
+                    providerID,
+                    modelID,
+                    providerID === currentProviderId && modelID === currentModelId
+                        ? currentVariant
+                        : favoriteModelsList.find((entry) => entry.providerID === providerID && entry.modelID === modelID)?.variant
+                            ?? recentModelsList.find((entry) => entry.providerID === providerID && entry.modelID === modelID)?.variant,
+                )}
                 getMetadata={getModelMetadata}
             />
         );
@@ -2014,9 +2024,29 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const wasAdjusted = adjustedThinkingModels.has(mapKey);
             const effectiveAgentName = resolveLiveAgentName();
 
-            handleProviderAndModelChange(entry.providerID, entry.modelID, wasAdjusted
-                ? { applyVariant: true, variant: pendingVariant, agentName: effectiveAgentName }
-                : { agentName: effectiveAgentName });
+            if (wasAdjusted) {
+                handleProviderAndModelChange(entry.providerID, entry.modelID, {
+                    applyVariant: true,
+                    variant: pendingVariant,
+                    agentName: effectiveAgentName,
+                });
+                return;
+            }
+
+            const availableVariants = getModelVariantOptions(entry.providerID, entry.modelID);
+            const rememberedVariant = entry.variant !== undefined && availableVariants.includes(entry.variant)
+                ? entry.variant
+                : undefined;
+            if (rememberedVariant !== undefined) {
+                handleProviderAndModelChange(entry.providerID, entry.modelID, {
+                    applyVariant: true,
+                    variant: rememberedVariant,
+                    agentName: effectiveAgentName,
+                });
+                return;
+            }
+
+            handleProviderAndModelChange(entry.providerID, entry.modelID, { agentName: effectiveAgentName });
         };
 
         const handleModelShortcutKeyDownCapture = (e: React.KeyboardEvent) => {
@@ -2318,7 +2348,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         onActiveEntryChange={(entry) => { activeModelPickerEntryRef.current = entry; }}
                                         onVariantKey={handleThinkingVariantKey}
                                         isFavorite={(entry) => isFavoriteModel(entry.providerID, entry.modelID)}
-                                        onToggleFavorite={(entry) => toggleFavoriteModel(entry.providerID, entry.modelID)}
+                                        onToggleFavorite={(entry) => toggleFavoriteModel(
+                                            entry.providerID,
+                                            entry.modelID,
+                                            entry.providerID === currentProviderId && entry.modelID === currentModelId
+                                                ? currentVariant
+                                                : entry.variant,
+                                        )}
                                         renderRowEnd={renderThinkingSlot}
                                         renderVersion={modelPickerRenderVersion}
                                         onReorderFavorite={(active, over) => reorderFavoriteModel(

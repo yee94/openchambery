@@ -408,7 +408,7 @@ node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to st
 - 无密钥时走明文 zip，`checksum` 为 **纯 64 位 hex（无 `sha256:` 前缀）**——原生插件按字面值比较自身摘要，带前缀会导致下载校验失败。脚本会自动剥掉输入的前缀。
 - 检查端点对加密 bundle 同时返回 `session_key` 与 `sessionKey` 两个键：Android 解析 `sessionKey`，iOS 解析 `session_key`。
 - 回滚加密 bundle 属于已知限制：回滚 zip 只能携带明文摘要，配置了公钥的壳无法校验，会自动回退到上一个成功 bundle。
-- zip **必须 < 24 MiB**；超限失败并提示迁移 COS。CI 只部署 Vercel（权威源）；EdgeOne（`openchamber.xiaobe.top`，国内入口）由 git 自动部署 + `/ota/*` 边缘反向代理跟随 Vercel，无需 CI 双发。
+- zip **必须 < 24 MiB**；超限失败并提示迁移 COS。CI 只部署 Vercel（权威源）；EdgeOne（`openchamber.xiaobe.top`，国内入口）由 git 自动部署 + `/ota/*` 边缘反向代理跟随 Vercel，无需 CI 双发。服务端 bundle 分发支持 HTTP Range 断点续传（EdgeOne 代理已透传 `Range` / `Content-Range`，部分响应不落边缘缓存）。
 
 ### 通道隔离保证
 

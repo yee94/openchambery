@@ -7,6 +7,10 @@ import {
   isTranscriptAuthorityRefreshInFlight,
   subscribeTranscriptAuthorityRefresh,
 } from '@/sync/transcript-authority-refresh-flight';
+import {
+  isTranscriptResyncInFlight,
+  subscribeTranscriptResync,
+} from '@/sync/transcript-resync-flight';
 
 export type MobileTranscriptSyncHintKind = 'syncing';
 
@@ -15,6 +19,7 @@ export type MobileTranscriptSyncHintInput = {
   hasTranscript: boolean;
   loadStatus?: 'loading' | 'ready' | 'error';
   userRefreshInFlight: boolean;
+  backgroundResyncInFlight: boolean;
   isConnected: boolean;
   connectionPhase: 'connecting' | 'connected' | 'reconnecting';
 };
@@ -23,16 +28,21 @@ export type MobileTranscriptSyncHintInput = {
  * When the chat title should show a WeChat-style sync whisper.
  *
  * Warm prefetch `loading` is ignored: Relay can stick there, and load-older
- * already has its own spinner. Once this session already has a transcript,
- * reconnecting must not keep the whisper — HTTP refresh can finish while the
- * socket is still catching up. Cold first paint, in-flight user refresh, and
- * reconnect-before-any-messages are the only live-work signals.
+ * already has its own spinner. Live work that proves the page is chasing the
+ * remote state shows even when a transcript is already present: an in-flight
+ * user authority refresh, or a background resync flight (reconnect recovery
+ * pull, compensation reconcile, observe-time head check). When those clear,
+ * the visible transcript has been reconciled against the server. Socket-level
+ * `reconnecting` alone stays hidden for warm transcripts — HTTP catch-up can
+ * finish while the socket is still backing off. Cold first paint and
+ * reconnect-before-any-messages keep their original signals.
  */
 export function resolveMobileTranscriptSyncHint(
   input: MobileTranscriptSyncHintInput,
 ): MobileTranscriptSyncHintKind | null {
   if (!input.sessionId) return null;
   if (input.userRefreshInFlight) return 'syncing';
+  if (input.backgroundResyncInFlight) return 'syncing';
   if (input.hasTranscript) return null;
   if (!input.isConnected && input.connectionPhase === 'reconnecting') return 'syncing';
   if (input.loadStatus === 'loading') return 'syncing';
@@ -53,12 +63,18 @@ export function useMobileTranscriptSyncHint(
     () => isTranscriptAuthorityRefreshInFlight(sessionId, directory),
     () => false,
   );
+  const backgroundResyncInFlight = useSyncExternalStore(
+    subscribeTranscriptResync,
+    () => isTranscriptResyncInFlight(sessionId, directory),
+    () => false,
+  );
 
   const kind = resolveMobileTranscriptSyncHint({
     sessionId,
     hasTranscript,
     loadStatus: load?.status,
     userRefreshInFlight,
+    backgroundResyncInFlight,
     isConnected,
     connectionPhase,
   });

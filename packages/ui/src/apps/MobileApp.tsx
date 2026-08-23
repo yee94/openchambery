@@ -3965,6 +3965,12 @@ export function MobileApp({ apis }: MobileAppProps) {
       if (!updater || disposed) return;
 
       try {
+        const download = await updater.addListener('download', (event) => {
+          useUpdateStore.getState().setOtaDownloadPercent(event.percent);
+        });
+        const downloadFailed = await updater.addListener('downloadFailed', () => {
+          useUpdateStore.getState().setOtaDownloadFailed();
+        });
         const downloadComplete = await updater.addListener('downloadComplete', () => {
           useUpdateStore.getState().setOtaPhase('pending_restart');
         });
@@ -3977,6 +3983,8 @@ export function MobileApp({ apis }: MobileAppProps) {
         });
 
         if (disposed) {
+          void download.remove();
+          void downloadFailed.remove();
           void downloadComplete.remove();
           void appReloaded.remove();
           void autoRevert.remove();
@@ -3984,6 +3992,8 @@ export function MobileApp({ apis }: MobileAppProps) {
         }
 
         cleanups.push(
+          () => void download.remove(),
+          () => void downloadFailed.remove(),
           () => void downloadComplete.remove(),
           () => void appReloaded.remove(),
           () => void autoRevert.remove(),

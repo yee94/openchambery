@@ -754,7 +754,7 @@ both readers agree on when a frame may shrink.
   only for ids actually removed. `reconcile-page` already preserves the history
   boundary / cursor / loadedTurns (Host `complete` ends a compensation round,
   not older-history exhaustion); refresh keeps that, because older-than-anchor
-  pages remain. SSE that advances revision during the pull trips
+  pages remain.   SSE that advances revision during the pull trips
   `STALE_RECOVERY` and skips the deletion pass so live objects are not
   overwritten. The fetch is outside the
   InfiniteQuery observer, so `getRequestState` stays `ready`;
@@ -763,7 +763,19 @@ both readers agree on when a frame may shrink.
    stays up only while that refresh is in flight, during cold first paint
    (no transcript yet), or while reconnecting before any messages exist.
    A loaded transcript hides it even if the socket is still reconnecting or
-   the InfiniteQuery observer is still `isFetching`.    Desktop session context-menu
+   the InfiniteQuery observer is still `isFetching`. Background catch-up has
+   its own ref-counted signal (`transcript-resync-flight`): the reconnect
+   recovery tail pull for materialized sessions in `resyncDirectoryAfterReconnect`,
+   every compensation reconcile flight (`pumpDirectory`), and stale-on-observe
+   `ensureInitial` mark it. The whisper means a known gap is being chased
+   (disconnect, background resume, marked-stale session), so it also shows for
+   warm transcripts while those flights run and clears when the last
+   overlapping flight ends; every mark ends in a `finally`, so a failed fetch
+   cannot strand the hint. Routine verification fetches stay silent by design:
+   while foregrounded the SSE stream merges every canonical scope live, so
+   hot revalidation (`runAuthorityHotRevalidate`), idle materialization, and
+   the observe-time head check almost never find a diff — whispering there
+   would flash noise on every session switch past their revalidation windows.    Desktop session context-menu
    "Sync messages", the dedicated-mobile overflow "Sync messages", and the
    mobile session row-actions sheet all call
     `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
