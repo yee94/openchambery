@@ -1291,9 +1291,12 @@ trusts authoritative idle and does not wait for `time.completed`. Missing
 message materialization preserves the idle path.
 - Aborting a turn creates a transient queue-dispatch block keyed by the exact
   `(transportIdentity, directory, sessionID)` queue scope before the SDK abort
-  request. The block preserves queued rows, lasts two seconds, rolls back only
-  its matching token when abort fails, clears on runtime restore, and wakes the
-  scheduler at expiry. Manual dispatch remains available during this window.
+  request. The block preserves queued rows, releases early on authoritative
+  server idle events (`session.idle` / `session.error` / `session.status` idle),
+  falls back to a six-second timeout when idle is delayed or missing, rolls back
+  only its matching token when abort fails, clears on runtime restore, and wakes
+  the scheduler at expiry or early release. Manual dispatch remains available
+  during this window.
 - Status snapshots apply per session only when their request-start timestamp is
   newer than that session's observed status timestamp. Optimistic busy and
   rollback idle writes advance the observed timestamp, so an in-flight HTTP

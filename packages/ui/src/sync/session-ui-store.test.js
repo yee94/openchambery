@@ -8,6 +8,7 @@ import {
   beginDraftEstablishingPaint,
   clearDraftEstablishingPaint,
   materializeOpenDraftSession,
+  QUEUE_ABORT_BLOCK_FALLBACK_MS,
   routeMessage,
   useSessionUIStore,
 } from './session-ui-store';
@@ -258,6 +259,10 @@ describe('session-worktree-store worktree routing', () => {
 });
 
 describe('queue abort blocks', () => {
+  beforeEach(() => {
+    useSessionUIStore.setState({ queueAbortBlocks: new Map() });
+  });
+
   test('keeps a newer exact-scope block when an older abort failure clears its token', () => {
     const store = useSessionUIStore.getState();
     const firstScope = { state: 'bound', transportIdentity: 'runtime-a', directory: '/project-a', sessionID: 'shared-session' };
@@ -271,6 +276,35 @@ describe('queue abort blocks', () => {
     expect(useSessionUIStore.getState().queueAbortBlocks.has(queueScopeKey(otherScope))).toBe(true);
     useSessionUIStore.getState().pruneQueueAbortBlocks(Date.now() + 2001);
     expect(useSessionUIStore.getState().queueAbortBlocks.size).toBe(0);
+  });
+
+  test('defaults to the six-second fallback duration and stores directory/sessionID', () => {
+    const before = Date.now();
+    const scope = { state: 'bound', transportIdentity: 'runtime-a', directory: '/project-a', sessionID: 'session-a' };
+    useSessionUIStore.getState().beginQueueAbortBlock(scope);
+    const block = useSessionUIStore.getState().queueAbortBlocks.get(queueScopeKey(scope));
+    expect(block?.directory).toBe('/project-a');
+    expect(block?.sessionID).toBe('session-a');
+    expect(block?.expiresAt).toBeGreaterThanOrEqual(before + QUEUE_ABORT_BLOCK_FALLBACK_MS);
+    expect(block?.expiresAt).toBeLessThanOrEqual(Date.now() + QUEUE_ABORT_BLOCK_FALLBACK_MS);
+    expect(QUEUE_ABORT_BLOCK_FALLBACK_MS).toBe(6000);
+  });
+
+  test('releaseQueueAbortBlocksForServerIdle removes matching active blocks only', () => {
+    const store = useSessionUIStore.getState();
+    const matched = { state: 'bound', transportIdentity: 'runtime-a', directory: '/project-a', sessionID: 'session-a' };
+    const otherSession = { ...matched, sessionID: 'session-b' };
+    const otherDirectory = { ...matched, directory: '/project-b' };
+    store.beginQueueAbortBlock(matched, 6000);
+    store.beginQueueAbortBlock(otherSession, 6000);
+    store.beginQueueAbortBlock(otherDirectory, 6000);
+
+    store.releaseQueueAbortBlocksForServerIdle('/project-a', 'session-a');
+
+    const blocks = useSessionUIStore.getState().queueAbortBlocks;
+    expect(blocks.has(queueScopeKey(matched))).toBe(false);
+    expect(blocks.has(queueScopeKey(otherSession))).toBe(true);
+    expect(blocks.has(queueScopeKey(otherDirectory))).toBe(true);
   });
 });
 

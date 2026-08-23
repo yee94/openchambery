@@ -93,6 +93,7 @@ import { opencodeClient } from "@/lib/opencode/client"
 import { usePermissionStore } from "@/stores/permissionStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
+import { useSessionUIStore } from "./session-ui-store"
 import { toast } from "@/components/ui"
 import { appendNotification } from "./notification-store"
 import {
@@ -2357,6 +2358,9 @@ export function handleEvent(
   const reducerResult = applyDirectoryEvent(draft, payload, {
     onSetSessionTodo: (sessionID, todos) => {
       useTodosPersistStore.getState().setSessionTodos(sessionID, todos)
+    },
+    onServerSessionIdle: (sessionID) => {
+      useSessionUIStore.getState().releaseQueueAbortBlocksForServerIdle(resolvedDirectory, sessionID)
     },
     now: Date.now,
   })

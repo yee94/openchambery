@@ -364,6 +364,38 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     expect(draft.session_status.ses_1).toEqual({ type: "busy" })
   })
 
+  test("server idle events release queue abort blocks even on no-op status writes", () => {
+    const draft = directoryState({
+      session_status: { ses_1: { type: "idle" } },
+    })
+    const released: string[] = []
+    const callbacks = {
+      onServerSessionIdle: (sessionID: string) => {
+        released.push(sessionID)
+      },
+      now: () => 42,
+    }
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.idle",
+      properties: { sessionID: "ses_1" },
+    } as Event, callbacks)).toBe(true)
+    expect(applyDirectoryEvent(draft, {
+      type: "session.error",
+      properties: { sessionID: "ses_1" },
+    } as Event, callbacks)).toBe(true)
+    expect(applyDirectoryEvent(draft, {
+      type: "session.status",
+      properties: { sessionID: "ses_1", status: { type: "idle" } as SessionStatus },
+    } as Event, callbacks)).toBe(true)
+    expect(applyDirectoryEvent(draft, {
+      type: "session.status",
+      properties: { sessionID: "ses_1", status: { type: "busy" } as SessionStatus },
+    } as Event, callbacks)).toBe(true)
+
+    expect(released).toEqual(["ses_1", "ses_1", "ses_1"])
+  })
+
   test("permission.asked mutates permission map", () => {
     const draft = directoryState()
     const permission = {

@@ -91,6 +91,16 @@ import { beginSessionSwitchMeasure } from "@/lib/sessionSwitchPerf"
 import { parseSlashCommandInvocation } from "@/composer/inline-visual"
 import { announceSessionSwitchIntent } from "@/lib/sessionSwitchIntent"
 
+/** Fallback abort-block duration when server idle is delayed or missing. */
+export const QUEUE_ABORT_BLOCK_FALLBACK_MS = 6000
+
+export type QueueAbortBlock = {
+  token: string
+  expiresAt: number
+  directory: string
+  sessionID: string
+}
+
 export type { AttachedFile }
 
 export type MessageEditSnapshot = {
@@ -508,7 +518,7 @@ export type SessionUIState = {
   availableWorktreesByProject: Map<string, WorktreeMetadata[]>
   webUICreatedSessions: Set<string>
   sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean }>
-  queueAbortBlocks: Map<string, { token: string; expiresAt: number }>
+  queueAbortBlocks: Map<string, QueueAbortBlock>
   abortControllers: Map<string, AbortController>
   isLoading: boolean
   lastLoadedDirectory: string | null
@@ -544,6 +554,7 @@ export type SessionUIState = {
   beginQueueAbortBlock: (scope: Extract<QueueScope, { state: "bound" }>, durationMs?: number) => string
   clearQueueAbortBlock: (scope: Extract<QueueScope, { state: "bound" }>, token: string) => void
   pruneQueueAbortBlocks: (now?: number) => void
+  releaseQueueAbortBlocksForServerIdle: (directory: string, sessionID: string) => void
   clearAbortPrompt: () => void
   armAbortPrompt: (durationMs?: number) => number | null
   clearError: () => void
@@ -1788,12 +1799,17 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       return { sessionAbortFlags: flags }
     }),
 
-  beginQueueAbortBlock: (scope, durationMs = 2000) => {
+  beginQueueAbortBlock: (scope, durationMs = QUEUE_ABORT_BLOCK_FALLBACK_MS) => {
     const token = createUuid()
     const key = queueScopeKey(scope)
     set((state) => {
       const queueAbortBlocks = new Map(state.queueAbortBlocks)
-      queueAbortBlocks.set(key, { token, expiresAt: Date.now() + durationMs })
+      queueAbortBlocks.set(key, {
+        token,
+        expiresAt: Date.now() + durationMs,
+        directory: scope.directory,
+        sessionID: scope.sessionID,
+      })
       return { queueAbortBlocks }
     })
     return token
@@ -1810,9 +1826,22 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   pruneQueueAbortBlocks: (now = Date.now()) =>
     set((state) => {
-      let queueAbortBlocks: Map<string, { token: string; expiresAt: number }> | undefined
+      let queueAbortBlocks: Map<string, QueueAbortBlock> | undefined
       for (const [key, block] of state.queueAbortBlocks) {
         if (block.expiresAt > now) continue
+        if (!queueAbortBlocks) queueAbortBlocks = new Map(state.queueAbortBlocks)
+        queueAbortBlocks.delete(key)
+      }
+      return queueAbortBlocks ? { queueAbortBlocks } : state
+    }),
+
+  releaseQueueAbortBlocksForServerIdle: (directory, sessionID) =>
+    set((state) => {
+      let queueAbortBlocks: Map<string, QueueAbortBlock> | undefined
+      const now = Date.now()
+      for (const [key, block] of state.queueAbortBlocks) {
+        if (block.directory !== directory || block.sessionID !== sessionID) continue
+        if (block.expiresAt <= now) continue
         if (!queueAbortBlocks) queueAbortBlocks = new Map(state.queueAbortBlocks)
         queueAbortBlocks.delete(key)
       }
