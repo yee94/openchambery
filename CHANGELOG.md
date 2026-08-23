@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.49] - 2026-08-23
+
+### 移动端
+
+- **首页 worktree 分支名不再压过项目标题：** 分支名从与项目名同级的 `typography-ui-label font-semibold` 降为 `typography-small font-medium`，项目名保持主标题层级。项目卡圆形图标容器与 ⋯ 按钮尺寸改为走 `--padding-scale`，与内部 glyph 一起随密度缩放。
+
 ## [1.18.2-beta.48] - 2026-08-23
 
 ### 移动端
