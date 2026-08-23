@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.54] - 2026-08-23
+
+### 聊天
+
+- **附件与 chip 尺寸补齐密度缩放：** 输入区附件图标（18px）、内联引用 chip 高度（26px）、附件文件名/路径截断宽度（200/220/140px）此前是任意 px 字面量，不随 `--dpt` 缩放；统一换算为 rem 令牌后走 `用户密度 × --dpt-n` 链。图片缩略图 chip（h-10）、队列 chip（h-7）与 chip 文字（text-[11px]→calc）已在链上无需改动。
+
 ## [1.18.2-beta.53] - 2026-08-23
 
 ### 移动端

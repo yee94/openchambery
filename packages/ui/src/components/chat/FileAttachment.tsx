@@ -41,7 +41,7 @@ const FileAttachmentButton = memo(() => {
   const runtimeApis = useRuntimeAPIs();
   const isVSCodeRuntime = runtimeApis.runtime.isVSCode;
   const buttonSizeClass = isMobile ? 'h-9 w-9' : 'h-7 w-7';
-  const iconSizeClass = isMobile ? 'h-5 w-5' : 'h-[18px] w-[18px]';
+  const iconSizeClass = isMobile ? 'h-5 w-5' : 'h-[1.125rem] w-[1.125rem]';
 
   const attachFiles = async (files: FileList | File[]) => {
     for (let i = 0; i < files.length; i++) {
@@ -225,7 +225,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-opacity text-left h-5"
       >
         <FileTypeIcon filePath={file.filename} extension={extension} className="h-4 w-4" />
-        <span className="text-foreground truncate max-w-[200px]">
+        <span className="text-foreground truncate max-w-[12.5rem]">
           {displayName}
         </span>
         <span
@@ -373,7 +373,7 @@ const VSCodeFileChip = memo(({ file, onRemove }: FileChipProps) => {
         <Icon name="close" className="h-4 w-4 text-muted-foreground" />
       </span>
         <FileTypeIcon filePath={file.filename} extension={extension} className="h-4 w-4" />
-        <span className={cn('text-foreground', isSelectionAttachment ? 'whitespace-nowrap' : 'truncate max-w-[200px]')}>
+        <span className={cn('text-foreground', isSelectionAttachment ? 'whitespace-nowrap' : 'truncate max-w-[12.5rem]')}>
           {displayName}
         </span>
     </button>
@@ -579,7 +579,7 @@ export const ActiveEditorFileSuggestion = memo(({
             <Icon name="add" className="h-4 w-4" />
           </button>
           <FileTypeIcon filePath={fileName} extension={ext} className="h-4 w-4 flex-shrink-0" />
-          <span className="text-xs truncate max-w-[220px]">{displayName}</span>
+          <span className="text-xs truncate max-w-[13.75rem]">{displayName}</span>
         </div>
       )}
     </div>
@@ -1134,7 +1134,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
                         ) : (
                           <Icon name="github" className="text-muted-foreground h-3.5 w-3.5" />
                         )}
-                        <div className="overflow-hidden max-w-[220px]">
+                        <div className="overflow-hidden max-w-[13.75rem]">
                           <span className="truncate block" title={fileName}>{fileName}</span>
                         </div>
                       </button>
@@ -1145,7 +1145,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
                         ) : (
                           <FileTypeIcon filePath={fileName} extension={ext} isDirectory={isDirectory} className="text-muted-foreground h-3.5 w-3.5" />
                         )}
-                        <div className="overflow-hidden max-w-[140px]">
+                        <div className="overflow-hidden max-w-[8.75rem]">
                           <span className="truncate block" title={fileName}>{fileName}</span>
                         </div>
                       </div>

@@ -6759,7 +6759,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const buttonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
     const sendIconSizeClass = isMobile ? 'h-4 w-4' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
     const stopIconSizeClass = isMobile ? 'h-6 w-6' : (isVSCode ? 'h-4 w-4' : 'h-5 w-5');
-    const iconSizeClass = isMobile ? 'h-[18px] w-[18px]' : (isVSCode ? 'h-4 w-4' : 'h-[18px] w-[18px]');
+    const iconSizeClass = isMobile ? 'h-[1.125rem] w-[1.125rem]' : (isVSCode ? 'h-4 w-4' : 'h-[1.125rem] w-[1.125rem]');
 
     const iconButtonBaseClass = cn(
         'flex cursor-pointer items-center justify-center text-foreground transition-none outline-none focus:outline-none flex-shrink-0 disabled:cursor-not-allowed',
@@ -7440,7 +7440,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             <button
                                 type="button"
                                 className={cn(
-                                    'inline-flex h-[26px] min-w-0 max-w-[46%] shrink items-center gap-1.5 rounded-lg px-1.5 text-[11px] leading-none font-medium text-foreground/80',
+                                    'inline-flex h-[1.625rem] min-w-0 max-w-[46%] shrink items-center gap-1.5 rounded-lg px-1.5 text-[11px] leading-none font-medium text-foreground/80',
                                     SELECTOR_CHIP_HOVER_CLASS,
                                 )}
                                 onClick={() => setMobileDraftPicker('project')}
@@ -7451,7 +7451,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             <button
                                 type="button"
                                 className={cn(
-                                    'inline-flex h-[26px] min-w-0 max-w-[46%] items-center gap-1.5 rounded-lg px-1.5 text-[11px] leading-none font-medium text-foreground/80',
+                                    'inline-flex h-[1.625rem] min-w-0 max-w-[46%] items-center gap-1.5 rounded-lg px-1.5 text-[11px] leading-none font-medium text-foreground/80',
                                     SELECTOR_CHIP_HOVER_CLASS,
                                 )}
                                 onClick={() => sessionEvents.requestDirectoryDialog()}
@@ -7991,7 +7991,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             requestAnimationFrame(handlePickLocalFiles);
                         }}
                     >
-                        <Icon name="attachment-2" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        <Icon name="attachment-2" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
                         {t('chat.chatInput.actions.attachFiles')}
                     </button>
                     <button
@@ -8005,7 +8005,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             requestAnimationFrame(openIssuePicker);
                         }}
                     >
-                        <Icon name="github" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        <Icon name="github" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
                         {t('chat.chatInput.actions.linkGithubIssue')}
                     </button>
                     <button
@@ -8017,7 +8017,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             requestAnimationFrame(openPrPicker);
                         }}
                     >
-                        <Icon name="git-pull-request" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        <Icon name="git-pull-request" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
                         {t('chat.chatInput.actions.linkGithubPr')}
                     </button>
                 </div>
@@ -8039,7 +8039,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             requestAnimationFrame(handlePickAndroidPhotos);
                         }}
                     >
-                        <Icon name="file-image" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        <Icon name="file-image" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
                         {t('chat.chatInput.actions.attachPhotos')}
                     </button>
                     <button
@@ -8051,7 +8051,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             requestAnimationFrame(handlePickLocalFiles);
                         }}
                     >
-                        <Icon name="attachment-2" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        <Icon name="attachment-2" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
                         {t('chat.chatInput.actions.attachFiles')}
                     </button>
                 </div>
