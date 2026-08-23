@@ -164,8 +164,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     }, [addRecentModel, closePicker, onChange, variantSelectionEnabled]);
 
     const renderVariantControl = React.useCallback((entry: ModelPickerEntry, state: { isSelected: boolean }) => {
-        if (!variantSelectionEnabled || getVariantOptions(entry).length === 0) return null;
-        const selectedVariant = state.isSelected ? variant : '';
+        const variantOptions = getVariantOptions(entry);
+        if (!variantSelectionEnabled || variantOptions.length === 0) return null;
+        const rememberedVariant = entry.variant !== undefined && variantOptions.includes(entry.variant)
+            ? entry.variant
+            : undefined;
+        const selectedVariant = state.isSelected ? variant : (rememberedVariant ?? '');
         return (
             <button
                 type="button"
@@ -215,6 +219,16 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         />
     );
 
+    const variantTargetOptions = variantTarget ? getVariantOptions(variantTarget) : [];
+    const variantTargetHighlighted = (() => {
+        if (!variantTarget) return '';
+        const isCurrentModel = variantTarget.providerID === providerId
+            && variantTarget.modelID === modelId;
+        if (isCurrentModel) return variant || '';
+        return variantTarget.variant !== undefined && variantTargetOptions.includes(variantTarget.variant)
+            ? variantTarget.variant
+            : '';
+    })();
     const variantPicker = variantTarget ? (
         <div className="flex min-h-0 flex-1 flex-col">
             <button
@@ -227,10 +241,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 <span className="min-w-0 flex-1 truncate">{variantTarget.modelID}</span>
             </button>
             <div className="space-y-1 p-2" role="listbox" aria-label={t('chat.modelControls.thinking')}>
-                {['', ...getVariantOptions(variantTarget)].map((option) => {
-                    const selected = variantTarget.providerID === providerId
-                        && variantTarget.modelID === modelId
-                        && (variant || '') === option;
+                {['', ...variantTargetOptions].map((option) => {
+                    const selected = variantTargetHighlighted === option;
                     return (
                         <button
                             key={option || '__default'}

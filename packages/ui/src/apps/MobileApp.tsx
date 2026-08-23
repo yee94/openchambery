@@ -112,6 +112,7 @@ import { useDeepLinkHandlers, useDeepLinkSource, usePairingDeepLinkHandler } fro
 import { useEdgeSwipeSessionSwitch, type SwipeProgress } from './useEdgeSwipeSessionSwitch';
 import { useHeaderSwipeToSessions } from './useHeaderSwipeToSessions';
 import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHaptics';
+import { startPerfDiagnosticsController } from '@/sync/perf-diagnostics';
 import { useNativePushRegistration } from './useNativePushRegistration';
 import { MobileShareBridge } from './MobileShareBridge';
 import { handlePendingNativeAssistantOpen } from './nativeAssistantShortcut';
@@ -3792,6 +3793,8 @@ const MobileShell: React.FC<{
 };
 
 export function MobileApp({ apis }: MobileAppProps) {
+  React.useEffect(() => startPerfDiagnosticsController(), []);
+
   const { t } = useI18n();
   const initializeApp = useConfigStore((state) => state.initializeApp);
   const isInitialized = useConfigStore((state) => state.isInitialized);

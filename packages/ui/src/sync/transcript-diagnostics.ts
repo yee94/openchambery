@@ -22,7 +22,7 @@ export type TranscriptDiagnosticsHydration = {
  * URLs, tokens, titles, prompts, agent names, and attachment payloads
  * stay out. SSE part.delta / unchanged connection batches are not recorded.
  */
-export type ClientDiagnosticsFeat = "transcript" | "task"
+export type ClientDiagnosticsFeat = "transcript" | "task" | "perf"
 
 export type TranscriptDiagnosticsKind =
   | "ensure-initial"
@@ -39,7 +39,7 @@ export type TranscriptDiagnosticsKind =
 
 export type TaskDiagnosticsKind = "task-row" | "task-click"
 
-export type ClientDiagnosticsKind = TranscriptDiagnosticsKind | TaskDiagnosticsKind
+export type ClientDiagnosticsKind = TranscriptDiagnosticsKind | TaskDiagnosticsKind | "perf-window"
 
 export type TaskClickOutcome =
   | "opened"
@@ -164,6 +164,22 @@ export type TranscriptDiagnosticsEvent = {
   readonly taskStartedAt?: number
   readonly statusObservedAt?: number
   readonly statusSnapshotAt?: number
+  readonly fpsAvg?: number
+  readonly fpsMin?: number
+  readonly fpsP10?: number
+  readonly longTaskCount?: number
+  readonly longTaskTotalMs?: number
+  readonly longTaskMaxMs?: number
+  readonly eventLoopLagMaxMs?: number
+  readonly eventLoopLagAvgMs?: number
+  readonly hapticLightCount?: number
+  readonly hapticMediumCount?: number
+  readonly hapticHeavyCount?: number
+  readonly jsHeapUsedMB?: number
+  readonly jsHeapLimitMB?: number
+  readonly visible?: boolean
+  readonly foreground?: boolean
+  readonly platform?: string
 }
 
 export type TranscriptDiagnosticsSink = {

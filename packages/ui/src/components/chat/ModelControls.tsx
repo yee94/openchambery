@@ -2113,7 +2113,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const mapKey = buildModelRefKey(entry.providerID, entry.modelID);
             const hasPendingVariant = pendingThinkingVariants.has(mapKey);
             const pendingVariant = pendingThinkingVariants.get(mapKey);
-            const effectiveVariant = hasPendingVariant ? pendingVariant : (isSelected ? currentVariant : undefined);
+            const rememberedVariant = entry.variant !== undefined && variantOptions.includes(entry.variant)
+                ? entry.variant
+                : undefined;
+            const effectiveVariant = hasPendingVariant
+                ? pendingVariant
+                : (isSelected ? currentVariant : rememberedVariant);
             const wasAdjusted = adjustedThinkingModels.has(mapKey);
             const hasActiveVariant = Boolean(wasAdjusted || effectiveVariant);
 
@@ -2153,9 +2158,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const pendingVariant = pendingThinkingVariants.get(mapKey);
             const isCurrentModel = desktopVariantTarget.providerID === currentProviderId
                 && desktopVariantTarget.modelID === currentModelId;
+            const rememberedVariant = desktopVariantTarget.variant !== undefined
+                && variantOptions.includes(desktopVariantTarget.variant)
+                ? desktopVariantTarget.variant
+                : undefined;
             const selectedVariant = hasPendingVariant
                 ? pendingVariant
-                : (isCurrentModel ? currentVariant : undefined);
+                : (isCurrentModel ? currentVariant : rememberedVariant);
             const targetModelLabel = getSharedModelDisplayName(
                 desktopVariantTarget.model,
                 desktopVariantTarget.modelID,

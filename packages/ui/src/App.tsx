@@ -68,6 +68,7 @@ import {
 import { SyncAppEffects } from '@/apps/AppEffects';
 import { resetAppForRuntimeEndpointChange } from '@/apps/runtimeEndpointReset';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
+import { startPerfDiagnosticsController } from '@/sync/perf-diagnostics';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { StartupSessionSyncOverlay } from '@/components/session/StartupSessionSyncOverlay';
 import { DesktopRuntimeSwitchOverlay } from '@/components/desktop/DesktopRuntimeSwitchOverlay';
@@ -231,6 +232,8 @@ function App({ apis }: AppProps) {
       console.info('[startup-trace] enabled. Run console.table(window.__OPENCHAMBER_STARTUP_TRACE__) after startup.');
     }
   }, []);
+
+  React.useEffect(() => startPerfDiagnosticsController(), []);
 
   const initializeApp = useConfigStore((s) => s.initializeApp);
   const isInitialized = useConfigStore((s) => s.isInitialized);
