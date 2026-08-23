@@ -36,6 +36,7 @@ export {
   parsePaginationNodeId,
   getParentId,
   getSessionDirectory,
+  listProjectAreaRootSessions,
   normalizePath,
   formatRelativeShort,
   getSessionTimestamp,

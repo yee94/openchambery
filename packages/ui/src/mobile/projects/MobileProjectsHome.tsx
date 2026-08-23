@@ -169,70 +169,6 @@ function SessionList({
   );
 }
 
-/** Project-local group label; its matching session card is rendered separately. */
-function WorkspaceGroupLabel({
-  icon,
-  label,
-  count,
-  expanded,
-  onToggle,
-  actions,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  count?: number;
-  expanded?: boolean;
-  onToggle?: () => void;
-  actions?: React.ReactNode;
-}) {
-  const { t } = useI18n();
-  const content = (
-    <>
-      <span className="oc-mobile-group-label-icon" aria-hidden>
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-left typography-ui-label font-semibold text-foreground">
-        {label}
-      </span>
-      {typeof count === 'number' ? (
-        <span className="typography-small text-muted-foreground tabular-nums">
-          {count === 1
-            ? t('mobile.sessions.project.sessionsSingle')
-            : t('mobile.sessions.project.sessionsPlural', { count })}
-        </span>
-      ) : null}
-      {onToggle ? (
-        <Icon
-          name="arrow-down-s"
-          className={cn(
-            'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
-            expanded ? 'rotate-0' : '-rotate-90',
-          )}
-        />
-      ) : null}
-    </>
-  );
-
-  return (
-    <div className="oc-mobile-group-label">
-      {onToggle ? (
-        <button
-          type="button"
-          data-mobile-press-feedback="soft"
-          className="oc-mobile-group-label-trigger"
-          aria-expanded={expanded}
-          onClick={onToggle}
-        >
-          {content}
-        </button>
-      ) : (
-        <div className="oc-mobile-group-label-trigger">{content}</div>
-      )}
-      {actions}
-    </div>
-  );
-}
-
 /**
  * Linked worktree header: same long-press + left-swipe pattern as session rows.
  * Swipe reveals New session / Delete (PC hover parity); long press opens the full sheet.
@@ -700,29 +636,34 @@ export function MobileProjectsHome({
       ) : null}
 
       {!searching && pinnedSessions.length > 0 ? (
-        <MobileFloatingSurface>
-          <MobileLabeledSurfaceGroup
-            ariaLabel={t('mobile.sessions.section.pinned')}
-            label={(
-              <WorkspaceGroupLabel
-                icon={<Icon name="pushpin" className="size-3.5" />}
-                label={t('mobile.sessions.section.pinned')}
-                count={pinnedSessions.length}
-                expanded={pinnedExpanded}
-                onToggle={() => setPinnedExpanded((expanded) => !expanded)}
-              />
-            )}
-          >
+        <MobileFloatingSurface asChild>
+          <section className="oc-mobile-project-shell" aria-label={t('mobile.sessions.section.pinned')}>
+            <MobileProjectCard
+              project={{
+                id: '__pinned__',
+                name: t('mobile.sessions.section.pinned'),
+                path: '',
+                icon: 'pushpin',
+                sessionCount: pinnedSessions.length,
+              }}
+              expanded={pinnedExpanded}
+              embedded
+              onToggle={() => setPinnedExpanded((expanded) => !expanded)}
+            />
             {pinnedExpanded ? (
-              <SessionList
-                sessions={pinnedSessions}
-                onSelectSession={onSelectSession}
-                onPinSession={onPinSession}
-                onArchiveSession={onArchiveSession}
-                onOpenSessionActions={onOpenSessionActions}
-              />
+              <div className="oc-mobile-project-groups" role="group">
+                <div className="oc-mobile-labeled-surface-group">
+                  <SessionList
+                    sessions={pinnedSessions}
+                    onSelectSession={onSelectSession}
+                    onPinSession={onPinSession}
+                    onArchiveSession={onArchiveSession}
+                    onOpenSessionActions={onOpenSessionActions}
+                  />
+                </div>
+              </div>
             ) : null}
-          </MobileLabeledSurfaceGroup>
+          </section>
         </MobileFloatingSurface>
       ) : null}
 

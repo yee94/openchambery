@@ -6,6 +6,10 @@
 - Sidebar is now a single multi-project tree: an optional `pinned` top section,
   then projects, then worktrees/archived groups, then sessions. Pinned sessions
   render only in the top section and are excluded from project groups.
+  Mobile projects home uses the same contract: `derivePinnedSessions` for the
+  global pinned card, `createSessionOwnershipIndex` for session→project
+  assignment, and `buildSessionTree(..., { omitPinnedSessions: true })` so
+  pinned roots leave project/worktree lists.
   Parent/child attachment always runs on the full session list first; pinned
   roots are omitted from project groups only after children attach. Pinned rows
   stay flat (no expand chevron, no nested subagents). Children of pinned parents

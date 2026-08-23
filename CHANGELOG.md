@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.41] - 2026-08-23
+
+### 移动端
+
+- **置顶会话不再重复出现在项目列表：** 移动端首页改为与 PC 侧边栏共用同一套会话归属与置顶展示逻辑（`createSessionOwnershipIndex` / `derivePinnedSessions` / `omitPinnedSessions` 剔除）。置顶的会话只出现在顶部「置顶」卡，不再同时留在原项目/工作区列表；取消置顶后恢复原位。项目卡与会话计数同步排除置顶项，子目录会话的归属也与 PC 一致。
+
+- **置顶卡样式与项目卡对齐：** 顶部「置顶」卡改用与项目卡完全相同的外壳（圆角、阴影、圆形玻璃图标、标题、会话数、展开箭头），不再出现直角背景与不一致的投影；置顶卡无更多操作按钮。
+
 ## [1.18.2-beta.40] - 2026-08-23
 
 ### 移动端

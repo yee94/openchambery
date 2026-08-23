@@ -1,6 +1,6 @@
 {
   "name": "@openchambery/web",
-  "version": "1.18.2-beta.40",
+  "version": "1.18.2-beta.41",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
