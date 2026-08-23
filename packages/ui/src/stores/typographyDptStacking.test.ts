@@ -58,4 +58,16 @@ describe('applyTypography design-pt stacking', () => {
     useUIStore.getState().applyTypography();
     expect(root().style.getPropertyValue('--text-markdown')).toBe('');
   });
+
+  test('applyPadding writes the user value name so svg icons can stack --dpt', () => {
+    useUIStore.setState({ padding: 144 });
+    useUIStore.getState().applyPadding();
+    // 1.44 → sqrt damping ≈ 1.2
+    expect(Number.parseFloat(root().style.getPropertyValue('--user-padding-scale'))).toBeCloseTo(1.2, 5);
+    expect(root().style.getPropertyValue('--padding-scale')).toBe('');
+
+    useUIStore.setState({ padding: 100 });
+    useUIStore.getState().applyPadding();
+    expect(root().style.getPropertyValue('--user-padding-scale')).toBe('');
+  });
 });

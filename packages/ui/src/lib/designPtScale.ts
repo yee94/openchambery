@@ -53,6 +53,10 @@ export function writeCachedDesignPtScale(scale: number): void {
 export function applyDesignPtScaleToRoot(scale: number, root: HTMLElement = document.documentElement): void {
   const next = clampDesignPtScale(scale);
   root.style.setProperty('--dpt', `${next}px`);
+  // Unitless twin for multiplying unitless scales (e.g. --padding-scale on
+  // icons). `calc(1rem * var(--dpt))` would be invalid — lengths cannot
+  // multiply lengths.
+  root.style.setProperty('--dpt-n', String(next));
 }
 
 export async function applyDesignPtScaleFromNative(): Promise<number> {

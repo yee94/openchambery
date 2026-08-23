@@ -1,7 +1,14 @@
 const REM_PX = 16;
 
-const shouldRewriteProp = (prop) => (
-  prop === 'font-size' || prop === 'line-height' || prop.startsWith('--text-')
+const TYPOGRAPHY_SIZE_CUSTOM_PROP = /--[a-z0-9-]*(font-size|title-size|meta-size|subtitle-size|label-size|line-height)$/i;
+
+export const shouldRewriteProp = (prop) => (
+  prop === 'font-size'
+  || prop === 'line-height'
+  || prop.startsWith('--text-')
+  // Typographic size custom props (--oc-mobile-root-title-size, --form-helper-font-size,
+  // …). Geometry vars (-width/-height) must stay CSS px or keyboard/layout breaks.
+  || TYPOGRAPHY_SIZE_CUSTOM_PROP.test(prop)
 );
 
 export const rewriteLengthToDesignPt = (value) => {

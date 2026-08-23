@@ -2221,7 +2221,7 @@ export const useUIStore = create<UIStore>()(
           const scale = padding / 100;
 
           if (scale === 1) {
-            root.style.removeProperty('--padding-scale');
+            root.style.removeProperty('--user-padding-scale');
             root.style.removeProperty('--line-height-tight');
             root.style.removeProperty('--line-height-normal');
             root.style.removeProperty('--line-height-relaxed');
@@ -2233,8 +2233,10 @@ export const useUIStore = create<UIStore>()(
           // Use square root for more natural scaling at extremes
           const adjustedScale = Math.sqrt(scale);
 
-          // Set the CSS custom property that all spacing tokens reference
-          root.style.setProperty('--padding-scale', adjustedScale.toString());
+          // Set the CSS custom property that all spacing tokens reference.
+          // Writes the user value name; :root derives --padding-scale from it
+          // and icon svgs stack --dpt on it, so app spacing never rides dpt.
+          root.style.setProperty('--user-padding-scale', adjustedScale.toString());
 
           // Dampened line-height scaling at extremes
           const lineHeightScale = 1 + (scale - 1) * 0.15;

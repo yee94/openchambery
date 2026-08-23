@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.42] - 2026-08-23
+
+### 移动端
+
+- **Android 密度对齐扩展到图标与页面标题：** 构建期字号转换新增 `--oc-*-title-size/-meta-size/-subtitle-size` 等排版变量（首页大标题、项目卡标题、二级页标题/副标题、设置分组标签与行说明、表单辅助文字），全部随 `--dpt` 物理系数缩放；布局几何变量（dock/头部高度、行最小高度）保持不动，键盘 inset 与触控热区不受影响。图标（svg）通过在 svg 子树叠加 `--dpt-n × 用户密度` 随密度缩放，全局间距不参与。iOS `--dpt=1` 行为不变。
+
 ## [1.18.2-beta.41] - 2026-08-23
 
 ### 移动端
