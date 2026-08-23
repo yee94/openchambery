@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveMobileTranscriptSyncHint } from './useMobileTranscriptSyncHint';
+import {
+  createSyncHintSmoother,
+  resolveMobileTranscriptSyncHint,
+} from './useMobileTranscriptSyncHint';
 
 const idle = {
   sessionId: 'ses_1',
@@ -86,5 +89,61 @@ describe('resolveMobileTranscriptSyncHint', () => {
       isConnected: false,
       connectionPhase: 'connecting',
     })).toBeNull();
+  });
+});
+
+describe('createSyncHintSmoother', () => {
+  const flush = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  function makeSmoother() {
+    const events: boolean[] = [];
+    const smoother = createSyncHintSmoother(
+      (visible) => events.push(visible),
+      { showDelayMs: 20, hideGraceMs: 60 },
+    );
+    return { smoother, events };
+  }
+
+  test('blip shorter than the show delay never renders', async () => {
+    const { smoother, events } = makeSmoother();
+    smoother.setRaw(true);
+    await flush(5);
+    smoother.setRaw(false);
+    await flush(120);
+    expect(events).toEqual([]);
+  });
+
+  test('sustained work shows after the show delay', async () => {
+    const { smoother, events } = makeSmoother();
+    smoother.setRaw(true);
+    await flush(5);
+    expect(events).toEqual([]);
+    await flush(60);
+    expect(events).toEqual([true]);
+  });
+
+  test('relayed flights within the hide grace stay one continuous display', async () => {
+    const { smoother, events } = makeSmoother();
+    smoother.setRaw(true);
+    await flush(80);
+    expect(events).toEqual([true]);
+    // Flight A ends, flight B begins 30ms later (grace is 60ms).
+    smoother.setRaw(false);
+    await flush(30);
+    smoother.setRaw(true);
+    await flush(150);
+    // Still exactly one appearance; the between-flights gap never painted.
+    expect(events).toEqual([true]);
+    smoother.setRaw(false);
+    await flush(120);
+    expect(events).toEqual([true, false]);
+  });
+
+  test('cancel drops pending transitions', async () => {
+    const { smoother, events } = makeSmoother();
+    smoother.setRaw(true);
+    smoother.cancel();
+    await flush(80);
+    expect(events).toEqual([]);
   });
 });

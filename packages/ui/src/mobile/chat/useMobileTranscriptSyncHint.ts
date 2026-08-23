@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { useI18n } from '@/lib/i18n';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -49,6 +49,67 @@ export function resolveMobileTranscriptSyncHint(
   return null;
 }
 
+export const SYNC_HINT_SHOW_DELAY_MS = 250;
+export const SYNC_HINT_HIDE_GRACE_MS = 1000;
+
+/**
+ * Display-level hysteresis for the sync whisper.
+ *
+ * Foreground resume fires several lifecycle events (visibilitychange,
+ * pageshow, system-resume, debounced online) and each can run its own
+ * abort → reconnect → recovery/reconcise relay, so the raw in-flight signal
+ * legitimately toggles several times in a row. The smoother delays showing
+ * (sub-delay blips never render) and grace-extends hiding (relayed flights
+ * render as one continuous whisper). The flight registries stay exact;
+ * only the painted hint is smoothed.
+ */
+export function createSyncHintSmoother(
+  onChange: (visible: boolean) => void,
+  options?: { showDelayMs?: number; hideGraceMs?: number },
+) {
+  const showDelayMs = options?.showDelayMs ?? SYNC_HINT_SHOW_DELAY_MS;
+  const hideGraceMs = options?.hideGraceMs ?? SYNC_HINT_HIDE_GRACE_MS;
+  let raw = false;
+  let visible = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const apply = () => {
+    timer = null;
+    if (visible === raw) return;
+    visible = raw;
+    onChange(visible);
+  };
+
+  return {
+    setRaw(next: boolean) {
+      raw = next;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(apply, raw ? showDelayMs : hideGraceMs);
+    },
+    cancel() {
+      raw = false;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
+function useSmoothedSyncHintActive(raw: boolean): boolean {
+  const [visible, setVisible] = useState(false);
+  const smootherRef = useRef<ReturnType<typeof createSyncHintSmoother> | null>(null);
+  if (!smootherRef.current) smootherRef.current = createSyncHintSmoother(setVisible);
+  const smoother = smootherRef.current;
+
+  useEffect(() => {
+    smoother.setRaw(raw);
+    return () => smoother.cancel();
+  }, [raw, smoother]);
+
+  return visible;
+}
+
 export function useMobileTranscriptSyncHint(
   sessionId: string,
   directory?: string,
@@ -78,5 +139,6 @@ export function useMobileTranscriptSyncHint(
     isConnected,
     connectionPhase,
   });
-  return kind === 'syncing' ? t('mobile.chat.syncingMessages') : null;
+  const visible = useSmoothedSyncHintActive(kind === 'syncing');
+  return visible ? t('mobile.chat.syncingMessages') : null;
 }

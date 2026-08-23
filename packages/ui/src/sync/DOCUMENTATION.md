@@ -776,7 +776,14 @@ both readers agree on when a frame may shrink.
    while foregrounded the SSE stream merges every canonical scope live, so
    hot revalidation (`runAuthorityHotRevalidate`), idle materialization, and
    the observe-time head check almost never find a diff — whispering there
-   would flash noise on every session switch past their revalidation windows.    Desktop session context-menu
+   would flash noise on every session switch past their revalidation windows.
+   The painted hint is smoothed at the display layer
+   (`createSyncHintSmoother` in `useMobileTranscriptSyncHint`): it appears
+   only after 250ms of sustained work and stays 1000ms past the last flight
+   clear, because one foreground resume legitimately runs several relayed
+   recovery/reconcise flights (visibilitychange, pageshow, system-resume,
+   debounced online each trigger their own cycle). The flight registries stay
+   exact; only the whisper rendering is hysteresis-debounced.    Desktop session context-menu
    "Sync messages", the dedicated-mobile overflow "Sync messages", and the
    mobile session row-actions sheet all call
     `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
