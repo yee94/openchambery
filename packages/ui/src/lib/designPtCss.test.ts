@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { rewriteLengthToDesignPt, shouldRewriteProp } from '../../../../scripts/postcss-dpt-font-size.mjs';
+import {
+  isTypographyProp,
+  rewriteGeometryToPaddingScale,
+  rewriteLengthToDesignPt,
+  shouldRewriteProp,
+} from '../../../../scripts/postcss-dpt-font-size.mjs';
 
 describe('rewriteLengthToDesignPt', () => {
   test('converts px and rem font sizes, including leading-dot decimals', () => {
@@ -37,12 +42,32 @@ describe('rewriteLengthToDesignPt', () => {
     expect(shouldRewriteProp('--oc-mobile-detail-subtitle-size')).toBe(true);
     expect(shouldRewriteProp('--oc-settings-section-title-size')).toBe(true);
     expect(shouldRewriteProp('--form-helper-font-size')).toBe(true);
-    // Geometry must never scale: keyboard inset, dock height, icon size…
+    // Geometry element props rewrite (rem only) through --padding-scale…
+    expect(shouldRewriteProp('padding')).toBe(true);
+    expect(shouldRewriteProp('padding-block')).toBe(true);
+    expect(shouldRewriteProp('gap')).toBe(true);
+    expect(shouldRewriteProp('margin-inline')).toBe(true);
+    expect(shouldRewriteProp('width')).toBe(true);
+    expect(shouldRewriteProp('min-height')).toBe(true);
+    // …but geometry custom props stay untouched:
     expect(shouldRewriteProp('--oc-mobile-dock-height')).toBe(false);
     expect(shouldRewriteProp('--oc-header-height')).toBe(false);
     expect(shouldRewriteProp('--oc-mobile-project-icon-size')).toBe(false);
     expect(shouldRewriteProp('--form-control-line-height')).toBe(true); // line-height rides dpt
     expect(shouldRewriteProp('--oc-safe-area-top')).toBe(false);
-    expect(shouldRewriteProp('width')).toBe(false);
+    expect(shouldRewriteProp('border-radius')).toBe(false);
+    expect(isTypographyProp('padding')).toBe(false);
+    expect(isTypographyProp('font-size')).toBe(true);
+  });
+
+  test('geometry rewrites ride --padding-scale with rem only; px is sacred', () => {
+    expect(rewriteGeometryToPaddingScale('.5rem')).toBe('calc(.5rem * var(--padding-scale, 1))');
+    expect(rewriteGeometryToPaddingScale('2rem')).toBe('calc(2rem * var(--padding-scale, 1))');
+    // Touch-minimum / inset px guarantees never scale.
+    expect(rewriteGeometryToPaddingScale('36px')).toBe('36px');
+    expect(rewriteGeometryToPaddingScale('16px')).toBe('16px');
+    // Non-literals pass through.
+    expect(rewriteGeometryToPaddingScale('auto')).toBe('auto');
+    expect(rewriteGeometryToPaddingScale('var(--x)')).toBe('var(--x)');
   });
 });

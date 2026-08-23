@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.46] - 2026-08-23
+
+### 移动端
+
+- **输入区周边控件补齐密度缩放：** 修复手写 CSS 里的裸 rem 几何值（composer 动作/附件/模型按钮的宽高、各类手写 padding/gap/min-height）不随 `--dpt` 缩放的问题——构建期统一转成 `calc(Nrem * var(--padding-scale))`（用户密度 × 物理系数），与 Tailwind 间距同一管道。px 字面量（36px 触控最小值、键盘编排值、1px 边框）与几何变量（dock/表单控件高度）结构上不可能被转换，触控与键盘安全。输入区一行可容纳字数、队列 chip、附件与模型按钮在 Android 上与 iOS 密度对齐。
+
 ## [1.18.2-beta.45] - 2026-08-23
 
 ### 移动端
