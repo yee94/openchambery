@@ -3,7 +3,7 @@ import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
-import { resolveMobileComposerShrink } from '@/components/chat/mobileComposerScrollShrink';
+import { compensateMobileComposerDistance, resolveMobileComposerShrink } from '@/components/chat/mobileComposerScrollShrink';
 import { getViewportSessionMemory, useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
 
 type AutoFollowState = 'following' | 'released';
@@ -700,7 +700,16 @@ export const useChatAutoFollow = ({
     const publishMobileComposerShrink = useEvent((geometry: ScrollGeometry) => {
         if (!isMobileRef.current || typeof document === 'undefined') return;
         const root = document.documentElement;
-        const distanceFromBottom = distanceFromBottomOf(geometry);
+        // Raw distance feeds back through the composer's own retraction (it
+        // grows the scroll viewport by the px it shrinks). Compensate with the
+        // live shrink + mirrored stage height so progress tracks real travel.
+        const currentShrink = Number.parseFloat(root.style.getPropertyValue('--oc-mobile-composer-shrink')) || 0;
+        const stagePx = Number.parseFloat(root.style.getPropertyValue('--oc-mobile-composer-stage-height')) || 112;
+        const distanceFromBottom = compensateMobileComposerDistance(
+            distanceFromBottomOf(geometry),
+            currentShrink,
+            stagePx,
+        );
         const keyboardOpen = keyboardOpenRef.current
             || root.classList.contains('oc-keyboard-open')
             || root.classList.contains('oc-browser-keyboard-open');

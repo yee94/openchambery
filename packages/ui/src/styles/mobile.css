@@ -3100,35 +3100,66 @@ button.oc-mobile-worktree-label-trigger:active,
   .oc-mobile-readonly-prompt-surface {
     box-shadow: none !important;
   }
+
+  :root.oc-mobile-composer-shrunk .oc-mobile-composer-surface {
+    background: var(--surface-subtle) !important;
+    background-color: var(--surface-subtle) !important;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
-/* Queue + composer share one shrinking column so chips stay aligned with the
-   card. Status / changes fade out of the way; the page foot itself goes
-   transparent so chat shows around the floating 80% card. */
+/* Existing queue / changes / todos chrome is unchanged. Expanded state keeps
+   the original layout fully — their popovers (todo list, changed-files list)
+   are inline absolute and open upward past this wrapper, so clipping only
+   engages while a shrink is actually in progress. */
 .oc-mobile-composer-stack {
-  width: calc(100% - 20% * var(--oc-mobile-composer-shrink, 0));
-  margin-inline: auto;
+  width: 100%;
   min-width: 0;
 }
 
-.oc-mobile-composer-status {
-  opacity: calc(1 - var(--oc-mobile-composer-shrink, 0));
-  max-height: calc(2.5rem * (1 - var(--oc-mobile-composer-shrink, 0)));
-  overflow: hidden;
+.oc-mobile-composer-reveal {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
-:root.oc-mobile-composer-shrinking .oc-mobile-composer-status {
+:root.oc-mobile-composer-shrinking .oc-mobile-composer-reveal {
+  overflow: hidden;
+  max-height: calc(12rem * (1 - var(--oc-mobile-composer-shrink, 0)));
   pointer-events: none;
 }
 
-:root.oc-mobile-composer-shrunk .oc-mobile-composer-status {
+:root.oc-mobile-composer-shrunk .oc-mobile-composer-reveal {
   visibility: hidden;
 }
 
 :root.oc-mobile-composer-shrinking .oc-mobile-composer,
-:root.oc-mobile-composer-shrinking .oc-mobile-composer::after {
+:root.oc-mobile-composer-shrinking .oc-mobile-composer::after,
+:root.oc-mobile-composer-shrinking .oc-mobile-composer-foot,
+:root.oc-mobile-composer-shrunk .oc-mobile-composer-foot {
   background: transparent !important;
   background-color: transparent !important;
+}
+
+/* Fully collapsed: lift the foot out of flow so the transcript fills the
+   80% gutters instead of a leftover page-colored bar. */
+:root.oc-mobile-composer-shrunk .oc-mobile-composer-foot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+:root.oc-mobile-composer-shrunk .oc-mobile-composer-foot .oc-mobile-composer {
+  pointer-events: auto;
+}
+
+:root.oc-capacitor-app.oc-mobile-composer-shrunk
+  body:has(.oc-mobile-composer)::before {
+  background: transparent !important;
 }
 
 :root.oc-mobile-composer-shrinking .oc-mobile-composer::after {
@@ -3171,14 +3202,29 @@ button.oc-mobile-worktree-label-trigger:active,
   overflow: hidden;
 }
 
+/* Compact end state only — while queue/changes are out they stay full-width
+   and attached to the input. */
+:root.oc-mobile-composer-shrunk .oc-mobile-composer-motion-viewport {
+  width: 80%;
+}
+
+/* Stage geometry only — visual chrome (background, shadow, blur) stays owned
+   by the original .oc-mobile-composer-surface block above. */
 .oc-mobile-composer-surface {
   overflow: visible;
   min-height: 2.75rem;
   max-height: min(70vh, 22rem);
   width: 100%;
-  background: var(--surface-elevated) !important;
-  background-color: var(--surface-elevated) !important;
-  box-shadow: var(--oc-mobile-float-shadow) !important;
+}
+
+/* Translucency is a discrete end-state flip, never interpolated per scroll
+   frame: color-mix + backdrop-filter repaint on every geometry change would
+   stack paint cost on top of the (already layout-bound) height shrink. */
+:root.oc-mobile-composer-shrunk .oc-mobile-composer-surface {
+  background: color-mix(in srgb, var(--surface-subtle) 45%, transparent) !important;
+  background-color: color-mix(in srgb, var(--surface-subtle) 45%, transparent) !important;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
 }
 
 /* Beat :root.mobile-pointer .flex.flex-col { min-height: 0 }. That rule

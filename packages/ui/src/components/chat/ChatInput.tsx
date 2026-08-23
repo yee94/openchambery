@@ -6122,6 +6122,24 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         root.style.removeProperty('--oc-mobile-composer-shrink');
     }, []);
 
+    // First tap on a scroll-shrunk composer: restore the full-width layout
+    // only — no focus, no IME. The tap's native textarea focus is dropped
+    // through the same gesture window the chrome actions use (pointerdown
+    // arms it before focus lands), so a SECOND tap is what focuses. Further
+    // shrink re-arms through the normal upward-scroll release of the pin.
+    const restoreMobileComposerFullWidth = useEvent(() => {
+        if (!isMobile || typeof document === 'undefined') return false;
+        const root = document.documentElement;
+        const wasShrunk = root.classList.contains('oc-mobile-composer-shrinking')
+            || root.classList.contains('oc-mobile-composer-shrunk');
+        if (!wasShrunk) return false;
+        markComposerActionGesture();
+        root.classList.add('oc-mobile-composer-pinned-full');
+        root.classList.remove('oc-mobile-composer-shrinking', 'oc-mobile-composer-shrunk');
+        root.style.setProperty('--oc-mobile-composer-shrink', '0');
+        return true;
+    });
+
     const openMobileAttachSheet = React.useCallback(() => {
         // Mark the sheet open BEFORE blur so overlay-busy is true when the
         // keyboard-close lands. The trigger button blocks the tap's own focus
@@ -6390,6 +6408,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         observer?.observe(composerSurface);
         return () => observer?.disconnect();
     }, [isMobile, mobileComposerStageScope, sessionIsRunning, textareaSize]);
+
+    // Mirror the measured stage height onto the root so useChatAutoFollow can
+    // compensate the shrink feedback (retracted px grow the scroll viewport)
+    // without a per-frame element lookup. Inline element var keeps winning for
+    // the viewport itself.
+    React.useEffect(() => {
+        if (!isMobile || typeof document === 'undefined') return;
+        document.documentElement.style.setProperty('--oc-mobile-composer-stage-height', `${mobileComposerStageHeight}px`);
+        return () => {
+            document.documentElement.style.removeProperty('--oc-mobile-composer-stage-height');
+        };
+    }, [isMobile, mobileComposerStageHeight]);
 
     // Reset the picker search whenever a draft picker sheet opens/closes.
     React.useEffect(() => {
@@ -7075,14 +7105,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     sessionId={currentSessionId}
                     directory={currentSessionDirectoryForSync ?? currentDirectory}
                 />
-                <div className={isMobile ? 'oc-mobile-composer-status' : undefined}>
+                <div className={isMobile ? 'oc-mobile-composer-reveal' : 'contents'}>
                 <MemoStatusRow
                     showAbortStatus={showAbortStatus}
                     showAssistantStatus={false}
                     showTodos
                     leftAccessory={newSessionDraftOpen || !hasPendingChanges ? null : <PendingChangesBar />}
                 />
-                </div>
                 {!isMobile && showDraftTargetSelectors ? (
                     <div className="mb-1.5 flex min-w-0 items-center gap-1.5 px-0.5">
                         {selectedDraftProject ? (
@@ -7216,6 +7245,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         ) : null}
                     </div>
                 ) : null}
+                {queuedMessageSurface}
+                </div>
                 <div
                     // Desktop: layout-transparent. Mobile: positioning host for
                     // the wrapper-level dictation overlay across pill/full states.
@@ -7225,7 +7256,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobileExpanded && 'flex min-h-0 flex-1 flex-col',
                     )}
                 >
-                {queuedMessageSurface}
                 <div
                     className={isMobile ? 'oc-mobile-composer-motion-viewport' : 'contents'}
                     style={isMobile ? ({
@@ -7335,6 +7365,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onDrop: handleDrop,
                         onDragEnd: handleDragEnd,
                         onKeyUp: updateAutocompleteOverlayPosition,
+                        onPointerDown: () => {
+                            // Tap #1 on a shrunk composer expands without
+                            // focusing; tap #2 (not shrunk) is a no-op here
+                            // and focuses normally.
+                            restoreMobileComposerFullWidth();
+                        },
                         onClick: () => {
                             if (isMobile && Date.now() >= suppressComposerFocusUntilRef.current) {
                                 pinMobileComposerFull(false);

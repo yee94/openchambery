@@ -1800,6 +1800,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 				<div
 					className={cn(
 						'relative z-10 flex min-h-0',
+						isMobile && 'oc-mobile-composer-foot',
 						isDesktopExpandedInput
 							? 'flex-1 bg-background'
 							: useCompactDraftLayout
@@ -1861,6 +1862,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 				<div
 					className={cn(
 						'relative z-10',
+						isMobile && 'oc-mobile-composer-foot',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
 							: 'bg-background',
@@ -1917,6 +1919,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 <div
                     className={cn(
                         'relative z-10',
+                        isMobile && 'oc-mobile-composer-foot',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
 							: 'bg-background'
@@ -1952,6 +1955,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 <div
                     className={cn(
                         'relative z-10',
+                        isMobile && 'oc-mobile-composer-foot',
 					isDesktopExpandedInput
 						? 'flex-1 min-h-0 bg-background'
 						: 'bg-background'
@@ -2010,6 +2014,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             <div
                 className={cn(
                     'relative z-10',
+                    isMobile && 'oc-mobile-composer-foot',
                     isDesktopExpandedInput
                         ? 'flex-1 min-h-0 bg-background'
                         : 'bg-background'
