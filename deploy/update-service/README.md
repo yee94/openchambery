@@ -98,7 +98,7 @@ Required JSON fields:
 - `nativeVersion`: native marketing version string
 - `nativeBuild`: positive integer
 - `shellApiVersion`: positive integer
-- `currentBundleId`: active OTA bundle id, or `builtin`
+- `currentBundleId`: active OTA bundle id, or `builtin`. On the beta channel this must be the running **web** bundle version, never the iOS marketing version (`1.18.2`). Capgo builtin reports `CFBundleShortVersionString`; the resolver ignores that stripped identity when it matches `nativeVersion`, otherwise every `1.18.2-beta.N` OTA looks like a downgrade.
 - `installSource`: optional string
 
 ### Decision response (`/v1/mobile/update/check`)

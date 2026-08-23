@@ -11,7 +11,10 @@
  *      version, so the probe sends the stripped form plus the minimum viable
  *      native build and `currentBundleId: builtin`.
  *   2. Old Android shell — full semver nativeVersion, minimum viable build.
- *   3. Device already on the bundle — `currentBundleId` set to the release
+ *   3. iOS Capgo builtin marketing version — `currentBundleId` equals the
+ *      stripped CFBundleShortVersionString (`1.18.2`). Must still `apply_ota`
+ *      on beta; this is what a real TestFlight shell reports today.
+ *   4. Device already on the bundle — `currentBundleId` set to the release
  *      version; must answer `none` so clients do not re-offer forever.
  *
  * Usage (repo root):
@@ -98,6 +101,21 @@ function buildProfiles(manifest) {
         currentBundleId: 'builtin',
       },
       expect: mode === 'native' ? 'install_native_required' : 'apply_ota',
+    })
+  }
+  if (mode === 'ota') {
+    profiles.push({
+      name: 'iOS Capgo builtin marketing version',
+      body: {
+        channel,
+        platform: 'ios',
+        deviceId: 'ci-detectability-ios-marketing',
+        nativeVersion: stripPrerelease(version),
+        nativeBuild: active.platforms?.ios?.minNativeBuild ?? 1,
+        shellApiVersion: shellApi,
+        currentBundleId: stripPrerelease(version),
+      },
+      expect: 'apply_ota',
     })
   }
   profiles.push({

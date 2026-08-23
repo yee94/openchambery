@@ -320,6 +320,25 @@ test('stale iOS nativeTarget still apply_ota when the running web is older (buil
   assert.equal(decision.ota.bundle.releaseVersion, '1.18.2-beta.36');
 });
 
+test('iOS Capgo builtin marketing version must not hide a newer beta OTA', () => {
+  // Capgo builtin.version is CFBundleShortVersionString ("1.18.2"). The client
+  // on a beta shell may send that as currentBundleId. Semver ranks 1.18.2 above
+  // 1.18.2-beta.68, so treating it as a floor would return none forever.
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.68' }),
+    nativeTargets: {
+      ios: { version: '1.18.2-beta.61', build: 391, installUrl: 'https://testflight.apple.com/join/xxx' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.2',
+    nativeVersion: '1.18.2',
+    nativeBuild: 392,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.2-beta.68');
+});
+
 test('baked web releaseVersion as currentBundleId is current even with a stale iOS nativeTarget', () => {
   const manifest = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.36' }),

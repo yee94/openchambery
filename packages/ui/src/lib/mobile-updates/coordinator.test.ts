@@ -130,6 +130,27 @@ describe('mobile OTA coordinator', () => {
     expect(resolveReportedBundleId({ id: 'builtin', version: 'builtin' }, null)).toBe('builtin');
   });
 
+  test('beta channel reports the web bundle version, never the stripped iOS marketing version', () => {
+    expect(resolveReportedBundleId(
+      { id: 'builtin', version: '1.18.2' },
+      '1.18.2-beta.66',
+      'beta',
+    )).toBe('1.18.2-beta.66');
+    expect(resolveReportedBundleId(
+      { id: 'c02a8f76562d97ec', version: '1.18.2' },
+      '1.18.2-beta.66',
+      'beta',
+    )).toBe('1.18.2-beta.66');
+  });
+
+  test('stable channel still reports a real installed bundle version', () => {
+    expect(resolveReportedBundleId(
+      { id: 'c02a8f76562d97ec', version: '1.18.2' },
+      '1.18.2',
+      'stable',
+    )).toBe('1.18.2');
+  });
+
   test('installed bundle reports its release version so changelog filtering anchors on it', () => {
     // The plugin's `version` is the releaseVersion the bundle was downloaded
     // with; the server parses it for "already current" and changelog ranges.

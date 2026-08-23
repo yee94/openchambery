@@ -150,27 +150,37 @@ const resolveNativeInfo = async (): Promise<{ version: string; build: number }> 
 };
 
 /**
- * Capgo reports `builtin` for the shell-embedded web bundle. The update
- * service treats `currentBundleId === activeBundle.releaseVersion` as already
- * current, so a builtin shell must report the baked `__APP_VERSION__` or it
- * will be offered the same zip forever (iOS 1.18.2-beta.36 → 1.18.2-beta.36).
+ * Identity sent as `currentBundleId`.
  *
- * An installed OTA bundle reports the plugin's `version` (the releaseVersion
- * it was downloaded with) in preference to the opaque hex `id`: the update
- * service accepts either identity for "already current", but only the
- * releaseVersion parses server-side and anchors changelog range filtering.
- * A hex id left iOS with no parseable current version (its marketing version
- * strips `-beta.N`), collapsing its release notes to the latest section only.
+ * Beta channel always reports the running web bundle (`__APP_VERSION__`).
+ * The check is "is there a newer web package on this channel?", not "how
+ * does the store/TestFlight marketing version compare?". iOS Capgo builtin
+ * reports `CFBundleShortVersionString` (`1.18.2`); semver ranks that stable
+ * identity above every `1.18.2-beta.N` and would hide all beta OTAs.
+ *
+ * Stable channel still prefers an installed Capgo bundle version, then the
+ * hex id, then the baked web version / `builtin`.
  */
 export const resolveReportedBundleId = (
   capgoBundle: { id?: string | null; version?: string | null } | null | undefined,
   bundledReleaseVersion: string | null | undefined,
+  channel?: MobileUpdateChannel,
 ): string => {
   const version = nonEmptyString(capgoBundle?.version);
-  if (version && version !== 'builtin') return version;
+  const bundled = nonEmptyString(bundledReleaseVersion);
+  // Beta checks the running web bundle, never the store/TestFlight marketing
+  // version. iOS Capgo builtin reports CFBundleShortVersionString ("1.18.2"),
+  // which semver ranks above every 1.18.2-beta.N and would hide all beta OTAs.
+  if (channel === 'beta' && bundled) return bundled;
+  if (version && version !== 'builtin') {
+    if (bundled && bundled !== version && bundled.startsWith(`${version}-`)) {
+      return bundled;
+    }
+    return version;
+  }
   const id = nonEmptyString(capgoBundle?.id);
   if (id && id !== 'builtin') return id;
-  return nonEmptyString(bundledReleaseVersion) ?? 'builtin';
+  return bundled ?? 'builtin';
 };
 
 const bundledReleaseVersion = (): string | null => (
@@ -179,12 +189,13 @@ const bundledReleaseVersion = (): string | null => (
 
 const resolveCurrentBundleId = async (updater: CapgoUpdater | null): Promise<string> => {
   const bundled = bundledReleaseVersion();
-  if (!updater) return resolveReportedBundleId(null, bundled);
+  const channel = readChannel();
+  if (!updater) return resolveReportedBundleId(null, bundled, channel);
   try {
     const current = await updater.current();
-    return resolveReportedBundleId(current.bundle, bundled);
+    return resolveReportedBundleId(current.bundle, bundled, channel);
   } catch {
-    return resolveReportedBundleId(null, bundled);
+    return resolveReportedBundleId(null, bundled, channel);
   }
 };
 

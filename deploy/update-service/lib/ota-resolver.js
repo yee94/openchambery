@@ -1,4 +1,4 @@
-import { compareReleaseVersions, parseReleaseVersion } from './semver.js';
+import { compareReleaseVersions, isStrippedMarketingIdentity, parseReleaseVersion } from './semver.js';
 
 const DEFAULT_NEXT_CHECK_IN_SEC = 3600;
 
@@ -59,7 +59,10 @@ function nativeInfo(nativeTarget) {
  */
 export function resolveCurrentFloorVersion(request, nativeTarget) {
   const candidates = [];
-  if (parseReleaseVersion(request.currentBundleId)) {
+  if (
+    parseReleaseVersion(request.currentBundleId)
+    && !isStrippedMarketingIdentity(request.currentBundleId, request.nativeVersion)
+  ) {
     candidates.push(request.currentBundleId);
   }
   const native = parseReleaseVersion(request.nativeVersion);
