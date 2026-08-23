@@ -216,9 +216,11 @@ const areStringRecordsEqual = (left: Record<string, string>, right: Record<strin
   return leftEntries.every(([key, value]) => right[key] === value);
 };
 
+type ModelRefWithOptionalVariant = { providerID: string; modelID: string; variant?: string };
+
 const areModelRefsEqual = (
-  left: Array<{ providerID: string; modelID: string; variant?: string }>,
-  right: Array<{ providerID: string; modelID: string; variant?: string }>,
+  left: Array<ModelRefWithOptionalVariant>,
+  right: Array<ModelRefWithOptionalVariant>,
 ): boolean => (
   left.length === right.length &&
   left.every((item, idx) => (
@@ -227,6 +229,40 @@ const areModelRefsEqual = (
     && item.variant === right[idx]?.variant
   ))
 );
+
+/**
+ * Merge server model-ref lists onto local ones without letting legacy writers
+ * (old clients / old server payloads that omit `variant`) erase a remembered
+ * thinking strength. Order and membership follow `next`; when an incoming entry
+ * has no variant but the matching local entry does, keep the local variant.
+ * Incoming entries that include a variant win as authoritative.
+ */
+const mergeModelRefsPreservingVariants = (
+  current: Array<ModelRefWithOptionalVariant>,
+  next: Array<ModelRefWithOptionalVariant>,
+): Array<ModelRefWithOptionalVariant> => {
+  if (next.length === 0) {
+    return next;
+  }
+
+  const currentVariantByKey = new Map<string, string>();
+  for (const entry of current) {
+    if (typeof entry.variant === 'string' && entry.variant.length > 0) {
+      currentVariantByKey.set(`${entry.providerID}/${entry.modelID}`, entry.variant);
+    }
+  }
+
+  return next.map((entry) => {
+    if (typeof entry.variant === 'string' && entry.variant.length > 0) {
+      return entry;
+    }
+    const remembered = currentVariantByKey.get(`${entry.providerID}/${entry.modelID}`);
+    if (!remembered) {
+      return entry;
+    }
+    return { providerID: entry.providerID, modelID: entry.modelID, variant: remembered };
+  });
+};
 
 const areStringArraysEqual = (left: string[], right: string[]): boolean => (
   left.length === right.length && left.every((value, idx) => value === right[idx])
@@ -670,7 +706,7 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
 
   if (Array.isArray(settings.favoriteModels)) {
     const current = store.favoriteModels;
-    const next = settings.favoriteModels;
+    const next = mergeModelRefsPreservingVariants(current, settings.favoriteModels);
     if (!areModelRefsEqual(current, next)) {
       useUIStore.setState({ favoriteModels: next });
     }
@@ -694,7 +730,7 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
 
   if (Array.isArray(settings.recentModels)) {
     const current = store.recentModels;
-    const next = settings.recentModels;
+    const next = mergeModelRefsPreservingVariants(current, settings.recentModels);
     if (!areModelRefsEqual(current, next)) {
       useUIStore.setState({ recentModels: next });
     }

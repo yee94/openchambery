@@ -335,6 +335,84 @@ describe('updateDesktopSettings', () => {
     expect('variant' in state.recentModels[1]).toBe(false);
   });
 
+  test('keeps local thinking variants when server model refs omit them', async () => {
+    getWindow();
+    useUIStore.setState({
+      favoriteModels: [
+        { providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' },
+        { providerID: 'openai', modelID: 'gpt-5', variant: 'low' },
+      ],
+      recentModels: [{ providerID: 'google', modelID: 'gemini-pro', variant: 'medium' }],
+    });
+    const settings = {
+      favoriteModels: [
+        { providerID: 'openai', modelID: 'gpt-5' },
+        { providerID: 'anthropic', modelID: 'claude-haiku-4' },
+      ],
+      recentModels: [{ providerID: 'google', modelID: 'gemini-pro' }],
+    } satisfies SettingsPayload;
+    registerSettingsApi(async () => ({}), async () => ({ settings, source: 'web' }));
+
+    await syncDesktopSettings();
+
+    const state = useUIStore.getState();
+    expect(state.favoriteModels).toEqual([
+      { providerID: 'openai', modelID: 'gpt-5', variant: 'low' },
+      { providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' },
+    ]);
+    expect(state.recentModels).toEqual([
+      { providerID: 'google', modelID: 'gemini-pro', variant: 'medium' },
+    ]);
+  });
+
+  test('lets server model refs with variants overwrite local remembered variants', async () => {
+    getWindow();
+    useUIStore.setState({
+      favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'high' }],
+      recentModels: [{ providerID: 'google', modelID: 'gemini-pro', variant: 'medium' }],
+    });
+    const settings = {
+      favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'low' }],
+      recentModels: [{ providerID: 'google', modelID: 'gemini-pro', variant: 'high' }],
+    } satisfies SettingsPayload;
+    registerSettingsApi(async () => ({}), async () => ({ settings, source: 'web' }));
+
+    await syncDesktopSettings();
+
+    const state = useUIStore.getState();
+    expect(state.favoriteModels).toEqual([
+      { providerID: 'anthropic', modelID: 'claude-haiku-4', variant: 'low' },
+    ]);
+    expect(state.recentModels).toEqual([
+      { providerID: 'google', modelID: 'gemini-pro', variant: 'high' },
+    ]);
+  });
+
+  test('does not rewrite model refs when neither side has variants', async () => {
+    getWindow();
+    useUIStore.setState({
+      favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4' }],
+      recentModels: [{ providerID: 'google', modelID: 'gemini-pro' }],
+    });
+    const settings = {
+      favoriteModels: [{ providerID: 'anthropic', modelID: 'claude-haiku-4' }],
+      recentModels: [{ providerID: 'google', modelID: 'gemini-pro' }],
+    } satisfies SettingsPayload;
+    registerSettingsApi(async () => ({}), async () => ({ settings, source: 'web' }));
+
+    await syncDesktopSettings();
+
+    const state = useUIStore.getState();
+    expect(state.favoriteModels).toEqual([
+      { providerID: 'anthropic', modelID: 'claude-haiku-4' },
+    ]);
+    expect(state.recentModels).toEqual([
+      { providerID: 'google', modelID: 'gemini-pro' },
+    ]);
+    expect('variant' in state.favoriteModels[0]).toBe(false);
+    expect('variant' in state.recentModels[0]).toBe(false);
+  });
+
   test('autosaves all model selector settings fields', async () => {
     getWindow();
     const saveCalls: Array<Partial<SettingsPayload>> = [];
