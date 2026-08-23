@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.67] - 2026-08-23
+
+### 聊天
+
+- **移动端键盘收起后页面不再滞留「抬起」状态：** WKWebView 收起键盘时会用自带的回滚动画慢慢放平为露出光标而平移的页面，观感为键盘已完全收起、输入区却还悬着；现在在收起同帧与键盘结束各做一次窗口零位校正，让页面与键盘同步落地（对齐 PWA 已有的收起 snap 逻辑）。
+
 ## [1.18.2-beta.66] - 2026-08-23
 
 ### 移动端

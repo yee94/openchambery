@@ -853,6 +853,19 @@ const useNativeMobileChrome = (): void => {
         // merge + render) and read as a ~500ms lag. UIKit still animates the
         // keyboard itself; the curtain below keeps covering the fade-out seam.
         clearKbMovers();
+        // WKWebView pans its own scroll view to reveal the caret on focus and
+        // unwinds that pan with its own ~keyboard-duration animation on hide —
+        // geometry vars above are already at rest while the page still reads
+        // "lifted" until WebKit finishes scrolling. Zero the window scroll now
+        // and once more as the keyboard finishes (mirrors the standalone-PWA
+        // snap below) so the shell lands with the keyboard, not after it.
+        const snapWindowScroll = () => {
+          if (keyboardOpen) return;
+          window.scrollTo(0, 0);
+          if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+        };
+        snapWindowScroll();
+        window.setTimeout(snapWindowScroll, 350);
         dispatchKb('oc:keyboard-anim', { phase: 'hide', slide, durationMs: 0, easing: KB_ANIM_EASING });
         root.classList.add('oc-kb-animating', 'oc-kb-hide');
         settleTimer = window.setTimeout(() => {
