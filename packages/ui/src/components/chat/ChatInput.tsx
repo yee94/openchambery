@@ -1027,7 +1027,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [mobileComposerMotion, setMobileComposerMotion] = React.useState<'idle' | 'expanding' | 'collapsing'>('idle');
     const [mobileComposerStageHeight, setMobileComposerStageHeight] = React.useState(112);
     const mobileComposerMeasuredStageScopeRef = React.useRef<string | null>(null);
-    const [mobileFullChromePrewarmed, setMobileFullChromePrewarmed] = React.useState(false);
+    const [mobileFullChromePrewarmed, setMobileFullChromePrewarmed] = React.useState(MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED);
     const mobileComposerMotionTimerRef = React.useRef<number | null>(null);
     // Dictation-end collapse probe (30ms) and PWA overlay keyboard-reveal
     // retries (300/650ms). Cleared on re-arm and unmount so long sessions do
