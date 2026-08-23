@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.38] - 2026-08-23
+
+### 移动端
+
+- **OTA 更新卡片能显示 changelog：** iOS 上报的剥离版号 `1.18.2` 不再把所有 `1.18.2-beta.*` 更新说明滤掉。卡片按当前 web 版本取笔记。
+
 ## [1.18.2-beta.37] - 2026-08-23
 
 ### 移动端
