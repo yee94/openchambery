@@ -2021,6 +2021,16 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 0 !important;
   }
 
+  /* Composer stop control: keep the authored compact size. The generic 36px
+     touch floor would otherwise inflate the hit target. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    button[data-composer-stop="true"],
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-composer-stop="true"][role="button"] {
+    min-height: 0 !important;
+    min-width: 0 !important;
+  }
+
   /* Agent cycle + model name chip: keep compact label sizing; do not inflate
      to the generic 36px touch min (would enlarge "GPT-…" text row). */
   :root.mobile-pointer:not(.desktop-runtime)
@@ -2816,7 +2826,9 @@ button.oc-mobile-worktree-label-trigger:active,
    https://developer.android.com/develop/ui/views/layout/sw-keyboard
 
    --oc-keyboard-inset: portal overlays. --oc-kb-layout: iOS shell height (and
-   Android unused / kept at 0 during FLIP). */
+   Android unused / kept at 0 during FLIP). --oc-kb-scroll-inset: chat-scroll
+   padding for non-composer fields (question cards, etc.) when the shell is
+   not shrunk; cleared to 0 while composer focus owns --oc-kb-layout. */
 /* Match the tabs-root canvas so Capacitor bottom-safe padding and any
    under-filled phone shell never seam against plain --background. */
 .oc-mobile-app-shell {
@@ -2949,12 +2961,19 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 /* iOS: page-push layout. The scroller is a normal flex sibling above the
-   composer, so shrinking the shell lifts the transcript with the full input
-   (footer + padding included). Do not extend behind the composer — that was
-   the FLIP trick and left the page visually pinned while only the caret moved. */
+   composer, so shrinking the shell (--oc-kb-layout) lifts the transcript with
+   the full input. Do not extend behind the composer during that path — that
+   was the FLIP trick and left the page visually pinned while only the caret
+   moved.
+
+   Question / other non-composer fields keep --oc-kb-layout at 0 and publish
+   --oc-kb-scroll-inset instead. Without that padding there is no scroll range
+   to reveal the focused field above the IME (resize:none keeps a full-height
+   viewport). Composer focus clears the scroll inset so shell shrink and
+   padding never double-count. */
 :root.oc-capacitor-app:not(.oc-platform-android) .oc-mobile-app-shell .chat-scroll {
   bottom: 0;
-  padding-bottom: 0;
+  padding-bottom: var(--oc-kb-scroll-inset, 0px);
 }
 
 /* WKWebView draws the text caret as a native layer that ignores CSS transforms:

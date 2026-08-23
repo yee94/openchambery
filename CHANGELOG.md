@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.2] - 2026-08-24
+
+### 聊天
+
+- **停止按钮改回实心方块：** 去掉白底圆试验样式；浅色模式黑方块、暗色模式白方块，移动端恢复原有尺寸。
+- **问题卡键盘避让：** iOS 非输入框字段聚焦时用 `--oc-kb-scroll-inset` 给聊天列表加底 padding；输入框焦点仍走整页上顶，并清掉该 inset，避免双重抬升。
+
 ## [1.18.3-beta.1] - 2026-08-24
 
 ### 聊天

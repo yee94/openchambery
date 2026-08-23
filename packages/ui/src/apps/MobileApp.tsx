@@ -718,13 +718,15 @@ const useNativeMobileChrome = (): void => {
       };
       // Header stays pinned. The shell height drops by the IME so the whole
       // composer (textarea + model/attach footer + foot padding) sits in flow
-      // at the new shell bottom — not just the focused caret.
+      // at the new shell bottom — not just the focused caret. Clear
+      // --oc-kb-scroll-inset here: that var is only for non-composer fields
+      // that keep a full-height shell and need chat-scroll padding to reveal.
       const applyIosKeyboardLayout = (height: number): number => {
         measureSafeBottom();
         const slide = Math.max(0, height - safeBottomPx);
         setInset(height);
         setVar('--oc-kb-layout', height);
-        setVar('--oc-kb-scroll-inset', slide);
+        setVar('--oc-kb-scroll-inset', 0);
         layoutApplied = true;
         clearKbMovers();
         window.scrollTo(0, 0);

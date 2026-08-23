@@ -773,6 +773,7 @@ const PermissionAutoAcceptButton = React.memo(function PermissionAutoAcceptButto
 type ComposerActionButtonsProps = {
     isMobile: boolean;
     footerIconButtonClass: string;
+    stopFooterIconButtonClass?: string;
     sendIconSizeClass: string;
     stopIconSizeClass: string;
     canSend: boolean;
@@ -794,6 +795,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     const {
         isMobile,
         footerIconButtonClass,
+        stopFooterIconButtonClass,
         sendIconSizeClass,
         stopIconSizeClass,
         canSend,
@@ -913,11 +915,12 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
             ) : null}
             <button
                 type="button"
+                data-composer-stop="true"
                 onClick={onAbort}
                 className={cn(
-                    footerIconButtonClass,
-                    // White circular chip + hollow stop square (trial).
-                    'relative z-30 rounded-full bg-white text-foreground hover:bg-white hover:text-foreground'
+                    stopFooterIconButtonClass ?? footerIconButtonClass,
+                    // Plain stop square only: black in light mode, white in dark.
+                    'relative z-30 !text-black hover:!text-black dark:!text-white dark:hover:!text-white'
                 )}
                 aria-label={t('chat.chatInput.actions.stopGeneratingAria')}
             >
@@ -928,6 +931,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
 }, (prev, next) => (
     prev.isMobile === next.isMobile
     && prev.footerIconButtonClass === next.footerIconButtonClass
+    && prev.stopFooterIconButtonClass === next.stopFooterIconButtonClass
     && prev.sendIconSizeClass === next.sendIconSizeClass
     && prev.stopIconSizeClass === next.stopIconSizeClass
     && prev.canSend === next.canSend
@@ -6355,9 +6359,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const footerPaddingClass = isMobile ? 'px-1.5 py-1.5' : (isVSCode ? 'px-1.5 py-1' : 'px-2.5 py-1.5');
     const buttonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
     const sendIconSizeClass = isMobile ? 'h-4 w-4' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
-    // White solid stop square reads larger than the previous outlined glyph —
-    // only a touch smaller than the surrounding footer icons.
-    const stopIconSizeClass = isMobile ? 'h-5 w-5' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
+    // Solid stop square: keep near the original mobile/desktop sizes.
+    const stopIconSizeClass = isMobile ? 'h-5 w-5' : (isVSCode ? 'h-4 w-4' : 'h-5 w-5');
     const iconSizeClass = isMobile ? 'h-[1.125rem] w-[1.125rem]' : (isVSCode ? 'h-4 w-4' : 'h-[1.125rem] w-[1.125rem]');
 
     const iconButtonBaseClass = cn(
@@ -6365,6 +6368,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         COMPOSER_ICON_HOVER_CLASS,
     );
     const footerIconButtonClass = cn(iconButtonBaseClass, buttonSizeClass);
+    const stopFooterIconButtonClass = footerIconButtonClass;
     // Idle composer stays quieter; focus / open pickers / hover restore full weight.
     const composerChromeEmphasized = isMobile
         ? (mobileTextareaFocused || isAgentSelectorOpen || isModelSelectorOpen || Boolean(mobileControlsPanel))
@@ -6482,6 +6486,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             <ComposerActionButtons
                                 isMobile
                                 footerIconButtonClass={footerIconButtonClass}
+                                stopFooterIconButtonClass={stopFooterIconButtonClass}
                                 sendIconSizeClass={sendIconSizeClass}
                                 stopIconSizeClass={stopIconSizeClass}
                                 canSend={canSend}
@@ -6550,6 +6555,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     <ComposerActionButtons
                         isMobile={isMobile}
                         footerIconButtonClass={footerIconButtonClass}
+                        stopFooterIconButtonClass={stopFooterIconButtonClass}
                         sendIconSizeClass={sendIconSizeClass}
                         stopIconSizeClass={stopIconSizeClass}
                         canSend={canSend}
@@ -6626,6 +6632,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 <ComposerActionButtons
                     isMobile={isMobile}
                     footerIconButtonClass={footerIconButtonClass}
+                    stopFooterIconButtonClass={stopFooterIconButtonClass}
                     sendIconSizeClass={sendIconSizeClass}
                     stopIconSizeClass={stopIconSizeClass}
                     canSend={canSend}
