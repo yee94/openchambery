@@ -14,9 +14,9 @@ Accept an optional semantic version in `X.Y.Z` or `X.Y.Z-prerelease.N` form, fol
 Workflow:
 
 1. Inspect the worktree and recent release/tag state. Run `node scripts/mobile-release-plan.mjs --json`. Choose the artifact:
-   - **Default new version** (including `mode: "ota"`) → **native**: tag `v$VERSION`. This builds desktop + APK + npm, uploads iOS to internal TestFlight, and publishes the same-version OTA via `mobile-native-targets`, so first-time downloaders still get installers. Stable additionally publishes the external TestFlight group.
-   - **OTA-only** `mobile-beta/v$VERSION` (or `mobile-stable/v$VERSION`) only when the user explicitly wants an installed-app web update and no installers. This is the only path without iOS / TestFlight.
-   - To retro-upload iOS for an already-released beta that lacks it (e.g. published before this rule), dispatch `mobile-release.yml` with `build_ios=true`, `publish_external_testflight=false`, `build_android=false`, and the original `version_name` / `build_number`.
+   - **Default new version** → **native**: tag `v$VERSION`. This builds desktop + APK + npm and publishes the same-version OTA via `mobile-native-targets`, so first-time downloaders still get installers. TestFlight follows the plan mode: `mode: native` betas upload iOS to internal TestFlight (the shell changed, testers need it); `mode: ota` betas skip iOS. Stable always uploads iOS and publishes the external TestFlight group.
+   - **OTA-only** `mobile-beta/v$VERSION` (or `mobile-stable/v$VERSION`) only when the user explicitly wants an installed-app web update and no installers. No iOS / TestFlight.
+   - To retro-upload iOS for a beta that shipped without it but turns out to need the native shell, dispatch `mobile-release.yml` with `build_ios=true`, `publish_external_testflight=false`, `build_android=false`, and the original `version_name` / `build_number`.
 2. Set `VERSION` from the argument or the rule above. Include all current worktree changes in the release commit.
 3. Classify the channel:
    - **Stable:** `X.Y.Z` with no `-` suffix.
@@ -46,7 +46,7 @@ Stable packaged clients must never be offered a beta through auto-update. When r
 - **Must not** point desktop updater feeds, Discord “latest”, or Android “latest APK” at a beta. Desktop Vercel `/desktop/latest*.yml` proxies GitHub `/releases/latest`; Android also uses `/releases/latest`.
 - **Must** leave `autoUpdater.allowPrerelease = false` alone unless the user explicitly requests prerelease auto-update.
 - After pushing a beta tag, if a previous beta was accidentally published as Latest, immediately restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` / Vercel `latest-mac.yml` still show that stable version.
-- Beta `v*` uploads iOS to internal-only TestFlight (external group and Beta App Review stay stable-only); OTA-only `mobile-beta/*` tags have no iOS. Do not attach beta builds to the existing external TestFlight group or submit Beta App Review.
+- TestFlight tracks the native-shell requirement, not the tag: `mode: native` betas and all stable releases upload iOS (betas internal-only; external group and Beta App Review stay stable-only); `mode: ota` betas and `mobile-beta/*` tags skip iOS. The minNativeBuild floor (one-tap OTA vs reinstall prompt) rises only on `mode: native`, independent of OTA publishing.
 
 Constraints:
 

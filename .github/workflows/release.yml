@@ -39,8 +39,27 @@ jobs:
       # Semver prerelease (e.g. 1.16.94-beta.2) must never become GitHub Latest
       # or enter the Vercel auto-update feed used by stable packaged clients.
       is_prerelease: ${{ steps.get_version.outputs.is_prerelease }}
+      # Mobile plan mode ("ota" | "native") from mobile-release-plan.mjs.
+      # Drives whether iOS/TestFlight builds: native betas and ALL stable
+      # releases upload iOS; web-only betas skip it. Also gates the
+      # minNativeBuild floor raise in mobile-native-targets.
+      plan_mode: ${{ steps.mobile_plan.outputs.mode }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # mobile-release-plan diffs against the latest v* tag.
+          fetch-depth: 0
+
+      - name: Compute mobile release plan
+        id: mobile_plan
+        run: |
+          PLAN_JSON="$(node scripts/mobile-release-plan.mjs --json)"
+          echo "$PLAN_JSON"
+          node -e "
+            const plan = JSON.parse(process.argv[1]);
+            const mode = plan.mode === 'native' ? 'native' : 'ota';
+            console.log('mode=' + mode);
+          " "$PLAN_JSON" >> "$GITHUB_OUTPUT"
 
       - name: Get version
         id: get_version
@@ -549,11 +568,11 @@ jobs:
       release_tag: v${{ needs.create-release.outputs.version }}
       upload_github_release: true
       build_android: true
-      # All v* releases (beta + stable) build iOS and upload to TestFlight so
-      # mobile testers get native shells too. Betas stay internal-only: the
-      # external group and Beta App Review remain stable-only so review delays
-      # cannot block a beta. Only OTA-only tags (mobile-beta/*) skip iOS.
-      build_ios: true
+      # TestFlight follows the native requirement, not the v* tag itself:
+      # native-mode betas and ALL stable releases build + upload iOS (betas
+      # internal-only, stable also publishes the external group); web-only
+      # (mode: ota) betas skip iOS entirely — existing shells update via OTA.
+      build_ios: ${{ needs.create-release.outputs.plan_mode == 'native' || !contains(needs.create-release.outputs.version, '-') }}
       publish_external_testflight: ${{ !contains(needs.create-release.outputs.version, '-') }}
       # Bake OTA channel into the native shell at mobile:sync. Prerelease tags
       # stay on beta; plain semver store builds use stable.
@@ -695,25 +714,25 @@ jobs:
           set -euo pipefail
           OUT="$RUNNER_TEMP/ota-native-targets"
           ANDROID_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
-          # Fixed TestFlight public link (stable external group). All v*
-          # releases upload iOS, so advertise the native iOS target every time.
+          # Fixed TestFlight public link (stable external group). Advertise the
+          # native iOS target only when this release actually uploaded iOS
+          # (native-mode betas and stable); web-only betas keep the previous
+          # advertisement instead of pointing at a build that was never shipped.
           IOS_URL="https://testflight.apple.com/join/ZCENBHtm"
-          BUILD_IOS="true"
+          BUILD_IOS="${{ needs.create-release.outputs.plan_mode == 'native' || !contains(needs.create-release.outputs.version, '-') }}"
           PLAN_JSON="$(node scripts/mobile-release-plan.mjs --json)"
           PLAN_MODE="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).mode || '')" "$PLAN_JSON")"
           echo "mobile-release-plan mode=$PLAN_MODE"
 
           # Publish the same-version web bundle first so a fresh native install
           # cannot be rolled back to an older activeBundle. Raise minNativeBuild
-          # only when the native shell actually changed. Web-only v* must keep
-          # existing APKs on apply_ota instead of install_native_required/GitHub.
-          # iOS follows the same rule as Android: native-mode releases (or
-          # stable, which historically always raised when uploading iOS) raise
-          # the floor; web-only betas keep existing iOS shells on apply_ota.
-          if [[ "$PLAN_MODE" == "native" || "$OTA_CHANNEL" == "stable" ]]; then
-            export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
-          fi
+          # only when the native shell actually changed (mode: native), for BOTH
+          # platforms and both channels — the in-app one-tap-vs-reinstall choice
+          # is decided here, independent of OTA publishing. Web-only releases
+          # (mode: ota) keep existing shells on apply_ota; stable never raises
+          # the floor just because it shipped an installer.
           if [[ "$PLAN_MODE" == "native" ]]; then
+            export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
             export MIN_NATIVE_BUILD_ANDROID="$BUILD_NUMBER"
           fi
           ASSEMBLE_ARGS=(

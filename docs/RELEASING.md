@@ -18,10 +18,13 @@
 
 | 情况 | 产物 | Tag | 触发 |
 |---|---|---|---|
-| 默认新版本（含 web/UI，即使 `mode: "ota"`） | 桌面 macOS/Win/Linux + Android APK/AAB + npm + 同版本 OTA + iOS 内测 TestFlight，给首次下载的人。 | `vX.Y.Z-beta.N` | `release.yml`（含 `mobile-native-targets`） |
+| 默认新版本，纯 web 变更（`mode: "ota"`） | 桌面 macOS/Win/Linux + Android APK/AAB + npm + 同版本 OTA。**不上 iOS / TestFlight**。 | `vX.Y.Z-beta.N` | `release.yml`（含 `mobile-native-targets`） |
+| 新版本含原生壳变更（`mode: "native"`，即 break change） | 上行全部 + iOS 内测 TestFlight；端内检测抬 `minNativeBuild` 引导重装 | `vX.Y.Z-beta.N` | `release.yml`（`build_ios` 由 plan mode 决定） |
 | 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA（无 iOS） | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
-| 稳定版 | 完整原生 + 桌面；iOS 上传 TestFlight 并关联外测组（Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
+| 稳定版 | 桌面 + Android APK/AAB + npm + 同版本 OTA + iOS TestFlight（关联外测组 + Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
 | 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
+
+**TestFlight 跟随「是否需要原生壳」，不跟随 tag**：`mode: native` 的 beta 与所有稳定版上传 iOS（beta 仅内测，稳定版关联外测组）；`mode: ota` 的 beta 不碰 iOS。**端内一键更新 vs 跳转重装由 `minNativeBuild` 决定，与 OTA 发布是两条独立链路**：只有 `mode: native` 抬下限（两端同规则，稳定版也不因发了安装包而抬）。
 
 默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。
 
@@ -78,7 +81,7 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**所有 `v*`（含 beta）都构建并上传 iOS 到 TestFlight**：beta 走内测，不关联外测组、不提 Beta App Review；稳定版额外关联外测组。只有 `mobile-beta/*` OTA-only tag 不涉及 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测、不关联外测组、不提 Beta App Review；稳定版额外关联外测组）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
 
 npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@openchambery/web`。
 
@@ -99,7 +102,7 @@ npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publis
 2. 依赖 `release.yml`：含 `-` 的版本创建/发布 GitHub Release 时设置 `prerelease: true`，从而**不会**成为 `/releases/latest`。
 3. 依赖 finalize-release **跳过** `deploy/update-service/release-manifest.json` 写入；`write-release-manifest.mjs` 对 prerelease 直接 exit 0。Agent 不得手工把该 manifest 改成 beta 版本并推送。
 4. 保持 Electron `autoUpdater.allowPrerelease = false`（稳定客户端不订阅 prerelease）。
-5. beta `v*` **默认构建并上传 iOS 到 TestFlight 内测**（仅 OTA-only 的 `mobile-beta/*` 无 iOS）。**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review（外测组仅稳定版）。iOS 上传失败只影响内测可见性，重跑 `--failed` 即可；桌面 / APK / npm 不受影响。
+5. beta `v*` 是否上传 iOS 由 plan mode 决定：`mode: native`（需要原生壳）**必须**上传 iOS 到 TestFlight 内测；`mode: ota`（常规 web-only beta）**不构建、不上传 iOS**。**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review（外测组仅稳定版）。iOS 上传失败只影响内测可见性，重跑 `--failed` 即可；桌面 / APK / npm 不受影响。
 
 **发布时禁止**
 
@@ -399,7 +402,7 @@ node scripts/mobile-ota/rollout.mjs --action rollback --channel beta --out /tmp/
 node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 100 --out /tmp/ota-snap
 ```
 
-`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`。`mobile-release-plan` 为 `ota` 时**不抬** `minNativeBuild`，已装壳（Android / iOS 同规则）继续走 `apply_ota`，不要被赶去 GitHub / TestFlight。只有 `mode: native`（或稳定版）才把对应平台的 `minNativeBuild` 写成这一轮 `run_number`。所有 `v*` 都上传 iOS，因此 `nativeTargets.ios` 每轮前移；`nativeTargets.android` 仅 `mode: native` 时前移。客户端是否打开外链只看检查协议的 `primaryAction` + `native.installUrl`，不要本地拼 GitHub。
+`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`。`minNativeBuild` 下限抬升（端内「一键 OTA」vs「跳转重装」的分界）**只由 `mode: native` 决定**，与是否发布 OTA / 安装包解耦：`mode: ota` 时两端（Android / iOS、beta / 稳定版）都不抬，已装壳继续走 `apply_ota`；`mode: native` 时两端都抬到本轮 `run_number`。`nativeTargets.ios` 仅在本轮实际上传了 iOS（native beta / 稳定版）时前移，`nativeTargets.android` 仅 `mode: native` 时前移。客户端是否打开外链只看检查协议的 `primaryAction` + `native.installUrl`，不要本地拼 GitHub。
 
 稳定版与 beta `v*` 都会前移指针。后续纯 web 的 `mobile-beta/*` / `mobile-stable/*` 仍可单独发更高版本 OTA；assemble 会拒绝比当前 active 更旧的包。
 
