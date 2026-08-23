@@ -110,7 +110,7 @@ Required JSON fields:
   "ota": { "state": "current | available | outside_rollout | incompatible", "bundle": { } },
   "native": { "state": "current | available | required", "version": "", "build": 0, "installUrl": "" },
   "nextCheckInSec": 3600,
-  "releaseNotes": "optional markdown between nativeVersion and OTA releaseVersion"
+  "releaseNotes": "optional markdown newer than currentBundleId (not stripped iOS nativeVersion) through OTA releaseVersion"
 }
 ```
 

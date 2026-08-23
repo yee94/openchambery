@@ -1,6 +1,6 @@
 import { loadOtaChannelManifest } from './ota-manifest.js';
 import { resolveMobileUpdate } from './ota-resolver.js';
-import { loadReleaseNotes } from './release-notes.js';
+import { loadReleaseNotes, resolveChangelogCurrentVersion } from './release-notes.js';
 
 const ALLOWED_CHANNELS = new Set(['beta', 'stable']);
 const ALLOWED_PLATFORMS = new Set(['ios', 'android']);
@@ -217,7 +217,7 @@ async function withReleaseNotes(decision, request, parsedRequest) {
 
   const releaseNotes = await loadReleaseNotes(
     request.url,
-    parsedRequest.nativeVersion,
+    resolveChangelogCurrentVersion(parsedRequest),
     decision.ota.bundle.releaseVersion,
   );
   if (!releaseNotes) return decision;

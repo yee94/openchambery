@@ -111,6 +111,41 @@ test('mobile update check returns apply_ota with absolute bundle URL', async () 
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
 });
 
+test('iOS stripped nativeVersion still attaches beta changelog using currentBundleId', async () => {
+  stubChannel({
+    manifest: channelManifest({
+      activeBundle: {
+        ...channelManifest().activeBundle,
+        releaseVersion: '1.18.2-beta.37',
+      },
+    }),
+    changelog: [
+      '# Changelog',
+      '',
+      '## [1.18.2-beta.37] - 2026-08-23',
+      '',
+      '- Stop same-version OTA loop',
+      '',
+      '## [1.18.2-beta.36] - 2026-08-23',
+      '',
+      '- Already installed',
+    ].join('\n'),
+  });
+  const response = await handleMobileUpdateCheck(mobileRequest({
+    ...validBody,
+    nativeVersion: '1.18.2',
+    currentBundleId: '1.18.2-beta.36',
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'apply_ota');
+  assert.equal(
+    body.releaseNotes,
+    '## [1.18.2-beta.37] - 2026-08-23\n\n- Stop same-version OTA loop',
+  );
+});
+
 test('mobile update check attaches releaseNotes for apply_ota from CHANGELOG.md', async () => {
   const requests = stubChannel({
     manifest: channelManifest(),

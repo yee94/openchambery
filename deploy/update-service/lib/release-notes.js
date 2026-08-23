@@ -1,4 +1,4 @@
-import { compareReleaseVersions } from './semver.js';
+import { compareReleaseVersions, parseReleaseVersion } from './semver.js';
 
 const CHANGELOG_PATH = '/CHANGELOG.md';
 
@@ -39,14 +39,35 @@ function compareVersions(left, right) {
 }
 
 /**
+ * Web-bundle identity for changelog filtering.
+ * iOS marketing versions strip `-beta.N` (`1.18.2-beta.36` → `1.18.2`).
+ * That stripped stable is newer than every `1.18.2-beta.*`, so it must not
+ * be used as "already installed" or every beta note disappears.
+ */
+export function resolveChangelogCurrentVersion(request) {
+  if (parseReleaseVersion(request?.currentBundleId)) {
+    return request.currentBundleId;
+  }
+  const native = parseReleaseVersion(request?.nativeVersion);
+  if (native && native.beta !== null) {
+    return request.nativeVersion;
+  }
+  return null;
+}
+
+/**
  * Filter CHANGELOG.md sections to versions strictly newer than `currentVersion`
- * and at most `latestVersion`.
+ * and at most `latestVersion`. A null/empty current version keeps only the
+ * latest section (unknown installed web bundle).
  */
 export function extractReleaseNotes(changelog, currentVersion, latestVersion) {
   const sections = changelog.split(/^## /m).slice(1);
   const relevantSections = sections.filter((section) => {
     const match = section.match(/^\[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\]/);
     if (!match) return false;
+    if (currentVersion == null || currentVersion === '') {
+      return compareVersions(match[1], latestVersion) === 0;
+    }
     return compareVersions(match[1], currentVersion) > 0 && compareVersions(match[1], latestVersion) <= 0;
   });
 
