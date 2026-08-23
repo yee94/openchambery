@@ -4,8 +4,9 @@
  *
  * Manifest/bundle reachability is not enough: the check endpoint must answer
  * `apply_ota` for an existing shell and `none` for a device already on the
- * bundle. This script replays three device profiles against
- * POST /v1/mobile/update/check and fails the release when any of them regresses:
+ * bundle. This script replays four device profiles against
+ * POST /v1/mobile/update/check on every client-facing origin and fails the
+ * release when any of them regresses:
  *
  *   1. Old iOS shell — iOS TestFlight strips `-beta.N` from the marketing
  *      version, so the probe sends the stripped form plus the minimum viable
@@ -17,37 +18,50 @@
  *   4. Device already on the bundle — `currentBundleId` set to the release
  *      version; must answer `none` so clients do not re-offer forever.
  *
+ * Origins default to both hosts the app actually calls (Vercel authoritative,
+ * EdgeOne preferred by mainland clients). `--base` may be repeated to override.
+ *
  * Usage (repo root):
  *   node scripts/mobile-ota/verify-detectability.mjs --channel beta \
- *     --version 1.18.2-beta.66 --mode ota [--base https://openchamber-update.vercel.app]
+ *     --version 1.18.2-beta.66 --mode ota
  *
- * `--mode ota` expects profiles 1+2 to see `apply_ota` (web-only release:
+ * `--mode ota` expects profiles 1–3 to see `apply_ota` (web-only release:
  * existing shells must update in place). `--mode native` expects
  * `install_native_required` (the floor was raised: shells must reinstall).
  *
  * The check endpoint may briefly serve a pre-deploy manifest (edge cache), so
  * probes retry for up to ~3 minutes before failing.
  */
-const DEFAULT_BASE = 'https://openchamber-update.vercel.app'
+const DEFAULT_BASES = [
+  'https://openchamber-update.vercel.app',
+  'https://openchamber.xiaobe.top',
+]
 
 function parseArgs(argv) {
-  const out = { channel: 'beta', version: null, mode: 'ota', base: process.env.OTA_BASE_URL || DEFAULT_BASE }
+  const out = { channel: 'beta', version: null, mode: 'ota', bases: [] }
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]
     const value = argv[i + 1]
     if (key === '--channel') out.channel = value
     else if (key === '--version') out.version = value
     else if (key === '--mode') out.mode = value
-    else if (key === '--base') out.base = value
+    else if (key === '--base') out.bases.push(value)
     else throw new Error(`Unknown argument: ${key}`)
   }
   if (!out.version) throw new Error('--version is required')
   if (out.channel !== 'beta' && out.channel !== 'stable') throw new Error('--channel must be beta or stable')
   if (out.mode !== 'ota' && out.mode !== 'native') throw new Error('--mode must be ota or native')
+  if (out.bases.length === 0) {
+    const fromEnv = (process.env.OTA_DETECTABILITY_BASES || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    out.bases = fromEnv.length > 0 ? fromEnv : DEFAULT_BASES
+  }
   return out
 }
 
-const { channel, version, mode, base } = parseArgs(process.argv.slice(2))
+const { channel, version, mode, bases } = parseArgs(process.argv.slice(2))
 
 const RETRY_DELAYS_MS = [0, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000]
 
@@ -55,13 +69,21 @@ const stripPrerelease = (v) => v.replace(/-[0-9A-Za-z.+-]+$/, '')
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function fetchManifest() {
+const hostLabel = (base) => {
+  try {
+    return new URL(base).host
+  } catch {
+    return base
+  }
+}
+
+async function fetchManifest(base) {
   const response = await fetch(`${base}/ota/channels/${channel}.json`, { cache: 'no-store' })
   if (!response.ok) throw new Error(`manifest fetch failed: ${response.status}`)
   return response.json()
 }
 
-async function probe(body) {
+async function probe(base, body) {
   const response = await fetch(`${base}/v1/mobile/update/check`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -138,25 +160,32 @@ function buildProfiles(manifest) {
 let lastFailures = []
 for (const delay of RETRY_DELAYS_MS) {
   if (delay > 0) await sleep(delay)
-  const profiles = buildProfiles(await fetchManifest())
   lastFailures = []
-  for (const profile of profiles) {
+  for (const base of bases) {
+    const label = hostLabel(base)
     try {
-      const decision = await probe(profile.body)
-      const actual = decision.primaryAction
-      if (actual !== profile.expect) {
-        lastFailures.push(`${profile.name}: expected ${profile.expect}, got ${actual}`)
-      } else if (profile.expect === 'apply_ota' && decision.ota?.bundle?.releaseVersion !== version) {
-        lastFailures.push(`${profile.name}: apply_ota offers ${decision.ota?.bundle?.releaseVersion ?? 'none'}, expected ${version}`)
-      } else {
-        console.log(`  ok ${profile.name} -> ${actual}`)
+      const profiles = buildProfiles(await fetchManifest(base))
+      for (const profile of profiles) {
+        try {
+          const decision = await probe(base, profile.body)
+          const actual = decision.primaryAction
+          if (actual !== profile.expect) {
+            lastFailures.push(`${label} ${profile.name}: expected ${profile.expect}, got ${actual}`)
+          } else if (profile.expect === 'apply_ota' && decision.ota?.bundle?.releaseVersion !== version) {
+            lastFailures.push(`${label} ${profile.name}: apply_ota offers ${decision.ota?.bundle?.releaseVersion ?? 'none'}, expected ${version}`)
+          } else {
+            console.log(`  ok ${label} ${profile.name} -> ${actual}`)
+          }
+        } catch (error) {
+          lastFailures.push(`${label} ${profile.name}: ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     } catch (error) {
-      lastFailures.push(`${profile.name}: ${error instanceof Error ? error.message : String(error)}`)
+      lastFailures.push(`${label} manifest: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
   if (lastFailures.length === 0) {
-    console.log(`detectability verified: ${channel} ${version} (mode=${mode})`)
+    console.log(`detectability verified: ${channel} ${version} (mode=${mode}) bases=${bases.join(',')}`)
     process.exit(0)
   }
   console.log(`  stale/mismatch (${lastFailures.length}), retrying...`)

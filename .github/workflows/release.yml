@@ -849,7 +849,7 @@ jobs:
             exit 0
           fi
           node scripts/mobile-ota/verify-detectability.mjs \
-            --channel "$OTA_CHANNEL" --version "$VERSION" --mode "$PLAN_MODE" --base "$OTA_BASE_URL"
+            --channel "$OTA_CHANNEL" --version "$VERSION" --mode "$PLAN_MODE"
 
   publish-relay-docker-manual:
     name: Publish only the Relay Docker image

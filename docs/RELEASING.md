@@ -324,7 +324,7 @@ OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/
 
 ### 客户端可检测性验证（detectability probe）
 
-每次 OTA 发布部署后，CI 会用 `scripts/mobile-ota/verify-detectability.mjs` 以四种设备画像探活 `POST /v1/mobile/update/check`，任一失败即让发布 fail（带 ~3 分钟边缘缓存重试）：
+每次 OTA 发布部署后，CI 会用 `scripts/mobile-ota/verify-detectability.mjs` 对 **Vercel 与 EdgeOne 两个客户端入口** 各用四种设备画像探活 `POST /v1/mobile/update/check`，任一失败即让发布 fail（带 ~3 分钟边缘缓存重试）。设备优先打 EdgeOne，只探 Vercel 会漏掉国内入口的 resolver 回归：
 
 1. **旧 iOS 壳**：剥离 `-beta.N` 的版本号 + `currentBundleId: builtin` —— `mode: ota` 必须返回 `apply_ota` 且指向新版本；`mode: native` 必须返回 `install_native_required`。
 2. **旧 Android 壳**：完整版本号 + `builtin` —— 同上。

@@ -47,6 +47,7 @@ Stable packaged clients must never be offered a beta through auto-update. When r
 - **Must** leave `autoUpdater.allowPrerelease = false` alone unless the user explicitly requests prerelease auto-update.
 - After pushing a beta tag, if a previous beta was accidentally published as Latest, immediately restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` / Vercel `latest-mac.yml` still show that stable version.
 - TestFlight tracks the native-shell requirement, not the tag: `mode: native` betas and all stable releases upload iOS (betas internal-only; external group and Beta App Review stay stable-only); `mode: ota` betas and `mobile-beta/*` tags skip iOS. The minNativeBuild floor (one-tap OTA vs reinstall prompt) rises only on `mode: native`, independent of OTA publishing.
+- OTA detectability is a release gate, not a manual afterthought: `release.yml` / `mobile-beta-ota.yml` run `scripts/mobile-ota/verify-detectability.mjs` against Vercel and EdgeOne. Do not drop the iOS marketing-version profile (`currentBundleId` = stripped `CFBundleShortVersionString`). Beta-channel checks must use the running web bundle version, never the official marketing version.
 
 Constraints:
 

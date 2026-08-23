@@ -456,7 +456,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/mobile-ota/verify-detectability.mjs \
-            --channel "$CHANNEL" --version "$VERSION" --mode ota --base "$OTA_BASE_URL"
+            --channel "$CHANNEL" --version "$VERSION" --mode ota
 
   archive:
     name: Archive OTA prerelease
