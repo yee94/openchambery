@@ -1017,10 +1017,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [snippetQuery, setSnippetQuery] = React.useState('');
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
     const [mobileControlsPanel, setMobileControlsPanel] = React.useState<MobileControlsPanel>(null);
+    // DEBUG（临时）: 移动端 composer 永远保持完整展开态，跳过 pill 收起，
+    // 用于真机排查完整输入框的渲染/显示问题。测试完删掉此开关即恢复。
+    const MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED = true;
     // Mobile pill composer keeps the SAME textarea/DOM across both silhouettes.
     // A fixed-height viewport masks the full surface while transform-only motion
     // reveals or conceals it, keeping transcript layout out of animation frames.
-    const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(false);
+    const [mobileComposerExpanded, setMobileComposerExpanded] = React.useState(MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED);
     const [mobileComposerMotion, setMobileComposerMotion] = React.useState<'idle' | 'expanding' | 'collapsing'>('idle');
     const [mobileComposerStageHeight, setMobileComposerStageHeight] = React.useState(112);
     const mobileComposerMeasuredStageScopeRef = React.useRef<string | null>(null);
@@ -1038,7 +1041,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // during collapse. Native shells commit 'full' synchronously (flushSync) with
     // the prewarmed footer tree, so the tap frame carries only a visibility flip
     // and the silhouette settles at its final height before the reveal starts.
-    const [mobileComposerChrome, setMobileComposerChrome] = React.useState<'collapsed' | 'none' | 'full'>('collapsed');
+    const [mobileComposerChrome, setMobileComposerChrome] = React.useState<'collapsed' | 'none' | 'full'>(
+        MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED ? 'full' : 'collapsed',
+    );
     const prewarmMobileFullChrome = useEvent(() => setMobileFullChromePrewarmed(true));
     const [mobileTextareaFocused, setMobileTextareaFocused] = React.useState(false);
     // Mobile browser / installed PWA: tapping a composer control while the
@@ -6182,6 +6187,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     });
 
     const collapseMobileComposer = useEvent(() => {
+        // DEBUG（临时）: 调试开关开启时禁用一切收起路径，composer 保持完整态。
+        if (MOBILE_COMPOSER_DEBUG_ALWAYS_EXPANDED) return;
         if (!mobileComposerExpandedRef.current) return;
         mobileComposerExpandedRef.current = false;
         mobileExpandIntentRef.current = null;

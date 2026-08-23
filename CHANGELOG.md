@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.63] - 2026-08-23
+
+### 调试
+
+- **（临时调试构建）移动端输入框常驻完整展开态：** 禁用胶囊收起路径，输入框在收起场景下也完整渲染显示，用于真机排查渲染/显示问题；非调试行为将在后续版本恢复。
+
 ## [1.18.2-beta.62] - 2026-08-23
 
 ### 聊天
