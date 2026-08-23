@@ -221,22 +221,39 @@ jobs:
           done
 
           MANIFEST_URL="${OTA_BASE_URL}/ota/channels/${CHANNEL}.json"
-          curl -fsS "$MANIFEST_URL" -o /tmp/channel.json
-          node -e "
-            const fs = require('fs');
-            const m = JSON.parse(fs.readFileSync('/tmp/channel.json','utf8'));
-            const expected = Number(process.env.EXPECTED_GENERATION);
-            const previous = Number(process.env.PREVIOUS_GENERATION);
-            if (m.generation !== expected) {
-              throw new Error('generation mismatch: got ' + m.generation + ' expected ' + expected);
-            }
-            if (!(expected > previous)) {
-              throw new Error('generation did not increment');
-            }
-            if (process.env.ACTION !== 'set-native-target' && process.env.ACTIVE_BUNDLE_ID) {
-              if (!m.activeBundle || m.activeBundle.bundleId !== process.env.ACTIVE_BUNDLE_ID) {
-                throw new Error('activeBundle.bundleId mismatch after ' + process.env.ACTION);
+          # Channel manifests sit behind a 60s edge cache (s-maxage=60); a
+          # freshly deployed generation may still read stale right after
+          # deploy. Retry the generation check for up to ~3 minutes before
+          # failing the rollout.
+          VERIFIED=0
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            curl -fsS "$MANIFEST_URL" -o /tmp/channel.json
+            if node -e "
+              const fs = require('fs');
+              const m = JSON.parse(fs.readFileSync('/tmp/channel.json','utf8'));
+              const expected = Number(process.env.EXPECTED_GENERATION);
+              const previous = Number(process.env.PREVIOUS_GENERATION);
+              if (m.generation !== expected) {
+                console.error('generation mismatch: got ' + m.generation + ' expected ' + expected);
+                process.exit(1);
               }
-            }
-            console.log('rollout verified generation=' + m.generation + ' action=' + process.env.ACTION);
-          "
+              if (!(expected > previous)) {
+                throw new Error('generation did not increment');
+              }
+              if (process.env.ACTION !== 'set-native-target' && process.env.ACTIVE_BUNDLE_ID) {
+                if (!m.activeBundle || m.activeBundle.bundleId !== process.env.ACTIVE_BUNDLE_ID) {
+                  throw new Error('activeBundle.bundleId mismatch after ' + process.env.ACTION);
+                }
+              }
+              console.log('rollout verified generation=' + m.generation + ' action=' + process.env.ACTION);
+            "; then
+              VERIFIED=1
+              break
+            fi
+            echo "verify attempt ${attempt} saw a stale manifest (edge cache); retrying in 15s..."
+            sleep 15
+          done
+          if [[ "$VERIFIED" != "1" ]]; then
+            echo "::error::Rollout verification never observed generation=$EXPECTED_GENERATION after retries."
+            exit 1
+          fi
