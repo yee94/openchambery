@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.47] - 2026-08-23
+
+### 聊天
+
+- **工具卡片角标字号补齐密度缩放：** 工具执行状态的三个角标用内联 `0.8rem` 压掉了 `typography-meta` 令牌，不随 `--dpt` 缩放；移除内联覆盖后与全局字号链一致。
+
 ## [1.18.2-beta.46] - 2026-08-23
 
 ### 移动端
