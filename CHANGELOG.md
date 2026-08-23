@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.57] - 2026-08-23
+
+### 移动端
+
+- **助手停用页补回分享三步：** 保留精简标题与开启按钮，把「系统分享 / 快捷分享 / 选择助理」改成横向滑动卡片，去掉 Inbox Topic 长说明。
+
 ## [1.18.2-beta.56] - 2026-08-23
 
 ### 移动端

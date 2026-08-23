@@ -2,6 +2,9 @@ import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 
 import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero-wide.jpg';
+import androidDirectShareImage from '@/assets/assistant-share-welcome/android-direct-share.jpg';
+import iosShareSheetImage from '@/assets/assistant-share-welcome/ios-share-sheet.jpg';
+import selectAssistantImage from '@/assets/assistant-share-welcome/select-assistant.jpg';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { AssistantDeleteConfirmDialog } from '@/components/assistants/AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
@@ -35,6 +38,24 @@ export type MobileAssistantTabProps = {
   onOpenAssistant: (assistantID: string) => void;
   className?: string;
 };
+
+const assistantGuideShareSteps = [
+  {
+    image: iosShareSheetImage,
+    titleKey: 'assistants.guide.share.ios.title',
+    descriptionKey: 'assistants.guide.share.ios.description',
+  },
+  {
+    image: androidDirectShareImage,
+    titleKey: 'assistants.guide.share.android.title',
+    descriptionKey: 'assistants.guide.share.android.description',
+  },
+  {
+    image: selectAssistantImage,
+    titleKey: 'assistants.guide.share.pick.title',
+    descriptionKey: 'assistants.guide.share.pick.description',
+  },
+] as const;
 
 function MobileAssistantSkeleton() {
   const { t } = useI18n();
@@ -73,6 +94,28 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
           {t('assistants.guide.enableAction')}
         </Button>
       </div>
+
+      <section className="oc-mobile-assistant-guide-share">
+        <h3 className="oc-mobile-assistant-guide-share-title">
+          {t('assistants.guide.shareTitle')}
+        </h3>
+        <div
+          className="oc-mobile-assistant-guide-steps"
+          aria-label={t('assistants.guide.shareAria')}
+        >
+          {assistantGuideShareSteps.map((step) => (
+            <article key={step.titleKey} className="oc-mobile-assistant-guide-step">
+              <div className="oc-mobile-assistant-guide-step-image">
+                <img src={step.image} alt="" />
+              </div>
+              <div className="oc-mobile-assistant-guide-step-copy">
+                <h4>{t(step.titleKey)}</h4>
+                <p>{t(step.descriptionKey)}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
     </article>
   );
 }
