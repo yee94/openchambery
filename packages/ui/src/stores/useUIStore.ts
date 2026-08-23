@@ -2199,7 +2199,18 @@ export const useUIStore = create<UIStore>()(
               root.style.removeProperty(getTypographyVariable(key));
               continue;
             }
-            root.style.setProperty(getTypographyVariable(key), `${numericValue * typographyScale}rem`);
+            if (mobile) {
+              // Mobile inline overrides must ride --dpt too; a plain rem inline
+              // value would beat the stylesheet's calc(N * var(--dpt)) and
+              // silently desync from the physical design-pt scale.
+              const px = numericValue * 16 * typographyScale;
+              root.style.setProperty(
+                getTypographyVariable(key),
+                `calc(${Math.round(px * 1000) / 1000} * var(--dpt))`,
+              );
+            } else {
+              root.style.setProperty(getTypographyVariable(key), `${numericValue * typographyScale}rem`);
+            }
           }
         },
 

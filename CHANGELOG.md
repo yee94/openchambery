@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.2-beta.40] - 2026-08-23
+
+### 移动端
+
+- **修复应用内字号设置绕过物理缩放：** 字号设置 ≠100% 时，移动端会把 `--text-*` 以纯 rem 内联值写回，压过样式表的 `calc(N * var(--dpt))`，导致 Android 整体字号缩放完全失效。现在内联覆盖同样走 `calc(px * var(--dpt))`：用户字号百分比与 `--dpt` 物理系数相乘叠加，任何字号设置下 Android 都保持与 iOS 的密度对齐；桌面端不受影响。
+
 ## [1.18.2-beta.39] - 2026-08-23
 
 ### 移动端
