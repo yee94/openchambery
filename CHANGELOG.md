@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.4] - 2026-08-24
+
+### 移动端
+
+- **更新资格改为按 Web 版本号判断：** 端内「一键 OTA / 需重装」不再比较 CI 构建号（两条发布线的构建号各自计数，手动构建的新壳会被误判过旧而强制重装），改用构建时烘焙的 Web 版本号做门槛。含原生变更的版本发布时会记录版本下限 `minShellReleaseVersion`，旧壳照常收到重装提示；纯 Web 的 beta 依旧不抬门槛。
+- **移动端附件菜单迁移到可调高度面板：** 附件展开菜单与安卓照片/文件选择改用统一的 `MobileResizableSheet`，行按钮加大触控目标，与其余移动端面板保持一致。
+
 ## [1.18.3-beta.3] - 2026-08-24
 
 ### 聊天
