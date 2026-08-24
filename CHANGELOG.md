@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.10] - 2026-08-24
+
+### 移动端
+
+- **切后台重连后恢复运行中状态显示：** 重连补偿完成后对当前会话确认一次权威 session status；transcript 尾部仍是未完成 assistant（turn 未 settle）时，active-membership 缺席不再把 busy 权威降级成 idle，streaming / 发送中状态不再丢失（此前需杀掉 APP 冷启动才恢复）。同一会话短窗口内重复 `resetRequired` 降级为非破坏性 ensure tail，不再反复清空 transcript 与 streaming 证据。
+- **移动端输入器 swap 状态随作用域切换清理：** 会话切换 / 关闭 swap 时清掉残留的 swap CSS 变量与 phase；非 overlay 的输入器 foot（草稿 / 空会话 / 历史错误页）固定 expanded、不参与 swap，避免上一会话泄漏的 swap 状态让 "Tap to type" 药丸挡住真实输入框。收回桌面端输入器 chrome 的 focus 透明度强调逻辑。
+
 ## [1.18.3-beta.9] - 2026-08-24
 
 ### 移动端
