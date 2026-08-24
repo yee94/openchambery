@@ -83,7 +83,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { COMPOSER_ICON_HOVER_CLASS, SELECTOR_CHIP_HOVER_CLASS } from '@/components/chat/message/parts/toolRowChrome';
 import { Input } from '@/components/ui/input';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { hasActiveMobileOverlay, MOBILE_OVERLAY_ACTIVE_ATTRIBUTE } from '@/components/ui/MobileOverlayPresence';
@@ -7544,15 +7543,24 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             Replaces the dropdown (which stole focus and dismissed the keyboard)
             and leaves room for more actions later. */}
         {ATTACHMENT_EXPANSION_MENU_ENABLED && isMobile ? (
-            <MobileOverlayPanel
+            <MobileResizableSheet
+                id="mobile-attach-menu-sheet"
                 open={mobileAttachMenuOpen}
-                title={t('chat.chatInput.actions.addAttachment')}
-                onClose={() => setMobileAttachMenuOpen(false)}
+                onOpenChange={(open) => {
+                    if (!open) setMobileAttachMenuOpen(false);
+                }}
+                title={<h2 className="truncate typography-ui-label font-semibold">{t('chat.chatInput.actions.addAttachment')}</h2>}
+                ariaLabel={t('chat.chatInput.actions.addAttachment')}
+                closeAriaLabel={t('mobile.surface.closeAria')}
+                resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+                fitContent
             >
-                <div className="flex flex-col px-3 pb-4 pt-1">
-                    <button
+                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
+                    <Button
                         type="button"
-                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        variant="ghost"
+                        size="lg"
+                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
                         onClick={() => {
                             // The native file/photo picker takes over next — restoring
                             // the keyboard in between would flash it open and shut.
@@ -7561,12 +7569,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             requestAnimationFrame(handlePickLocalFiles);
                         }}
                     >
-                        <Icon name="attachment-2" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.attachFiles')}
-                    </button>
-                    <button
+                        <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
+                        <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
+                    </Button>
+                    <Button
                         type="button"
-                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        variant="ghost"
+                        size="lg"
+                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
                         onClick={() => {
                             // Hand-off to the picker: don't sync-restore the
                             // keyboard under the overlay that opens next frame.
@@ -7575,57 +7585,74 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             requestAnimationFrame(openIssuePicker);
                         }}
                     >
-                        <Icon name="github" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.linkGithubIssue')}
-                    </button>
-                    <button
+                        <Icon name="github" className="size-5 flex-shrink-0 text-muted-foreground" />
+                        <span className="truncate">{t('chat.chatInput.actions.linkGithubIssue')}</span>
+                    </Button>
+                    <Button
                         type="button"
-                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        variant="ghost"
+                        size="lg"
+                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
                         onClick={() => {
                             skipNextOverlayCloseRestoreRef.current = true;
                             setMobileAttachMenuOpen(false);
                             requestAnimationFrame(openPrPicker);
                         }}
                     >
-                        <Icon name="git-pull-request" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.linkGithubPr')}
-                    </button>
+                        <Icon name="git-pull-request" className="size-5 flex-shrink-0 text-muted-foreground" />
+                        <span className="truncate">{t('chat.chatInput.actions.linkGithubPr')}</span>
+                    </Button>
                 </div>
-            </MobileOverlayPanel>
+            </MobileResizableSheet>
         ) : null}
 
         {/* Android Capacitor photo/file chooser: the all-files WebView input opens
             the system file manager and loses the gallery experience; iOS keeps the
             single attach flow (WKWebView's picker already offers the photo library). */}
-        {isMobile && androidMediaPickSheetOpen ? (
-            <MobileOverlayPanel open onClose={() => setAndroidMediaPickSheetOpen(false)} title={t('chat.chatInput.actions.addAttachment')}>
-                <div className="flex flex-col px-3 pb-4 pt-1">
-                    <button
+        {isMobile ? (
+            <MobileResizableSheet
+                id="android-media-pick-sheet"
+                open={androidMediaPickSheetOpen}
+                onOpenChange={(open) => {
+                    if (!open) setAndroidMediaPickSheetOpen(false);
+                }}
+                title={<h2 className="truncate typography-ui-label font-semibold">{t('chat.chatInput.actions.addAttachment')}</h2>}
+                ariaLabel={t('chat.chatInput.actions.addAttachment')}
+                closeAriaLabel={t('mobile.surface.closeAria')}
+                resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+                fitContent
+            >
+                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
+                    <Button
                         type="button"
-                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        variant="ghost"
+                        size="lg"
+                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
                         onClick={() => {
                             restoreKeyboardAfterOverlayRef.current = false;
                             setAndroidMediaPickSheetOpen(false);
                             requestAnimationFrame(handlePickAndroidPhotos);
                         }}
                     >
-                        <Icon name="file-image" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.attachPhotos')}
-                    </button>
-                    <button
+                        <Icon name="file-image" className="size-5 flex-shrink-0 text-muted-foreground" />
+                        <span className="truncate">{t('chat.chatInput.actions.attachPhotos')}</span>
+                    </Button>
+                    <Button
                         type="button"
-                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-3 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                        variant="ghost"
+                        size="lg"
+                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
                         onClick={() => {
                             restoreKeyboardAfterOverlayRef.current = false;
                             setAndroidMediaPickSheetOpen(false);
                             requestAnimationFrame(handlePickLocalFiles);
                         }}
                     >
-                        <Icon name="attachment-2" className="h-[1.125rem] w-[1.125rem] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.attachFiles')}
-                    </button>
+                        <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
+                        <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
+                    </Button>
                 </div>
-            </MobileOverlayPanel>
+            </MobileResizableSheet>
         ) : null}
 
         {/* Mobile draft target pickers: bottom sheets replacing the inline
