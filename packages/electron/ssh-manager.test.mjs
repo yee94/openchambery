@@ -12,6 +12,8 @@ import {
   buildRemoteManagedNodeSelectionFunctions,
   buildRemoteManagedRuntimePrefix,
   buildRemoteNativeBindingRepairScript,
+  classifyManagedSshBootstrapError,
+  summarizeManagedSshBootstrapError,
   buildRemoteSyncPrepareScript,
   buildRemoteSyncProbeScript,
   createEphemeralUiPassword,
@@ -535,6 +537,26 @@ describe('buildRemoteManagedNodeSelectionFunctions', () => {
       { name: 'odd23', version: '23.11.1' },
     ]);
     expect(selected.endsWith(`${path.sep}odd23${path.sep}node`)).toBe(true);
+  });
+});
+
+describe('classifyManagedSshBootstrapError', () => {
+  test('maps native binding dumps and missing Node to stable codes', () => {
+    expect(classifyManagedSshBootstrapError(
+      'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
+    )).toBe('nodeRuntimeMissing');
+    expect(classifyManagedSshBootstrapError('gyp ERR! ENOENT node_gyp_bins')).toBe('nativeBinding');
+    expect(classifyManagedSshBootstrapError('Permission denied (publickey)')).toBe('sshAuth');
+  });
+
+  test('summarizes long node-gyp dumps for desktop status.detail', () => {
+    const dump = [
+      'gyp ERR! UNCAUGHT EXCEPTION',
+      "Error: ENOENT: no such file or directory, lstat '/root/.../better-sqlite3/build/node_gyp_bins'",
+    ].join('\n');
+    expect(summarizeManagedSshBootstrapError(dump)).toBe(
+      'failed to prepare better-sqlite3 for the selected remote Node runtime',
+    );
   });
 });
 

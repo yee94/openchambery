@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.16] - 2026-08-24
+
 ### Desktop / SSH
 
 - **托管 SSH Bootstrap 优先偶数 LTS 并自动修好 native binding：** 远程选 Node 不再只取版本号最高（fnm 的 23 会压过 DevCloud 的 22.19），改为偶数 LTS（22/24）优先、同级再看是否带 sibling `npm`。`better-sqlite3` 探测失败后会清掉半成品 `build/node_gyp_bins`、补 python/gcc、rebuild 重试，仍失败再按当前桌面版本 `npm install -g` 重装。全新远程机不必再因 node-gyp ENOENT 卡在 `requires_user_action`。
+- **托管 SSH 启动失败在桌面端给出可操作指引：** 连接弹窗、Toast 和「远程实例」详情不再把整段 npm/gyp 日志丢给用户。桌面会按原因分类（缺 Node 22+、native binding、SSH 认证/不可达等），显示对应修复步骤，并提供打开远程实例设置、切回本地、重试。
 
 ## [1.18.3-beta.15] - 2026-08-24
 

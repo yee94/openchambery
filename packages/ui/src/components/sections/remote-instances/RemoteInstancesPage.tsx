@@ -39,6 +39,11 @@ import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n, type I18nKey } from '@/lib/i18n';
+import { SshBootstrapErrorNotice } from '@/components/desktop/SshBootstrapErrorNotice';
+import {
+  resolveManagedSshBootstrapErrorCode,
+  sshBootstrapErrorGuidanceKey,
+} from '@/lib/desktopSshBootstrapError';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { PendingPairingRecord, RemoteClientRecord } from '@/lib/api/types';
 import { buildPairingConnectionPayload, encodePairingConnectionPayload, parsePairingConnectionPayload, type PairingEndpointCandidate } from '@/lib/connectionPayload';
@@ -2197,13 +2202,18 @@ export const RemoteInstancesPage: React.FC = () => {
             : 'settings.remoteInstances.page.toast.cancelConnectionFailed')
           : 'settings.remoteInstances.page.toast.connectFailed';
         toast.error(t(key), {
-          description: error instanceof Error ? error.message : String(error),
+          description: wasConnected
+            ? (error instanceof Error ? error.message : String(error))
+            : t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(
+              status?.errorCode,
+              status?.detail || (error instanceof Error ? error.message : String(error)),
+            ))),
         });
       })
       .finally(() => {
         setIsPrimaryActionPending(false);
       });
-  }, [canDisconnect, connectWithPortRecovery, disconnect, draft, isReady, t]);
+  }, [canDisconnect, connectWithPortRecovery, disconnect, draft, isReady, status, t]);
 
   const handleRetryAction = React.useCallback(() => {
     if (!draft) {
@@ -2222,13 +2232,16 @@ export const RemoteInstancesPage: React.FC = () => {
     void operation
       .catch((error) => {
         toast.error(t('settings.remoteInstances.page.toast.retryFailed'), {
-          description: error instanceof Error ? error.message : String(error),
+          description: t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(
+            status?.errorCode,
+            status?.detail || (error instanceof Error ? error.message : String(error)),
+          ))),
         });
       })
       .finally(() => {
         setIsRetryPending(false);
       });
-  }, [connectWithPortRecovery, disconnect, draft, isConnecting, isReconnecting, retry, t]);
+  }, [connectWithPortRecovery, disconnect, draft, isConnecting, isReconnecting, retry, status, t]);
 
   const retryButtonLabel = isConnecting
     ? t('settings.remoteInstances.page.actions.connecting')
@@ -2513,7 +2526,12 @@ export const RemoteInstancesPage: React.FC = () => {
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => {
                           const op = ready ? disconnect(instance.id) : connect(instance.id);
                           void op.catch((err) => toast.error(ready ? t('settings.remoteInstances.sidebar.toast.disconnectFailed') : t('settings.remoteInstances.sidebar.toast.connectFailed'), {
-                            description: err instanceof Error ? err.message : String(err),
+                            description: ready
+                              ? (err instanceof Error ? err.message : String(err))
+                              : t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(
+                                instanceStatus?.errorCode,
+                                instanceStatus?.detail || (err instanceof Error ? err.message : String(err)),
+                              ))),
                           }));
                         }}>
                           {ready ? <Icon name="stop" className="h-3.5 w-3.5" /> : <Icon name="plug-2" className="h-3.5 w-3.5" />}
@@ -2980,6 +2998,9 @@ export const RemoteInstancesPage: React.FC = () => {
           {reconnectAppearsStuck ? <span>{t('settings.remoteInstances.page.status.reconnectStale')}</span> : null}
         </DialogDescription>
       </DialogHeader>
+      {statusPhase === 'error' ? (
+        <SshBootstrapErrorNotice errorCode={status?.errorCode} detail={status?.detail} />
+      ) : null}
 
       <SettingsGroup label={t('settings.remoteInstances.page.section.actions')}>
           <div className="oc-settings-group-row flex flex-wrap items-center gap-2">

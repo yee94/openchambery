@@ -106,6 +106,69 @@ export const buildManagedServeEnvPrefix = (uiPassword) => {
   return `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD=${shellQuote(password)}`;
 };
 
+export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
+  'nodeRuntimeMissing',
+  'packageManagerMissing',
+  'nativeBinding',
+  'openchamberInstall',
+  'opencodeInstall',
+  'serverStart',
+  'sshAuth',
+  'sshUnreachable',
+  'timeout',
+  'unknown',
+];
+
+/**
+ * Classify a managed SSH bootstrap failure so the desktop client can show
+ * actionable guidance instead of a raw npm/gyp dump.
+ * @param {unknown} raw
+ * @returns {(typeof MANAGED_SSH_BOOTSTRAP_ERROR_CODES)[number]}
+ */
+export const classifyManagedSshBootstrapError = (raw) => {
+  const text = String(raw || '');
+  if (/requires Node\.js \d+|no supported Node runtime/i.test(text)) return 'nodeRuntimeMissing';
+  if (/neither bun nor npm/i.test(text)) return 'packageManagerMissing';
+  if (/better-sqlite3|node_gyp_bins|gyp ERR|failed to prepare better-sqlite3/i.test(text)) return 'nativeBinding';
+  if (/Failed to install OpenChamber|OpenChamber installation completed but the executable is unavailable/i.test(text)) {
+    return 'openchamberInstall';
+  }
+  if (/Failed to install OpenCode|OpenCode CLI/i.test(text)) return 'opencodeInstall';
+  if (/failed to become reachable|Managed OpenChamber server failed/i.test(text)) return 'serverStart';
+  if (/Permission denied|Authentication failed|publickey|keyboard-interactive/i.test(text)) return 'sshAuth';
+  if (/Could not resolve hostname|Connection refused|Connection timed out|ControlMaster connection timed out|SSH master process exited|Network is unreachable/i.test(text)) {
+    return 'sshUnreachable';
+  }
+  if (/Timed out waiting for SSH|Timed out waiting for forwarded/i.test(text)) return 'timeout';
+  return 'unknown';
+};
+
+const SHORT_BOOTSTRAP_ERROR_DETAIL = {
+  nodeRuntimeMissing: 'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
+  packageManagerMissing: 'Remote host has neither bun nor npm available to install OpenChamber',
+  nativeBinding: 'failed to prepare better-sqlite3 for the selected remote Node runtime',
+  openchamberInstall: 'Failed to install OpenChamber on remote host',
+  opencodeInstall: 'Failed to install OpenCode CLI on remote host',
+  serverStart: 'Managed OpenChamber server failed to become reachable',
+  sshAuth: 'SSH authentication failed',
+  sshUnreachable: 'Could not reach the SSH host',
+  timeout: 'Timed out waiting for SSH connection',
+};
+
+/**
+ * Keep status.detail short enough for the desktop UI. Full stderr stays in logs.
+ * @param {unknown} raw
+ */
+export const summarizeManagedSshBootstrapError = (raw) => {
+  const text = String(raw || '').trim();
+  const code = classifyManagedSshBootstrapError(text);
+  if (code !== 'unknown' && SHORT_BOOTSTRAP_ERROR_DETAIL[code]) {
+    return SHORT_BOOTSTRAP_ERROR_DETAIL[code];
+  }
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim()) || 'Remote instance failed to start';
+  return firstLine.length > 280 ? `${firstLine.slice(0, 277)}...` : firstLine;
+};
+
 /**
  * Parse a remote Node version for managed SSH selection.
  * Odd majors (23, 25) are accepted only when no even LTS (22, 24, …) exists.
@@ -983,6 +1046,7 @@ export class ElectronSshManager {
       `phase=${JSON.stringify(phase)} detail=${detail || ''} retry=${retryAttempt} requires_user_action=${requiresUserAction}`,
     );
 
+    const errorCode = phase === 'error' ? classifyManagedSshBootstrapError(detail) : null;
     const status = {
       id,
       phase,
@@ -993,6 +1057,7 @@ export class ElectronSshManager {
       startedByUs,
       retryAttempt,
       requiresUserAction,
+      ...(errorCode ? { errorCode } : {}),
       updatedAtMs: nowMillis(),
     };
     this.statuses.set(id, status);
@@ -2461,7 +2526,9 @@ export class ElectronSshManager {
       try {
         await this.connect(id);
       } catch (error) {
-        this.setStatus(id, 'error', error instanceof Error ? error.message : String(error), null, null, null, false, attempt, true);
+        const raw = error instanceof Error ? error.message : String(error);
+        this.appendLogWithLevel(id, 'ERROR', raw);
+        this.setStatus(id, 'error', summarizeManagedSshBootstrapError(raw), null, null, null, false, attempt, true);
       }
     };
     this.monitorTimers.set(id, setTimeout(tick, MONITOR_INITIAL_POLL_MS));
@@ -2491,9 +2558,12 @@ export class ElectronSshManager {
 
     const task = this.connectBlocking(this.sanitizeInstance(instance))
       .catch(async (error) => {
-        this.setStatus(trimmed, 'error', error instanceof Error ? error.message : String(error), null, null, null, false, 0, true);
+        const raw = error instanceof Error ? error.message : String(error);
+        this.appendLogWithLevel(trimmed, 'ERROR', raw);
+        const detail = summarizeManagedSshBootstrapError(raw);
+        this.setStatus(trimmed, 'error', detail, null, null, null, false, 0, true);
         await this.disconnectInternal(trimmed, false);
-        throw error;
+        throw new Error(detail);
       })
       .finally(() => {
         this.connecting.delete(trimmed);
