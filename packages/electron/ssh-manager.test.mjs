@@ -8,14 +8,25 @@ import path from 'node:path';
 import {
   ElectronSshManager,
   attachProcessStderrTail,
+  buildManagedServeCommand,
   buildManagedServeEnvPrefix,
+  buildRelayHostFlag,
+  buildRemoteManagedNodeSelectionFunctions,
   buildRemoteManagedRuntimePrefix,
+  buildRemoteNativeBindingRepairScript,
+  classifyManagedSshBootstrapError,
+  summarizeManagedSshBootstrapError,
   buildRemoteSyncPrepareScript,
   buildRemoteSyncProbeScript,
   createEphemeralUiPassword,
   formatMasterExitError,
+  instanceWantsRelayHost,
+  parseRelayDescriptorFromStatus,
+  parseRemoteManagedNodeVersion,
   parseSshCommand,
   planOpenCodeConfigSync,
+  remoteRuntimeCanHostRelay,
+  selectPreferredRemoteManagedNode,
 } from './ssh-manager.mjs';
 import { EventEmitter } from 'node:events';
 
@@ -180,8 +191,10 @@ describe('ElectronSshManager', () => {
     const script = buildRemoteManagedRuntimePrefix();
     expect(script).toContain('/codev/opt/nodejs/*/bin/node');
     expect(script).toContain('[ "$major" -ge 22 ]');
+    expect(script).toContain('major % 2');
     expect(script).toContain('$HOME/.bun/bin');
     expect(script).toContain('$HOME/.opencode/bin');
+    expect(script).toContain('.local/share/mise/installs/node');
     expect(script).not.toContain('.profile');
     expect(script).not.toContain('.bashrc');
   });
@@ -436,6 +449,272 @@ describe('ElectronSshManager', () => {
     // Round-trip: reload settings via sanitize path keeps the port.
     const reloaded = manager.sanitizeInstance(settings.desktopSshInstances[0]);
     expect(reloaded.lanForward).toEqual({ enabled: true, localPort: result.localPort });
+  });
+});
+
+describe('selectPreferredRemoteManagedNode', () => {
+  test('ignores Node below 22', () => {
+    expect(parseRemoteManagedNodeVersion('20.20.2')).toBeNull();
+    expect(selectPreferredRemoteManagedNode([
+      { bin: '/usr/bin/node', version: '20.20.2', hasNpm: true },
+    ])).toBeNull();
+  });
+
+  test('prefers even LTS over a higher odd major', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/fnm/23/node', version: '23.11.1', hasNpm: true },
+      { bin: '/codev/22.19.0/node', version: '22.19.0', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/codev/22.19.0/node');
+    expect(selected?.version).toBe('22.19.0');
+  });
+
+  test('among even LTS majors picks the highest version', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/codev/22.11.0/node', version: '22.11.0', hasNpm: true },
+      { bin: '/codev/22.19.0/node', version: '22.19.0', hasNpm: true },
+      { bin: '/fnm/24.5.0/node', version: '24.5.0', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/fnm/24.5.0/node');
+  });
+
+  test('prefers a sibling npm over a newer even major without npm', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/fnm/24.5.0/node', version: '24.5.0', hasNpm: false },
+      { bin: '/codev/22.19.0/node', version: '22.19.0', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/codev/22.19.0/node');
+  });
+
+  test('falls back to an odd major when it is the only supported runtime', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/fnm/23.11.1/node', version: '23.11.1', hasNpm: true },
+      { bin: '/usr/bin/node', version: '20.20.2', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/fnm/23.11.1/node');
+  });
+
+  test('DevCloud-shaped candidate set prefers even 22.19 over login fnm 23 and system 20', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/usr/bin/node', version: '20.20.2', hasNpm: true },
+      { bin: '/codev/opt/nodejs/22.19.0/bin/node', version: '22.19.0', hasNpm: true },
+      { bin: '/fnm/23.11.1/node', version: '23.11.1', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/codev/opt/nodejs/22.19.0/bin/node');
+    expect(remoteRuntimeCanHostRelay({ runtime: 'web' })).toBe(false);
+    expect(remoteRuntimeCanHostRelay({ runtime: 'ssh-remote' })).toBe(true);
+  });
+});
+
+describe('buildRemoteManagedNodeSelectionFunctions', () => {
+  const writeFakeNode = async (dir, version, { withNpm = true } = {}) => {
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(
+      path.join(dir, 'node'),
+      `#!/bin/sh\nif [ "$1" = "-p" ]; then printf '%s\\n' '${version}'; exit 0; fi\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    if (withNpm) {
+      await fsp.writeFile(path.join(dir, 'npm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    }
+  };
+
+  const selectWithFixtures = async (fixtures) => {
+    const root = await makeTempDir();
+    const lines = [buildRemoteManagedNodeSelectionFunctions()];
+    for (const fixture of fixtures) {
+      const dir = path.join(root, fixture.name);
+      await writeFakeNode(dir, fixture.version, { withNpm: fixture.withNpm !== false });
+      lines.push(`consider_node ${JSON.stringify(path.join(dir, 'node'))}`);
+    }
+    lines.push('printf "%s\\n" "$best_node_bin"');
+    const { execFileSync } = await import('node:child_process');
+    return execFileSync('sh', ['-c', lines.join('\n')], { encoding: 'utf8' }).trim();
+  };
+
+  test('shell selection prefers even LTS 22.19 over odd 23.11', async () => {
+    const selected = await selectWithFixtures([
+      { name: 'odd23', version: '23.11.1' },
+      { name: 'even22', version: '22.19.0' },
+    ]);
+    expect(selected.endsWith(`${path.sep}even22${path.sep}node`)).toBe(true);
+  });
+
+  test('shell selection prefers sibling npm over a newer even major without npm', async () => {
+    const selected = await selectWithFixtures([
+      { name: 'even24', version: '24.5.0', withNpm: false },
+      { name: 'even22', version: '22.19.0', withNpm: true },
+    ]);
+    expect(selected.endsWith(`${path.sep}even22${path.sep}node`)).toBe(true);
+  });
+
+  test('shell selection keeps the only odd runtime when no even LTS exists', async () => {
+    const selected = await selectWithFixtures([
+      { name: 'odd23', version: '23.11.1' },
+    ]);
+    expect(selected.endsWith(`${path.sep}odd23${path.sep}node`)).toBe(true);
+  });
+});
+
+describe('managed SSH relay host defaults', () => {
+  test('relay host is on by default and can be opted out', () => {
+    expect(instanceWantsRelayHost({})).toBe(true);
+    expect(instanceWantsRelayHost({ remoteOpenchamber: {} })).toBe(true);
+    expect(instanceWantsRelayHost({ remoteOpenchamber: { relayHost: true } })).toBe(true);
+    expect(instanceWantsRelayHost({ remoteOpenchamber: { relayHost: false } })).toBe(false);
+  });
+
+  test('sanitizeInstance persists relayHost=true by default', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    tempDirs.push(tempDir);
+    const manager = new ElectronSshManager({
+      settingsFilePath: path.join(tempDir, 'settings.json'),
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+    });
+    expect(manager.sanitizeInstance({
+      id: 'ssh-1',
+      sshCommand: 'ssh user@host.example',
+    }).remoteOpenchamber.relayHost).toBe(true);
+    expect(manager.sanitizeInstance({
+      id: 'ssh-2',
+      sshCommand: 'ssh user@host.example',
+      remoteOpenchamber: { relayHost: false },
+    }).remoteOpenchamber.relayHost).toBe(false);
+  });
+
+  test('remoteRuntimeCanHostRelay accepts ssh-remote and desktop only', () => {
+    expect(remoteRuntimeCanHostRelay({ runtime: 'ssh-remote' })).toBe(true);
+    expect(remoteRuntimeCanHostRelay({ runtime: 'desktop' })).toBe(true);
+    expect(remoteRuntimeCanHostRelay({ runtime: 'web' })).toBe(false);
+    expect(remoteRuntimeCanHostRelay({})).toBe(false);
+  });
+
+  test('parseRelayDescriptorFromStatus requires a host-capable public descriptor', () => {
+    const jwk = { kty: 'EC', crv: 'P-256', x: 'abc', y: 'def' };
+    expect(parseRelayDescriptorFromStatus({
+      hostAllowed: true,
+      relayUrl: 'wss://relay.example/ws',
+      serverId: 'srv-1',
+      hostEncPubJwk: jwk,
+    })).toEqual({
+      relayUrl: 'wss://relay.example/ws',
+      serverId: 'srv-1',
+      hostEncPubJwk: jwk,
+    });
+    expect(parseRelayDescriptorFromStatus({
+      hostAllowed: false,
+      relayUrl: 'wss://relay.example/ws',
+      serverId: 'srv-1',
+      hostEncPubJwk: jwk,
+    })).toBeNull();
+  });
+
+  test('buildRelayHostFlag defaults to flag-only and pins a stored ws/wss URL', () => {
+    expect(buildRelayHostFlag({})).toBe('--relay-host');
+    expect(buildRelayHostFlag({ relayUrl: 'wss://relay.example/ws' })).toBe(
+      "--relay-host 'wss://relay.example/ws'",
+    );
+    expect(buildRelayHostFlag({
+      remoteOpenchamber: { relayUrl: 'ws://127.0.0.1:8787/ws' },
+    })).toBe("--relay-host 'ws://127.0.0.1:8787/ws'");
+    expect(buildRelayHostFlag({ relayUrl: 'https://not-a-relay.example' })).toBe('--relay-host');
+  });
+
+  test('create → sanitize → serve command is ssh-remote + --relay-host by default', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    tempDirs.push(tempDir);
+    const manager = new ElectronSshManager({
+      settingsFilePath: path.join(tempDir, 'settings.json'),
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+    });
+    const created = {
+      id: 'ssh-devcloud',
+      sshCommand: 'ssh root@host.example -p 36000',
+      remoteOpenchamber: { mode: 'managed', keepRunning: true },
+    };
+    const instance = manager.sanitizeInstance(created);
+    expect(instance.remoteOpenchamber.relayHost).toBe(true);
+    const command = buildManagedServeCommand(instance, 18765, 'ui-secret');
+    expect(command).toContain("OPENCHAMBER_RUNTIME=ssh-remote");
+    expect(command).toContain("OPENCHAMBER_UI_PASSWORD='ui-secret'");
+    expect(command).toContain('openchamber serve --hostname 127.0.0.1 --port 18765 --relay-host');
+    expect(command).not.toMatch(/--relay-host '/);
+
+    const optedOut = manager.sanitizeInstance({
+      ...created,
+      id: 'ssh-devcloud-off',
+      remoteOpenchamber: { relayHost: false },
+    });
+    expect(buildManagedServeCommand(optedOut, 18765, 'ui-secret')).toBe(
+      "OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='ui-secret' openchamber serve --hostname 127.0.0.1 --port 18765",
+    );
+  });
+
+  test('updateHostRuntime attaches a relay descriptor and preserves it when omitted', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    tempDirs.push(tempDir);
+    const settingsFilePath = path.join(tempDir, 'settings.json');
+    const manager = new ElectronSshManager({
+      settingsFilePath,
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+    });
+    const relay = {
+      relayUrl: 'wss://relay.example/ws',
+      serverId: 'srv-1',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'abc', y: 'def' },
+    };
+    await manager.updateHostRuntime('ssh-1', 'SSH Host', 'http://127.0.0.1:18765', 'tok-1', relay);
+    expect(JSON.parse(fs.readFileSync(settingsFilePath, 'utf8')).desktopHosts[0].relay).toEqual(relay);
+    await manager.updateHostRuntime('ssh-1', 'SSH Host renamed', 'http://127.0.0.1:18766', 'tok-2');
+    const after = JSON.parse(fs.readFileSync(settingsFilePath, 'utf8')).desktopHosts[0];
+    expect(after.relay).toEqual(relay);
+    expect(after.clientToken).toBe('tok-2');
+  });
+});
+
+describe('classifyManagedSshBootstrapError', () => {
+  test('maps native binding dumps and missing Node to stable codes', () => {
+    expect(classifyManagedSshBootstrapError(
+      'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
+    )).toBe('nodeRuntimeMissing');
+    expect(classifyManagedSshBootstrapError('gyp ERR! ENOENT node_gyp_bins')).toBe('nativeBinding');
+    expect(classifyManagedSshBootstrapError('Permission denied (publickey)')).toBe('sshAuth');
+  });
+
+  test('summarizes long node-gyp dumps for desktop status.detail', () => {
+    const dump = [
+      'gyp ERR! UNCAUGHT EXCEPTION',
+      "Error: ENOENT: no such file or directory, lstat '/root/.../better-sqlite3/build/node_gyp_bins'",
+    ].join('\n');
+    expect(summarizeManagedSshBootstrapError(dump)).toBe(
+      'failed to prepare better-sqlite3 for the selected remote Node runtime',
+    );
+  });
+});
+
+describe('buildRemoteNativeBindingRepairScript', () => {
+  test('probes first, then cleans node-gyp leftovers, retries, and reinstalls', () => {
+    const script = buildRemoteNativeBindingRepairScript({
+      packageName: '@openchambery/web',
+      version: '1.18.3-beta.14',
+    });
+    expect(script.indexOf('probe_sqlite')).toBeLessThan(script.indexOf('rebuild_sqlite'));
+    expect(script).toContain('rm -rf "$sqlite_dir/build"');
+    expect(script).toContain('mkdir -p "$sqlite_dir/build/node_gyp_bins"');
+    expect(script).toContain('npm rebuild better-sqlite3 --foreground-scripts');
+    expect(script).toContain("npm install -g '@openchambery/web@1.18.3-beta.14' --force");
+    expect(script).toContain('/usr/bin/python3.11');
+    expect(script).toContain('/opt/rh/gcc-toolset-12');
+    expect(script).toContain('failed to prepare better-sqlite3');
+  });
+
+  test('omits npm reinstall when package version is unknown', () => {
+    const script = buildRemoteNativeBindingRepairScript();
+    expect(script).toContain('npm rebuild better-sqlite3 --foreground-scripts');
+    expect(script).not.toContain('npm install -g');
   });
 });
 

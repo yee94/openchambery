@@ -26,6 +26,23 @@ describe('cli-entry-runtime', () => {
     expect(startServer).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves OPENCHAMBER_RUNTIME=ssh-remote on the direct node server path', () => {
+    process.env.OPENCHAMBER_RUNTIME = 'ssh-remote';
+    const startServer = vi.fn(async () => {});
+
+    runCliEntryIfMain({
+      process: { argv: ['node', '/tmp/server/index.js', '--port', '3001'], env: process.env, exit: vi.fn() },
+      currentFilename: '/tmp/server/index.js',
+      parseServeCliOptions: () => ({ port: 3001, host: undefined, uiPassword: null, apiOnly: false }),
+      defaultPort: 3001,
+      setExitOnShutdown: vi.fn(),
+      startServer,
+    });
+
+    expect(process.env.OPENCHAMBER_RUNTIME).toBe('ssh-remote');
+    expect(startServer).toHaveBeenCalledTimes(1);
+  });
+
   it('does not rewrite OPENCHAMBER_RUNTIME when imported as a library (Electron in-process)', () => {
     process.env.OPENCHAMBER_RUNTIME = 'desktop';
 

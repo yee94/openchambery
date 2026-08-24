@@ -8,7 +8,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/auth.js`: provider authentication file operations.
 - `packages/web/server/lib/opencode/auth-state-runtime.js`: managed OpenCode server auth password/header runtime.
 - `packages/web/server/lib/opencode/cli-options.js`: CLI/environment option parsing for server startup arguments.
-- `packages/web/server/lib/opencode/cli-entry-runtime.js`: CLI entrypoint runtime that detects direct execution, forces `OPENCHAMBER_RUNTIME=web` (so `dev:server` cannot inherit a leftover desktop env and host a relay), parses CLI options, and starts server bootstrap.
+- `packages/web/server/lib/opencode/cli-entry-runtime.js`: CLI entrypoint runtime that detects direct execution, forces `OPENCHAMBER_RUNTIME=web` unless already `ssh-remote` (so `dev:server` cannot inherit a leftover desktop env and host a relay, while SSH-managed remotes may), parses CLI options, and starts server bootstrap.
 - `packages/web/server/lib/opencode/routes.js`: OpenCode/provider settings and auth-related route registration.
 - `packages/web/server/lib/opencode/lifecycle.js`: OpenCode process lifecycle runtime (startup, restart, readiness, health monitoring). Managed child env inherits the user shell environment unchanged; experimental flags such as `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS` follow the user's own environment and are never injected by OpenChamber.
 - `packages/web/server/lib/opencode/managed-capabilities-runtime.js`: managed-child scheduled-task resources, config injection, rotating bridge identity, and bridge authorization.
@@ -33,7 +33,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: active loopback-port wiring shared by pairing/LAN URLs and the private relay host.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
-- `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update, models metadata, session-index, transcript-cache, and desktop SSH host-token route registration. Tokenless ready SSH hosts may mint a client token on demand via Electron `mintSshHostToken`, which authenticates to the forwarded remote with the in-memory tunnel UI password.
+- `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update, models metadata, session-index, and transcript-cache route registration.
 - `packages/web/server/lib/transcript-cache/`: opt-in Electron/local SQLite transcript cache (`/api/openchamber/transcript-cache`); default path is null so remote Web servers do not persist conversation bodies. See `transcript-cache/DOCUMENTATION.md`.
 - `packages/web/server/lib/opencode/pwa-manifest-routes.js`: PWA manifest route registration with recent-session shortcut resolution and short-lived caching.
 - `packages/web/server/lib/opencode/project-icon-routes.js`: project icon upload/read/discovery route registration and icon storage orchestration.
@@ -276,7 +276,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
    - `DELETE /api/passkeys/:id`
    - `POST /api/auth/reset`
     - `POST /api/client-auth/pairing/sessions`: accepts an optional `relayUrl` when Relay is included. An owner UI session or the local `desktop-local` shell client may set a custom endpoint (other client bearers receive HTTP 403). Canonical form is `ws://`/`wss://` scheme/host/path: userinfo is rejected (HTTP 400); query and fragment are stripped and are not part of endpoint identity. The Host persists the switch and reconnects its control connection before returning the pairing-v2 Relay candidate; an `OPENCHAMBER_RELAY_URL` override stays authoritative.
-    - `GET /api/client-auth/pairing/transports`: returns direct transport availability. `relayAvailable` is true only for the Electron desktop host; local `dev` / `web` / CLI servers report false and omit Relay URL fields so the create-device dialog never defaults to Anywhere or probes the relay.
+    - `GET /api/client-auth/pairing/transports`: returns direct transport availability. `relayAvailable` is true for desktop and SSH-managed remote hosts (`OPENCHAMBER_RUNTIME=desktop|ssh-remote`); local `dev` / `web` / ordinary CLI servers report false and omit Relay URL fields so the create-device dialog never defaults to Anywhere or probes the relay.
    - `GET /connect`
    - `POST /api/system/probe-url`
    - `app.use('/api', ...)` auth/tunnel guard
@@ -297,7 +297,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - Legacy `--tunnel` shorthand normalization
 
 ## Public exports (cli-entry-runtime.js)
-- `runCliEntryIfMain(dependencies)`: detects direct CLI execution, forces `OPENCHAMBER_RUNTIME=web` so a leftover desktop env cannot host or probe a relay, and runs server startup with parsed CLI options.
+- `runCliEntryIfMain(dependencies)`: detects direct CLI execution, forces `OPENCHAMBER_RUNTIME=web` (preserving `ssh-remote`) so a leftover desktop env cannot host or probe a relay, and runs server startup with parsed CLI options.
 
 ## Public exports (server-utils-runtime.js)
 - `createServerUtilsRuntime(dependencies)`: creates server utility runtime for OpenCode orchestration helpers.

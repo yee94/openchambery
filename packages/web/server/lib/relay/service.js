@@ -6,11 +6,11 @@
 // Routes are registered with the other OpenChamber feature routes, before the
 // generic OpenCode proxy, and are covered by the same global UI auth gate.
 //
-// Host gate: only the Electron desktop runtime may run a relay host
-// (OPENCHAMBER_RUNTIME=desktop, set before the in-process web server starts).
-// Plain `node server`, `dev:web:hmr`, VS Code, CLI, and browser clients must
-// never open the host-control socket, mint a relay identity, advertise a host
-// pairing candidate, or probe the relay. They may still be relay *clients*
+// Host gate: only the Electron desktop runtime or an SSH-managed remote server
+// may run a relay host (OPENCHAMBER_RUNTIME=desktop | ssh-remote).
+// Plain `node server`, `dev:web:hmr`, VS Code, ordinary CLI, and browser clients
+// must never open the host-control socket, mint a relay identity, advertise a
+// host pairing candidate, or probe the relay. They may still be relay *clients*
 // when connecting to another host.
 
 import express from 'express';
@@ -21,16 +21,22 @@ import { startRelayHost } from './host-client.js';
 export const DEFAULT_RELAY_URL = 'wss://relay.openchamber.dev/ws';
 
 export const RELAY_HOST_DESKTOP_ONLY_MESSAGE =
-  'Relay host is only available in the OpenChamber desktop app';
+  'Relay host is only available in the OpenChamber desktop app or an SSH-managed remote server';
 
 // Electron main sets this before importing the in-process web server.
 export const isDesktopRelayHostRuntime = (env = process.env) =>
   env?.OPENCHAMBER_RUNTIME === 'desktop';
 
+// Desktop app, or an SSH-manager-started remote (`OPENCHAMBER_RUNTIME=ssh-remote`).
+export const isRelayHostRuntime = (env = process.env) => {
+  const runtime = env?.OPENCHAMBER_RUNTIME;
+  return runtime === 'desktop' || runtime === 'ssh-remote';
+};
+
 // Canonical form: ws(s)://host[:port]/path only. Reject credentials (userinfo)
 // so settings and pairing candidates never store secrets in the endpoint URL.
 // Strip query/fragment so persistence and candidates stay scheme/host/path.
-const canonicalizeRelayUrl = (value) => {
+export const canonicalizeRelayUrl = (value) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -69,7 +75,6 @@ const envRelayUrlOverride = () => {
  *   readSettingsFromDiskMigrated: () => Promise<object>,
  *   writeSettingsToDisk: (settings: object) => Promise<void>,
  *   getLocalPort: () => number,
- *   getSshRoutingTable?: () => { id: string, localPort: number }[],
  *   logger?: Pick<Console, 'warn'>,
  *   canHostRelay?: () => boolean,
  * }} deps
@@ -82,8 +87,6 @@ export const createRelayService = ({
   // regeneration — see identity.js/signing-key.js.
   readSettingsStrict,
   getLocalPort,
-  // Live SSH local-forward ports (Electron). Empty outside desktop.
-  getSshRoutingTable = () => [],
   // Returns true when any paired device or pending pairing session uses the
   // relay transport. The relay lifecycle is driven purely by this demand.
   hasRelayDemand = async () => false,
@@ -92,8 +95,8 @@ export const createRelayService = ({
   // evict each other at the relay worker ("Control replaced") and devices land
   // on a random instance. Optional: without it, behavior is pre-lock.
   hostLock = null,
-  // Host gate: false for non-Electron runtimes (dev server, CLI, VS Code, …).
-  canHostRelay = () => isDesktopRelayHostRuntime(),
+  // Host gate: false for non-host runtimes (dev server, ordinary CLI, VS Code, …).
+  canHostRelay = () => isRelayHostRuntime(),
   logger = console,
 }) => {
   const identityRuntime = createRelayIdentityRuntime({ crypto, readSettingsFromDiskMigrated, writeSettingsToDisk, readSettingsStrict });
@@ -211,7 +214,6 @@ export const createRelayService = ({
       relayUrl,
       identity,
       getLocalPort,
-      getSshRoutingTable,
       logger,
       onStatus: (next) => {
         status = next;
@@ -242,8 +244,12 @@ export const createRelayService = ({
   // Drive the relay lifecycle from demand: run it when a device or pending
   // session uses the relay, stop it when none remain. Called on startup and after
   // pairing/device changes, so the operator never toggles it manually.
-  // Non-desktop runtimes never host: skip entirely so a shared data dir with
+  // Non-host runtimes never host: skip entirely so a shared data dir with
   // Electron is not rewritten or claim-contested by dev/CLI servers.
+  // SSH-managed remotes (`ssh-remote`) may also keep an explicit
+  // `privateRelay.enabled` opt-in (e.g. `openchamber serve --relay-host`) even
+  // when no paired device is present yet — desktop still auto-clears enabled
+  // when demand drops.
   const reconcile = async () => {
     if (!hostAllowed()) {
       refuseHost();
@@ -258,6 +264,9 @@ export const createRelayService = ({
           const next = await readConfig();
           await start(next.relayUrl);
         }
+      } else if (config.enabled && !isDesktopRelayHostRuntime()) {
+        // Sticky opt-in on ssh-remote (and any future non-desktop host runtime).
+        if (!hostClient) await start(config.relayUrl);
       } else {
         if (config.enabled) await writeConfig({ enabled: false, relayUrl: config.relayUrl });
         stop();
@@ -270,8 +279,8 @@ export const createRelayService = ({
   // Stable server identity (base64url SHA-256 of the canonical public signing
   // JWK). Derived from a public key, so it is not a secret; clients use it to
   // verify that a learned/probed address belongs to this server before trusting
-  // it. Independent of whether the relay host is currently enabled. Off
-  // desktop this is null — minting identity is a desktop-host concern.
+  // it. Independent of whether the relay host is currently enabled. Off a host
+  // runtime this is null — minting identity is a desktop / ssh-remote concern.
   const getServerId = async () => {
     if (!hostAllowed()) return null;
     const identity = await identityRuntime.getRelayIdentity();
@@ -299,6 +308,9 @@ export const createRelayService = ({
       // another local process owns the machine's relay host claim.
       state: hostClient ? live.state : (status.state === 'standby' ? 'standby' : 'disabled'),
       serverId: identity.serverId,
+      // Public E2EE trust anchor. Desktop SSH attach uses this to persist a
+      // multi-transport host (local-forward + relay) without a pairing round-trip.
+      hostEncPubJwk: identity.hostEncPubJwk,
       connectedClients: live.connectedClients,
       relayUrl: config.relayUrl,
       relayUrlLocked: config.relayUrlLocked,

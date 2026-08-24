@@ -1509,18 +1509,13 @@ const MobileInstancesSurface: React.FC<{
             const isConnectingRow = connectingId === connection.id;
             // Status line: the active instance says HOW it is connected right
             // now (direct vs relay); others show their address.
-            const sshTarget = connection.sshTarget;
             const statusText = isConnectingRow
               ? t('mobile.connect.connecting')
               : isActive
-                ? (sshTarget
-                  ? t('mobile.instances.status.connectedSshRelay')
-                  : isRelayModeActive()
-                    ? t('mobile.instances.status.connectedRelay')
-                    : t('mobile.instances.status.connectedDirect'))
-                : sshTarget
-                  ? t('mobile.instances.sshViaDesktop')
-                  : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
+                ? (isRelayModeActive()
+                  ? t('mobile.instances.status.connectedRelay')
+                  : t('mobile.instances.status.connectedDirect'))
+                : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
             return (
               <div
                 key={connection.id}
@@ -1552,11 +1547,6 @@ const MobileInstancesSurface: React.FC<{
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span className="block truncate typography-ui-label text-foreground">{connection.label}</span>
-                      {sshTarget ? (
-                        <span className="shrink-0 rounded border border-border/50 bg-muted px-1 typography-micro leading-none text-muted-foreground pb-px">
-                          {t('mobile.instances.sshBadge')}
-                        </span>
-                      ) : null}
                     </span>
                     <span className={cn(
                       'block truncate typography-small',

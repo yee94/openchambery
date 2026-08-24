@@ -90,7 +90,7 @@ import { applyRuntimeCorsHeaders } from './lib/request-cors.js';
 import { createClientPairingRuntime } from './lib/client-auth/pairing.js';
 import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
 import { attachRealtimeProxy } from './lib/realtime-proxy.js';
-import { createRelayService, isDesktopRelayHostRuntime } from './lib/relay/service.js';
+import { createRelayService, isRelayHostRuntime } from './lib/relay/service.js';
 import { createRelayHostLock } from './lib/relay/host-lock.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import webPush from 'web-push';
@@ -1184,9 +1184,10 @@ async function main(options = {}) {
       if (h && h !== '127.0.0.1' && h !== 'localhost' && h !== '::1') lanHost = effectiveBindHost;
     }
     const lan = lanHost ? `http://${lanHost.includes(':') ? `[${lanHost}]` : lanHost}:${activePort}` : null;
-    // Only the desktop host may advertise relay. Local `dev` / `web` / CLI
-    // servers must not present "Anywhere" as available or trigger a probe.
-    return { local, lan, relayAvailable: isDesktopRelayHostRuntime() };
+    // Only desktop / SSH-managed remote hosts may advertise relay. Local
+    // `dev` / `web` / ordinary CLI servers must not present "Anywhere" as
+    // available or trigger a probe.
+    return { local, lan, relayAvailable: isRelayHostRuntime() };
   };
   // ALL direct LAN URLs this server is currently reachable on, for the
   // candidates-refresh endpoint: the address the requesting client already
@@ -1248,11 +1249,6 @@ async function main(options = {}) {
   const getDesktopRuntimeConfig = typeof options.getDesktopRuntimeConfig === 'function'
     ? options.getDesktopRuntimeConfig
     : null;
-  // Electron injects live SSH local-forward ports; non-desktop defaults to empty
-  // so relay target-port routing never falls back to an unvalidated port.
-  const getSshRoutingTable = typeof options.getSshRoutingTable === 'function'
-    ? options.getSshRoutingTable
-    : () => [];
   const sessionIndexDbPath = options.sessionIndexDbPath !== undefined
     ? options.sessionIndexDbPath
     : process.env.OPENCHAMBER_SESSION_INDEX_DB_PATH;
@@ -1478,11 +1474,6 @@ async function main(options = {}) {
     sessionIndexService,
     sessionIndexSyncRuntime,
     transcriptCacheService,
-    getSshRoutingTable,
-    mintSshHostToken: typeof options.mintSshHostToken === 'function'
-      ? options.mintSshHostToken
-      : undefined,
-    getPairingSession: (id) => clientPairingRuntime.getPairingSession(id),
   });
   uiAuthController = bootstrapResult.uiAuthController;
   realtimeProxyRuntime = attachRealtimeProxy({
@@ -1506,7 +1497,6 @@ async function main(options = {}) {
     readSettingsStrict: readSettingsFromDiskStrict,
     remoteClientAuthRuntime,
     getLocalPort: () => tunnelRuntimeContext.getActivePort(),
-    getSshRoutingTable,
     // One relay host per machine: every instance sharing this data dir shares
     // the relay identity (serverId), so concurrent hosts evict each other at
     // the relay worker and devices land on a random local instance.
@@ -1644,15 +1634,16 @@ async function main(options = {}) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
   }
 
-  // Only Electron (OPENCHAMBER_RUNTIME=desktop) opens a relay host-control
-  // socket or polls relay demand. Local `dev` / `web` never reconcile, so they
-  // cannot inherit a leftover desktop env and start probing the relay.
+  // Only desktop / SSH-managed remotes (OPENCHAMBER_RUNTIME=desktop|ssh-remote)
+  // open a relay host-control socket or poll relay demand. Local `dev` / `web`
+  // never reconcile, so they cannot inherit a leftover desktop env and start
+  // probing the relay.
   let relayReconcileTimer = null;
-  if (isDesktopRelayHostRuntime()) {
+  if (isRelayHostRuntime()) {
     void relayService.reconcile();
     // Relay demand can change outside our routes: pending sessions expire, or a
     // paired device is revoked, without hitting our management routes. Poll so
-    // the desktop host picks demand up (or drops it) within a minute.
+    // the host picks demand up (or drops it) within a minute.
     relayReconcileTimer = setInterval(() => {
       void relayService.reconcile();
     }, 60_000);

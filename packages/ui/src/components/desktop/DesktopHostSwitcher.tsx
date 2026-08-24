@@ -53,6 +53,12 @@ import {
   type HostRowDisplayStatus,
   type HostRowProbeSnapshot,
 } from './desktopHostSwitcherDisplay';
+import { SshBootstrapErrorNotice } from './SshBootstrapErrorNotice';
+import {
+  resolveManagedSshBootstrapErrorCode,
+  sshBootstrapErrorGuidanceKey,
+  sshBootstrapErrorTitleKey,
+} from '@/lib/desktopSshBootstrapError';
 
 const LOCAL_HOST_ID = 'local';
 const SSH_CONNECT_TIMEOUT_MS = 90_000;
@@ -334,6 +340,7 @@ export function DesktopHostSwitcherDialog({
     phase: DesktopSshInstanceStatus['phase'] | 'idle';
     detail: string | null;
     error: string | null;
+    errorCode: string | null;
   }>({
     open: false,
     hostId: null,
@@ -341,6 +348,7 @@ export function DesktopHostSwitcherDialog({
     phase: 'idle',
     detail: null,
     error: null,
+    errorCode: null,
   });
   const [error, setError] = React.useState<string>('');
   const [localOrigin, setLocalOrigin] = React.useState<string>(() => getLocalOrigin());
@@ -448,9 +456,8 @@ export function DesktopHostSwitcherDialog({
       const results = await Promise.all(
         hosts.map(async (h) => {
           const probeRelayLeg = async (): Promise<HostStatus> => {
-            const res = await probeRelayDesktopHost(h.relay!, {
-              sshTarget: h.sshTarget,
-            }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+            const res = await probeRelayDesktopHost(h.relay!)
+              .catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
             return { status: res.status, latencyMs: res.latencyMs, ...(res.status === 'ok' ? { via: 'relay' as const } : {}) };
           };
           // Relay-only host: no HTTP address — probe through the E2EE tunnel.
@@ -488,7 +495,7 @@ export function DesktopHostSwitcherDialog({
       setEditLabel('');
       setEditUrl('');
       setSshSwitchingHostId(null);
-      setSshSwitchModal({ open: false, hostId: null, hostLabel: '', phase: 'idle', detail: null, error: null });
+      setSshSwitchModal({ open: false, hostId: null, hostLabel: '', phase: 'idle', detail: null, error: null, errorCode: null });
       setError('');
       return;
     }
@@ -530,19 +537,6 @@ export function DesktopHostSwitcherDialog({
     const origin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(host.url) || '');
     const apiOrigin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(getDesktopHostApiUrl(host)) || '');
     const relayOnly = Boolean(host.relay) && !host.apiUrl && host.id !== LOCAL_HOST_ID;
-    // SSH host listed by the paired desktop: keep the active relay, retarget via
-    // host token + x-openchamber-target-port (mobile/browser over relay).
-    if (host.viaSshRelay && currentTransportIsRelay) {
-      if (hostSwitchPending) return;
-      if (getRuntimeKey() === runtimeKeyForHost(host)) {
-        onHostSwitched?.();
-        return;
-      }
-      const result = await switchDesktopHostInstance({ host });
-      setStatusById((prev) => ({ ...prev, [host.id]: result.status }));
-      if (result.ok) onHostSwitched?.();
-      return;
-    }
     if (!origin && !relayOnly) return;
 
     if (isElectronShell()) {
@@ -597,6 +591,7 @@ export function DesktopHostSwitcherDialog({
         phase: 'master_connecting',
         detail: null,
         error: null,
+        errorCode: null,
       });
       try {
         await desktopSshConnect(host.id);
@@ -613,6 +608,7 @@ export function DesktopHostSwitcherDialog({
             ...prev,
             phase: status.phase,
             detail: status.detail || null,
+            errorCode: status.errorCode || null,
           }));
         }, () => switchToken !== sshSwitchTokenRef.current);
 
@@ -635,12 +631,14 @@ export function DesktopHostSwitcherDialog({
           return;
         }
 
+        const errorCode = resolveManagedSshBootstrapErrorCode(sshSwitchModal.errorCode, message);
         setSshSwitchModal((prev) => ({
           ...prev,
           error: message,
+          errorCode,
         }));
         toast.error(t('desktopHostSwitcher.toast.sshFailedToConnect', { host: redactSensitiveUrl(host.label) }), {
-          description: message,
+          description: t(sshBootstrapErrorGuidanceKey(errorCode)),
         });
         return;
       } finally {
@@ -739,6 +737,7 @@ export function DesktopHostSwitcherDialog({
       open: false,
       hostId: null,
       error: null,
+      errorCode: null,
       detail: null,
       phase: 'idle',
     }));
@@ -769,6 +768,7 @@ export function DesktopHostSwitcherDialog({
       phase: 'idle',
       detail: null,
       error: null,
+      errorCode: null,
     });
 
     if (!hostId || hostId === LOCAL_HOST_ID || !isDesktopShell()) {
@@ -804,7 +804,7 @@ export function DesktopHostSwitcherDialog({
       const message = err instanceof Error ? err.message : String(err);
       if (message !== SSH_CONNECT_CANCELLED_ERROR) {
         toast.error(t('desktopHostSwitcher.toast.sshFailedToConnect', { host: redactSensitiveUrl(host.label) }), {
-          description: message,
+          description: t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(null, message))),
         });
       }
     } finally {
@@ -1121,7 +1121,7 @@ export function DesktopHostSwitcherDialog({
         setSshSwitchModal((prev) => ({
           ...prev,
           open: nextOpen,
-          ...(nextOpen ? {} : { hostId: null, error: null, detail: null, phase: 'idle' as const }),
+          ...(nextOpen ? {} : { hostId: null, error: null, errorCode: null, detail: null, phase: 'idle' as const }),
         }));
       }}
     >
@@ -1131,14 +1131,32 @@ export function DesktopHostSwitcherDialog({
             <Icon name="loader-4" className={cn('h-4 w-4', !sshSwitchModal.error && 'animate-spin')} />
             {t('desktopHostSwitcher.ssh.connectingTo', { host: sshSwitchModal.hostLabel || t('desktopHostSwitcher.ssh.instanceFallback') })}
           </DialogTitle>
-          <DialogDescription>
-            {sshSwitchModal.error
-              ? sshSwitchModal.error
-              : sshSwitchModal.detail || t(sshPhaseLabelKey(sshSwitchModal.phase))}
-          </DialogDescription>
+          {sshSwitchModal.error ? (
+            <>
+              <DialogDescription className="sr-only">
+                {t(sshBootstrapErrorTitleKey(resolveManagedSshBootstrapErrorCode(sshSwitchModal.errorCode, sshSwitchModal.error)))}
+              </DialogDescription>
+              <SshBootstrapErrorNotice errorCode={sshSwitchModal.errorCode} detail={sshSwitchModal.error} />
+            </>
+          ) : (
+            <DialogDescription>
+              {sshSwitchModal.detail || t(sshPhaseLabelKey(sshSwitchModal.phase))}
+            </DialogDescription>
+          )}
         </DialogHeader>
         {sshSwitchModal.error ? (
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                openRemoteInstancesSettings();
+                void cancelSshSwitch();
+              }}
+            >
+              {t('desktopHostSwitcher.sshError.openRemoteSettings')}
+            </Button>
             <Button
               type="button"
               size="sm"

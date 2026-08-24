@@ -1,15 +1,20 @@
 import fs from 'fs';
+import path from 'path';
 import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 import { EXIT_CODE, TunnelCliError } from './cli-errors.js';
 import { buildLocalUrl, resolveServeHost, assertSafeBrowserPort, hasUiPasswordConfigured, assertAuthenticatedNetworkExposure } from './cli-network.js';
 import { fetchSystemInfoFromPort } from './cli-http.js';
 import { isPortAvailable, resolveAvailablePort } from './cli-ports.js';
-import { ensureLogsDir, getLogFilePath } from './cli-paths.js';
+import { ensureLogsDir, getDataDir, getLogFilePath } from './cli-paths.js';
 import { rotateLogFile } from './cli-log-files.js';
 import { discoverOpenChamberInstanceOnPort, isDesktopRuntimeForPort } from './cli-lifecycle.js';
 import { getPidFilePath, getInstanceFilePath, writePidFile, writeInstanceOptions, removePidFile, removeInstanceFile, isProcessRunning, terminateProcessTree } from './cli-process.js';
 import { isNetworkExposedBindHost } from '../../server/lib/security/bind-host.js';
+import {
+  canonicalizeRelayUrl,
+  DEFAULT_RELAY_URL,
+} from '../../server/lib/relay/service.js';
 import {
   intro as clackIntro,
   outro as clackOutro,
@@ -22,6 +27,67 @@ import {
 } from '../cli-output.js';
 
 const DAEMON_READY_TIMEOUT_MS = 30000;
+const SETTINGS_FILE_NAME = 'settings.json';
+
+// Ordinary CLI serve must not inherit a leftover desktop env and become a
+// relay host. SSH-manager remotes set OPENCHAMBER_RUNTIME=ssh-remote and may
+// pass --relay-host — preserve that so the remote can host a private relay.
+function resolveServeRuntime(env = process.env) {
+  return env?.OPENCHAMBER_RUNTIME === 'ssh-remote' ? 'ssh-remote' : 'web';
+}
+
+function assertServeRelayHostAllowed(serveRuntime, options) {
+  if (options?.relayHost && serveRuntime !== 'ssh-remote') {
+    throw new TunnelCliError(
+      '--relay-host is only valid for an SSH-managed remote (OPENCHAMBER_RUNTIME=ssh-remote). Ordinary `openchamber serve` cannot host the private relay.',
+      EXIT_CODE.USAGE_ERROR,
+    );
+  }
+}
+
+// Persist privateRelay.enabled before the server starts so reconcile /
+// startIfEnabled sees the opt-in. Optional URL pins the endpoint in settings
+// and OPENCHAMBER_RELAY_URL (env override stays authoritative while set).
+function applyRelayHostOptIn(options) {
+  if (!options?.relayHost) return;
+
+  let pinnedUrl = null;
+  if (typeof options.relayHost === 'string') {
+    pinnedUrl = canonicalizeRelayUrl(options.relayHost);
+    if (!pinnedUrl) {
+      throw new TunnelCliError(
+        'Invalid --relay-host URL. Use a ws:// or wss:// URL without credentials.',
+        EXIT_CODE.USAGE_ERROR,
+      );
+    }
+    process.env.OPENCHAMBER_RELAY_URL = pinnedUrl;
+  }
+
+  const settingsPath = path.join(getDataDir(), SETTINGS_FILE_NAME);
+  let settings = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) settings = {};
+  } catch {
+    settings = {};
+  }
+
+  const existingUrl = typeof settings?.privateRelay?.relayUrl === 'string'
+    ? settings.privateRelay.relayUrl
+    : null;
+  const relayUrl = pinnedUrl
+    ?? (canonicalizeRelayUrl(existingUrl) || DEFAULT_RELAY_URL);
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(
+    settingsPath,
+    `${JSON.stringify({
+      ...settings,
+      privateRelay: { enabled: true, relayUrl },
+    }, null, 2)}\n`,
+    'utf8',
+  );
+}
 
 function createServeCommand({
   serverPath,
@@ -103,6 +169,9 @@ async function serveCommand(options) {
     // package scripts. Selecting Bun merely because it is installed makes an
     // otherwise valid CLI launch fail before the Host can report readiness.
     const runtimeBin = process.execPath;
+    const serveRuntime = resolveServeRuntime();
+    assertServeRelayHostAllowed(serveRuntime, options);
+    applyRelayHostOptIn(options);
 
     ensureLogsDir();
     const initialLogPort = targetPort === 0 ? 'auto' : String(targetPort);
@@ -156,7 +225,7 @@ async function serveCommand(options) {
         process.env.OPENCHAMBER_UI_PASSWORD = effectiveUiPassword;
       }
       process.env.OPENCHAMBER_HOST = effectiveHost;
-      process.env.OPENCHAMBER_RUNTIME = 'web';
+      process.env.OPENCHAMBER_RUNTIME = serveRuntime;
 
       // In --quiet mode, redirect stdout/stderr to the log file so that
       // server runtime output (console.log calls) does not pollute the
@@ -270,7 +339,7 @@ async function serveCommand(options) {
       env: {
         ...process.env,
         OPENCHAMBER_PORT: String(targetPort),
-        OPENCHAMBER_RUNTIME: 'web',
+        OPENCHAMBER_RUNTIME: serveRuntime,
         OPENCODE_BINARY: opencodeBinary,
         OPENCHAMBER_HOST: effectiveHost,
         ...(effectiveUiPassword ? { OPENCHAMBER_UI_PASSWORD: effectiveUiPassword } : {}),
@@ -393,4 +462,4 @@ async function serveCommand(options) {
   return serveCommand;
 }
 
-export { createServeCommand };
+export { createServeCommand, resolveServeRuntime, applyRelayHostOptIn, assertServeRelayHostAllowed };

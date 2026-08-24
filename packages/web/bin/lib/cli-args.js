@@ -76,6 +76,8 @@ function parseArgs(argv = process.argv.slice(2)) {
     foreground: false,
     lan: false,
     apiOnly: false,
+    // false = unset; true = enable with default/stored URL; string = pin URL
+    relayHost: false,
   };
 
   const removedFlagErrors = [];
@@ -204,6 +206,18 @@ function parseArgs(argv = process.argv.slice(2)) {
       case 'relay':
         options.relay = true;
         break;
+      case 'relay-host': {
+        // Optional value: `--relay-host` enables with default/stored URL;
+        // `--relay-host wss://…` (or `=`) pins a custom endpoint.
+        const { value, nextIndex } = consumeValue(i, inlineValue);
+        i = nextIndex;
+        if (typeof value === 'string' && value.trim().length > 0) {
+          options.relayHost = value.trim();
+        } else {
+          options.relayHost = true;
+        }
+        break;
+      }
       case 'qr':
         options.qr = true;
         options.explicitQr = true;
@@ -305,6 +319,8 @@ OPTIONS:
   --lan                   Bind to 0.0.0.0 for LAN access
   --server <url>          Public/server URL for connect-url links
   --relay                 connect-url: also include the end-to-end-encrypted relay transport
+  --relay-host [url]      serve: enable the private relay host (desktop/SSH-remote only).
+                          Optional ws(s) URL pins the relay endpoint.
   --ui-password           Protect browser UI with single password
   --api-only              Start API routes only, without serving browser UI assets
   --foreground            Run server in foreground (use with systemd/process managers)
@@ -317,6 +333,7 @@ ENVIRONMENT:
   OPENCHAMBER_UI_PASSWORD      Alternative to --ui-password flag
   OPENCHAMBER_API_ONLY         Set to true/1 to start API routes only
   OPENCHAMBER_DATA_DIR         Override OpenChamber data directory
+  OPENCHAMBER_RELAY_URL        Pin private relay endpoint (ws:// or wss://)
   OPENCODE_HOST               External OpenCode server base URL, e.g. http://hostname:4096
   OPENCODE_PORT               Port of external OpenCode server to connect to
   OPENCODE_SKIP_START          Skip starting OpenCode, use external server
@@ -327,6 +344,8 @@ EXAMPLES:
   openchamber --port 8080        # Start on port 8080 (daemon)
   openchamber --lan --port 3002  # Start on LAN at 0.0.0.0:3002
   openchamber serve --foreground # Start in foreground (for systemd Type=simple)
+  openchamber serve --relay-host # Enable private relay host (SSH-managed remote)
+  openchamber serve --relay-host wss://relay.example/ws
   openchamber connect-url --port 3000 --qr
   openchamber connect-url --server https://openchamber.example.com
   openchamber startup enable     # Start OpenChamber at user login

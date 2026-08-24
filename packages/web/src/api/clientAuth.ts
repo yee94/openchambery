@@ -50,7 +50,6 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
         ...(typeof input.includeRelay === 'boolean' ? { includeRelay: input.includeRelay } : {}),
         ...(typeof input.includeDirect === 'boolean' ? { includeDirect: input.includeDirect } : {}),
         ...(input.relayUrl ? { relayUrl: input.relayUrl } : {}),
-        ...(input.sshHostId ? { sshHostId: input.sshHostId } : {}),
       }),
     });
     const payload = await jsonOrNull<PairingSessionCreateResult & { error?: string }>(response);

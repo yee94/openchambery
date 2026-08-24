@@ -19,7 +19,8 @@ Command modules implement user-facing commands and preserve output contracts acr
   - Implements `openchamber serve`.
   - Owns OpenCode CLI checks, port resolution, log rotation, PID/instance registry writes, foreground/background server launch, startup summaries, and foreground shutdown behavior.
   - The Host process always inherits the CLI's Node executable. Do not select Bun based on PATH availability: the Web API owns `better-sqlite3` and requires the prepared Node ABI.
-  - Sets `OPENCHAMBER_RUNTIME=web` for both foreground and daemon children so a leftover desktop env cannot host or probe the private relay.
+  - Sets `OPENCHAMBER_RUNTIME=web` for ordinary CLI serve (foreground and daemon) so a leftover desktop env cannot host or probe the private relay. Preserves `OPENCHAMBER_RUNTIME=ssh-remote` when SSH manager already set it.
+  - `--relay-host [url]` is valid only when `OPENCHAMBER_RUNTIME=ssh-remote`. It enables the private relay host before startup: writes `settings.privateRelay.enabled=true` (and optional pinned `relayUrl`), and when a URL is provided also sets `OPENCHAMBER_RELAY_URL`. Ordinary `web` serve rejects the flag.
 
 - `commands-lifecycle.js`
   - Implements `openchamber stop` and `openchamber restart`.

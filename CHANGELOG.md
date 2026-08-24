@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 远程实例（SSH + Private Relay）
+
+- **SSH 远程自行托管 Relay：** managed SSH 启动的 `openchamber serve` 以 `OPENCHAMBER_RUNTIME=ssh-remote` 运行，并带 `--relay-host`；remote 进程本身成为 private relay host（与 desktop 同级），手机 / 另一台电脑用普通 pairing 直连该 remote，不再经桌面中继。
+- **复用旧 web serve 时自动重启为 relay host：** 已在跑、但 runtime 不是 `ssh-remote`/`desktop` 的 managed 实例会先停再按新命令拉起，避免「连上了却 relayAvailable=false」。
+- **桌面 SSH host 挂上 relay 描述符：** 连接成功后把 remote 的 `serverId` / `hostEncPubJwk` 写进该 host，SSH 隧道断开后桌面可走 relay 回连；手机配对仍在该 remote 的「添加设备」里生成普通 pairing。
+- **SSH 默认开启 remote relay host：** 新建/已有 managed 实例默认 `relayHost: true`（可显式关掉）；连接时带 `--relay-host`，并在连上后写入 relay 描述符。
+- **托管 SSH 启动失败给出可操作指引：** 连接弹窗、Toast 和「远程实例」详情按原因分类（缺 Node 22+、native binding、SSH 认证/不可达等），并提供打开设置、切回本地、重试。
+- **移除 desktop 中继 SSH 路径：** 删除 `x-openchamber-target-port` 路由、`/api/openchamber/ssh-host-token`、`sshTarget` / `viaSshRelay` / pairing `sshHostId`。桌面本机仍可通过 SSH local-forward（apiUrl + clientToken）访问该实例。
+
 ## [1.18.3-beta.14] - 2026-08-24
 
 ### 聊天

@@ -774,22 +774,7 @@ describe('core-routes', () => {
       allowedClientKinds: ['mobile'],
       createdByClientId: null,
       usesRelay: false,
-      sshHostId: undefined,
     });
-  });
-
-  it('forwards optional sshHostId into createPairingSession', async () => {
-    const { app, dependencies } = createPairingRouteApp();
-
-    await request(app)
-      .post('/api/client-auth/pairing/sessions')
-      .set('Host', 'runtime.example')
-      .send({ label: 'SSH phone', allowedClientKinds: ['mobile'], sshHostId: 'ssh-1', includeRelay: true })
-      .expect(201);
-
-    expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalledWith(
-      expect.objectContaining({ sshHostId: 'ssh-1' }),
-    );
   });
 
   it('advertises the caller-supplied serverUrl as the direct candidate over the request origin', async () => {

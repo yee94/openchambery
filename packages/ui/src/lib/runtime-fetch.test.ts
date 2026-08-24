@@ -610,39 +610,6 @@ describe('runtimeFetch read coalescing', () => {
     }
   });
 
-  test('does not coalesce same-URL reads with different target-port headers', async () => {
-    const previous = getRuntimeUrlResolver();
-    let calls = 0;
-    try {
-      configureRuntimeUrlResolver({ apiBaseUrl: 'https://api.example' });
-      globalThis.fetch = (async () => {
-        calls += 1;
-        await new Promise((r) => setTimeout(r, 20));
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }) as typeof fetch;
-
-      const [a, b] = await Promise.all([
-        runtimeFetch('/api/config/providers', {
-          headers: { 'x-openchamber-target-port': '18765' },
-        }),
-        runtimeFetch('/api/config/providers', {
-          headers: { 'x-openchamber-target-port': '18766' },
-        }),
-      ]);
-
-      expect(calls).toBe(2);
-      expect(await a.json()).toEqual({ ok: true });
-      expect(await b.json()).toEqual({ ok: true });
-    } finally {
-      setRuntimeUrlResolver(previous);
-      globalThis.fetch = originalFetch;
-      clearRuntimeAuthCredentialProvider();
-    }
-  });
-
   test('does not coalesce non-GET, non-allowlisted, or signal-bearing requests', async () => {
     const previous = getRuntimeUrlResolver();
     let calls = 0;

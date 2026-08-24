@@ -68,6 +68,17 @@ export const buildRemoteSyncPrepareScript = (plan, options = {}) => buildRemoteS
 const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
 const OPENCODE_NPM_PACKAGE = 'opencode-ai';
 export const REMOTE_NODE_MIN_MAJOR = 22;
+const REMOTE_NODE_CANDIDATE_GLOBS = [
+  '/codev/opt/nodejs/*/bin/node',
+  '/opt/codev/nodejs/*/bin/node',
+  '"$HOME"/.nvm/versions/node/*/bin/node',
+  '"$HOME"/.fnm/node-versions/*/installation/bin/node',
+  '"$HOME"/.local/share/fnm/node-versions/*/installation/bin/node',
+  '"$HOME"/.asdf/installs/nodejs/*/bin/node',
+  '"$HOME"/.local/share/mise/installs/node/*/bin/node',
+  '"$HOME"/.volta/bin/node',
+  '/usr/local/n/versions/node/*/bin/node',
+];
 const LOCAL_HOST_ID = 'local';
 const DEFAULT_CONNECTION_TIMEOUT_SEC = 60;
 const DEFAULT_LOCAL_BIND_HOST = '127.0.0.1';
@@ -96,18 +107,194 @@ export const buildManagedServeEnvPrefix = (uiPassword) => {
 };
 
 /**
- * Sets a PATH for one remote command only. It never edits shell startup files.
- * A fresh DevCloud host can ship several Node versions while its login PATH
- * still selects Node 18; choose the highest usable Node 22+ binary instead.
+ * Exact remote command managed SSH uses to start OpenChamber.
+ * Default instances include `--relay-host`; `relayHost: false` omits it.
  */
-export const buildRemoteManagedRuntimePrefix = () => `
+export const buildManagedServeCommand = (instance, desiredPort, uiPassword) => {
+  const envPrefix = buildManagedServeEnvPrefix(uiPassword);
+  const relayHostFlag = instanceWantsRelayHost(instance) ? buildRelayHostFlag(instance) : '';
+  return [
+    envPrefix,
+    'openchamber serve --hostname 127.0.0.1 --port',
+    String(desiredPort),
+    relayHostFlag,
+  ].filter(Boolean).join(' ');
+};
+
+/** `--relay-host` with no value uses the remote's default/stored URL. */
+export const buildRelayHostFlag = (instance) => {
+  const candidates = [
+    instance?.relayUrl,
+    instance?.remoteOpenchamber?.relayUrl,
+  ];
+  for (const candidate of candidates) {
+    const url = typeof candidate === 'string' ? candidate.trim() : '';
+    if (!url) continue;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') continue;
+      if (parsed.username || parsed.password) continue;
+      return `--relay-host ${shellQuote(url)}`;
+    } catch {
+      // ignore invalid stored URL; fall through to flag-only
+    }
+  }
+  return '--relay-host';
+};
+
+/** Managed remotes host private relay unless the instance explicitly opts out. */
+export const instanceWantsRelayHost = (instance) => instance?.remoteOpenchamber?.relayHost !== false;
+
+/** Managed remotes must be ssh-remote (or a leftover desktop) to host private relay. */
+export const remoteRuntimeCanHostRelay = (info) => {
+  const runtime = typeof info?.runtime === 'string' ? info.runtime.trim() : '';
+  return runtime === 'ssh-remote' || runtime === 'desktop';
+};
+
+/** Public relay descriptor from `/api/openchamber/relay/status` (no private key). */
+export const parseRelayDescriptorFromStatus = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  if (payload.hostAllowed !== true) return null;
+  const relayUrl = typeof payload.relayUrl === 'string' ? payload.relayUrl.trim() : '';
+  const serverId = typeof payload.serverId === 'string' ? payload.serverId.trim() : '';
+  const jwk = payload.hostEncPubJwk;
+  if (!relayUrl || !serverId || !jwk || typeof jwk !== 'object' || Array.isArray(jwk)) return null;
+  if (typeof jwk.kty !== 'string' || typeof jwk.crv !== 'string' || typeof jwk.x !== 'string') return null;
+  try {
+    const parsed = new URL(relayUrl);
+    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') return null;
+    if (parsed.username || parsed.password) return null;
+  } catch {
+    return null;
+  }
+  return { relayUrl, serverId, hostEncPubJwk: jwk };
+};
+
+export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
+  'nodeRuntimeMissing',
+  'packageManagerMissing',
+  'nativeBinding',
+  'openchamberInstall',
+  'opencodeInstall',
+  'serverStart',
+  'sshAuth',
+  'sshUnreachable',
+  'timeout',
+  'unknown',
+];
+
+/**
+ * Classify a managed SSH bootstrap failure so the desktop client can show
+ * actionable guidance instead of a raw npm/gyp dump.
+ * @param {unknown} raw
+ * @returns {(typeof MANAGED_SSH_BOOTSTRAP_ERROR_CODES)[number]}
+ */
+export const classifyManagedSshBootstrapError = (raw) => {
+  const text = String(raw || '');
+  if (/requires Node\.js \d+|no supported Node runtime/i.test(text)) return 'nodeRuntimeMissing';
+  if (/neither bun nor npm/i.test(text)) return 'packageManagerMissing';
+  if (/better-sqlite3|node_gyp_bins|gyp ERR|failed to prepare better-sqlite3/i.test(text)) return 'nativeBinding';
+  if (/Failed to install OpenChamber|OpenChamber installation completed but the executable is unavailable/i.test(text)) {
+    return 'openchamberInstall';
+  }
+  if (/Failed to install OpenCode|OpenCode CLI/i.test(text)) return 'opencodeInstall';
+  if (/failed to become reachable|Managed OpenChamber server failed/i.test(text)) return 'serverStart';
+  if (/Permission denied|Authentication failed|publickey|keyboard-interactive/i.test(text)) return 'sshAuth';
+  if (/Could not resolve hostname|Connection refused|Connection timed out|ControlMaster connection timed out|SSH master process exited|Network is unreachable/i.test(text)) {
+    return 'sshUnreachable';
+  }
+  if (/Timed out waiting for SSH|Timed out waiting for forwarded/i.test(text)) return 'timeout';
+  return 'unknown';
+};
+
+const SHORT_BOOTSTRAP_ERROR_DETAIL = {
+  nodeRuntimeMissing: 'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
+  packageManagerMissing: 'Remote host has neither bun nor npm available to install OpenChamber',
+  nativeBinding: 'failed to prepare better-sqlite3 for the selected remote Node runtime',
+  openchamberInstall: 'Failed to install OpenChamber on remote host',
+  opencodeInstall: 'Failed to install OpenCode CLI on remote host',
+  serverStart: 'Managed OpenChamber server failed to become reachable',
+  sshAuth: 'SSH authentication failed',
+  sshUnreachable: 'Could not reach the SSH host',
+  timeout: 'Timed out waiting for SSH connection',
+};
+
+/**
+ * Keep status.detail short enough for the desktop UI. Full stderr stays in logs.
+ * @param {unknown} raw
+ */
+export const summarizeManagedSshBootstrapError = (raw) => {
+  const text = String(raw || '').trim();
+  const code = classifyManagedSshBootstrapError(text);
+  if (code !== 'unknown' && SHORT_BOOTSTRAP_ERROR_DETAIL[code]) {
+    return SHORT_BOOTSTRAP_ERROR_DETAIL[code];
+  }
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim()) || 'Remote instance failed to start';
+  return firstLine.length > 280 ? `${firstLine.slice(0, 277)}...` : firstLine;
+};
+
+/**
+ * Parse a remote Node version for managed SSH selection.
+ * Odd majors (23, 25) are accepted only when no even LTS (22, 24, …) exists.
+ * @param {unknown} raw
+ * @returns {{ version: string, major: number, even: boolean } | null}
+ */
+export const parseRemoteManagedNodeVersion = (raw) => {
+  const version = String(raw || '').trim().replace(/^v/i, '');
+  const major = Number.parseInt(version.split('.')[0], 10);
+  if (!Number.isInteger(major) || major < REMOTE_NODE_MIN_MAJOR) return null;
+  return { version, major, even: major % 2 === 0 };
+};
+
+const compareRemoteNodeSemver = (left, right) => {
+  const leftParts = String(left).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = String(right).split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = (rightParts[index] || 0) - (leftParts[index] || 0);
+    if (delta !== 0) return delta;
+  }
+  return 0;
+};
+
+/**
+ * Whether `next` should replace `current` as the managed SSH Node runtime.
+ * Policy: even LTS major beats odd; sibling `npm` beats a lone `node`; then highest semver.
+ * @param {{ even: boolean, hasNpm?: boolean, version: string } | null} current
+ * @param {{ even: boolean, hasNpm?: boolean, version: string } | null} next
+ */
+export const isPreferredRemoteManagedNode = (current, next) => {
+  if (!next) return false;
+  if (!current) return true;
+  if (next.even !== current.even) return next.even;
+  if (Boolean(next.hasNpm) !== Boolean(current.hasNpm)) return Boolean(next.hasNpm);
+  return compareRemoteNodeSemver(current.version, next.version) > 0;
+};
+
+/**
+ * @param {Array<{ bin?: string, version: string, hasNpm?: boolean }>} candidates
+ */
+export const selectPreferredRemoteManagedNode = (candidates) => {
+  let best = null;
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const parsed = parseRemoteManagedNodeVersion(candidate?.version);
+    if (!parsed) continue;
+    const next = { ...candidate, ...parsed };
+    if (isPreferredRemoteManagedNode(best, next)) best = next;
+  }
+  return best;
+};
+
+/**
+ * Shell helpers that pick one Node for every managed SSH command.
+ * Kept session-scoped: never edits remote shell startup files.
+ */
+export const buildRemoteManagedNodeSelectionFunctions = () => `
 prepend_path() { [ -d "$1" ] || return 0; case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac; }
-prepend_path "$HOME/.bun/bin"
-prepend_path "$HOME/.opencode/bin"
-prepend_path "$HOME/.local/bin"
-prepend_path "$HOME/.npm/node_modules/bin"
 best_node_bin=""
 best_node_version=""
+best_node_even=""
+best_node_has_npm=""
 consider_node() {
   candidate="$1"
   [ -x "$candidate" ] || return 0
@@ -115,17 +302,137 @@ consider_node() {
   major="\${version%%.*}"
   case "$major" in ''|*[!0-9]*) return 0 ;; esac
   [ "$major" -ge ${REMOTE_NODE_MIN_MAJOR} ] || return 0
-  if [ -z "$best_node_version" ] || [ "$(printf '%s\\n%s\\n' "$best_node_version" "$version" | sort -V | tail -n 1)" = "$version" ]; then
+  even=0
+  [ "$((major % 2))" -eq 0 ] && even=1
+  has_npm=0
+  [ -x "$(dirname "$candidate")/npm" ] && has_npm=1
+  if [ -z "$best_node_version" ]; then
     best_node_bin="$candidate"
     best_node_version="$version"
+    best_node_even="$even"
+    best_node_has_npm="$has_npm"
+    return 0
+  fi
+  if [ "$even" -eq 1 ] && [ "$best_node_even" -eq 0 ]; then
+    best_node_bin="$candidate"
+    best_node_version="$version"
+    best_node_even="$even"
+    best_node_has_npm="$has_npm"
+    return 0
+  fi
+  if [ "$even" -eq 0 ] && [ "$best_node_even" -eq 1 ]; then
+    return 0
+  fi
+  if [ "$has_npm" -eq 1 ] && [ "$best_node_has_npm" -eq 0 ]; then
+    best_node_bin="$candidate"
+    best_node_version="$version"
+    best_node_even="$even"
+    best_node_has_npm="$has_npm"
+    return 0
+  fi
+  if [ "$has_npm" -eq 0 ] && [ "$best_node_has_npm" -eq 1 ]; then
+    return 0
+  fi
+  if [ "$(printf '%s\\n%s\\n' "$best_node_version" "$version" | sort -V | tail -n 1)" = "$version" ] \\
+    && [ "$version" != "$best_node_version" ]; then
+    best_node_bin="$candidate"
+    best_node_version="$version"
+    best_node_even="$even"
+    best_node_has_npm="$has_npm"
   fi
 }
+`;
+
+/**
+ * Sets a PATH for one remote command only. It never edits shell startup files.
+ * A fresh DevCloud host can ship several Node versions while its login PATH
+ * still selects Node 18; prefer the highest even LTS (22/24) with a sibling npm.
+ */
+export const buildRemoteManagedRuntimePrefix = () => `
+${buildRemoteManagedNodeSelectionFunctions()}
+prepend_path "$HOME/.bun/bin"
+prepend_path "$HOME/.opencode/bin"
+prepend_path "$HOME/.local/bin"
+prepend_path "$HOME/.npm/node_modules/bin"
 if command -v node >/dev/null 2>&1; then consider_node "$(command -v node)"; fi
-for candidate in /codev/opt/nodejs/*/bin/node /opt/codev/nodejs/*/bin/node "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.fnm/node-versions/*/installation/bin/node "$HOME"/.local/share/fnm/node-versions/*/installation/bin/node; do consider_node "$candidate"; done
+for candidate in ${REMOTE_NODE_CANDIDATE_GLOBS.join(' ')}; do consider_node "$candidate"; done
 if [ -n "$best_node_bin" ]; then prepend_path "$(dirname "$best_node_bin")"; fi
 if command -v npm >/dev/null 2>&1; then npm_prefix="$(npm prefix -g 2>/dev/null || true)"; [ -n "$npm_prefix" ] && prepend_path "$npm_prefix/bin"; fi
 export PATH
 `;
+
+/**
+ * Repair better-sqlite3 for the Node already selected on PATH.
+ * Probe first; only then clean + rebuild, retry once, then npm reinstall.
+ * @param {{ packageName?: string, version?: string }} [options]
+ */
+export const buildRemoteNativeBindingRepairScript = (options = {}) => {
+  const packageName = typeof options.packageName === 'string' ? options.packageName.trim() : '';
+  const version = typeof options.version === 'string' ? options.version.trim() : '';
+  const reinstallSpec = packageName && version ? `${packageName}@${version}` : '';
+  const quotedSpec = reinstallSpec ? shellQuote(reinstallSpec) : '';
+  return `
+openchamber_bin="$(command -v openchamber)"
+if [ -z "$openchamber_bin" ]; then
+  echo "openchamber CLI is not on PATH after managed install" >&2
+  exit 1
+fi
+openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
+openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
+sqlite_dir="$openchamber_root/node_modules/better-sqlite3"
+
+probe_sqlite() {
+  (cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()") >/dev/null 2>&1
+}
+
+prepare_native_toolchain() {
+  if [ -z "$PYTHON" ]; then
+    for py in /usr/bin/python3.13 /usr/bin/python3.12 /usr/bin/python3.11 /usr/bin/python3.10 /usr/bin/python3.9 /usr/bin/python3.8 /usr/bin/python3 /usr/local/bin/python3; do
+      if [ -x "$py" ]; then export PYTHON="$py"; break; fi
+    done
+  fi
+  if [ -z "$PYTHON" ] && command -v python3 >/dev/null 2>&1; then
+    export PYTHON="$(command -v python3)"
+  fi
+  if [ -n "$PYTHON" ]; then export npm_config_python="$PYTHON"; fi
+  for toolset in /opt/rh/gcc-toolset-14 /opt/rh/gcc-toolset-13 /opt/rh/gcc-toolset-12; do
+    if [ -x "$toolset/root/usr/bin/gcc" ] && [ -x "$toolset/root/usr/bin/g++" ]; then
+      export CC="$toolset/root/usr/bin/gcc"
+      export CXX="$toolset/root/usr/bin/g++"
+      break
+    fi
+  done
+}
+
+rebuild_sqlite() {
+  [ -d "$sqlite_dir" ] || return 1
+  rm -rf "$sqlite_dir/build"
+  mkdir -p "$sqlite_dir/build/node_gyp_bins"
+  (cd "$openchamber_root" && npm rebuild better-sqlite3 --foreground-scripts)
+}
+
+if probe_sqlite; then exit 0; fi
+if ! command -v npm >/dev/null 2>&1; then
+  echo "better-sqlite3 binding is unusable and npm is unavailable to rebuild it" >&2
+  exit 1
+fi
+prepare_native_toolchain
+rebuild_sqlite || true
+if probe_sqlite; then exit 0; fi
+rebuild_sqlite || true
+if probe_sqlite; then exit 0; fi
+${quotedSpec ? `npm install -g ${quotedSpec} --force || true
+openchamber_bin="$(command -v openchamber)"
+openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
+openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
+sqlite_dir="$openchamber_root/node_modules/better-sqlite3"
+if probe_sqlite; then exit 0; fi
+rebuild_sqlite || true
+if probe_sqlite; then exit 0; fi` : ''}
+echo "failed to prepare better-sqlite3 for Node $(node -p 'process.versions.node' 2>/dev/null || echo unknown)" >&2
+exit 1
+`;
+};
 
 const hasGlobWildcard = (value) => /[*?]/.test(value);
 
@@ -803,6 +1110,7 @@ export class ElectronSshManager {
       `phase=${JSON.stringify(phase)} detail=${detail || ''} retry=${retryAttempt} requires_user_action=${requiresUserAction}`,
     );
 
+    const errorCode = phase === 'error' ? classifyManagedSshBootstrapError(detail) : null;
     const status = {
       id,
       phase,
@@ -813,6 +1121,7 @@ export class ElectronSshManager {
       startedByUs,
       retryAttempt,
       requiresUserAction,
+      ...(errorCode ? { errorCode } : {}),
       updatedAtMs: nowMillis(),
     };
     this.statuses.set(id, status);
@@ -1025,6 +1334,7 @@ export class ElectronSshManager {
       remoteOpenchamber: {
         mode: instance?.remoteOpenchamber?.mode === 'external' ? 'external' : 'managed',
         keepRunning: instance?.remoteOpenchamber?.keepRunning !== false,
+        relayHost: instance?.remoteOpenchamber?.relayHost !== false,
         ...(Number.isFinite(instance?.remoteOpenchamber?.preferredPort) ? { preferredPort: Number(instance.remoteOpenchamber.preferredPort) } : {}),
         installMethod: ['npm', 'bun', 'download_release', 'upload_bundle'].includes(instance?.remoteOpenchamber?.installMethod)
           ? instance.remoteOpenchamber.installMethod
@@ -1050,28 +1360,61 @@ export class ElectronSshManager {
     return this.updateHostRuntime(instanceId, label, localUrl, '');
   }
 
-  async updateHostRuntime(instanceId, label, localUrl, clientToken = '') {
+  async updateHostRuntime(instanceId, label, localUrl, clientToken = '', relay = null) {
     await this.mutateSettingsRoot((root) => {
       const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
       const existing = hosts.find((entry) => entry?.id === instanceId);
       const token = typeof clientToken === 'string' ? clientToken.trim() : '';
+      const nextRelay = parseRelayDescriptorFromStatus(
+        relay && typeof relay === 'object'
+          ? { hostAllowed: true, relayUrl: relay.relayUrl, serverId: relay.serverId, hostEncPubJwk: relay.hostEncPubJwk }
+          : null,
+      );
       if (existing) {
         existing.label = label;
         existing.url = localUrl;
         existing.apiUrl = localUrl;
         if (token) existing.clientToken = token;
+        if (nextRelay) existing.relay = nextRelay;
       } else {
-        hosts.push({ id: instanceId, label, url: localUrl, apiUrl: localUrl, ...(token ? { clientToken: token } : {}) });
+        hosts.push({
+          id: instanceId,
+          label,
+          url: localUrl,
+          apiUrl: localUrl,
+          ...(token ? { clientToken: token } : {}),
+          ...(nextRelay ? { relay: nextRelay } : {}),
+        });
       }
       root.desktopHosts = hosts;
       return root;
     });
   }
 
+  async fetchRemoteRelayDescriptor(localUrl, clientToken) {
+    const token = typeof clientToken === 'string' ? clientToken.trim() : '';
+    if (!token) return null;
+    try {
+      const response = await fetch(new URL('/api/openchamber/relay/status', `${localUrl}/`).toString(), {
+        method: 'GET',
+        signal: AbortSignal.timeout(8_000),
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) return null;
+      const payload = await response.json().catch(() => null);
+      return parseRelayDescriptorFromStatus(payload);
+    } catch {
+      return null;
+    }
+  }
+
   async issueClientToken(localUrl, openchamberPassword) {
     const password = typeof openchamberPassword === 'string' ? openchamberPassword.trim() : '';
     if (!password) {
-      throw new Error('OpenChamber UI password is required to mint an SSH host token');
+      throw new Error('OpenChamber UI password is required to mint a client token');
     }
 
     const loginResponse = await fetch(new URL('/auth/session', `${localUrl}/`).toString(), {
@@ -1351,20 +1694,14 @@ export class ElectronSshManager {
   }
 
   async ensureRemoteOpenChamberNativeBinding(parsed, controlPath) {
-    const script = `
-openchamber_bin="$(command -v openchamber)"
-openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
-openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
-if (cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()") >/dev/null 2>&1; then exit 0; fi
-if [ -x /usr/bin/python3.8 ]; then export PYTHON=/usr/bin/python3.8; fi
-if [ -x /opt/rh/gcc-toolset-12/root/usr/bin/gcc ] && [ -x /opt/rh/gcc-toolset-12/root/usr/bin/g++ ]; then
-  export CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc
-  export CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++
-fi
-(cd "$openchamber_root" && npm rebuild better-sqlite3 --foreground-scripts)
-(cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()")
-`;
-    await this.runManagedRemoteCommand(parsed, controlPath, script);
+    await this.runManagedRemoteCommand(
+      parsed,
+      controlPath,
+      buildRemoteNativeBindingRepairScript({
+        packageName: OPENCHAMBER_NPM_PACKAGE,
+        version: this.appVersion,
+      }),
+    );
   }
 
   async currentRemoteOpenCodeVersion(parsed, controlPath) {
@@ -1455,10 +1792,17 @@ fi
 
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
     const uiPassword = this.configuredOpenChamberPassword(instance) || createEphemeralUiPassword();
-    const envPrefix = buildManagedServeEnvPrefix(uiPassword);
-    const output = await this.runManagedRemoteCommand(parsed, controlPath, `${envPrefix} openchamber serve --hostname 127.0.0.1 --port ${desiredPort}`);
+    const output = await this.runManagedRemoteCommand(
+      parsed,
+      controlPath,
+      buildManagedServeCommand(instance, desiredPort, uiPassword),
+    );
     const port = output.split(/\s+/).map((token) => Number.parseInt(token, 10)).find((value) => Number.isFinite(value));
     return { port: port || desiredPort, uiPassword };
+  }
+
+  buildRelayHostFlag(instance) {
+    return buildRelayHostFlag(instance);
   }
 
   async stopRemoteServerBestEffort(parsed, controlPath, remotePort) {
@@ -2050,7 +2394,24 @@ fi
     let uiPassword = this.configuredOpenChamberPassword(instance)
       || this.ephemeralUiPasswords.get(instance.id)
       || null;
-    if (remotePort && !(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) {
+    let runningInfo = null;
+    if (remotePort) {
+      try {
+        runningInfo = await this.probeRemoteSystemInfo(parsed, controlPath, remotePort, uiPassword);
+      } catch {
+        remotePort = null;
+        runningInfo = null;
+      }
+    }
+    // Default relay-host SSH remotes cannot reuse a leftover `web` serve.
+    if (remotePort && instanceWantsRelayHost(instance) && !remoteRuntimeCanHostRelay(runningInfo)) {
+      this.setStatus(instance.id, 'server_starting', 'Restarting remote OpenChamber as a relay host');
+      await this.stopRemoteServerBestEffort(parsed, controlPath, remotePort);
+      const deadline = Date.now() + 8_000;
+      while (Date.now() < deadline) {
+        if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, uiPassword))) break;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
       remotePort = null;
     }
     if (!remotePort) {
@@ -2183,10 +2544,13 @@ fi
     const localUrl = `http://127.0.0.1:${localPort}`;
     const label = instance.nickname?.trim() || parsed.destination || id;
     if (!uiPassword) {
-      throw new Error('OpenChamber UI password is required to mint an SSH host token');
+      throw new Error('OpenChamber UI password is required to mint a client token');
     }
     const clientToken = await this.issueClientToken(localUrl, uiPassword);
-    await this.updateHostRuntime(id, label, localUrl, clientToken);
+    const relay = instanceWantsRelayHost(instance)
+      ? await this.fetchRemoteRelayDescriptor(localUrl, clientToken)
+      : null;
+    await this.updateHostRuntime(id, label, localUrl, clientToken, relay);
     if (instance.localForward?.preferredLocalPort !== localPort) {
       await this.persistLocalPort(id, localPort);
     }
@@ -2287,7 +2651,9 @@ fi
       try {
         await this.connect(id);
       } catch (error) {
-        this.setStatus(id, 'error', error instanceof Error ? error.message : String(error), null, null, null, false, attempt, true);
+        const raw = error instanceof Error ? error.message : String(error);
+        this.appendLogWithLevel(id, 'ERROR', raw);
+        this.setStatus(id, 'error', summarizeManagedSshBootstrapError(raw), null, null, null, false, attempt, true);
       }
     };
     this.monitorTimers.set(id, setTimeout(tick, MONITOR_INITIAL_POLL_MS));
@@ -2317,9 +2683,12 @@ fi
 
     const task = this.connectBlocking(this.sanitizeInstance(instance))
       .catch(async (error) => {
-        this.setStatus(trimmed, 'error', error instanceof Error ? error.message : String(error), null, null, null, false, 0, true);
+        const raw = error instanceof Error ? error.message : String(error);
+        this.appendLogWithLevel(trimmed, 'ERROR', raw);
+        const detail = summarizeManagedSshBootstrapError(raw);
+        this.setStatus(trimmed, 'error', detail, null, null, null, false, 0, true);
         await this.disconnectInternal(trimmed, false);
-        throw error;
+        throw new Error(detail);
       })
       .finally(() => {
         this.connecting.delete(trimmed);

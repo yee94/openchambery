@@ -43,6 +43,8 @@ export type DesktopSshInstance = {
   remoteOpenchamber: {
     mode: DesktopSshRemoteMode;
     keepRunning: boolean;
+    /** Default true: managed remotes start with `--relay-host`. */
+    relayHost: boolean;
     preferredPort?: number;
     installMethod: DesktopSshInstallMethod;
     uploadBundleOverSsh: boolean;
@@ -87,6 +89,7 @@ export type DesktopSshInstanceStatus = {
   startedByUs: boolean;
   retryAttempt: number;
   requiresUserAction: boolean;
+  errorCode?: string;
   updatedAtMs: number;
 };
 
@@ -239,6 +242,7 @@ const parseInstance = (value: unknown): DesktopSshInstance | null => {
     remoteOpenchamber: {
       mode,
       keepRunning: readBoolean(remoteRaw, 'keepRunning') ?? readBoolean(remoteRaw, 'keep_running') ?? true,
+      relayHost: readBoolean(remoteRaw, 'relayHost') ?? readBoolean(remoteRaw, 'relay_host') ?? true,
       ...(preferredPort ? { preferredPort } : {}),
       installMethod,
       uploadBundleOverSsh:
@@ -301,6 +305,9 @@ const parseStatus = (value: unknown): DesktopSshInstanceStatus | null => {
     retryAttempt: readNumber(value, 'retryAttempt') ?? readNumber(value, 'retry_attempt') ?? 0,
     requiresUserAction:
       readBoolean(value, 'requiresUserAction') ?? readBoolean(value, 'requires_user_action') ?? false,
+    ...(readString(value, 'errorCode') || readString(value, 'error_code')
+      ? { errorCode: readString(value, 'errorCode') || readString(value, 'error_code') || undefined }
+      : {}),
     updatedAtMs: readNumber(value, 'updatedAtMs') ?? readNumber(value, 'updated_at_ms') ?? Date.now(),
   };
 };
@@ -327,6 +334,7 @@ export const createDesktopSshInstance = (id: string, sshCommand: string): Deskto
     remoteOpenchamber: {
       mode: 'managed',
       keepRunning: true,
+      relayHost: true,
       installMethod: 'bun',
       uploadBundleOverSsh: false,
     },
