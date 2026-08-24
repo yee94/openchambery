@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.13] - 2026-08-24
+
+### Git / Changes
+
+- **新增文件在 Changes / Diff 中显示内容：** 新增（A / 未跟踪）文件打开后不再空白（只剩 +0/-0 与 Stage / Discard 浮层）。此前预取写入的双空 `{original:'', modified:''}` 缓存被当成"已加载"的完整 diff，跳过按需拉取、渲染 0 行；现在双空非二进制的缓存视为未加载，会正常拉取并展示全部新增行，双空坏结果也不再进缓存（真 0 字节文件显示空 diff 且不重复拉取）。VS Code 运行时同步修复：新增 / 未跟踪文件的 `modified` 从工作区（暂存新增从 index）读取，不再因 `git show` 失败回落双空。
+
 ## [1.18.3-beta.12] - 2026-08-24
 
 ### 聊天

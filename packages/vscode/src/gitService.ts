@@ -2155,42 +2155,58 @@ export async function getGitFileDiff(
   staged = false
 ): Promise<{ original: string; modified: string; path: string }> {
   const repo = await getRepository(directory);
-  
+
+  // For staged files, get content from HEAD
+  // For unstaged files, get content from index (staged) or HEAD
+  // Untracked/new files have no HEAD/index blob — keep original as '' and still
+  // resolve modified from the working tree (or index for staged adds).
+  let original = '';
   if (repo) {
     try {
-      // For staged files, get content from HEAD
-      // For unstaged files, get content from index (staged) or HEAD
-      let original: string;
       if (staged) {
-        original = await repo.show('HEAD', filePath);
+        try {
+          original = await repo.show('HEAD', filePath);
+        } catch {
+          original = '';
+        }
       } else {
         try {
           // Try to get from index first
           original = await repo.show(':0:' + filePath, filePath);
         } catch {
-          // Fall back to HEAD
-          original = await repo.show('HEAD', filePath);
+          try {
+            // Fall back to HEAD
+            original = await repo.show('HEAD', filePath);
+          } catch {
+            original = '';
+          }
         }
       }
-      
-      let modified: string;
-      if (staged) {
-        const stagedResult = await execGit(['show', `:${filePath}`], directory);
-        modified = stagedResult.exitCode === 0 ? stagedResult.stdout : '';
-      } else {
-        const fileUri = vscode.Uri.file(path.join(directory, filePath));
-        const modifiedBytes = await vscode.workspace.fs.readFile(fileUri);
-        modified = Buffer.from(modifiedBytes).toString('utf8');
-      }
-      
-      return { original, modified, path: filePath };
     } catch (error) {
-      console.error('[GitService] Failed to get file diff:', error);
+      console.error('[GitService] Failed to get original file content for diff:', error);
+      original = '';
     }
   }
 
-  // Fallback: return empty content
-  return { original: '', modified: '', path: filePath };
+  let modified = '';
+  try {
+    if (staged) {
+      const stagedResult = await execGit(['show', `:${filePath}`], directory);
+      modified = stagedResult.exitCode === 0 ? stagedResult.stdout : '';
+    } else {
+      const fileUri = vscode.Uri.file(path.join(directory, filePath));
+      const modifiedBytes = await vscode.workspace.fs.readFile(fileUri);
+      modified = Buffer.from(modifiedBytes).toString('utf8');
+    }
+  } catch (error) {
+    // Deleted / missing working-tree file — modified stays empty.
+    // Tracked deletes keep original from HEAD/index; only log when both sides miss.
+    if (original === '') {
+      console.error('[GitService] Failed to get modified file content for diff:', error);
+    }
+  }
+
+  return { original, modified, path: filePath };
 }
 
 /**

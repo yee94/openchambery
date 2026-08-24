@@ -165,3 +165,17 @@ describe('DiffView per-file row action contract', () => {
     expect(diffViewSource).toContain('openContextFile(effectiveDirectory, absolutePath)');
   });
 });
+
+describe('DiffView empty full-context load contract', () => {
+  test('does not treat dual-empty non-binary cache as loaded full context', () => {
+    // Helper rejects empty before/after unless binary/patch/fileDiff is present.
+    expect(diffViewSource).toContain('const hasLoadedFullContextBody');
+    expect(diffViewSource).toContain('if (!hasLoadedFullContextBody(fromCache)) return null;');
+    // Turn L3 and thin turn maps use the same empty-body guard.
+    expect(diffViewSource).toContain('Only seed before/after when a real body is present');
+    // Successful full fetch always seeds localDiffData so a true empty file cannot
+    // re-enter on-demand fetch via a dual-empty cache entry alone.
+    expect(diffViewSource).toContain('setLocalDiffData(nextDiff);');
+    expect(diffViewSource).toContain('setDiff(directory, file.path, nextDiff);');
+  });
+});
