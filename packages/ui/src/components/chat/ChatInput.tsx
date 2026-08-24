@@ -1765,9 +1765,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const [showAbortStatus, setShowAbortStatus] = React.useState(false);
     const composerHighlightRef = React.useRef<HTMLDivElement | null>(null);
-    const [desktopComposerFocused, setDesktopComposerFocused] = React.useState(false);
-    const isAgentSelectorOpen = useUIStore((state) => state.isAgentSelectorOpen);
-    const isModelSelectorOpen = useUIStore((state) => state.isModelSelectorOpen);
     const [isNarrowComposer, setIsNarrowComposer] = React.useState(false);
     React.useEffect(() => {
         if (!currentDirectory || !runtimeGit) return;
@@ -6368,13 +6365,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     );
     const footerIconButtonClass = cn(iconButtonBaseClass, buttonSizeClass);
     const stopFooterIconButtonClass = footerIconButtonClass;
-    // Idle composer stays quieter; focus / open pickers / hover restore full weight.
-    const composerChromeEmphasized = isMobile
-        ? (mobileTextareaFocused || isAgentSelectorOpen || isModelSelectorOpen || Boolean(mobileControlsPanel))
-        : (desktopComposerFocused || isAgentSelectorOpen || isModelSelectorOpen);
-    const composerChromeOpacityClass = composerChromeEmphasized
-        ? 'opacity-100'
-        : 'opacity-45 hover:opacity-100 focus-within:opacity-100';
     React.useEffect(() => {
         return () => {
             if (abortTimeoutRef.current) {
@@ -7139,11 +7129,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     onDragEnd={handleDragEnd}
                     autoResize={false}
                     disableInputWhilePending={false}
-                    contentClassName={cn(
-                        'transition-opacity duration-200',
-                        composerChromeOpacityClass,
-                        isComposerExpanded && 'flex-1 min-h-0',
-                    )}
+                    contentClassName={isComposerExpanded ? 'flex-1 min-h-0' : undefined}
                     inputHeader={composerInputHeader}
                     attachmentContent={composerAttachmentContent}
                     highlightedContent={composerHighlightedContent}
@@ -7250,10 +7236,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             updateAutocompleteOverlayPosition();
                         },
                         onFocus: () => {
-                            if (!isMobile) {
-                                setDesktopComposerFocused(true);
-                                return;
-                            }
+                            if (!isMobile) return;
                             // Footer action just ran (attach / agent / model / …):
                             // drop accidental focus so we never open the IME as
                             // if the user tapped the field.
@@ -7274,21 +7257,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             nativeCompositionActiveRef.current = false;
                             cursorPosRef.current = event.currentTarget.selectionStart ?? cursorPosRef.current;
                             releaseStagedEditOnComposerBlur();
-                            if (!isMobile) {
-                                window.setTimeout(() => {
-                                    const active = document.activeElement;
-                                    if (!(active instanceof Element)) {
-                                        setDesktopComposerFocused(false);
-                                        return;
-                                    }
-                                    if (
-                                        active.closest('[data-composer-content="true"]')
-                                        || active.closest('[data-slot="dropdown-menu-content"]')
-                                    ) return;
-                                    setDesktopComposerFocused(false);
-                                }, 0);
-                                return;
-                            }
+                            if (!isMobile) return;
                             if (Date.now() < holdComposerFocusUntilRef.current) {
                                 const textarea = textareaRef.current;
                                 if (textarea) {

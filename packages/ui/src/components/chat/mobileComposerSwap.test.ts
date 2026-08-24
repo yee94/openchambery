@@ -12,6 +12,7 @@ import {
     applyComposerSwapSnapDone,
     createComposerSwapState,
     distanceFromBottomOf,
+    clearComposerSwap,
     publishComposerSwap,
     resolveComposerSwapCommit,
     shouldComposerSwapAutoCommit,
@@ -170,6 +171,21 @@ describe('mobileComposerSwap', () => {
         publishComposerSwap(orderedScope, applyComposerSwapCommit(tracking), published);
         expect(order[0]).toBe('ocComposerSwapPhase:snapping');
         expect(order.indexOf('flush')).toBeLessThan(order.indexOf('progress:1'));
+    });
+
+    test('clearComposerSwap drops leftover inline swap so a reused draft root cannot stay compact', () => {
+        const scope = document.createElement('div');
+        const compact = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+        publishComposerSwap(scope, compact);
+        expect(scope.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR)).toBe('1');
+        expect(scope.dataset.ocComposerSwapRest).toBe('compact');
+
+        clearComposerSwap(scope);
+        expect(scope.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR)).toBe('');
+        expect(scope.dataset.ocComposerSwapPhase).toBeUndefined();
+        expect(scope.dataset.ocComposerSwapRest).toBeUndefined();
     });
 
     test('force expand works from compact', () => {

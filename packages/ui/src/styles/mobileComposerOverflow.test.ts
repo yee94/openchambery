@@ -125,4 +125,52 @@ describe('mobile composer overflow and swap contract', () => {
     test('settings inputBarOffset applies only in the native app while the keyboard is down', () => {
         expect(chatInputSource).toContain('isMobile && isCapacitorApp() && inputBarOffset > 0 && !mobileTextareaFocused');
     });
+
+    test('in-flow draft feet pin expanded and hide leftover compact pills', () => {
+        expect(mobileCss).toMatch(
+            /\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s*\{[^}]*--oc-mobile-composer-swap:\s*0/,
+        );
+        expect(mobileCss).toMatch(
+            /\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s+\.oc-mobile-composer-compact-layer\s*\{[^}]*display:\s*none/,
+        );
+        expect(swapHookSource).toContain('clearComposerSwap');
+        expect(chatContainerSource.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(2);
+        expect(chatContainerSource).toContain('oc-draft-center');
+    });
+
+    test('leftover session swap cannot cover the in-flow draft composer', () => {
+        const host = mountStyledFixture(`
+          <style>
+            .oc-mobile-composer-expanded-layer {
+              opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+            }
+            .oc-mobile-composer-compact-layer {
+              opacity: max(0, calc(var(--oc-mobile-composer-swap) * 2 - 1));
+              pointer-events: none;
+            }
+            .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {
+              --oc-mobile-composer-swap: 0;
+            }
+            .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)
+              .oc-mobile-composer-compact-layer {
+              display: none;
+            }
+          </style>
+          <div style="--oc-mobile-composer-swap: 1">
+            <div class="oc-mobile-composer-foot">
+              <div class="oc-mobile-composer-expanded-layer" data-testid="draft-expanded"></div>
+              <div class="oc-mobile-composer-compact-layer" data-testid="draft-compact"></div>
+            </div>
+            <div class="oc-mobile-composer-foot oc-mobile-composer-foot--overlay">
+              <div class="oc-mobile-composer-compact-layer" data-testid="overlay-compact"></div>
+            </div>
+          </div>
+        `);
+        const draftFoot = host.querySelector<HTMLElement>('.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)')!;
+        const draftCompact = host.querySelector('[data-testid="draft-compact"]')!;
+        const overlayCompact = host.querySelector('[data-testid="overlay-compact"]')!;
+        expect(getComputedStyle(draftFoot).getPropertyValue('--oc-mobile-composer-swap').trim()).toBe('0');
+        expect(getComputedStyle(draftCompact).display).toBe('none');
+        expect(getComputedStyle(overlayCompact).display).not.toBe('none');
+    });
 });

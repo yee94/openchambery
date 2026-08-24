@@ -237,6 +237,12 @@ export const applyComposerSwapSnapDone = (state: ComposerSwapState): ComposerSwa
     });
 };
 
+export const clearComposerSwap = (scope: HTMLElement): void => {
+    scope.style.removeProperty(COMPOSER_SWAP_CSS_VAR);
+    delete scope.dataset.ocComposerSwapPhase;
+    delete scope.dataset.ocComposerSwapRest;
+};
+
 export const publishComposerSwap = (
     scope: HTMLElement,
     state: ComposerSwapState,

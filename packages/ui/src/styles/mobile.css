@@ -3141,6 +3141,20 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: auto;
 }
 
+/* In-flow feet (draft / empty / history-error) never swap. Opening a new
+   chat from a session reuses ChatContainer's root node, so the session's
+   inline --oc-mobile-composer-swap: 1 can leak onto the draft page. The
+   compact pill then paints "Tap to type" with pointer-events: none and
+   hides the real textarea. Pin expanded and drop the pill. */
+.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {
+  --oc-mobile-composer-swap: 0;
+}
+
+.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)
+  .oc-mobile-composer-compact-layer {
+  display: none;
+}
+
 /* Expanded keeps the solid page foot fill. Compact fades the host so the
    rising glass pill can sit over the transcript without a solid bar behind it. */
 .oc-mobile-composer {

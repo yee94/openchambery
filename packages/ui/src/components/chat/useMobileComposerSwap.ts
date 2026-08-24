@@ -11,6 +11,7 @@ import {
     applyComposerSwapPin,
     applyComposerSwapScroll,
     applyComposerSwapSnapDone,
+    clearComposerSwap,
     createComposerSwapState,
     distanceFromBottomOf,
     publishComposerSwap,
@@ -199,9 +200,21 @@ export const useMobileComposerSwap = (args: {
 
     const [scrollEl, setScrollEl] = React.useState<HTMLElement | null>(null);
     const [scopeEl, setScopeEl] = React.useState<HTMLElement | null>(null);
+    const lastScopeRef = React.useRef<HTMLElement | null>(null);
+    const releaseScope = useEvent((scope: HTMLElement | null) => {
+        if (scope) clearComposerSwap(scope);
+        publishedRef.current = undefined;
+        compactSettleArmedRef.current = false;
+        compactSettleUntilRef.current = 0;
+        replaceState(createComposerSwapState());
+    });
     React.useLayoutEffect(() => {
         const nextScroll = args.enabled ? args.scrollRef.current : null;
         const nextScope = args.enabled ? args.scopeRef.current : null;
+        if (lastScopeRef.current && lastScopeRef.current !== nextScope) {
+            releaseScope(lastScopeRef.current);
+        }
+        lastScopeRef.current = nextScope;
         setScrollEl((prev) => (prev === nextScroll ? prev : nextScroll));
         setScopeEl((prev) => (prev === nextScope ? prev : nextScope));
     });
@@ -225,10 +238,8 @@ export const useMobileComposerSwap = (args: {
 
     React.useEffect(() => {
         if (!args.enabled) {
-            replaceState(createComposerSwapState());
-            publishedRef.current = undefined;
-            compactSettleArmedRef.current = false;
-            compactSettleUntilRef.current = 0;
+            releaseScope(lastScopeRef.current);
+            lastScopeRef.current = null;
             return;
         }
         syncPin();
