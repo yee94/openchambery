@@ -470,18 +470,20 @@ const ChatViewport = React.memo(({
                         )}
                         {showDesktopLoadOlderStatus && (
                             <div
-                                className="flex items-center justify-center gap-1.5 pt-3 pb-1"
+                                className="absolute inset-x-0 top-0 z-20 flex justify-center pointer-events-none"
                                 role="status"
                                 aria-live="polite"
                             >
-                                <Icon
-                                    name="loader-4"
-                                    className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]"
-                                    aria-hidden="true"
-                                />
-                                <span className="typography-meta text-[var(--surface-mutedForeground)]">
-                                    {t('chat.history.loadingMore')}
-                                </span>
+                                <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
+                                    <Icon
+                                        name="loader-4"
+                                        className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]"
+                                        aria-hidden="true"
+                                    />
+                                    <span className="typography-meta text-[var(--surface-mutedForeground)]">
+                                        {t('chat.history.loadingMore')}
+                                    </span>
+                                </div>
                             </div>
                         )}
                         <MessageList

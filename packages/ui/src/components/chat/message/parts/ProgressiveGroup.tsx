@@ -1190,7 +1190,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
 
     // Header-only turns (e.g. completed compaction with foldable body text outside
     // activity rows) must still paint the disclosure chrome when showHeader is set.
-    if (!showHeader && rows.length === 0) {
+    // Live non-compaction with zero rows stays hidden — the Working header alone
+    // above WorkingPlaceholder is empty chrome; show it once the first row exists.
+    if ((!showHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0) {
         return null;
     }
 

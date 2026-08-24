@@ -254,8 +254,13 @@ describe('progressive activity presentation', () => {
         // return) so mid-reconcile cannot unmount the live disclosure.
         expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
         expect(progressiveGroupSource).toContain('// Header-only turns (e.g. completed compaction with foldable body text outside');
-        expect(progressiveGroupSource).toContain('if (!showHeader && rows.length === 0)');
+        expect(progressiveGroupSource).toContain('if ((!showHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0)');
         expect(progressiveGroupSource).not.toContain('statusOnly');
+    });
+
+    test('hides live empty non-compaction activity headers until the first row exists', () => {
+        expect(progressiveGroupSource).toContain('Live non-compaction with zero rows stays hidden');
+        expect(progressiveGroupSource).toContain('if ((!showHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0)');
     });
 
     test('shows expanded compaction summary body while still streaming (before stop)', () => {

@@ -21,6 +21,10 @@ import {
     getTranscriptRepository,
     transcriptScope,
 } from '@/sync/transcript-repository-runtime';
+import {
+    createHistoryViewportAnchorKeeper,
+    type HistoryViewportAnchorKeeper,
+} from './historyViewportAnchorKeeper';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -692,11 +696,23 @@ export const useChatTimelineController = ({
         }
     });
 
+    // Armed-window DOM keeper for non-virtual desktop: corrects materialization /
+    // hydration mutations that do not change renderedMessages (layout effect miss).
+    const historyAnchorKeeperRef = React.useRef<HistoryViewportAnchorKeeper | null>(null);
+
+    const stopKeeper = useEvent(() => {
+        const keeper = historyAnchorKeeperRef.current;
+        if (!keeper) return;
+        historyAnchorKeeperRef.current = null;
+        keeper.dispose();
+    });
+
     useUnmount(() => {
         if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(historyInteractionTimerRef.current);
             historyInteractionTimerRef.current = null;
         }
+        stopKeeper();
         resolvePendingRenderWaiters();
         resolvePendingScrollRequest(false);
     });
@@ -743,6 +759,9 @@ export const useChatTimelineController = ({
     // fetchOlderHistory stores a snapshot here before triggering the fetch and
     // keeps it armed for the whole load. Layout effect re-asserts it after
     // every commit React makes in between — before the browser paints.
+    // Desktop loading status is an overlay (no layout push). Within the armed
+    // window a MutationObserver keeper also corrects in-component mutations
+    // (slim→full / markdown hydrate) that leave renderedMessages unchanged.
     // (DOM geometry sync is intentionally layout-phase, not Query/useEffect.)
     const prePrependScrollRef = React.useRef<PrePrependSnapshot | null>(null);
 
@@ -752,6 +771,20 @@ export const useChatTimelineController = ({
 
     const restoreViewportAnchor = useEvent((anchor: ViewportAnchor): boolean => {
         return messageListRef.current?.restoreViewportAnchor(anchor) ?? false;
+    });
+
+    const startKeeper = useEvent(() => {
+        if (isMobileSurfaceRuntime()) return;
+        if (messageListRef.current?.isHistoryVirtualized()) return;
+        stopKeeper();
+        const container = scrollRef.current;
+        if (!container) return;
+        const anchor = captureViewportAnchor();
+        if (!anchor) return;
+        historyAnchorKeeperRef.current = createHistoryViewportAnchorKeeper({
+            container,
+            anchor,
+        });
     });
 
     // Tracks the timeline edges + height of the previous commit so a prepend
@@ -767,6 +800,7 @@ export const useChatTimelineController = ({
     } | null>(null);
 
     useIsomorphicLayoutEffect(() => {
+        stopKeeper();
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
         messageListRef.current?.cancelViewportAnchorHold();
@@ -839,6 +873,7 @@ export const useChatTimelineController = ({
             // best, and the source of the old up/down jiggle on send / from the
             // queue / while streaming. So for an append we do nothing and let
             // auto-follow own it.
+            stopKeeper();
             if (didPrepend) {
                 prePrependScrollRef.current = null;
                 goToBottom('instant');
@@ -915,6 +950,7 @@ export const useChatTimelineController = ({
                 }
             }
             updateTracking(measuredHeight);
+            startKeeper();
             return;
         }
 
@@ -1028,6 +1064,7 @@ export const useChatTimelineController = ({
                 prePrependScrollRef.current = null;
                 messageListRef.current?.cancelViewportAnchorHold();
             }
+            stopKeeper();
             if (historyViewportPreservationActive) {
                 historyViewportPreservationActive = false;
                 endHistoryViewportPreservation();
@@ -1074,6 +1111,7 @@ export const useChatTimelineController = ({
                     newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
                 };
                 prePrependScrollRef.current = armedSnapshot;
+                startKeeper();
             }
 
             let loadedMessageCount = beforeMessageCount;
@@ -1183,10 +1221,10 @@ export const useChatTimelineController = ({
             isLoadingOlderRef.current = false;
             setIsLoadingOlder(false);
             settleHistoryInteraction();
-            // Removing the loading row is itself a geometry change above the
-            // viewport, so the anchor stays armed until that commit has been
-            // compensated. Releasing it afterwards keeps ordinary commits
-            // (streaming, live events) free of a stale read position.
+            // Desktop loading status is overlay (no layout push). Keep the
+            // snapshot + DOM keeper armed until the next commit settles so
+            // materialization/hydration mutations still correct before paint;
+            // then release so ordinary commits stay free of a stale read position.
             void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
         }
     });

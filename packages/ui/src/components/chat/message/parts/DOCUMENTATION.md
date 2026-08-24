@@ -30,6 +30,9 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - While `completionDisposition === 'active'`, the Activity disclosure is locked open:
     no collapse chevron/toggle, and the indent rail (`ml-2 pl-3` + connector line) is
     omitted so in-flight rows do not jump horizontally when the turn settles.
+  - Live non-compaction with zero activity rows renders nothing (header stays hidden
+    until the first tool/reasoning/justification row exists). Compaction still keeps
+    its header-only chrome so the foldable summary body has an anchor.
   - Collapsed Activity hides Explored / Thought rows with the rest of the timeline.
   - Nested row React keys and expand-state ids are the projected activity id
     (`resolveActivityPartId`, i.e. `part.id` for anything the server sent).
