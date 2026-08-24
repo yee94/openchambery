@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.7] - 2026-08-24
+
+### 移动端
+
+- **Tailwind `text-sm` / `text-base` 等字号走 `--dpt`：** 在 `@theme inline` 里把 `text-xs`…`text-9xl` 写成 `calc(N * var(--dpt))`，和 spacing 的 `--padding-scale` 同一套。任意值 `text-[13px]` 仍由 PostCSS 改写 `font-size`。
+
 ## [1.18.3-beta.6] - 2026-08-24
 
 ### 移动端

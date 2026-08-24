@@ -149,6 +149,11 @@ Android at `0.9` as a visibility experiment. iOS stays `1`.
 It does not touch `1px` hairlines, media queries, safe-area, or keyboard
 insets. Layout spacing stays CSS px/rem.
 
+Tailwind `text-xs` … `text-9xl` are owned in `@theme inline`
+(`design-system.css`) as `calc(N * var(--dpt))`, same pattern as the
+spacing scale and `--padding-scale`. Arbitrary `text-[13px]` still
+depends on the PostCSS `font-size` rewrite.
+
 The composer highlight overlay (`[data-composer-highlight="true"]`) must
 use the same `calc(16 * var(--dpt))` as the textarea. Attachment chips
 turn the overlay on (textarea becomes `text-transparent`); a 16px overlay

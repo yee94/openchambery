@@ -258,6 +258,23 @@
   --radius-xl: 0.75rem;
   --radius-full: 9999px;
 
+  /* Tailwind text-* utilities (text-sm / text-base / …) ride --dpt the same
+     way spacing rides --padding-scale. Arbitrary text-[Npx] still goes through
+     the PostCSS rewrite of compiled font-size literals. */
+  --text-xs: calc(12 * var(--dpt));
+  --text-sm: calc(14 * var(--dpt));
+  --text-base: calc(16 * var(--dpt));
+  --text-lg: calc(18 * var(--dpt));
+  --text-xl: calc(20 * var(--dpt));
+  --text-2xl: calc(24 * var(--dpt));
+  --text-3xl: calc(30 * var(--dpt));
+  --text-4xl: calc(36 * var(--dpt));
+  --text-5xl: calc(48 * var(--dpt));
+  --text-6xl: calc(60 * var(--dpt));
+  --text-7xl: calc(72 * var(--dpt));
+  --text-8xl: calc(96 * var(--dpt));
+  --text-9xl: calc(128 * var(--dpt));
+
   /* Override Tailwind spacing scale with custom properties that respect --padding-scale */
   --spacing-0: 0;
   --spacing-0\.5: calc(0.125rem * var(--padding-scale, 1));
