@@ -10,7 +10,7 @@ import { MessageFilesDisplay } from '../FileAttachment';
 import { TurnChangedFilesDropdown } from '../TurnChangedFilesDropdown';
 import type { ToolPart as ToolPartType } from '@/lib/opencode/v2-types';
 import type { StreamPhase, ToolPopupContent, AgentMentionInfo } from './types';
-import type { TurnGroupingContext } from '../lib/turns/types';
+import type { TurnChangedFile, TurnGroupingContext } from '../lib/turns/types';
 import { cn } from '@/lib/utils';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { isEmptyTextPart, extractTextContent } from './partUtils';
@@ -65,6 +65,8 @@ import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { parseSubagentNotification, type SubagentNotification } from './parts/taskToolModel';
+import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
+import { openTurnChangedFilePreview } from '../openTurnChangedFile';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const };
@@ -91,6 +93,12 @@ const MESSAGE_FOOTER_META_ICON_CLASS = 'size-3.5!';
 /** Message-action icons: medium stroke — PC + mobile 同一套. */
 const MESSAGE_ACTION_ICON_WEIGHT = 'medium' as const;
 
+const getDisplayFileName = (file: string): string => {
+    const normalized = file.replace(/\\/g, '/');
+    const segments = normalized.split('/').filter(Boolean);
+    return segments.at(-1) ?? file;
+};
+
 // Desktop rows stay h-7 / meta; mobile matches ProgressiveGroup + message-footer density.
 const TURN_CHANGES_ROW_CLASS =
     'w-full min-w-0 justify-start rounded-[var(--radius-md)] bg-transparent px-1 hover:!bg-interactive-hover focus-visible:!bg-interactive-hover active:!bg-interactive-active supports-[corner-shape:squircle]:rounded-[var(--radius-md)]';
@@ -100,14 +108,89 @@ const TURN_CHANGES_ROW_MOBILE_CLASS = 'h-6 gap-1';
 const TURN_CHANGES_CHROME_TEXT_MOBILE_CLASS = 'text-[11px] leading-none';
 const TURN_CHANGES_ICON_DESKTOP_CLASS = 'size-3.5';
 const TURN_CHANGES_ICON_MOBILE_CLASS = 'size-3';
+/** Inline transcript preview shows a short head; overflow opens the full turn DiffView. */
+const TURN_CHANGES_PREVIEW_VISIBLE_LIMIT = 5;
+
+const TurnChangedFileRowContent = React.memo(({
+    file,
+    isMobile,
+}: {
+    file: TurnChangedFile;
+    isMobile: boolean;
+}) => (
+    <span
+        className={cn(
+            'flex min-w-0 flex-1 items-center leading-none text-muted-foreground',
+            isMobile ? 'gap-1 text-[11px]' : 'gap-1.5 text-xs',
+        )}
+    >
+        <FileTypeIcon
+            filePath={file.file}
+            className={cn('flex-shrink-0', isMobile ? 'h-3 w-3' : 'h-3.5 w-3.5')}
+        />
+        <span className="min-w-0 flex-1 truncate text-left text-foreground/80" title={file.file}>
+            {getDisplayFileName(file.file)}
+        </span>
+        <span
+            className={cn(
+                'inline-flex flex-shrink-0 items-center gap-0 leading-none tabular-nums',
+                isMobile ? 'text-[11px]' : 'typography-meta',
+            )}
+        >
+            <span style={{ color: 'var(--status-success)' }}>+{file.additions}</span>
+            <span className="text-muted-foreground/70">/</span>
+            <span style={{ color: 'var(--status-error)' }}>-{file.deletions}</span>
+        </span>
+    </span>
+));
+
+const TurnChangedFilePreviewButton = React.memo(({
+    file,
+    canOpen,
+    isMobile,
+    onOpen,
+}: {
+    file: TurnChangedFile;
+    canOpen: boolean;
+    isMobile: boolean;
+    onOpen: (file: string) => void;
+}) => {
+    const { t } = useI18n();
+    const handleOpen = useEvent(() => {
+        onOpen(file.file);
+    });
+
+    return (
+        <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={!canOpen}
+            data-turn-change-file="true"
+            className={cn(
+                TURN_CHANGES_ROW_CLASS,
+                isMobile ? TURN_CHANGES_ROW_MOBILE_CLASS : TURN_CHANGES_ROW_DESKTOP_CLASS,
+            )}
+            aria-label={t('chat.changedFiles.actions.openFileTitle', { path: file.file })}
+            title={file.file}
+            onClick={handleOpen}
+        >
+            <TurnChangedFileRowContent file={file} isMobile={isMobile} />
+        </Button>
+    );
+});
 
 const TurnChangesPreview = React.memo(({
     fileCount,
+    changedFiles,
     turnId,
+    isLatestTurn,
     isMobile,
 }: {
     fileCount: number;
+    changedFiles?: TurnChangedFile[];
     turnId: string;
+    isLatestTurn: boolean;
     isMobile: boolean;
 }) => {
     const { t } = useI18n();
@@ -118,10 +201,18 @@ const TurnChangesPreview = React.memo(({
     const diffSessionId = sessionSurface.sessionId;
     const mobileActions = useMobileAppActions();
     const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
-    const canOpen = Boolean(mobileActions || (!isMobile && diffDirectory));
-    const fileCountLabel = fileCount === 1
-        ? t('chat.pendingChanges.fileCountSingle', { count: fileCount })
-        : t('chat.pendingChanges.fileCountPlural', { count: fileCount });
+    // L1 carries the thin file list on the message wire; render it synchronously.
+    const files = React.useMemo<TurnChangedFile[]>(() => changedFiles ?? [], [changedFiles]);
+    const visibleFiles = files.slice(0, TURN_CHANGES_PREVIEW_VISIBLE_LIMIT);
+    const hiddenCount = Math.max(0, files.length - visibleFiles.length);
+    const displayFileCount = files.length > 0 ? files.length : fileCount;
+    const canOpen = Boolean(mobileActions || (!isMobile && diffDirectory) || (isMobile && isLatestTurn));
+    const fileCountLabel = displayFileCount === 1
+        ? t('chat.pendingChanges.fileCountSingle', { count: displayFileCount })
+        : t('chat.pendingChanges.fileCountPlural', { count: displayFileCount });
+    const hiddenCountLabel = hiddenCount === 1
+        ? t('chat.pendingChanges.fileCountSingle', { count: hiddenCount })
+        : t('chat.pendingChanges.fileCountPlural', { count: hiddenCount });
     const rowClass = cn(
         TURN_CHANGES_ROW_CLASS,
         isMobile ? TURN_CHANGES_ROW_MOBILE_CLASS : TURN_CHANGES_ROW_DESKTOP_CLASS,
@@ -134,7 +225,39 @@ const TurnChangesPreview = React.memo(({
     const metaClass = isMobile
         ? cn(TURN_CHANGES_CHROME_TEXT_MOBILE_CLASS, 'text-muted-foreground')
         : 'typography-meta text-muted-foreground';
-    const openTurnDiff = useEvent(() => {
+    const footerClass = isMobile
+        ? cn(TURN_CHANGES_CHROME_TEXT_MOBILE_CLASS, 'font-medium')
+        : 'typography-meta font-medium';
+
+    const openTurnFile = useEvent((file: string) => {
+        if (mobileActions) {
+            // Pass the clicked file so the sheet expands/scrolls to it (desktop parity).
+            mobileActions.openTurnDiff(turnId, diffSessionId, file);
+            return;
+        }
+
+        if (!isMobile && diffDirectory) {
+            openTurnChangedFilePreview({
+                directory: diffDirectory,
+                filePath: file,
+                turnMessageId: turnId,
+                sessionId: diffSessionId,
+            });
+            return;
+        }
+
+        if (isMobile && isLatestTurn && diffDirectory) {
+            openTurnChangedFilePreview({
+                directory: diffDirectory,
+                filePath: file,
+                turnMessageId: turnId,
+                sessionId: diffSessionId,
+                mobile: true,
+            });
+        }
+    });
+
+    const openCompleteTurnDiff = useEvent(() => {
         if (mobileActions) {
             mobileActions.openTurnDiff(turnId, diffSessionId);
             return;
@@ -148,6 +271,18 @@ const TurnChangesPreview = React.memo(({
                 diffScope: 'turn',
                 diffTurnMessageId: turnId,
                 diffSessionId,
+            });
+            return;
+        }
+
+        const firstFile = visibleFiles[0]?.file;
+        if (firstFile && isMobile && isLatestTurn && diffDirectory) {
+            openTurnChangedFilePreview({
+                directory: diffDirectory,
+                filePath: firstFile,
+                turnMessageId: turnId,
+                sessionId: diffSessionId,
+                mobile: true,
             });
         }
     });
@@ -171,7 +306,7 @@ const TurnChangesPreview = React.memo(({
                 variant="ghost"
                 size="xs"
                 disabled={!canOpen}
-                onClick={openTurnDiff}
+                onClick={openCompleteTurnDiff}
                 className={cn(rowClass, 'max-w-full text-muted-foreground hover:text-foreground')}
                 aria-label={t('diffView.actions.reviewAria')}
                 title={t('diffView.actions.reviewAria')}
@@ -183,6 +318,35 @@ const TurnChangesPreview = React.memo(({
                 <span className={metaClass}>{fileCountLabel}</span>
                 <Icon name="arrow-right-s" className={cn(iconClass, 'opacity-60')} />
             </Button>
+            {visibleFiles.length > 0 ? (
+                <div className={cn('flex min-w-0 flex-col', isMobile ? 'gap-0' : 'gap-0.5')}>
+                    {visibleFiles.map((file) => (
+                        <TurnChangedFilePreviewButton
+                            key={file.file}
+                            file={file}
+                            canOpen={canOpen}
+                            isMobile={isMobile}
+                            onOpen={openTurnFile}
+                        />
+                    ))}
+                    {hiddenCount > 0 ? (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            disabled={!canOpen}
+                            className={cn(rowClass, 'text-muted-foreground hover:text-foreground')}
+                            onClick={openCompleteTurnDiff}
+                            aria-label={t('diffView.actions.reviewAria')}
+                            title={t('diffView.actions.reviewAria')}
+                        >
+                            <span aria-hidden="true" className={cn(iconClass, 'flex-shrink-0')} />
+                            <span className={footerClass}>+{hiddenCountLabel}</span>
+                            <Icon name="arrow-right-s" className={iconClass} />
+                        </Button>
+                    ) : null}
+                </div>
+            ) : null}
         </section>
     );
 });
@@ -2306,7 +2470,9 @@ const AssistantMessageBody = React.memo(({
                 {shouldShowChangesPreview && turnGroupingContext?.diffStats ? (
                     <TurnChangesPreview
                         fileCount={turnGroupingContext.diffStats.files}
+                        changedFiles={turnGroupingContext.changedFiles}
                         turnId={turnGroupingContext.turnId}
+                        isLatestTurn={turnGroupingContext.isLatestTurn}
                         isMobile={isMobile}
                     />
                 ) : null}

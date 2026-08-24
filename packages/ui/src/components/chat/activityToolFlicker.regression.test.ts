@@ -220,6 +220,7 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
         isLastTurn: true,
         turnCompletionDisposition: turnDisposition,
         headerPresentationDisposition: header.completionDisposition,
+            hasAssistantMessages: true,
       });
       // Expansion path always keeps active for the last open turn.
       expect(expansionDisposition).toBe('active');
@@ -317,6 +318,7 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
       isLastTurn: true,
       turnCompletionDisposition: 'normal',
       headerPresentationDisposition: header.completionDisposition,
+            hasAssistantMessages: true,
     });
     expect(expansionDisposition).toBe('normal');
     // Settled turns follow the render mode. The newest turn keeps its stability
@@ -352,6 +354,7 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
         isLastTurn: true,
         turnCompletionDisposition: turn.completionDisposition,
         headerPresentationDisposition: header.completionDisposition,
+            hasAssistantMessages: true,
       });
       return {
         completionDisposition: turn.completionDisposition,
@@ -467,6 +470,7 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
         isLastTurn: true,
         turnCompletionDisposition: turn.completionDisposition,
         headerPresentationDisposition: header.completionDisposition,
+            hasAssistantMessages: true,
       });
       return {
         completionDisposition: turn.completionDisposition,

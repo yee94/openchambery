@@ -1509,7 +1509,7 @@ export const createInputStore = (services: InputDraftServices = {}) => {
         return
       }
       if (!isDurableURL(url)) return
-      // Use "local" source so the file renders in AttachedFilesList.
+      // Use "local" source so images preview in AttachedFilesList; non-images use inline citation chips.
       // serverPath mirrors legacy restore so ImagePreview can use the URL.
       get().addDraftDurableAttachment(draftKey, {
         filename,
@@ -1522,7 +1522,7 @@ export const createInputStore = (services: InputDraftServices = {}) => {
       return
     }
     const id = `restored-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    // Use "local" source so the file renders in AttachedFilesList.
+    // Use "local" source so images preview in AttachedFilesList; non-images use inline citation chips.
     // Set serverPath to the URL so ImagePreview can use it as the img src
     // when dataUrl is not a data: URL. sanitizeAttachmentsForSend leaves
     // dataUrl alone for non-server sources, so the URL stays intact on send.

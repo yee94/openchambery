@@ -57,7 +57,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const isFavoriteModel = useUIStore((state) => state.isFavoriteModel);
     const addRecentModel = useUIStore((state) => state.addRecentModel);
     const providerOrder = useUIStore((state) => state.providerOrder);
-    const { favoriteModelsList, recentModelsList } = useModelLists();
+    const { favoriteModelsList, recentModelsList } = useModelLists({
+        currentProviderID: providerId,
+        currentModelID: modelId,
+    });
     const { isMobile: deviceIsMobile } = useDeviceInfo();
     const isActuallyMobile = isMobile || deviceIsMobile;
 

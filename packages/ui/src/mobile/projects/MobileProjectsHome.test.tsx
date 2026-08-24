@@ -38,6 +38,13 @@ const projects: MobileProjectHomeItem[] = [{
 
 const props: MobileProjectsHomeProps = {
   projects,
+  pinnedSessions: [{
+    id: 'global-pinned-session',
+    kind: 'pagination',
+    title: 'Global pinned session',
+    subtitle: 'OpenChamber',
+    pinned: true,
+  }],
   onAddProject: noop,
   onNewSession: noop,
   onToggleProject: noop,
@@ -53,6 +60,21 @@ const props: MobileProjectsHomeProps = {
 };
 
 describe('MobileProjectsHome workspace groups', () => {
+  test('renders one global pinned project card before projects', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileProjectsHome {...props} />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Global pinned session');
+    expect(html).toContain('OpenChamber');
+    expect(html).toContain('oc-mobile-project-shell');
+    expect(html.indexOf('Global pinned session')).toBeLessThan(html.indexOf('Main session'));
+    expect(html.match(/aria-label="Pinned"/g)).toHaveLength(1);
+    expect(html).toContain('oc-mobile-project-card');
+  });
+
   test('renders main sessions directly and keeps linked worktree headers', () => {
     const html = renderToString(
       <I18nProvider>
@@ -64,6 +86,9 @@ describe('MobileProjectsHome workspace groups', () => {
     expect(html).not.toContain('Main workspace');
     expect(html).toContain('Feature branch');
     expect(html).toContain('Feature session');
+    // Worktree name is secondary to the project title — not the same
+    // semibold ui-label treatment, or it visually outranks the project.
+    expect(html).toMatch(/oc-mobile-entity-title[^"]*font-semibold[^"]*text-foreground[^>]*>Feature branch/);
   });
 
   test('wires worktree action affordances on linked worktree headers', () => {

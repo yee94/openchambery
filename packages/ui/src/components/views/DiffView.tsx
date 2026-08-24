@@ -49,7 +49,6 @@ import {
 } from './diffPatchUtils';
 import {
     useSessionTurnChangeFileQuery,
-    useSessionTurnChangesQuery,
 } from '@/queries/sessionTurnChangesQueries';
 import type { FileDiffMetadata } from '@pierre/diffs';
 
@@ -689,7 +688,9 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
         : turnChangeFileQuery.error
             ? String(turnChangeFileQuery.error)
             : null;
-    const visibleDiffLoadError = turnChangeError ?? diffLoadError;
+    const visibleDiffLoadError = diffData
+        ? null
+        : (turnChangeError ?? diffLoadError);
     const visibleIsLoading = (loadTurnChangeFile && turnChangeFileQuery.isPending) || isLoading;
 
     const diffDataMatchesContextMode = diffData?.contextMode === desiredContextMode;
@@ -1165,7 +1166,9 @@ export const DiffView: React.FC<DiffViewProps> = ({
         let startIndex = sessionMessages.length - 1;
         if (turnMessageId) {
             startIndex = sessionMessages.findIndex((message) => message.id === turnMessageId);
-            if (startIndex < 0) return { messageID: null, count: 0, hasDiffs: false };
+            if (startIndex < 0) {
+                return { messageID: null, count: 0, hasDiffs: false, thinDiffs: [] as TurnSnapshotDiff[] };
+            }
         }
         for (let index = startIndex; index >= 0; index -= 1) {
             const message = sessionMessages[index] as {
@@ -1174,17 +1177,18 @@ export const DiffView: React.FC<DiffViewProps> = ({
                 summary?: { diffs?: unknown; diffCount?: unknown; hasDiffs?: unknown };
             };
             if (message.role !== 'user') continue;
-            const legacyDiffs = listTurnDiffs(message.summary?.diffs);
+            const thinDiffs = listTurnDiffs(message.summary?.diffs);
             const markerCount = typeof message.summary?.diffCount === 'number' && Number.isFinite(message.summary.diffCount)
                 ? Math.max(0, Math.trunc(message.summary.diffCount))
-                : legacyDiffs.length;
+                : thinDiffs.length;
             return {
                 messageID: typeof message.id === 'string' && message.id ? message.id : null,
                 count: markerCount,
-                hasDiffs: message.summary?.hasDiffs === true || markerCount > 0 || legacyDiffs.length > 0,
+                hasDiffs: message.summary?.hasDiffs === true || markerCount > 0 || thinDiffs.length > 0,
+                thinDiffs,
             };
         }
-        return { messageID: null, count: 0, hasDiffs: false };
+        return { messageID: null, count: 0, hasDiffs: false, thinDiffs: [] as TurnSnapshotDiff[] };
     }, [sessionMessages, turnMessageId]);
 
     const selectedToolTurnDiffs = React.useMemo(
@@ -1202,23 +1206,14 @@ export const DiffView: React.FC<DiffViewProps> = ({
             diffCount: turnChangesMarker.count,
         };
     }, [effectiveDirectory, resolvedSessionId, turnChangesMarker.count, turnChangesMarker.messageID]);
-    const shouldLoadTurnChanges = activeDiffScope === 'turn'
-        && !usesToolPatches
-        && turnChangesMarker.hasDiffs
-        && Boolean(turnChangesRequest);
-    const turnChangesQuery = useSessionTurnChangesQuery({
-        sessionID: turnChangesRequest?.sessionID ?? '',
-        directory: turnChangesRequest?.directory ?? '',
-        messageID: turnChangesRequest?.messageID ?? '',
-        diffCount: turnChangesRequest?.diffCount,
-    }, {
-        enabled: shouldLoadTurnChanges,
-    });
 
+    // L1 carries the thin file list on the turn user message; render it
+    // synchronously. There is no async list load for turn scope — only the
+    // per-file L3 patch query below fetches on demand.
     const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(() => {
         if (usesToolPatches) return selectedToolTurnDiffs;
-        return turnChangesQuery.data?.files ?? [];
-    }, [selectedToolTurnDiffs, turnChangesQuery.data, usesToolPatches]);
+        return turnChangesMarker.thinDiffs;
+    }, [selectedToolTurnDiffs, turnChangesMarker.thinDiffs, usesToolPatches]);
 
     const lastTurnDiffData = React.useMemo(() => {
         const map = new Map<string, DiffData>();
@@ -1487,15 +1482,22 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return;
         }
 
+        // Always mark the target expanded so L2 arrival does not leave it collapsed.
+        expandStackedFile(normalizedTarget);
         setDisplayFile(normalizedTarget);
         setDisplayFileStaged(activeDiffScope === 'staged');
         setDisplayFocusLine(targetLine);
 
+        // Wait until the file row exists in the list (turn L2 / git status) before
+        // scrolling/pinning — otherwise rAF retries exhaust before the DOM mounts.
+        if (!changedFiles.some((file) => file.path === normalizedTarget)) {
+            return;
+        }
+
         shouldPinAfterAlignRef.current = true;
         pendingScrollTargetRef.current = normalizedTarget;
-        expandStackedFile(normalizedTarget);
         setScrollRequestNonce((value) => value + 1);
-    }, [activeDiffScope, expandStackedFile, navigationRequestKey, targetFilePath, targetLine]);
+    }, [activeDiffScope, changedFiles, expandStackedFile, navigationRequestKey, targetFilePath, targetLine]);
 
     React.useEffect(() => {
         if (!displayFile) {
@@ -1877,40 +1879,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return (
                 <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                     {t('diffView.state.notGitRepository')}
-                </div>
-            );
-        }
-
-        if (shouldLoadTurnChanges && turnChangesQuery.isPending) {
-            return (
-                <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="loader-4" className="size-4 animate-spin" />
-                    {t('diffView.state.loadingDiff')}
-                </div>
-            );
-        }
-
-        if (shouldLoadTurnChanges && turnChangesQuery.error) {
-            const errorMessage = turnChangesQuery.error instanceof Error
-                ? turnChangesQuery.error.message
-                : String(turnChangesQuery.error);
-            return (
-                <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-sm text-muted-foreground">
-                    <div className="typography-ui-label font-semibold text-foreground">
-                        {t('diffView.state.failedToLoadDiff')}
-                    </div>
-                    <div className="typography-meta max-w-[32rem] text-center text-muted-foreground">
-                        {errorMessage}
-                    </div>
-                    <button
-                        type="button"
-                        className="typography-ui-label text-primary hover:underline"
-                        onClick={() => {
-                            void turnChangesQuery.refetch();
-                        }}
-                    >
-                        {t('diffView.actions.retry')}
-                    </button>
                 </div>
             );
         }

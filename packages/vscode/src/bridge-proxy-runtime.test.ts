@@ -131,7 +131,7 @@ describe('VS Code API proxy read coalescing', () => {
 });
 
 describe('VS Code exact message GET L1 projection', () => {
-  test('projects summary.diffs to diffCount/hasDiffs before webview', async () => {
+  test('projects summary.diffs to thin file list + diffCount/hasDiffs before webview', async () => {
     const originalFetch = globalThis.fetch;
     try {
       globalThis.fetch = (async () => new Response(JSON.stringify({
@@ -146,6 +146,8 @@ describe('VS Code exact message GET L1 projection', () => {
               additions: 2,
               deletions: 1,
               patch: '@@ huge @@',
+              before: 'old',
+              after: 'new',
             }],
           },
         },
@@ -173,13 +175,19 @@ describe('VS Code exact message GET L1 projection', () => {
       };
       assert.deepEqual(body.info.summary, {
         title: 'turn',
+        diffs: [{
+          file: 'src/a.ts',
+          status: 'modified',
+          additions: 2,
+          deletions: 1,
+        }],
         diffCount: 1,
         hasDiffs: true,
       });
-      assert.equal('diffs' in body.info.summary, false);
       assert.equal(body.parts.length, 1);
       assert.equal(bodyText.includes('@@ huge @@'), false);
-      assert.equal(bodyText.includes('src/a.ts'), false);
+      assert.equal(bodyText.includes('"before"'), false);
+      assert.equal(bodyText.includes('"after"'), false);
     } finally {
       globalThis.fetch = originalFetch;
     }

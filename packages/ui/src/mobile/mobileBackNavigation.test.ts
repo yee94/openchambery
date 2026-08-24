@@ -334,6 +334,13 @@ describe('resolveMobileSecondaryBackDecision', () => {
     })).toEqual({ action: 'closeSecondary' });
   });
 
+  test('instance management closes secondary', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'instances' },
+      parentSessionTarget: null,
+    })).toEqual({ action: 'closeSecondary' });
+  });
+
   test('closed secondary is a no-op', () => {
     expect(resolveMobileSecondaryBackDecision({
       secondary: null,

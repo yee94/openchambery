@@ -26,7 +26,9 @@ const resolveVariantSuffix = (variant?: string) => {
 };
 
 const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, providerID, modelID, agentName, modelName, variant }) => {
-    const variantSuffix = !isUser ? resolveVariantSuffix(variant) : null;
+    // Mobile omits the suffix: per-turn variant is not in the message snapshot,
+    // so a local-only badge would disappear after switching devices.
+    const variantSuffix = !isUser && !isMobile ? resolveVariantSuffix(variant) : null;
     const displayModelName = modelName || 'Assistant';
 
     return (
@@ -55,13 +57,13 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                     <div className="flex items-center gap-2">
                         <h3
                             className={cn(
-                                'inline-flex min-w-0 items-center gap-1.5 font-semibold typography-ui-header tracking-tight leading-none',
+                                'inline-flex min-w-0 items-center gap-1.5 font-semibold typography-ui-header tracking-tight leading-tight',
                                 isUser ? 'text-primary' : 'text-foreground'
                             )}
                         >
                             <span className="truncate">{isUser ? 'You' : displayModelName}</span>
                             {variantSuffix ? (
-                                <span className="shrink-0 text-xs font-normal leading-none text-muted-foreground">
+                                <span className="shrink-0 text-xs font-normal leading-tight text-muted-foreground">
                                     {variantSuffix}
                                 </span>
                             ) : null}
@@ -69,7 +71,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                         {!isUser && agentName && (
                             <div
                                 className={cn(
-                                    'agent-badge inline-flex items-center gap-1 cursor-default rounded font-normal leading-none',
+                                    'agent-badge inline-flex items-center gap-1 cursor-default rounded font-normal leading-tight',
                                     isMobile ? 'px-1 py-px text-[10px]' : 'px-1.5 py-0.5 typography-micro',
                                     getAgentColor(agentName).class
                                 )}

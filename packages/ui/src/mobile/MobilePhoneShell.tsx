@@ -19,10 +19,14 @@ import { acknowledgeMobileSessionMirror, useMobileNavigationStore } from './useM
 export type MobilePhoneShellProps = {
   /** Opens the directory explorer so the user can add a project. */
   onAddProject: () => void;
+  onScanQr?: () => void;
+  onSwitchInstance?: () => void;
   /** Enables assistants (opens settings at the assistants section). */
   onEnableAssistants: () => void;
   /** Saved-instance management content for the Settings secondary page. */
   instancesPage?: React.ReactNode;
+  /** Saved-instance management content opened above the Projects root tab. */
+  instancesSecondaryPage?: React.ReactNode;
   /**
    * Authoritative parent of the current chat session (child.parentID). When set
    * on a chat secondary page, back navigates to the parent without closing
@@ -56,8 +60,11 @@ export type MobilePhoneShellProps = {
  */
 export function MobilePhoneShell({
   onAddProject,
+  onScanQr,
+  onSwitchInstance,
   onEnableAssistants,
   instancesPage,
+  instancesSecondaryPage,
   parentSessionTarget = null,
   registerSecondaryBackHandler,
   scheduledContent,
@@ -182,13 +189,15 @@ export function MobilePhoneShell({
           onOpenChat={openChat}
           onAddProject={onAddProject}
           onNewSession={handleNewSessionDraft}
+          onScanQr={onScanQr}
+          onSwitchInstance={onSwitchInstance}
         />
       ),
       assistant: <MobileAssistantTab onEnable={onEnableAssistants} onOpenAssistant={openAssistant} />,
       scheduled: <MobileScheduledTab showHeader={false}>{scheduledTabBody}</MobileScheduledTab>,
       settings: <MobileSettingsTab instancesPage={instancesPage} />,
     }),
-    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, instancesPage, scheduledTabBody],
+    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onScanQr, onSwitchInstance, onEnableAssistants, instancesPage, scheduledTabBody],
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;
@@ -206,6 +215,15 @@ export function MobilePhoneShell({
             onMobileBack={() => mobileBackNavigationCoordinator.requestAnimatedBack('root')}
           />
         ),
+      }];
+    }
+    if (secondaryKind === 'instances') {
+      return [{
+        key: 'instances-secondary',
+        depth: 1,
+        ariaLabel: t('mobile.settings.switchInstance'),
+        onBack: handleSecondaryBack,
+        content: instancesSecondaryPage,
       }];
     }
     // Project the render target from the authoritative session store: once a
@@ -240,7 +258,7 @@ export function MobilePhoneShell({
         }),
       };
     });
-  }, [secondaryKind, navigation.secondary, handleSecondaryBack, renderChat, t]);
+  }, [secondaryKind, navigation.secondary, handleSecondaryBack, instancesSecondaryPage, renderChat, t]);
 
   return (
     <MobileTabsRoot

@@ -172,7 +172,7 @@ describe('projectSlimParts', () => {
     },
   });
 
-  it('projects message summary.diffs to L1 count/marker even when parts are empty', () => {
+  it('projects message summary.diffs to L1 slim list + markers even when parts are empty', () => {
     const patch = 'diff-body-'.repeat(20_000);
     const [projected] = projectSlimParts([{
       info: {
@@ -186,6 +186,10 @@ describe('projectSlimParts', () => {
             additions: 12,
             deletions: 4,
             patch,
+            before: 'old-body',
+            after: 'new-body',
+            from: 'from-blob',
+            to: 'to-blob',
           }],
         },
       },
@@ -194,12 +198,18 @@ describe('projectSlimParts', () => {
 
     expect(projected.info.summary).toEqual({
       title: 'kept',
+      diffs: [{
+        file: 'src/large.ts',
+        status: 'modified',
+        additions: 12,
+        deletions: 4,
+      }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(projected.info.summary.diffs).toBeUndefined();
     expect(JSON.stringify(projected)).not.toContain(patch);
-    expect(JSON.stringify(projected)).not.toContain('src/large.ts');
+    expect(JSON.stringify(projected)).not.toContain('old-body');
+    expect(JSON.stringify(projected)).not.toContain('from-blob');
   });
 
   it('drops tool output and metadata but keeps identity and status', () => {

@@ -1,3 +1,5 @@
+import { canRevealSortedFinalBody, resolveSortedRevealStreamPhase } from './turns/assistantMessageLifecycle';
+import type { TurnActivityRecord } from './turns/types';
 import type { ChatMessageEntry } from './turns/types';
 
 export const isAssistantMessageCompleted = (message: ChatMessageEntry): boolean => {
@@ -51,4 +53,92 @@ export const resolveVisibleSortedAssistants = (
 
   // Stream id missing mid-turn: keep every assistant already in the turn.
   return assistants as ChatMessageEntry[];
+};
+
+/**
+ * Which assistant message currently owns the sorted live body reveal.
+ *
+ * The optimistic reveal holds only while the streaming last assistant is in a
+ * live phase with no continuation tool part yet. A continuation tool arriving
+ * mid-stream withdraws the reveal (the original consumption semantics): the
+ * text folds back into its Activity justification row and never stays on
+ * screen next to the running tool steps. While the reveal IS active the
+ * Activity group must withhold the SAME text (its justification row), or the
+ * paragraph renders twice: once in the body of the streaming message and once
+ * in the Activity group hosted on the turn's first assistant.
+ *
+ * The phase derivation is owned by `resolveSortedRevealStreamPhase` — the
+ * same single derivation the reveal predicate consumes — so the Activity
+ * dedup cannot drift from what the body render decides.
+ */
+export const resolveLiveRevealBodyMessageId = (input: {
+  chatRenderMode: 'sorted' | 'live';
+  assistants: readonly ChatMessageEntry[];
+  streamingAssistantMessageId: string | null | undefined;
+  activeStreamingPhase: string | null | undefined;
+}): string | null => {
+  if (input.chatRenderMode !== 'sorted') return null;
+  const streamingId = input.streamingAssistantMessageId;
+  if (!streamingId) return null;
+
+  const streaming = input.assistants.find(
+    (assistant) => assistant.info.id === streamingId,
+  );
+  if (!streaming) return null;
+
+  const info = streaming.info as { finish?: unknown; error?: unknown };
+  const streamPhase = resolveSortedRevealStreamPhase({
+    finish: info.finish,
+    isMessageCompleted: isAssistantMessageCompleted(streaming),
+    activeStreamingPhase: input.activeStreamingPhase,
+  });
+
+  const reveal = canRevealSortedFinalBody({
+    finish: info.finish,
+    parts: streaming.parts,
+    streamPhase,
+    error: info.error,
+    // The streaming id is always the last visible assistant of its turn.
+    isLastAssistantInTurn: true,
+  });
+  return reveal ? streamingId : null;
+};
+
+/**
+ * Withhold the live-reveal message's justification rows from the Activity
+ * viewport while its body streams, so the text renders exactly once. Returns
+ * the same array reference when nothing is dropped.
+ */
+export const dropLiveRevealJustificationParts = <T extends Pick<TurnActivityRecord, 'kind' | 'messageId'>>(
+  parts: readonly T[],
+  liveRevealBodyMessageId: string | null,
+): T[] => {
+  if (!liveRevealBodyMessageId) return parts as T[];
+  const filtered = parts.filter(
+    (part) => !(part.kind === 'justification' && part.messageId === liveRevealBodyMessageId),
+  );
+  return filtered.length === parts.length ? (parts as T[]) : filtered;
+};
+
+/**
+ * Withhold the live-reveal message's justification rows across an Activity
+ * segment list. Segment identity (and every segment whose parts are
+ * untouched) keeps its original reference, so downstream memo/renderCompare
+ * keys stay stable while the reveal is active.
+ */
+export const withholdLiveRevealActivitySegments = <
+  T extends { parts: readonly TurnActivityRecord[] },
+>(
+  segments: readonly T[],
+  liveRevealBodyMessageId: string | null,
+): T[] => {
+  if (!liveRevealBodyMessageId) return segments as T[];
+  let changed = false;
+  const withheld = segments.map((segment) => {
+    const parts = dropLiveRevealJustificationParts(segment.parts, liveRevealBodyMessageId);
+    if (parts === segment.parts) return segment;
+    changed = true;
+    return { ...segment, parts };
+  });
+  return changed ? withheld : (segments as T[]);
 };

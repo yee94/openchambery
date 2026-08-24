@@ -17,7 +17,9 @@
     var(--oc-settings-section-title-line-height) +
       var(--oc-settings-section-gap)
   );
-  --oc-settings-row-min-height: 3.25rem;
+  /* 3.25rem × 0.9 = 46.8px — settings rows stay above the 36px touch minimum
+     while compacting with the density chain. */
+  --oc-settings-row-min-height: calc(3.25rem * var(--padding-scale, 1));
   --oc-settings-row-gap: 0.625rem;
   --oc-settings-row-label-size: var(--oc-settings-base-font-size);
   --oc-settings-row-label-line-height: var(--oc-settings-base-line-height);

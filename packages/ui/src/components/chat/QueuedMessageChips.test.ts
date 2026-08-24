@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, buildQueuedMessagePreviewParts, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, isServerQueueItemHiddenFromChips, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, buildQueuedMessagePreviewParts, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isLegacyQueueItemDispatchPending, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, isServerQueueItemHiddenFromChips, isServerQueueSendPendingTimedOut, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperation, selectPendingServerQueueOperations, SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
 import type { ServerQueueCommittedSendShadow, ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT, sessionDraftKey } from '@/sync/input-draft-types';
@@ -148,17 +148,55 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(queueModeAllowsMutations('server')).toBe(true);
     });
 
-    test('manual dispatch intent stays clickable while active attempts retain dispatch identity', () => {
+    test('manual dispatch intent blocks Send until client timeout allows retry; active attempts retain dispatch identity', () => {
         const queued = serverItem('queue-a', 'queued');
         const manual = { ...queued, manualDispatchRequested: true };
         expect(canSendServerQueuedMessage(queued, false)).toBe(true);
-        expect(canSendServerQueuedMessage(manual, false)).toBe(true);
+        expect(canSendServerQueuedMessage(manual, false)).toBe(false);
+        expect(canSendServerQueuedMessage(manual, false, { allowManualDispatchRetry: true })).toBe(true);
         expect(isServerQueueItemDispatchPending(manual)).toBe(true);
         expect(isServerQueueItemDispatchPending(queued)).toBe(false);
         expect(isServerQueueItemDispatchPending(serverItem('sending', 'sending'))).toBe(true);
         expect(isServerQueueItemDispatchPending(serverItem('reconciling', 'reconciling'))).toBe(true);
         expect(isServerQueueItemActiveAttempt(manual)).toBe(false);
         expect(isServerQueueItemActiveAttempt(serverItem('sending', 'sending'))).toBe(true);
+    });
+
+    test('isServerQueueSendPendingTimedOut uses an 8s client timeout and rejects invalid inputs', () => {
+        expect(SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS).toBe(8_000);
+        expect(isServerQueueSendPendingTimedOut(1_000, 9_000)).toBe(true);
+        expect(isServerQueueSendPendingTimedOut(1_000, 8_999)).toBe(false);
+        expect(isServerQueueSendPendingTimedOut(Number.NaN, 9_000)).toBe(false);
+        expect(isServerQueueSendPendingTimedOut(1_000, Number.POSITIVE_INFINITY)).toBe(false);
+        expect(isServerQueueSendPendingTimedOut(1_000, 2_000, Number.NaN)).toBe(false);
+    });
+
+    test('isLegacyQueueItemDispatchPending is true only for sending/reconciling rows', () => {
+        const queued = add(scope, 'legacy-queued');
+        expect(isLegacyQueueItemDispatchPending(queued)).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'retrying' })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'failed' })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'unresolved' })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: undefined })).toBe(false);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'sending' })).toBe(true);
+        expect(isLegacyQueueItemDispatchPending({ ...queued, status: 'reconciling' })).toBe(true);
+    });
+
+    test('selectLegacyQueueDisplayItemsForScope keeps legacy sending rows visible for Sending… chip presentation', () => {
+        const durable = add(scope, 'durable');
+        const started = useMessageQueueStore.getState().beginQueueItemDispatch(
+            scope,
+            { queueItemID: durable.queueItemID!, operationID: durable.operationID!, messageID: durable.messageID! },
+            'msg_ffffffffffffABCDEFGHIJKLMN',
+            false,
+        );
+        expect(started?.status).toBe('sending');
+        const display = selectLegacyQueueDisplayItemsForScope(useMessageQueueStore.getState(), scope);
+        expect(display).toHaveLength(1);
+        const row = display[0] as QueueItem;
+        expect(row.id).toBe(durable.id);
+        expect(row.status).toBe('sending');
+        expect(isLegacyQueueItemDispatchPending(row)).toBe(true);
     });
 
     test('an active server attempt does not globally disable waiting-row send', () => {
@@ -203,24 +241,26 @@ describe('QueuedMessageChips production queue boundary', () => {
         ], exact).map((operation) => operation.queueItemID)).toEqual(['queue-a', 'queue-b']);
     });
 
-    test('applyPendingServerQueueOperation optimistically hides the send target like edit/remove', () => {
+    test('applyPendingServerQueueOperation leaves the send target visible (edit/remove still hide)', () => {
         const first = serverItem('first');
         const second = serverItem('second');
         const third = serverItem('third');
         const items: readonly (MessageQueueItem | MessageQueuePendingAdmissionItem)[] = [first, second, third];
         const send: ServerQueueOperationIdentity = { kind: 'send', transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a', queueItemID: 'second' };
         const result = applyPendingServerQueueOperation(items, send);
-        expect(result.map((item) => item.queueItemID)).toEqual(['first', 'third']);
-        expect(result[0]).toBe(first);
-        expect(result[1]).toBe(third);
-        // Missing target returns original reference.
+        expect(result).toBe(items);
+        expect(result.map((item) => item.queueItemID)).toEqual(['first', 'second', 'third']);
+        // Missing target also returns original reference.
         const missingTargetResult = applyPendingServerQueueOperation(items, { ...send, queueItemID: 'missing' });
         expect(missingTargetResult).toBe(items);
         // Source array is never mutated.
         expect(items.map((item) => item.queueItemID)).toEqual(['first', 'second', 'third']);
+        // edit/remove still hide immediately.
+        expect(applyPendingServerQueueOperation(items, { ...send, kind: 'edit' }).map((item) => item.queueItemID)).toEqual(['first', 'third']);
+        expect(applyPendingServerQueueOperation(items, { ...send, kind: 'remove' }).map((item) => item.queueItemID)).toEqual(['first', 'third']);
     });
 
-    test('projectServerQueueChipItems hides pending send and authoritative tracking rows, restores failed/unresolved', () => {
+    test('projectServerQueueChipItems keeps pending send and manualDispatchRequested visible; hides only sending/reconciling', () => {
         const waiting = serverItem('waiting');
         const manual = { ...serverItem('manual'), manualDispatchRequested: true };
         const sending = serverItem('sending', 'sending');
@@ -229,7 +269,7 @@ describe('QueuedMessageChips production queue boundary', () => {
         const unresolved = serverItem('unresolved', 'unresolved');
         const pending: MessageQueuePendingAdmissionItem = { ...pendingAdmissionItem };
         const exact = { transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a' };
-        expect(isServerQueueItemHiddenFromChips(manual)).toBe(true);
+        expect(isServerQueueItemHiddenFromChips(manual)).toBe(false);
         expect(isServerQueueItemHiddenFromChips(sending)).toBe(true);
         expect(isServerQueueItemHiddenFromChips(reconciling)).toBe(true);
         expect(isServerQueueItemHiddenFromChips(failed)).toBe(false);
@@ -237,23 +277,23 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(isServerQueueItemHiddenFromChips(waiting)).toBe(false);
 
         const authoritative = [waiting, manual, sending, reconciling, failed, unresolved, pending];
-        expect(projectServerQueueChipItems(authoritative, []).map((item) => item.queueItemID)).toEqual(['waiting', 'failed', 'unresolved', 'pending']);
+        expect(projectServerQueueChipItems(authoritative, []).map((item) => item.queueItemID)).toEqual(['waiting', 'manual', 'failed', 'unresolved', 'pending']);
 
         const pendingSend: ServerQueueOperationIdentity = { kind: 'send', ...exact, queueItemID: 'waiting' };
-        expect(projectServerQueueChipItems(authoritative, [pendingSend]).map((item) => item.queueItemID)).toEqual(['failed', 'unresolved', 'pending']);
-        // Definitive failure clears the mutation overlay; waiting row returns.
-        expect(projectServerQueueChipItems(authoritative, []).map((item) => item.queueItemID)).toEqual(['waiting', 'failed', 'unresolved', 'pending']);
+        expect(projectServerQueueChipItems(authoritative, [pendingSend]).map((item) => item.queueItemID)).toEqual(['waiting', 'manual', 'failed', 'unresolved', 'pending']);
+        // Definitive failure clears the mutation overlay; waiting/manual rows remain visible.
+        expect(projectServerQueueChipItems(authoritative, []).map((item) => item.queueItemID)).toEqual(['waiting', 'manual', 'failed', 'unresolved', 'pending']);
     });
 
-    test('committed send shadow keeps hide while scope lags and restores failed/unresolved after ack revision', () => {
+    test('committed send shadow keeps waiting row visible for Sending UI while scope lags', () => {
         const exact = { transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a' };
         const waiting = serverItem('waiting');
         const failed = serverItem('failed', 'failed');
         const unresolved = serverItem('unresolved', 'unresolved');
         const shadow: ServerQueueCommittedSendShadow = { kind: 'send', ...exact, queueItemID: 'waiting', committedRevision: 5 };
-        // pending → success with lagging authoritative scope continues optimistic hide.
+        // pending → success with lagging authoritative scope keeps shadow selected for pending UI ownership.
         expect(selectCommittedSendShadows([shadow], exact, 3).map((entry) => entry.queueItemID)).toEqual(['waiting']);
-        expect(projectServerQueueChipItems([waiting, failed, unresolved], selectCommittedSendShadows([shadow], exact, 3)).map((item) => item.queueItemID)).toEqual(['failed', 'unresolved']);
+        expect(projectServerQueueChipItems([waiting, failed, unresolved], selectCommittedSendShadows([shadow], exact, 3)).map((item) => item.queueItemID)).toEqual(['waiting', 'failed', 'unresolved']);
         // Once scope reaches the receipt revision, shadow ends and recoverable rows stay visible.
         expect(selectCommittedSendShadows([shadow], exact, 5)).toEqual([]);
         expect(projectServerQueueChipItems([waiting, failed, unresolved], selectCommittedSendShadows([shadow], exact, 5)).map((item) => item.queueItemID)).toEqual(['waiting', 'failed', 'unresolved']);
@@ -348,10 +388,11 @@ describe('QueuedMessageChips production queue boundary', () => {
 
         const result = applyPendingServerQueueOperations([first, sending, second, third], operations);
 
-        // send hides third; remove hides first; reorder rearranges remaining authoritative rows.
-        expect(result.map((item) => item.queueItemID)).toEqual(['sending', 'second']);
+        // send leaves third visible; remove hides first; reorder rearranges remaining authoritative rows.
+        expect(result.map((item) => item.queueItemID)).toEqual(['sending', 'second', 'third']);
         expect(result[0]).toBe(sending);
-        expect(projectServerQueueChipItems([first, sending, second, third], operations).map((item) => item.queueItemID)).toEqual(['second']);
+        // Chip projection still hides authoritative sending/reconciling tracking rows.
+        expect(projectServerQueueChipItems([first, sending, second, third], operations).map((item) => item.queueItemID)).toEqual(['second', 'third']);
     });
 });
 

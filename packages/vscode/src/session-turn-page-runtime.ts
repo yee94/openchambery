@@ -114,9 +114,38 @@ export const SLIM_PARTS_PROJECTION = 'slim-v1';
 
 type LoosePart = Record<string, unknown>;
 
+/** L1 thin FileDiff allowlist — never patch / before / after / from / to. */
+const FILE_DIFF_L1_KEYS = ['file', 'status', 'additions', 'deletions'] as const;
+
 /**
- * L1 Host-parity projection: replace `summary.diffs` with `{ diffCount, hasDiffs }`
- * and remove the file array. Identity when `diffs` is absent.
+ * Project one `summary.diffs` entry to the L1 thin allowlist.
+ * Identity when the entry is already allowlist-only.
+ */
+const projectL1DiffEntry = (entry: unknown): unknown => {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  const record = entry as LoosePart;
+  const slim: LoosePart = {};
+  let kept = 0;
+  for (const key of FILE_DIFF_L1_KEYS) {
+    if (key in record && record[key] !== undefined) {
+      slim[key] = record[key];
+      kept += 1;
+    }
+  }
+  const originalKeys = Object.keys(record);
+  if (
+    originalKeys.length === kept
+    && originalKeys.every((key) => key in slim && record[key] === slim[key])
+  ) {
+    return entry;
+  }
+  return slim;
+};
+
+/**
+ * L1 Host-parity projection: keep a thin `summary.diffs` array
+ * (`{ file, status?, additions, deletions }` only) and additively set
+ * `diffCount` / `hasDiffs`. Identity when `diffs` is absent.
  */
 export const projectMessageSummaryDiffCounts = (owner: unknown): unknown => {
   if (!owner || typeof owner !== 'object' || Array.isArray(owner)) return owner;
@@ -128,15 +157,38 @@ export const projectMessageSummaryDiffCounts = (owner: unknown): unknown => {
   if (!Object.prototype.hasOwnProperty.call(summaryRecord, 'diffs')) return owner;
 
   const diffs = summaryRecord.diffs;
-  const diffCount = Array.isArray(diffs) ? diffs.length : 0;
-  const nextSummary: LoosePart = { ...summaryRecord, diffCount, hasDiffs: diffCount > 0 };
-  delete nextSummary.diffs;
+  let nextDiffs: unknown = diffs;
+  let diffsChanged = false;
+  if (Array.isArray(diffs)) {
+    const projected = diffs.map((entry) => {
+      const slim = projectL1DiffEntry(entry);
+      if (slim !== entry) diffsChanged = true;
+      return slim;
+    });
+    nextDiffs = diffsChanged ? projected : diffs;
+  } else {
+    nextDiffs = [];
+    diffsChanged = diffs !== nextDiffs;
+  }
+
+  const diffCount = Array.isArray(nextDiffs) ? nextDiffs.length : 0;
+  const hasDiffs = diffCount > 0;
+  const markersOk =
+    summaryRecord.diffCount === diffCount && summaryRecord.hasDiffs === hasDiffs;
+  if (!diffsChanged && markersOk && nextDiffs === diffs) return owner;
+
+  const nextSummary: LoosePart = {
+    ...summaryRecord,
+    diffs: nextDiffs,
+    diffCount,
+    hasDiffs,
+  };
   return { ...record, summary: nextSummary };
 };
 
 /**
  * Project exact message GET payload: keep original `{ info, parts }` shape,
- * only L1-project `info.summary.diffs` → diffCount/hasDiffs.
+ * only L1-project `info.summary.diffs` → thin array + diffCount/hasDiffs.
  */
 export const projectExactMessagePayload = (payload: unknown): unknown => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;

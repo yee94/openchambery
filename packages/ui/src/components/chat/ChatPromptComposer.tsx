@@ -143,6 +143,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   };
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
+  const imageAttachments = attachments.filter((attachment) => attachment.mime.startsWith('image/'));
   const defaultLeftControls = onAddFiles ? (
     <>
       <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
@@ -193,18 +194,11 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
         <div className={cn('overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col', inputSectionClassName)}>
           {inputHeader}
           {attachmentContent}
-          {attachments.length > 0 ? (
+          {imageAttachments.length > 0 ? (
             <div className="flex gap-2 overflow-x-auto px-3 pt-3" data-chat-prompt-attachments="true">
-              {attachments.map((attachment) => (
+              {imageAttachments.map((attachment) => (
                 <div key={attachment.id} className="group relative shrink-0">
-                  {attachment.mime.startsWith('image/') ? (
-                    <img src={attachment.url} alt={attachment.name} className="size-16 rounded-lg border border-border object-cover" />
-                  ) : (
-                    <div className="flex h-16 max-w-40 items-center gap-2 rounded-lg border border-border px-3 typography-meta">
-                      <Icon name="attachment-2" className="size-4 shrink-0" />
-                      <span className="truncate">{attachment.name}</span>
-                    </div>
-                  )}
+                  <img src={attachment.url} alt={attachment.name} className="size-16 rounded-lg border border-border object-cover" />
                   {onRemoveAttachment ? (
                     <button
                       type="button"

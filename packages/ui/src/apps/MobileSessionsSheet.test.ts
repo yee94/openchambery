@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { Session } from '@opencode-ai/sdk/v2/client';
+
 import {
   getMobileSessionDefaultVisibleCount,
   getMobileSessionPageSize,
@@ -10,6 +12,7 @@ import {
   mergeMobileWorktreeRefreshResults,
 } from './mobileSessionPagination';
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
+import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 import type { WorktreeMetadata } from '@/types/worktree';
 
 const mobileSessionsSheetSource = readFileSync(
@@ -427,5 +430,31 @@ describe('MobileSessionsSheet stop logic', () => {
     const formatAria = (label: string) => `Stop all running in ${label}`;
     expect(formatAria('my-project')).toBe('Stop all running in my-project');
     expect(formatAria('feature-branch')).toBe('Stop all running in feature-branch');
+  });
+});
+
+describe('MobileSessionsSheet visible roots fold boundary', () => {
+  test('retains a running root past the compact Show more boundary', () => {
+    const roots = [
+      { id: 'first' },
+      { id: 'second' },
+      { id: 'third' },
+      { id: 'running' },
+      { id: 'hidden' },
+    ] as Session[];
+
+    // Intentional page size stays at the compact boundary; pinned extras must
+    // not inflate the next Show more page.
+    const visibleCount = 3;
+    const visibleRoots = selectVisibleSessions(roots, visibleCount, new Set(['running']));
+
+    expect(visibleRoots.map((session) => session.id)).toEqual([
+      'first',
+      'second',
+      'third',
+      'running',
+    ]);
+    expect(roots.length - visibleRoots.length).toBe(1);
+    expect(visibleCount).toBe(3);
   });
 });

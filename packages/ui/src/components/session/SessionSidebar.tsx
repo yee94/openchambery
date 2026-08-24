@@ -8,10 +8,10 @@ import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell } from '@/lib/desktop';
 import { formatDirectoryName, cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useAllLiveSessions, useAllSessionStatuses } from '@/sync/sync-context';
+import { useAllLiveSessions } from '@/sync/sync-context';
 import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { openAssistant } from '@/stores/useAssistantUIStore';
-import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
+import { useAlwaysVisibleSessionIds } from './sidebar/hooks/useAlwaysVisibleSessionIds';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -77,7 +77,7 @@ import {
 } from '@/stores/useSessionFocusStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
 import { derivePinnedSessions } from './sidebar/pinnedSessions';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import {
   compareSessionsByPinnedAndTime,
   normalizePath,
@@ -133,7 +133,6 @@ const PROJECT_ACTIVE_SESSION_STORAGE_KEY = "oc.sessions.activeSessionByProject";
 // id into all four context combinations.
 const SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents.v2";
 const LEGACY_SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents";
-const SESSION_PINNED_STORAGE_KEY = "oc.sessions.pinned";
 
 const instanceSafeStorage = createInstanceScopedStorageAdapter(getDeferredSafeStorage());
 
@@ -251,9 +250,7 @@ const isKnownActiveSessionDirectory = (
 const SIDEBAR_PR_NO_PR_RETRY_MS = 5 * 60_000;
 
 const EMPTY_SUBTREE_SET: Set<string> = new Set();
-const EMPTY_STRING_SET: Set<string> = new Set();
 const EMPTY_PATH_LIST: string[] = [];
-const EMPTY_STATUS_BY_ID = new Map<string, { status: 'busy' | 'retry'; directory: string }>();
 
 const useStableRenderCallback = <Args extends unknown[], Return>(
   handler: (...args: Args) => Return,
@@ -331,9 +328,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     React.useState<DeleteFolderConfirmState>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] =
     React.useState<BulkDeleteSessionsConfirmState>(null);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
-  const setPinnedSessionIds = useSessionPinnedStore((state) => state.setIds);
-  const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
+  const pinnedSessionIds = usePinnedSessionIds();
+  const togglePinnedSession = useTogglePinnedSession();
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
     () => readStoredStringSet(GROUP_COLLAPSE_STORAGE_KEY),
   );
@@ -453,23 +449,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   // streaming does not drive off-screen sidebar React work. Structural global
   // session lists still update (authoritative index / create-delete).
   const liveSessions = useAllLiveSessions({ enabled: isVisible });
-  const liveSessionStatuses = useAllSessionStatuses({ enabled: isVisible });
-  const fallbackSessionStatuses = useGlobalSessionStatusStore((state) =>
-    isVisible ? state.statusById : EMPTY_STATUS_BY_ID,
-  );
-  const runningSessionIds = React.useMemo(() => {
-    if (!isVisible) {
-      return EMPTY_STRING_SET;
-    }
-    const ids = new Set<string>();
-    for (const [sessionId, status] of Object.entries(liveSessionStatuses)) {
-      if (status.type === 'busy' || status.type === 'retry') ids.add(sessionId);
-    }
-    for (const sessionId of fallbackSessionStatuses.keys()) {
-      if (liveSessionStatuses[sessionId] === undefined) ids.add(sessionId);
-    }
-    return ids;
-  }, [fallbackSessionStatuses, isVisible, liveSessionStatuses]);
+  // Viewing + running sessions stay in the visible window of already-loaded
+  // lists (does not fetch more sessions from the server).
+  const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds({ enabled: isVisible });
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const fullCatalogSessionIds = useGlobalSessionsStore((state) => state.fullCatalogSessionIds);
   const fullCatalogGeneration = useGlobalSessionsStore((state) => state.fullCatalogGeneration);
@@ -496,15 +478,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     React.useDeferredValue(globalActiveSessions);
   const archivedSessions = React.useDeferredValue(archivedSessionsRaw);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  // Viewing + running sessions stay in the visible window of already-loaded
-  // lists (does not fetch more sessions from the server).
-  const alwaysVisibleSessionIds = React.useMemo(() => {
-    if (!currentSessionId) return runningSessionIds;
-    if (runningSessionIds.has(currentSessionId)) return runningSessionIds;
-    const ids = new Set(runningSessionIds);
-    ids.add(currentSessionId);
-    return ids;
-  }, [currentSessionId, runningSessionIds]);
   const sessionFocus = useSessionFocusStore((state) => state.focus);
   const sessionSwitchIntent = React.useSyncExternalStore(
     subscribeSessionSwitchIntent,
@@ -681,20 +654,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const { scheduleCollapsedProjectsPersist, hasRestoredProjectCollapse } = useSidebarPersistence({
     isVSCode,
-    fullCatalogSessionIds,
-    fullCatalogGeneration,
     safeStorage,
     keys: {
       sessionExpanded: SESSION_EXPANDED_STORAGE_KEY,
       sessionExpandedLegacy: LEGACY_SESSION_EXPANDED_STORAGE_KEY,
       projectCollapse: PROJECT_COLLAPSE_STORAGE_KEY,
-      sessionPinned: SESSION_PINNED_STORAGE_KEY,
       groupOrder: GROUP_ORDER_STORAGE_KEY,
       projectActiveSession: PROJECT_ACTIVE_SESSION_STORAGE_KEY,
       groupCollapse: GROUP_COLLAPSE_STORAGE_KEY,
     },
-    pinnedSessionIds,
-    setPinnedSessionIds,
     groupOrderByProject,
     activeSessionByProject,
     collapsedGroups,
@@ -2498,7 +2466,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         editTitle={editTitle}
         openSidebarMenuKey={openSidebarMenuKey}
         liveSessionById={liveSessionById}
-        runningSessionIds={runningSessionIds}
+        alwaysVisibleSessionIds={alwaysVisibleSessionIds}
         prVisualStateByDirectoryBranch={prVisualStateByDirectoryBranch}
         onToggleCollapsedGroup={(key) => {
           if (group.isArchivedBucket && collapsedGroups.has(key) && projectId) {
@@ -2549,7 +2517,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       editTitle,
       openSidebarMenuKey,
       liveSessionById,
-      runningSessionIds,
+      alwaysVisibleSessionIds,
       prVisualStateByDirectoryBranch,
       toggleCollapsedGroup,
       ensureArchivedSessionsLoaded,

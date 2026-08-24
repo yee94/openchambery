@@ -214,7 +214,7 @@ const getMultiFileDescription = (
                             {entry.name}
                         </Text>
                         {hasPerFileDiff ? (
-                            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta">
                                 <span style={{ color: 'var(--status-success)' }}>+{entry.added ?? 0}</span>
                                 <span style={{ color: 'var(--tools-description)' }}>/</span>
                                 <span style={{ color: 'var(--status-error)' }}>-{entry.removed ?? 0}</span>
@@ -2772,14 +2772,14 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 )
                             )}
                             {diffStats && (
-                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta">
                                     <span style={{ color: 'var(--status-success)' }}>+{diffStats.added}</span>
                                     <span style={{ color: 'var(--tools-description)' }}>/</span>
                                     <span style={{ color: 'var(--status-error)' }}>-{diffStats.removed}</span>
                                 </span>
                             )}
                             {writeLineCount && (
-                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta">
                                     <span style={{ color: 'var(--status-success)' }}>+{writeLineCount}</span>
                                 </span>
                             )}

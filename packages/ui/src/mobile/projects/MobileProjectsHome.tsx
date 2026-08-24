@@ -4,6 +4,12 @@ import { useEvent } from '@reactuses/core';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   createMobileLongPressController,
   type MobileLongPressController,
 } from '@/components/ui/mobileLongPress';
@@ -78,8 +84,11 @@ export type MobileProjectHomeItem = MobileProjectCardModel & {
 
 export type MobileProjectsHomeProps = {
   projects: MobileProjectHomeItem[];
+  pinnedSessions: MobileSessionTreeNode[];
   onAddProject: () => void;
   onNewSession: () => void;
+  onScanQr?: () => void;
+  onSwitchInstance?: () => void;
   onToggleProject: (project: MobileProjectHomeItem) => void;
   onOpenProjectActions: (project: MobileProjectHomeItem) => void;
   onToggleWorktree: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
@@ -157,70 +166,6 @@ function SessionList({
         );
       })}
     </>
-  );
-}
-
-/** Project-local group label; its matching session card is rendered separately. */
-function WorkspaceGroupLabel({
-  icon,
-  label,
-  count,
-  expanded,
-  onToggle,
-  actions,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  count?: number;
-  expanded?: boolean;
-  onToggle?: () => void;
-  actions?: React.ReactNode;
-}) {
-  const { t } = useI18n();
-  const content = (
-    <>
-      <span className="oc-mobile-group-label-icon" aria-hidden>
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-left typography-ui-label font-semibold text-foreground">
-        {label}
-      </span>
-      {typeof count === 'number' ? (
-        <span className="typography-small text-muted-foreground tabular-nums">
-          {count === 1
-            ? t('mobile.sessions.project.sessionsSingle')
-            : t('mobile.sessions.project.sessionsPlural', { count })}
-        </span>
-      ) : null}
-      {onToggle ? (
-        <Icon
-          name="arrow-down-s"
-          className={cn(
-            'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
-            expanded ? 'rotate-0' : '-rotate-90',
-          )}
-        />
-      ) : null}
-    </>
-  );
-
-  return (
-    <div className="oc-mobile-group-label">
-      {onToggle ? (
-        <button
-          type="button"
-          data-mobile-press-feedback="soft"
-          className="oc-mobile-group-label-trigger"
-          aria-expanded={expanded}
-          onClick={onToggle}
-        >
-          {content}
-        </button>
-      ) : (
-        <div className="oc-mobile-group-label-trigger">{content}</div>
-      )}
-      {actions}
-    </div>
   );
 }
 
@@ -412,7 +357,7 @@ function MobileWorktreeGroupLabel({
       <span className="oc-mobile-group-label-icon" aria-hidden>
         <Icon name="git-branch" className="size-3.5" />
       </span>
-      <span className="min-w-0 flex-1 truncate text-left typography-ui-label font-semibold text-foreground">
+      <span className="min-w-0 flex-1 truncate text-left oc-mobile-entity-title font-semibold text-foreground">
         {worktree.name}
       </span>
       <span className="typography-small text-muted-foreground tabular-nums">
@@ -529,24 +474,13 @@ function MobileWorktreeGroupLabel({
   );
 }
 
-/** Collect root-level sessions from a tree (for pinned extraction). */
-const collectRootSessions = (sessions: MobileSessionTreeNode[]): MobileSessionTreeNode[] =>
-  sessions.filter((session) => !session.id.startsWith('__show_'));
-
-const stripPinned = (sessions: MobileSessionTreeNode[]): {
-  pinned: MobileSessionTreeNode[];
-  rest: MobileSessionTreeNode[];
-} => {
-  const roots = collectRootSessions(sessions);
-  const pinned = roots.filter((session) => session.pinned);
-  const rest = sessions.filter((session) => !session.pinned);
-  return { pinned, rest };
-};
-
 export function MobileProjectsHome({
   projects,
+  pinnedSessions,
   onAddProject,
   onNewSession,
+  onScanQr,
+  onSwitchInstance,
   onToggleProject,
   onOpenProjectActions,
   onToggleWorktree,
@@ -560,8 +494,9 @@ export function MobileProjectsHome({
   className,
 }: MobileProjectsHomeProps) {
   const { t } = useI18n();
-  const [pinnedExpandedByProject, setPinnedExpandedByProject] = React.useState<Record<string, boolean>>({});
+  const [pinnedExpanded, setPinnedExpanded] = React.useState(true);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const searching = normalizedSearchQuery.length > 0;
@@ -572,6 +507,9 @@ export function MobileProjectsHome({
 
   const handleAddProject = useEvent(onAddProject);
   const handleNewSession = useEvent(onNewSession);
+  const handleScanQr = useEvent(() => onScanQr?.());
+  const handleSwitchInstance = useEvent(() => onSwitchInstance?.());
+  const handleMenuOpenChange = useEvent((open: boolean) => setMenuOpen(open));
   const closeSearch = useEvent(() => {
     setSearchQuery('');
     setSearchOpen(false);
@@ -618,15 +556,46 @@ export function MobileProjectsHome({
             >
               <Icon name={searchOpen ? 'close' : 'search'} className="size-5" />
             </Button>
-            <Button
-              type="button"
-              size="mobileIcon"
-              className="oc-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
-              aria-label={t('mobile.sessions.newChat')}
-              onClick={handleNewSession}
-            >
-              <Icon name="add" className="size-5" />
-            </Button>
+            <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="mobileIcon"
+                  className="oc-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
+                  aria-label={t('mobile.projects.menu.label')}
+                >
+                  <Icon
+                    name="add"
+                    className={cn(
+                      'size-5 transition-transform duration-150 motion-reduce:transition-none',
+                      menuOpen ? 'rotate-45' : 'rotate-0',
+                    )}
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="bottom" className="min-w-44">
+                <DropdownMenuItem className="min-h-11" onSelect={handleNewSession}>
+                  <Icon name="chat-new" className="size-4" />
+                  {t('mobile.projects.menu.newChat')}
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-11" onSelect={handleAddProject}>
+                  <Icon name="folder" className="size-4" />
+                  {t('mobile.projects.menu.newProject')}
+                </DropdownMenuItem>
+                {onScanQr ? (
+                  <DropdownMenuItem className="min-h-11" onSelect={handleScanQr}>
+                    <Icon name="scan-2" className="size-4" />
+                    {t('mobile.projects.menu.scanQr')}
+                  </DropdownMenuItem>
+                ) : null}
+                {onSwitchInstance ? (
+                  <DropdownMenuItem className="min-h-11" onSelect={handleSwitchInstance}>
+                    <Icon name="server" className="size-4" />
+                    {t('mobile.projects.menu.switchInstance')}
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         )}
       />
@@ -666,6 +635,38 @@ export function MobileProjectsHome({
         </div>
       ) : null}
 
+      {!searching && pinnedSessions.length > 0 ? (
+        <MobileFloatingSurface asChild>
+          <section className="oc-mobile-project-shell" aria-label={t('mobile.sessions.section.pinned')}>
+            <MobileProjectCard
+              project={{
+                id: '__pinned__',
+                name: t('mobile.sessions.section.pinned'),
+                path: '',
+                icon: 'pushpin',
+                sessionCount: pinnedSessions.length,
+              }}
+              expanded={pinnedExpanded}
+              embedded
+              onToggle={() => setPinnedExpanded((expanded) => !expanded)}
+            />
+            {pinnedExpanded ? (
+              <div className="oc-mobile-project-groups" role="group">
+                <div className="oc-mobile-labeled-surface-group">
+                  <SessionList
+                    sessions={pinnedSessions}
+                    onSelectSession={onSelectSession}
+                    onPinSession={onPinSession}
+                    onArchiveSession={onArchiveSession}
+                    onOpenSessionActions={onOpenSessionActions}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </MobileFloatingSurface>
+      ) : null}
+
       {projects.length === 0 ? (
         <section className="flex min-h-[52dvh] flex-col items-center justify-center px-6 text-center">
           <span className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-[var(--surface-muted)] text-muted-foreground">
@@ -692,13 +693,6 @@ export function MobileProjectsHome({
           const linkedWorktrees = project.worktrees.filter((entry) => entry !== mainWorkspace);
 
           const mainSessions = mainWorkspace?.sessions ?? [];
-          const { pinned: pinnedFromMain, rest: mainRest } = stripPinned(mainSessions);
-          // Also surface pinned sessions that live inside worktrees at the top.
-          const pinnedFromWorktrees = linkedWorktrees.flatMap((worktree) =>
-            collectRootSessions(worktree.sessions).filter((session) => session.pinned),
-          );
-          const pinnedSessions = [...pinnedFromMain, ...pinnedFromWorktrees];
-          const pinnedExpanded = searching || (pinnedExpandedByProject[project.id] ?? true);
 
           return (
             <MobileFloatingSurface key={project.id} asChild>
@@ -716,42 +710,11 @@ export function MobileProjectsHome({
 
               {projectExpanded ? (
                 <div className="oc-mobile-project-groups" role="group" aria-label={project.name}>
-                  {/* Pinned group */}
-                  {pinnedSessions.length > 0 ? (
-                    <MobileLabeledSurfaceGroup
-                      ariaLabel={t('mobile.sessions.section.pinned')}
-                      label={(
-                        <WorkspaceGroupLabel
-                          icon={<Icon name="pushpin" className="size-3.5" />}
-                          label={t('mobile.sessions.section.pinned')}
-                          count={pinnedSessions.length}
-                          expanded={pinnedExpanded}
-                          onToggle={searching ? undefined : () => {
-                            setPinnedExpandedByProject((previous) => ({
-                              ...previous,
-                              [project.id]: !(previous[project.id] ?? true),
-                            }));
-                          }}
-                        />
-                      )}
-                    >
-                      {pinnedExpanded ? (
-                        <SessionList
-                          sessions={pinnedSessions}
-                          onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
-                          onPinSession={onPinSession}
-                          onArchiveSession={onArchiveSession}
-                          onOpenSessionActions={onOpenSessionActions}
-                        />
-                      ) : null}
-                    </MobileLabeledSurfaceGroup>
-                  ) : null}
-
                   {/* Main workspace sessions flow directly below the project header. */}
-                  {mainRest.length > 0 ? (
+                  {mainSessions.length > 0 ? (
                     <div className="oc-mobile-labeled-surface-group">
                       <SessionList
-                        sessions={mainRest}
+                        sessions={mainSessions}
                         onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                         onPinSession={onPinSession}
                         onArchiveSession={onArchiveSession}
@@ -762,7 +725,6 @@ export function MobileProjectsHome({
 
                   {/* Every linked worktree gets an independent label + session card. */}
                   {linkedWorktrees.map((worktree) => {
-                    const worktreeRest = worktree.sessions.filter((session) => !session.pinned);
                     const worktreeExpanded = searching || Boolean(worktree.expanded);
                     return (
                       <MobileLabeledSurfaceGroup
@@ -783,9 +745,9 @@ export function MobileProjectsHome({
                           />
                         )}
                       >
-                        {worktreeExpanded && worktreeRest.length > 0 ? (
+                        {worktreeExpanded && worktree.sessions.length > 0 ? (
                           <SessionList
-                            sessions={worktreeRest}
+                            sessions={worktree.sessions}
                             onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                             onPinSession={onPinSession}
                             onArchiveSession={onArchiveSession}

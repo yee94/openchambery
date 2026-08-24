@@ -579,11 +579,15 @@ describe('bridge session turn-page runtime', () => {
 
     expect(result.success).toBe(true);
     expect(result.data.records[0].info.summary).toEqual({
+      diffs: [{
+        file: 'src/large.ts',
+        status: 'modified',
+        additions: 6,
+        deletions: 2,
+      }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(result.data.records[0].info.summary.diffs).toBeUndefined();
     expect(JSON.stringify(result.data)).not.toContain(patch);
-    expect(JSON.stringify(result.data)).not.toContain('src/large.ts');
   });
 });

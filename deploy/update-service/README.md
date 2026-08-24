@@ -74,3 +74,91 @@ Its build command writes `dist/`, while Vercel continues to build `public/`.
 The EdgeOne project must permit public requests to its project domain; this
 transition feed uses the same stable release manifest and GitHub release assets
 as Vercel.
+
+## Mobile OTA endpoints
+
+Self-hosted Capgo-style OTA for Capacitor mobile clients.
+
+### Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/v1/mobile/update/check` | OpenChamber decision JSON |
+| `POST` | `/v1/ota/check` | Capgo self-hosted protocol response |
+
+Both accept CORS preflight (`OPTIONS`) and return `cache-control: no-store`.
+
+### Request body (`/v1/mobile/update/check`)
+
+Required JSON fields:
+
+- `channel`: `beta` \| `stable`
+- `platform`: `ios` \| `android`
+- `deviceId`: non-empty string (rollout bucketing)
+- `nativeVersion`: native marketing version string
+- `nativeBuild`: positive integer
+- `shellApiVersion`: positive integer
+- `currentBundleId`: active OTA bundle id, or `builtin`
+- `installSource`: optional string
+
+### Decision response (`/v1/mobile/update/check`)
+
+```json
+{
+  "status": "ok",
+  "primaryAction": "none | apply_ota | install_native_required",
+  "ota": { "state": "current | available | outside_rollout | incompatible", "bundle": { } },
+  "native": { "state": "current | available | required", "version": "", "build": 0, "installUrl": "" },
+  "nextCheckInSec": 3600,
+  "releaseNotes": "optional markdown newer than currentBundleId (not stripped iOS nativeVersion) through OTA releaseVersion"
+}
+```
+
+Clients must follow `primaryAction`: `apply_ota` applies the bundle in-app;
+`install_native_required` opens `native.installUrl` when present; `none` hides
+the update. Do not invent a GitHub URL on the client.
+
+Relative `bundle.url` values are resolved to absolute URLs against the request origin.
+When `primaryAction` is `apply_ota`, the handler loads `/CHANGELOG.md` from the same
+origin and attaches filtered `releaseNotes` (same extraction as `/v1/update/check`).
+Missing or empty changelog content omits the field.
+
+### Capgo response (`/v1/ota/check`)
+
+Maps the same resolver decision:
+
+- `apply_ota` → `{ version, url, checksum, session_key?, sessionKey? }`（Android 解析 `sessionKey`，iOS 解析 `session_key`，加密 bundle 两个键都返回；明文 `checksum` 为纯 64 位 hex，原生插件按字面值比较）
+- `install_native_required` → `{ major: true, breaking: true, message: "native update required" }`
+- otherwise → `{ message: "No new version available", version: "", url: "" }`
+
+OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 设备已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。同版本不同 `bundleId` 仍可作内容更正。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报，否则 iOS 剥离版 `nativeVersion` + 过期 `nativeTargets.ios` 会把同版本反复判成 `apply_ota`。
+
+Manifest load failure returns `503 { "error": "ota_manifest_unavailable" }` on both endpoints (never a forged no-update).
+
+Capgo clients typically send `platform`, `device_id`, `app_id`, `version_build`, `version_code`, `version_name`, and `defaultChannel`.
+
+### Channel manifest
+
+Static file: `ota/channels/<channel>.json` (seeds: `ota/channels/beta.json` and `ota/channels/stable.json`). Both beta and stable channels are served the same way.
+
+Schema summary (`schemaVersion: 1`):
+
+- `channel`, `generation`
+- `activeBundle`: full bundle metadata, or `null` when OTA is enabled but nothing is published yet
+- `nativeTargets.ios|android`: optional `{ version, build, status?, installUrl? }`
+- `rollbackBundleIds`: 0–2 hex bundle ids
+
+Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne) and fails if either `ota/channels/beta.json` or `ota/channels/stable.json` is missing or invalid.
+
+### Cache rules
+
+| Path | Cache-Control |
+| --- | --- |
+| `/ota/bundles/(.*)` | `public, max-age=31536000, immutable` |
+| `/ota/channels/(.*)` | `no-cache, max-age=0` |
+
+### Deploying bundles and channels
+
+CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The Vercel origin (`openchamber-update.vercel.app`) is authoritative — CI deploys snapshots there via `vercel deploy --prebuilt`.
+
+The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries the seeds. To keep it current, `edge-functions/ota/[...path].js` reverse-proxies `/ota/channels/*.json` and `/ota/bundles/*.zip` to the Vercel origin with edge-friendly cache headers (channels `s-maxage=60` + stale-while-revalidate, bundles `immutable`). The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative no-update.

@@ -179,18 +179,51 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
         expect(shouldStreamSortedFinalBody(input)).toBe(true);
     });
 
-    test('continuation tools keep intermediate text deferred', () => {
+    test('continuation tools arriving withdraw the optimistic reveal', () => {
+        // 正文流式中一旦出现 continuation tool part，乐观揭示立即撤回：文本
+        // 折回 Activity justification（原始消费语义）。撤回跟随工具到达而
+        // 非步骤边界——正文不得与正在运行的工具步骤同屏挂起。
         const input = {
             finish: undefined,
             parts: [
+                textPart('p1', 'partial answer before tools'),
                 toolPart({ id: 't1', status: 'completed' }),
-                textPart('p1', 'working...'),
             ],
             streamPhase: 'streaming' as const,
             isLastAssistantInTurn: true,
         };
         expect(canRevealSortedFinalBody(input)).toBe(false);
         expect(shouldStreamSortedFinalBody(input)).toBe(false);
+    });
+
+    test('step boundary folds intermediate text back into Activity', () => {
+        // finish 打上 tool-calls（步骤结束、下一 assistant 未到）即整理进
+        // Activity，正文不再揭示。
+        const input = {
+            finish: 'tool-calls',
+            parts: [
+                textPart('p1', 'working...'),
+                toolPart({ id: 't1', status: 'completed' }),
+            ],
+            streamPhase: 'streaming' as const,
+            isLastAssistantInTurn: true,
+        };
+        expect(canRevealSortedFinalBody(input)).toBe(false);
+        expect(shouldStreamSortedFinalBody(input)).toBe(false);
+    });
+
+    test('non-live messages with continuation tools stay deferred', () => {
+        // 非 live 阶段只认 confirmed terminal stop：工具未清偿的已完成消息
+        // 的文本保持在 Activity。
+        expect(canRevealSortedFinalBody({
+            finish: undefined,
+            parts: [
+                toolPart({ id: 't1', status: 'completed' }),
+                textPart('p1', 'working...'),
+            ],
+            streamPhase: 'completed',
+            isLastAssistantInTurn: true,
+        })).toBe(false);
     });
 
     test('non-stop finish and non-last assistants never reveal as final body', () => {

@@ -1,6 +1,10 @@
 import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 
+import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero-wide.jpg';
+import androidDirectShareImage from '@/assets/assistant-share-welcome/android-direct-share.jpg';
+import iosShareSheetImage from '@/assets/assistant-share-welcome/ios-share-sheet.jpg';
+import selectAssistantImage from '@/assets/assistant-share-welcome/select-assistant.jpg';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { AssistantDeleteConfirmDialog } from '@/components/assistants/AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
@@ -24,7 +28,7 @@ import {
   useAssistantSnapshotQuery,
   type AssistantDTO,
 } from '@/queries/assistantQueries';
-import { openAssistantSettings } from '@/stores/useAssistantUIStore';
+import { openAssistantSettings, useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 
 import { MobileFloatingSurface, MobileLabeledSurfaceGroup, MobileTabPageScaffold } from '../MobileSurface';
@@ -34,6 +38,24 @@ export type MobileAssistantTabProps = {
   onOpenAssistant: (assistantID: string) => void;
   className?: string;
 };
+
+const assistantGuideShareSteps = [
+  {
+    image: iosShareSheetImage,
+    titleKey: 'assistants.guide.share.ios.title',
+    descriptionKey: 'assistants.guide.share.ios.description',
+  },
+  {
+    image: androidDirectShareImage,
+    titleKey: 'assistants.guide.share.android.title',
+    descriptionKey: 'assistants.guide.share.android.description',
+  },
+  {
+    image: selectAssistantImage,
+    titleKey: 'assistants.guide.share.pick.title',
+    descriptionKey: 'assistants.guide.share.pick.description',
+  },
+] as const;
 
 function MobileAssistantSkeleton() {
   const { t } = useI18n();
@@ -49,6 +71,52 @@ function MobileAssistantSkeleton() {
       <div className="h-3.5 w-full animate-pulse rounded-md bg-[var(--surface-muted)] motion-reduce:animate-none" />
       <div className="h-3.5 w-4/5 animate-pulse rounded-md bg-[var(--surface-muted)] motion-reduce:animate-none" />
     </div>
+  );
+}
+
+function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
+  const { t } = useI18n();
+
+  return (
+    <article className="oc-mobile-assistant-guide">
+      <div className="oc-mobile-assistant-guide-hero" aria-hidden="true">
+        <img src={assistantGuideHero} alt="" />
+      </div>
+
+      <div className="oc-mobile-assistant-guide-body">
+        <h2 className="oc-mobile-assistant-guide-title">
+          {t('assistants.guide.disabledTitle')}
+        </h2>
+        <p className="oc-mobile-assistant-guide-description">
+          {t('assistants.guide.disabledDescription')}
+        </p>
+        <Button type="button" size="lg" onClick={onEnable}>
+          {t('assistants.guide.enableAction')}
+        </Button>
+      </div>
+
+      <section className="oc-mobile-assistant-guide-share">
+        <h3 className="oc-mobile-assistant-guide-share-title">
+          {t('assistants.guide.shareTitle')}
+        </h3>
+        <div
+          className="oc-mobile-assistant-guide-steps"
+          aria-label={t('assistants.guide.shareAria')}
+        >
+          {assistantGuideShareSteps.map((step) => (
+            <article key={step.titleKey} className="oc-mobile-assistant-guide-step">
+              <div className="oc-mobile-assistant-guide-step-image">
+                <img src={step.image} alt="" />
+              </div>
+              <div className="oc-mobile-assistant-guide-step-copy">
+                <h4>{t(step.titleKey)}</h4>
+                <p>{t(step.descriptionKey)}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </article>
   );
 }
 
@@ -158,25 +226,32 @@ function MobileAssistantCard({
             />
           }
         >
-          <span className="oc-mobile-assistant-avatar oc-mobile-glass-control oc-mobile-glass-control--clear rounded-full">
+          <span className={cn(
+            'oc-mobile-assistant-avatar',
+            avatarEmoji
+              ? 'oc-mobile-assistant-avatar--emoji'
+              : 'oc-mobile-assistant-avatar--visual',
+          )}>
             <AgentAvatar
               name={assistantID}
               emoji={avatarEmoji}
-              size={28}
+              size={avatarEmoji ? 40 : 38}
               label={displayName}
             />
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="oc-mobile-entity-title block truncate font-semibold text-foreground">
-              {displayName}
+          <span className="oc-mobile-assistant-card-content min-w-0 flex-1">
+            <span className="oc-mobile-assistant-card-header">
+              <span className="oc-mobile-entity-title oc-mobile-assistant-name min-w-0 flex-1 truncate font-semibold text-foreground">
+                {displayName}
+              </span>
+              <span className="oc-mobile-entity-meta oc-mobile-assistant-mode shrink-0 text-muted-foreground">
+                {modeLabel}
+              </span>
             </span>
-            <span className="oc-mobile-entity-meta mt-0.5 flex min-w-0 items-center text-muted-foreground">
-              <span className="shrink-0">{modeLabel}</span>
-              <span aria-hidden className="text-muted-foreground/50">·</span>
-              <span className="min-w-0 truncate">{summary}</span>
+            <span className="oc-mobile-assistant-summary text-muted-foreground">
+              {summary}
             </span>
           </span>
-          <Icon name="arrow-right-s" className="size-4 shrink-0 text-muted-foreground" />
         </ContextMenuTrigger>
       </MobileFloatingSurface>
       <ContextMenuContent className="min-w-[10rem]">
@@ -202,8 +277,13 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
   const mobileActions = useMobileAppActions();
   const capability = useAssistantCapabilityQuery();
   const snapshot = useAssistantSnapshotQuery();
+  const requestCreate = useAssistantUIStore((state) => state.requestCreate);
   const [deleteTarget, setDeleteTarget] = React.useState<AssistantDTO | null>(null);
   const handleEnable = useEvent(() => onEnable());
+  const handleCreate = useEvent(() => {
+    requestCreate();
+    mobileActions?.openSettings('assistants');
+  });
   const handleOpenAssistant = useEvent((assistantID: string) => onOpenAssistant(assistantID));
   const handleEdit = useEvent((assistantID: string) => {
     openAssistantSettings(
@@ -276,13 +356,57 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
     );
   }
 
+  if (
+    capability.data?.supported
+    && capability.data.enabled
+    && snapshot.data?.enabled
+    && snapshot.data.assistants.length === 0
+  ) {
+    return (
+      <MobileTabPageScaffold
+        title={pageTitle}
+        className={className}
+        surface={false}
+        surfaceClassName="oc-mobile-assistant-state"
+      >
+        <MobileFloatingSurface className="oc-mobile-assistant-onboarding">
+          <span className="oc-mobile-assistant-onboarding-icon">
+            <Icon name="ai-agent" className="size-5" />
+          </span>
+          <h2>{t('assistants.onboarding.title')}</h2>
+          <p>{t('assistants.onboarding.description')}</p>
+          <Button type="button" size="lg" className="mt-6 w-full" onClick={handleCreate}>
+            <Icon name="add" className="size-[18px]" />
+            {t('assistants.onboarding.action')}
+          </Button>
+        </MobileFloatingSurface>
+      </MobileTabPageScaffold>
+    );
+  }
+
   const unsupported = capability.isSuccess && capability.data.supported === false;
-  const unavailable = capability.isError || snapshot.isError;
+  const unavailable = capability.isError
+    || (capability.data?.supported === true && capability.data.enabled && snapshot.isError);
+  const instanceDisabled = capability.data?.supported === true
+    && (capability.data.enabled === false || snapshot.data?.enabled === false);
   const title = unavailable
     ? t('assistants.state.unavailable')
     : unsupported
       ? t('assistants.state.unsupportedTitle')
       : t('assistants.state.instanceDisabled');
+
+  if (instanceDisabled && !unavailable) {
+    return (
+      <MobileTabPageScaffold
+        title={pageTitle}
+        className={className}
+        surface={false}
+        surfaceClassName="oc-mobile-assistant-guide-host"
+      >
+        <MobileAssistantDisabledGuide onEnable={handleEnable} />
+      </MobileTabPageScaffold>
+    );
+  }
 
   return (
     <MobileTabPageScaffold
@@ -296,24 +420,17 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
         cardClassName="oc-mobile-assistant-state-card"
       >
         <section className="w-full max-w-md py-2">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-interactive-selection text-interactive-selection-foreground">
-          <Icon name={unsupported ? 'cloud-off' : 'sparkling'} weight="medium" className="size-5" />
-        </div>
-        <h2 className="mt-5 max-w-xs text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">
-          {title}
-        </h2>
-        {unavailable ? null : (
-          <p className="mt-2 max-w-sm typography-small leading-relaxed text-muted-foreground">
-            {unsupported ? t('assistants.state.unsupportedDescription') : t('assistants.state.instanceDisabledDescription')}
-          </p>
-        )}
-        {capability.data?.supported === true ? (
-          <Button type="button" size="lg" className="mt-6 w-full" onClick={handleEnable}>
-            <Icon name="settings-3" className="size-[18px]" />
-            {/* TODO(locale): Add a dedicated mobile Assistant enable CTA key. */}
-            {t('assistants.settings.instanceEnabled')}
-          </Button>
-        ) : null}
+          <div className="flex size-12 items-center justify-center rounded-xl bg-interactive-selection text-interactive-selection-foreground">
+            <Icon name={unsupported ? 'cloud-off' : 'sparkling'} weight="medium" className="size-5" />
+          </div>
+          <h2 className="mt-5 max-w-xs text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">
+            {title}
+          </h2>
+          {unavailable ? null : (
+            <p className="mt-2 max-w-sm typography-small leading-relaxed text-muted-foreground">
+              {unsupported ? t('assistants.state.unsupportedDescription') : t('assistants.state.instanceDisabledDescription')}
+            </p>
+          )}
         </section>
       </MobileLabeledSurfaceGroup>
     </MobileTabPageScaffold>

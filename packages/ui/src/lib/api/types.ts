@@ -1,6 +1,10 @@
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { DraftStarterRef } from '@/lib/draftStarters';
 import type {
+  MobileOtaBundleInfo,
+  MobileUpdateDecision,
+} from '@/lib/mobile-updates/types';
+import type {
   Session,
   TextPartInput,
   FilePartInput,
@@ -807,6 +811,15 @@ export interface PushAPI {
   unregisterApnsToken(payload: ApnsTokenPayload): Promise<{ ok: true } | null>;
 }
 
+/** Capacitor mobile app only; optional elsewhere. Capgo-style self-hosted OTA. */
+export interface MobileUpdatesAPI {
+  checkForOtaUpdate(): Promise<MobileUpdateDecision>;
+  downloadOtaUpdate(bundle: MobileOtaBundleInfo): Promise<void>;
+  applyOtaUpdateNow(): Promise<void>;
+  queueOtaUpdateForNextLaunch(): Promise<void>;
+  getOtaStatus(): Promise<{ supported: boolean; currentBundleId: string; nativeVersion: string }>;
+}
+
 export type GitHubUserSummary = {
   login: string;
   id?: number;
@@ -1230,6 +1243,8 @@ export interface RuntimeAPIs {
   notifications: NotificationsAPI;
   github?: GitHubAPI;
   push?: PushAPI;
+  /** Capacitor mobile app only; optional elsewhere. */
+  mobileUpdates?: MobileUpdatesAPI;
   diagnostics?: DiagnosticsAPI;
   clientAuth?: ClientAuthAPI;
   tools: ToolsAPI;

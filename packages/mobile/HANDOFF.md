@@ -163,6 +163,11 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 - **iOS Simulator + MLKit**: `GoogleMLKit` barcode has no arm64-simulator slice, so
   `scripts/ios-sim-build.mjs` temporarily strips the `CapacitorMlkitBarcodeScanning` pod, builds,
   then restores it. Device builds include it normally.
+- **Android design pt (`--dpt`)**: WebView CSS px is 1 dp, not 1 iOS pt. Capacitor
+  plugin `OpenChamberPhysicalScale` reads `DisplayMetrics.xdpi/ydpi` and the web
+  layer sets `--dpt` so compiled font sizes (`calc(N * var(--dpt))`) track ~1/163
+  inch. Do not pin Activity `densityDpi` to shrink the page — WebView ignores it
+  and IME geometry breaks. Keep `setTextZoom(100)` + `fontScale=1`.
 - **Android WebView version**: the UI uses `color-mix()` (Tailwind v4 + theme) which needs
   Chromium **111+**. An outdated Android System WebView renders translucency/selection wrong — tell
   testers to keep Android System WebView updated (or use a device with a current one). Floating
@@ -244,3 +249,36 @@ quality. Done in-repo vs. to-do at release time:
 - **Guideline 4.2 (minimum functionality)** — WebView-wrapper apps can be scrutinized; cite the
   native features (push, widgets, Control Center, QR pairing) in the review notes.
 - Signing/upload as covered in the CI section above (all three iOS targets; signed Android AAB).
+
+## OTA (Capgo self-hosted)
+
+Self-hosted live updates use `@capgo/capacitor-updater` (plugin config key `CapacitorUpdater`).
+
+### What was added
+
+- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel` from build-time `otaChannel`, `autoUpdate: false` so About can confirm a one-tap reload, `appReadyTimeout: 20000`, explicit delete/reset flags, optional `publicKey`) plus top-level `OpenChamberOTA` (`channel` / `shellApiVersion`) for the web layer. `otaChannel` = `process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta'` (baked at `mobile:sync`; stable store builds pass `OPENCHAMBER_OTA_CHANNEL=stable`). OTA never applies a lower `releaseVersion` than the device already has.
+- `src/openchamber-ota.ts` — local typed bridge (`CapacitorUpdaterBridge` via `registerPlugin('CapacitorUpdater')`); does **not** import `@capgo/capacitor-updater`. Canonical constants: `OPENCHAMBER_OTA_CHANNEL` (build default `'beta'`, overridable at sync via env — mirrors `capacitor.config.ts`), `OPENCHAMBER_SHELL_API_VERSION` (literal mirrored in config so Cap CLI does not execute `registerPlugin` when loading config).
+- `test/ota-config-contract.test.mjs` — source-regex contract for config + bridge surface.
+
+### Native wiring
+
+iOS pods / Android Gradle plugin registration for Capgo is **not** checked in from this change. It lands when CI (or a local machine) runs `bun run mobile:sync` (`cap sync`). Do not hand-edit `ios/**` or `android/**` for updater wiring.
+
+### Env overrides
+
+| Env | Purpose |
+|---|---|
+| `OPENCHAMBER_OTA_CHANNEL` | Bake shell channel at `mobile:sync` (`stable` or default `beta`) |
+| `OPENCHAMBER_OTA_UPDATE_URL` | Override the Capgo check endpoint (default `https://openchamber.xiaobe.top/v1/ota/check`) |
+| `OPENCHAMBER_OTA_PUBLIC_KEY` | Optional E2E encryption public key; empty / unset = unencrypted bundles |
+
+### `shellApiVersion` bump rule
+
+`OpenChamberOTA.shellApiVersion` / `OPENCHAMBER_SHELL_API_VERSION` is the native bridge contract version. **Bump it when any custom Capacitor plugin method surface changes.** OTA manifests declare `minShellApiVersion`; older shells should receive `install_native_required` instead of a JS bundle that would call missing native APIs.
+
+### Related endpoints / CI
+
+- Default new version is `v*` (desktop + APK + OTA). `mobile-beta/*` is mobile-web-only. See `docs/RELEASING.md` § 先选产物 (`node scripts/mobile-release-plan.mjs --json`).
+- Update-service OTA routes: `deploy/update-service` (check / bundle delivery; seeds for both `beta` and `stable` channels).
+- Mobile OTA Release workflow: `.github/workflows/mobile-beta-ota.yml` (tags `mobile-beta/*` + `mobile-stable/*`).
+- Rollout / promote-channel: `.github/workflows/mobile-beta-rollout.yml`.

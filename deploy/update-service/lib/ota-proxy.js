@@ -1,0 +1,102 @@
+/**
+ * EdgeOne edge proxy for `/ota/*` assets.
+ *
+ * EdgeOne Pages deploys this project from git, while OTA snapshots (channel
+ * manifests + content-addressed bundles) are published by CI to the Vercel
+ * origin only. To keep the EdgeOne host (preferred by mainland-China clients)
+ * from serving stale seeds, `/ota/channels/*.json` and `/ota/bundles/*.zip`
+ * are reverse-proxied to the Vercel origin with edge-friendly cache headers.
+ *
+ * The proxy is strictly allowlisted — it never becomes an open proxy — and it
+ * never fabricates success: upstream failures surface as 502, misses as 404.
+ */
+
+const DEFAULT_UPSTREAM_ORIGIN = 'https://openchamber-update.vercel.app';
+const UPSTREAM_TIMEOUT_MS = 20_000;
+
+// Content-addressed, immutable artifacts — safe for long edge caching.
+const BUNDLE_PATH_PATTERN = /^\/ota\/bundles\/[0-9a-f]{16}\.zip$/;
+// Channel manifests mutate per release — short edge TTL keeps rollout/pause
+// actions visible within a minute while shielding the origin from hot checks.
+const CHANNEL_PATH_PATTERN = /^\/ota\/channels\/[a-z0-9_-]+\.json$/;
+
+const CHANNEL_CACHE_CONTROL = 'public, max-age=0, s-maxage=60, stale-while-revalidate=300';
+const BUNDLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+function notFound() {
+  return new Response('Not found', { status: 404 });
+}
+
+function upstreamUnavailable() {
+  // Never masquerade an origin failure as an authoritative empty result.
+  return new Response(JSON.stringify({ error: 'ota_upstream_unavailable' }), {
+    status: 502,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  });
+}
+
+/**
+ * Handle an `/ota/*` request by proxying the allowlisted path upstream.
+ * Returns a `Response`; never throws.
+ */
+export async function handleOtaProxyRequest(request, options = {}) {
+  const origin = options.upstreamOrigin ?? DEFAULT_UPSTREAM_ORIGIN;
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  const method = request.method.toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return notFound();
+
+  const path = new URL(request.url).pathname;
+  const isBundle = BUNDLE_PATH_PATTERN.test(path);
+  if (!isBundle && !CHANNEL_PATH_PATTERN.test(path)) return notFound();
+
+  let upstream;
+  let upstreamError = 'unknown';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  try {
+    upstream = await fetchImpl(origin + path, {
+      method,
+      headers: { Accept: '*/*' },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    upstreamError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    // Never masquerade an origin failure as an authoritative empty result.
+    // Include the failure reason so edge/origin reachability issues are
+    // diagnosable from the response alone.
+    return new Response(JSON.stringify({ error: 'ota_upstream_unavailable', detail: upstreamError }), {
+      status: 502,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!upstream.ok) {
+    // Preserve misses (404) and origin errors without caching them.
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: { 'cache-control': 'no-store' },
+    });
+  }
+
+  const headers = new Headers();
+  headers.set('cache-control', isBundle ? BUNDLE_CACHE_CONTROL : CHANNEL_CACHE_CONTROL);
+  const contentType = upstream.headers.get('content-type');
+  if (contentType) headers.set('content-type', contentType);
+  const contentLength = upstream.headers.get('content-length');
+  if (contentLength) headers.set('content-length', contentLength);
+  headers.set('x-ota-proxy', 'edgeone');
+
+  return new Response(method === 'HEAD' ? null : upstream.body, {
+    status: upstream.status,
+    headers,
+  });
+}

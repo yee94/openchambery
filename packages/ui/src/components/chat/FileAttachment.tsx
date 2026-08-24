@@ -41,7 +41,7 @@ const FileAttachmentButton = memo(() => {
   const runtimeApis = useRuntimeAPIs();
   const isVSCodeRuntime = runtimeApis.runtime.isVSCode;
   const buttonSizeClass = isMobile ? 'h-9 w-9' : 'h-7 w-7';
-  const iconSizeClass = isMobile ? 'h-5 w-5' : 'h-[18px] w-[18px]';
+  const iconSizeClass = isMobile ? 'h-5 w-5' : 'h-[1.125rem] w-[1.125rem]';
 
   const attachFiles = async (files: FileList | File[]) => {
     for (let i = 0; i < files.length; i++) {
@@ -225,7 +225,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-opacity text-left h-5"
       >
         <FileTypeIcon filePath={file.filename} extension={extension} className="h-4 w-4" />
-        <span className="text-foreground truncate max-w-[200px]">
+        <span className="text-foreground truncate max-w-[12.5rem]">
           {displayName}
         </span>
         <span
@@ -278,6 +278,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         event.stopPropagation();
         longPressRef.current.openFromContextMenu(longPressKey, openSaveActions);
       }}
+      data-attachment-preview="true"
       className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       aria-label={displayName}
     >
@@ -340,46 +341,6 @@ interface FileChipProps {
   onRemove: () => void;
 }
 
-const FileChip = memo(({ file, onRemove }: FileChipProps) => {
-  const { t } = useI18n();
-  const { displayName, fileSize, extension } = useFileDetails(file);
-  const isDirectory = isDirectoryAttachmentMime(file.mimeType)
-    || isDirectoryAttachmentPath(file.filename)
-    || isDirectoryAttachmentPath(file.serverPath);
-
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        // Prevent click from bubbling if clicking the remove button
-        if ((e.target as HTMLElement).closest('[data-remove-button]')) {
-          return;
-        }
-      }}
-      className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-opacity text-left h-5"
-    >
-      <FileTypeIcon filePath={file.filename} extension={extension} isDirectory={isDirectory} className="h-4 w-4" />
-      <span className="text-foreground truncate max-w-[200px]">
-        {displayName}
-        {fileSize && <span className="text-muted-foreground ml-1">({fileSize})</span>}
-      </span>
-      <span
-        data-remove-button
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        className="flex items-center justify-center h-5 w-5 flex-shrink-0 hover:bg-[var(--interactive-hover)] rounded-full transition-colors cursor-pointer"
-        aria-label={t('chat.fileAttachment.actions.removeNamed', { name: displayName })}
-      >
-        <Icon name="close" className="h-4 w-4 text-muted-foreground" />
-      </span>
-    </button>
-  );
-});
-
-FileChip.displayName = 'FileChip';
-
 const VSCodeFileChip = memo(({ file, onRemove }: FileChipProps) => {
   const { t } = useI18n();
   const { displayName, extension } = useFileDetails(file);
@@ -413,7 +374,7 @@ const VSCodeFileChip = memo(({ file, onRemove }: FileChipProps) => {
         <Icon name="close" className="h-4 w-4 text-muted-foreground" />
       </span>
         <FileTypeIcon filePath={file.filename} extension={extension} className="h-4 w-4" />
-        <span className={cn('text-foreground', isSelectionAttachment ? 'whitespace-nowrap' : 'truncate max-w-[200px]')}>
+        <span className={cn('text-foreground', isSelectionAttachment ? 'whitespace-nowrap' : 'truncate max-w-[12.5rem]')}>
           {displayName}
         </span>
     </button>
@@ -459,12 +420,12 @@ AttachedVSCodeFileChips.displayName = 'AttachedVSCodeFileChips';
 
 export const AttachedFilesList = memo(({ attachments, onShowPopup, onRemoveAttachedFile }: AttachedFilesListProps) => {
   const attachedFiles = attachments;
-  const localFiles = attachedFiles.filter((file) => file.source !== 'server' && file.source !== 'vscode');
+  const images = attachedFiles.filter(
+    (file) => file.source !== 'server' && file.source !== 'vscode' && file.mimeType.startsWith('image/'),
+  );
 
-  if (localFiles.length === 0) return null;
+  if (images.length === 0) return null;
 
-  const images = localFiles.filter((f) => f.mimeType.startsWith('image/'));
-  const otherFiles = localFiles.filter((f) => !f.mimeType.startsWith('image/'));
   const imageGallery = images.map((file) => ({
     url: file.dataUrl || file.serverPath || '',
     mimeType: file.mimeType,
@@ -473,35 +434,19 @@ export const AttachedFilesList = memo(({ attachments, onShowPopup, onRemoveAttac
   })).filter((image) => image.url);
 
   return (
-    <div className="pb-4 w-full px-1 space-y-3">
-      {/* Images row - inline with previews */}
-      {images.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {images.map((file, index) => (
-            <ImagePreview
-              key={file.id}
-              file={file}
-              onRemove={() => onRemoveAttachedFile(file)}
-              onShowPopup={onShowPopup}
-              gallery={imageGallery}
-              index={index}
-            />
-          ))}
-        </div>
-      )}
-      
-      {/* Other files row - inline text-only */}
-      {otherFiles.length > 0 && (
-        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
-          {otherFiles.map((file) => (
-            <FileChip
-              key={file.id}
-              file={file}
-              onRemove={() => onRemoveAttachedFile(file)}
-            />
-          ))}
-        </div>
-      )}
+    <div className="pb-4 w-full px-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {images.map((file, index) => (
+          <ImagePreview
+            key={file.id}
+            file={file}
+            onRemove={() => onRemoveAttachedFile(file)}
+            onShowPopup={onShowPopup}
+            gallery={imageGallery}
+            index={index}
+          />
+        ))}
+      </div>
     </div>
   );
 });
@@ -635,7 +580,7 @@ export const ActiveEditorFileSuggestion = memo(({
             <Icon name="add" className="h-4 w-4" />
           </button>
           <FileTypeIcon filePath={fileName} extension={ext} className="h-4 w-4 flex-shrink-0" />
-          <span className="text-xs truncate max-w-[220px]">{displayName}</span>
+          <span className="text-xs truncate max-w-[13.75rem]">{displayName}</span>
         </div>
       )}
     </div>
@@ -1190,7 +1135,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
                         ) : (
                           <Icon name="github" className="text-muted-foreground h-3.5 w-3.5" />
                         )}
-                        <div className="overflow-hidden max-w-[220px]">
+                        <div className="overflow-hidden max-w-[13.75rem]">
                           <span className="truncate block" title={fileName}>{fileName}</span>
                         </div>
                       </button>
@@ -1201,7 +1146,7 @@ export const MessageFilesDisplay = memo(({ files, messageID, sessionID, onShowPo
                         ) : (
                           <FileTypeIcon filePath={fileName} extension={ext} isDirectory={isDirectory} className="text-muted-foreground h-3.5 w-3.5" />
                         )}
-                        <div className="overflow-hidden max-w-[140px]">
+                        <div className="overflow-hidden max-w-[8.75rem]">
                           <span className="truncate block" title={fileName}>{fileName}</span>
                         </div>
                       </div>
