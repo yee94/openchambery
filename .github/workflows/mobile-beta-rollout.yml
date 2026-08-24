@@ -12,6 +12,7 @@ on:
           - pause
           - rollback
           - set-native-target
+          - set-min-shell-release-version
           - set-min-native-build
           - promote-channel
       percent:
@@ -28,11 +29,11 @@ on:
           - ios
           - android
       version:
-        description: Native version for set-native-target
+        description: Version for set-native-target / set-min-shell-release-version (empty clears the shell gate)
         required: false
         type: string
       build:
-        description: Native build number for set-native-target / set-min-native-build
+        description: Native build number for set-native-target / set-min-native-build (deprecated gate)
         required: false
         type: string
       url:
@@ -131,7 +132,13 @@ jobs:
               fi
               WRITE_CHANNEL="$CHANNEL"
               ;;
+            set-min-shell-release-version)
+              # Empty VERSION clears activeBundle.minShellReleaseVersion (no shell gate).
+              ARGS=(--action set-min-shell-release-version --channel "$CHANNEL" --version "${VERSION:-}" --out "$OUT")
+              WRITE_CHANNEL="$CHANNEL"
+              ;;
             set-min-native-build)
+              # DEPRECATED: server check no longer reads minNativeBuild; kept for legacy repair.
               if [[ -z "${PLATFORM:-}" || -z "${BUILD:-}" ]]; then
                 echo "set-min-native-build requires platform and build"
                 exit 1

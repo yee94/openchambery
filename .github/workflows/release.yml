@@ -42,7 +42,7 @@ jobs:
       # Mobile plan mode ("ota" | "native") from mobile-release-plan.mjs.
       # Drives whether iOS/TestFlight builds: native betas and ALL stable
       # releases upload iOS; web-only betas skip it. Also gates the
-      # minNativeBuild floor raise in mobile-native-targets.
+      # minShellReleaseVersion floor raise in mobile-native-targets.
       plan_mode: ${{ steps.mobile_plan.outputs.mode }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -725,15 +725,16 @@ jobs:
           echo "mobile-release-plan mode=$PLAN_MODE"
 
           # Publish the same-version web bundle first so a fresh native install
-          # cannot be rolled back to an older activeBundle. Raise minNativeBuild
-          # only when the native shell actually changed (mode: native), for BOTH
-          # platforms and both channels — the in-app one-tap-vs-reinstall choice
-          # is decided here, independent of OTA publishing. Web-only releases
-          # (mode: ota) keep existing shells on apply_ota; stable never raises
-          # the floor just because it shipped an installer.
+          # cannot be rolled back to an older activeBundle. Raise
+          # minShellReleaseVersion only when the native shell actually changed
+          # (mode: native), for BOTH platforms and both channels — the in-app
+          # one-tap-vs-reinstall choice is decided here by web/shell version
+          # identity, independent of OTA publishing and of github.run_number.
+          # Web-only releases (mode: ota) keep existing shells on apply_ota;
+          # stable never raises the floor just because it shipped an installer.
+          # BUILD_NUMBER remains for nativeTargets / asset naming only.
           if [[ "$PLAN_MODE" == "native" ]]; then
-            export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
-            export MIN_NATIVE_BUILD_ANDROID="$BUILD_NUMBER"
+            export MIN_SHELL_RELEASE_VERSION="$VERSION"
           fi
           ASSEMBLE_ARGS=(
             --zip "$ZIP_PATH"
@@ -766,12 +767,18 @@ jobs:
           }
           manifest.nativeTargets = manifest.nativeTargets || {};
           if (planMode === 'ota') {
+            // Do not raise the shell gate on web-only releases. Legacy
+            // platforms.*.minNativeBuild may still be present for schema
+            // compatibility; keep the historical android<=ios sync only.
             const iosMin = manifest.activeBundle.platforms?.ios?.minNativeBuild;
             const androidMin = manifest.activeBundle.platforms?.android?.minNativeBuild;
             if (Number.isInteger(iosMin) && Number.isInteger(androidMin) && androidMin > iosMin) {
               manifest.activeBundle.platforms.android.minNativeBuild = iosMin;
             }
           } else {
+            // Version-gate floor (top-level); build number is not used for
+            // in-app update decisions anymore.
+            manifest.activeBundle.minShellReleaseVersion = version;
             manifest.nativeTargets.android = {
               version,
               build,

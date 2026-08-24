@@ -53,6 +53,21 @@ function nativeInfo(nativeTarget) {
 }
 
 /**
+ * 门身份：第一个可被 parseReleaseVersion 解析的 [request.currentBundleId, request.nativeVersion]。
+ * currentBundleId 通常是运行中 web 包版本（含 -beta.N）；旧壳/builtin 场景回退 nativeVersion
+ * （iOS 剥离版 "1.18.2" 也可解析，参与门比较是安全且正确的方向——stable 门不拦同 core beta 剥离身份）。
+ */
+function resolveShellGateIdentity(request) {
+  if (parseReleaseVersion(request.currentBundleId)) {
+    return request.currentBundleId;
+  }
+  if (parseReleaseVersion(request.nativeVersion)) {
+    return request.nativeVersion;
+  }
+  return null;
+}
+
+/**
  * Highest release version the device is already known to be on.
  * Used so a fresh native install (`currentBundleId: builtin`) cannot be
  * rolled back to an older activeBundle.
@@ -71,12 +86,12 @@ export function resolveCurrentFloorVersion(request, nativeTarget) {
   if (native && native.beta !== null) {
     candidates.push(request.nativeVersion);
   }
+  const gateIdentity = resolveShellGateIdentity(request);
   if (
     nativeTarget
-    && Number.isInteger(request.nativeBuild)
-    && Number.isInteger(nativeTarget.build)
-    && request.nativeBuild >= nativeTarget.build
+    && gateIdentity
     && parseReleaseVersion(nativeTarget.version)
+    && compareReleaseVersions(gateIdentity, nativeTarget.version) >= 0
   ) {
     candidates.push(nativeTarget.version);
   }
@@ -134,11 +149,26 @@ export function resolveMobileUpdate(manifest, request) {
   }
 
   const activeBundle = manifest.activeBundle;
-  const minNativeBuild = activeBundle.platforms[platform].minNativeBuild;
+  const gateIdentity = resolveShellGateIdentity(request);
 
   // 2. Shell / native too old for this bundle.
-  if (request.nativeBuild < minNativeBuild
-    || request.shellApiVersion < activeBundle.minShellApiVersion) {
+  // 门禁：shellApiVersion，以及 optional minShellReleaseVersion（版本号门，替代已废弃的 minNativeBuild）。
+  if (request.shellApiVersion < activeBundle.minShellApiVersion) {
+    const native = nativeInfo(nativeTarget);
+    native.state = 'required';
+    return {
+      status: 'ok',
+      primaryAction: 'install_native_required',
+      ota: { state: 'incompatible' },
+      native,
+      nextCheckInSec,
+    };
+  }
+  if (
+    activeBundle.minShellReleaseVersion
+    && gateIdentity
+    && compareReleaseVersions(gateIdentity, activeBundle.minShellReleaseVersion) < 0
+  ) {
     const native = nativeInfo(nativeTarget);
     native.state = 'required';
     return {
@@ -162,23 +192,14 @@ export function resolveMobileUpdate(manifest, request) {
     };
   }
 
-  // Shell already ships this (or a newer) web bundle: when the device's
-  // nativeBuild has reached nativeTarget.build and nativeTarget.version is not
-  // older than activeBundle.releaseVersion, the installed shell already embeds
-  // the active web bundle. This matters on iOS, whose marketing version strips
-  // `-beta.N` (1.18.2-beta.33 → 1.18.2), so a fresh shell reports
-  // currentBundleId 'builtin' and a stripped nativeVersion — neither identity
-  // matches, which would otherwise re-offer apply_ota on every check.
-  const nativeTargetVersion = parseReleaseVersion(nativeTarget?.version);
-  const activeReleaseVersion = parseReleaseVersion(activeBundle.releaseVersion);
+  // 壳已内嵌或不低于 active web：仅 builtin 启用（门身份常回退到 nativeVersion）。
+  // 门身份 >= activeBundle.releaseVersion → none（剥离 "1.18.2" > "1.18.2-beta.N"）。
+  // 已安装 OTA（hex bundleId / 真实 web 版本名）与误报的剥离 currentBundleId 不走此分支，
+  // 以免挡住同版本内容更正，并保留「剥离身份不得永久挡住同 core beta OTA」的 floor 语义。
   const shellEmbeddedActiveWeb = Boolean(
-    nativeTarget
-    && nativeTargetVersion
-    && activeReleaseVersion
-    && Number.isInteger(request.nativeBuild)
-    && Number.isInteger(nativeTarget.build)
-    && request.nativeBuild >= nativeTarget.build
-    && compareReleaseVersions(nativeTarget.version, activeBundle.releaseVersion) >= 0
+    request.currentBundleId === 'builtin'
+    && gateIdentity
+    && compareReleaseVersions(gateIdentity, activeBundle.releaseVersion) >= 0
   );
 
   // 4. Different active bundle → apply OTA.

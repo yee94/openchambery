@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import { parseOtaManifest } from '../lib/ota-manifest.js';
-import { fnv1a32, resolveMobileUpdate, rolloutBucket } from '../lib/ota-resolver.js';
+import { fnv1a32, resolveCurrentFloorVersion, resolveMobileUpdate, rolloutBucket } from '../lib/ota-resolver.js';
 
 const CHECKSUM = `sha256:${'a'.repeat(64)}`;
 
@@ -80,6 +80,20 @@ test('parseOtaManifest accepts a full valid manifest and null activeBundle seed'
   assert.equal(seed.manifest.activeBundle, null);
 });
 
+test('parseOtaManifest accepts optional minShellReleaseVersion and rejects invalid values', () => {
+  const ok = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ minShellReleaseVersion: '1.18.3-beta.1' }),
+  }));
+  assert.equal(ok.ok, true);
+  assert.equal(ok.manifest.activeBundle.minShellReleaseVersion, '1.18.3-beta.1');
+
+  const bad = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ minShellReleaseVersion: 'not-a-version' }),
+  }));
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.some((error) => error.includes('minShellReleaseVersion')));
+});
+
 test('parseOtaManifest collects validation errors for invalid fields', () => {
   const result = parseOtaManifest({
     schemaVersion: 2,
@@ -124,14 +138,21 @@ test('null manifest or null activeBundle yields none/current (decision order 1)'
   assert.equal(decision.ota.state, 'current');
 });
 
-test('shell too old via minNativeBuild requires native install (decision order 2)', () => {
-  const manifest = parseOtaManifest(validManifest()).manifest;
-  const decision = resolveMobileUpdate(manifest, baseRequest({ nativeBuild: 349 }));
+test('shell too old via minShellReleaseVersion requires native install (decision order 2)', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.3',
+      minShellReleaseVersion: '1.18.3',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2',
+    nativeBuild: 21,
+  }));
   assert.equal(decision.primaryAction, 'install_native_required');
   assert.equal(decision.ota.state, 'incompatible');
   assert.equal(decision.native.state, 'required');
-  assert.equal(decision.native.build, 350);
-  assert.equal(decision.native.installUrl, 'https://testflight.apple.com/join/xxx');
 });
 
 test('shell too old via shellApiVersion requires native install (decision order 2)', () => {
@@ -142,6 +163,71 @@ test('shell too old via shellApiVersion requires native install (decision order 
   assert.equal(decision.primaryAction, 'install_native_required');
   assert.equal(decision.ota.state, 'incompatible');
   assert.equal(decision.native.state, 'required');
+});
+
+test('minShellReleaseVersion gate: matching beta identity is allowed (no nativeBuild check)', () => {
+  // 用户真实误判场景回归：build 21 壳不应再被 minNativeBuild 误拦。
+  // 门比较沿用 compareReleaseVersions（同 core 的 stable > beta），故门写本轮 beta 身份。
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.3-beta.2',
+      minShellReleaseVersion: '1.18.3-beta.1',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.3-beta.1',
+    nativeVersion: '1.18.3-beta.1',
+    nativeBuild: 21,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.state, 'available');
+});
+
+test('minShellReleaseVersion gate: stripped iOS identity below floor requires native install', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.3',
+      minShellReleaseVersion: '1.18.3',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2',
+    nativeBuild: 400,
+  }));
+  assert.equal(decision.primaryAction, 'install_native_required');
+  assert.equal(decision.ota.state, 'incompatible');
+});
+
+test('minShellReleaseVersion gate: stripped identity equal to stable floor is allowed', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.2-beta.61',
+      minShellReleaseVersion: '1.18.2',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.2',
+    nativeVersion: '1.18.2',
+    nativeBuild: 21,
+  }));
+  // 剥离身份不过门；floor 忽略剥离 currentBundleId，仍可 apply 同 core beta OTA。
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.state, 'available');
+});
+
+test('legacy manifest without minShellReleaseVersion ignores low nativeBuild', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.40' }),
+  })).manifest;
+  assert.equal(manifest.activeBundle.minShellReleaseVersion, undefined);
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.2-beta.30',
+    nativeVersion: '1.18.2-beta.30',
+    nativeBuild: 21,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.state, 'available');
 });
 
 test('rollout bucket is deterministic and gates at 0 and 100 percent (decision order 3)', () => {
@@ -162,7 +248,11 @@ test('rollout bucket is deterministic and gates at 0 and 100 percent (decision o
   const full = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ rolloutPercent: 100 }),
   })).manifest;
-  const fullDecision = resolveMobileUpdate(full, baseRequest({ deviceId, currentBundleId: 'builtin' }));
+  const fullDecision = resolveMobileUpdate(full, baseRequest({
+    deviceId,
+    currentBundleId: '1.18.2-beta.20',
+    nativeVersion: '1.18.2-beta.20',
+  }));
   assert.equal(fullDecision.primaryAction, 'apply_ota');
   assert.equal(fullDecision.ota.state, 'available');
 
@@ -177,7 +267,11 @@ test('rollout bucket is deterministic and gates at 0 and 100 percent (decision o
   const included = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ rolloutPercent: bucket + 1 }),
   })).manifest;
-  const includedDecision = resolveMobileUpdate(included, baseRequest({ deviceId }));
+  const includedDecision = resolveMobileUpdate(included, baseRequest({
+    deviceId,
+    currentBundleId: '1.18.2-beta.20',
+    nativeVersion: '1.18.2-beta.20',
+  }));
   assert.equal(includedDecision.primaryAction, 'apply_ota');
 });
 
@@ -185,7 +279,10 @@ test('different bundleId yields apply_ota with public bundle fields (decision or
   const manifest = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ sessionKey: 'base64session' }),
   })).manifest;
-  const decision = resolveMobileUpdate(manifest, baseRequest({ currentBundleId: 'builtin' }));
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.2-beta.20',
+    nativeVersion: '1.18.2-beta.20',
+  }));
   assert.equal(decision.primaryAction, 'apply_ota');
   assert.equal(decision.ota.state, 'available');
   assert.equal(decision.ota.bundle.bundleId, '34ab092a8e7f6d21');
@@ -232,7 +329,7 @@ test('builtin on a newer native version must not apply an older OTA bundle', () 
   assert.equal(decision.ota.state, 'current');
 });
 
-test('stripped iOS nativeVersion still blocks downgrade via nativeTargets.build', () => {
+test('stripped iOS nativeVersion still blocks downgrade via gate identity vs nativeTargets.version', () => {
   const manifest = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.29' }),
     nativeTargets: {
@@ -242,7 +339,7 @@ test('stripped iOS nativeVersion still blocks downgrade via nativeTargets.build'
   const decision = resolveMobileUpdate(manifest, baseRequest({
     currentBundleId: 'builtin',
     nativeVersion: '1.18.2',
-    nativeBuild: 360,
+    nativeBuild: 21,
   }));
   assert.equal(decision.primaryAction, 'none');
   assert.equal(decision.ota.state, 'current');
@@ -261,50 +358,25 @@ test('applied newer bundle version name must not roll back to an older activeBun
   assert.equal(decision.ota.state, 'current');
 });
 
-test('fresh iOS shell on the native target does not re-apply the same web bundle', () => {
-  // iOS strips `-beta` from the marketing version, so a freshly installed shell
-  // reports nativeVersion 1.18.2 (stripped) and currentBundleId 'builtin'. Its
-  // nativeBuild already reached nativeTarget.build and the shell embeds the
-  // active web bundle — the resolver must not re-offer apply_ota every check.
+test('builtin shell with stripped identity at or above active release is embedded (no re-apply)', () => {
+  // 门身份 1.18.2 >= active 1.18.2-beta.61 → none（不重推）。
   const manifest = parseOtaManifest(validManifest({
-    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.33' }),
+    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.61' }),
     nativeTargets: {
       ios: { version: '1.18.2-beta.33', build: 370, installUrl: 'https://testflight.apple.com/join/xxx' },
     },
   })).manifest;
   const decision = resolveMobileUpdate(manifest, baseRequest({
     currentBundleId: 'builtin',
-    nativeVersion: '1.18.2', // stripped iOS marketing version
-    nativeBuild: 370,
+    nativeVersion: '1.18.2',
+    nativeBuild: 21,
   }));
   assert.equal(decision.primaryAction, 'none');
   assert.equal(decision.ota.state, 'current');
 });
 
-test('older activeBundle still applies OTA when the shell is older than the native target', () => {
-  // Pure web OTA bumps activeBundle.releaseVersion without changing the shell.
-  // The device nativeBuild stays below nativeTarget.build, so the shell does
-  // not already embed the active web bundle → apply_ota.
-  const manifest = parseOtaManifest(validManifest({
-    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.33' }),
-    nativeTargets: {
-      ios: { version: '1.18.2-beta.30', build: 350, installUrl: 'https://testflight.apple.com/join/xxx' },
-    },
-  })).manifest;
-  const decision = resolveMobileUpdate(manifest, baseRequest({
-    currentBundleId: 'builtin',
-    nativeVersion: '1.18.2', // stripped iOS marketing version
-    nativeBuild: 350,
-  }));
-  assert.equal(decision.primaryAction, 'apply_ota');
-  assert.equal(decision.ota.state, 'available');
-  assert.equal(decision.ota.bundle.releaseVersion, '1.18.2-beta.33');
-});
-
-test('stale iOS nativeTarget still apply_ota when the running web is older (builtin)', () => {
-  // Live beta.json after skipping TestFlight: nativeTargets.ios stays on an
-  // older shell (1.18.2-beta.32) while activeBundle is 1.18.2-beta.36.
-  // A builtin shell that has not reported its baked web version still needs OTA.
+test('baked older web version still applies newer OTA regardless of nativeBuild', () => {
+  // 正确上报烘焙 web 版本时，低于 active 仍 apply_ota；不再依赖 nativeBuild vs nativeTarget.build。
   const manifest = parseOtaManifest(validManifest({
     activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.36' }),
     nativeTargets: {
@@ -312,9 +384,9 @@ test('stale iOS nativeTarget still apply_ota when the running web is older (buil
     },
   })).manifest;
   const decision = resolveMobileUpdate(manifest, baseRequest({
-    currentBundleId: 'builtin',
+    currentBundleId: '1.18.2-beta.32',
     nativeVersion: '1.18.2',
-    nativeBuild: 362,
+    nativeBuild: 21,
   }));
   assert.equal(decision.primaryAction, 'apply_ota');
   assert.equal(decision.ota.bundle.releaseVersion, '1.18.2-beta.36');
@@ -377,6 +449,23 @@ test('releaseVersion identity also counts as current (on-device bundle version n
   }));
   assert.equal(decision.primaryAction, 'none');
   assert.equal(decision.ota.state, 'current');
+});
+
+test('floor third candidate: gate identity at or above nativeTarget.version includes target', () => {
+  const nativeTarget = { version: '1.18.2-beta.30', build: 360 };
+  const included = resolveCurrentFloorVersion(baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2',
+    nativeBuild: 21,
+  }), nativeTarget);
+  assert.equal(included, '1.18.2-beta.30');
+
+  const excluded = resolveCurrentFloorVersion(baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.2-beta.20',
+    nativeBuild: 999,
+  }), nativeTarget);
+  assert.equal(excluded, '1.18.2-beta.20');
 });
 
 test('checksum normalization: prefixed input stored as plain hex; encrypted keeps opaque value', () => {

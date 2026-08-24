@@ -19,12 +19,12 @@
 | 情况 | 产物 | Tag | 触发 |
 |---|---|---|---|
 | 默认新版本，纯 web 变更（`mode: "ota"`） | 桌面 macOS/Win/Linux + Android APK/AAB + npm + 同版本 OTA。**不上 iOS / TestFlight**。 | `vX.Y.Z-beta.N` | `release.yml`（含 `mobile-native-targets`） |
-| 新版本含原生壳变更（`mode: "native"`，即 break change） | 上行全部 + iOS 内测 TestFlight；端内检测抬 `minNativeBuild` 引导重装 | `vX.Y.Z-beta.N` | `release.yml`（`build_ios` 由 plan mode 决定） |
+| 新版本含原生壳变更（`mode: "native"`，即 break change） | 上行全部 + iOS 内测 TestFlight；端内检测抬 `minShellReleaseVersion` 引导重装 | `vX.Y.Z-beta.N` | `release.yml`（`build_ios` 由 plan mode 决定） |
 | 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA（无 iOS） | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
 | 稳定版 | 桌面 + Android APK/AAB + npm + 同版本 OTA + iOS TestFlight（关联外测组 + Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
 | 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
 
-**TestFlight 跟随「是否需要原生壳」，不跟随 tag**：`mode: native` 的 beta 与所有稳定版上传 iOS（beta 仅内测，稳定版关联外测组）；`mode: ota` 的 beta 不碰 iOS。**端内一键更新 vs 跳转重装由 `minNativeBuild` 决定，与 OTA 发布是两条独立链路**：只有 `mode: native` 抬下限（两端同规则，稳定版也不因发了安装包而抬）。
+**TestFlight 跟随「是否需要原生壳」，不跟随 tag**：`mode: native` 的 beta 与所有稳定版上传 iOS（beta 仅内测，稳定版关联外测组）；`mode: ota` 的 beta 不碰 iOS。**端内一键更新 vs 跳转重装由 `activeBundle.minShellReleaseVersion`（版本语义）决定，与 OTA 发布是两条独立链路**：只有 `mode: native` 把下限写成**本轮发布版本号**；`github.run_number` / `nativeBuild` 只用于 TestFlight/商店记账，**不再参与端内更新判定**。稳定版也不因发了安装包而抬门。
 
 默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。
 
@@ -324,14 +324,20 @@ OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/
 
 ### 客户端可检测性验证（detectability probe）
 
-每次 OTA 发布部署后，CI 会用 `scripts/mobile-ota/verify-detectability.mjs` 对 **Vercel 与 EdgeOne 两个客户端入口** 各用四种设备画像探活 `POST /v1/mobile/update/check`，任一失败即让发布 fail（带 ~3 分钟边缘缓存重试）。设备优先打 EdgeOne，只探 Vercel 会漏掉国内入口的 resolver 回归：
+每次 OTA 发布部署后，CI 会用 `scripts/mobile-ota/verify-detectability.mjs` 对 **Vercel 与 EdgeOne 两个客户端入口** 探活 `POST /v1/mobile/update/check`，任一失败即让发布 fail（带 ~3 分钟边缘缓存重试）。脚本先断言**双 fixture**（新式版本门 / 存量无门），再打线上。设备优先打 EdgeOne，只探 Vercel 会漏掉国内入口的 resolver 回归。
 
-1. **旧 iOS 壳**：剥离 `-beta.N` 的版本号 + `currentBundleId: builtin` —— `mode: ota` 必须返回 `apply_ota` 且指向新版本；`mode: native` 必须返回 `install_native_required`。
-2. **旧 Android 壳**：完整版本号 + `builtin` —— 同上。
-3. **iOS Capgo builtin 营销版本**：`currentBundleId` = 剥离后的 `CFBundleShortVersionString`（`1.18.2`）。Beta 渠道必须仍返回 `apply_ota`——这是 TestFlight 壳实际上报的身份，不能当成正式版地板。
-4. **已在包上的设备**：`currentBundleId` = 发布版本 —— 必须返回 `none`（防无限重推）。
+**Fixture A**（manifest 带 `minShellReleaseVersion: "1.18.3"`，active `1.18.3-beta.2`）：
 
-这保证「发布了」等于「客户端检测得到」：灰度桶、下限抬升、降级保护、iOS 剥离版本号等任一环节回归都会在发布时暴露，而不是等用户设备发现。本地可手动跑同款验证。
+1. **旧 iOS 壳**：`nativeVersion: "1.18.2"`（剥离）+ `currentBundleId: "builtin"` → `install_native_required`
+2. **旧 Android 壳**：`currentBundleId: "1.18.2-beta.50"` → `install_native_required`
+3. **新壳**：`currentBundleId: "1.18.3-beta.1"`、`nativeBuild: 21`（故意很小）→ `apply_ota`（证明 build 号不再参与判定）
+4. **已在包上**：`currentBundleId: "1.18.3-beta.2"`（= active releaseVersion）→ `none`
+
+**Fixture B**（存量 manifest，无 `minShellReleaseVersion`）：`nativeBuild: 21` + 旧 web 版本 → `apply_ota`（无门放行；即便遗留 `platforms.*.minNativeBuild` 也不再抬门）。
+
+线上探活的四画像沿用同一套版本门语义：有 `minShellReleaseVersion` 时旧壳重装，无门时旧壳 `apply_ota`；`nativeBuild` 故意填小以回归「两把计数器错位」类误判。
+
+这保证「发布了」等于「客户端检测得到」：灰度桶、版本门抬升、降级保护、iOS 剥离版本号等任一环节回归都会在发布时暴露，而不是等用户设备发现。本地可手动跑同款验证（`--fixtures-only` 只验画像表）。
 
 ### 通道烘焙（shell channel）
 
@@ -401,7 +407,8 @@ GitHub Actions → **Mobile Beta OTA Rollout**（`mobile-beta-rollout.yml`）`wo
 | `pause` | `rolloutPercent = 0` |
 | `rollback` | 将 `rollbackBundleIds[0]` 升为 active，当前 active 退入 rollback 队列（最多保留 2 个） |
 | `set-native-target` | 更新 `nativeTargets.ios|android` |
-| `set-min-native-build` | 设置 `activeBundle.platforms.<platform>.minNativeBuild`（可升可降）。用于修复被错误抬高的原生下限，让既有壳回到 `apply_ota` |
+| `set-min-shell-release-version` | 设置或清除 `activeBundle.minShellReleaseVersion`（传空字符串清除）。端内「一键 OTA」vs「跳转重装」的版本门 |
+| `set-min-native-build` | **DEPRECATED**。设置 `activeBundle.platforms.<platform>.minNativeBuild`（可升可降）。服务端判定已不再读取该字段；仅保留用于修复线上存量 manifest |
 | `promote-channel` | 将 `--from`（通常 beta）已验证的 activeBundle **原样**拷到 `--to`（通常 stable），仅换 `rolloutSalt` / `rolloutPercent`（默认 100）；内容寻址 zip 可复用 |
 
 本地等价（写出 snapshot，再由 CI/人工部署）：
@@ -413,7 +420,7 @@ node scripts/mobile-ota/rollout.mjs --action rollback --channel beta --out /tmp/
 node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable --percent 100 --out /tmp/ota-snap
 ```
 
-`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`。`minNativeBuild` 下限抬升（端内「一键 OTA」vs「跳转重装」的分界）**只由 `mode: native` 决定**，与是否发布 OTA / 安装包解耦：`mode: ota` 时两端（Android / iOS、beta / 稳定版）都不抬，已装壳继续走 `apply_ota`；`mode: native` 时两端都抬到本轮 `run_number`。`nativeTargets.ios` 仅在本轮实际上传了 iOS（native beta / 稳定版）时前移，`nativeTargets.android` 仅 `mode: native` 时前移。客户端是否打开外链只看检查协议的 `primaryAction` + `native.installUrl`，不要本地拼 GitHub。
+`release.yml` 在 `mobile-release` 成功后还会跑 `mobile-native-targets`：先把**本轮同版本 web bundle** 写成该通道的 `activeBundle`。壳门下限字段是 `activeBundle.minShellReleaseVersion`（版本语义，端内「一键 OTA」vs「跳转重装」的分界）**只由 `mode: native` 决定**，与是否发布 OTA / 安装包解耦：`mode: ota` 时不新写门（透传既有门），已装且满足门的壳继续走 `apply_ota`；`mode: native` 时写成**本轮发布版本号** `$VERSION`。`github.run_number` 仍用于 `nativeTargets.*.build` / 资产命名，但**不再参与端内更新判定**。`nativeTargets.ios` 仅在本轮实际上传了 iOS（native beta / 稳定版）时前移，`nativeTargets.android` 仅 `mode: native` 时前移。客户端是否打开外链只看检查协议的 `primaryAction` + `native.installUrl`，不要本地拼 GitHub。
 
 稳定版与 beta `v*` 都会前移指针。后续纯 web 的 `mobile-beta/*` / `mobile-stable/*` 仍可单独发更高版本 OTA；assemble 会拒绝比当前 active 更旧的包。
 
