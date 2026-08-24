@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.14] - 2026-08-24
+
+### 聊天
+
+- **输入框发送与停止按钮宽度占位对齐：** 触控设备上发送按钮不再被抬到 36px，与停止按钮共用同一套 compact 尺寸豁免，空闲纸飞机与进行中停止方块切换时右下角占位不再跳动。
+
 ## [1.18.3-beta.13] - 2026-08-24
 
 ### Git / Changes

@@ -2015,8 +2015,12 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 0 !important;
   }
 
-  /* Composer stop control: keep the authored compact size. The generic 36px
-     touch floor would otherwise inflate the hit target. */
+  /* Composer send and stop controls share their authored compact size and width
+     placeholder. The generic 36px touch floor would otherwise inflate them. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    button[data-composer-send="true"],
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-composer-send="true"][role="button"],
   :root.mobile-pointer:not(.desktop-runtime)
     button[data-composer-stop="true"],
   :root.mobile-pointer:not(.desktop-runtime)

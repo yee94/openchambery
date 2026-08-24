@@ -57,7 +57,7 @@ Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h
 |---|---|---|
 | Tool expandable rows | `.oc-tool-row[role="button"]` | `mobile.css` |
 | Composer footer mobile actions | `.composer-mobile-actions button` | `mobile.css` |
-| Composer stop chip | `button[data-composer-stop="true"]` | `mobile.css` |
+| Composer send + stop controls | `button[data-composer-send="true"]` / `button[data-composer-stop="true"]` | `mobile.css` |
 | Composer agent + model chips | `.composer-mobile-model-controls button` | `mobile.css` |
 | Message action / footer icons | `[data-message-action-group="true"] button` | `mobile.css` |
 | Composer queued-message chips | `.oc-composer-queue button` / `[role="button"]` | `mobile.css` |

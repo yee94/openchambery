@@ -855,6 +855,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     const sendButton = (
         <button
             type={isMobile ? 'button' : 'submit'}
+            data-composer-send="true"
             disabled={actionAvailability.sendDisabled}
             aria-busy={inFlight || undefined}
             {...keepKeyboardFocusProps}
@@ -893,6 +894,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
             {(hasContent || queueInFlight) ? (
                 <button
                     type="button"
+                    data-composer-send="true"
                     disabled={actionAvailability.sendDisabled || queueInFlight}
                     aria-busy={queueInFlight || undefined}
                     {...keepKeyboardFocusProps}
