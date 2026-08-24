@@ -24,6 +24,11 @@
     font-size: var(--text-micro);
   }
 
+  /* Used widely as secondary caption; was never defined, so it inherited 16px. */
+  .typography-small {
+    font-size: var(--text-micro);
+  }
+
   .chat-column {
     width: min(100%, 800px);
     margin-inline: auto;

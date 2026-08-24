@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.8] - 2026-08-24
+
+### 移动端
+
+- **字号预设全部在样式集接 `--dpt`：** 语义 token（`--text-markdown` / `--text-ui-label` 等）、移动端标题/meta、设置 section title、表单 helper、Tailwind `leading-3`…`leading-10` 都改成 `calc(N * var(--dpt))`。补上从未定义的 `typography-small`。iOS standalone 不再用 rem 钉死 typography 类。
+
 ## [1.18.3-beta.7] - 2026-08-24
 
 ### 移动端

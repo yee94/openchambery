@@ -9,10 +9,9 @@ import {
   shouldRewriteProp,
 } from '../../../../scripts/postcss-dpt-font-size.mjs';
 
-const designSystemCss = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), '../styles/design-system.css'),
-  'utf8',
-);
+const stylesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../styles');
+const designSystemCss = readFileSync(path.join(stylesDir, 'design-system.css'), 'utf8');
+const mobileCss = readFileSync(path.join(stylesDir, 'mobile.css'), 'utf8');
 
 describe('rewriteLengthToDesignPt', () => {
   test('converts px and rem font sizes, including leading-dot decimals', () => {
@@ -80,11 +79,24 @@ describe('rewriteLengthToDesignPt', () => {
   });
 });
 
-describe('Tailwind text-* theme scale', () => {
-  test('text-xs through text-base are owned in @theme as --dpt calcs', () => {
+describe('typography presets ride --dpt in the style set', () => {
+  test('Tailwind text-* and leading-* rem scales are --dpt calcs', () => {
     expect(designSystemCss).toMatch(/--text-xs:\s*calc\(12 \* var\(--dpt\)\)/);
     expect(designSystemCss).toMatch(/--text-sm:\s*calc\(14 \* var\(--dpt\)\)/);
     expect(designSystemCss).toMatch(/--text-base:\s*calc\(16 \* var\(--dpt\)\)/);
-    expect(designSystemCss).toMatch(/--text-lg:\s*calc\(18 \* var\(--dpt\)\)/);
+    expect(designSystemCss).toMatch(/--leading-5:\s*calc\(20 \* var\(--dpt\)\)/);
+  });
+
+  test('semantic --text-* tokens are --dpt calcs, not rem literals', () => {
+    expect(designSystemCss).toMatch(/--text-markdown:\s*calc\(14 \* var\(--dpt\)\)/);
+    expect(designSystemCss).toMatch(/--text-ui-label:\s*calc\(14 \* var\(--dpt\)\)/);
+    expect(designSystemCss).toMatch(/--text-micro:\s*calc\(14 \* var\(--dpt\)\)/);
+    expect(designSystemCss).not.toMatch(/--text-markdown:\s*0\.875rem/);
+  });
+
+  test('mobile-pointer semantic overrides are --dpt calcs', () => {
+    expect(mobileCss).toMatch(/--text-markdown:\s*calc\(15 \* var\(--dpt\)\)/);
+    expect(mobileCss).toMatch(/--text-ui-label:\s*calc\(13 \* var\(--dpt\)\)/);
+    expect(mobileCss).toMatch(/--oc-mobile-entity-title-size:\s*calc\(16 \* var\(--dpt\)\)/);
   });
 });
