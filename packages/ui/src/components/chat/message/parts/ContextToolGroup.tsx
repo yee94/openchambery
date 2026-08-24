@@ -83,7 +83,7 @@ export const ContextToolGroup: React.FC<{
                 aria-controls={contentId}
                 aria-label={ariaLabel}
                 data-mobile-press-feedback="soft"
-                className={cn('flex w-full min-h-0 min-w-0 items-center gap-1.5 overflow-clip', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
+                className={cn('flex min-h-0 min-w-0 items-center gap-1.5 overflow-clip', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
                 onClick={handleToggle}
                 onKeyDown={handleKeyDown}
             >

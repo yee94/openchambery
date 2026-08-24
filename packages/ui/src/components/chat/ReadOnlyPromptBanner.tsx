@@ -81,7 +81,7 @@ export const ReadOnlyPromptBanner: React.FC<ReadOnlyPromptBannerProps> = (props)
                 {showExecutionMetadata ? (
                     <div
                         data-testid="read-only-prompt-banner-meta"
-                        className={`mt-1.5 flex min-w-0 items-center justify-between gap-3 border-t border-border/70 pt-1.5 ${BANNER_TEXT_CLASS}`}
+                        className="mt-1.5 flex min-w-0 items-center justify-between gap-3 border-t border-border/70 pt-1.5 text-[13px] leading-none sm:text-[length:var(--text-micro)]"
                     >
                         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                             <AgentAvatar name={props.agentName} size={14} label={agentLabel} />

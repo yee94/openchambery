@@ -306,7 +306,14 @@ test('capgo endpoint: encrypted bundle emits both session_key and sessionKey wit
 });
 
 test('capgo endpoint returns major:true when native update is required', async () => {
-  stubChannel({ manifest: channelManifest() });
+  stubChannel({
+    manifest: channelManifest({
+      activeBundle: {
+        ...channelManifest().activeBundle,
+        minShellReleaseVersion: '1.18.2-beta.22',
+      },
+    }),
+  });
   const response = await handleCapgoOtaCheck(mobileRequest({
     platform: 'ios',
     device_id: 'device-1',

@@ -107,3 +107,66 @@ test('HEAD requests return empty body but keep headers', async () => {
   assert.equal(await response.text(), '');
   assert.equal(response.headers.get('content-length'), '9');
 });
+
+test('forwards Range on bundle paths and returns 206 with no-store cache', async () => {
+  const fetched = stubUpstream((_url, init) => {
+    assert.equal(init?.headers?.Range, 'bytes=100-');
+    assert.equal(init?.headers?.Accept, '*/*');
+    return new Response('partial-zip', {
+      status: 206,
+      headers: {
+        'content-type': 'application/zip',
+        'content-length': '11',
+        'content-range': 'bytes 100-110/999',
+        'accept-ranges': 'bytes',
+      },
+    });
+  });
+  const response = await handleOtaProxyRequest(
+    new Request('https://proxy.example.com/ota/bundles/34ab092a8e7f6d21.zip', {
+      method: 'GET',
+      headers: { Range: 'bytes=100-' },
+    }),
+    { upstreamOrigin: ORIGIN },
+  );
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('content-range'), 'bytes 100-110/999');
+  assert.equal(response.headers.get('accept-ranges'), 'bytes');
+  assert.equal(fetched[0].init.headers.Range, 'bytes=100-');
+});
+
+test('full bundle GET without Range keeps immutable cache and does not send Range upstream', async () => {
+  const fetched = stubUpstream(() => new Response('zip-bytes', {
+    status: 200,
+    headers: { 'content-type': 'application/zip', 'content-length': '9' },
+  }));
+  const response = await handleOtaProxyRequest(
+    otaRequest('/ota/bundles/34ab092a8e7f6d21.zip'),
+    { upstreamOrigin: ORIGIN },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  assert.equal(fetched[0].init.headers.Range, undefined);
+  assert.equal(fetched[0].init.headers.Accept, '*/*');
+});
+
+test('channel paths never forward Range even when the client sends one', async () => {
+  const fetched = stubUpstream((_url, init) => {
+    assert.equal(init?.headers?.Range, undefined);
+    return new Response('{"generation":2}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+  const response = await handleOtaProxyRequest(
+    new Request('https://proxy.example.com/ota/channels/beta.json', {
+      method: 'GET',
+      headers: { Range: 'bytes=0-10' },
+    }),
+    { upstreamOrigin: ORIGIN },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=0, s-maxage=60, stale-while-revalidate=300');
+  assert.equal(fetched[0].init.headers.Range, undefined);
+});

@@ -102,14 +102,28 @@ export const useMiniChatKeyboardShortcuts = () => {
         }
 
         event.preventDefault();
-        const { currentProviderId, currentModelId, setProvider, setModel } = useConfigStore.getState();
+        const {
+          currentProviderId,
+          currentModelId,
+          providers,
+          setProvider,
+          setModel,
+          setCurrentVariant,
+        } = useConfigStore.getState();
         const currentIndex = favoriteModels.findIndex((favorite) => favorite.providerID === currentProviderId && favorite.modelID === currentModelId);
         const delta = cyclesForward ? 1 : -1;
         const next = favoriteModels[(currentIndex + delta + favoriteModels.length) % favoriteModels.length];
 
         setProvider(next.providerID);
         setModel(next.modelID);
-        addRecentModel(next.providerID, next.modelID);
+        const provider = providers.find((entry) => entry.id === next.providerID);
+        const model = provider?.models?.find((entry) => entry.id === next.modelID) as { variants?: Record<string, unknown> } | undefined;
+        const availableVariants = model?.variants ? Object.keys(model.variants) : [];
+        const rememberedVariant = next.variant !== undefined && availableVariants.includes(next.variant)
+          ? next.variant
+          : undefined;
+        setCurrentVariant(rememberedVariant);
+        addRecentModel(next.providerID, next.modelID, rememberedVariant);
       }
     };
 

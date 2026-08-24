@@ -1,3 +1,5 @@
+import { parseReleaseVersion } from './semver.js';
+
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/;
 // Unencrypted checksums are plain 64-char hex — the @capgo/capacitor-updater
@@ -19,6 +21,7 @@ function parsePlatformMinNative(value, platform, errors) {
     errors.push(`activeBundle.platforms.${platform} must be an object`);
     return null;
   }
+  // deprecated：存量 manifest 兼容读取；OTA 判定已改用 activeBundle.minShellReleaseVersion，不再使用 minNativeBuild。
   if (!Number.isInteger(value.minNativeBuild) || value.minNativeBuild < 1) {
     errors.push(`activeBundle.platforms.${platform}.minNativeBuild must be a positive integer`);
     return null;
@@ -101,6 +104,16 @@ function parseActiveBundle(value, errors) {
     errors.push('activeBundle.minShellApiVersion must be a positive integer');
   } else {
     bundle.minShellApiVersion = value.minShellApiVersion;
+  }
+
+  // optional：原生壳能力下限（版本号）。mode: native 发布时写入本轮版本；判定见 ota-resolver。
+  if (value.minShellReleaseVersion !== undefined) {
+    if (typeof value.minShellReleaseVersion !== 'string'
+      || !parseReleaseVersion(value.minShellReleaseVersion)) {
+      errors.push('activeBundle.minShellReleaseVersion must be a release version (X.Y.Z or X.Y.Z-beta.N)');
+    } else {
+      bundle.minShellReleaseVersion = value.minShellReleaseVersion;
+    }
   }
 
   if (!isRecord(value.platforms)) {

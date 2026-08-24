@@ -38,6 +38,8 @@ type UpdateState = {
   otaDecision: MobileUpdateDecision | null;
   /** Capgo download / apply lifecycle phase (Capacitor only). */
   otaPhase: OtaPhase;
+  /** Whether the current OTA download reused an existing local bundle. */
+  otaDownloadSkipped: boolean;
 };
 
 interface UpdateStore extends UpdateState {
@@ -47,6 +49,8 @@ interface UpdateStore extends UpdateState {
   /** Wire main-process idle/manual download events into store state. */
   subscribeDesktopUpdateEvents: () => Promise<() => void>;
   setOtaPhase: (phase: OtaPhase, error?: string | null) => void;
+  setOtaDownloadPercent: (percent: number) => void;
+  setOtaDownloadFailed: (message?: string) => void;
   dismiss: () => void;
   reset: () => void;
 }
@@ -217,6 +221,7 @@ const initialState: UpdateState = {
   nextCheckInSec: null,
   otaDecision: null,
   otaPhase: 'idle',
+  otaDownloadSkipped: false,
 };
 
 function mapOtaDecisionToUpdateInfo(
@@ -328,6 +333,10 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
             set({ otaPhase: 'checking' });
             const decision = await mobileUpdates.checkForOtaUpdate();
             const mapped = mapOtaDecisionToUpdateInfo(decision, currentVersion);
+            const previousBundleId = get().otaDecision?.ota.bundle?.bundleId;
+            const nextBundleId = decision.ota.bundle?.bundleId;
+            const bundleChanged = previousBundleId !== nextBundleId;
+            const keepPendingRestart = get().downloaded && !bundleChanged;
 
             set({
               checking: false,
@@ -337,7 +346,10 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
               lastChecked: Date.now(),
               nextCheckInSec: decision.nextCheckInSec,
               otaDecision: decision,
-              otaPhase: mapped.otaPhase,
+              otaPhase: keepPendingRestart ? 'pending_restart' : mapped.otaPhase,
+              ...(bundleChanged
+                ? { downloaded: false, otaDownloadSkipped: false, progress: null }
+                : {}),
             });
             return decision.nextCheckInSec;
           } catch (error) {
@@ -420,17 +432,23 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         return;
       }
 
-      set({ downloading: true, error: null, progress: null, otaPhase: 'downloading' });
+      set({
+        downloading: true,
+        error: null,
+        progress: null,
+        otaPhase: 'downloading',
+        otaDownloadSkipped: false,
+      });
       try {
-        await mobileUpdates.downloadOtaUpdate(otaDecision.ota.bundle);
+        const { skipped } = await mobileUpdates.downloadOtaUpdate(otaDecision.ota.bundle);
         await mobileUpdates.queueOtaUpdateForNextLaunch();
         set({
           downloading: false,
           downloaded: true,
           progress: null,
           otaPhase: 'pending_restart',
+          otaDownloadSkipped: skipped,
         });
-        await mobileUpdates.applyOtaUpdateNow();
       } catch (error) {
         set({
           downloading: false,
@@ -612,8 +630,52 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
     });
   },
 
+  setOtaDownloadPercent: (percent) => {
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) return;
+
+    const state = get();
+    if (!state.downloading) return;
+
+    const integerPercent = Math.round(percent);
+    const currentPercent = state.progress?.total
+      ? Math.round((state.progress.downloaded / state.progress.total) * 100)
+      : null;
+    if (currentPercent === integerPercent) return;
+
+    const bundleSize = state.otaDecision?.ota.bundle?.size;
+    if (typeof bundleSize === 'number' && Number.isFinite(bundleSize) && bundleSize > 0) {
+      set({
+        progress: {
+          downloaded: Math.round(bundleSize * percent / 100),
+          total: bundleSize,
+        },
+      });
+      return;
+    }
+
+    set({ progress: { downloaded: percent, total: 100 } });
+  },
+
+  setOtaDownloadFailed: (message) => {
+    set({
+      downloading: false,
+      downloaded: false,
+      error: message ?? 'Failed to download update',
+      otaPhase: 'error',
+    });
+  },
+
   dismiss: () => {
-    set({ available: false, downloaded: false, info: null, otaDecision: null, otaPhase: 'idle' });
+    const state = get();
+    if (state.runtimeType === 'mobile' && state.otaPhase === 'pending_restart') return;
+    set({
+      available: false,
+      downloaded: false,
+      info: null,
+      otaDecision: null,
+      otaPhase: 'idle',
+      otaDownloadSkipped: false,
+    });
   },
 
   reset: () => {

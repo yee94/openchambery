@@ -99,7 +99,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
   that refreshes widgets from push. All share the App Group `group.com.yee94.openchamber`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
-  keyboard handling (iOS pre-focus cached-height FLIP calibrated by Keyboard events; Android pre-focus cached-height FLIP), edge-swipe session switch,
+  keyboard handling (iOS immediate shell shrink via --oc-kb-layout; Android pre-focus cached-height FLIP), edge-swipe session switch,
   back-button handling, app-icon badge.
 - **App icons** — iOS `AppIcon`; Android adaptive launcher icon; notification small icon
   (`ic_stat_notify`).
@@ -120,10 +120,11 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 
 ### iOS (`ios/App`)
 
-- Keyboard intent commits the expanded Composer synchronously and starts a cached-height
-  transform before UIKit presents the keyboard. `keyboardWillShow` calibrates the final
-  height and persists its viewport ratio. The shared native curtain covers bridge timing
-  gaps, and the Composer removes its resting bottom-safe padding while the keyboard is open.
+- Keyboard intent shrinks the app shell immediately (`--oc-kb-layout` from the cached
+  IME height) so the header stays pinned and the full composer sits above the keyboard.
+  `keyboardWillShow` calibrates the final height and persists its viewport ratio. The
+  shared native curtain covers the gap while UIKit is still sliding. The Composer
+  removes its resting bottom-safe padding while the keyboard is open.
 - Extensions: `OpenChamberWidget` (WidgetKit, deployment 17.0) and `OpenChamberNotificationService`
   (NSE, 15.5), both hand-wired into `App.xcodeproj/project.pbxproj` and embedded via a copy phase.
 - App Group `group.com.yee94.openchamber` in all three targets' entitlements (app + widget + NSE).
@@ -256,7 +257,7 @@ Self-hosted live updates use `@capgo/capacitor-updater` (plugin config key `Capa
 
 ### What was added
 
-- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel` from build-time `otaChannel`, `autoUpdate: false` so About can confirm a one-tap reload, `appReadyTimeout: 20000`, explicit delete/reset flags, optional `publicKey`) plus top-level `OpenChamberOTA` (`channel` / `shellApiVersion`) for the web layer. `otaChannel` = `process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta'` (baked at `mobile:sync`; stable store builds pass `OPENCHAMBER_OTA_CHANNEL=stable`). OTA never applies a lower `releaseVersion` than the device already has.
+- `capacitor.config.ts` — `plugins.CapacitorUpdater` (self-hosted `updateUrl`, `statsUrl: ''`, `defaultChannel` from build-time `otaChannel`, `autoUpdate: false` so About can confirm a one-tap reload, `appReadyTimeout: 20000`, `autoDeleteFailed: false` so failed/partial bundles remain for native HTTP Range resume, `autoDeletePrevious: true` for cleanup after a successful start, `resetWhenUpdate: true`, optional `publicKey`) plus top-level `OpenChamberOTA` (`channel` / `shellApiVersion`) for the web layer. `otaChannel` = `process.env.OPENCHAMBER_OTA_CHANNEL === 'stable' ? 'stable' : 'beta'` (baked at `mobile:sync`; stable store builds pass `OPENCHAMBER_OTA_CHANNEL=stable`). OTA never applies a lower `releaseVersion` than the device already has.
 - `src/openchamber-ota.ts` — local typed bridge (`CapacitorUpdaterBridge` via `registerPlugin('CapacitorUpdater')`); does **not** import `@capgo/capacitor-updater`. Canonical constants: `OPENCHAMBER_OTA_CHANNEL` (build default `'beta'`, overridable at sync via env — mirrors `capacitor.config.ts`), `OPENCHAMBER_SHELL_API_VERSION` (literal mirrored in config so Cap CLI does not execute `registerPlugin` when loading config).
 - `test/ota-config-contract.test.mjs` — source-regex contract for config + bridge surface.
 

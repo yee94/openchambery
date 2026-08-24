@@ -205,6 +205,14 @@ const statusToGitCode = (status?: string): string => {
     return 'M';
 };
 
+/** Full-context body is "loaded" only when binary, patch/fileDiff, or a real before/after string is present. */
+const hasLoadedFullContextBody = (diff: Pick<DiffData, 'original' | 'modified' | 'isBinary' | 'patch' | 'fileDiff'>): boolean => {
+    if (diff.isBinary) return true;
+    if (typeof diff.patch === 'string' && diff.patch.length > 0) return true;
+    if (diff.fileDiff) return true;
+    return diff.original.length > 0 || diff.modified.length > 0;
+};
+
 const createTextDiffDataFromPatch = (filePath: string, patch: string, contextMode: DiffContextMode): DiffData => {
     if (isBinaryPatch(patch)) {
         return { original: '', modified: '', isBinary: true, patch, contextMode };
@@ -664,7 +672,12 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
         if (typeof diff.patch === 'string' && diff.patch.length > 0) {
             return createTextDiffDataFromPatch(file.path, diff.patch, 'patch');
         }
-        if (typeof diff.before === 'string' || typeof diff.after === 'string') {
+        // Only seed before/after when a real body is present; empty strings would
+        // look like loaded full context and skip on-demand fetch UI.
+        if (
+            (typeof diff.before === 'string' && diff.before.length > 0)
+            || (typeof diff.after === 'string' && diff.after.length > 0)
+        ) {
             return {
                 original: diff.before ?? '',
                 modified: diff.after ?? '',
@@ -680,7 +693,16 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
         if (staged) return stagedDiffData;
         if (localDiffData) return localDiffData;
         if (!cachedDiff) return null;
-        return { original: cachedDiff.original, modified: cachedDiff.modified, isBinary: cachedDiff.isBinary, contextMode: 'full' };
+        // Empty non-binary cache entries are not loaded (e.g. failed prefetch for
+        // untracked files). Treating them as full context would skip on-demand fetch.
+        const fromCache: DiffData = {
+            original: cachedDiff.original,
+            modified: cachedDiff.modified,
+            isBinary: cachedDiff.isBinary,
+            contextMode: 'full',
+        };
+        if (!hasLoadedFullContextBody(fromCache)) return null;
+        return fromCache;
     }, [cachedDiff, initialDiffData, localDiffData, staged, stagedDiffData, turnChangeDiffData]);
 
     const turnChangeError = turnChangeFileQuery.error instanceof Error
@@ -771,6 +793,9 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                     if (staged) {
                         setStagedDiffData(nextDiff);
                     } else {
+                        // Keep localDiffData even for true empty files so a dual-empty
+                        // cache entry cannot look unloaded and re-trigger this effect.
+                        setLocalDiffData(nextDiff);
                         setDiff(directory, file.path, nextDiff);
                     }
                 }

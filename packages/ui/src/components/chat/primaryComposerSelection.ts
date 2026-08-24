@@ -71,8 +71,18 @@ export type ResolvedPrimaryComposerSessionSelection = {
   modelID: string;
   /** Explicit variant to apply; `undefined` clears any previous variant. */
   variant: string | undefined;
-  source: 'history' | 'session-memory';
+  source: 'history' | 'session-memory' | 'session-entity';
   messageId?: string;
+};
+
+/** Narrow SDK Session agent/model fields for composer restore (model.id → modelID). */
+export type PrimaryComposerSessionEntity = {
+  agent?: string;
+  model?: {
+    id: string;
+    providerID: string;
+    variant?: string;
+  };
 };
 
 /**
@@ -204,9 +214,11 @@ const resolveHistoryModelVariant = (options: {
 /**
  * Resolve the session selection to restore into the primary composer.
  *
- * History (latest user message) is the cross-client authoritative baseline.
- * Same-client selection-store memory is the fallback when messages are not
- * ready, the history choice fails catalog validation, or history omits variant.
+ * Cascade: history (latest user message) → same-client selection-store memory →
+ * session-entity (SDK Session.agent / Session.model, server-maintained). History
+ * is the cross-client authoritative baseline; memory covers unread transcripts
+ * and omitted variants; session-entity survives lazy transcript loads and local
+ * storage loss/eviction.
  */
 export const resolvePrimaryComposerSessionSelection = (options: {
   sessionId: string;
@@ -219,10 +231,12 @@ export const resolvePrimaryComposerSessionSelection = (options: {
     | 'getAgentModelForSession'
     | 'getAgentModelVariantForSession'
   >;
+  /** SDK Session agent/model when history and memory cannot restore. */
+  sessionEntity?: PrimaryComposerSessionEntity | null;
   /** Current config agent used only when history omits agent and memory has none. */
   fallbackAgentName?: string;
 }): ResolvedPrimaryComposerSessionSelection | null => {
-  const { sessionId, latestUserChoice, catalog, memory, fallbackAgentName } = options;
+  const { sessionId, latestUserChoice, catalog, memory, sessionEntity, fallbackAgentName } = options;
 
   if (
     latestUserChoice?.providerID
@@ -265,70 +279,100 @@ export const resolvePrimaryComposerSessionSelection = (options: {
     };
   }
 
-  if (!memory) {
-    return null;
-  }
+  if (memory) {
+    const savedAgentName = memory.getSessionAgentSelection?.(sessionId) ?? null;
+    const agentName =
+      savedAgentName && catalogHasAgent(catalog, savedAgentName)
+        ? savedAgentName
+        : (fallbackAgentName && catalogHasAgent(catalog, fallbackAgentName)
+          ? fallbackAgentName
+          : undefined);
 
-  const savedAgentName = memory.getSessionAgentSelection?.(sessionId) ?? null;
-  const agentName =
-    savedAgentName && catalogHasAgent(catalog, savedAgentName)
-      ? savedAgentName
-      : (fallbackAgentName && catalogHasAgent(catalog, fallbackAgentName)
-        ? fallbackAgentName
-        : undefined);
+    if (agentName) {
+      const agentModel = memory.getAgentModelForSession?.(sessionId, agentName);
+      if (
+        agentModel
+        && catalogHasProviderModel(catalog, agentModel.providerId, agentModel.modelId)
+      ) {
+        const savedVariant = memory.getAgentModelVariantForSession?.(
+          sessionId,
+          agentName,
+          agentModel.providerId,
+          agentModel.modelId,
+        );
+        const variant =
+          savedVariant
+          && catalogHasVariant(catalog, agentModel.providerId, agentModel.modelId, savedVariant)
+            ? savedVariant
+            : undefined;
+        return {
+          agent: agentName,
+          providerID: agentModel.providerId,
+          modelID: agentModel.modelId,
+          variant,
+          source: 'session-memory',
+        };
+      }
+    }
 
-  if (agentName) {
-    const agentModel = memory.getAgentModelForSession?.(sessionId, agentName);
+    const sessionModel = memory.getSessionModelSelection?.(sessionId);
     if (
-      agentModel
-      && catalogHasProviderModel(catalog, agentModel.providerId, agentModel.modelId)
+      sessionModel
+      && catalogHasProviderModel(catalog, sessionModel.providerId, sessionModel.modelId)
     ) {
-      const savedVariant = memory.getAgentModelVariantForSession?.(
-        sessionId,
-        agentName,
-        agentModel.providerId,
-        agentModel.modelId,
-      );
+      const savedVariant =
+        agentName
+          ? memory.getAgentModelVariantForSession?.(
+            sessionId,
+            agentName,
+            sessionModel.providerId,
+            sessionModel.modelId,
+          )
+          : undefined;
       const variant =
         savedVariant
-        && catalogHasVariant(catalog, agentModel.providerId, agentModel.modelId, savedVariant)
+        && catalogHasVariant(catalog, sessionModel.providerId, sessionModel.modelId, savedVariant)
           ? savedVariant
           : undefined;
       return {
         agent: agentName,
-        providerID: agentModel.providerId,
-        modelID: agentModel.modelId,
+        providerID: sessionModel.providerId,
+        modelID: sessionModel.modelId,
         variant,
         source: 'session-memory',
       };
     }
   }
 
-  const sessionModel = memory.getSessionModelSelection?.(sessionId);
+  const entityModel = sessionEntity?.model;
   if (
-    sessionModel
-    && catalogHasProviderModel(catalog, sessionModel.providerId, sessionModel.modelId)
+    entityModel
+    && catalogHasProviderModel(catalog, entityModel.providerID, entityModel.id)
   ) {
-    const savedVariant =
-      agentName
-        ? memory.getAgentModelVariantForSession?.(
-          sessionId,
-          agentName,
-          sessionModel.providerId,
-          sessionModel.modelId,
-        )
+    const savedAgentName = memory?.getSessionAgentSelection?.(sessionId) ?? null;
+    const entityAgent =
+      sessionEntity?.agent && catalogHasAgent(catalog, sessionEntity.agent)
+        ? sessionEntity.agent
         : undefined;
+    const agentName =
+      entityAgent
+      ?? (savedAgentName && catalogHasAgent(catalog, savedAgentName)
+        ? savedAgentName
+        : (fallbackAgentName && catalogHasAgent(catalog, fallbackAgentName)
+          ? fallbackAgentName
+          : undefined));
+    const entityVariant = entityModel.variant;
     const variant =
-      savedVariant
-      && catalogHasVariant(catalog, sessionModel.providerId, sessionModel.modelId, savedVariant)
-        ? savedVariant
+      entityVariant
+      && catalogHasVariant(catalog, entityModel.providerID, entityModel.id, entityVariant)
+        ? entityVariant
         : undefined;
     return {
       agent: agentName,
-      providerID: sessionModel.providerId,
-      modelID: sessionModel.modelId,
+      providerID: entityModel.providerID,
+      modelID: entityModel.id,
       variant,
-      source: 'session-memory',
+      source: 'session-entity',
     };
   }
 

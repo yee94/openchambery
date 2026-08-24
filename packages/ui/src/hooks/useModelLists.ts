@@ -11,6 +11,8 @@ export interface ModelListItem {
   model: ProviderModel;
   providerID: string;
   modelID: string;
+  /** Remembered thinking variant from favorites/recents; omitted when never recorded. */
+  variant?: string;
 }
 
 export interface UseModelListsOptions {
@@ -24,6 +26,7 @@ function resolveListItem(
   hiddenModels: Array<{ providerID: string; modelID: string }>,
   providerID: string,
   modelID: string,
+  variant?: string,
 ): ModelListItem | null {
   const provider = providers.find((p) => p.id === providerID);
   if (!provider) return null;
@@ -33,7 +36,9 @@ function resolveListItem(
   if (hiddenModels.some((item) => item.providerID === providerID && item.modelID === modelID)) {
     return null;
   }
-  return { provider, model, providerID, modelID };
+  return variant === undefined
+    ? { provider, model, providerID, modelID }
+    : { provider, model, providerID, modelID, variant };
 }
 
 export const useModelLists = (options?: UseModelListsOptions) => {
@@ -46,13 +51,13 @@ export const useModelLists = (options?: UseModelListsOptions) => {
 
   const favoriteModelsList = React.useMemo(() => {
     return favoriteModels
-      .map(({ providerID, modelID }) => resolveListItem(providers, hiddenModels, providerID, modelID))
+      .map(({ providerID, modelID, variant }) => resolveListItem(providers, hiddenModels, providerID, modelID, variant))
       .filter((item): item is ModelListItem => item !== null);
   }, [favoriteModels, providers, hiddenModels]);
 
   const recentModelsList = React.useMemo(() => {
     const list = recentModels
-      .map(({ providerID, modelID }) => resolveListItem(providers, hiddenModels, providerID, modelID))
+      .map(({ providerID, modelID, variant }) => resolveListItem(providers, hiddenModels, providerID, modelID, variant))
       .filter((item): item is ModelListItem => item !== null)
       .filter(({ providerID, modelID }) =>
         !favoriteModels.some(fav => fav.providerID === providerID && fav.modelID === modelID)

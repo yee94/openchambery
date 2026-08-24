@@ -39,8 +39,27 @@ jobs:
       # Semver prerelease (e.g. 1.16.94-beta.2) must never become GitHub Latest
       # or enter the Vercel auto-update feed used by stable packaged clients.
       is_prerelease: ${{ steps.get_version.outputs.is_prerelease }}
+      # Mobile plan mode ("ota" | "native") from mobile-release-plan.mjs.
+      # Drives whether iOS/TestFlight builds: native betas and ALL stable
+      # releases upload iOS; web-only betas skip it. Also gates the
+      # minShellReleaseVersion floor raise in mobile-native-targets.
+      plan_mode: ${{ steps.mobile_plan.outputs.mode }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # mobile-release-plan diffs against the latest v* tag.
+          fetch-depth: 0
+
+      - name: Compute mobile release plan
+        id: mobile_plan
+        run: |
+          PLAN_JSON="$(node scripts/mobile-release-plan.mjs --json)"
+          echo "$PLAN_JSON"
+          node -e "
+            const plan = JSON.parse(process.argv[1]);
+            const mode = plan.mode === 'native' ? 'native' : 'ota';
+            console.log('mode=' + mode);
+          " "$PLAN_JSON" >> "$GITHUB_OUTPUT"
 
       - name: Get version
         id: get_version
@@ -549,10 +568,11 @@ jobs:
       release_tag: v${{ needs.create-release.outputs.version }}
       upload_github_release: true
       build_android: true
-      # Beta / prerelease skips iOS entirely so TestFlight upload limits cannot
-      # block desktop + APK + OTA. Stable still builds iOS and may publish the
-      # external group. Opt back into a beta IPA via mobile-release.yml.
-      build_ios: ${{ !contains(needs.create-release.outputs.version, '-') }}
+      # TestFlight follows the native requirement, not the v* tag itself:
+      # native-mode betas and ALL stable releases build + upload iOS (betas
+      # internal-only, stable also publishes the external group); web-only
+      # (mode: ota) betas skip iOS entirely — existing shells update via OTA.
+      build_ios: ${{ needs.create-release.outputs.plan_mode == 'native' || !contains(needs.create-release.outputs.version, '-') }}
       publish_external_testflight: ${{ !contains(needs.create-release.outputs.version, '-') }}
       # Bake OTA channel into the native shell at mobile:sync. Prerelease tags
       # stay on beta; plain semver store builds use stable.
@@ -694,23 +714,27 @@ jobs:
           set -euo pipefail
           OUT="$RUNNER_TEMP/ota-native-targets"
           ANDROID_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
-          # Fixed TestFlight public link (stable external group). Beta v* skips
-          # iOS, so do not advertise a native iOS target that was never uploaded.
+          # Fixed TestFlight public link (stable external group). Advertise the
+          # native iOS target only when this release actually uploaded iOS
+          # (native-mode betas and stable); web-only betas keep the previous
+          # advertisement instead of pointing at a build that was never shipped.
           IOS_URL="https://testflight.apple.com/join/ZCENBHtm"
-          BUILD_IOS="${{ !contains(needs.create-release.outputs.version, '-') }}"
+          BUILD_IOS="${{ needs.create-release.outputs.plan_mode == 'native' || !contains(needs.create-release.outputs.version, '-') }}"
           PLAN_JSON="$(node scripts/mobile-release-plan.mjs --json)"
           PLAN_MODE="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).mode || '')" "$PLAN_JSON")"
           echo "mobile-release-plan mode=$PLAN_MODE"
 
           # Publish the same-version web bundle first so a fresh native install
-          # cannot be rolled back to an older activeBundle. Raise minNativeBuild
-          # only when the native shell actually changed. Web-only v* must keep
-          # existing APKs on apply_ota instead of install_native_required/GitHub.
-          if [[ "$BUILD_IOS" == "true" ]]; then
-            export MIN_NATIVE_BUILD_IOS="$BUILD_NUMBER"
-          fi
+          # cannot be rolled back to an older activeBundle. Raise
+          # minShellReleaseVersion only when the native shell actually changed
+          # (mode: native), for BOTH platforms and both channels — the in-app
+          # one-tap-vs-reinstall choice is decided here by web/shell version
+          # identity, independent of OTA publishing and of github.run_number.
+          # Web-only releases (mode: ota) keep existing shells on apply_ota;
+          # stable never raises the floor just because it shipped an installer.
+          # BUILD_NUMBER remains for nativeTargets / asset naming only.
           if [[ "$PLAN_MODE" == "native" ]]; then
-            export MIN_NATIVE_BUILD_ANDROID="$BUILD_NUMBER"
+            export MIN_SHELL_RELEASE_VERSION="$VERSION"
           fi
           ASSEMBLE_ARGS=(
             --zip "$ZIP_PATH"
@@ -743,12 +767,18 @@ jobs:
           }
           manifest.nativeTargets = manifest.nativeTargets || {};
           if (planMode === 'ota') {
+            // Do not raise the shell gate on web-only releases. Legacy
+            // platforms.*.minNativeBuild may still be present for schema
+            // compatibility; keep the historical android<=ios sync only.
             const iosMin = manifest.activeBundle.platforms?.ios?.minNativeBuild;
             const androidMin = manifest.activeBundle.platforms?.android?.minNativeBuild;
             if (Number.isInteger(iosMin) && Number.isInteger(androidMin) && androidMin > iosMin) {
               manifest.activeBundle.platforms.android.minNativeBuild = iosMin;
             }
           } else {
+            // Version-gate floor (top-level); build number is not used for
+            // in-app update decisions anymore.
+            manifest.activeBundle.minShellReleaseVersion = version;
             manifest.nativeTargets.android = {
               version,
               build,
@@ -810,6 +840,23 @@ jobs:
           npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN" \
             --cwd deploy/update-service
           rm -rf deploy/update-service/.vercel
+
+      - name: Verify client update detectability
+        env:
+          OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+          PLAN_MODE: ${{ needs.create-release.outputs.plan_mode }}
+          OTA_CHANNEL: ${{ contains(needs.create-release.outputs.version, '-') && 'beta' || 'stable' }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Deploy is skipped when Vercel secrets are absent; nothing to verify then.
+          if [[ -z "${VERCEL_TOKEN}" ]]; then
+            echo "Skipping detectability verify; Vercel secrets are not configured."
+            exit 0
+          fi
+          node scripts/mobile-ota/verify-detectability.mjs \
+            --channel "$OTA_CHANNEL" --version "$VERSION" --mode "$PLAN_MODE"
 
   publish-relay-docker-manual:
     name: Publish only the Relay Docker image

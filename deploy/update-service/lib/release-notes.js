@@ -1,4 +1,4 @@
-import { compareReleaseVersions, parseReleaseVersion } from './semver.js';
+import { compareReleaseVersions, isStrippedMarketingIdentity, parseReleaseVersion } from './semver.js';
 
 const CHANGELOG_PATH = '/CHANGELOG.md';
 
@@ -45,7 +45,10 @@ function compareVersions(left, right) {
  * be used as "already installed" or every beta note disappears.
  */
 export function resolveChangelogCurrentVersion(request) {
-  if (parseReleaseVersion(request?.currentBundleId)) {
+  if (
+    parseReleaseVersion(request?.currentBundleId)
+    && !isStrippedMarketingIdentity(request.currentBundleId, request.nativeVersion)
+  ) {
     return request.currentBundleId;
   }
   const native = parseReleaseVersion(request?.nativeVersion);

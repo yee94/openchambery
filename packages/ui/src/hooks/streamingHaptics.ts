@@ -14,6 +14,7 @@ import {
 } from '@/sync/streaming-haptic-events';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getClientPlatform } from '@/lib/platform';
+import { notePerfHapticFired } from '@/sync/perf-diagnostics';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
 
@@ -175,6 +176,7 @@ export function triggerMobileHaptic(
 
   const method = resolveMobileHapticMethod(strength);
   void OpenChamberHaptics[method]().catch(() => undefined);
+  notePerfHapticFired(strength);
   return true;
 }
 

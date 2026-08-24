@@ -1,10 +1,10 @@
 import { useUIStore } from '@/stores/useUIStore';
 import { updateDesktopSettings } from '@/lib/persistence';
 
-type ModelRef = { providerID: string; modelID: string };
+type ModelRef = { providerID: string; modelID: string; variant?: string };
 type ModelPrefsPayload = {
   favoriteModels: ModelRef[];
-  hiddenModels: ModelRef[];
+  hiddenModels: Array<{ providerID: string; modelID: string }>;
   collapsedModelProviders: string[];
   recentModels: ModelRef[];
   recentAgents: string[];
@@ -12,6 +12,20 @@ type ModelPrefsPayload = {
 };
 
 const refsEqual = (a: ModelRef[], b: ModelRef[]): boolean => {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i]?.providerID !== b[i]?.providerID) return false;
+    if (a[i]?.modelID !== b[i]?.modelID) return false;
+    if (a[i]?.variant !== b[i]?.variant) return false;
+  }
+  return true;
+};
+
+const hiddenRefsEqual = (
+  a: Array<{ providerID: string; modelID: string }>,
+  b: Array<{ providerID: string; modelID: string }>,
+): boolean => {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -51,7 +65,7 @@ const snapshotModelPrefs = (): ModelPrefsPayload => {
 
 const modelPrefsEqual = (a: ModelPrefsPayload, b: ModelPrefsPayload): boolean => (
   refsEqual(a.favoriteModels, b.favoriteModels) &&
-  refsEqual(a.hiddenModels, b.hiddenModels) &&
+  hiddenRefsEqual(a.hiddenModels, b.hiddenModels) &&
   stringsEqual(a.collapsedModelProviders, b.collapsedModelProviders) &&
   refsEqual(a.recentModels, b.recentModels) &&
   stringsEqual(a.recentAgents, b.recentAgents) &&

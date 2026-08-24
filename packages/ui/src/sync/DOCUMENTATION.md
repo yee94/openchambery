@@ -332,15 +332,16 @@ Modules:
 | `session-projection-api.ts` | Official v2 `GET /api/session/:id/message` projection page via Host shallow proxy + `runtimeFetch`; normalizes `SessionMessage.Info` to Message+Part; unknown variants stay as placeholders |
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
-| `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` and `task` today), redacted snapshots (bounded user text only; no assistant bodies/tokens/URLs/titles), bounded recorder, export schema `openchamber.client-diagnostics.v1`; `transcript-diff` before/after identity snapshots; `task-row` / `task-click` lifecycle facts |
+| `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript`, `task`, and `perf`), redacted snapshots (bounded user text only; no assistant bodies/tokens/URLs/titles), bounded recorder, export schema `openchamber.client-diagnostics.v1`; `transcript-diff` before/after identity snapshots; `task-row` / `task-click` lifecycle facts; `perf-window` aggregates |
 | `transcript-diagnostics-runtime.ts` | Production selector: About switch (beta default on, stable default off), IndexedDB/memory sink, export/download, `recordTranscriptDiff` |
+| `perf-diagnostics.ts` | App-level perf probes (`feat: perf`, `kind: perf-window`): always-on longtask + event-loop lag, duty-cycled FPS (first 3s of each 30s window), haptic counters; writes only while the About diagnostics switch is on |
 | `transcript-diagnostics-diff.test.ts` | Canonical snapshot capture + added/removed/partsChanged/downgraded/optimisticLost contracts |
 | `transcript-diagnostics-indexeddb.ts` | IndexedDB ring buffer for local feat events |
 | `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
 | `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |
 | `session-transcript-reconcile-api.test.ts` / `session-transcript-reconnect-compensation.test.ts` | Client contract, checkpoint/anchor, first-ready skip, priority set, concurrency, continuation, multi-round, reset, generation cancel |
 
-**Client diagnostics hub:** Query adapter, Task rows, and About export share one local recorder. Each event names a `feat` (`transcript` or `task` today). About has a switch: prerelease versions default on, stable versions default off, and the user can override. Export appears only while the switch is on. User-message text is copied into snapshots (400-char bound; credential-shaped values become `redacted-text`) so duplicate or optimistic user rows can be located. Assistant/system bodies, URLs, tokens, titles, prompts, agent names, and attachments stay out. SSE `message.part.delta` and unchanged connection batches are not recorded. Each `transcript` event records `source` (`network` / `query-cache` / `durable-cache` / `sse`), optional `durationMs`, request status, hydration/paint order (`lastMessageIDs`), command/SSE type, and sanitized `error` / `httpStatus` so GET vs cache vs on-screen order and settled load-failed walls are reconstructable. `purpose: load-failed` is the visible "unable to load this conversation" wall; `purpose: retry` is the user retry. `kind: transcript-diff` is a before/after identity snapshot (`messageIDs`, per-message part/slim/full/optimistic counts, plus bounded user text) recorded around user send/edit/delete/refresh and reconnect compensation / materialize / destructiveReset. Diff fields are `addedMessageIDs`, `removedMessageIDs`, `partsChanged`, `downgraded` (full parts replaced by slim-only), and `optimisticLost` (optimistic row vanished or became non-optimistic without `time.completed > 0`). Capture is read-only `getTranscript` and is swallowed on throw. `feat: task` records compact Task-row lifecycle facts (`kind: task-row` on identity/status change, `kind: task-click` on row click or queued open): parent/child session IDs, whether a child id is present, tool status, finalized/background/effective-active/suppress-loading/delegating, child/parent `session_status` (`idle`/`busy`/`retry`/`missing`), idle-confirmed, navigate capability, directory presence, and click outcome (`opened` / `queued` / `capability-off` / `missing-directory` / `navigate-rejected`). Recording is gated by the same About switch as transcript events and never writes when the switch is off. Export writes `openchamber.client-diagnostics.v1` JSON from the local ring buffer; native `diagnostics.downloadLogs` is optional and never replaces an empty local report with a failed fetch. Capacitor uses `OpenChamberMedia.saveFile` (iOS document picker / Android create-document) so export is a real file save, not clipboard or `navigator.share`. Android writes a cache file first and drops `dataBase64` from the persisted plugin call so DocumentsUI pause/restore cannot `TransactionTooLarge`; the create-document MIME is `application/octet-stream` because `application/json` crashes some OEM pickers on confirm.
+**Client diagnostics hub:** Query adapter, Task rows, and About export share one local recorder. Each event names a `feat` (`transcript`, `task`, or `perf` today). About has a switch: prerelease versions default on, stable versions default off, and the user can override. Export appears only while the switch is on. User-message text is copied into snapshots (400-char bound; credential-shaped values become `redacted-text`) so duplicate or optimistic user rows can be located. Assistant/system bodies, URLs, tokens, titles, prompts, agent names, and attachments stay out. SSE `message.part.delta` and unchanged connection batches are not recorded. Each `transcript` event records `source` (`network` / `query-cache` / `durable-cache` / `sse`), optional `durationMs`, request status, hydration/paint order (`lastMessageIDs`), command/SSE type, and sanitized `error` / `httpStatus` so GET vs cache vs on-screen order and settled load-failed walls are reconstructable. `purpose: load-failed` is the visible "unable to load this conversation" wall; `purpose: retry` is the user retry. `kind: transcript-diff` is a before/after identity snapshot (`messageIDs`, per-message part/slim/full/optimistic counts, plus bounded user text) recorded around user send/edit/delete/refresh and reconnect compensation / materialize / destructiveReset. Diff fields are `addedMessageIDs`, `removedMessageIDs`, `partsChanged`, `downgraded` (full parts replaced by slim-only), and `optimisticLost` (optimistic row vanished or became non-optimistic without `time.completed > 0`). Capture is read-only `getTranscript` and is swallowed on throw. `feat: task` records compact Task-row lifecycle facts (`kind: task-row` on identity/status change, `kind: task-click` on row click or queued open): parent/child session IDs, whether a child id is present, tool status, finalized/background/effective-active/suppress-loading/delegating, child/parent `session_status` (`idle`/`busy`/`retry`/`missing`), idle-confirmed, navigate capability, directory presence, and click outcome (`opened` / `queued` / `capability-off` / `missing-directory` / `navigate-rejected`). Recording is gated by the same About switch as transcript events and never writes when the switch is off. `feat: perf` (`kind: perf-window`) is produced by `perf-diagnostics.ts`: always-on longtask PerformanceObserver + 1s event-loop lag probe, plus duty-cycled FPS sampling for the first 3s of each 30s window; haptic success counts come from `notePerfHapticFired`. Window flush writes only while the About switch is on (otherwise counters reset with no record). Export fields include optional `fpsAvg`/`fpsMin`/`fpsP10` (omitted when no samples), `longTask*`, `eventLoopLag*`, `haptic*Count`, optional Chromium `jsHeap*MB`, `visible`/`foreground`, and `platform`; `sessionID` is `app`. Probe callbacks are try/catch-wrapped so diagnostics never affect the call path. Export writes `openchamber.client-diagnostics.v1` JSON from the local ring buffer; native `diagnostics.downloadLogs` is optional and never replaces an empty local report with a failed fetch. Capacitor uses `OpenChamberMedia.saveFile` (iOS document picker / Android create-document) so export is a real file save, not clipboard or `navigator.share`. Android writes a cache file first and drops `dataBase64` from the persisted plugin call so DocumentsUI pause/restore cannot `TransactionTooLarge`; the create-document MIME is `application/octet-stream` because `application/json` crashes some OEM pickers on confirm.
 
 **Ownership boundary (QueryCache sole production authority):**
 
@@ -756,7 +757,7 @@ both readers agree on when a frame may shrink.
   only for ids actually removed. `reconcile-page` already preserves the history
   boundary / cursor / loadedTurns (Host `complete` ends a compensation round,
   not older-history exhaustion); refresh keeps that, because older-than-anchor
-  pages remain. SSE that advances revision during the pull trips
+  pages remain.   SSE that advances revision during the pull trips
   `STALE_RECOVERY` and skips the deletion pass so live objects are not
   overwritten. The fetch is outside the
   InfiniteQuery observer, so `getRequestState` stays `ready`;
@@ -765,7 +766,26 @@ both readers agree on when a frame may shrink.
    stays up only while that refresh is in flight, during cold first paint
    (no transcript yet), or while reconnecting before any messages exist.
    A loaded transcript hides it even if the socket is still reconnecting or
-   the InfiniteQuery observer is still `isFetching`. Desktop session context-menu
+   the InfiniteQuery observer is still `isFetching`. Background catch-up has
+   its own ref-counted signal (`transcript-resync-flight`): the reconnect
+   recovery tail pull for materialized sessions in `resyncDirectoryAfterReconnect`,
+   every compensation reconcile flight (`pumpDirectory`), and stale-on-observe
+   `ensureInitial` mark it. The whisper means a known gap is being chased
+   (disconnect, background resume, marked-stale session), so it also shows for
+   warm transcripts while those flights run and clears when the last
+   overlapping flight ends; every mark ends in a `finally`, so a failed fetch
+   cannot strand the hint. Routine verification fetches stay silent by design:
+   while foregrounded the SSE stream merges every canonical scope live, so
+   hot revalidation (`runAuthorityHotRevalidate`), idle materialization, and
+   the observe-time head check almost never find a diff — whispering there
+   would flash noise on every session switch past their revalidation windows.
+   The painted hint is smoothed at the display layer
+   (`createSyncHintSmoother` in `useMobileTranscriptSyncHint`): it appears
+   only after 250ms of sustained work and stays 1000ms past the last flight
+   clear, because one foreground resume legitimately runs several relayed
+   recovery/reconcise flights (visibilitychange, pageshow, system-resume,
+   debounced online each trigger their own cycle). The flight registries stay
+   exact; only the whisper rendering is hysteresis-debounced. Desktop session context-menu
    "Sync messages", the dedicated-mobile overflow "Sync messages", and the
    mobile session row-actions sheet all call
    `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
@@ -854,6 +874,10 @@ both readers agree on when a frame may shrink.
    - active running + expired retry → busy (the attempt has resumed)
    - active running + busy / absent → busy
   - active supported + absent from membership → idle (stale busy converges)
+  - active supported + absent from membership + `tailOpenSessionIds` → keep
+    retry metadata when legacy is retry, otherwise busy (open transcript tail
+    is authoritative that the turn has not settled; membership alone may be
+    incomplete in a reconnect window)
   - active unknown / unsupported → legacy only
   - both unusable → preserve prior status; **do not** advance
     `session_status_snapshot_at`
@@ -863,6 +887,12 @@ both readers agree on when a frame may shrink.
     other directories are never written into the wrong child store
   - empty candidates + failed legacy + active listing only foreign IDs →
     preserve prior status; **do not** advance `session_status_snapshot_at`
+  After each terminal reconnect-compensation outcome for an immediate session,
+  the production stack confirms directory session status once so the child
+  store can re-derive live busy from the transcript tail. Destructive resets
+  of the same session are deduped within a short window and degrade to a
+  non-destructive ensure-tail when the host repeatedly returns `resetRequired`
+  for a long-running turn.
   Authority boundary uses the earlier of the two request-start timestamps so
   SSE/WS status observed during either in-flight window keeps precedence via
   `session_status_observed_at`. Unknown session IDs are never invented outside
@@ -1286,9 +1316,12 @@ trusts authoritative idle and does not wait for `time.completed`. Missing
 message materialization preserves the idle path.
 - Aborting a turn creates a transient queue-dispatch block keyed by the exact
   `(transportIdentity, directory, sessionID)` queue scope before the SDK abort
-  request. The block preserves queued rows, lasts two seconds, rolls back only
-  its matching token when abort fails, clears on runtime restore, and wakes the
-  scheduler at expiry. Manual dispatch remains available during this window.
+  request. The block preserves queued rows, releases early on authoritative
+  server idle events (`session.idle` / `session.error` / `session.status` idle),
+  falls back to a six-second timeout when idle is delayed or missing, rolls back
+  only its matching token when abort fails, clears on runtime restore, and wakes
+  the scheduler at expiry or early release. Manual dispatch remains available
+  during this window.
 - Status snapshots apply per session only when their request-start timestamp is
   newer than that session's observed status timestamp. Optimistic busy and
   rollback idle writes advance the observed timestamp, so an in-flight HTTP

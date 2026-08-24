@@ -7,6 +7,7 @@ import {
   applyDownloadedBundleNow,
   checkMobileOtaUpdate,
   downloadOtaBundle,
+  findDownloadedOtaBundle,
   queueDownloadedBundle,
 } from './coordinator';
 import type { MobileOtaBundleInfo } from './types';
@@ -49,7 +50,13 @@ export const createMobileUpdatesAPI = (): MobileUpdatesAPI => ({
 
   async downloadOtaUpdate(bundle: MobileOtaBundleInfo) {
     if (!isCapgoUpdaterSupported()) throw new MobileUpdatesUnsupportedError();
+    const existingId = await findDownloadedOtaBundle(bundle);
+    if (existingId) {
+      lastDownloadedBundleId = existingId;
+      return { skipped: true };
+    }
     lastDownloadedBundleId = await downloadOtaBundle(bundle);
+    return { skipped: false };
   },
 
   async applyOtaUpdateNow() {

@@ -18,7 +18,7 @@ import type { ModelPickerEntry, ModelPickerProvider } from './ModelPickerList';
 
 type HiddenModel = { providerID: string; modelID: string };
 type PickerView = 'model' | 'variant';
-type VariantTarget = { providerID: string; modelID: string };
+type VariantTarget = { providerID: string; modelID: string; variant?: string };
 type MetadataIcon = { key: string; icon: IconName; label: string };
 
 const MAX_INLINE_VARIANT_OPTIONS = 8;
@@ -201,8 +201,8 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         return icons;
     }, [t]);
 
-    const openVariantOverflow = (providerID: string, modelID: string) => {
-        setVariantTarget({ providerID, modelID });
+    const openVariantOverflow = (providerID: string, modelID: string, variant?: string) => {
+        setVariantTarget(variant === undefined ? { providerID, modelID } : { providerID, modelID, variant });
         setView('variant');
     };
 
@@ -215,7 +215,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         },
     };
 
-    const renderModelRow = (entry: ModelPickerEntry, options: { showProvider?: boolean } = {}) => {
+    const renderModelRow = (entry: ModelPickerEntry, options: { showProvider?: boolean; preferRememberedVariant?: boolean } = {}) => {
         const { model, providerID, modelID } = entry;
         const rowKey = `${providerID}:${modelID}`;
         const selected = providerID === selectedProviderID && modelID === selectedModelID;
@@ -226,6 +226,17 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         );
         const variants = variantSelectionEnabled ? getVariantOptions(providers, providerID, modelID) : [];
         const selectedVariant = resolveSelectedVariant(providerID, modelID);
+        const rememberedVariant = options.preferRememberedVariant
+            && entry.variant !== undefined
+            && variants.includes(entry.variant)
+            ? entry.variant
+            : undefined;
+        // Favorites/recents apply a still-valid remembered variant; expired values fall back.
+        // Selected rows keep live resolveSelectedVariant for display; clicks still prefer remembered.
+        const clickVariant = rememberedVariant !== undefined ? rememberedVariant : selectedVariant;
+        const displayVariant = selected
+            ? selectedVariant
+            : (rememberedVariant !== undefined ? rememberedVariant : selectedVariant);
         const inlineVariants = [undefined, ...variants].slice(0, MAX_INLINE_VARIANT_OPTIONS);
         const expanded = expandedModelKey === rowKey;
         const metadataIcons = getMetadataIcons(metadata);
@@ -234,7 +245,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         return (
             <div key={`mobile-model-${rowKey}`} className={cn('border-b border-border/30 last:border-b-0', selected && 'bg-interactive-selection/15 text-interactive-selection-foreground')}>
                 <div className="flex items-center gap-2 px-2 py-1.5">
-                    <button type="button" {...matchingPressProps} onClick={() => onSelect(providerID, modelID, selectedVariant)} className="flex min-w-0 flex-1 items-start gap-2 rounded-lg text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary">
+                    <button type="button" {...matchingPressProps} onClick={() => onSelect(providerID, modelID, clickVariant)} className="flex min-w-0 flex-1 items-start gap-2 rounded-lg text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary">
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                             {options.showProvider ? (
                                 <span className="truncate text-[10px] leading-none text-muted-foreground/60">{providerByID.get(providerID)?.name || providerID}</span>
@@ -261,7 +272,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                     </button>
                     {variants.length > 0 ? (
                         <button type="button" {...matchingPressProps} onClick={() => setExpandedModelKey((current) => current === rowKey ? null : rowKey)} className="flex flex-shrink-0 items-center gap-0.5 typography-micro font-medium text-muted-foreground hover:text-foreground" aria-expanded={expanded} aria-label={expanded ? t('chat.modelControls.hideThinkingModes') : t('chat.modelControls.showThinkingModes')}>
-                            <span className="whitespace-nowrap">{formatVariantLabel(selectedVariant)}</span>
+                            <span className="whitespace-nowrap">{formatVariantLabel(displayVariant)}</span>
                             <Icon name={expanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3.5" />
                         </button>
                     ) : null}
@@ -273,10 +284,10 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                     <div className="border-t border-border/30 p-2">
                         <div className="flex flex-wrap gap-2">
                             {inlineVariants.map((variant) => {
-                                const variantSelected = variant === selectedVariant || (!variant && !selectedVariant);
+                                const variantSelected = variant === displayVariant || (!variant && !displayVariant);
                                 return <button key={`${rowKey}-${variant ?? 'default'}`} type="button" {...matchingPressProps} onClick={() => onSelect(providerID, modelID, variant)} className={cn('inline-flex items-center rounded-full border px-2.5 py-1 typography-meta font-medium', variantSelected ? 'border-primary/30 bg-primary/10 text-foreground' : 'border-border/40 text-muted-foreground hover:bg-interactive-hover/50')} aria-pressed={variantSelected}>{formatVariantLabel(variant)}</button>;
                             })}
-                            {inlineVariants.length < variants.length + 1 ? <button type="button" {...matchingPressProps} onClick={() => openVariantOverflow(providerID, modelID)} className="inline-flex items-center rounded-full border border-border/40 px-2.5 py-1 typography-meta font-medium text-muted-foreground hover:bg-interactive-hover/50" aria-label={t('chat.modelControls.moreThinkingModes')}>{t('inlineComment.actions.showMore')}</button> : null}
+                            {inlineVariants.length < variants.length + 1 ? <button type="button" {...matchingPressProps} onClick={() => openVariantOverflow(providerID, modelID, displayVariant)} className="inline-flex items-center rounded-full border border-border/40 px-2.5 py-1 typography-meta font-medium text-muted-foreground hover:bg-interactive-hover/50" aria-label={t('chat.modelControls.moreThinkingModes')}>{t('inlineComment.actions.showMore')}</button> : null}
                         </div>
                     </div>
                 ) : null}
@@ -288,7 +299,19 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         ? { providerID: selectedProviderID, modelID: selectedModelID }
         : null);
     const targetVariants = activeVariantTarget ? getVariantOptions(providers, activeVariantTarget.providerID, activeVariantTarget.modelID) : [];
-    const targetSelectedVariant = activeVariantTarget ? resolveSelectedVariant(activeVariantTarget.providerID, activeVariantTarget.modelID) : undefined;
+    const targetSelectedVariant = (() => {
+        if (!activeVariantTarget) return undefined;
+        const isCurrentModel = activeVariantTarget.providerID === selectedProviderID
+            && activeVariantTarget.modelID === selectedModelID;
+        if (isCurrentModel) {
+            return resolveSelectedVariant(activeVariantTarget.providerID, activeVariantTarget.modelID);
+        }
+        const remembered = activeVariantTarget.variant !== undefined
+            && targetVariants.includes(activeVariantTarget.variant)
+            ? activeVariantTarget.variant
+            : undefined;
+        return remembered ?? resolveSelectedVariant(activeVariantTarget.providerID, activeVariantTarget.modelID);
+    })();
     const hasResults = filteredFavorites.length > 0 || filteredRecents.length > 0 || filteredProviders.length > 0;
     const isVariantView = activeView === 'variant' && Boolean(activeVariantTarget);
 
@@ -406,7 +429,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                                             <Icon name="star-fill" className="mr-1.5 inline-block size-3 text-primary" />
                                             {t('chat.modelControls.favorites')}
                                         </div>
-                                        <div className="flex flex-col border-t border-border/30">{filteredFavorites.map((entry) => renderModelRow(entry, { showProvider: true }))}</div>
+                                        <div className="flex flex-col border-t border-border/30">{filteredFavorites.map((entry) => renderModelRow(entry, { showProvider: true, preferRememberedVariant: true }))}</div>
                                     </div>
                                 ) : null}
                                 {filteredRecents.length > 0 ? (
@@ -415,7 +438,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                                             <Icon name="time" className="mr-1.5 inline-block size-3" />
                                             {t('chat.modelControls.recent')}
                                         </div>
-                                        <div className="flex flex-col border-t border-border/30">{filteredRecents.map((entry) => renderModelRow(entry, { showProvider: true }))}</div>
+                                        <div className="flex flex-col border-t border-border/30">{filteredRecents.map((entry) => renderModelRow(entry, { showProvider: true, preferRememberedVariant: true }))}</div>
                                     </div>
                                 ) : null}
                                 {filteredProviders.map(({ provider, models }) => {

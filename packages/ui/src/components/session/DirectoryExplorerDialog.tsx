@@ -703,13 +703,13 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
             {t('directoryExplorerDialog.title')}
           </h2>
         )}
+        trailing={showHiddenToggle}
         ariaLabel={t('directoryExplorerDialog.title')}
         closeAriaLabel={t('mobile.surface.closeAria')}
         resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
         initiallyExpanded
       >
         <div className="flex h-full min-h-0 flex-col gap-3">
-          <div className="flex shrink-0 justify-end px-3">{showHiddenToggle}</div>
           <div className="flex min-h-0 flex-1 flex-col px-2">{content}</div>
           <div className="shrink-0 border-t border-border/40 px-3 pb-4 pt-2">
             <div className="flex flex-col gap-2">{renderFooter()}</div>

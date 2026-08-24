@@ -98,7 +98,7 @@ Required JSON fields:
 - `nativeVersion`: native marketing version string
 - `nativeBuild`: positive integer
 - `shellApiVersion`: positive integer
-- `currentBundleId`: active OTA bundle id, or `builtin`
+- `currentBundleId`: active OTA bundle id, or `builtin`. On the beta channel this must be the running **web** bundle version, never the iOS marketing version (`1.18.2`). Capgo builtin reports `CFBundleShortVersionString`; the resolver ignores that stripped identity when it matches `nativeVersion`, otherwise every `1.18.2-beta.N` OTA looks like a downgrade. It is also the primary identity for the shell version gate (`minShellReleaseVersion`); beta clients must report the running web package version.
 - `installSource`: optional string
 
 ### Decision response (`/v1/mobile/update/check`)
@@ -131,7 +131,7 @@ Maps the same resolver decision:
 - `install_native_required` → `{ major: true, breaking: true, message: "native update required" }`
 - otherwise → `{ message: "No new version available", version: "", url: "" }`
 
-OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 设备已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。同版本不同 `bundleId` 仍可作内容更正。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报，否则 iOS 剥离版 `nativeVersion` + 过期 `nativeTargets.ios` 会把同版本反复判成 `apply_ota`。
+OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 门身份已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。同版本不同 `bundleId` 仍可作内容更正。原生壳下限用版本号 `activeBundle.minShellReleaseVersion`（`mode: native` 发布时写入本轮版本）；`platforms.*.minNativeBuild` 仅存量兼容，build 号不再参与任何判定。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报；门身份（`currentBundleId` 或回退 `nativeVersion`）不低于 `activeBundle.releaseVersion` 时视为已内嵌，避免反复 `apply_ota`。
 
 Manifest load failure returns `503 { "error": "ota_manifest_unavailable" }` on both endpoints (never a forged no-update).
 
@@ -145,6 +145,8 @@ Schema summary (`schemaVersion: 1`):
 
 - `channel`, `generation`
 - `activeBundle`: full bundle metadata, or `null` when OTA is enabled but nothing is published yet
+  - `minShellReleaseVersion` (optional): semver `X.Y.Z` / `X.Y.Z-beta.N`；原生壳能力下限，低于此版本 → `install_native_required`
+  - `platforms.ios|android.minNativeBuild` (**deprecated**): 存量 manifest 兼容读取；判定已不使用
 - `nativeTargets.ios|android`: optional `{ version, build, status?, installUrl? }`
 - `rollbackBundleIds`: 0–2 hex bundle ids
 
@@ -154,11 +156,12 @@ Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne)
 
 | Path | Cache-Control |
 | --- | --- |
-| `/ota/bundles/(.*)` | `public, max-age=31536000, immutable` |
+| `/ota/bundles/(.*)` (full GET) | `public, max-age=31536000, immutable` |
+| `/ota/bundles/(.*)` (client `Range` or upstream `206`) | `no-store` (never edge-cache partial bodies) |
 | `/ota/channels/(.*)` | `no-cache, max-age=0` |
 
 ### Deploying bundles and channels
 
 CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The Vercel origin (`openchamber-update.vercel.app`) is authoritative — CI deploys snapshots there via `vercel deploy --prebuilt`.
 
-The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries the seeds. To keep it current, `edge-functions/ota/[...path].js` reverse-proxies `/ota/channels/*.json` and `/ota/bundles/*.zip` to the Vercel origin with edge-friendly cache headers (channels `s-maxage=60` + stale-while-revalidate, bundles `immutable`). The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative no-update.
+The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries the seeds. To keep it current, `edge-functions/ota/[...path].js` reverse-proxies `/ota/channels/*.json` and `/ota/bundles/*.zip` to the Vercel origin with edge-friendly cache headers (channels `s-maxage=60` + stale-while-revalidate, full bundles `immutable`). For bundle paths only, the proxy forwards client `Range` and passes through `content-range` / `accept-ranges` so Capgo native resume works; channel paths never forward `Range`. Partial responses use `cache-control: no-store` so an edge never caches a byte-range body that would poison later full GETs. The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative no-update.

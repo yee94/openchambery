@@ -90,6 +90,8 @@ export type ModelPickerEntry = {
   model: ProviderModel;
   providerID: string;
   modelID: string;
+  /** Remembered thinking variant from favorites/recents; omitted when never recorded. */
+  variant?: string;
 };
 
 type ModelPickerFavoriteEntry = ModelPickerEntry;

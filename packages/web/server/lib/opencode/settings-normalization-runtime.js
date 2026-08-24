@@ -309,13 +309,14 @@ export const createSettingsNormalizationRuntime = (dependencies) => {
     return populated ? result : undefined;
   };
 
-  const sanitizeModelRefs = (input, limit) => {
+  const sanitizeModelRefs = (input, limit, options) => {
     if (!Array.isArray(input)) {
       return undefined;
     }
 
     const result = [];
     const seen = new Set();
+    const preserveVariant = options?.preserveVariant === true;
 
     for (const entry of input) {
       if (!entry || typeof entry !== 'object') continue;
@@ -325,7 +326,11 @@ export const createSettingsNormalizationRuntime = (dependencies) => {
       const key = `${providerID}/${modelID}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      result.push({ providerID, modelID });
+      if (preserveVariant && typeof entry.variant === 'string' && entry.variant.trim().length > 0) {
+        result.push({ providerID, modelID, variant: entry.variant.trim() });
+      } else {
+        result.push({ providerID, modelID });
+      }
       if (result.length >= limit) break;
     }
 

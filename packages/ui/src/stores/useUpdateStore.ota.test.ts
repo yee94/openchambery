@@ -142,7 +142,7 @@ describe('useUpdateStore mobile OTA branch', () => {
 
   test('apply_ota download queues the bundle for in-app restart', async () => {
     mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(otaAvailableDecision());
-    mocks.mobileUpdates.downloadOtaUpdate.mockResolvedValue(undefined);
+    mocks.mobileUpdates.downloadOtaUpdate.mockResolvedValue({ skipped: true });
     mocks.mobileUpdates.queueOtaUpdateForNextLaunch.mockResolvedValue(undefined);
 
     await useUpdateStore.getState().checkForUpdates();
@@ -153,10 +153,112 @@ describe('useUpdateStore mobile OTA branch', () => {
       otaAvailableDecision().ota.bundle,
     );
     expect(mocks.mobileUpdates.queueOtaUpdateForNextLaunch).toHaveBeenCalledOnce();
-    expect(mocks.mobileUpdates.applyOtaUpdateNow).toHaveBeenCalledOnce();
+    expect(mocks.mobileUpdates.applyOtaUpdateNow).not.toHaveBeenCalled();
     expect(state.downloaded).toBe(true);
     expect(state.downloading).toBe(false);
     expect(state.otaPhase).toBe('pending_restart');
+    expect(state.otaDownloadSkipped).toBe(true);
+  });
+
+  test('maps OTA download percent to bundle bytes and deduplicates integer progress', async () => {
+    const decision = otaAvailableDecision();
+    decision.ota.bundle!.size = 1000;
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(decision);
+    await useUpdateStore.getState().checkForUpdates();
+    useUpdateStore.setState({ downloading: true });
+
+    useUpdateStore.getState().setOtaDownloadPercent(25.4);
+    const firstProgress = useUpdateStore.getState().progress;
+    expect(firstProgress).toEqual({ downloaded: 254, total: 1000 });
+
+    useUpdateStore.getState().setOtaDownloadPercent(25.49);
+    expect(useUpdateStore.getState().progress).toBe(firstProgress);
+  });
+
+  test('uses percentage units when the OTA bundle size is unavailable', async () => {
+    const decision = otaAvailableDecision();
+    decision.ota.bundle!.size = 0;
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(decision);
+    await useUpdateStore.getState().checkForUpdates();
+    useUpdateStore.setState({ downloading: true });
+
+    useUpdateStore.getState().setOtaDownloadPercent(40);
+
+    expect(useUpdateStore.getState().progress).toEqual({ downloaded: 40, total: 100 });
+  });
+
+  test('ignores OTA download progress outside an active valid download', () => {
+    useUpdateStore.getState().setOtaDownloadPercent(50);
+    useUpdateStore.setState({ downloading: true });
+    useUpdateStore.getState().setOtaDownloadPercent(Number.NaN);
+    useUpdateStore.getState().setOtaDownloadPercent(-1);
+    useUpdateStore.getState().setOtaDownloadPercent(101);
+
+    expect(useUpdateStore.getState().progress).toBeNull();
+  });
+
+  test('marks a native OTA download event failure', () => {
+    useUpdateStore.setState({ downloading: true, downloaded: true });
+
+    useUpdateStore.getState().setOtaDownloadFailed();
+
+    const state = useUpdateStore.getState();
+    expect(state.downloading).toBe(false);
+    expect(state.downloaded).toBe(false);
+    expect(state.error).toBe('Failed to download update');
+    expect(state.otaPhase).toBe('error');
+  });
+
+  test('keeps a queued mobile OTA update when the dialog is dismissed', async () => {
+    const decision = otaAvailableDecision();
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(decision);
+    await useUpdateStore.getState().checkForUpdates();
+    useUpdateStore.setState({
+      downloaded: true,
+      otaPhase: 'pending_restart',
+      otaDownloadSkipped: true,
+    });
+
+    useUpdateStore.getState().dismiss();
+
+    const state = useUpdateStore.getState();
+    expect(state.available).toBe(true);
+    expect(state.downloaded).toBe(true);
+    expect(state.otaPhase).toBe('pending_restart');
+    expect(state.otaDownloadSkipped).toBe(true);
+    expect(state.otaDecision).toBe(decision);
+    expect(state.info?.version).toBe('1.18.3');
+  });
+
+  test('clears a downloaded OTA bundle when a new bundle id is returned', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate
+      .mockResolvedValueOnce(otaAvailableDecision())
+      .mockResolvedValueOnce({
+        ...otaAvailableDecision(),
+        ota: {
+          state: 'available',
+          bundle: {
+            ...otaAvailableDecision().ota.bundle!,
+            bundleId: 'new-bundle-id',
+            releaseVersion: '1.18.4',
+          },
+        },
+      });
+    await useUpdateStore.getState().checkForUpdates();
+    useUpdateStore.setState({
+      downloaded: true,
+      otaPhase: 'pending_restart',
+      otaDownloadSkipped: true,
+      progress: { downloaded: 100, total: 100 },
+    });
+
+    await useUpdateStore.getState().checkForUpdates();
+
+    const state = useUpdateStore.getState();
+    expect(state.downloaded).toBe(false);
+    expect(state.otaDownloadSkipped).toBe(false);
+    expect(state.progress).toBeNull();
+    expect(state.otaPhase).toBe('available');
   });
 
   test('apply_ota restart applies the queued bundle now', async () => {

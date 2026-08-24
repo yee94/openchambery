@@ -64,9 +64,10 @@ const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
       getComputedStyle(document.documentElement).getPropertyValue('--oc-kb-scroll-inset'),
     ) || 0;
     const visibleTop = Math.max(scrollerRect.top, viewportTop);
-    // chat-scroll already ends above the composer. Subtract the IME inset from
-    // the visual viewport, not from the scroller bottom, or the field sits a
-    // composer-height too high and the footer is more likely to stay covered.
+    // Capacitor IME uses resize:none, so visualViewport often stays full-height.
+    // Subtract the published IME inset from that viewport. Native chat-scroll
+    // also grows padding-bottom by --oc-kb-scroll-inset on the non-composer
+    // path so there is scroll range to land the field above the keyboard.
     const visibleBottom = Math.min(scrollerRect.bottom, viewportBottom - keyboardInset);
     const availableHeight = Math.max(0, visibleBottom - visibleTop);
     const card = textarea.closest<HTMLElement>('[data-question-card]');

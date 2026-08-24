@@ -83,6 +83,7 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-5 w-4');
         expect(markup).toContain('width:12px;height:12px');
         expect(markup).toContain('min-h-0 min-w-0 items-center gap-1.5 overflow-clip');
+        expect(markup).not.toContain('flex w-full min-h-0 min-w-0 items-center gap-1.5 overflow-clip');
     });
 
     test('clips both moving layers inside a fixed-height paint viewport', () => {

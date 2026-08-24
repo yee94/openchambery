@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import {
   isTypographyProp,
@@ -5,6 +8,11 @@ import {
   rewriteLengthToDesignPt,
   shouldRewriteProp,
 } from '../../../../scripts/postcss-dpt-font-size.mjs';
+
+const designSystemCss = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '../styles/design-system.css'),
+  'utf8',
+);
 
 describe('rewriteLengthToDesignPt', () => {
   test('converts px and rem font sizes, including leading-dot decimals', () => {
@@ -69,5 +77,14 @@ describe('rewriteLengthToDesignPt', () => {
     // Non-literals pass through.
     expect(rewriteGeometryToPaddingScale('auto')).toBe('auto');
     expect(rewriteGeometryToPaddingScale('var(--x)')).toBe('var(--x)');
+  });
+});
+
+describe('Tailwind text-* theme scale', () => {
+  test('text-xs through text-base are owned in @theme as --dpt calcs', () => {
+    expect(designSystemCss).toMatch(/--text-xs:\s*calc\(12 \* var\(--dpt\)\)/);
+    expect(designSystemCss).toMatch(/--text-sm:\s*calc\(14 \* var\(--dpt\)\)/);
+    expect(designSystemCss).toMatch(/--text-base:\s*calc\(16 \* var\(--dpt\)\)/);
+    expect(designSystemCss).toMatch(/--text-lg:\s*calc\(18 \* var\(--dpt\)\)/);
   });
 });

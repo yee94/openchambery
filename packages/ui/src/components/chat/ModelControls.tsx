@@ -772,31 +772,32 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const getModelVariantOptions = React.useCallback((providerId: string, modelId: string) => {
         if (selectionAdapter) {
-            const fromCatalog = resolveChatInputSelectionVariantOptions(
-                selectionAdapter.selection,
-                selectionAdapter.catalog,
-                providerId,
-                modelId,
-            );
-            if (
-                fromCatalog.length > 0
-                || selectionAdapter.catalog?.variants
-                || selectionAdapter.catalog?.variantsReady === false
-                || selectionAdapter.selection.providerID !== providerId
-                || selectionAdapter.selection.modelID !== modelId
-            ) {
-                return fromCatalog;
+            const isCurrentSelection = selectionAdapter.selection.providerID === providerId
+                && selectionAdapter.selection.modelID === modelId;
+            if (isCurrentSelection) {
+                // Catalog is current-model-only: trust it fully for the live
+                // selection (including variantsReady === false → wait empty).
+                return resolveChatInputSelectionVariantOptions(
+                    selectionAdapter.selection,
+                    selectionAdapter.catalog,
+                    providerId,
+                    modelId,
+                );
             }
-            // Primary adapters may omit catalog.variants; fall back to the
-            // provider list already resolved for this control (store or surface).
-            const provider = providers.find((entry) => entry.id === providerId);
-            const model = provider?.models?.find((entry) => entry.id === modelId) as { variants?: unknown } | undefined;
-            return resolveModelVariantKeys(model);
+            // Non-current models never come from catalog.variants; resolve from
+            // the provider list so remembered favorites/recents still show and apply.
         }
         const provider = providers.find((entry) => entry.id === providerId);
         const model = provider?.models?.find((entry) => entry.id === modelId) as { variants?: unknown } | undefined;
         return resolveModelVariantKeys(model);
-    }, [currentModelId, currentProviderId, providers, selectionAdapter, selectionCatalog?.variants, selectionCatalog?.variantsReady]);
+    }, [
+        providers,
+        selectionAdapter,
+        selectionAdapter?.selection.providerID,
+        selectionAdapter?.selection.modelID,
+        selectionCatalog?.variants,
+        selectionCatalog?.variantsReady,
+    ]);
 
     const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string) => {
         const adapterOptions = selectionAdapter
@@ -909,10 +910,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return result;
         }
 
-        addRecentModel(providerId, modelId);
         commitVariantSelectionForModel(providerId, modelId, variant, effectiveAgentName);
+        const recordedVariant = selectionAdapter
+            ? variant
+            : useConfigStore.getState().currentVariant;
+        addRecentModel(providerId, modelId, recordedVariant);
         return 'applied';
-    }, [addRecentModel, commitVariantSelectionForModel, resolveLiveAgentName, tryApplyModelSelection]);
+    }, [addRecentModel, commitVariantSelectionForModel, resolveLiveAgentName, selectionAdapter, tryApplyModelSelection]);
 
     React.useEffect(() => {
         if (selectionAdapter) return;
@@ -1448,7 +1452,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 agent: options?.agentName ?? selectionAdapter.selection.agent,
                 variant: nextVariant,
             }).then(() => {
-                addRecentModel(providerId, modelId);
+                addRecentModel(providerId, modelId, nextVariant);
                 closeModelMenu();
             }).catch(() => undefined);
             return;
@@ -1474,7 +1478,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             );
             if (!options?.applyVariant) {
                 // Add to recent models on successful selection.
-                addRecentModel(providerId, modelId);
+                addRecentModel(providerId, modelId, useConfigStore.getState().currentVariant);
             }
             closeModelMenu();
             if (isCompact) {
@@ -1769,7 +1773,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     agent: selectionAdapter.selection.agent,
                     variant,
                 }).then(() => {
-                    addRecentModel(providerId, modelId);
+                    addRecentModel(providerId, modelId, variant);
                 }).catch(() => undefined);
                 return;
             }
@@ -1805,7 +1809,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 hiddenModels={hiddenModels}
                 providerOrder={providerOrder}
                 isFavorite={isFavoriteModel}
-                onToggleFavorite={toggleFavoriteModel}
+                onToggleFavorite={(providerID, modelID) => toggleFavoriteModel(
+                    providerID,
+                    modelID,
+                    providerID === currentProviderId && modelID === currentModelId
+                        ? currentVariant
+                        : favoriteModelsList.find((entry) => entry.providerID === providerID && entry.modelID === modelID)?.variant
+                            ?? recentModelsList.find((entry) => entry.providerID === providerID && entry.modelID === modelID)?.variant,
+                )}
                 getMetadata={getModelMetadata}
             />
         );
@@ -2014,9 +2025,29 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const wasAdjusted = adjustedThinkingModels.has(mapKey);
             const effectiveAgentName = resolveLiveAgentName();
 
-            handleProviderAndModelChange(entry.providerID, entry.modelID, wasAdjusted
-                ? { applyVariant: true, variant: pendingVariant, agentName: effectiveAgentName }
-                : { agentName: effectiveAgentName });
+            if (wasAdjusted) {
+                handleProviderAndModelChange(entry.providerID, entry.modelID, {
+                    applyVariant: true,
+                    variant: pendingVariant,
+                    agentName: effectiveAgentName,
+                });
+                return;
+            }
+
+            const availableVariants = getModelVariantOptions(entry.providerID, entry.modelID);
+            const rememberedVariant = entry.variant !== undefined && availableVariants.includes(entry.variant)
+                ? entry.variant
+                : undefined;
+            if (rememberedVariant !== undefined) {
+                handleProviderAndModelChange(entry.providerID, entry.modelID, {
+                    applyVariant: true,
+                    variant: rememberedVariant,
+                    agentName: effectiveAgentName,
+                });
+                return;
+            }
+
+            handleProviderAndModelChange(entry.providerID, entry.modelID, { agentName: effectiveAgentName });
         };
 
         const handleModelShortcutKeyDownCapture = (e: React.KeyboardEvent) => {
@@ -2083,7 +2114,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const mapKey = buildModelRefKey(entry.providerID, entry.modelID);
             const hasPendingVariant = pendingThinkingVariants.has(mapKey);
             const pendingVariant = pendingThinkingVariants.get(mapKey);
-            const effectiveVariant = hasPendingVariant ? pendingVariant : (isSelected ? currentVariant : undefined);
+            const rememberedVariant = entry.variant !== undefined && variantOptions.includes(entry.variant)
+                ? entry.variant
+                : undefined;
+            const effectiveVariant = hasPendingVariant
+                ? pendingVariant
+                : (isSelected ? currentVariant : rememberedVariant);
             const wasAdjusted = adjustedThinkingModels.has(mapKey);
             const hasActiveVariant = Boolean(wasAdjusted || effectiveVariant);
 
@@ -2123,9 +2159,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const pendingVariant = pendingThinkingVariants.get(mapKey);
             const isCurrentModel = desktopVariantTarget.providerID === currentProviderId
                 && desktopVariantTarget.modelID === currentModelId;
+            const rememberedVariant = desktopVariantTarget.variant !== undefined
+                && variantOptions.includes(desktopVariantTarget.variant)
+                ? desktopVariantTarget.variant
+                : undefined;
             const selectedVariant = hasPendingVariant
                 ? pendingVariant
-                : (isCurrentModel ? currentVariant : undefined);
+                : (isCurrentModel ? currentVariant : rememberedVariant);
             const targetModelLabel = getSharedModelDisplayName(
                 desktopVariantTarget.model,
                 desktopVariantTarget.modelID,
@@ -2318,7 +2358,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         onActiveEntryChange={(entry) => { activeModelPickerEntryRef.current = entry; }}
                                         onVariantKey={handleThinkingVariantKey}
                                         isFavorite={(entry) => isFavoriteModel(entry.providerID, entry.modelID)}
-                                        onToggleFavorite={(entry) => toggleFavoriteModel(entry.providerID, entry.modelID)}
+                                        onToggleFavorite={(entry) => toggleFavoriteModel(
+                                            entry.providerID,
+                                            entry.modelID,
+                                            entry.providerID === currentProviderId && entry.modelID === currentModelId
+                                                ? currentVariant
+                                                : entry.variant,
+                                        )}
                                         renderRowEnd={renderThinkingSlot}
                                         renderVersion={modelPickerRenderVersion}
                                         onReorderFavorite={(active, over) => reorderFavoriteModel(

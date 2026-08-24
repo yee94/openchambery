@@ -216,13 +216,53 @@ const areStringRecordsEqual = (left: Record<string, string>, right: Record<strin
   return leftEntries.every(([key, value]) => right[key] === value);
 };
 
+type ModelRefWithOptionalVariant = { providerID: string; modelID: string; variant?: string };
+
 const areModelRefsEqual = (
-  left: Array<{ providerID: string; modelID: string }>,
-  right: Array<{ providerID: string; modelID: string }>,
+  left: Array<ModelRefWithOptionalVariant>,
+  right: Array<ModelRefWithOptionalVariant>,
 ): boolean => (
   left.length === right.length &&
-  left.every((item, idx) => item.providerID === right[idx]?.providerID && item.modelID === right[idx]?.modelID)
+  left.every((item, idx) => (
+    item.providerID === right[idx]?.providerID
+    && item.modelID === right[idx]?.modelID
+    && item.variant === right[idx]?.variant
+  ))
 );
+
+/**
+ * Merge server model-ref lists onto local ones without letting legacy writers
+ * (old clients / old server payloads that omit `variant`) erase a remembered
+ * thinking strength. Order and membership follow `next`; when an incoming entry
+ * has no variant but the matching local entry does, keep the local variant.
+ * Incoming entries that include a variant win as authoritative.
+ */
+const mergeModelRefsPreservingVariants = (
+  current: Array<ModelRefWithOptionalVariant>,
+  next: Array<ModelRefWithOptionalVariant>,
+): Array<ModelRefWithOptionalVariant> => {
+  if (next.length === 0) {
+    return next;
+  }
+
+  const currentVariantByKey = new Map<string, string>();
+  for (const entry of current) {
+    if (typeof entry.variant === 'string' && entry.variant.length > 0) {
+      currentVariantByKey.set(`${entry.providerID}/${entry.modelID}`, entry.variant);
+    }
+  }
+
+  return next.map((entry) => {
+    if (typeof entry.variant === 'string' && entry.variant.length > 0) {
+      return entry;
+    }
+    const remembered = currentVariantByKey.get(`${entry.providerID}/${entry.modelID}`);
+    if (!remembered) {
+      return entry;
+    }
+    return { providerID: entry.providerID, modelID: entry.modelID, variant: remembered };
+  });
+};
 
 const areStringArraysEqual = (left: string[], right: string[]): boolean => (
   left.length === right.length && left.every((value, idx) => value === right[idx])
@@ -347,13 +387,18 @@ const sanitizeProjects = (value: unknown): DesktopSettings['projects'] | undefin
   return result.length > 0 ? result : undefined;
 };
 
-const sanitizeModelRefs = (value: unknown, limit: number): Array<{ providerID: string; modelID: string }> | undefined => {
+const sanitizeModelRefs = (
+  value: unknown,
+  limit: number,
+  options?: { preserveVariant?: boolean },
+): Array<{ providerID: string; modelID: string; variant?: string }> | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
   }
 
-  const result: Array<{ providerID: string; modelID: string }> = [];
+  const result: Array<{ providerID: string; modelID: string; variant?: string }> = [];
   const seen = new Set<string>();
+  const preserveVariant = options?.preserveVariant === true;
 
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') continue;
@@ -364,7 +409,11 @@ const sanitizeModelRefs = (value: unknown, limit: number): Array<{ providerID: s
     const key = `${providerID}/${modelID}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ providerID, modelID });
+    if (preserveVariant && typeof candidate.variant === 'string' && candidate.variant.trim().length > 0) {
+      result.push({ providerID, modelID, variant: candidate.variant.trim() });
+    } else {
+      result.push({ providerID, modelID });
+    }
     if (result.length >= limit) break;
   }
 
@@ -657,7 +706,7 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
 
   if (Array.isArray(settings.favoriteModels)) {
     const current = store.favoriteModels;
-    const next = settings.favoriteModels;
+    const next = mergeModelRefsPreservingVariants(current, settings.favoriteModels);
     if (!areModelRefsEqual(current, next)) {
       useUIStore.setState({ favoriteModels: next });
     }
@@ -681,7 +730,7 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
 
   if (Array.isArray(settings.recentModels)) {
     const current = store.recentModels;
-    const next = settings.recentModels;
+    const next = mergeModelRefsPreservingVariants(current, settings.recentModels);
     if (!areModelRefsEqual(current, next)) {
       useUIStore.setState({ recentModels: next });
     }
@@ -1148,7 +1197,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     }
   }
 
-  const favoriteModels = sanitizeModelRefs(candidate.favoriteModels, 64);
+  const favoriteModels = sanitizeModelRefs(candidate.favoriteModels, 64, { preserveVariant: true });
   if (favoriteModels) {
     result.favoriteModels = favoriteModels;
   }
@@ -1163,7 +1212,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     result.collapsedModelProviders = collapsedModelProviders;
   }
 
-  const recentModels = sanitizeModelRefs(candidate.recentModels, 16);
+  const recentModels = sanitizeModelRefs(candidate.recentModels, 16, { preserveVariant: true });
   if (recentModels) {
     result.recentModels = recentModels;
   }

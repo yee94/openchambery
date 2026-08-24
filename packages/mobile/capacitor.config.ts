@@ -38,7 +38,7 @@ const config: CapacitorConfig & {
   },
   plugins: {
     Keyboard: {
-      // iOS: resize none + JS composer transform FLIP. Android: adjustNothing +
+      // iOS: resize none + JS shell shrink (--oc-kb-layout). Android: adjustNothing +
       // pre-focus cached-height composer CSS FLIP; ImeSyncBridge keeps parent
       // padding zero and reports state/settled height. resizeOnFullScreen stays off.
       resize: 'none',
@@ -70,7 +70,9 @@ const config: CapacitorConfig & {
       // Raised above Capgo's 10s default: mobile splash + remote-config-free cold start
       // can exceed 10s on low-end devices before JS can call notifyAppReady.
       appReadyTimeout: 20000,
-      autoDeleteFailed: true,
+      // Keep failed/partial bundles so native HTTP Range resume can continue on
+      // the next download. Successful-start cleanup still uses autoDeletePrevious.
+      autoDeleteFailed: false,
       autoDeletePrevious: true,
       resetWhenUpdate: true,
       // Optional E2E encryption public key; empty string = unencrypted bundles.
