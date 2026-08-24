@@ -149,18 +149,10 @@ Android at `0.9` as a visibility experiment. iOS stays `1`.
 It does not touch `1px` hairlines, media queries, safe-area, or keyboard
 insets. Layout spacing stays CSS px/rem.
 
-Typography presets are owned as `calc(N * var(--dpt))` in the style set,
-not left as rem for PostCSS to catch later:
-
-- Tailwind `text-xs` … `text-9xl` and rem `leading-3` … `leading-10`
-  in `@theme inline` (`design-system.css`)
-- Semantic `--text-markdown` / `--text-ui-label` / … on `:root`, with
-  mobile-pointer overrides in `mobile.css`
-- Mobile title/meta tokens (`--oc-mobile-*-title-size`, settings
-  section titles) and `--form-helper-font-size`
-
-Arbitrary `text-[13px]` still depends on the PostCSS `font-size` rewrite.
-Unitless `leading-tight` / `leading-normal` stay ratios.
+Tailwind `text-xs` … `text-9xl` are owned in `@theme inline`
+(`design-system.css`) as `calc(N * var(--dpt))`, same pattern as the
+spacing scale and `--padding-scale`. Arbitrary `text-[13px]` still
+depends on the PostCSS `font-size` rewrite.
 
 The composer highlight overlay (`[data-composer-highlight="true"]`) must
 use the same `calc(16 * var(--dpt))` as the textarea. Attachment chips

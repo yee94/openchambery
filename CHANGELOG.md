@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.9] - 2026-08-24
+
+### 移动端
+
+- **收回 beta.8 对非 text 预设的改动：** 只保留 Tailwind `text-xs`…`text-9xl`（含 `text-xl`）走 `--dpt`。语义 token、leading、组件字号、`typography-small` 恢复原样。
+
 ## [1.18.3-beta.8] - 2026-08-24
 
 ### 移动端

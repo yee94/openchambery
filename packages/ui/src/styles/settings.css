@@ -9,8 +9,8 @@
   /* One roomy vertical rhythm for navigation sections and detail groups across
      desktop and mobile. Keep this distinct from compact in-card row spacing. */
   --oc-settings-section-stack-gap: 1.25rem;
-  --oc-settings-section-title-size: calc(12 * var(--dpt));
-  --oc-settings-section-title-line-height: calc(16 * var(--dpt));
+  --oc-settings-section-title-size: 0.75rem;
+  --oc-settings-section-title-line-height: 1rem;
   --oc-settings-section-title-weight: 400;
   --oc-settings-section-title-inset: 0.5rem;
   --oc-settings-section-title-slot: calc(
@@ -80,7 +80,7 @@
    same nominal size. Apply one optical step without special-casing product
    names so mixed-language navigation keeps one perceived hierarchy. */
 .oc-settings-group-label[data-settings-label-script="latin"] {
-  font-size: calc(var(--oc-settings-section-title-size) + (1 * var(--dpt)));
+  font-size: calc(var(--oc-settings-section-title-size) + 0.0625rem);
 }
 
 .oc-settings-group-card {

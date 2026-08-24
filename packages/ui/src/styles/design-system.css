@@ -30,14 +30,14 @@
     --dpt: 1px;
     --dpt-n: 1;
 
-    /* Semantic typography defaults (must match SEMANTIC_TYPOGRAPHY rem bases). */
+    /* Semantic typography defaults (must match SEMANTIC_TYPOGRAPHY) */
     /* Codex App chat body defaults to 14px (--text-base / --codex-chat-font-size). */
-    --text-markdown: calc(14 * var(--dpt));
-    --text-code: calc(12 * var(--dpt));
-    --text-ui-header: calc(15 * var(--dpt));
-    --text-ui-label: calc(14 * var(--dpt));
-    --text-meta: calc(14 * var(--dpt));
-    --text-micro: calc(14 * var(--dpt));
+    --text-markdown: 0.875rem;
+    --text-code: 0.75rem;
+    --text-ui-header: 0.9375rem;
+    --text-ui-label: 0.8750rem;
+    --text-meta: 0.875rem;
+    --text-micro: 0.875rem;
 
     /* Shared form geometry and materials. Settings surfaces consume these
        tokens instead of defining page-local field borders, radii, or sizes. */
@@ -46,9 +46,9 @@
     --form-control-border: var(--interactive-border, var(--border));
     --form-control-background: var(--surface-elevated, var(--card));
     --form-control-font-size: var(--text-ui-label);
-    --form-control-line-height: calc(22 * var(--dpt));
-    --form-helper-font-size: calc(12 * var(--dpt));
-    --form-helper-line-height: calc(16 * var(--dpt));
+    --form-control-line-height: 1.375rem;
+    --form-helper-font-size: 0.75rem;
+    --form-helper-line-height: 1rem;
     --form-surface-border: color-mix(
       in srgb,
       var(--surface-foreground, var(--foreground)) 8%,
@@ -274,16 +274,6 @@
   --text-7xl: calc(72 * var(--dpt));
   --text-8xl: calc(96 * var(--dpt));
   --text-9xl: calc(128 * var(--dpt));
-
-  /* Rem-based leading-* utilities. Unitless leading-tight/normal/… stay ratios. */
-  --leading-3: calc(12 * var(--dpt));
-  --leading-4: calc(16 * var(--dpt));
-  --leading-5: calc(20 * var(--dpt));
-  --leading-6: calc(24 * var(--dpt));
-  --leading-7: calc(28 * var(--dpt));
-  --leading-8: calc(32 * var(--dpt));
-  --leading-9: calc(36 * var(--dpt));
-  --leading-10: calc(40 * var(--dpt));
 
   /* Override Tailwind spacing scale with custom properties that respect --padding-scale */
   --spacing-0: 0;

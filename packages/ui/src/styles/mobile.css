@@ -5,8 +5,8 @@
   --is-mobile: 0;
   --device-type: "desktop";
   --font-scale: 1;
-  --oc-mobile-detail-title-size: calc(15 * var(--dpt));
-  --oc-mobile-detail-subtitle-size: calc(10 * var(--dpt));
+  --oc-mobile-detail-title-size: 0.9375rem;
+  --oc-mobile-detail-subtitle-size: 0.625rem;
   /* Content-driven title bar height rides the density chain; the back button
      inside keeps its own fixed touch size. */
   --oc-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
@@ -40,16 +40,16 @@
   --oc-mobile-control-radius: 1.25rem;
   --oc-mobile-page-gap: 1.25rem;
   --oc-mobile-page-inline-inset: 1.125rem;
-  --oc-mobile-root-title-size: calc(32 * var(--dpt));
+  --oc-mobile-root-title-size: 2rem;
   --oc-mobile-project-group-gap: 0.75rem;
   /* Card header is title+subtitle driven; rides density (not a touch target). */
   --oc-mobile-project-header-height: calc(5.25rem * var(--padding-scale, 1));
   --oc-mobile-project-icon-size: calc(2.75rem * var(--padding-scale, 1));
   --oc-mobile-project-action-size: calc(2.25rem * var(--padding-scale, 1));
-  --oc-mobile-entity-title-size: calc(16 * var(--dpt));
-  --oc-mobile-entity-title-line-height: calc(20 * var(--dpt));
-  --oc-mobile-entity-meta-size: calc(13 * var(--dpt));
-  --oc-mobile-entity-meta-line-height: calc(16 * var(--dpt));
+  --oc-mobile-entity-title-size: 1rem;
+  --oc-mobile-entity-title-line-height: 1.25rem;
+  --oc-mobile-entity-meta-size: 0.8125rem;
+  --oc-mobile-entity-meta-line-height: 1rem;
   /* 2.875rem × 0.9 = 41.4px — still above the 36px touch minimum. */
   --oc-mobile-session-row-height: calc(2.875rem * var(--padding-scale, 1));
   --oc-mobile-session-actions-width: 7rem;
@@ -220,8 +220,8 @@
   padding: var(--oc-mobile-dock-inner-inset);
   border-radius: var(--oc-mobile-tab-radius) !important;
   corner-shape: round;
-  font-size: var(--text-micro) !important;
-  line-height: var(--text-micro) !important;
+  font-size: 0.75rem !important;
+  line-height: 0.75rem !important;
   overflow: hidden;
   scrollbar-width: none;
   -webkit-tap-highlight-color: transparent;
@@ -258,8 +258,8 @@
    specificity so 计划任务 remains complete on the 378px native viewport. */
 :root.mobile-pointer:not(.desktop-runtime)
   .oc-mobile-tab-button.typography-ui-label {
-  font-size: var(--text-micro) !important;
-  line-height: var(--text-micro) !important;
+  font-size: 0.75rem !important;
+  line-height: 0.75rem !important;
 }
 
 .oc-mobile-floating-surface,
@@ -650,13 +650,13 @@ button.oc-mobile-group-label-trigger:focus-visible {
 }
 
 .oc-mobile-group-label-trigger .typography-ui-label {
-  font-size: var(--text-ui-label) !important;
-  line-height: calc(16 * var(--dpt)) !important;
+  font-size: 0.8125rem !important;
+  line-height: 1rem !important;
 }
 
 .oc-mobile-group-label-trigger .typography-small {
-  font-size: var(--text-micro) !important;
-  line-height: calc(16 * var(--dpt)) !important;
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
 }
 
 .oc-mobile-group-action {
@@ -771,20 +771,20 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-title {
-  font-size: calc(13 * var(--dpt));
-  line-height: calc(18 * var(--dpt));
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
   letter-spacing: -0.012em;
 }
 
 .oc-mobile-session-subtitle,
 .oc-mobile-session-action-label {
-  font-size: calc(10 * var(--dpt));
-  line-height: calc(12 * var(--dpt));
+  font-size: 0.625rem;
+  line-height: 0.75rem;
 }
 
 .oc-mobile-session-time {
-  font-size: calc(11 * var(--dpt));
-  line-height: calc(14 * var(--dpt));
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
 }
 
 .oc-mobile-session-actions {
@@ -804,8 +804,8 @@ button.oc-mobile-worktree-label-trigger:active,
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem 0.5rem 2.5rem;
-  font-size: calc(13 * var(--dpt));
-  line-height: calc(18 * var(--dpt));
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
   outline: none;
 }
 
@@ -876,7 +876,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-assistant-guide-title {
   max-width: 18rem;
-  font-size: calc(20 * var(--dpt));
+  font-size: 1.25rem;
   font-weight: 650;
   line-height: 1.25;
   letter-spacing: -0.03em;
@@ -984,7 +984,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-assistant-onboarding h2 {
   margin-top: 1.25rem;
-  font-size: calc(18 * var(--dpt));
+  font-size: 1.125rem;
   font-weight: 650;
   line-height: 1.3;
   letter-spacing: -0.025em;
@@ -1084,7 +1084,7 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-assistant-avatar--emoji > [role="img"] > span {
-  font-size: calc(28 * var(--dpt)) !important;
+  font-size: 1.75rem !important;
   line-height: 1 !important;
 }
 
@@ -1102,8 +1102,8 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-assistant-name {
-  font-size: calc(15 * var(--dpt));
-  line-height: calc(20 * var(--dpt));
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
   letter-spacing: -0.02em;
 }
 
@@ -1962,12 +1962,12 @@ button.oc-mobile-worktree-label-trigger:active,
    * At 100%, applyTypography removes inline overrides so these defaults apply.
    */
   :root.mobile-pointer:not(.desktop-runtime) {
-    --text-markdown: calc(15 * var(--dpt));
-    --text-code: calc(13 * var(--dpt));
-    --text-ui-header: calc(14 * var(--dpt));
-    --text-ui-label: calc(13 * var(--dpt));
-    --text-meta: calc(13 * var(--dpt));
-    --text-micro: calc(12 * var(--dpt));
+    --text-markdown: 0.9375rem;
+    --text-code: 0.8125rem;
+    --text-ui-header: 0.875rem;
+    --text-ui-label: 0.8125rem;
+    --text-meta: 0.8125rem;
+    --text-micro: 0.75rem;
   }
 
   /* Do not `font-size: unset` the typography-* utilities. They already apply
@@ -1995,7 +1995,7 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   :root.mobile-pointer:not(.desktop-runtime) .session-mutation-undo-action {
-    font-size: calc(12 * var(--dpt)) !important;
+    font-size: 0.75rem !important;
   }
 
   /* Tool rows provide their own compact rhythm. The generic touch target rule
@@ -2535,35 +2535,35 @@ button.oc-mobile-worktree-label-trigger:active,
       --header-height: 4.5rem;
     }
 
-    /* Keep standalone iOS on the same --text-* / --dpt tokens as Android.
-       Do not pin rem here — that would undo the physical scale. */
+    /* Mobile typography improvements */
     .typography-markdown {
-      font-size: var(--text-markdown) !important;
+      font-size: 1rem !important;
     }
 
     .typography-code {
-      font-size: var(--text-code) !important;
+      font-size: 0.875rem !important;
     }
 
     .typography-ui-header {
-      font-size: var(--text-ui-header) !important;
+      font-size: 0.9375rem !important;
     }
 
     .typography-ui-label {
-      font-size: var(--text-ui-label) !important;
+      font-size: 0.875rem !important;
     }
 
     .typography-meta {
-      font-size: var(--text-meta) !important;
+      font-size: 0.875rem !important;
     }
 
     .typography-micro {
-      font-size: var(--text-micro) !important;
+      font-size: 0.8125rem !important;
     }
 
+    /* Fix font size for tool displays */
     [class*="tool"],
     [class*="code"] {
-      font-size: var(--text-code) !important;
+      font-size: 0.875rem !important;
     }
   }
 
@@ -3484,7 +3484,7 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
   border-radius: 999px;
   background: rgb(0 0 0 / 55%);
   color: #fff;
-  font-size: calc(28 * var(--dpt));
+  font-size: 28px;
   line-height: 1;
   cursor: pointer;
 }
