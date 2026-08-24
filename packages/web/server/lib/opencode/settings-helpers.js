@@ -616,12 +616,12 @@ export const createSettingsHelpers = (dependencies) => {
       result.shortcutOverrides = shortcutOverrides;
     }
 
-    const favoriteModels = sanitizeModelRefs(candidate.favoriteModels, 64);
+    const favoriteModels = sanitizeModelRefs(candidate.favoriteModels, 64, { preserveVariant: true });
     if (favoriteModels) {
       result.favoriteModels = favoriteModels;
     }
 
-    const recentModels = sanitizeModelRefs(candidate.recentModels, 16);
+    const recentModels = sanitizeModelRefs(candidate.recentModels, 16, { preserveVariant: true });
     if (recentModels) {
       result.recentModels = recentModels;
     }

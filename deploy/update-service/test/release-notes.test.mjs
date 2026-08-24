@@ -36,6 +36,16 @@ test('stripped iOS marketing version must not hide beta notes', () => {
   );
 });
 
+test('stripped iOS Capgo builtin version is not a changelog floor', () => {
+  assert.equal(
+    resolveChangelogCurrentVersion({
+      nativeVersion: '1.18.2',
+      currentBundleId: '1.18.2',
+    }),
+    null,
+  );
+});
+
 test('unknown web bundle still returns the latest section', () => {
   assert.equal(
     extractReleaseNotes(changelog, null, '1.18.2-beta.37'),

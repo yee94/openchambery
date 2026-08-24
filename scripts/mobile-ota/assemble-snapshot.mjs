@@ -42,7 +42,7 @@ const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
 const { parseOtaManifest } = await import(
   pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/ota-manifest.js')).href
 )
-const { compareReleaseVersions } = await import(
+const { compareReleaseVersions, parseReleaseVersion } = await import(
   pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/semver.js')).href
 )
 
@@ -175,6 +175,17 @@ async function fetchProductionManifest(baseUrl, channel) {
   if (parsed.manifest.channel !== channel) {
     throw new Error(`Aborting: production channel field mismatch (${url}): expected ${channel}, got ${parsed.manifest.channel}`)
   }
+  // Preserve optional minShellReleaseVersion from the raw body when the
+  // schema/parser (parallel lane) has not yet echoed it into parsed.manifest.
+  const rawGate = body.activeBundle?.minShellReleaseVersion
+  if (
+    typeof rawGate === 'string'
+    && rawGate !== ''
+    && parsed.manifest.activeBundle
+    && parsed.manifest.activeBundle.minShellReleaseVersion === undefined
+  ) {
+    parsed.manifest.activeBundle.minShellReleaseVersion = rawGate
+  }
   return { kind: 'ok', manifest: parsed.manifest }
 }
 
@@ -225,18 +236,40 @@ async function mirrorOtherChannel(baseUrl, targetChannel, channelsDir, bundlesDi
   return { other, kind, generation: manifest.generation }
 }
 
-function resolveMinNativeBuild(envKey, previousActive, platform) {
-  const fromEnv = process.env[envKey]
-  if (fromEnv !== undefined && fromEnv !== '') {
-    const n = Number.parseInt(fromEnv, 10)
-    if (!Number.isInteger(n) || n < 1) {
-      throw new Error(`${envKey} must be a positive integer`)
-    }
-    return n
-  }
+/**
+ * Carry forward legacy platforms.*.minNativeBuild for schema compatibility.
+ * New publishes no longer raise this field; the shell gate is
+ * activeBundle.minShellReleaseVersion (see resolveMinShellReleaseVersion).
+ */
+function carryForwardMinNativeBuild(previousActive, platform) {
   const prev = previousActive?.platforms?.[platform]?.minNativeBuild
   if (Number.isInteger(prev) && prev >= 1) return prev
   return 1
+}
+
+/**
+ * Optional MIN_SHELL_RELEASE_VERSION env: when set (non-empty), write
+ * activeBundle.minShellReleaseVersion. Must be a parseable release version
+ * (`X.Y.Z` or `X.Y.Z-beta.N`). Absent/empty → carry forward previous active
+ * gate (so mode:ota web publishes do not wipe a native-mode floor); if neither
+ * side has a value, omit the field (no shell gate).
+ */
+function resolveMinShellReleaseVersion(previousActive) {
+  const fromEnv = process.env.MIN_SHELL_RELEASE_VERSION
+  if (fromEnv !== undefined && fromEnv !== '') {
+    const parsed = parseReleaseVersion(fromEnv)
+    if (!parsed) {
+      throw new Error(
+        `MIN_SHELL_RELEASE_VERSION must be a release version (X.Y.Z or X.Y.Z-beta.N), got "${fromEnv}"`,
+      )
+    }
+    return fromEnv.trim().replace(/^v/i, '')
+  }
+  const prev = previousActive?.minShellReleaseVersion
+  if (typeof prev === 'string' && prev !== '' && parseReleaseVersion(prev)) {
+    return prev
+  }
+  return null
 }
 
 async function main() {
@@ -293,12 +326,16 @@ async function main() {
     minShellApiVersion,
     platforms: {
       ios: {
-        minNativeBuild: resolveMinNativeBuild('MIN_NATIVE_BUILD_IOS', previousActive, 'ios'),
+        minNativeBuild: carryForwardMinNativeBuild(previousActive, 'ios'),
       },
       android: {
-        minNativeBuild: resolveMinNativeBuild('MIN_NATIVE_BUILD_ANDROID', previousActive, 'android'),
+        minNativeBuild: carryForwardMinNativeBuild(previousActive, 'android'),
       },
     },
+  }
+  const minShellReleaseVersion = resolveMinShellReleaseVersion(previousActive)
+  if (minShellReleaseVersion) {
+    activeBundle.minShellReleaseVersion = minShellReleaseVersion
   }
   if (args.sessionKey) {
     activeBundle.sessionKey = args.sessionKey

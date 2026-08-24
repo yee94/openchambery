@@ -5,6 +5,7 @@ import { useEvent } from '@reactuses/core';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { MobileSheetHeaderActions } from '@/components/ui/MobileResizableSheet';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { Icon } from '@/components/icon/Icon';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -414,6 +415,27 @@ const MobileSearchResults: React.FC<{
   );
 };
 
+const MobileFileDetailActions: React.FC<{
+  path: string;
+  onCopyPath: () => void;
+  onCopyContent: () => void;
+}> = ({ path, onCopyPath, onCopyContent }) => {
+  const { t } = useI18n();
+
+  return (
+    <>
+      {!isImageFile(path) ? (
+        <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
+          <Icon name="file-copy" className="size-4" />
+        </Button>
+      ) : null}
+      <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
+        <Icon name="clipboard" className="size-4" />
+      </Button>
+    </>
+  );
+};
+
 const MobileFileDetail: React.FC<{
   path: string;
   content: string;
@@ -560,26 +582,12 @@ const MobileFileDetail: React.FC<{
           <div className="min-w-0 flex-1">
             <h2 className="truncate typography-ui-header text-foreground">{imageFilename}</h2>
           </div>
-          {!isImageFile(path) ? (
-            <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
-              <Icon name="file-copy" className="size-4" />
-            </Button>
-          ) : null}
-          <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
-            <Icon name="clipboard" className="size-4" />
-          </Button>
+          <MobileFileDetailActions path={path} onCopyPath={onCopyPath} onCopyContent={onCopyContent} />
         </header>
       ) : (
-        <div className="flex shrink-0 items-center justify-end gap-1 px-3 pb-1">
-          {!isImageFile(path) ? (
-            <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
-              <Icon name="file-copy" className="size-4" />
-            </Button>
-          ) : null}
-          <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
-            <Icon name="clipboard" className="size-4" />
-          </Button>
-        </div>
+        <MobileSheetHeaderActions>
+          <MobileFileDetailActions path={path} onCopyPath={onCopyPath} onCopyContent={onCopyContent} />
+        </MobileSheetHeaderActions>
       )}
       <div className="min-h-0 flex-1 overflow-hidden">
         {isLoading || imageAuthLoading || isRelayImageLoading ? (

@@ -814,7 +814,11 @@ export interface PushAPI {
 /** Capacitor mobile app only; optional elsewhere. Capgo-style self-hosted OTA. */
 export interface MobileUpdatesAPI {
   checkForOtaUpdate(): Promise<MobileUpdateDecision>;
-  downloadOtaUpdate(bundle: MobileOtaBundleInfo): Promise<void>;
+  /**
+   * Downloads (or reuses) the OTA bundle. `skipped` is true when an already
+   * downloaded bundle matching the target was reused instead of re-downloaded.
+   */
+  downloadOtaUpdate(bundle: MobileOtaBundleInfo): Promise<{ skipped: boolean }>;
   applyOtaUpdateNow(): Promise<void>;
   queueOtaUpdateForNextLaunch(): Promise<void>;
   getOtaStatus(): Promise<{ supported: boolean; currentBundleId: string; nativeVersion: string }>;

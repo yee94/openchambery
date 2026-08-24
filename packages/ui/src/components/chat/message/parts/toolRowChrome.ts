@@ -10,6 +10,8 @@ export const TOOL_ROW_CHIP_GEOMETRY_CLASS = 'rounded-lg px-2 py-0.5';
  * Background only appears on hover — idle rows stay flush with the message body.
  * Tight `py-0.5` keeps row height compact; top-level tool wrappers own vertical padding.
  * `-mx-2` cancels `px-2` so hover wash expands outward without shifting icon/text.
+ * Do not put `w-full` on the same node: specified width + both negative margins is
+ * overconstrained, so the right margin is dropped and the chip ends 8px short.
  * `oc-tool-row` opts into pointer cursor even under desktop-runtime neutralization.
  */
 export const TOOL_ROW_CHIP_CLASS =

@@ -247,9 +247,11 @@ export const useEdgeSwipeSessionSwitch = (
         return;
       }
       const surface = target.closest<HTMLElement>(SESSION_SWIPE_SURFACE_SELECTOR);
+      const root = document.documentElement;
       const composerActive = surface !== null
-        && (!surface.classList.contains('oc-mobile-composer-collapsed')
-          || surface.contains(document.activeElement));
+        && (surface.contains(document.activeElement)
+          || root.classList.contains('oc-keyboard-open')
+          || root.classList.contains('oc-browser-keyboard-open'));
       if (composerActive) {
         tracking = false;
         return;

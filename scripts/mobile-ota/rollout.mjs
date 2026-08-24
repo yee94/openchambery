@@ -14,6 +14,12 @@
  *   --action rollback [--channel beta|stable]
  *   --action set-native-target --platform ios|android --version V --build N
  *     [--status published] [--url U] [--channel beta|stable]
+ *   --action set-min-shell-release-version --version V|"" [--channel beta|stable]
+ *     Sets or clears activeBundle.minShellReleaseVersion (empty string clears).
+ *   --action set-min-native-build --platform ios|android --build N [--channel beta|stable]
+ *     DEPRECATED: Sets activeBundle.platforms.<platform>.minNativeBuild.
+ *     Server-side check no longer reads this field; kept for repairing legacy
+ *     manifests. Prefer set-min-shell-release-version.
  *   --action promote-channel --from beta --to stable [--percent 100]
  */
 import {
@@ -103,6 +109,8 @@ function parseArgs(argv) {
   node scripts/mobile-ota/rollout.mjs --action pause --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action rollback --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action set-native-target --platform ios|android --version V --build N [--url U] --out <dir> [--channel beta|stable]
+  node scripts/mobile-ota/rollout.mjs --action set-min-shell-release-version --version V|"" --out <dir> [--channel beta|stable]
+  node scripts/mobile-ota/rollout.mjs --action set-min-native-build --platform ios|android --build N --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to stable [--percent 100] --out <dir>`)
         process.exit(0)
         break
@@ -249,6 +257,48 @@ function applySetNativeTarget(manifest, args) {
   if (args.status) target.status = args.status
   if (args.url) target.installUrl = args.url
   next.nativeTargets[args.platform] = target
+  return next
+}
+
+function applySetMinShellReleaseVersion(manifest, args) {
+  if (!manifest.activeBundle) {
+    throw new Error('Cannot set min shell release version: activeBundle is null')
+  }
+  // Empty / omitted --version clears the gate (no shell floor).
+  const raw = args.version
+  const clearing = raw === null || raw === undefined || raw === ''
+  if (!clearing && !VERSION_PATTERN.test(raw)) {
+    throw new Error('--version must be a semver string, or empty to clear minShellReleaseVersion')
+  }
+
+  const next = structuredClone(manifest)
+  next.generation = (Number.isInteger(manifest.generation) ? manifest.generation : 0) + 1
+  if (clearing) {
+    delete next.activeBundle.minShellReleaseVersion
+  } else {
+    next.activeBundle.minShellReleaseVersion = raw
+  }
+  return next
+}
+
+// DEPRECATED: 服务端判定已不再读取 platforms.*.minNativeBuild；仅保留用于修复线上存量 manifest。
+// 新的壳门请用 set-min-shell-release-version（activeBundle.minShellReleaseVersion）。
+function applySetMinNativeBuild(manifest, args) {
+  if (args.platform !== 'ios' && args.platform !== 'android') {
+    throw new Error('--platform must be ios or android')
+  }
+  if (!Number.isInteger(args.build) || args.build < 1) {
+    throw new Error('--build must be a positive integer')
+  }
+  if (!manifest.activeBundle) {
+    throw new Error('Cannot set min native build: activeBundle is null')
+  }
+
+  const next = structuredClone(manifest)
+  next.generation = (Number.isInteger(manifest.generation) ? manifest.generation : 0) + 1
+  next.activeBundle.platforms = next.activeBundle.platforms || {}
+  next.activeBundle.platforms[args.platform] = next.activeBundle.platforms[args.platform] || {}
+  next.activeBundle.platforms[args.platform].minNativeBuild = args.build
   return next
 }
 
@@ -411,6 +461,13 @@ async function main() {
         break
       case 'set-native-target':
         next = applySetNativeTarget(previous, args)
+        break
+      case 'set-min-shell-release-version':
+        next = applySetMinShellReleaseVersion(previous, args)
+        break
+      case 'set-min-native-build':
+        // DEPRECATED: 见 applySetMinNativeBuild 注释；服务端判定已不读 minNativeBuild。
+        next = applySetMinNativeBuild(previous, args)
         break
       default:
         throw new Error(`Unknown action: ${args.action}`)

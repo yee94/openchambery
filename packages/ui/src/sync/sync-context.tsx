@@ -54,6 +54,10 @@ import {
   notifyTranscriptReconnectDisconnect,
 } from "./transcript-reconnect-compensation-runtime"
 import {
+  beginTranscriptResync,
+  endTranscriptResync,
+} from "./transcript-resync-flight"
+import {
   applyProductionHttpPage,
   fetchProductionTranscriptTransportPage,
   mountProductionTranscriptStack,
@@ -101,6 +105,7 @@ import { opencodeClient } from "@/lib/opencode/client"
 import { usePermissionStore } from "@/stores/permissionStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
+import { useSessionUIStore } from "./session-ui-store"
 import { toast } from "@/components/ui"
 import { appendNotification } from "./notification-store"
 import {
@@ -1705,6 +1710,9 @@ export async function resyncDirectoryAfterReconnect(
       // Ticket 09: Query sole write for recovery body (raw transport → http-page).
       // When a Query compensation controller is registered it may already own
       // multi-page reconcile; this path still ensures a recovery tail page.
+      // Resync flight: this warm session's transcript is chasing the remote
+      // tail here, so the sync hint must be in flight even with a transcript.
+      beginTranscriptResync(directory, sessionId)
       try {
         const page = await fetchProductionTranscriptTransportPage({
           directory,
@@ -1755,6 +1763,8 @@ export async function resyncDirectoryAfterReconnect(
         })
       } catch {
         // Preserve prior transcript on recovery failure (same as loader error path).
+      } finally {
+        endTranscriptResync(directory, sessionId)
       }
     }))
   }
@@ -2349,6 +2359,9 @@ export function handleEvent(
   const reducerResult = applyDirectoryEvent(draft, payload, {
     onSetSessionTodo: (sessionID, todos) => {
       useTodosPersistStore.getState().setSessionTodos(sessionID, todos)
+    },
+    onServerSessionIdle: (sessionID) => {
+      useSessionUIStore.getState().releaseQueueAbortBlocksForServerIdle(resolvedDirectory, sessionID)
     },
     now: Date.now,
   })

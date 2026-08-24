@@ -30,4 +30,10 @@ describe('DirectoryExplorerDialog mobile layout', () => {
     expect(componentSource).toContain('open={open}');
     expect(componentSource).not.toMatch(/<MobileResizableSheet[^>]*\bopen\s*\n/);
   });
+
+  test('keeps the show-hidden action in the mobile sheet header', () => {
+    expect(componentSource).toContain('trailing={showHiddenToggle}');
+    expect(componentSource).not.toContain('<div className="flex shrink-0 justify-end px-3">{showHiddenToggle}</div>');
+    expect(componentSource).toContain('{showHiddenToggle}\n          </div>');
+  });
 });

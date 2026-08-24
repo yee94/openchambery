@@ -783,11 +783,11 @@ interface UIStore {
   inputBarOffset: number;
   mobileKeyboardMode: MobileKeyboardMode;
 
-  favoriteModels: Array<{ providerID: string; modelID: string }>;
+  favoriteModels: Array<{ providerID: string; modelID: string; variant?: string }>;
   hiddenModels: Array<{ providerID: string; modelID: string }>;
   providerOrder: string[];
   collapsedModelProviders: string[];
-  recentModels: Array<{ providerID: string; modelID: string }>;
+  recentModels: Array<{ providerID: string; modelID: string; variant?: string }>;
   recentAgents: string[];
   recentEfforts: Record<string, string[]>;
 
@@ -958,7 +958,7 @@ interface UIStore {
   applyTypography: () => void;
   applyPadding: () => void;
   updateProportionalSidebarWidths: () => void;
-  toggleFavoriteModel: (providerID: string, modelID: string) => void;
+  toggleFavoriteModel: (providerID: string, modelID: string, variant?: string) => void;
   reorderFavoriteModel: (
     activeProviderID: string,
     activeModelID: string,
@@ -973,7 +973,8 @@ interface UIStore {
   toggleModelProviderCollapsed: (providerID: string) => void;
   setModelProvidersCollapsed: (providerIDs: string[], collapsed: boolean) => void;
   isFavoriteModel: (providerID: string, modelID: string) => boolean;
-  addRecentModel: (providerID: string, modelID: string) => void;
+  /** Records a recent model (and syncs favorite variant in place when already favorited). */
+  addRecentModel: (providerID: string, modelID: string, variant?: string) => void;
   addRecentAgent: (agentName: string) => void;
   addRecentEffort: (providerID: string, modelID: string, variant: string | undefined) => void;
   setDiffLayoutPreference: (mode: 'dynamic' | 'inline' | 'side-by-side') => void;
@@ -2276,7 +2277,7 @@ export const useUIStore = create<UIStore>()(
           set((state) => state.mobileKeyboardMode === mode ? state : { mobileKeyboardMode: mode });
         },
 
-        toggleFavoriteModel: (providerID, modelID) => {
+        toggleFavoriteModel: (providerID, modelID, variant) => {
           set((state) => {
             const exists = state.favoriteModels.some(
               (fav) => fav.providerID === providerID && fav.modelID === modelID
@@ -2290,9 +2291,12 @@ export const useUIStore = create<UIStore>()(
                 ),
               };
             } else {
-              // Add to favorites (newest first)
+              // Add to favorites (newest first); omit unset variant for a clean persist shape
+              const entry = variant === undefined
+                ? { providerID, modelID }
+                : { providerID, modelID, variant };
               return {
-                favoriteModels: [{ providerID, modelID }, ...state.favoriteModels],
+                favoriteModels: [entry, ...state.favoriteModels],
               };
             }
           });
@@ -2426,16 +2430,39 @@ export const useUIStore = create<UIStore>()(
           );
         },
 
-        addRecentModel: (providerID, modelID) => {
+        addRecentModel: (providerID, modelID, variant) => {
           set((state) => {
+            // Omit unset variant so persisted entries stay round-trip clean.
+            const entry = variant === undefined
+              ? { providerID, modelID }
+              : { providerID, modelID, variant };
             // Remove existing instance if any
             const filtered = state.recentModels.filter(
               (m) => !(m.providerID === providerID && m.modelID === modelID)
             );
             // Add to front, limit to 5
-            return {
-              recentModels: [{ providerID, modelID }, ...filtered].slice(0, 5),
-            };
+            const recentModels = [entry, ...filtered].slice(0, 5);
+
+            // Selecting a favorited model updates that favorite's remembered variant
+            // in place without changing favorite order.
+            const favoriteIndex = state.favoriteModels.findIndex(
+              (fav) => fav.providerID === providerID && fav.modelID === modelID
+            );
+            if (favoriteIndex === -1) {
+              return { recentModels };
+            }
+
+            const previous = state.favoriteModels[favoriteIndex];
+            if (previous.variant === variant) {
+              return { recentModels };
+            }
+
+            const nextFavorite = variant === undefined
+              ? { providerID: previous.providerID, modelID: previous.modelID }
+              : { providerID: previous.providerID, modelID: previous.modelID, variant };
+            const favoriteModels = state.favoriteModels.slice();
+            favoriteModels[favoriteIndex] = nextFavorite;
+            return { recentModels, favoriteModels };
           });
         },
 

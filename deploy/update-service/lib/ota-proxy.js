@@ -9,6 +9,11 @@
  *
  * The proxy is strictly allowlisted — it never becomes an open proxy — and it
  * never fabricates success: upstream failures surface as 502, misses as 404.
+ *
+ * Bundle paths forward client `Range` so Capgo native resume works. Partial
+ * responses (request Range or upstream 206/416) use `cache-control: no-store`
+ * so edge caches never store a byte-range body that would poison later GETs.
+ * Channel manifests never forward Range.
  */
 
 const DEFAULT_UPSTREAM_ORIGIN = 'https://openchamber-update.vercel.app';
@@ -53,6 +58,10 @@ export async function handleOtaProxyRequest(request, options = {}) {
   const isBundle = BUNDLE_PATH_PATTERN.test(path);
   if (!isBundle && !CHANNEL_PATH_PATTERN.test(path)) return notFound();
 
+  const clientRange = isBundle ? request.headers.get('range') : null;
+  const upstreamHeaders = { Accept: '*/*' };
+  if (clientRange) upstreamHeaders.Range = clientRange;
+
   let upstream;
   let upstreamError = 'unknown';
   const controller = new AbortController();
@@ -60,7 +69,7 @@ export async function handleOtaProxyRequest(request, options = {}) {
   try {
     upstream = await fetchImpl(origin + path, {
       method,
-      headers: { Accept: '*/*' },
+      headers: upstreamHeaders,
       signal: controller.signal,
     });
   } catch (error) {
@@ -80,19 +89,29 @@ export async function handleOtaProxyRequest(request, options = {}) {
   }
 
   if (!upstream.ok) {
-    // Preserve misses (404) and origin errors without caching them.
+    // Preserve misses (404), Range unsatisfiable (416), and origin errors without caching them.
     return new Response(upstream.body, {
       status: upstream.status,
       headers: { 'cache-control': 'no-store' },
     });
   }
 
+  const isPartialResponse = Boolean(clientRange) || upstream.status === 206;
   const headers = new Headers();
-  headers.set('cache-control', isBundle ? BUNDLE_CACHE_CONTROL : CHANNEL_CACHE_CONTROL);
+  headers.set(
+    'cache-control',
+    isPartialResponse ? 'no-store' : (isBundle ? BUNDLE_CACHE_CONTROL : CHANNEL_CACHE_CONTROL),
+  );
   const contentType = upstream.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
   const contentLength = upstream.headers.get('content-length');
   if (contentLength) headers.set('content-length', contentLength);
+  if (isBundle) {
+    const contentRange = upstream.headers.get('content-range');
+    if (contentRange) headers.set('content-range', contentRange);
+    const acceptRanges = upstream.headers.get('accept-ranges');
+    if (acceptRanges) headers.set('accept-ranges', acceptRanges);
+  }
   headers.set('x-ota-proxy', 'edgeone');
 
   return new Response(method === 'HEAD' ? null : upstream.body, {

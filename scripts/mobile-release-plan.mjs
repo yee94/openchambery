@@ -87,10 +87,21 @@ function compareSemverTags(a, b) {
 }
 
 function latestBaseTag() {
+  // CI checks out the tag being released, so that tag points at HEAD and
+  // would be selected as the highest base — diffing a tag against itself is
+  // always empty and every release would read as `ota`. Exclude tags that
+  // point at HEAD so the base falls to the PREVIOUS release. Local dev HEADs
+  // (no tag) keep selecting the latest tag as before.
+  const headTags = new Set(
+    git(['tag', '--points-at', 'HEAD'])
+      .split('\n')
+      .map((t) => t.trim())
+      .filter(Boolean),
+  )
   const tags = git(['tag', '-l', 'v*'])
     .split('\n')
     .map((t) => t.trim())
-    .filter((t) => TAG_PATTERN.test(t))
+    .filter((t) => TAG_PATTERN.test(t) && !headTags.has(t))
   if (tags.length === 0) {
     throw new Error('No matching base tags found (expected vX.Y.Z or vX.Y.Z-beta.N)')
   }

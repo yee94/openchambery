@@ -1084,17 +1084,31 @@ export const useKeyboardShortcuts = () => {
             (f) => f.providerID === currentProviderId && f.modelID === currentModelId,
           );
           const next = favoriteModels[(currentIdx + delta + len) % len];
+          const providers = useConfigStore.getState().providers;
+          const provider = providers.find((entry) => entry.id === next.providerID);
+          const model = provider?.models?.find((entry) => entry.id === next.modelID) as { variants?: Record<string, unknown> } | undefined;
+          const availableVariants = model?.variants ? Object.keys(model.variants) : [];
+          const rememberedVariant = next.variant !== undefined && availableVariants.includes(next.variant)
+            ? next.variant
+            : undefined;
           void surface.selection.change({
             ...surface.selection.value,
             providerID: next.providerID,
             modelID: next.modelID,
-            variant: undefined,
+            variant: rememberedVariant,
           });
-          addRecentModel(next.providerID, next.modelID);
+          addRecentModel(next.providerID, next.modelID, rememberedVariant);
           return;
         }
 
-        const { currentProviderId, currentModelId, setProvider, setModel } = useConfigStore.getState();
+        const {
+          currentProviderId,
+          currentModelId,
+          providers,
+          setProvider,
+          setModel,
+          setCurrentVariant,
+        } = useConfigStore.getState();
         const currentIdx = favoriteModels.findIndex(
           (f) => f.providerID === currentProviderId && f.modelID === currentModelId,
         );
@@ -1102,7 +1116,14 @@ export const useKeyboardShortcuts = () => {
 
         setProvider(next.providerID);
         setModel(next.modelID);
-        addRecentModel(next.providerID, next.modelID);
+        const provider = providers.find((entry) => entry.id === next.providerID);
+        const model = provider?.models?.find((entry) => entry.id === next.modelID) as { variants?: Record<string, unknown> } | undefined;
+        const availableVariants = model?.variants ? Object.keys(model.variants) : [];
+        const rememberedVariant = next.variant !== undefined && availableVariants.includes(next.variant)
+          ? next.variant
+          : undefined;
+        setCurrentVariant(rememberedVariant);
+        addRecentModel(next.providerID, next.modelID, rememberedVariant);
         return;
       }
 

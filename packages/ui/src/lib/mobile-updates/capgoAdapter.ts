@@ -18,6 +18,40 @@ type CapgoCurrentBundle = {
   native: string;
 };
 
+export type CapgoLocalBundleStatus =
+  | 'success'
+  | 'error'
+  | 'pending'
+  | 'downloading'
+  | 'deleted'
+  | 'deleting';
+
+/** Local Capgo bundle row from `list()` — mirrors plugin BundleInfo. */
+export type CapgoLocalBundleInfo = {
+  id: string;
+  version: string;
+  downloaded: string;
+  checksum: string;
+  status: CapgoLocalBundleStatus;
+};
+
+export type CapgoDownloadEvent = {
+  percent: number;
+  bundle: { id: string; version: string };
+};
+
+export type CapgoDownloadFailedEvent = {
+  version: string;
+};
+
+type CapgoLegacyEventName =
+  | 'downloadComplete'
+  | 'appReady'
+  | 'appReloaded'
+  | 'autoRevert'
+  | 'noNeedUpdate'
+  | 'majorAvailable';
+
 type CapgoUpdaterPlugin = {
   notifyAppReady(): Promise<void>;
   download(options: CapgoDownloadOptions): Promise<{ id: string }>;
@@ -25,8 +59,17 @@ type CapgoUpdaterPlugin = {
   reload(): Promise<void>;
   current(): Promise<CapgoCurrentBundle>;
   getDeviceId(): Promise<{ deviceId: string }>;
+  list(): Promise<{ bundles: CapgoLocalBundleInfo[] }>;
   addListener(
-    eventName: 'downloadComplete' | 'appReady' | 'appReloaded' | 'autoRevert' | 'noNeedUpdate' | 'majorAvailable',
+    eventName: 'download',
+    listener: (event: CapgoDownloadEvent) => void,
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'downloadFailed',
+    listener: (event: CapgoDownloadFailedEvent) => void,
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: CapgoLegacyEventName,
     listener: (event: Record<string, unknown>) => void,
   ): Promise<PluginListenerHandle>;
 };
@@ -54,6 +97,7 @@ export type CapgoUpdater = {
   reload(): Promise<void>;
   current(): Promise<CapgoCurrentBundle>;
   getDeviceId(): Promise<{ deviceId: string }>;
+  list(): Promise<{ bundles: CapgoLocalBundleInfo[] }>;
   addListener: CapgoUpdaterPlugin['addListener'];
 };
 
@@ -82,10 +126,18 @@ const createCapgoUpdater = (): CapgoUpdater => ({
     if (!isCapgoUpdaterAvailable()) unsupported();
     return CapacitorUpdater.getDeviceId();
   },
-  async addListener(eventName, listener) {
+  async list() {
     if (!isCapgoUpdaterAvailable()) unsupported();
-    return CapacitorUpdater.addListener(eventName, listener);
+    return CapacitorUpdater.list();
   },
+  // Implementation signature collapses overload unions; cast preserves typed addListener.
+  addListener: ((async (eventName: string, listener: (event: never) => void) => {
+    if (!isCapgoUpdaterAvailable()) unsupported();
+    return (CapacitorUpdater.addListener as (
+      eventName: string,
+      listener: (event: never) => void,
+    ) => Promise<PluginListenerHandle>)(eventName, listener);
+  }) as CapgoUpdaterPlugin['addListener']),
 });
 
 let cachedUpdater: CapgoUpdater | null | undefined;

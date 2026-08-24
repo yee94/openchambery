@@ -48,6 +48,8 @@ describe('SkillToolGroup', () => {
         expect(markup).toContain('sync-state-invariants, diagnosing-bugs');
         expect(markup).toContain('typography-meta h-5 min-h-0 w-0 min-w-0 max-w-full flex-1 overflow-clip sm:h-6');
         expect(markup).toContain('#oc-book');
+        expect(skillToolGroupSource).toContain("'flex min-h-0 min-w-0 items-center gap-1.5 overflow-clip'");
+        expect(skillToolGroupSource).not.toContain("'flex w-full min-h-0 min-w-0 items-center gap-1.5 overflow-clip'");
     });
 
     test('shows the first three names and an overflow count past three', () => {

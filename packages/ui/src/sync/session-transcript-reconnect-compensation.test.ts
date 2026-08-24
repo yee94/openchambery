@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "vitest"
 import type { Message, Part } from '@/lib/opencode/v2-types'
 
 import { QueryClient } from "@tanstack/react-query"
@@ -22,6 +22,7 @@ import {
   notifyTranscriptReconnectDisconnect,
   hasTranscriptReconnectCompensationController,
 } from "./transcript-reconnect-compensation-runtime"
+import { isTranscriptResyncInFlight } from "./transcript-resync-flight"
 import type { SessionTranscriptFetcher } from "./session-message-query"
 import { seedCanonicalTranscriptQuery } from "./session-transcript-query-cache"
 
@@ -209,6 +210,12 @@ describe("createTranscriptReconnectCompensationController", () => {
     viewed?: { directory: string; sessionID: string } | null
     generation?: number
     directoryConcurrency?: number
+    now?: () => number
+    confirmSessionStatus?: (
+      ref: { directory: string; sessionID: string },
+      hint: { tailOpen: boolean },
+    ) => Promise<void>
+    destructiveResetDedupeMs?: number
   } = {}) {
     client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -229,6 +236,9 @@ describe("createTranscriptReconnectCompensationController", () => {
       },
       directoryConcurrency: options.directoryConcurrency ?? 2,
       fetchReconcile: options.fetchReconcile,
+      now: options.now,
+      confirmSessionStatus: options.confirmSessionStatus,
+      destructiveResetDedupeMs: options.destructiveResetDedupeMs,
     })
     controllers.push(controller)
     return {
@@ -267,6 +277,83 @@ describe("createTranscriptReconnectCompensationController", () => {
     })
     await new Promise((r) => setTimeout(r, 20))
     expect(fetches).toBe(0)
+  })
+
+  test("viewed reconcile marks resync flight in-flight; success and failure both clear it", async () => {
+    const user = msg("u1", "user")
+    let releaseFetch!: (page: SessionTranscriptReconcilePage) => void
+    const gate = new Promise<SessionTranscriptReconcilePage>((resolve) => {
+      releaseFetch = resolve
+    })
+    let fetchCalls = 0
+    const localClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createRepo(localClient, createFetcher([{ info: user, parts: [part("p1", "u1")] }]))
+    const controller = createTranscriptReconnectCompensationController({
+      client: localClient,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => ({ directory: DIRECTORY, sessionID: "ses_1" }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetchReconcile: async () => {
+        fetchCalls += 1
+        if (fetchCalls === 1) return gate
+        throw new Error("network down")
+      },
+    })
+    controllers.push(controller)
+
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+
+    // First compensation round: gated fetch holds the reconcile in flight.
+    controller.captureCheckpoints({ lastEventID: "evt_1", reason: "disconnect" })
+    controller.onCompensation({
+      lastEventId: "evt_1",
+      disconnectedAt: 1,
+      runtimeGeneration: GENERATION,
+      reason: "ready",
+      transport: "ws",
+      isReconnect: true,
+    })
+    for (let i = 0; i < 100 && !isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(true)
+
+    releaseFetch(reconcilePage())
+    for (let i = 0; i < 100 && isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(false)
+
+    // Second round: a failed fetch must clear the flight too (finally-ended).
+    controller.captureCheckpoints({ lastEventID: "evt_2", reason: "disconnect" })
+    controller.onCompensation({
+      lastEventId: "evt_2",
+      disconnectedAt: 2,
+      runtimeGeneration: GENERATION,
+      reason: "ready",
+      transport: "ws",
+      isReconnect: true,
+    })
+    for (let i = 0; i < 100 && !isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(true)
+    for (let i = 0; i < 100 && isTranscriptResyncInFlight("ses_1", DIRECTORY); i += 1) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(isTranscriptResyncInFlight("ses_1", DIRECTORY)).toBe(false)
   })
 
   test("checkpoint is fixed before compensation; anchor is authored user", async () => {
@@ -580,6 +667,295 @@ describe("createTranscriptReconnectCompensationController", () => {
     expect(transcript.messageOrder).toEqual(["u_tail"])
     expect(transcript.messageOrder).not.toContain("u1")
     expect(ensureCalls).toBeGreaterThanOrEqual(2)
+
+    unsub()
+  })
+
+  test("repeated resetRequired within dedupe window degrades to ensureInitial", async () => {
+    const user = msg("u1", "user")
+    const openAssistant = msg("a_open", "assistant")
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let clock = 1_000
+    let destructiveCalls = 0
+    let ensureInitialCalls = 0
+    const confirmCalls: Array<{ sessionID: string; tailOpen: boolean }> = []
+
+    const repo = createQueryTranscriptRepository({
+      client: clientLocal,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetcher: async () => ({
+        records: [
+          { info: user, parts: [part("p1", "u1")] },
+          { info: openAssistant, parts: [part("p2", "a_open")] },
+        ],
+        complete: true,
+        turnCount: 1,
+      }),
+    }) as QueryTranscriptCompensationRepository
+    const originalEnsure = repo.ensureInitial.bind(repo)
+    repo.ensureInitial = async (scope) => {
+      ensureInitialCalls += 1
+      return originalEnsure(scope)
+    }
+    const originalDestructive = repo.destructiveReset.bind(repo)
+    repo.destructiveReset = async (scope) => {
+      destructiveCalls += 1
+      return originalDestructive(scope)
+    }
+
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => ({ directory: DIRECTORY, sessionID: "ses_1" }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      now: () => clock,
+      destructiveResetDedupeMs: 1_000,
+      confirmSessionStatus: async (ref, hint) => {
+        confirmCalls.push({ sessionID: ref.sessionID, tailOpen: hint.tailOpen })
+      },
+      fetchReconcile: async () =>
+        reconcilePage({
+          resetRequired: true,
+          complete: true,
+          records: [],
+          continuation: null,
+        }),
+    })
+    controllers.push(controller)
+
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const unsub = repo.subscribe(
+      { directory: DIRECTORY, sessionID: "ses_1", transport: TRANSPORT, generation: GENERATION },
+      () => {},
+    )
+
+    const runFlight = async () => {
+      controller.captureCheckpoints({ lastEventID: `evt_${clock}`, reason: "disconnect" })
+      controller.onCompensation({
+        lastEventId: `evt_${clock}`,
+        disconnectedAt: clock,
+        runtimeGeneration: GENERATION,
+        reason: "reconnect",
+        transport: "ws",
+        isReconnect: true,
+      })
+      for (let i = 0; i < 80; i += 1) {
+        if (!controller.isSessionInFlight(DIRECTORY, "ses_1")) break
+        await new Promise((r) => setTimeout(r, 10))
+      }
+    }
+
+    await runFlight()
+    expect(destructiveCalls).toBe(1)
+    const ensureAfterFirst = ensureInitialCalls
+    expect(confirmCalls).toEqual([{ sessionID: "ses_1", tailOpen: true }])
+
+    // Second independent flight inside the dedupe window → ensure, not reset.
+    clock += 100
+    await runFlight()
+    expect(destructiveCalls).toBe(1)
+    expect(ensureInitialCalls).toBeGreaterThan(ensureAfterFirst)
+    expect(confirmCalls).toEqual([
+      { sessionID: "ses_1", tailOpen: true },
+      { sessionID: "ses_1", tailOpen: true },
+    ])
+
+    unsub()
+  })
+
+  test("resetRequired after dedupe window expires runs destructive again", async () => {
+    const user = msg("u1", "user")
+    const openAssistant = msg("a_open", "assistant")
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let clock = 1_000
+    let destructiveCalls = 0
+
+    const repo = createQueryTranscriptRepository({
+      client: clientLocal,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetcher: async () => ({
+        records: [
+          { info: user, parts: [part("p1", "u1")] },
+          { info: openAssistant, parts: [part("p2", "a_open")] },
+        ],
+        complete: true,
+        turnCount: 1,
+      }),
+    }) as QueryTranscriptCompensationRepository
+    const originalDestructive = repo.destructiveReset.bind(repo)
+    repo.destructiveReset = async (scope) => {
+      destructiveCalls += 1
+      return originalDestructive(scope)
+    }
+
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => ({ directory: DIRECTORY, sessionID: "ses_1" }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      now: () => clock,
+      destructiveResetDedupeMs: 1_000,
+      fetchReconcile: async () =>
+        reconcilePage({
+          resetRequired: true,
+          complete: true,
+          records: [],
+          continuation: null,
+        }),
+    })
+    controllers.push(controller)
+
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const unsub = repo.subscribe(
+      { directory: DIRECTORY, sessionID: "ses_1", transport: TRANSPORT, generation: GENERATION },
+      () => {},
+    )
+
+    const runFlight = async () => {
+      controller.captureCheckpoints({ lastEventID: `evt_${clock}`, reason: "disconnect" })
+      controller.onCompensation({
+        lastEventId: `evt_${clock}`,
+        disconnectedAt: clock,
+        runtimeGeneration: GENERATION,
+        reason: "reconnect",
+        transport: "ws",
+        isReconnect: true,
+      })
+      for (let i = 0; i < 80; i += 1) {
+        if (!controller.isSessionInFlight(DIRECTORY, "ses_1")) break
+        await new Promise((r) => setTimeout(r, 10))
+      }
+    }
+
+    await runFlight()
+    expect(destructiveCalls).toBe(1)
+
+    clock += 1_001
+    await runFlight()
+    expect(destructiveCalls).toBe(2)
+
+    unsub()
+  })
+
+  test("confirmSessionStatus rejection does not fail the reconcile flight", async () => {
+    const user = msg("u1", "user")
+    const openAssistant = msg("a_open", "assistant")
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let confirmCalls = 0
+
+    const repo = createQueryTranscriptRepository({
+      client: clientLocal,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetcher: async () => ({
+        records: [
+          { info: user, parts: [part("p1", "u1")] },
+          { info: openAssistant, parts: [part("p2", "a_open")] },
+        ],
+        complete: true,
+        turnCount: 1,
+      }),
+    }) as QueryTranscriptCompensationRepository
+
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => [],
+      getViewedSession: () => ({ directory: DIRECTORY, sessionID: "ses_1" }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      confirmSessionStatus: async () => {
+        confirmCalls += 1
+        throw new Error("status confirm failed")
+      },
+      fetchReconcile: async () =>
+        reconcilePage({
+          resetRequired: true,
+          complete: true,
+          records: [],
+          continuation: null,
+        }),
+    })
+    controllers.push(controller)
+
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const unsub = repo.subscribe(
+      { directory: DIRECTORY, sessionID: "ses_1", transport: TRANSPORT, generation: GENERATION },
+      () => {},
+    )
+
+    controller.captureCheckpoints({ lastEventID: "evt_confirm", reason: "disconnect" })
+    controller.onCompensation({
+      lastEventId: "evt_confirm",
+      disconnectedAt: Date.now(),
+      runtimeGeneration: GENERATION,
+      reason: "reconnect",
+      transport: "ws",
+      isReconnect: true,
+    })
+    for (let i = 0; i < 80; i += 1) {
+      if (!controller.isSessionInFlight(DIRECTORY, "ses_1")) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+
+    expect(confirmCalls).toBe(1)
+    expect(controller.isSessionInFlight(DIRECTORY, "ses_1")).toBe(false)
+    const cp = controller.getCheckpoint({
+      directory: DIRECTORY,
+      sessionID: "ses_1",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    // Successful destructive path clears the checkpoint (not left in error).
+    expect(cp).toBeUndefined()
 
     unsub()
   })

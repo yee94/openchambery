@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { useEvent } from '@reactuses/core';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { useUpdateStore } from '@/stores/useUpdateStore';
 
 type WebUpdateState = 'idle' | 'updating' | 'restarting' | 'reconnecting' | 'error';
 
@@ -205,6 +207,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   const [copied, setCopied] = useState(false);
   const [webUpdateState, setWebUpdateState] = useState<WebUpdateState>('idle');
   const [webError, setWebError] = useState<string | null>(null);
+  const otaDownloadSkipped = useUpdateStore((state) => state.otaDownloadSkipped);
 
   const releaseUrl = info?.releaseUrl
     || (info?.version ? `${GITHUB_RELEASES_URL}/tag/v${info.version}` : GITHUB_RELEASES_URL);
@@ -221,6 +224,18 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   const isInAppMobileOta = isMobileRuntime && info?.inAppApply === true;
   const isManualDesktopUpdate = runtimeType === 'desktop' && info?.manualUpdate === true;
   const updateCommand = info?.updateCommand || 'openchamber update';
+
+  const handleDialogOpenChange = useEvent((nextOpen: boolean) => {
+    if (!nextOpen && isInAppMobileOta && downloaded) {
+      useUpdateStore.getState().dismiss();
+    }
+    onOpenChange(nextOpen);
+  });
+
+  const handleLater = useEvent(() => {
+    useUpdateStore.getState().dismiss();
+    onOpenChange(false);
+  });
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -310,14 +325,14 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   }, [info?.body, t]);
 
   return (
-    <Dialog open={open} onOpenChange={isWebUpdating ? undefined : onOpenChange}>
+    <Dialog open={open} onOpenChange={isWebUpdating ? undefined : handleDialogOpenChange}>
       <DialogContent className="max-w-4xl gap-0 p-4 sm:p-5 bg-background border-[var(--interactive-border)]" showCloseButton={true}>
         
         {/* Header Section */}
         <div className="mb-3 pr-8 sm:mb-4">
           <DialogTitle className="flex items-center gap-2">
             <Icon name="download-cloud" className="h-5 w-5 text-[var(--primary-base)]" />
-            <span className="text-base font-semibold text-foreground sm:text-lg">
+            <span className="font-semibold text-foreground">
               {webUpdateState === 'restarting' || webUpdateState === 'reconnecting'
                 ? t('updateDialog.header.updating')
                 : t('updateDialog.header.updateAvailable')}
@@ -477,6 +492,13 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           )}
         </div>
 
+        {isInAppMobileOta && downloaded && otaDownloadSkipped && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-background)] px-3 py-2.5 text-sm text-[var(--status-success)]">
+            <Icon name="check" className="h-4 w-4 shrink-0" />
+            <span>{t('updateDialog.status.otaBundleReused')}</span>
+          </div>
+        )}
+
         {/* Action Footer */}
         <div className="mt-4 flex items-center justify-between gap-4">
           {(!isMobileRuntime || showProtocolExternalLink) ? (
@@ -484,7 +506,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               href={isMobileRuntime ? protocolExternalUrl : releaseUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              className="flex items-center gap-1.5 typography-ui-label text-muted-foreground hover:text-foreground transition-colors shrink-0"
             >
               <Icon name="external-link" className="h-4 w-4" />
               GitHub
@@ -496,15 +518,12 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           <div className="flex-1 flex justify-end">
             {/* Desktop / in-app mobile OTA buttons */}
             {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && !isManualDesktopUpdate && !downloaded && !downloading && (
-              <button
-                onClick={onDownload}
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
-              >
+              <Button onClick={onDownload} size="default">
                 <Icon name="download" className="h-4 w-4" />
                 {isInAppMobileOta
                   ? t('updateDialog.actions.applyOtaNow')
                   : t('updateDialog.actions.downloadUpdate')}
-              </button>
+              </Button>
             )}
 
             {!isWebRuntime && !isMobileRuntime && isManualDesktopUpdate && !downloaded && !downloading && (
@@ -515,23 +534,24 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             )}
 
             {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading && (
-              <button
-                disabled
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] cursor-not-allowed"
-              >
+              <Button disabled size="default">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />
                 {t('updateDialog.status.downloading')}
-              </button>
+              </Button>
             )}
 
             {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloaded && (
-              <button
-                onClick={onRestart}
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
-              >
-                <Icon name="restart" className="h-4 w-4" />
-                {t('updateDialog.actions.restartToUpdate')}
-              </button>
+              <div className="flex items-center gap-2">
+                {isInAppMobileOta && (
+                  <Button onClick={handleLater} variant="ghost" size="default">
+                    {t('updateDialog.actions.later')}
+                  </Button>
+                )}
+                <Button onClick={onRestart} size="default">
+                  <Icon name="restart" className="h-4 w-4" />
+                  {t('updateDialog.actions.restartToUpdate')}
+                </Button>
+              </div>
             )}
 
             {isMobileRuntime && !isInAppMobileOta && showProtocolExternalLink && (
@@ -545,23 +565,17 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             )}
 
             {isWebRuntime && !isWebUpdating && (
-              <button
-                onClick={handleWebUpdate}
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
-              >
+              <Button onClick={handleWebUpdate} size="default">
                 <Icon name="download" className="h-4 w-4" />
                 {t('updateDialog.actions.updateNow')}
-              </button>
+              </Button>
             )}
 
             {isWebRuntime && isWebUpdating && (
-              <button
-                disabled
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] cursor-not-allowed"
-              >
+              <Button disabled size="default">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />
                 {t('updateDialog.status.updating')}
-              </button>
+              </Button>
             )}
           </div>
         </div>

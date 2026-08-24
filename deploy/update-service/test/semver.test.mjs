@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
-import { compareReleaseVersions, parseReleaseVersion } from '../lib/semver.js';
+import { compareReleaseVersions, isStrippedMarketingIdentity, parseReleaseVersion } from '../lib/semver.js';
 
 test('parseReleaseVersion accepts core, beta, and optional v prefix', () => {
   assert.deepEqual(parseReleaseVersion('1.18.2-beta.30'), {
@@ -26,4 +26,11 @@ test('compareReleaseVersions orders beta numbers and ranks stable above beta', (
   assert.equal(compareReleaseVersions('1.18.2-beta.30', 'v1.18.2-beta.30'), 0);
   assert.ok(compareReleaseVersions('1.18.2', '1.18.2-beta.30') > 0);
   assert.equal(compareReleaseVersions('builtin', '1.18.2-beta.30'), null);
+});
+
+test('isStrippedMarketingIdentity detects iOS Capgo builtin marketing version', () => {
+  assert.equal(isStrippedMarketingIdentity('1.18.2', '1.18.2'), true);
+  assert.equal(isStrippedMarketingIdentity('1.18.2-beta.66', '1.18.2'), false);
+  assert.equal(isStrippedMarketingIdentity('1.18.2', '1.18.2-beta.66'), false);
+  assert.equal(isStrippedMarketingIdentity('builtin', '1.18.2'), false);
 });

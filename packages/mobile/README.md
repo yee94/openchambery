@@ -79,7 +79,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 ## Install (beta)
 
-Shipping a beta: default to a `v*` tag so macOS and APK installers exist for first-time downloaders (`docs/RELEASING.md` § 先选产物). Beta skips iOS / TestFlight. Use `mobile-beta/v*` only when the user wants mobile-web-only OTA and no installers.
+Shipping a beta: default to a `v*` tag so macOS and APK installers exist for first-time downloaders (`docs/RELEASING.md` § 先选产物). TestFlight follows the mobile plan mode, not the tag: betas with native-shell changes (`mode: native`) upload iOS to internal TestFlight; web-only (`mode: ota`) betas skip iOS. Stable always uploads iOS (external group). Use `mobile-beta/v*` only when the user wants mobile-web-only OTA and no installers.
 
 - **iOS TestFlight (public link):** https://testflight.apple.com/join/ZCENBHtm  
   External group: `OpenChamber Beta`. New CI uploads are attached to this group after processing; first-time external builds require Apple Beta App Review.

@@ -32,3 +32,22 @@ export function compareReleaseVersions(left, right) {
   if (parsedRight.beta === null) return -1;
   return parsedLeft.beta - parsedRight.beta;
 }
+
+/**
+ * iOS Capgo's builtin bundle reports `CFBundleShortVersionString` as
+ * `bundle.version` (e.g. `1.18.2`). That is the same stripped marketing
+ * identity as `nativeVersion` — not a real installed stable web bundle.
+ * Semver ranks that stable identity above every `1.18.2-beta.N`, so treating
+ * it as "already on 1.18.2" hides every beta OTA.
+ */
+export function isStrippedMarketingIdentity(bundleId, nativeVersion) {
+  const parsedBundle = parseReleaseVersion(bundleId);
+  const parsedNative = parseReleaseVersion(nativeVersion);
+  return Boolean(
+    parsedBundle
+    && parsedBundle.beta === null
+    && parsedNative
+    && parsedNative.beta === null
+    && bundleId === nativeVersion
+  );
+}

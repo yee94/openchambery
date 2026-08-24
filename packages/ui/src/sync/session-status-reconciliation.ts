@@ -53,6 +53,11 @@ type SessionStatusResyncOptions = {
    * handler registered via `setAuthoritativeGlobalSessionStatusConverge`.
    */
   onAuthoritativeGlobalStatusConverge?: AuthoritativeGlobalSessionStatusConverge
+  /**
+   * Sessions whose transcript tail is an open assistant message. Membership
+   * absence alone must not fuse these to idle during reconnect windows.
+   */
+  tailOpenSessionIds?: ReadonlySet<string>
 }
 
 type MessagePullStatusReconciliationInput = SessionStatusResyncOptions & {
@@ -146,6 +151,7 @@ export function fuseActiveWithLegacyStatus(
   legacy: DirectorySessionStatusSnapshot | null | undefined,
   candidateSessionIds: string[],
   now: number = Date.now(),
+  options?: { tailOpenSessionIds?: ReadonlySet<string> },
 ): {
   snapshot: DirectorySessionStatusSnapshot | null
   source: "fused" | "legacy" | "none"
@@ -183,6 +189,15 @@ export function fuseActiveWithLegacyStatus(
       } else {
         fused[sessionId] = { type: "busy" }
       }
+      continue
+    }
+
+    // Transcript-tail open assistant is authoritative evidence the turn has not
+    // settled. Membership absence alone (reconnect-window active snapshot may be
+    // incomplete) must not downgrade busy; a later live SSE idle still wins via
+    // session_status_observed_at precedence.
+    if (options?.tailOpenSessionIds?.has(sessionId)) {
+      fused[sessionId] = legacyStatus?.type === "retry" ? legacyStatus : { type: "busy" }
       continue
     }
 
@@ -344,6 +359,8 @@ export async function resyncDirectorySessionStatuses(
     activeResult,
     legacySnapshot,
     candidateSessionIds,
+    Date.now(),
+    { tailOpenSessionIds: options.tailOpenSessionIds },
   )
 
   if (!fused || source === "none") {
