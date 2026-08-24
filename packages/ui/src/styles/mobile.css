@@ -1970,17 +1970,11 @@ button.oc-mobile-worktree-label-trigger:active,
     --text-micro: 0.75rem;
   }
 
-  /* Typography utility classes hardcode font-size; unset so they inherit --text-*.
-     Do NOT unset .typography-ui-header: MessageHeader model names would inherit
-     the root 16px and stay huge after body/chrome shrink via --dpt. The class
-     already applies var(--text-ui-header) (mobile 0.875rem → calc(14 * var(--dpt))). */
-  :root.mobile-pointer:not(.desktop-runtime) .typography-markdown,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-code,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-ui-label,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-meta,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-micro {
-    font-size: unset !important;
-  }
+  /* Do not `font-size: unset` the typography-* utilities. They already apply
+     var(--text-*), which mobile.css rewrites to calc(N * var(--dpt)). Unset
+     made MessageHeader, Button ("加载更早的消息"), and the context overlay
+     inherit the root 16px while body/chrome shrank. Composer textareas keep
+     their own 16×--dpt !important rule below (iOS focus-zoom floor). */
 
   /* Tool/code surfaces: consume shared --text-code (respects Settings scale) */
   :root.mobile-pointer:not(.desktop-runtime) [class*="tool"],
@@ -2087,14 +2081,9 @@ button.oc-mobile-worktree-label-trigger:active,
     min-height: 36px;
   }
 
-  /* Fix mobile text inputs. The :is() descendant takes its most specific
-     argument (input[type="text"] → 0,1,1), lifting this rule to (0,4,1) so it
-     beats the typography `unset !important` compat block above (0,4,0) —
-     without that, textareas with typography-* classes fell back to inherited
-     root 16px and ignored this iOS-zoom-safe calc size entirely.
-     The highlight overlay must share this size: the textarea is
-     text-transparent and only paints the caret, so a 16px overlay against a
-     calc(16 * var(--dpt)) field puts the caret in the wrong place. */
+  /* Fix mobile text inputs. 16×--dpt keeps the iOS focus-zoom floor while
+     still shrinking with Android --dpt. The highlight overlay must share this
+     size: the textarea is text-transparent and only paints the caret. */
   :root.mobile-pointer:not(.desktop-runtime)
     :is(
       input[type="text"],

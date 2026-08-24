@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.5] - 2026-08-24
+
+### 移动端
+
+- **加载更早消息按钮与查看上下文弹层随密度缩放：** 去掉移动端对 `typography-*` 的 `font-size: unset !important`。该类本就走 `--text-*` / `--dpt`；unset 后按钮（`typography-ui-label`）和上下文弹层标签回落到根节点 16px，正文缩小后割裂。
+
 ## [1.18.3-beta.4] - 2026-08-24
 
 ### 移动端

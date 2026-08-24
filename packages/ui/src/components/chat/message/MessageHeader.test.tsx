@@ -40,14 +40,9 @@ describe('MessageHeader', () => {
     expect(html).toContain('typography-ui-header');
   });
 
-  test('mobile typography unset compat block does not strip ui-header', () => {
-    const unsetBlock = mobileCss.match(
-      /:root\.mobile-pointer:not\(\.desktop-runtime\) \.typography-markdown,[\s\S]*?font-size:\s*unset\s*!important;/,
-    )?.[0];
-    expect(unsetBlock).toBeTruthy();
-    expect(unsetBlock).not.toMatch(
-      /:root\.mobile-pointer:not\(\.desktop-runtime\) \.typography-ui-header,/,
+  test('mobile typography utilities are not stripped back to inherited 16px', () => {
+    expect(mobileCss).not.toMatch(
+      /:root\.mobile-pointer:not\(\.desktop-runtime\) \.typography-(markdown|code|ui-header|ui-label|meta|micro)[\s\S]{0,240}font-size:\s*unset/,
     );
-    expect(unsetBlock).toContain('.typography-ui-label');
   });
 });
