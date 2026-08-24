@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { useEvent } from '@reactuses/core';
-import type { Session } from '@opencode-ai/sdk/v2';
 import { toast } from '@/components/ui';
 import { formatMessage, useI18nStore, type I18nKey, type I18nParams } from '@/lib/i18n';
 import {
@@ -28,13 +27,9 @@ const t = (key: I18nKey, params?: I18nParams): string => (
   formatMessage(useI18nStore.getState().dictionary, key, params)
 );
 
-type SessionTimeWithPinned = Session['time'] & {
-  pinned?: string | number | null;
-};
-
 /** Non-null `time.pinned` means the session is pinned (ISO string or numeric timestamp). */
 export const isSessionIndexPinned = (
-  session: { time?: SessionTimeWithPinned } | null | undefined,
+  session: { time?: { pinned?: string | number | null; created?: number; updated?: number } } | null | undefined,
 ): boolean => {
   const pinned = session?.time?.pinned;
   return pinned != null && pinned !== '';

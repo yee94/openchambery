@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
 import type { Message, Part } from '@/lib/opencode/v2-types'
-
 import { QueryClient } from "@tanstack/react-query"
 
 import {
@@ -677,7 +676,7 @@ describe("createTranscriptReconnectCompensationController", () => {
     const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let clock = 1_000
     let destructiveCalls = 0
-    let ensureInitialCalls = 0
+    let refreshCalls = 0
     const confirmCalls: Array<{ sessionID: string; tailOpen: boolean }> = []
 
     const repo = createQueryTranscriptRepository({
@@ -697,10 +696,11 @@ describe("createTranscriptReconnectCompensationController", () => {
         turnCount: 1,
       }),
     }) as QueryTranscriptCompensationRepository
-    const originalEnsure = repo.ensureInitial.bind(repo)
-    repo.ensureInitial = async (scope) => {
-      ensureInitialCalls += 1
-      return originalEnsure(scope)
+    const refresh = repo.refreshFromAuthority
+    if (!refresh) throw new Error('refreshFromAuthority required')
+    repo.refreshFromAuthority = async (scope) => {
+      refreshCalls += 1
+      return refresh(scope)
     }
     const originalDestructive = repo.destructiveReset.bind(repo)
     repo.destructiveReset = async (scope) => {
@@ -764,14 +764,14 @@ describe("createTranscriptReconnectCompensationController", () => {
 
     await runFlight()
     expect(destructiveCalls).toBe(1)
-    const ensureAfterFirst = ensureInitialCalls
+    const refreshAfterFirst = refreshCalls
     expect(confirmCalls).toEqual([{ sessionID: "ses_1", tailOpen: true }])
 
     // Second independent flight inside the dedupe window → ensure, not reset.
     clock += 100
     await runFlight()
     expect(destructiveCalls).toBe(1)
-    expect(ensureInitialCalls).toBeGreaterThan(ensureAfterFirst)
+    expect(refreshCalls).toBeGreaterThan(refreshAfterFirst)
     expect(confirmCalls).toEqual([
       { sessionID: "ses_1", tailOpen: true },
       { sessionID: "ses_1", tailOpen: true },
@@ -986,10 +986,12 @@ describe("createTranscriptReconnectCompensationController", () => {
       ensureInitialCalls += 1
       return originalEnsure(scope)
     }
-    const originalRefresh = repo.refreshFromAuthority!.bind(repo)
-    repo.refreshFromAuthority = async (scope) => {
-      refreshCalls += 1
-      return originalRefresh(scope)
+    const refresh = repo.refreshFromAuthority
+    if (refresh) {
+      repo.refreshFromAuthority = async (scope) => {
+        refreshCalls += 1
+        return refresh(scope)
+      }
     }
     const originalDestructive = repo.destructiveReset.bind(repo)
     repo.destructiveReset = async (scope) => {
@@ -1053,8 +1055,8 @@ describe("createTranscriptReconnectCompensationController", () => {
 
     expect(reconcileCalls).toBe(0)
     expect(destructiveCalls).toBe(0)
+    expect(ensureInitialCalls).toBe(1)
     expect(refreshCalls).toBeGreaterThanOrEqual(1)
-    expect(ensureInitialCalls).toBeGreaterThanOrEqual(1)
     expect(
       repo.getTranscript({
         directory: DIRECTORY,
@@ -1096,6 +1098,8 @@ describe("createTranscriptReconnectCompensationController", () => {
       ensureInitialCalls += 1
       return originalEnsure(scope)
     }
+    const refresh = repo.refreshFromAuthority
+    if (!refresh) throw new Error('refreshFromAuthority required')
     repo.refreshFromAuthority = async () => {
       refreshCalls += 1
       throw new Error("tail_fetch_failed")
@@ -1164,8 +1168,8 @@ describe("createTranscriptReconnectCompensationController", () => {
     }
 
     expect(destructiveCalls).toBe(0)
+    expect(ensureInitialCalls).toBe(1)
     expect(refreshCalls).toBeGreaterThanOrEqual(1)
-    expect(ensureInitialCalls).toBeGreaterThanOrEqual(1)
     expect(
       repo.getTranscript({
         directory: DIRECTORY,
