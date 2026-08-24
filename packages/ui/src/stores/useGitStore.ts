@@ -932,6 +932,11 @@ export const useGitStore = create<GitStore>()(
         const now = Date.now();
 
         results.forEach((result) => {
+          // Dual-empty non-binary results are not useful cache (e.g. failed
+          // untracked fetch). Seeding them would make DiffView skip on-demand load.
+          if (!result.diff.isBinary && result.diff.original === '' && result.diff.modified === '') {
+            return;
+          }
           newDiffCache.set(result.path, {
             ...result.diff,
             fetchedAt: now

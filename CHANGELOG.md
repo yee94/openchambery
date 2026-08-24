@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.12] - 2026-08-24
+
+### 聊天
+
+- **进入会话恢复模型 / Agent 选择加服务端实体兜底：** 此前恢复级联只有 transcript 历史（最后一条 user 消息推导）→ 本地 selection-store 记忆（localStorage，上限 150 条，延迟落盘可丢）两级，偶发同时失效时静默不恢复，选择器显示目录默认模型 / Agent（移动端进会话偶发"被重置"）。现加第三级 SDK session 实体（`Session.agent` / `Session.model`，服务端维护、启动即加载、随 `session.updated` 刷新），同样经 catalog 校验，校验失败仍回落默认，不污染选择。
+
 ## [1.18.3-beta.11] - 2026-08-24
 
 ### 聊天
