@@ -20,6 +20,7 @@ import {
   createTranscriptQueryCacheBudget,
 } from "./session-transcript-query-cache"
 import { createTranscriptReconnectCompensationController } from "./session-transcript-reconnect-compensation"
+import { resyncDirectorySessionStatuses } from "./session-status-reconciliation"
 import {
   createQueryTranscriptRepository,
   type QueryTranscriptRepository,
@@ -212,6 +213,21 @@ export function mountProductionTranscriptStack(
     probe: {
       getTransport: getRuntimeTransportIdentity,
       getGeneration: getRuntimeGeneration,
+    },
+    confirmSessionStatus: async (ref, hint) => {
+      const store = input.childStores.getChild(ref.directory)
+      if (!store) return
+      const current = store.getState().session_status?.[ref.sessionID]
+      // Only confirm when there is something to fix: an open turn tail that must
+      // not be downgraded to idle, or a stale busy/retry entry that should
+      // converge. Idle-with-closed-tail needs no extra fetch churn.
+      if (!hint.tailOpen && current?.type !== "busy" && current?.type !== "retry") return
+      await resyncDirectorySessionStatuses(
+        ref.directory,
+        store,
+        [ref.sessionID],
+        hint.tailOpen ? { tailOpenSessionIds: new Set([ref.sessionID]) } : {},
+      )
     },
   })
 

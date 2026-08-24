@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { QueryClient } from "@tanstack/react-query"
 import { create, type StoreApi } from "zustand"
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -139,6 +139,50 @@ describe("fuseActiveWithLegacyStatus", () => {
     )
     expect(source).toBe("none")
     expect(snapshot).toBe(null)
+  })
+
+  test("tailOpenSessionIds keeps busy when absent from membership with legacy busy", () => {
+    const { snapshot, source } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: {} },
+      { ses_a: { type: "busy" } },
+      ["ses_a"],
+      Date.now(),
+      { tailOpenSessionIds: new Set(["ses_a"]) },
+    )
+    expect(source).toBe("fused")
+    expect(snapshot?.ses_a).toEqual({ type: "busy" })
+  })
+
+  test("tailOpenSessionIds promotes legacy idle to busy when absent from membership", () => {
+    const { snapshot } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: {} },
+      { ses_a: { type: "idle" } },
+      ["ses_a"],
+      Date.now(),
+      { tailOpenSessionIds: new Set(["ses_a"]) },
+    )
+    expect(snapshot?.ses_a).toEqual({ type: "busy" })
+  })
+
+  test("without tailOpenSessionIds, absent membership still converges to idle", () => {
+    const { snapshot } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: {} },
+      { ses_a: { type: "busy" } },
+      ["ses_a"],
+    )
+    expect(snapshot?.ses_a).toEqual({ type: "idle" })
+  })
+
+  test("tailOpenSessionIds preserves retry when absent from membership", () => {
+    const retry = { type: "retry" as const, attempt: 1, message: "x", next: 1_700_000_060_000 }
+    const { snapshot } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: {} },
+      { ses_a: retry },
+      ["ses_a"],
+      1_700_000_000_000,
+      { tailOpenSessionIds: new Set(["ses_a"]) },
+    )
+    expect(snapshot?.ses_a).toEqual(retry)
   })
 })
 
@@ -324,6 +368,22 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
 
     expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
     expect(store.getState().session_status_snapshot_at).toBe(50)
+  })
+
+  test("resync passes tailOpenSessionIds through fuse so open tails stay busy", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "busy" } },
+    })
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 51,
+      loadSnapshot: async () => ({ ses_a: { type: "busy" } }),
+      loadActive: async () => ({ state: "supported", membership: {} }),
+      tailOpenSessionIds: new Set(["ses_a"]),
+    })
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(store.getState().session_status_snapshot_at).toBe(51)
   })
 
   test("successful fused snapshot converges global fallback for directory apply ids", async () => {

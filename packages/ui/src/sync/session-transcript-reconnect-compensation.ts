@@ -61,6 +61,7 @@ import {
   recordTranscriptDiff,
   tryCaptureTranscriptCanonicalSnapshot,
 } from "./transcript-diagnostics-runtime"
+import { isMessageSnapshotOpen } from "./displayParts"
 
 // ---------------------------------------------------------------------------
 // Query repository surface required by the controller
@@ -218,6 +219,15 @@ export type CreateTranscriptReconnectCompensationControllerInput = {
     sessionID: string
     phase: string
   }) => void
+  /**
+   * Post-compensation session-status confirmation. Called once after each
+   * terminal reconcile outcome so the directory child store can re-derive
+   * live busy state (the transcript tail is authoritative evidence an open
+   * turn is still running). Best-effort: failures never fail the flight.
+   */
+  confirmSessionStatus?: (ref: CompensationSessionRef, hint: { tailOpen: boolean }) => Promise<void>
+  /** Minimum interval between destructive resets of the same session. */
+  destructiveResetDedupeMs?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +235,7 @@ export type CreateTranscriptReconnectCompensationControllerInput = {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_DIRECTORY_CONCURRENCY = 2
+const DEFAULT_DESTRUCTIVE_RESET_DEDUPE_MS = 60_000
 /** In-process observe-time reconcile head-check throttle. */
 const OBSERVE_HEAD_CHECK_TTL_MS = 60_000
 
@@ -304,6 +315,10 @@ export function createTranscriptReconnectCompensationController(
   )
   const fetchReconcile = input.fetchReconcile ?? fetchSessionTranscriptReconcile
   const now = input.now ?? Date.now
+  const destructiveResetDedupeMs = Math.max(
+    0,
+    input.destructiveResetDedupeMs ?? DEFAULT_DESTRUCTIVE_RESET_DEDUPE_MS,
+  )
 
   let destroyed = false
   /** Generation epoch for cancel-on-switch; bumped by cancelAll. */
@@ -322,6 +337,8 @@ export function createTranscriptReconnectCompensationController(
   const observeHeadCheckedAt = new Map<string, { checkedAt: number }>()
   /** In-flight observe-time head checks (single-flight per scope). */
   const observeHeadInFlight = new Set<string>()
+  /** Last successful destructive reset time per session flight key. */
+  const destructiveResetAt = new Map<string, number>()
 
   const markStale = (directory: string, sessionID: string) => {
     staleOnObserve.add(flightKey(directory, sessionID))
@@ -347,6 +364,7 @@ export function createTranscriptReconnectCompensationController(
     }
     directoryQueues.clear()
     directoryActive.clear()
+    destructiveResetAt.clear()
   }
 
   /**
@@ -575,6 +593,15 @@ export function createTranscriptReconnectCompensationController(
     return applied
   }
 
+  const isTranscriptTailOpen = (scope: TranscriptScope): boolean => {
+    const transcript = repository.getTranscript(scope)
+    const tailID = transcript.messageOrder[transcript.messageOrder.length - 1]
+    if (!tailID) return false
+    const info = transcript.messagesByID[tailID]
+    if (!info || info.role !== "assistant") return false
+    return isMessageSnapshotOpen(info)
+  }
+
   const runDestructiveTail = async (
     scope: TranscriptScope,
     cacheScope: TranscriptCacheScope,
@@ -614,6 +641,10 @@ export function createTranscriptReconnectCompensationController(
       if (epoch !== controllerEpoch) throw new SessionMessageRuntimeStaleError()
       clearTranscriptRecoveryCheckpoint(client, cacheScope)
       clearStale(cacheScope.directory, cacheScope.sessionID)
+      destructiveResetAt.set(
+        flightKey(cacheScope.directory, cacheScope.sessionID),
+        now(),
+      )
       try {
         const resetDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
           repository.getTranscript(scope),
@@ -780,6 +811,13 @@ export function createTranscriptReconnectCompensationController(
       if (!checkpoint.anchorMessageID) {
         await runEnsureTail(scope, cacheScope, epoch)
         client.setQueryData(taskKey, { status: "ensure", finishedAt: now() })
+        if (input.confirmSessionStatus) {
+          try {
+            await input.confirmSessionStatus(ref, { tailOpen: isTranscriptTailOpen(scope) })
+          } catch {
+            // Best-effort live-state recovery; never fail the reconcile flight.
+          }
+        }
         return
       }
 
@@ -834,8 +872,26 @@ export function createTranscriptReconnectCompensationController(
           }
 
           if (page.resetRequired) {
-            await runDestructiveTail(scope, cacheScope, epoch)
-            client.setQueryData(taskKey, { status: "reset", finishedAt: now() })
+            // Host may repeatedly return resetRequired for a long-running turn
+            // (scan budget exceeded). Repeated destructive resets in a short
+            // window clear canonical + streaming evidence; degrade to a
+            // non-destructive ensure tail instead.
+            const lastResetAt =
+              destructiveResetAt.get(flightKey(ref.directory, ref.sessionID)) ?? -Infinity
+            if (now() - lastResetAt < destructiveResetDedupeMs) {
+              await runEnsureTail(scope, cacheScope, epoch)
+              client.setQueryData(taskKey, { status: "ensure", finishedAt: now() })
+            } else {
+              await runDestructiveTail(scope, cacheScope, epoch)
+              client.setQueryData(taskKey, { status: "reset", finishedAt: now() })
+            }
+            if (input.confirmSessionStatus) {
+              try {
+                await input.confirmSessionStatus(ref, { tailOpen: isTranscriptTailOpen(scope) })
+              } catch {
+                // Best-effort live-state recovery; never fail the reconcile flight.
+              }
+            }
             return
           }
 
@@ -901,12 +957,37 @@ export function createTranscriptReconnectCompensationController(
         writeTranscriptRecoveryCheckpoint(client, checkpoint)
         clearStale(ref.directory, ref.sessionID)
         client.setQueryData(taskKey, { status: "complete", finishedAt: now() })
+        if (input.confirmSessionStatus) {
+          try {
+            await input.confirmSessionStatus(ref, { tailOpen: isTranscriptTailOpen(scope) })
+          } catch {
+            // Best-effort live-state recovery; never fail the reconcile flight.
+          }
+        }
         return
       }
 
       // Budget of rounds exceeded → destructive tail.
-      await runDestructiveTail(scope, cacheScope, epoch)
-      client.setQueryData(taskKey, { status: "reset", finishedAt: now() })
+      // Same short-window dedupe as resetRequired: avoid clearing streaming
+      // evidence twice for one long-running turn.
+      {
+        const lastResetAt =
+          destructiveResetAt.get(flightKey(ref.directory, ref.sessionID)) ?? -Infinity
+        if (now() - lastResetAt < destructiveResetDedupeMs) {
+          await runEnsureTail(scope, cacheScope, epoch)
+          client.setQueryData(taskKey, { status: "ensure", finishedAt: now() })
+        } else {
+          await runDestructiveTail(scope, cacheScope, epoch)
+          client.setQueryData(taskKey, { status: "reset", finishedAt: now() })
+        }
+        if (input.confirmSessionStatus) {
+          try {
+            await input.confirmSessionStatus(ref, { tailOpen: isTranscriptTailOpen(scope) })
+          } catch {
+            // Best-effort live-state recovery; never fail the reconcile flight.
+          }
+        }
+      }
     } catch (error) {
       if (
         error instanceof SessionMessageRuntimeStaleError

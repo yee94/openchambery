@@ -866,6 +866,10 @@ both readers agree on when a frame may shrink.
    - active running + expired retry → busy (the attempt has resumed)
    - active running + busy / absent → busy
   - active supported + absent from membership → idle (stale busy converges)
+  - active supported + absent from membership + `tailOpenSessionIds` → keep
+    retry metadata when legacy is retry, otherwise busy (open transcript tail
+    is authoritative that the turn has not settled; membership alone may be
+    incomplete in a reconnect window)
   - active unknown / unsupported → legacy only
   - both unusable → preserve prior status; **do not** advance
     `session_status_snapshot_at`
@@ -875,6 +879,12 @@ both readers agree on when a frame may shrink.
     other directories are never written into the wrong child store
   - empty candidates + failed legacy + active listing only foreign IDs →
     preserve prior status; **do not** advance `session_status_snapshot_at`
+  After each terminal reconnect-compensation outcome for an immediate session,
+  the production stack confirms directory session status once so the child
+  store can re-derive live busy from the transcript tail. Destructive resets
+  of the same session are deduped within a short window and degrade to a
+  non-destructive ensure-tail when the host repeatedly returns `resetRequired`
+  for a long-running turn.
   Authority boundary uses the earlier of the two request-start timestamps so
   SSE/WS status observed during either in-flight window keeps precedence via
   `session_status_observed_at`. Unknown session IDs are never invented outside
