@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { OpenCodeClient, Session } from '@/lib/opencode/v2-types';
+import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 
 // Clear sticky mocks from other suites before installing this file's doubles.
 mock.restore();
@@ -2198,7 +2199,7 @@ describe('session-index client SWR + cold startup seed', () => {
         value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
       });
       // Seed Query memory + persistent cache through the same helper the store uses.
-      writeSessionIndexSnapshotQuery(seedSnapshot);
+      writeSessionIndexSnapshotQuery(seedSnapshot as SessionIndexSnapshot);
       globalThis.fetch = async () => {
         throw new Error('offline');
       };
@@ -2271,7 +2272,7 @@ describe('session-index client SWR + cold startup seed', () => {
         configurable: true,
         value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
       });
-      writeSessionIndexSnapshotQuery(seedSnapshot);
+      writeSessionIndexSnapshotQuery(seedSnapshot as SessionIndexSnapshot);
       globalThis.fetch = async (input) => {
         const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
         if (pathname === '/api/openchamber/session-index') {
