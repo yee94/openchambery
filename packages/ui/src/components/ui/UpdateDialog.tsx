@@ -332,7 +332,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
         <div className="mb-3 pr-8 sm:mb-4">
           <DialogTitle className="flex items-center gap-2">
             <Icon name="download-cloud" className="h-5 w-5 text-[var(--primary-base)]" />
-            <span className="text-base font-semibold text-foreground sm:text-lg">
+            <span className="font-semibold text-foreground">
               {webUpdateState === 'restarting' || webUpdateState === 'reconnecting'
                 ? t('updateDialog.header.updating')
                 : t('updateDialog.header.updateAvailable')}
@@ -506,7 +506,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               href={isMobileRuntime ? protocolExternalUrl : releaseUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              className="flex items-center gap-1.5 typography-ui-label text-muted-foreground hover:text-foreground transition-colors shrink-0"
             >
               <Icon name="external-link" className="h-4 w-4" />
               GitHub
@@ -518,15 +518,12 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           <div className="flex-1 flex justify-end">
             {/* Desktop / in-app mobile OTA buttons */}
             {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && !isManualDesktopUpdate && !downloaded && !downloading && (
-              <button
-                onClick={onDownload}
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
-              >
+              <Button onClick={onDownload} size="default">
                 <Icon name="download" className="h-4 w-4" />
                 {isInAppMobileOta
                   ? t('updateDialog.actions.applyOtaNow')
                   : t('updateDialog.actions.downloadUpdate')}
-              </button>
+              </Button>
             )}
 
             {!isWebRuntime && !isMobileRuntime && isManualDesktopUpdate && !downloaded && !downloading && (
@@ -537,13 +534,10 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             )}
 
             {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloading && (
-              <button
-                disabled
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] cursor-not-allowed"
-              >
+              <Button disabled size="default">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />
                 {t('updateDialog.status.downloading')}
-              </button>
+              </Button>
             )}
 
             {!isWebRuntime && (!isMobileRuntime || isInAppMobileOta) && downloaded && (
@@ -571,23 +565,17 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             )}
 
             {isWebRuntime && !isWebUpdating && (
-              <button
-                onClick={handleWebUpdate}
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
-              >
+              <Button onClick={handleWebUpdate} size="default">
                 <Icon name="download" className="h-4 w-4" />
                 {t('updateDialog.actions.updateNow')}
-              </button>
+              </Button>
             )}
 
             {isWebRuntime && isWebUpdating && (
-              <button
-                disabled
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] cursor-not-allowed"
-              >
+              <Button disabled size="default">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />
                 {t('updateDialog.status.updating')}
-              </button>
+              </Button>
             )}
           </div>
         </div>

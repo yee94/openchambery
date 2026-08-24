@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.6] - 2026-08-24
+
+### 移动端
+
+- **更新弹窗确认按钮接入共享 Button：** 「一键更新 / 立即更新 / 下载中」原先是手写 `text-sm` 原生 button，不走 `--text-ui-label`。改为共享 `Button`（与重启、稍后、删除确认等同一套 `typography-ui-label` × `--dpt`）。标题去掉 `text-base` 覆盖，跟 DialogTitle 语义字号。
+
 ## [1.18.3-beta.5] - 2026-08-24
 
 ### 移动端
