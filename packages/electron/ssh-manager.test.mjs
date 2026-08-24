@@ -9,13 +9,17 @@ import {
   ElectronSshManager,
   attachProcessStderrTail,
   buildManagedServeEnvPrefix,
+  buildRemoteManagedNodeSelectionFunctions,
   buildRemoteManagedRuntimePrefix,
+  buildRemoteNativeBindingRepairScript,
   buildRemoteSyncPrepareScript,
   buildRemoteSyncProbeScript,
   createEphemeralUiPassword,
   formatMasterExitError,
+  parseRemoteManagedNodeVersion,
   parseSshCommand,
   planOpenCodeConfigSync,
+  selectPreferredRemoteManagedNode,
 } from './ssh-manager.mjs';
 import { EventEmitter } from 'node:events';
 
@@ -180,8 +184,10 @@ describe('ElectronSshManager', () => {
     const script = buildRemoteManagedRuntimePrefix();
     expect(script).toContain('/codev/opt/nodejs/*/bin/node');
     expect(script).toContain('[ "$major" -ge 22 ]');
+    expect(script).toContain('major % 2');
     expect(script).toContain('$HOME/.bun/bin');
     expect(script).toContain('$HOME/.opencode/bin');
+    expect(script).toContain('.local/share/mise/installs/node');
     expect(script).not.toContain('.profile');
     expect(script).not.toContain('.bashrc');
   });
@@ -436,6 +442,122 @@ describe('ElectronSshManager', () => {
     // Round-trip: reload settings via sanitize path keeps the port.
     const reloaded = manager.sanitizeInstance(settings.desktopSshInstances[0]);
     expect(reloaded.lanForward).toEqual({ enabled: true, localPort: result.localPort });
+  });
+});
+
+describe('selectPreferredRemoteManagedNode', () => {
+  test('ignores Node below 22', () => {
+    expect(parseRemoteManagedNodeVersion('20.20.2')).toBeNull();
+    expect(selectPreferredRemoteManagedNode([
+      { bin: '/usr/bin/node', version: '20.20.2', hasNpm: true },
+    ])).toBeNull();
+  });
+
+  test('prefers even LTS over a higher odd major', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/fnm/23/node', version: '23.11.1', hasNpm: true },
+      { bin: '/codev/22.19.0/node', version: '22.19.0', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/codev/22.19.0/node');
+    expect(selected?.version).toBe('22.19.0');
+  });
+
+  test('among even LTS majors picks the highest version', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/codev/22.11.0/node', version: '22.11.0', hasNpm: true },
+      { bin: '/codev/22.19.0/node', version: '22.19.0', hasNpm: true },
+      { bin: '/fnm/24.5.0/node', version: '24.5.0', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/fnm/24.5.0/node');
+  });
+
+  test('prefers a sibling npm over a newer even major without npm', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/fnm/24.5.0/node', version: '24.5.0', hasNpm: false },
+      { bin: '/codev/22.19.0/node', version: '22.19.0', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/codev/22.19.0/node');
+  });
+
+  test('falls back to an odd major when it is the only supported runtime', () => {
+    const selected = selectPreferredRemoteManagedNode([
+      { bin: '/fnm/23.11.1/node', version: '23.11.1', hasNpm: true },
+      { bin: '/usr/bin/node', version: '20.20.2', hasNpm: true },
+    ]);
+    expect(selected?.bin).toBe('/fnm/23.11.1/node');
+  });
+});
+
+describe('buildRemoteManagedNodeSelectionFunctions', () => {
+  const writeFakeNode = async (dir, version, { withNpm = true } = {}) => {
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(
+      path.join(dir, 'node'),
+      `#!/bin/sh\nif [ "$1" = "-p" ]; then printf '%s\\n' '${version}'; exit 0; fi\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    if (withNpm) {
+      await fsp.writeFile(path.join(dir, 'npm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    }
+  };
+
+  const selectWithFixtures = async (fixtures) => {
+    const root = await makeTempDir();
+    const lines = [buildRemoteManagedNodeSelectionFunctions()];
+    for (const fixture of fixtures) {
+      const dir = path.join(root, fixture.name);
+      await writeFakeNode(dir, fixture.version, { withNpm: fixture.withNpm !== false });
+      lines.push(`consider_node ${JSON.stringify(path.join(dir, 'node'))}`);
+    }
+    lines.push('printf "%s\\n" "$best_node_bin"');
+    const { execFileSync } = await import('node:child_process');
+    return execFileSync('sh', ['-c', lines.join('\n')], { encoding: 'utf8' }).trim();
+  };
+
+  test('shell selection prefers even LTS 22.19 over odd 23.11', async () => {
+    const selected = await selectWithFixtures([
+      { name: 'odd23', version: '23.11.1' },
+      { name: 'even22', version: '22.19.0' },
+    ]);
+    expect(selected.endsWith(`${path.sep}even22${path.sep}node`)).toBe(true);
+  });
+
+  test('shell selection prefers sibling npm over a newer even major without npm', async () => {
+    const selected = await selectWithFixtures([
+      { name: 'even24', version: '24.5.0', withNpm: false },
+      { name: 'even22', version: '22.19.0', withNpm: true },
+    ]);
+    expect(selected.endsWith(`${path.sep}even22${path.sep}node`)).toBe(true);
+  });
+
+  test('shell selection keeps the only odd runtime when no even LTS exists', async () => {
+    const selected = await selectWithFixtures([
+      { name: 'odd23', version: '23.11.1' },
+    ]);
+    expect(selected.endsWith(`${path.sep}odd23${path.sep}node`)).toBe(true);
+  });
+});
+
+describe('buildRemoteNativeBindingRepairScript', () => {
+  test('probes first, then cleans node-gyp leftovers, retries, and reinstalls', () => {
+    const script = buildRemoteNativeBindingRepairScript({
+      packageName: '@openchambery/web',
+      version: '1.18.3-beta.14',
+    });
+    expect(script.indexOf('probe_sqlite')).toBeLessThan(script.indexOf('rebuild_sqlite'));
+    expect(script).toContain('rm -rf "$sqlite_dir/build"');
+    expect(script).toContain('mkdir -p "$sqlite_dir/build/node_gyp_bins"');
+    expect(script).toContain('npm rebuild better-sqlite3 --foreground-scripts');
+    expect(script).toContain("npm install -g '@openchambery/web@1.18.3-beta.14' --force");
+    expect(script).toContain('/usr/bin/python3.11');
+    expect(script).toContain('/opt/rh/gcc-toolset-12');
+    expect(script).toContain('failed to prepare better-sqlite3');
+  });
+
+  test('omits npm reinstall when package version is unknown', () => {
+    const script = buildRemoteNativeBindingRepairScript();
+    expect(script).toContain('npm rebuild better-sqlite3 --foreground-scripts');
+    expect(script).not.toContain('npm install -g');
   });
 });
 
