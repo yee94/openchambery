@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.3-beta.11] - 2026-08-24
+
+### 聊天
+
+- **只读子代理提示栏 Agent / 模型名垂直居中：** meta 行去掉偏大的固定行高，改用 `leading-none`，与 14px 头像/模型图标通过 `items-center` 对齐，避免名称视觉偏上。
+
 ## [1.18.3-beta.10] - 2026-08-24
 
 ### 移动端
