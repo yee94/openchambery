@@ -320,4 +320,70 @@ describe('useGitStore', () => {
 
     expect(useGitStore.getState().getDirectoryState('/repo')?.status).toBe(initialStatus);
   });
+
+  test('does not cache dual-empty non-binary prefetch results', async () => {
+    setDirectoryStatus(createStatus(undefined, [
+      { path: 'new-file.ts', index: '?', working_dir: '?' },
+      { path: 'tracked.ts', index: ' ', working_dir: 'M' },
+    ]));
+
+    const git = createGitApi(async () => createStatus());
+    git.getGitFileDiff = async (_directory, options) => {
+      if (options.path === 'new-file.ts') {
+        return { original: '', modified: '', path: options.path };
+      }
+      return { original: 'old\n', modified: 'new\n', path: options.path };
+    };
+
+    const previousHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    try {
+      await useGitStore.getState().prefetchDiffs('/repo', git, ['new-file.ts', 'tracked.ts']);
+    } finally {
+      if (previousHidden) {
+        Object.defineProperty(document, 'hidden', previousHidden);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- test cleanup
+        delete (document as { hidden?: boolean }).hidden;
+      }
+    }
+
+    const cache = useGitStore.getState().getDirectoryState('/repo')?.diffCache;
+    expect(cache?.has('new-file.ts')).toBe(false);
+    const tracked = cache?.get('tracked.ts');
+    expect(tracked?.original).toBe('old\n');
+    expect(tracked?.modified).toBe('new\n');
+  });
+
+  test('still caches dual-empty binary prefetch results', async () => {
+    setDirectoryStatus(createStatus(undefined, [
+      { path: 'image.png', index: '?', working_dir: '?' },
+    ]));
+
+    const git = createGitApi(async () => createStatus());
+    git.getGitFileDiff = async (_directory, options) => ({
+      original: '',
+      modified: '',
+      path: options.path,
+      isBinary: true,
+    });
+
+    const previousHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    try {
+      await useGitStore.getState().prefetchDiffs('/repo', git, ['image.png']);
+    } finally {
+      if (previousHidden) {
+        Object.defineProperty(document, 'hidden', previousHidden);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- test cleanup
+        delete (document as { hidden?: boolean }).hidden;
+      }
+    }
+
+    const cached = useGitStore.getState().getDirectoryState('/repo')?.diffCache.get('image.png');
+    expect(cached?.original).toBe('');
+    expect(cached?.modified).toBe('');
+    expect(cached?.isBinary).toBe(true);
+  });
 });
