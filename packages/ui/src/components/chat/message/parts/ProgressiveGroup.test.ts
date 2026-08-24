@@ -61,7 +61,7 @@ describe('progressive activity presentation', () => {
     test('every collapsed activity state hides all detail rows', () => {
         expect(messageBodySource).toContain('const collapsedPreviewCount = 0;');
         expect(messageBodySource).not.toContain('collapsedPreviewCount = completionDisposition');
-        expect(progressiveGroupSource).toContain('const shouldRenderRows = !showHeader || isExpanded || previewCount > 0;');
+        expect(progressiveGroupSource).toContain('const shouldRenderRows = !showHeader || effectivelyExpanded || previewCount > 0;');
         expect(progressiveGroupSource).not.toContain('isLiveActivity');
         expect(progressiveGroupSource).not.toContain('stickyOpenPartsRef');
     });
@@ -91,8 +91,9 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("'chat.activity.active'");
         expect(progressiveGroupSource).toContain("'chat.activity.completedStatus'");
         expect(progressiveGroupSource).toContain("? t('chat.activity.title')");
-        expect(progressiveGroupSource).toContain('aria-expanded={isExpanded}');
-        expect(progressiveGroupSource).toContain("aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}");
+        expect(progressiveGroupSource).toContain('aria-expanded={effectivelyExpanded}');
+        expect(progressiveGroupSource).toContain("? t('chat.activity.collapseAria')");
+        expect(progressiveGroupSource).toContain(": t('chat.activity.expandAria')}");
 
         for (const fileName of messageDictionaryFiles) {
             const dictionarySource = readFileSync(join(messageDictionaryDirectory, fileName), 'utf-8');
@@ -166,7 +167,7 @@ describe('progressive activity presentation', () => {
             progressiveGroupSource.indexOf('const activityStatusLabel = completionDisposition === undefined'),
             progressiveGroupSource.indexOf('const taskAvatarSeeds'),
         );
-        const ariaExpandedIndex = progressiveGroupSource.indexOf('aria-expanded={isExpanded}');
+        const ariaExpandedIndex = progressiveGroupSource.indexOf('aria-expanded={effectivelyExpanded}');
         const activityHeaderSource = progressiveGroupSource.slice(
             progressiveGroupSource.lastIndexOf('<button', ariaExpandedIndex),
             progressiveGroupSource.indexOf('</button>', ariaExpandedIndex),
@@ -188,9 +189,10 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("'inline-flex min-w-0 flex-1 items-center overflow-clip'");
         expect(progressiveGroupSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end'");
         expect(progressiveGroupSource).toContain("isMobile && 'pr-0'");
-        expect(progressiveGroupSource.match(/aria-expanded=\{isExpanded\}/g)).toHaveLength(1);
-        expect(progressiveGroupSource).toContain("aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}");
-        expect(progressiveGroupSource).toContain("name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}");
+        expect(progressiveGroupSource.match(/aria-expanded=\{effectivelyExpanded\}/g)).toHaveLength(1);
+        expect(progressiveGroupSource).toContain("? t('chat.activity.collapseAria')");
+        expect(progressiveGroupSource).toContain(": t('chat.activity.expandAria')}");
+        expect(progressiveGroupSource).toContain("name={effectivelyExpanded ? 'arrow-down-s' : 'arrow-right-s'}");
         expect(progressiveGroupSource).not.toContain("displayedTaskAvatarSeeds.length === 0 && 'ml-auto'");
         expect(formatActivityDurationSource).toContain("return `${minutes}m ${seconds}s`;");
     });
@@ -269,10 +271,20 @@ describe('progressive activity presentation', () => {
     });
 
     test('keeps the pre-assistant compaction header expandable while details arrive', () => {
-        expect(progressiveGroupSource).toContain('onClick={handleToggle}');
-        expect(progressiveGroupSource).toContain('aria-expanded={isExpanded}');
-        expect(progressiveGroupSource).toContain("aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}");
-        expect(progressiveGroupSource).toContain("name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}");
+        expect(progressiveGroupSource).toContain('onClick={disclosureLockedOpen ? undefined : handleToggle}');
+        expect(progressiveGroupSource).toContain('aria-expanded={effectivelyExpanded}');
+        expect(progressiveGroupSource).toContain("? t('chat.activity.collapseAria')");
+        expect(progressiveGroupSource).toContain(": t('chat.activity.expandAria')}");
+        expect(progressiveGroupSource).toContain("name={effectivelyExpanded ? 'arrow-down-s' : 'arrow-right-s'}");
+    });
+
+    test('locks live activity open without indent rail or collapse control', () => {
+        expect(progressiveGroupSource).toContain('const disclosureLockedOpen = isActive;');
+        expect(progressiveGroupSource).toContain('const effectivelyExpanded = disclosureLockedOpen || isExpanded;');
+        expect(progressiveGroupSource).toContain('if (disclosureLockedOpen) {\n            return;\n        }');
+        expect(progressiveGroupSource).toContain("className={disclosureLockedOpen ? undefined : 'relative ml-2 pl-3'}");
+        expect(progressiveGroupSource).toContain('{!disclosureLockedOpen ? (');
+        expect(progressiveGroupSource).toContain('aria-disabled={disclosureLockedOpen || undefined}');
     });
 
     test('keeps task agent avatars and status-specific counts in active and completed headers', () => {
@@ -303,7 +315,8 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("header.closest<HTMLElement>('[data-scrollbar=\"chat\"]')");
         expect(progressiveGroupSource).toContain('anchor.scrollContainer.scrollTop += delta');
         expect(progressiveGroupSource).toContain('window.requestAnimationFrame(() => {');
-        expect(progressiveGroupSource.match(/onClick=\{handleToggle\}/g)).toHaveLength(2);
+        expect(progressiveGroupSource.match(/onClick=\{handleToggle\}/g)).toHaveLength(1);
+        expect(progressiveGroupSource).toContain('onClick={disclosureLockedOpen ? undefined : handleToggle}');
     });
 
     test('materializes slim activity messages once when the user expands the disclosure', () => {
@@ -311,7 +324,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('const materializationFlightsRef = React.useRef(new Map<string, Promise<void>>())');
         expect(progressiveGroupSource).toContain('if (materializationFlightsRef.current.has(targetMessageId)) continue;');
         expect(progressiveGroupSource).toContain('materializeTranscriptMessage(\n                effectiveDirectory,\n                targetSessionId,\n                targetMessageId,\n                { priority: autoSkipFailed ? \'background\' : \'user\' },\n            )');
-        expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
+        expect(progressiveGroupSource).toContain('if (!effectivelyExpanded) {\n            requestMaterialization();\n        }');
         expect(progressiveGroupSource).toContain("if (current.status === 'ready') continue;");
         expect(messageBodySource).toContain('materializationParts={materializationParts}');
         expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
@@ -322,8 +335,8 @@ describe('progressive activity presentation', () => {
         // mount-time exact fill on every collapsed group recreated the 500+
         // session.message storm. Collapsed rows keep slim summaries; expand
         // (user priority) and already-expanded mount (background) still fill.
-        expect(progressiveGroupSource).toContain('if (isActive || !isExpanded) {\n            return;\n        }\n        requestMaterialization(false, true);');
-        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive \|\| !isExpanded\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive, isExpanded\]\);/);
+        expect(progressiveGroupSource).toContain('if (isActive || !effectivelyExpanded) {\n            return;\n        }\n        requestMaterialization(false, true);');
+        expect(progressiveGroupSource).toMatch(/React\.useEffect\(\(\) => \{\n {8}if \(isActive \|\| !effectivelyExpanded\) \{\n {12}return;\n {8}\}\n {8}requestMaterialization\(false, true\);\n {4}\}, \[isActive, effectivelyExpanded\]\);/);
         expect(progressiveGroupSource).toContain("{ priority: autoSkipFailed ? 'background' : 'user' }");
     });
 
@@ -335,7 +348,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('const requestMaterialization = useEvent((retryErrorsOnly = false, autoSkipFailed = false) => {');
         expect(progressiveGroupSource).toContain("if (autoSkipFailed && current.status === 'error') continue;");
         // User-driven expand keeps retrying transient errors.
-        expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
+        expect(progressiveGroupSource).toContain('if (!effectivelyExpanded) {\n            requestMaterialization();\n        }');
         expect(progressiveGroupSource).toContain('requestMaterialization(true)');
     });
 
@@ -370,7 +383,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("t('chat.activity.outputLoadFailed')");
         expect(progressiveGroupSource).toContain("t('chat.activity.outputRetry')");
         expect(progressiveGroupSource).toContain("t('chat.toolOutputDialog.noOutputProduced')");
-        expect(progressiveGroupSource).toContain('isExpanded && (isMaterializationLoading || hasMaterializationError || showEmptyMaterialization)');
+        expect(progressiveGroupSource).toContain('effectivelyExpanded && (isMaterializationLoading || hasMaterializationError || showEmptyMaterialization)');
         expect(progressiveGroupSource).toContain('requestMaterialization(true)');
 
         for (const fileName of messageDictionaryFiles) {
