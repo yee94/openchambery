@@ -43,3 +43,22 @@ export function getAndroidComposerImeStateAction(
   if (isComposerKeyboardTarget(activeElement ?? null)) return 'open';
   return shouldReserveChatScrollInset(activeElement ?? null) ? 'field' : 'ignore';
 }
+
+/**
+ * A native measured IME height clearly above the height that armed this
+ * session means the estimate under-cleared the keyboard (stale ratio, density
+ * pinning, or a different IME silhouette). Correct the in-flight lift instead
+ * of leaving the composer covered for the whole keyboard session.
+ */
+export function shouldCorrectArmedImeLift(armedHeight: number, measuredHeight: number): boolean {
+  if (!(measuredHeight > 0)) return false;
+  if (!(armedHeight >= 0)) return false;
+  return measuredHeight > armedHeight + 24;
+}
+
+/** Convert a native WindowInsets IME height (window px) into WebView CSS px. */
+export function cssPxFromNativeImeHeight(heightPx: number, devicePixelRatio: number): number {
+  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  if (!(heightPx > 0)) return 0;
+  return Math.max(0, Math.round(heightPx / dpr));
+}

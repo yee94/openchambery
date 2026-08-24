@@ -223,7 +223,7 @@ describe('event stream protocol helpers', () => {
     expect(rawPayload.length).toBeLessThan(64 * 1024);
   });
 
-  it('projects message.updated summary.diffs to L1 count/marker on outbound frames', () => {
+  it('projects message.updated summary.diffs to L1 slim list + markers on outbound frames', () => {
     let rawPayload = null;
     const socket = {
       readyState: 1,
@@ -246,6 +246,8 @@ describe('event stream protocol helpers', () => {
               additions: 2,
               deletions: 1,
               patch: '@@ heavy patch body @@\n' + 'y'.repeat(1000),
+              before: 'old',
+              after: 'new',
             }],
           },
         },
@@ -255,12 +257,73 @@ describe('event stream protocol helpers', () => {
     expect(sent).toBe(true);
     const frame = JSON.parse(rawPayload);
     expect(frame.payload.properties.info.summary).toEqual({
+      diffs: [{
+        file: 'a.ts',
+        status: 'modified',
+        additions: 2,
+        deletions: 1,
+      }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(frame.payload.properties.info.summary.diffs).toBeUndefined();
     expect(JSON.stringify(frame)).not.toContain('patch');
-    expect(JSON.stringify(frame)).not.toContain('a.ts');
+    expect(JSON.stringify(frame)).not.toContain('"before"');
+    expect(JSON.stringify(frame)).not.toContain('"after"');
+  });
+
+  it('keeps L1 message.updated serialization under 256KiB for a 463-file / ~14MB patch summary', () => {
+    let rawPayload = null;
+    const socket = {
+      readyState: 1,
+      send(payload) {
+        rawPayload = payload;
+      },
+    };
+
+    const patchBody = 'P'.repeat(Math.floor((14 * 1024 * 1024) / 463));
+    const diffs = Array.from({ length: 463 }, (_, i) => ({
+      file: `src/generated/file-${i}.ts`,
+      status: 'modified',
+      additions: i % 7,
+      deletions: i % 3,
+      patch: `${patchBody}-${i}`,
+      before: `before-${i}`,
+      after: `after-${i}`,
+      from: `from-${i}`,
+      to: `to-${i}`,
+    }));
+
+    const sent = sendMessageStreamWsEvent(socket, {
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_huge',
+          sessionID: 'ses_huge',
+          role: 'assistant',
+          summary: { title: 'huge', diffs },
+        },
+      },
+    });
+
+    expect(sent).toBe(true);
+    const frame = JSON.parse(rawPayload);
+    const summary = frame.payload.properties.info.summary;
+    expect(summary.diffCount).toBe(463);
+    expect(summary.hasDiffs).toBe(true);
+    expect(summary.diffs).toHaveLength(463);
+    expect(summary.diffs[0]).toEqual({
+      file: 'src/generated/file-0.ts',
+      status: 'modified',
+      additions: 0,
+      deletions: 0,
+    });
+    expect(rawPayload).not.toContain(patchBody.slice(0, 64));
+    expect(rawPayload).not.toContain('"patch"');
+    expect(rawPayload).not.toContain('"before"');
+    expect(rawPayload).not.toContain('"after"');
+    expect(rawPayload).not.toContain('"from"');
+    expect(rawPayload).not.toContain('"to"');
+    expect(Buffer.byteLength(rawPayload, 'utf8')).toBeLessThan(256 * 1024);
   });
 
   it('leaves ordinary session.status events unchanged', () => {

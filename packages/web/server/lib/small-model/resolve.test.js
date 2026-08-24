@@ -1,19 +1,40 @@
-import { describe, it, expect } from 'bun:test';
-import { resolveSmallModel, parseModelRef, isUsableAuthEntry } from './resolve.js';
+import { describe, it, expect } from 'vitest';
+import {
+  resolveSmallModel,
+  parseModelRef,
+  isUsableAuthEntry,
+  rankSmallModelCandidates,
+  compareSmallModelCandidates,
+} from './resolve.js';
 
 const catalog = {
   google: {
     id: 'google',
     models: {
-      'gemini-2.5-flash': { id: 'gemini-2.5-flash', family: 'gemini-flash', release_date: '2025-06-01' },
-      'gemini-2.0-flash': { id: 'gemini-2.0-flash', family: 'gemini-flash', release_date: '2024-12-01' },
+      'gemini-2.5-flash': {
+        id: 'gemini-2.5-flash',
+        family: 'gemini-flash',
+        release_date: '2025-06-01',
+        cost: { input: 0.15, output: 0.6 },
+      },
+      'gemini-2.0-flash': {
+        id: 'gemini-2.0-flash',
+        family: 'gemini-flash',
+        release_date: '2024-12-01',
+        cost: { input: 0.1, output: 0.4 },
+      },
       'gemini-2.5-pro': { id: 'gemini-2.5-pro', family: 'gemini-pro', release_date: '2025-06-01' },
     },
   },
   anthropic: {
     id: 'anthropic',
     models: {
-      'claude-haiku-4-5': { id: 'claude-haiku-4-5', family: 'claude-haiku', release_date: '2025-10-01' },
+      'claude-haiku-4-5': {
+        id: 'claude-haiku-4-5',
+        family: 'claude-haiku',
+        release_date: '2025-10-01',
+        cost: { input: 1, output: 5 },
+      },
       'claude-sonnet-4-5': { id: 'claude-sonnet-4-5', family: 'claude-sonnet', release_date: '2025-09-01' },
     },
   },
@@ -77,7 +98,7 @@ describe('resolveSmallModel', () => {
     expect(result).toEqual({ providerID: 'openai', modelID: 'gpt-4o-mini', source: 'config' });
   });
 
-  it('scans authenticated providers by family priority, newest first', () => {
+  it('scans authenticated providers by family priority, cheapest then newest within family', () => {
     const result = resolveSmallModel({
       auth: {
         google: { type: 'api', key: 'g-key' },
@@ -86,7 +107,8 @@ describe('resolveSmallModel', () => {
       catalog,
       configSmallModel: null,
     });
-    expect(result).toEqual({ providerID: 'google', modelID: 'gemini-2.5-flash', source: 'family-scan' });
+    // gemini-flash outranks other families; within family cheaper input wins.
+    expect(result).toEqual({ providerID: 'google', modelID: 'gemini-2.0-flash', source: 'family-scan' });
   });
 
   it('skips providers without a usable credential', () => {
@@ -135,7 +157,7 @@ describe('resolveSmallModel', () => {
       configSmallModel: null,
       preferredProviderID: 'anthropic',
     });
-    expect(result).toEqual({ providerID: 'google', modelID: 'gemini-2.5-flash', source: 'family-scan' });
+    expect(result).toEqual({ providerID: 'google', modelID: 'gemini-2.0-flash', source: 'family-scan' });
   });
 
   it('never uses a session provider without a login (opencode free models)', () => {
@@ -163,7 +185,7 @@ describe('resolveSmallModel', () => {
     expect(result).toBeNull();
   });
 
-  it('falls back to the session model instead of scanning other providers', () => {
+  it('stays on the preferred provider via keyword scan instead of switching providers', () => {
     const result = resolveSmallModel({
       auth: {
         'opencode-go': { type: 'api', key: 'oc-key' },
@@ -181,7 +203,9 @@ describe('resolveSmallModel', () => {
       preferredProviderID: 'opencode-go',
       preferredModelID: 'deepseek-v4-flash',
     });
-    expect(result).toEqual({ providerID: 'opencode-go', modelID: 'deepseek-v4-flash', source: 'session-model' });
+    // No gemini-flash/gpt-nano/claude-haiku family, but "flash" keyword matches
+    // within the preferred provider — never silently switch to openai oauth.
+    expect(result).toEqual({ providerID: 'opencode-go', modelID: 'deepseek-v4-flash', source: 'keyword-scan' });
   });
 
   it('falls back to the session model itself when nothing resolves', () => {
@@ -193,5 +217,47 @@ describe('resolveSmallModel', () => {
       preferredModelID: 'mistral-large-latest',
     });
     expect(result).toEqual({ providerID: 'mistral', modelID: 'mistral-large-latest', source: 'session-model' });
+  });
+
+  it('picks keyword+cheapest catalog models when no family match exists', () => {
+    const result = resolveSmallModel({
+      auth: {
+        codebuddy: { type: 'api', key: 'cb-key' },
+        deepseek: { type: 'api', key: 'ds-key' },
+      },
+      catalog: {
+        codebuddy: {
+          id: 'codebuddy',
+          models: {
+            'codebuddy-pro': { id: 'codebuddy-pro', release_date: '2026-01-01', cost: { input: 0.01 } },
+            'codebuddy-mini': { id: 'codebuddy-mini', release_date: '2025-06-01', cost: { input: 0.5 } },
+            'codebuddy-lite': { id: 'codebuddy-lite', release_date: '2025-06-01', cost: { input: 0.05 } },
+          },
+        },
+        deepseek: {
+          id: 'deepseek',
+          models: {
+            'deepseek-chat': { id: 'deepseek-chat', release_date: '2025-01-01', cost: { input: 0.14 } },
+          },
+        },
+      },
+      configSmallModel: null,
+    });
+    // mini outranks lite/chat; within mini cheaper input would win (only one mini).
+    expect(result).toEqual({ providerID: 'codebuddy', modelID: 'codebuddy-mini', source: 'keyword-scan' });
+  });
+
+  it('ranks missing cost after priced models and prefers newer release_date on ties', () => {
+    const ranked = rankSmallModelCandidates({
+      'a-mini': { id: 'a-mini', release_date: '2024-01-01', cost: { input: 1 } },
+      'b-mini': { id: 'b-mini', release_date: '2025-01-01', cost: { input: 1 } },
+      'c-mini': { id: 'c-mini', release_date: '2026-01-01' },
+      'd-flash': { id: 'd-flash', release_date: '2023-01-01', cost: { input: 2 } },
+    });
+    expect(ranked.map((m) => m.id)).toEqual(['d-flash', 'b-mini', 'a-mini', 'c-mini']);
+    expect(compareSmallModelCandidates(
+      { id: 'x', cost: { input: 1 }, release_date: '2024-01-01' },
+      { id: 'y', cost: { input: 2 }, release_date: '2026-01-01' },
+    )).toBeLessThan(0);
   });
 });

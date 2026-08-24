@@ -11,7 +11,7 @@ const getParentID = (session: Session): string | null => {
 };
 
 export type BuildSessionTreeOptions = {
-  pinnedSessionIds?: Set<string>;
+  pinnedSessionIds?: ReadonlySet<string>;
   /**
    * When true, omit pinned sessions from the returned forest (project area).
    * Tree structure is still built with pinned parents present so children attach.

@@ -62,4 +62,38 @@ export const registerSessionIndexRoutes = (app, { sessionIndexService, sessionIn
     }
     res.json({ available: true, session: hit });
   });
+
+  app.post('/api/openchamber/session-index/session/:id/pin', (req, res) => {
+    if (!sessionIndexService) return unsupported(res);
+    if (typeof sessionIndexService.setPinned !== 'function') {
+      return res.status(501).json({ error: 'Session pin is unavailable' });
+    }
+    const sessionId = req.params.id;
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    const changed = sessionIndexService.setPinned(sessionId.trim());
+    if (!changed) {
+      return res.status(404).json({ error: 'session_not_found', sessionId: sessionId.trim() });
+    }
+    sessionIndexSyncRuntime?.publishChange?.();
+    res.status(204).end();
+  });
+
+  app.delete('/api/openchamber/session-index/session/:id/pin', (req, res) => {
+    if (!sessionIndexService) return unsupported(res);
+    if (typeof sessionIndexService.clearPinned !== 'function') {
+      return res.status(501).json({ error: 'Session unpin is unavailable' });
+    }
+    const sessionId = req.params.id;
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    const changed = sessionIndexService.clearPinned(sessionId.trim());
+    if (!changed) {
+      return res.status(404).json({ error: 'session_not_found', sessionId: sessionId.trim() });
+    }
+    sessionIndexSyncRuntime?.publishChange?.();
+    res.status(204).end();
+  });
 };

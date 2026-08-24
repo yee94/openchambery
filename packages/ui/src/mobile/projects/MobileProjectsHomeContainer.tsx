@@ -16,7 +16,7 @@ import { useI18n } from '@/lib/i18n';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import { syncGlobalSessionsForDirectories } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';
@@ -58,6 +58,8 @@ export type MobileProjectsHomeContainerProps = {
   /** Optional override for the header new-session button; defaults to opening
       a plain new-session draft without navigation. */
   onNewSession?: () => void;
+  onScanQr?: () => void;
+  onSwitchInstance?: () => void;
   className?: string;
 };
 
@@ -69,6 +71,8 @@ export function MobileProjectsHomeContainer({
   onOpenChat,
   onAddProject,
   onNewSession,
+  onScanQr,
+  onSwitchInstance,
   className,
 }: MobileProjectsHomeContainerProps) {
   const { t } = useI18n();
@@ -78,8 +82,8 @@ export function MobileProjectsHomeContainer({
 
   const setProjectExpanded = useMobileSessionTreeStore((state) => state.setProjectExpanded);
   const setWorktreeExpanded = useMobileSessionTreeStore((state) => state.setWorktreeExpanded);
-  const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
+  const togglePinnedSession = useTogglePinnedSession();
+  const pinnedSessionIds = usePinnedSessionIds();
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
   const updateSessionTitle = useSessionUIStore((state) => state.updateSessionTitle);
   const requestSessionSmartTitle = useSessionUIStore((state) => state.requestSessionSmartTitle);
@@ -561,8 +565,11 @@ export function MobileProjectsHomeContainer({
       <MobileProjectsHome
         className={className}
         projects={model.projects}
+        pinnedSessions={model.pinnedSessions}
         onAddProject={onAddProject}
         onNewSession={handleNewSession}
+        onScanQr={onScanQr}
+        onSwitchInstance={onSwitchInstance}
         onToggleProject={handleToggleProject}
         onOpenProjectActions={handleOpenProjectActions}
         onToggleWorktree={handleToggleWorktree}

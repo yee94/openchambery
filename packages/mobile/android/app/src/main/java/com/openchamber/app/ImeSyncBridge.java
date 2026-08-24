@@ -246,14 +246,13 @@ final class ImeSyncBridge {
     /** State-only notification for classes / auto-follow freeze; geometry stays native. */
     private void notifyImeState(boolean open, int heightPx) {
         if (bridge == null) return;
-        float density = activity.getResources().getDisplayMetrics().density;
-        if (density <= 0f) density = 1f;
-        int heightCss = Math.max(0, Math.round(heightPx / density));
+        // Send raw window px. JS converts with window.devicePixelRatio so the
+        // lift stays in WebView CSS space even when Activity density is pinned.
         String data = String.format(
             Locale.US,
             "{\"open\":%s,\"height\":%d}",
             open,
-            heightCss
+            Math.max(0, heightPx)
         );
         bridge.triggerJSEvent("oc:ime-state", "window", data);
     }

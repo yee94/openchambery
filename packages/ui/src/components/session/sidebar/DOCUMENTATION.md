@@ -6,6 +6,10 @@
 - Sidebar is now a single multi-project tree: an optional `pinned` top section,
   then projects, then worktrees/archived groups, then sessions. Pinned sessions
   render only in the top section and are excluded from project groups.
+  Mobile projects home uses the same contract: `derivePinnedSessions` for the
+  global pinned card, `createSessionOwnershipIndex` for session→project
+  assignment, and `buildSessionTree(..., { omitPinnedSessions: true })` so
+  pinned roots leave project/worktree lists.
   Parent/child attachment always runs on the full session list first; pinned
   roots are omitted from project groups only after children attach. Pinned rows
   stay flat (no expand chevron, no nested subagents). Children of pinned parents
@@ -16,8 +20,14 @@
    groups reveal 3 sessions by default from the already-fetched 20-session page;
    Show more reveals cached rows before loading the next 20-session page on demand.
    Once expanded past the default page, Show fewer is available alongside Show more
-   so the list can fold back without loading every remaining row first. Busy and
-   retrying sessions from the loaded snapshot remain visible beyond the folded boundary.
+    so the list can fold back without loading every remaining row first. Always-visible
+    sessions (busy/retry live status, plus fallback global busy/retry entries, plus the
+    current viewing session) from the loaded snapshot remain visible beyond the folded
+    boundary. That fold-boundary rule is owned by `hooks/useAlwaysVisibleSessionIds` and
+    `selectVisibleSessionNodes` / `selectVisibleSessions`; the mobile sessions sheet,
+    projects home, and status-bar group lists share the same contract. Project/worktree
+    collapse toggles are unrelated — only the Show-more fold keeps those rows visible
+    while the group is expanded.
 - Project/worktree Show more first reveals already-fetched rows, then fetches the next 20-session page for its own directory at the local boundary.
 - The mobile session tree shows 20 root sessions by default for projects without worktrees. Projects with worktrees show 5 sessions per root/worktree bucket by default; Show more and Show fewer use that bucket's default page size. Collapsing and reopening a project or worktree preserves its revealed session count until Show fewer is selected or the sessions surface closes.
 - Mobile project, worktree, and session rows expose their matching sidebar actions through a touch-sized bottom action panel after a 500ms long press. Scrolling movement and pointer cancellation abort the gesture, and the triggering click is consumed. Dedicated mobile and the responsive Web sessions sheet share the same hold controller; Web session rows retain their desktop context menu, while project and worktree context menus open the touch action panel.
@@ -130,7 +140,7 @@
 - Archived groups are collapsed by default and support bulk deletion at group/folder level.
 - Session rows support compact inline dates in minimal mode and simplified metadata in default mode.
 - Session-row visual selection is published through a narrow row-only Focus store before authoritative navigation. Focus includes the render scope (`recent` or `project`) plus session/project identity, so duplicate representations never both receive the Active background or satisfy the wrong paint barrier.
-- Previous/next-session navigation consumes ordered snapshots published from the rendered sidebar model. A Recent-origin focus cycles Recent items; a project-origin focus cycles the logically visible project rows in sidebar order, including across projects. Rows hidden by project/group/folder collapse or the group's Show more boundary are excluded, while busy and retrying rows retained beyond that boundary remain keyboard targets.
+- Previous/next-session navigation consumes ordered snapshots published from the rendered sidebar model. A Recent-origin focus cycles Recent items; a project-origin focus cycles the logically visible project rows in sidebar order, including across projects. Rows hidden by project/group/folder collapse or the group's Show more boundary are excluded, while always-visible (busy/retry + current viewing) rows retained beyond that boundary remain keyboard targets.
 - Advancing through Recent with the next-session shortcut reveals all remaining rows in the bounded 8-session Recent set, exactly like Show more. Navigation wraps after the eighth row and never loads another remote Recent page.
 - Global Mod+1…9 navigation numbers the first nine logically visible session rows from top to bottom across Recent and the expanded project tree. Container headers never consume a number; duplicate Recent/Project representations remain distinct Focus rows. Holding the platform primary modifier for 500ms reveals compact shortcut chips only on those rows; each chip occupies only its intrinsic width and replaces row quick actions until release. Releasing the modifier, window blur, or page hide clears the hints immediately.
 - Every session navigation announces a monotonic intent revision. A later sidebar, keyboard, deep-link, or switcher intent invalidates an older pending sidebar commit, including ABA sequences such as A -> B -> A.
@@ -165,7 +175,8 @@
 - `ConfirmDialogs.tsx`: Shared confirm dialog wrappers for session delete and folder delete flows.
 - `sortableItems.tsx`: DnD sortable wrappers for project and group ordering plus project-row action affordances.
 - `sessionFolderDnd.tsx`: Folder/session DnD scope and wrappers for dropping/moving sessions into folders.
-- `sessionNavigationModel.ts`: Flattens the rendered project/group/folder model into ordered shortcut targets, then filters them against project/group/folder collapse and Show more state so project-scoped shortcuts use only logically visible rows.
+- `sessionNavigationModel.ts`: Flattens the rendered project/group/folder model into ordered shortcut targets, then filters them against project/group/folder collapse and Show more state so project-scoped shortcuts use only logically visible rows. Also owns `selectVisibleSessionNodes` / `selectVisibleSessions` for the compact Show-more fold (first N, then append always-visible ids past the boundary).
+- `hooks/useAlwaysVisibleSessionIds.ts`: Shared running (busy/retry + uncovered fallback) and always-visible (running ∪ current viewing) session-id sets for PC sidebar and mobile session lists.
 - `sidebar-numbered-navigation.ts` (sync): Publishes the global first-nine visible session target order consumed by Mod+1…9, with revision-safe responsive remount cleanup.
 - `sessionOwnership.ts`: Resolves session directories once into shared project/worktree ownership and folder-scope indexes.
 - `manualProjectSessionSync.ts`: Builds deduplicated manual session-index sync directories from the project root, current selection, and freshly refreshed worktree catalog.
@@ -183,11 +194,11 @@
 - `hooks/useProjectSessionSelection.ts`: Resolves active/current project-session selection logic and session-directory context.
 - `hooks/useGroupOrdering.ts`: Applies persisted/custom group order with stable fallback ordering; archived groups are reorderable.
 - `hooks/useArchivedAutoFolders.ts`: Maintains archived auto-folder structure and assignment behavior.
-- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/pinned/group order/active session) to instance-scoped storage (`oc.inst.{runtimeKey}.*`) + desktop settings. Project registry order and `projectSortOrder` are also instance-scoped so two mobile hosts do not share one list.
+- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/group order/active session) to instance-scoped storage (`oc.inst.{runtimeKey}.*`) + desktop settings. Project registry order and `projectSortOrder` are also instance-scoped so two mobile hosts do not share one list. Session pin membership is derived from the server session-index snapshot (`time.pinned`), not localStorage.
 - `hooks/useProjectRepoStatus.ts`: Tracks per-project git-repo state and root branch metadata.
 - `hooks/useProjectSessionLists.ts`: Reads live and archived project buckets from the shared ownership index.
 - `hooks/useSessionFolderCleanup.ts`: Cleans stale folder session IDs by reconciling known sessions/archived scopes.
-- Persistent pinned, folder, and session-order cleanup consumes the store's complete-catalog ID snapshot (`fullCatalogSessionIds` + generation). Bounded directory snapshots only drive visible rows.
+- Folder and session-order cleanup consume the store's complete-catalog ID snapshot (`fullCatalogSessionIds` + generation). Pinned IDs come from the session-index snapshot and need no local prune. Bounded directory snapshots only drive visible rows.
 - Session order is keyed by each group's `folderScopeKey` and bound to the activity/member snapshot captured at drag time. Later activity or membership changes restore natural sorting; visual rows, navigation, and sortable items consume the same scope-local rule.
 - `sessionSortableOrder.ts` derives visible sortable IDs and the shared scope-local comparator from the rendered folder tree, collapsed/search state, Show-more slice, and order activity snapshot. Reordering stays within one folder or the ungrouped scope; folder drops own cross-folder moves.
 - `hooks/useStickyProjectHeaders.ts`: Tracks which project headers are sticky/stuck via `IntersectionObserver`.

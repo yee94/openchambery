@@ -106,6 +106,29 @@ const isLiveStreamPhase = (streamPhase: unknown): boolean => (
     streamPhase === 'streaming' || streamPhase === 'cooldown'
 );
 
+/**
+ * Effective stream phase for the sorted reveal path. This is the single
+ * derivation of the phase handed to `canRevealSortedFinalBody` /
+ * `shouldStreamSortedFinalBody`: a `stop` finish or message completion snaps
+ * to `completed`, otherwise the live channel phase with a `streaming`
+ * fallback. Consumers must not re-derive it inline — drift between copies
+ * makes the body reveal and the Activity dedup disagree, so the same text
+ * duplicates or vanishes.
+ */
+export const resolveSortedRevealStreamPhase = (input: {
+    finish: unknown;
+    isMessageCompleted: boolean;
+    activeStreamingPhase: unknown;
+}): unknown => {
+    if (input.finish === 'stop') {
+        return 'completed';
+    }
+    if (input.isMessageCompleted) {
+        return 'completed';
+    }
+    return input.activeStreamingPhase ?? 'streaming';
+};
+
 export type SortedFinalBodyRevealInput = {
     finish: unknown;
     parts: readonly Part[];

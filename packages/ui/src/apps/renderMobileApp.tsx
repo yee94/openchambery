@@ -8,6 +8,7 @@ import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { ThemeSystemProvider } from '@/contexts/ThemeSystemContext';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { startAppearanceAutoSave } from '@/lib/appearanceAutoSave';
+import { applyDesignPtScaleFromNative } from '@/lib/designPtScale';
 import { getDeviceInfo } from '@/lib/device';
 import { markAppBootReady } from './appBootReady';
 import { installMobileWidgetSnapshotBridge } from './mobileWidgetSnapshot';
@@ -62,6 +63,7 @@ export function renderMobileApp(apis: RuntimeAPIs) {
   // (MOBILE_SEMANTIC_TYPOGRAPHY); applied late from a hook effect, they bumped text
   // size a frame after mount and shifted the layout (connect / scan / saved-connection labels).
   getDeviceInfo();
+  void applyDesignPtScaleFromNative();
 
   const rootElement = document.getElementById('root');
   if (!rootElement) {

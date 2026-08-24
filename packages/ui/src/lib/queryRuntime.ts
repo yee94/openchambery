@@ -27,8 +27,9 @@ export const queryKeys = {
     raw: (_directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', 'raw'] => [transport, 'agents', 'raw'],
   },
     configCatalog: {
-      // Directory is an OpenCode request hint only; the catalog is one cache per transport.
-      providers: (_directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'configCatalog', 'providers'] => [transport, 'configCatalog', 'providers'],
+      // Catalog 缓存按 directory 分片，不同项目/实例不得共用。
+      // directory 是调用方已 normalize 的值（由 providerCatalogQueryOptions 传入 normalizeConfigCatalogDirectory 的结果）。
+      providers: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'configCatalog', 'providers', string | null] => [transport, 'configCatalog', 'providers', directory],
     },
   providers: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'providers', string | null] => [transport, 'providers', directory],
@@ -63,21 +64,6 @@ export const queryKeys = {
     snapshot: (directory: string, transport = getRuntimeTransportIdentity()): readonly [string, 'sessionStatus', 'snapshot', string | null] => [transport, 'sessionStatus', 'snapshot', normalizeQueryDirectory(directory)],
   },
   sessionTurnChanges: {
-    summary: (
-      directory: string | null | undefined,
-      sessionID: string,
-      messageID: string,
-      diffCount: number | undefined,
-      transport = getRuntimeTransportIdentity(),
-    ): readonly [string, 'sessionTurnChanges', 'summary', string | null, string, string, number | null] => [
-      transport,
-      'sessionTurnChanges',
-      'summary',
-      normalizeQueryDirectory(directory),
-      sessionID,
-      messageID,
-      typeof diffCount === 'number' && Number.isFinite(diffCount) ? Math.max(0, Math.trunc(diffCount)) : null,
-    ],
     file: (
       directory: string | null | undefined,
       sessionID: string,

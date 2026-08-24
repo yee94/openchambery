@@ -6,6 +6,7 @@ import { readConfigLayers } from '../opencode/shared.js';
 import { createModelCatalogLoader, getCatalogProvider } from './catalog.js';
 import { resolveSmallModel, parseModelRef, isUsableAuthEntry, getAuthEntryForProvider } from './resolve.js';
 import { callSmallModel } from './call.js';
+import { generateViaOpenCodeSession, stop as stopOpenCodeSessionTemp } from './opencode-session.js';
 
 const OPENCHAMBER_SETTINGS_FILE = path.join(
   process.env.OPENCHAMBER_DATA_DIR
@@ -74,21 +75,13 @@ const clampPromptToModelLimit = ({ prompt, catalog, providerID, modelID }) => {
   return { prompt: `${prompt.slice(0, maxChars)}…`, truncated: true };
 };
 
-// Dedicated adapters (or OpenAI-compatible models that publish api.url) are
-// the only providers the small-model dispatcher can call without models.dev.
-// Auth-type constraints must match resolve/call: OpenAI api|oauth; Anthropic/
-// Google api only; Copilot via github-copilot/copilot alias token.
-const DEDICATED_CALLABLE_PROVIDERS = new Set(['openai', 'anthropic', 'google', 'github-copilot']);
-
-const providerHasCallableEndpoint = (provider) => {
-  if (!provider || typeof provider !== 'object') return false;
-  return Object.values(provider.models || {}).some(
-    (model) => typeof model?.api?.url === 'string' && model.api.url.trim().length > 0,
-  );
-};
+// Dedicated adapters keep the direct wire-format path. Everything else
+// (plugin providers, credential-chain, missing api.url, …) goes through a
+// temporary OpenCode session so auth/endpoint rewrite stay in the runtime.
+const DEDICATED_DIRECT_PROVIDERS = new Set(['openai', 'anthropic', 'google', 'github-copilot']);
 
 // Mirrors pickWithinProvider / callSmallModel auth gates so Settings pickers
-// never list providers that would only fail at dispatch time.
+// never list dedicated providers that would only fail at dispatch time.
 const isCallableDedicatedAuth = (auth, providerID) => {
   if (providerID === 'openai') {
     const entry = auth?.openai;
@@ -108,17 +101,29 @@ const isCallableDedicatedAuth = (auth, providerID) => {
   return false;
 };
 
+const providerHasCatalogModels = (provider) => {
+  if (!provider || typeof provider !== 'object') return false;
+  return Object.values(provider.models || {}).some(
+    (model) => typeof model?.id === 'string' && model.id.trim().length > 0,
+  );
+};
+
+const shouldUseDirectAdapter = (providerID, auth) => {
+  if (!DEDICATED_DIRECT_PROVIDERS.has(providerID)) return false;
+  return isCallableDedicatedAuth(auth, providerID);
+};
+
 const listCallableProviderIDsForState = (auth, catalog) => {
   const ids = new Set(
     Object.keys(auth || {}).filter((providerID) => {
       // Surface Copilot only as github-copilot (alias handled below).
       if (providerID === 'copilot') return false;
-      if (DEDICATED_CALLABLE_PROVIDERS.has(providerID)) {
+      if (DEDICATED_DIRECT_PROVIDERS.has(providerID)) {
         return isCallableDedicatedAuth(auth, providerID);
       }
       if (!isUsableAuthEntry(auth[providerID])) return false;
       const provider = getCatalogProvider(catalog, providerID);
-      return providerHasCallableEndpoint(provider);
+      return providerHasCatalogModels(provider);
     }),
   );
   if (isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'))) {
@@ -181,10 +186,12 @@ const readConfiguredSmallModel = (workingDirectory) => {
  * }} dependencies
  */
 export function createSmallModelService(dependencies) {
+  const buildOpenCodeUrl = dependencies.buildOpenCodeUrl;
+  const getOpenCodeAuthHeaders = dependencies.getOpenCodeAuthHeaders;
   const getModelCatalog = dependencies.getModelCatalog
     || createModelCatalogLoader({
-      buildOpenCodeUrl: dependencies.buildOpenCodeUrl,
-      getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders,
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
     }).getModelCatalog;
 
   /**
@@ -273,17 +280,33 @@ export function createSmallModelService(dependencies) {
       modelID: resolved.modelID,
     });
 
-    const text = await callSmallModel({
-      auth,
-      catalog,
-      workingDirectory: directory,
-      providerID: resolved.providerID,
-      modelID: resolved.modelID,
-      prompt: clamped.prompt,
-      system: summaryPrompt || (typeof system === 'string' && system.trim() ? system.trim() : undefined),
-      maxOutputTokens,
-      custom: summaryCustom,
-    });
+    const effectiveSystem = summaryPrompt || (typeof system === 'string' && system.trim() ? system.trim() : undefined);
+
+    let text;
+    if (summaryCustom || shouldUseDirectAdapter(resolved.providerID, auth)) {
+      text = await callSmallModel({
+        auth,
+        catalog,
+        workingDirectory: directory,
+        providerID: resolved.providerID,
+        modelID: resolved.modelID,
+        prompt: clamped.prompt,
+        system: effectiveSystem,
+        maxOutputTokens,
+        custom: summaryCustom,
+      });
+    } else {
+      text = await generateViaOpenCodeSession({
+        buildOpenCodeUrl,
+        getOpenCodeAuthHeaders,
+        providerID: resolved.providerID,
+        modelID: resolved.modelID,
+        prompt: clamped.prompt,
+        system: effectiveSystem,
+        purpose: typeof purpose === 'string' && purpose.trim() ? purpose.trim() : 'generate',
+        directory,
+      });
+    }
 
     return {
       text: text.trim(),
@@ -341,5 +364,6 @@ export function createSmallModelService(dependencies) {
     listCallableProviders,
     listCallableModels,
     describeSmallModel,
+    stop: stopOpenCodeSessionTemp,
   };
 }

@@ -17,11 +17,16 @@ import {
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds } from '@/queries/sessionIndexPinQueries';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
+import { useAlwaysVisibleSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import { derivePinnedSessions } from '@/components/session/sidebar/pinnedSessions';
+import { createSessionOwnershipIndex } from '@/components/session/sidebar/sessionOwnership';
+import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
+import { buildSessionTree } from '@/components/session/sidebar/sessionTree';
 import type { WorktreeMetadata } from '@/types/worktree';
 
 import type {
@@ -136,15 +141,17 @@ const findExactWorktreeMatch = (
   project.worktrees.find((worktree) => normalizePath(worktree.path) === normalizedDirectory) ?? null
 );
 
-const projectMatchesExactDirectory = (
-  project: ProjectMeta,
-  normalizedDirectory: string,
-): boolean => (
-  normalizedDirectory === project.path || Boolean(findExactWorktreeMatch(project, normalizedDirectory))
-);
+export const listProjectAreaRootSessions = (
+  sessions: Session[],
+  pinnedSessionIds: ReadonlySet<string>,
+): Session[] => buildSessionTree(sessions, {
+  pinnedSessionIds,
+  omitPinnedSessions: true,
+}).map((node) => node.session);
 
 export type MobileProjectsHomeModel = {
   projects: MobileProjectHomeItem[];
+  pinnedSessions: MobileSessionTreeNode[];
   sessionById: Map<string, Session>;
   projectMetaById: Map<string, ProjectMeta>;
   allSessions: Session[];
@@ -175,12 +182,13 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   // session-ui-store). Do not re-probe git/worktrees here — that was an unbounded cold-start cost.
   const worktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const worktreeOrderByProject = useWorktreeOrderStore((state) => state.orderByProject);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
+  const pinnedSessionIds = usePinnedSessionIds();
   const projectExpandedMap = useMobileSessionTreeStore((state) => state.projectExpanded);
   const worktreeExpandedMap = useMobileSessionTreeStore((state) => state.worktreeExpanded);
   const unseenBySession = useNotificationStore((state) => state.index.session.unseenCount);
   // Ephemeral per-bucket visible root count (mirrors MobileSessionsSheet).
   const [visibleCountByBucket, setVisibleCountByBucket] = React.useState<Map<string, number>>(new Map());
+  const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds();
 
   const projectsMeta = React.useMemo<ProjectMeta[]>(
     () =>
@@ -217,6 +225,16 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     return merged;
   }, [globalActiveSessions, liveSessions]);
 
+  const ownership = React.useMemo(
+    () => createSessionOwnershipIndex(
+      sessions,
+      projectsMeta.map((project) => ({ id: project.id, normalizedPath: project.path })),
+      worktreesByProject,
+      false,
+    ),
+    [projectsMeta, sessions, worktreesByProject],
+  );
+
   const projectNodes = React.useMemo<ProjectNode[]>(() => {
     const nodes: ProjectNode[] = projectsMeta.map((project) => ({
       project,
@@ -225,6 +243,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
       isActive: project.id === activeProjectId,
       latestActivity: 0,
     }));
+    const nodesById = new Map(nodes.map((node) => [node.project.id, node]));
 
     const ensureBucket = (
       node: ProjectNode,
@@ -253,12 +272,13 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     }
 
     for (const session of sessions) {
-      const directory = getSessionDirectory(session);
-      if (!directory) continue;
-      const normalizedDirectory = normalizePath(directory);
-      const node = nodes.find((entry) => projectMatchesExactDirectory(entry.project, normalizedDirectory));
+      const owner = ownership.bySessionId.get(session.id);
+      if (!owner) continue;
+      const node = nodesById.get(owner.projectId);
       if (!node) continue;
-      const matchedWorktree = findExactWorktreeMatch(node.project, normalizedDirectory);
+      const matchedWorktree = owner.kind === 'worktree'
+        ? findExactWorktreeMatch(node.project, owner.scopeDirectory)
+        : null;
       const bucket = matchedWorktree
         ? ensureBucket(node, matchedWorktree.path, matchedWorktree)
         : ensureBucket(node, node.project.path, null);
@@ -268,8 +288,9 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     for (const node of nodes) {
       for (const bucket of node.buckets) {
         bucket.sessions.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
+        const visibleRoots = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds);
+        node.totalSessions += visibleRoots.length;
         for (const session of bucket.sessions) {
-          if (!getParentId(session)) node.totalSessions += 1;
           const ts = getSessionTimestamp(session);
           if (ts > node.latestActivity) node.latestActivity = ts;
         }
@@ -277,7 +298,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     }
 
     return nodes;
-  }, [activeProjectId, projectsMeta, sessions]);
+  }, [activeProjectId, ownership, pinnedSessionIds, projectsMeta, sessions]);
 
   const sessionById = React.useMemo(() => {
     const map = new Map<string, Session>();
@@ -291,12 +312,32 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     return map;
   }, [projectsMeta]);
 
+  const pinnedSessions = React.useMemo<MobileSessionTreeNode[]>(() => {
+    const projectById = new Map(projectsMeta.map((project) => [project.id, project]));
+    return derivePinnedSessions(sessions, pinnedSessionIds).flatMap((session) => {
+      const owner = ownership.bySessionId.get(session.id);
+      const project = owner ? projectById.get(owner.projectId) : undefined;
+      if (!project) return [];
+      return [{
+        id: session.id,
+        directory: getSessionDirectory(session),
+        title: session.title?.trim() || t('mobile.sessions.untitled'),
+        subtitle: project.label,
+        activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
+        unread: (unseenBySession[session.id] ?? 0) > 0,
+        pinned: true,
+        archived: isSessionArchived(session),
+        active: currentSessionId === session.id,
+      }];
+    });
+  }, [currentSessionId, ownership, pinnedSessionIds, projectsMeta, sessions, t, unseenBySession]);
+
   const bucketIndex = React.useMemo(() => {
     const map = new Map<string, { path: string; rootCount: number; hasWorktrees: boolean }>();
     for (const node of projectNodes) {
       const hasWorktrees = node.project.worktrees.length > 0;
       for (const bucket of node.buckets) {
-        const rootCount = bucket.sessions.filter((entry) => !getParentId(entry)).length;
+        const rootCount = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds).length;
         map.set(`${node.project.id}::${bucket.key}`, {
           path: bucket.path,
           rootCount,
@@ -305,7 +346,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
       }
     }
     return map;
-  }, [projectNodes]);
+  }, [pinnedSessionIds, projectNodes]);
 
   const homeProjects = React.useMemo<MobileProjectHomeItem[]>(() => {
     const normalizedDirectory = normalizePath(currentDirectory);
@@ -325,8 +366,9 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         // Mobile home is a flat parent-session list only. Subagents stay off the
         // catalog (and off search) — never promote orphans when the parent is
         // missing from this bucket (archived/system parents). Archive cascade
-        // still walks allSessions.
-        const rootSessions = bucket.sessions.filter((entry) => !getParentId(entry));
+        // still walks allSessions. Pinned roots leave the project area the same
+        // way the sidebar forest does: omit after parent/child attachment.
+        const rootSessions = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds);
 
         const toNode = (session: Session): MobileSessionTreeNode => {
           const parentId = getParentId(session);
@@ -345,7 +387,11 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           };
         };
 
-        const visibleRoots = rootSessions.slice(0, visibleCount).map(toNode);
+        const visibleRoots = selectVisibleSessions(
+          rootSessions,
+          visibleCount,
+          alwaysVisibleSessionIds,
+        ).map(toNode);
         const remaining = rootSessions.length - visibleRoots.length;
         const pagination = activePaginationByDirectory.get(normalizePath(bucket.path));
         const hasRemoteSessions = pagination?.hasMore === true;
@@ -417,6 +463,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     });
   }, [
     activePaginationByDirectory,
+    alwaysVisibleSessionIds,
     currentDirectory,
     currentSessionId,
     pinnedSessionIds,
@@ -496,6 +543,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
 
   return {
     projects: homeProjects,
+    pinnedSessions,
     sessionById,
     projectMetaById,
     allSessions: sessions,

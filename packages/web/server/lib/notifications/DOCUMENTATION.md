@@ -45,8 +45,8 @@ This module provides notification message preparation utilities for the web serv
 - Returned API:
   - `maybeSendPushForTrigger(payload)`
 - Owns:
-  - top-level completion/question/permission trigger routing; completion is the sole task-status notification and child sessions are suppressed
-  - session parent cache for child-session suppression
+  - top-level completion/question/permission trigger routing; completion is the sole task-status notification and child sessions plus small-model system sessions (`metadata.openchamber.smallModel.purpose`) are suppressed
+  - session meta cache for child-session and small-model suppression
   - template resolution and fallback behavior
   - native notification fanout and web push payload fanout
   - push suppression while any fresh UI visibility heartbeat reports a focused client

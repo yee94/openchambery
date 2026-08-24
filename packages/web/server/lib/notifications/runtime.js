@@ -111,8 +111,8 @@ export const createNotificationTriggerRuntime = (deps) => {
   const notifiedPermissionRequests = new Set();
   const lastReadyNotificationAt = new Map();
 
-  const sessionParentIdCache = new Map();
-  const SESSION_PARENT_CACHE_TTL_MS = 60 * 1000;
+  const sessionMetaCache = new Map();
+  const SESSION_META_CACHE_TTL_MS = 60 * 1000;
 
   // Sessions where the client has enabled Permission Auto-Accept. Mirrored
   // from the client-side permissionStore via POST /api/notifications/auto-accept
@@ -136,43 +136,67 @@ export const createNotificationTriggerRuntime = (deps) => {
     return `/?session=${encodeURIComponent(sessionId)}`;
   };
 
-  const getSessionParentCacheKey = (sessionId, directory) => `${directory || ''}\0${sessionId}`;
+  const getSessionMetaCacheKey = (sessionId, directory) => `${directory || ''}\0${sessionId}`;
 
-  const getCachedSessionParentId = (sessionId, directory) => {
-    const cacheKey = getSessionParentCacheKey(sessionId, directory);
-    const entry = sessionParentIdCache.get(cacheKey);
+  const normalizeParentID = (value) => (
+    typeof value === 'string' && value.length > 0 ? value : null
+  );
+
+  const normalizeSmallModelPurpose = (value) => (
+    typeof value === 'string' && value.length > 0 ? value : null
+  );
+
+  const getCachedSessionMeta = (sessionId, directory) => {
+    const cacheKey = getSessionMetaCacheKey(sessionId, directory);
+    const entry = sessionMetaCache.get(cacheKey);
     if (!entry) return undefined;
-    if (Date.now() - entry.at > SESSION_PARENT_CACHE_TTL_MS) {
-      sessionParentIdCache.delete(cacheKey);
+    if (Date.now() - entry.at > SESSION_META_CACHE_TTL_MS) {
+      sessionMetaCache.delete(cacheKey);
       return undefined;
     }
-    return entry.parentID;
+    return entry;
   };
 
-  const setCachedSessionParentId = (sessionId, directory, parentID) => {
-    sessionParentIdCache.set(getSessionParentCacheKey(sessionId, directory), { parentID: parentID ?? null, at: Date.now() });
+  const setCachedSessionMeta = (sessionId, directory, meta) => {
+    const previous = getCachedSessionMeta(sessionId, directory);
+    sessionMetaCache.set(getSessionMetaCacheKey(sessionId, directory), {
+      parentID: meta.parentID !== undefined ? meta.parentID : (previous?.parentID ?? null),
+      smallModelPurpose: meta.smallModelPurpose !== undefined
+        ? meta.smallModelPurpose
+        : (previous?.smallModelPurpose ?? null),
+      at: Date.now(),
+    });
   };
 
   const getParentIdFromPayload = (payload) => {
     if (!payload || typeof payload !== 'object') return undefined;
     if (payload.type !== 'session.created' && payload.type !== 'session.updated') return undefined;
-    const parentID = payload.properties?.info?.parentID ?? null;
-    return typeof parentID === 'string' && parentID.length > 0 ? parentID : null;
+    return normalizeParentID(payload.properties?.info?.parentID);
   };
 
-  const maybeCacheSessionParentFromPayload = (payload) => {
+  const getSmallModelPurposeFromPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return undefined;
+    if (payload.type !== 'session.created' && payload.type !== 'session.updated') return undefined;
+    return normalizeSmallModelPurpose(payload.properties?.info?.metadata?.openchamber?.smallModel?.purpose);
+  };
+
+  const maybeCacheSessionMetaFromPayload = (payload) => {
     const sessionId = extractSessionIdFromPayload(payload);
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     const directory = extractDirectoryFromPayload(payload);
     const parentID = getParentIdFromPayload(payload);
-    if (parentID === undefined) return;
-    setCachedSessionParentId(sessionId, directory, parentID);
+    const smallModelPurpose = getSmallModelPurposeFromPayload(payload);
+    if (parentID === undefined && smallModelPurpose === undefined) return;
+    setCachedSessionMeta(sessionId, directory, {
+      ...(parentID !== undefined ? { parentID } : {}),
+      ...(smallModelPurpose !== undefined ? { smallModelPurpose } : {}),
+    });
   };
 
-  const fetchSessionParentId = async (sessionId, directory) => {
+  const fetchSessionMeta = async (sessionId, directory) => {
     if (!sessionId) return undefined;
 
-    const cached = getCachedSessionParentId(sessionId, directory);
+    const cached = getCachedSessionMeta(sessionId, directory);
     if (cached !== undefined) return cached;
 
     try {
@@ -194,14 +218,20 @@ export const createNotificationTriggerRuntime = (deps) => {
         return undefined;
       }
 
-      const parentID = typeof session.parentID === 'string' && session.parentID.length > 0
-        ? session.parentID
-        : null;
-      setCachedSessionParentId(sessionId, directory, parentID);
-      return parentID;
+      const meta = {
+        parentID: normalizeParentID(session.parentID),
+        smallModelPurpose: normalizeSmallModelPurpose(session.metadata?.openchamber?.smallModel?.purpose),
+      };
+      setCachedSessionMeta(sessionId, directory, meta);
+      return meta;
     } catch {
       return undefined;
     }
+  };
+
+  const fetchSessionParentId = async (sessionId, directory) => {
+    const meta = await fetchSessionMeta(sessionId, directory);
+    return meta?.parentID;
   };
 
   // Mirrors client-side autoRespondsPermission: a session auto-accepts if it
@@ -223,6 +253,17 @@ export const createNotificationTriggerRuntime = (deps) => {
   const isSubtaskSession = async (sessionId, directory) => {
     const parentID = await fetchSessionParentId(sessionId, directory);
     return typeof parentID === 'string' && parentID.length > 0;
+  };
+
+  const isSmallModelSession = async (sessionId, directory) => {
+    const meta = await fetchSessionMeta(sessionId, directory);
+    return typeof meta?.smallModelPurpose === 'string' && meta.smallModelPurpose.length > 0;
+  };
+
+  const shouldSkipSystemSessionNotification = async (sessionId, directory) => {
+    if (await isSubtaskSession(sessionId, directory)) return true;
+    if (await isSmallModelSession(sessionId, directory)) return true;
+    return false;
   };
 
   const extractSessionIdFromPayload = (payload) => {
@@ -309,7 +350,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       return;
     }
 
-    maybeCacheSessionParentFromPayload(payload);
+    maybeCacheSessionMetaFromPayload(payload);
 
     const sessionId = extractSessionIdFromPayload(payload);
     const notificationDirectory = extractDirectoryFromPayload(payload);
@@ -340,7 +381,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         sessionId
         && info?.role === 'assistant'
         && (info?.finish === 'stop' || info?.finish === 'error')
-        && await isSubtaskSession(sessionId, notificationDirectory)
+        && await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)
       ) {
         return;
       }
@@ -433,7 +474,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
 
     if (payload.type === 'question.asked' && sessionId) {
-      if (await isSubtaskSession(sessionId, notificationDirectory)) {
+      if (await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)) {
         return;
       }
       const existingTimer = pushQuestionDebounceTimers.get(sessionId);
@@ -534,7 +575,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
 
     if (payload.type === 'permission.asked' && sessionId) {
-      if (await isSubtaskSession(sessionId, notificationDirectory)) {
+      if (await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)) {
         return;
       }
       const requestId = payload.properties?.id ?? payload.properties?.requestID ?? payload.properties?.requestId;

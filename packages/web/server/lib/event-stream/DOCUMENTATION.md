@@ -9,7 +9,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `packages/web/server/lib/event-stream/global-ws-bridge.js`: browser-facing global WS bridge that subscribes clients to the shared global hub.
 - `packages/web/server/lib/event-stream/directory-ws-bridge.js`: browser-facing per-directory WS bridge that owns one scoped upstream reader per connection.
 - `packages/web/server/lib/event-stream/protocol.js`: path constants, SSE envelope parsing, and WebSocket frame serialization helpers.
-- `packages/web/server/lib/event-stream/diff-summary.js`: pure outbound FileDiff helpers. L1 message/session `summary.diffs` project to `diffCount`/`hasDiffs` (array removed). `session.diff` event frames still keep file/status/additions/deletions and drop patch bodies. `summarizeFileDiff(s)` remains for explicit L2-style file lists.
+- `packages/web/server/lib/event-stream/diff-summary.js`: pure outbound FileDiff helpers. L1 message/session `summary.diffs` keep a slim file list `{ file, status?, additions, deletions }` plus additive `diffCount`/`hasDiffs` (never patch/before/after/from/to). `session.diff` event frames still keep file/status/additions/deletions and drop patch bodies. `summarizeFileDiff(s)` remains for explicit L2-style file lists.
 - `packages/web/server/lib/event-stream/upstream-reader.js`: reusable upstream SSE reader with event-id tracking, stall recovery, and reconnect handling.
 - `packages/web/server/lib/event-stream/runtime.js`: thin WebSocket server runtime for upgrade handling and path dispatch to the global/directory bridges.
 - `packages/web/server/lib/event-stream/protocol.test.js`: unit tests for protocol helpers.
@@ -26,7 +26,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - `MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS`: heartbeat interval for browser-facing WS connections.
 - `parseSseEventEnvelope(block)`: parses an SSE block into `{ eventId, directory, payload }`.
 - `sendMessageStreamWsFrame(socket, payload)`: serializes and sends a JSON WS frame.
-- `sendMessageStreamWsEvent(socket, payload, options)`: sends an event frame with optional `eventId` and `directory`. Outbound `session.diff` keeps file/status/additions/deletions only (no full patch bodies). Message/session `summary.diffs` are L1-projected to `diffCount`/`hasDiffs` (file array removed).
+- `sendMessageStreamWsEvent(socket, payload, options)`: sends an event frame with optional `eventId` and `directory`. Outbound `session.diff` keeps file/status/additions/deletions only (no full patch bodies). Message/session `summary.diffs` are L1-projected to a slim file list plus additive `diffCount`/`hasDiffs` (patch bodies never leave the host).
 
 ### Runtime helpers
 - `createGlobalMessageStreamHub(...)`: creates a shared `/global/event` upstream SSE hub with event/status subscribers and bounded event-id replay.

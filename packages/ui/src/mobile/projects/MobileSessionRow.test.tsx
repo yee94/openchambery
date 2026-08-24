@@ -33,6 +33,19 @@ describe('Mobile project group chrome', () => {
     expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child');
     expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child {\n  box-shadow: none;');
   });
+
+  test('uses momentary :active press fill instead of a persisted selected background', () => {
+    const transparentIndex = mobileStyles.indexOf('.oc-mobile-session-row-content,\n.oc-mobile-session-pagination-row {');
+    const pressIndex = mobileStyles.indexOf('.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"])');
+    const paginationPressIndex = mobileStyles.indexOf('.oc-mobile-session-pagination-row:active');
+
+    expect(transparentIndex).toBeGreaterThan(-1);
+    expect(pressIndex).toBeGreaterThan(transparentIndex);
+    expect(paginationPressIndex).toBeGreaterThan(pressIndex);
+    expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-active="true"]');
+    expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-pressed="true"]');
+    expect(mobileStyles.slice(pressIndex)).toContain('background: var(--interactive-hover)');
+  });
 });
 
 describe('resolveMobileSessionIndicator', () => {
@@ -71,6 +84,17 @@ describe('resolveMobileSessionIndicator', () => {
 });
 
 describe('MobileSessionRow status placement', () => {
+  test('does not persist selected or JS pressed backgrounds on the row', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionRow.tsx'),
+      'utf8',
+    );
+    expect(source).not.toContain('data-active=');
+    expect(source).not.toContain('data-pressed=');
+    expect(source).toContain('data-dragging={dragging ? \'true\' : undefined}');
+    expect(source).toContain('oc-mobile-session-pagination-row');
+  });
+
   test('renders the running indicator in the leading status slot', () => {
     const html = renderToString(
       <I18nProvider>

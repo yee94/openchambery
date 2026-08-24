@@ -2,6 +2,8 @@ import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllSessionStatuses, useAllLiveSessions } from '@/sync/sync-context';
+import { useAlwaysVisibleSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 import {
   loadMoreGlobalSessionsForDirectory,
   mergeLiveSessionWithGlobalSession,
@@ -11,7 +13,7 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import { useSessionStatusBarCollapseStore } from '@/stores/useSessionStatusBarCollapseStore';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import type { Session } from '@/lib/opencode/v2-types';
@@ -662,8 +664,8 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
   const removeProject = useProjectsStore((state) => state.removeProject);
-  const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
-  const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
+  const pinnedSessionIds = usePinnedSessionIds();
+  const togglePinnedSession = useTogglePinnedSession();
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const worktreeOrderByProject = useWorktreeOrderStore((state) => state.orderByProject);
   const activePaginationByDirectory = useGlobalSessionsStore((state) => state.activePaginationByDirectory);
@@ -675,6 +677,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const getProjectStatus = useProjectStatus(sessions, sessionStatus, currentSessionId);
   const resolveProjectRoots = useProjectRootsResolver();
   const [visibleCountByGroup, setVisibleCountByGroup] = React.useState<Map<string, number>>(new Map());
+  const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds();
   const [rootBranchesByProject, setRootBranchesByProject] = React.useState<Map<string, string>>(new Map());
   const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
   const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
@@ -1217,7 +1220,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     const isRoot = group.worktree === null;
     const expanded = isRoot || expandedWorktreeGroups[group.key] === true;
     const visibleCount = visibleCountByGroup.get(group.key) ?? DEFAULT_GROUP_SESSION_COUNT;
-    const visibleSessions = group.sessions.slice(0, visibleCount);
+    const visibleSessions = selectVisibleSessions(
+      group.sessions,
+      visibleCount,
+      alwaysVisibleSessionIds,
+    );
     const pagination = activePaginationByDirectory.get(group.directory);
     const showMore = visibleSessions.length < group.sessions.length || pagination?.hasMore === true;
     const showFewer = group.sessions.length > DEFAULT_GROUP_SESSION_COUNT

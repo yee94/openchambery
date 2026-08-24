@@ -13,8 +13,10 @@ export type MobileAppActions = {
   /**
    * Open every diff from the owning turn in a mobile review sheet.
    * `sessionId` scopes nested/subagent turns; omit it for the primary session.
+   * `filePath` focuses and expands that file once the turn file list is ready
+   * (same behavior as desktop context-panel turn diffs).
    */
-  openTurnDiff: (messageId?: string, sessionId?: string | null) => void;
+  openTurnDiff: (messageId?: string, sessionId?: string | null, filePath?: string | null) => void;
   /**
    * Open a file preview in the gesture-capable resizable sheet (phone)
    * or the right Files panel (iPad). Used by Read / Skill tool rows.

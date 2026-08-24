@@ -841,8 +841,8 @@ describe('projectSlimParts (VS Code parity with web host)', () => {
     expect(JSON.stringify(record.parts[0])).not.toContain('/tmp/skills/sync');
   });
 
-  it('L1-projects summary.diffs to diffCount/hasDiffs and drops the file array', async () => {
-    const { projectSlimParts, projectExactMessagePayload } = await loadRuntime();
+  it('L1-projects summary.diffs to a thin file list plus diffCount/hasDiffs', async () => {
+    const { projectSlimParts, projectExactMessagePayload, projectMessageSummaryDiffCounts } = await loadRuntime();
     const patch = '@@ huge @@';
     const [record] = projectSlimParts([
       {
@@ -857,6 +857,10 @@ describe('projectSlimParts (VS Code parity with web host)', () => {
               additions: 2,
               deletions: 1,
               patch,
+              before: 'old',
+              after: 'new',
+              from: 'f',
+              to: 't',
             }],
           },
         },
@@ -866,26 +870,39 @@ describe('projectSlimParts (VS Code parity with web host)', () => {
 
     expect(record.info.summary).toEqual({
       title: 'turn',
+      diffs: [{
+        file: 'src/a.ts',
+        status: 'modified',
+        additions: 2,
+        deletions: 1,
+      }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(record.info.summary.diffs).toBeUndefined();
     expect(JSON.stringify(record)).not.toContain(patch);
-    expect(JSON.stringify(record)).not.toContain('src/a.ts');
+    expect(JSON.stringify(record)).not.toContain('"before"');
+    expect(JSON.stringify(record)).not.toContain('"after"');
 
     const exact = projectExactMessagePayload({
       info: {
         id: 'msg_1',
-        summary: { diffs: [{ file: 'a.ts', patch }] },
+        summary: { diffs: [{ file: 'a.ts', additions: 1, deletions: 0, patch }] },
       },
       parts: [{ id: 'prt_1', type: 'text', text: 'hello' }],
     });
     expect(exact).toEqual({
       info: {
         id: 'msg_1',
-        summary: { diffCount: 1, hasDiffs: true },
+        summary: {
+          diffs: [{ file: 'a.ts', additions: 1, deletions: 0 }],
+          diffCount: 1,
+          hasDiffs: true,
+        },
       },
       parts: [{ id: 'prt_1', type: 'text', text: 'hello' }],
     });
+
+    const noDiffs = { id: 'msg_2', summary: { title: 'plain' } };
+    expect(projectMessageSummaryDiffCounts(noDiffs)).toBe(noDiffs);
   });
 });

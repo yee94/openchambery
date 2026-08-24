@@ -1,5 +1,6 @@
 import React from 'react';
 import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
+import { applyDesignPtScaleToRoot, readCachedDesignPtScale } from '@/lib/designPtScale';
 import { isCapacitorApp } from '@/lib/platform';
 
 type DeviceType = 'desktop' | 'mobile' | 'tablet';
@@ -98,6 +99,8 @@ const setRootDeviceAttributes = (
       root.classList.remove('mobile-pointer');
     }
   }
+
+  applyDesignPtScaleToRoot(isDesktopShellRuntime ? 1 : readCachedDesignPtScale(), root);
 };
 
 export function getDeviceInfo(): DeviceInfo {

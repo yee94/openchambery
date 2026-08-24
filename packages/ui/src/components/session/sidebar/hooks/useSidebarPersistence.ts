@@ -1,7 +1,6 @@
 import React from 'react';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { prunePinnedSessionIdsByKnownIds } from './pinnedSessionCleanup';
 
 type SafeStorageLike = {
   getItem: (key: string) => string | null;
@@ -17,7 +16,6 @@ type Keys = {
   // under `sessionExpanded`. After migration the v1 key is removed.
   sessionExpandedLegacy: string;
   projectCollapse: string;
-  sessionPinned: string;
   groupOrder: string;
   projectActiveSession: string;
   groupCollapse: string;
@@ -32,12 +30,8 @@ const LEGACY_EXPANSION_CONTEXT_PREFIXES = [
 
 type Args = {
   isVSCode: boolean;
-  fullCatalogSessionIds: Set<string>;
-  fullCatalogGeneration: number;
   safeStorage: SafeStorageLike;
   keys: Keys;
-  pinnedSessionIds: Set<string>;
-  setPinnedSessionIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   groupOrderByProject: Map<string, string[]>;
   activeSessionByProject: Map<string, string>;
   collapsedGroups: Set<string>;
@@ -48,11 +42,8 @@ type Args = {
 export const useSidebarPersistence = (args: Args) => {
   const {
     isVSCode,
-    fullCatalogSessionIds,
-    fullCatalogGeneration,
     safeStorage,
     keys,
-    setPinnedSessionIds,
     groupOrderByProject,
     activeSessionByProject,
     collapsedGroups,
@@ -151,16 +142,6 @@ export const useSidebarPersistence = (args: Args) => {
       setHasRestoredProjectCollapse(true);
     }
   }, [keys.projectCollapse, keys.sessionExpanded, keys.sessionExpandedLegacy, safeStorage, setCollapsedProjects, setExpandedParents]);
-
-  React.useEffect(() => {
-    if (fullCatalogGeneration === 0) {
-      return;
-    }
-
-    setPinnedSessionIds((prev) => {
-      return prunePinnedSessionIdsByKnownIds(fullCatalogSessionIds, prev);
-    });
-  }, [fullCatalogGeneration, fullCatalogSessionIds, setPinnedSessionIds]);
 
   React.useEffect(() => {
     try {

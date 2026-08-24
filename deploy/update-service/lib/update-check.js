@@ -1,7 +1,8 @@
+import { loadReleaseNotes } from './release-notes.js';
+
 const VERSION_PATTERN = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const DEFAULT_CHECK_INTERVAL_SECONDS = 3600;
 const MANIFEST_PATH = '/update-manifest.json';
-const CHANGELOG_PATH = '/CHANGELOG.md';
 const RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/openchamber/releases/download';
 const IOS_TESTFLIGHT_PUBLIC_URL = 'https://testflight.apple.com/join/ZCENBHtm';
 
@@ -106,30 +107,6 @@ async function loadManifest(request) {
   return manifest;
 }
 
-function extractReleaseNotes(changelog, currentVersion, latestVersion) {
-  const sections = changelog.split(/^## /m).slice(1);
-  const relevantSections = sections.filter((section) => {
-    const match = section.match(/^\[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\]/);
-    if (!match) return false;
-    return compareVersions(match[1], currentVersion) > 0 && compareVersions(match[1], latestVersion) <= 0;
-  });
-
-  if (relevantSections.length === 0) return undefined;
-  return relevantSections.map((section) => `## ${section.trim()}`).join('\n\n');
-}
-
-async function loadReleaseNotes(request, currentVersion, latestVersion) {
-  try {
-    const response = await fetch(new URL(CHANGELOG_PATH, request.url), {
-      headers: { Accept: 'text/markdown, text/plain;q=0.9' },
-    });
-    if (!response.ok) return undefined;
-    return extractReleaseNotes(await response.text(), currentVersion, latestVersion);
-  } catch {
-    return undefined;
-  }
-}
-
 export async function handleUpdateCheck(request) {
   const method = request.method.toUpperCase();
 
@@ -167,7 +144,7 @@ export async function handleUpdateCheck(request) {
   const updateAvailable = currentVersion !== null
     && compareVersions(manifest.latestVersion, currentVersion) > 0;
   const releaseNotes = updateAvailable
-    ? await loadReleaseNotes(request, currentVersion, manifest.latestVersion)
+    ? await loadReleaseNotes(request.url, currentVersion, manifest.latestVersion)
     : undefined;
   const appType = payload.appType;
   const platform = payload.platform;

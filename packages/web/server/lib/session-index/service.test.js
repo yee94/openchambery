@@ -68,7 +68,7 @@ describe('Electron session index', () => {
     service.close();
   });
 
-  it('excludes Assistant and Scheduled system sessions from ordinary sidebar summaries', () => {
+  it('excludes Assistant, Scheduled, and smallModel system sessions from ordinary sidebar summaries', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);
     const assistantSession = {
@@ -79,11 +79,15 @@ describe('Electron session index', () => {
       ...session('ses_scheduled', 99),
       metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
     };
+    const smallModelSession = {
+      ...session('ses_small_model', 97),
+      metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
+    };
     const ordinary = session('ses_ordinary', 98);
 
     service.replaceDirectory({
       directory: '/repo',
-      sessions: [assistantSession, scheduledSession, ordinary],
+      sessions: [assistantSession, scheduledSession, smallModelSession, ordinary],
       cursor: null,
       hasMore: false,
     });
@@ -91,6 +95,7 @@ describe('Electron session index', () => {
 
     service.upsert(assistantSession);
     service.upsert(scheduledSession);
+    service.upsert(smallModelSession);
     expect(service.snapshot().directories[0].sessions.map((item) => item.id)).toEqual(['ses_ordinary']);
     service.close();
   });
@@ -317,5 +322,70 @@ describe('Electron session index', () => {
     });
     expect(rebuilt.snapshot().directories).toEqual([]);
     rebuilt.close();
+  });
+
+  it('exposes time.pinned in snapshots and clears it on unpin', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+
+    expect(service.setPinned('ses_a', 55)).toBe(true);
+    expect(service.snapshot().directories[0].sessions[0].time).toMatchObject({
+      created: 9,
+      updated: 10,
+      pinned: 55,
+    });
+
+    expect(service.clearPinned('ses_a')).toBe(true);
+    expect(service.snapshot().directories[0].sessions[0].time).toEqual({
+      created: 9,
+      updated: 10,
+    });
+    service.close();
+  });
+
+  it('rescues pinned_at across replaceDirectory rebuilds', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+    expect(service.setPinned('ses_a', 77)).toBe(true);
+
+    service.replaceDirectory({
+      directory: '/repo',
+      sessions: [session('ses_a', 20)],
+      cursor: null,
+      hasMore: false,
+      now: 2000,
+    });
+
+    expect(service.snapshot().directories[0].sessions[0].time).toMatchObject({
+      updated: 20,
+      pinned: 77,
+    });
+    service.close();
+  });
+
+  it('does not let live upsert overwrite pinned_at', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+    expect(service.setPinned('ses_a', 88)).toBe(true);
+
+    service.upsert(session('ses_a', 30));
+
+    expect(service.snapshot().directories[0].sessions[0].time.pinned).toBe(88);
+    service.close();
+  });
+
+  it('removes pinned rows when an archived upsert deletes the session', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+    expect(service.setPinned('ses_a', 99)).toBe(true);
+
+    expect(service.upsert({ ...session('ses_a', 11), time: { created: 9, updated: 11, archived: 12 } })).toBe(true);
+    expect(service.snapshot().directories[0].sessions).toEqual([]);
+    expect(service.clearPinned('ses_a')).toBe(false);
+    service.close();
   });
 });

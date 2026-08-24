@@ -8,6 +8,14 @@
       "destination": "/api/v1/update/check"
     },
     {
+      "source": "/v1/mobile/update/check",
+      "destination": "/api/v1/mobile/update/check"
+    },
+    {
+      "source": "/v1/ota/check",
+      "destination": "/api/v1/ota/check"
+    },
+    {
       "source": "/desktop/:file",
       "destination": "/api/desktop?file=:file"
     }
@@ -28,6 +36,24 @@
         {
           "key": "Cache-Control",
           "value": "public, max-age=300, stale-while-revalidate=900"
+        }
+      ]
+    },
+    {
+      "source": "/ota/bundles/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/ota/channels/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, max-age=0"
         }
       ]
     }

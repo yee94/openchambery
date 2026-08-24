@@ -17,10 +17,20 @@ export const MobileAppUpdateToast: React.FC = () => {
   const runtimeType = useUpdateStore((state) => state.runtimeType);
   const version = useUpdateStore((state) => state.info?.version);
   const downloadUrl = useUpdateStore((state) => state.info?.downloadUrl);
+  const inAppApply = useUpdateStore((state) => state.info?.inAppApply === true);
   const seenVersionsRef = React.useRef(new Set<string>());
 
   React.useEffect(() => {
-    if (getClientPlatform() !== 'android' || runtimeType !== 'mobile' || !available || !version || !downloadUrl) {
+    // In-app web-bundle OTA is applied from About / UpdateDialog, not the
+    // Android APK download toast.
+    if (
+      getClientPlatform() !== 'android'
+      || runtimeType !== 'mobile'
+      || !available
+      || !version
+      || !downloadUrl
+      || inAppApply
+    ) {
       toast.dismiss(TOAST_ID);
       return;
     }
@@ -54,7 +64,7 @@ export const MobileAppUpdateToast: React.FC = () => {
         },
       },
     });
-  }, [available, downloadUrl, runtimeType, t, version]);
+  }, [available, downloadUrl, inAppApply, runtimeType, t, version]);
 
   return null;
 };

@@ -628,8 +628,8 @@ interface DirectoryScopedConfig {
 
 /**
  * Lift persisted selection for the active directory into the picker fields.
- * Provider catalog is global: prefer an already-hydrated top-level list, then
- * the active directory's startup snapshot (persist vehicle only).
+ * Prefer an already-hydrated top-level list, then the active directory's
+ * startup snapshot. Seed the Query cache with the same directory key used by loadProviders.
  */
 const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: T): T => {
     const directoryScoped = merged.directoryScoped;
@@ -659,7 +659,7 @@ const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: 
     next.opencodeDefaultModel = snapshot.opencodeDefaultModel;
     next.selectionSource = snapshot.selectionSource ?? "auto";
     if (globalProviders.length > 0 && snapshot.providerCatalogPartial !== true) {
-        seedProviderCatalogQuery(null, {
+        seedProviderCatalogQuery(fromDirectoryKey(activeKey), {
             providers: globalProviders,
             defaultProviders: next.defaultProviders ?? {},
             providerCatalogPartial: false,
@@ -1484,8 +1484,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                 loadProviders: async (options) => {
                     const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
-                    // Catalog is global. The directory is only an OpenCode request hint
-                    // and the key for lastUserSelection; it must not partition the cache.
+                    // Catalog 缓存与快照均按 config directory 分片；空响应视为软失败保留旧数据。
                     const configDirectory = resolveConfigDirectory(requestedDirectory);
                     if (!configDirectory) {
                         markStartupTrace('loadProviders:skippedUnknownDirectory', { requestedDirectory, source: options?.source ?? 'unknown' });
@@ -1505,7 +1504,6 @@ export const useConfigStore = create<ConfigStore>()(
                     markStartupTrace('loadProviders:called', { directoryKey, source, requestedDirectory, effectiveDirectory });
 
                     const currentProviderSnapshot = get().directoryScoped[directoryKey];
-                    // Catalog is global; a Project snapshot is only a persist vehicle.
                     const hasProviderData = get().providers.length > 0
                         || Boolean(currentProviderSnapshot?.providers.length);
                     if (!hasProviderData) {
@@ -1542,6 +1540,8 @@ export const useConfigStore = create<ConfigStore>()(
                                 return;
                             }
                             if (apiResult.partial && previousProviders.length > 0) return;
+                            // 空响应一律不写 store、不更新快照、不覆盖已有非空数据。
+                            if (processedProviders.length === 0) return;
 
                             set((state) => {
                                 if (!isCurrent() || state.catalogTransportIdentity !== transport) return state;
@@ -3420,7 +3420,8 @@ export const useConfigStore = create<ConfigStore>()(
                                 defaultProviders: sanitizeDefaultProviders(activeSnapshot.defaultProviders),
                                 providerCatalogPartial: false,
                             }
-                            : { providers: [], defaultProviders: {}, providerCatalogPartial: activeSnapshot?.providerCatalogPartial === true };
+                            // 空 catalog 以 partial 落盘：恢复时不被信任、不 seed。
+                            : { providers: [], defaultProviders: {}, providerCatalogPartial: true };
                     const activeCatalog = globalCatalog;
                     const serializeDirectorySnapshot = (
                         directoryKey: string,

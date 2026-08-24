@@ -4,6 +4,7 @@ import {
   evaluateSwipeThresholdHaptic,
   isCapacitorMobileNative,
   isCapacitorNativePlatform,
+  MOBILE_PRESS_TARGET_SELECTOR,
   resolveMobileHapticMethod,
   shouldTriggerHaptic,
   shouldTriggerStreamingTextHaptic,
@@ -68,6 +69,14 @@ describe('haptic strength mapping', () => {
     expect(resolveMobileHapticMethod('light')).toBe('impactLight');
     expect(resolveMobileHapticMethod('medium')).toBe('impactMedium');
     expect(resolveMobileHapticMethod('heavy')).toBe('impactHeavy');
+  });
+});
+
+describe('mobile press haptic targets', () => {
+  test('includes Base UI menu items that render as role=menuitem divs', () => {
+    expect(MOBILE_PRESS_TARGET_SELECTOR).toContain('[role="menuitem"]');
+    expect(MOBILE_PRESS_TARGET_SELECTOR).toContain('button');
+    expect(MOBILE_PRESS_TARGET_SELECTOR).toContain('[role="button"]');
   });
 });
 

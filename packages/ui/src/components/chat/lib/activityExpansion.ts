@@ -104,21 +104,31 @@ export const resolveTurnSettledForPresentation = (input: {
 /**
  * Disposition that drives Activity *expansion* (not header Working chrome).
  *
- * The last open turn stays `active` for expansion even when header presentation
- * demotes to `abnormal` because `sessionIsWorking` flapped idle between tools.
- * Collapse only after the turn itself settles (`normal` / `abnormal` on the
- * turn record).
+ * A turn still running its own loop (`turnCompletionDisposition === 'active'`)
+ * stays `active` for expansion regardless of turn position: a queued/steered
+ * user message makes the running turn non-last while its tools are still
+ * executing (the queue gap before the next run's first assistant can be
+ * minutes), and folding then hid the in-progress steps inside a collapsed
+ * disclosure — "the newest reasoning steps disappeared". An active turn
+ * without assistant messages (an empty queue placeholder) does not expand on
+ * its own; only the last-turn exemption keeps empty placeholders open.
+ *
+ * Otherwise expansion follows the header presentation demotion.
  *
  * Regression: Trace-20260804T171706 — tool rows flashed when expansion followed
  * header demotion across busy/idle status flaps mid-turn.
  */
 export const resolveActivityExpansionDisposition = (input: {
-  isLastTurn: boolean;
-  turnCompletionDisposition: TurnRecord['completionDisposition'];
-  headerPresentationDisposition: TurnRecord['completionDisposition'];
+    isLastTurn: boolean;
+    turnCompletionDisposition: TurnRecord['completionDisposition'];
+    headerPresentationDisposition: TurnRecord['completionDisposition'];
+    hasAssistantMessages: boolean;
 }): TurnRecord['completionDisposition'] => {
-  if (input.isLastTurn && input.turnCompletionDisposition === 'active') {
-    return 'active';
-  }
-  return input.headerPresentationDisposition;
+    if (
+        input.turnCompletionDisposition === 'active'
+        && (input.isLastTurn || input.hasAssistantMessages)
+    ) {
+        return 'active';
+    }
+    return input.headerPresentationDisposition;
 };

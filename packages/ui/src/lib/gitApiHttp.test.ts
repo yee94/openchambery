@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   checkIsGitRepository,
   createGitWorktree,
+  deleteGitWorktree,
   discoverGitRepositories,
   getGitStatus,
   getGitBranches,
@@ -606,6 +607,105 @@ describe('gitApiHttp status cache', () => {
         '/api/git/fetch?directory=%2Frepo-cache-fetch',
         '/api/git/status?directory=%2Frepo-cache-fetch',
       ]);
+    } finally {
+      restoreMocks();
+    }
+  });
+});
+
+describe('gitApiHttp worktree list cache', () => {
+  test('invalidates cached worktree list after delete', async () => {
+    installWindowMock();
+    let listRequestCount = 0;
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('/api/git/worktrees') && (!init?.method || init.method === 'GET')) {
+        listRequestCount += 1;
+        const value = listRequestCount === 1
+          ? [{ path: '/repo/.worktrees/feature', branch: 'feature', name: 'feature' }]
+          : [];
+        return new Response(JSON.stringify(value), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.startsWith('/api/git/worktrees') && init?.method === 'DELETE') {
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const directory = '/repo-worktree-cache';
+      const first = await listGitWorktrees(directory);
+      const cached = await listGitWorktrees(directory);
+      await deleteGitWorktree(directory, { directory: '/repo/.worktrees/feature' });
+      const afterDelete = await listGitWorktrees(directory);
+
+      expect(first).toHaveLength(1);
+      expect(cached).toHaveLength(1);
+      expect(afterDelete).toEqual([]);
+      expect(listRequestCount).toBe(2);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('does not reseat cache from an in-flight list that races delete', async () => {
+    installWindowMock();
+    let listRequestCount = 0;
+    let releaseList = () => {};
+    const listGate = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('/api/git/worktrees') && (!init?.method || init.method === 'GET')) {
+        listRequestCount += 1;
+        if (listRequestCount === 1) {
+          await listGate;
+          return new Response(JSON.stringify([
+            { path: '/repo/.worktrees/feature', branch: 'feature', name: 'feature' },
+          ]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.startsWith('/api/git/worktrees') && init?.method === 'DELETE') {
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const directory = '/repo-worktree-inflight';
+      const pendingList = listGitWorktrees(directory);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await deleteGitWorktree(directory, { directory: '/repo/.worktrees/feature' });
+      releaseList();
+      await pendingList;
+      const afterRace = await listGitWorktrees(directory);
+
+      expect(afterRace).toEqual([]);
+      expect(listRequestCount).toBe(2);
     } finally {
       restoreMocks();
     }

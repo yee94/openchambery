@@ -1354,7 +1354,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                     className="block"
                                 />
                             ) : (
-                                <Icon name={activityIconName} className="h-[14px] w-[14px]" />
+                                <Icon name={activityIconName} className="h-3.5 w-3.5" />
                             )}
                         </span>
                         <span className={cn(

@@ -7,7 +7,9 @@
   --font-scale: 1;
   --oc-mobile-detail-title-size: 0.9375rem;
   --oc-mobile-detail-subtitle-size: 0.625rem;
-  --oc-mobile-detail-navigation-height: 3.5rem;
+  /* Content-driven title bar height rides the density chain; the back button
+     inside keeps its own fixed touch size. */
+  --oc-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
   --oc-mobile-detail-action-edge-inset: 1rem;
 }
 
@@ -40,14 +42,16 @@
   --oc-mobile-page-inline-inset: 1.125rem;
   --oc-mobile-root-title-size: 2rem;
   --oc-mobile-project-group-gap: 0.75rem;
-  --oc-mobile-project-header-height: 5.25rem;
-  --oc-mobile-project-icon-size: 2.75rem;
-  --oc-mobile-project-action-size: 2.25rem;
+  /* Card header is title+subtitle driven; rides density (not a touch target). */
+  --oc-mobile-project-header-height: calc(5.25rem * var(--padding-scale, 1));
+  --oc-mobile-project-icon-size: calc(2.75rem * var(--padding-scale, 1));
+  --oc-mobile-project-action-size: calc(2.25rem * var(--padding-scale, 1));
   --oc-mobile-entity-title-size: 1rem;
   --oc-mobile-entity-title-line-height: 1.25rem;
   --oc-mobile-entity-meta-size: 0.8125rem;
   --oc-mobile-entity-meta-line-height: 1rem;
-  --oc-mobile-session-row-height: 2.875rem;
+  /* 2.875rem × 0.9 = 41.4px — still above the 36px touch minimum. */
+  --oc-mobile-session-row-height: calc(2.875rem * var(--padding-scale, 1));
   --oc-mobile-session-actions-width: 7rem;
   --oc-mobile-worktree-action-width: 3.5rem;
   --oc-mobile-session-action-width: calc(
@@ -733,9 +737,17 @@ button.oc-mobile-worktree-label-trigger:active,
   min-height: var(--oc-mobile-session-row-height);
 }
 
-.oc-mobile-session-row-content {
+.oc-mobile-session-row-content,
+.oc-mobile-session-pagination-row {
   /* Transparent so swipe rails and group chrome do not double-paint a slab. */
   background: transparent;
+}
+
+/* Momentary press only. Do not persist a selected/active session fill —
+   that looked like a stuck tap highlight after returning to Home. */
+.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"]),
+.oc-mobile-session-pagination-row:active {
+  background: var(--interactive-hover);
 }
 
 .oc-mobile-session-row-main {
@@ -814,6 +826,178 @@ button.oc-mobile-worktree-label-trigger:active,
   border-radius: var(--oc-mobile-surface-radius);
 }
 
+.oc-mobile-assistant-guide-host {
+  display: flex;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.oc-mobile-assistant-guide {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 0.25rem 0 1.5rem;
+}
+
+.oc-mobile-assistant-guide-hero {
+  position: relative;
+  width: min(calc(100% - 1.5rem), 18.5rem);
+  aspect-ratio: 16 / 9;
+  align-self: center;
+  overflow: hidden;
+  border-radius: var(--oc-mobile-inset-radius);
+  background: var(--surface-elevated);
+}
+
+.oc-mobile-assistant-guide-hero > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.dark .oc-mobile-assistant-guide-hero > img {
+  filter: brightness(0.68) saturate(0.8);
+  opacity: 0.88;
+}
+
+.oc-mobile-assistant-guide-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 0.75rem;
+  text-align: center;
+}
+
+.oc-mobile-assistant-guide-title {
+  max-width: 18rem;
+  font-size: 1.25rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+  color: var(--foreground);
+}
+
+.oc-mobile-assistant-guide-description {
+  max-width: 18rem;
+  font-size: var(--text-ui-label);
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+.oc-mobile-assistant-guide-body > button {
+  margin-top: 0.75rem;
+}
+
+.oc-mobile-assistant-guide-share {
+  width: 100%;
+  min-width: 0;
+}
+
+.oc-mobile-assistant-guide-share-title {
+  padding-inline: 0.75rem;
+  font-size: var(--text-ui-label);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--muted-foreground);
+}
+
+.oc-mobile-assistant-guide-steps {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-inline: 0.75rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.oc-mobile-assistant-guide-steps::-webkit-scrollbar {
+  display: none;
+}
+
+.oc-mobile-assistant-guide-step {
+  display: flex;
+  width: min(70vw, 15.5rem);
+  flex: none;
+  flex-direction: column;
+  overflow: hidden;
+  scroll-snap-align: start;
+  border-radius: var(--oc-mobile-inset-radius);
+  background: var(--surface-elevated);
+}
+
+.oc-mobile-assistant-guide-step-image {
+  height: 8.25rem;
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+
+.oc-mobile-assistant-guide-step-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+}
+
+.oc-mobile-assistant-guide-step-copy {
+  padding: 0.75rem 0.875rem 0.875rem;
+}
+
+.oc-mobile-assistant-guide-step-copy h4 {
+  font-size: var(--text-ui-label);
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+
+.oc-mobile-assistant-guide-step-copy p {
+  margin-top: 0.25rem;
+  font-size: var(--text-micro);
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.oc-mobile-assistant-onboarding {
+  width: 100%;
+  padding: 1.5rem;
+  border-radius: var(--oc-mobile-surface-radius);
+}
+
+.oc-mobile-assistant-onboarding-icon {
+  display: flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  color: var(--interactive-selection-foreground);
+  background: var(--interactive-selection);
+}
+
+.oc-mobile-assistant-onboarding h2 {
+  margin-top: 1.25rem;
+  font-size: 1.125rem;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+
+.oc-mobile-assistant-onboarding p {
+  margin-top: 0.5rem;
+  font-size: var(--text-ui-label);
+  line-height: 1.55;
+  color: var(--muted-foreground);
+}
+
 .oc-mobile-assistant-content {
   min-height: 0;
   flex: 1 1 0%;
@@ -824,7 +1008,7 @@ button.oc-mobile-worktree-label-trigger:active,
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: var(--oc-mobile-project-group-gap);
+  gap: 0.875rem;
 }
 
 .oc-mobile-assistant-loading {
@@ -841,13 +1025,13 @@ button.oc-mobile-worktree-label-trigger:active,
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 4.5rem;
-  align-items: center;
-  gap: 0.625rem;
+  min-height: 7rem;
+  align-items: flex-start;
+  gap: 0.75rem;
   border: 0;
   border-radius: var(--oc-mobile-surface-radius);
   corner-shape: round;
-  padding: 0.75rem;
+  padding: 1rem;
   text-align: left;
   outline: none;
   touch-action: manipulation;
@@ -872,6 +1056,85 @@ button.oc-mobile-worktree-label-trigger:active,
   flex: none;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.oc-mobile-assistant-avatar > [role="img"] {
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.oc-mobile-assistant-avatar--emoji {
+  padding: 0;
+  background: var(--interactive-selection);
+}
+
+.oc-mobile-assistant-avatar--emoji > [role="img"] {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  max-height: 100% !important;
+  border-radius: 999px;
+  background: var(--interactive-selection);
+}
+
+.oc-mobile-assistant-avatar--emoji > [role="img"] > span {
+  font-size: 1.75rem !important;
+  line-height: 1 !important;
+}
+
+.oc-mobile-assistant-avatar--visual {
+  padding: 1px;
+  background: var(--surface-muted);
+}
+
+.oc-mobile-assistant-avatar :is(img, svg) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.oc-mobile-assistant-name {
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.oc-mobile-assistant-card-content {
+  padding-top: 0.0625rem;
+}
+
+.oc-mobile-assistant-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.oc-mobile-assistant-mode {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.125rem 0.4375rem;
+  background: var(--surface-muted);
+}
+
+.oc-mobile-assistant-summary {
+  display: -webkit-box;
+  margin-top: 0.625rem;
+  overflow: hidden;
+  font-size: var(--text-micro);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .oc-mobile-assistant-content > * {
@@ -1053,7 +1316,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 /* Larger, vertically centered ⋯ on scheduled task cards. */
 .oc-mobile-scheduled-task-action {
-  --oc-mobile-project-action-size: 2.75rem;
+  --oc-mobile-project-action-size: calc(2.75rem * var(--padding-scale, 1));
   align-self: center;
   margin-right: 0.375rem;
 }
@@ -1241,7 +1504,9 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-detail-title {
   font-size: var(--oc-mobile-detail-title-size);
-  line-height: 1.125rem;
+  /* 1.4 leaves ascender/descender headroom for CJK; line-height == font-size
+     clips glyph extremes at every --dpt scale. Never clip — let the bar grow. */
+  line-height: calc(var(--oc-mobile-detail-title-size) * 1.4);
   font-weight: 650;
   text-align: center;
 }
@@ -1249,7 +1514,7 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-detail-subtitle {
   margin-block-start: 0.125rem;
   font-size: var(--oc-mobile-detail-subtitle-size);
-  line-height: 0.75rem;
+  line-height: calc(var(--oc-mobile-detail-subtitle-size) * 1.4);
   font-weight: 400;
   text-align: center;
 }
@@ -1810,18 +2075,24 @@ button.oc-mobile-worktree-label-trigger:active,
     min-height: 36px;
   }
 
-  /* Fix mobile text inputs */
-  :root.mobile-pointer:not(.desktop-runtime) input[type="text"],
-  :root.mobile-pointer:not(.desktop-runtime) input[type="search"],
-  :root.mobile-pointer:not(.desktop-runtime) input[type="email"],
-  :root.mobile-pointer:not(.desktop-runtime) input[type="password"],
-  :root.mobile-pointer:not(.desktop-runtime) textarea {
-    font-size: 16px !important; /* Prevents iOS zoom */
-  }
-
+  /* Fix mobile text inputs. The :is() descendant takes its most specific
+     argument (input[type="text"] → 0,1,1), lifting this rule to (0,4,1) so it
+     beats the typography `unset !important` compat block above (0,4,0) —
+     without that, textareas with typography-* classes fell back to inherited
+     root 16px and ignored this iOS-zoom-safe calc size entirely.
+     The highlight overlay must share this size: the textarea is
+     text-transparent and only paints the caret, so a 16px overlay against a
+     calc(16 * var(--dpt)) field puts the caret in the wrong place. */
   :root.mobile-pointer:not(.desktop-runtime)
-    [data-chat-input-highlight="true"] {
-    font-size: 16px !important;
+    :is(
+      input[type="text"],
+      input[type="search"],
+      input[type="email"],
+      input[type="password"],
+      textarea,
+      [data-composer-highlight="true"]
+    ) {
+    font-size: calc(16 * var(--dpt)) !important; /* Prevents iOS zoom */
   }
 
   /* Prevent keyboard on non-input elements */
@@ -1880,14 +2151,24 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-catalog,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-card-shell,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-scheduled-task-card,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel,
   :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-message-text-export-root="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-chat-message="true"] {
     container-type: inline-size;
   }
 
+  :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel {
+    --oc-press-edge-inset: 2px;
+    --oc-press-soft-scale: clamp(
+      0.985,
+      calc(1 - (2 * var(--oc-press-edge-inset)) / 100cqi),
+      0.994
+    );
+  }
+
   :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"]):not(:disabled):not(
+    :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
     ):not([data-mobile-press-feedback="none"]) {
     -webkit-tap-highlight-color: transparent;
@@ -1900,21 +2181,21 @@ button.oc-mobile-worktree-label-trigger:active,
      settings nav, and ordinary buttons all stay here — never the punchy
      compact scale that reads as a full-card shrink. */
   :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"]):not(:disabled):not(
+    :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
     ):not([data-mobile-press-feedback="none"]):not(
       [data-mobile-press-feedback="compact"]
-    ):active:not(:has(:where(button, [role="button"]):active)) {
+    ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active)) {
     scale: var(--oc-press-soft-scale);
     transition-duration: 0ms;
   }
 
   /* Compact: opt-in only for particularly small controls (icon buttons). */
   :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"])[data-mobile-press-feedback="compact"]:not(
+    :where(button, [role="button"], [role="menuitem"])[data-mobile-press-feedback="compact"]:not(
       :disabled
     ):not([aria-disabled="true"]):active:not(
-      :has(:where(button, [role="button"]):active)
+      :has(:where(button, [role="button"], [role="menuitem"]):active)
     ) {
     scale: var(--oc-press-compact-scale);
     transition-duration: 0ms;
@@ -1943,7 +2224,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
   @media (prefers-reduced-motion: reduce) {
     :root.mobile-pointer:not(.desktop-runtime)
-      :where(button, [role="button"]):not(:disabled):not(
+      :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
         [aria-disabled="true"]
       ):not([data-mobile-press-feedback="none"]),
     :root.mobile-pointer:not(.desktop-runtime)
@@ -2002,10 +2283,24 @@ button.oc-mobile-worktree-label-trigger:active,
      and absorb growth so the field no longer auto-expands. */
   :root.mobile-pointer:not(.desktop-runtime) [data-composer-content="true"] .overflow-hidden,
   :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"],
-  :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden {
+  :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"].overflow-hidden {
     overflow: hidden !important;
     overflow-x: hidden !important;
     overflow-y: hidden !important;
+  }
+
+  /* Attachment thumbs are 40px clip frames. The generic 36px touch min
+     inflates the close control past the chip and, with the overflow
+     rewrite, paints a scrollbar on the thumbnail. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-attachment-preview="true"]
+    button,
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-attachment-preview="true"][role="button"] {
+    min-height: 0 !important;
+    min-width: 0 !important;
   }
 
   /* Keep markdown code blocks horizontally scrollable on mobile. */
@@ -2619,6 +2914,14 @@ button.oc-mobile-worktree-label-trigger:active,
   transition: height 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
 
+/* Keyboard FLIP movers stay layer-promoted for the Capacitor session. Toggling
+   will-change on every open/close churns WebKit compositor layers and slows
+   later animations; keep a stable promotion on the fixed movers instead. */
+:root.oc-capacitor-app .oc-mobile-composer,
+:root.oc-capacitor-app .oc-draft-center {
+  will-change: transform;
+}
+
 /* Keyboard slide choreography: the composer (and the draft title, see
    .oc-draft-center note below) are moved with INLINE transform/transition set
    by useNativeMobileChrome — WebKit does not reliably start transitions when a
@@ -2813,6 +3116,16 @@ button.oc-mobile-worktree-label-trigger:active,
   width: 100%;
   align-items: flex-end;
   overflow: visible;
+  contain: layout;
+}
+
+/* Streaming turns relayout continuously while loading; layout containment on
+   each turn wrapper keeps that damage — and composer height commits — inside
+   the row instead of the whole document. Paint containment is deliberately
+   NOT used: selection halos, sticky headers, and horizontally scrollable code
+   must keep overflowing the row bounds. Mobile touch surfaces only. */
+.mobile-pointer:not(.desktop-runtime) .oc-chat-message-layout-boundary {
+  contain: layout;
 }
 
 .oc-mobile-composer-motion-active,
@@ -2837,13 +3150,11 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-composer-motion-expanding {
   animation: oc-mobile-composer-motion-expand 180ms cubic-bezier(0.2, 0, 0, 1)
     both;
-  will-change: transform;
 }
 
 .oc-mobile-composer-motion-collapsing {
   animation: oc-mobile-composer-motion-collapse 160ms
     cubic-bezier(0.4, 0, 1, 1) both;
-  will-change: transform;
 }
 
 @keyframes oc-mobile-composer-motion-expand {
@@ -2899,7 +3210,7 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
   [data-chat-input-footer="true"] {
-  animation: oc-mobile-composer-footer-in 160ms ease-out 40ms both;
+  animation: oc-mobile-composer-footer-in 120ms ease-out both;
 }
 
 @keyframes oc-mobile-composer-footer-in {
@@ -2934,7 +3245,6 @@ button.oc-mobile-worktree-label-trigger:active,
   .oc-mobile-composer-motion-collapsing {
     animation: none;
     transform: none;
-    will-change: auto;
   }
 
   .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
@@ -3016,7 +3326,9 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-composer-collapsed [data-composer-highlight="true"] {
-  top: calc(50% - 0.625rem);
+  /* Half of the collapsed 1.25rem line; ride --padding-scale so this
+     stays centered after geometry rem rewrite on height/line-height. */
+  top: calc(50% - (0.625rem * var(--padding-scale, 1)));
   bottom: auto;
 }
 

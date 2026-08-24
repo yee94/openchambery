@@ -15,7 +15,8 @@ import {
 import { setSyncRefs } from './sync-refs';
 import { ChildStoreManager } from './child-store';
 import { INITIAL_STATE } from './types';
-import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { writeSessionIndexSnapshotQuery } from '@/queries/sessionIndexQueries';
+import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionFocusStore } from '@/stores/useSessionFocusStore';
@@ -64,11 +65,48 @@ const makeNavigationTarget = (
   directory: projectId ? `/workspace/${projectId}` : null,
 });
 
+const emptyPinnedSnapshot = (): SessionIndexSnapshot => ({
+  revision: 1,
+  sync: {
+    active: false,
+    completed: 0,
+    total: 0,
+    pendingDirectories: [],
+    completedDirectories: [],
+    failedDirectories: [],
+  },
+  directories: [],
+});
+
+const snapshotWithPinned = (pinnedIds: string[]): SessionIndexSnapshot => ({
+  revision: 1,
+  sync: {
+    active: false,
+    completed: 1,
+    total: 1,
+    pendingDirectories: [],
+    completedDirectories: ['/workspace/project'],
+    failedDirectories: [],
+  },
+  directories: [{
+    directory: '/workspace/project',
+    cursor: null,
+    hasMore: false,
+    lastSyncedAt: 1,
+    lastFullSyncedAt: 1,
+    lastAccessedAt: 1,
+    sessions: pinnedIds.map((id) => ({
+      id,
+      time: { created: 1, updated: 1, pinned: '2026-01-01T00:00:00.000Z' },
+    } as SessionIndexSnapshot['directories'][number]['sessions'][number])),
+  }],
+});
+
 describe('session-navigation', () => {
   beforeEach(() => {
     clearSessionNavigationSnapshot();
     useSessionFocusStore.getState().setFocus(null);
-    useSessionPinnedStore.setState({ ids: new Set() });
+    writeSessionIndexSnapshotQuery(emptyPinnedSnapshot(), { persist: false });
     useGlobalSessionsStore.setState({
       activeSessions: [],
       archivedSessions: [],
@@ -162,7 +200,7 @@ describe('session-navigation', () => {
   });
 
   test('resolveAdjacentRootSession respects pinned ordering within a project', () => {
-    useSessionPinnedStore.setState({ ids: new Set(['root-a']) });
+    writeSessionIndexSnapshotQuery(snapshotWithPinned(['root-a']), { persist: false });
     useProjectsStore.setState({
       projects: [
         { id: 'p1', path: '/workspace/project', label: 'project' },

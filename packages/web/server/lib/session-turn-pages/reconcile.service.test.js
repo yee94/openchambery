@@ -512,13 +512,17 @@ describe('createSessionReconcileService', () => {
 
     expect(result.ok).toBe(true);
     expect(result.records[0].info.summary).toEqual({
+      diffs: [{
+        file: 'src/large.ts',
+        status: 'modified',
+        additions: 7,
+        deletions: 2,
+      }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(result.records[0].info.summary.diffs).toBeUndefined();
     expect(result.responseBytes).toBeLessThanOrEqual(1024);
     expect(JSON.stringify(result.records)).not.toContain(patch);
-    expect(JSON.stringify(result.records)).not.toContain('src/large.ts');
   });
 
   it('rejects continuation that does not bind runtime/directory/session/anchor/head', async () => {

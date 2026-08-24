@@ -1,8 +1,8 @@
 // Builds the iOS app for a connected physical device (Personal Team / side-load).
 //
-// The release/TestFlight project uses team 5J7WJGPA2Q with Push + App Group
-// `group.com.openchamber.app`. A free Personal Team cannot use Push, and that App Group
-// belongs to another team. This script temporarily strips Push and rewrites the App Group
+// The release/TestFlight project uses Push + a production App Group. A free Personal Team
+// cannot use Push, and the production App Group belongs to another team. This script
+// temporarily strips Push and rewrites the App Group
 // to a Personal-Team-local identifier, builds a signed .app, then restores entitlements so
 // release/device/TestFlight builds keep the production capabilities.
 
@@ -16,15 +16,15 @@ const iosAppDir = join(mobileRoot, 'ios', 'App');
 
 const developmentTeam = process.env.DEVELOPMENT_TEAM || process.env.IOS_DEVELOPMENT_TEAM || '6W97S9B7CZ';
 const devAppGroup = process.env.IOS_DEV_APP_GROUP || 'group.com.yeewang.openchamber.dev';
-const productionAppGroup = 'group.com.openchamber.app';
+const productionAppGroup = 'group.com.yee94.openchamber';
 const devBundlePrefix = process.env.IOS_DEV_BUNDLE_ID || 'com.yeewang.openchamber.dev';
 const pbxprojPath = join(iosAppDir, 'App.xcodeproj', 'project.pbxproj');
 
 const bundleIdReplacements = [
-  ['com.openchamber.app.OpenChamberShareExtension', `${devBundlePrefix}.OpenChamberShareExtension`],
-  ['com.openchamber.app.OpenChamberNotificationService', `${devBundlePrefix}.OpenChamberNotificationService`],
-  ['com.openchamber.app.OpenChamberWidget', `${devBundlePrefix}.OpenChamberWidget`],
-  ['com.openchamber.app', devBundlePrefix],
+  ['com.yee94.openchamber.OpenChamberShareExtension', `${devBundlePrefix}.OpenChamberShareExtension`],
+  ['com.yee94.openchamber.OpenChamberNotificationService', `${devBundlePrefix}.OpenChamberNotificationService`],
+  ['com.yee94.openchamber.OpenChamberWidget', `${devBundlePrefix}.OpenChamberWidget`],
+  ['com.yee94.openchamber', devBundlePrefix],
 ];
 
 const entitlementPaths = [
@@ -137,6 +137,7 @@ try {
     '-sdk', 'iphoneos',
     '-destination', deviceDestination(),
     '-allowProvisioningUpdates',
+    '-allowProvisioningDeviceRegistration',
     `DEVELOPMENT_TEAM=${developmentTeam}`,
     'build',
   ]);

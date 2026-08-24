@@ -10,6 +10,7 @@ import { McpDropdownContent } from '@/components/mcp/McpDropdown';
 import { AboutSettings } from '@/components/sections/openchamber/AboutSettings';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { MobileAppUpdateToast } from '@/components/update/MobileAppUpdateToast';
+import { MobileOtaUpdateNotice } from '@/components/update/MobileOtaUpdateNotice';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { Button } from '@/components/ui/button';
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
@@ -39,6 +40,7 @@ import type { ProjectEntry, RuntimeAPIs } from '@/lib/api/types';
 import type { PairingConnectionPayload } from '@/lib/connectionPayload';
 import { useOrientation } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
+import { getCapgoUpdater } from '@/lib/mobile-updates/capgoAdapter';
 import { MOBILE_SETTINGS_PAGE_SLUGS } from '@/lib/settings/metadata';
 import { isIPadApp } from '@/lib/platform';
 import { resolveProjectForDirectory, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
@@ -72,9 +74,11 @@ import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
 import {
+  cssPxFromNativeImeHeight,
   getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
+  shouldCorrectArmedImeLift,
   shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 import { MobileChangesSurface } from './MobileChangesSurface';
@@ -82,6 +86,8 @@ import { MobileFilesSurface } from './MobileFilesSurface';
 import { BusyDots } from '@/components/chat/message/parts/BusyDots';
 import { MobileSessionsSheet } from './MobileSessionsSheet';
 import { MobilePhoneShell } from '@/mobile/MobilePhoneShell';
+import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
+import { MobileFloatingSurface } from '@/mobile/MobileSurface';
 import {
   buildMobileContextDisplay,
   ContextProgressIcon,
@@ -400,7 +406,6 @@ const useNativeMobileChrome = (): void => {
         for (const el of document.querySelectorAll<HTMLElement>('.oc-mobile-composer, .oc-draft-center')) {
           el.style.transition = '';
           el.style.transform = '';
-          el.style.willChange = '';
         }
       };
       const measureSafeBottom = () => {
@@ -410,7 +415,7 @@ const useNativeMobileChrome = (): void => {
 
       // ── Android: pre-focus CSS FLIP from cached IME height ────────────────
       if (isAndroid) {
-        const IME_RATIO_STORAGE_KEY = 'openchamber.androidImeHeightRatio.v1';
+        const IME_RATIO_STORAGE_KEY = 'openchamber.androidImeHeightRatio.v2';
         // Open starts from intent/focus before the IME moves; keep it short.
         // Close usually begins after the system IME has already started (or
         // finished) dismissing, so a long hide leaves the composer hanging.
@@ -461,7 +466,6 @@ const useNativeMobileChrome = (): void => {
           const movers = getKbMovers(anchor);
           root.classList.add('oc-kb-animating');
           for (const { el, factor } of movers) {
-            el.style.willChange = 'transform';
             el.style.transition = `transform ${durationMs}ms ${easing}`;
             el.style.transform = getAndroidTransform(slide, factor);
           }
@@ -470,7 +474,6 @@ const useNativeMobileChrome = (): void => {
             root.classList.remove('oc-kb-animating');
             for (const { el } of movers) {
               el.style.transition = '';
-              el.style.willChange = '';
             }
           }, durationMs + 20);
           return slide;
@@ -629,7 +632,7 @@ const useNativeMobileChrome = (): void => {
           // CustomEvent detail remains supported for browser/test dispatches.
           const detail = nativeEvent.detail ?? nativeEvent;
           if (detail?.open === true) {
-            const measured = Math.max(0, Math.round(detail.height ?? 0));
+            const measured = cssPxFromNativeImeHeight(detail.height ?? 0, window.devicePixelRatio || 1);
             const action = getAndroidComposerImeStateAction(composerLiftArmed, document.activeElement);
             if (measured > 0 && (action === 'open' || action === 'cache')) {
               // A model-picker search field can have a different IME silhouette
@@ -641,6 +644,19 @@ const useNativeMobileChrome = (): void => {
             // a focus/intent lift is armed, this event only refreshes next-open
             // cache data and leaves its transform untouched.
             if (action === 'open') markOpen(document.activeElement, 'ime');
+            if (action === 'cache' && shouldCorrectArmedImeLift(armedImeHeight || imeHeight, measured)) {
+              // The estimate that armed this lift under-cleared the keyboard;
+              // re-lift from the measured height so the composer is not covered
+              // for the rest of the keyboard session.
+              armedImeHeight = measured;
+              const slide = liftMovers(
+                measured,
+                CORRECT_MS,
+                SHOW_EASING,
+                isComposerKeyboardTarget(document.activeElement) ? document.activeElement : undefined,
+              );
+              dispatchKb('oc:keyboard-anim', { phase: 'show', slide, durationMs: CORRECT_MS, easing: SHOW_EASING });
+            }
             if (action === 'field') reserveFieldScrollInset(measured || imeHeight);
           }
           if (detail?.open === false) markClosed(true);
@@ -699,7 +715,6 @@ const useNativeMobileChrome = (): void => {
         measureSafeBottom();
         const slide = Math.max(0, height - safeBottomPx);
         for (const { el, factor } of getKbMovers(anchor)) {
-          el.style.willChange = 'transform';
           el.style.transition = `transform ${KB_ANIM_MS}ms ${KB_ANIM_EASING}`;
           el.style.transform = `translateY(${-slide * factor}px)`;
         }
@@ -713,9 +728,15 @@ const useNativeMobileChrome = (): void => {
         if (isTextFieldLike(document.activeElement) && !isComposerKeyboardTarget(document.activeElement)) {
           return;
         }
+        const wasKeyboardOpen = keyboardOpen;
         keyboardOpen = true;
         root.classList.remove('oc-kb-hide');
-        root.classList.add('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold');
+        root.classList.add('oc-keyboard-open');
+        // Caret hold only masks the caret DURING a keyboard rise. When the IME
+        // is already open (soft focus return from another field), no
+        // keyboardWillShow will ever arrive to run the removal chain, and a
+        // hold added here would stick forever — keep the caret visible.
+        if (!wasKeyboardOpen) root.classList.add('oc-kb-animating', 'oc-kb-caret-hold');
         const predictedHeight = keyboardHeight > 0 ? keyboardHeight : readCachedIosImeHeight();
         const slide = liftIosMovers(predictedHeight, event.target);
         dispatchKb('oc:keyboard-anim', {
@@ -748,11 +769,14 @@ const useNativeMobileChrome = (): void => {
         setInset(keyboardHeight);
         if (!liftComposer) {
           // Question / other fields: keep the overlay and chat scroll insets
-          // without raising the bottom composer or shrinking the shell.
+          // without raising the bottom composer or shrinking the shell. The
+          // pre-focus intent may have armed the caret hold for this field —
+          // this early return has no removal chain of its own, so drop it or
+          // the caret stays transparent for the whole session.
           setVar('--oc-kb-layout', 0);
           measureSafeBottom();
           setVar('--oc-kb-scroll-inset', Math.max(0, keyboardHeight - safeBottomPx));
-          root.classList.remove('oc-keyboard-open');
+          root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold');
           clearKbMovers();
           layoutApplied = false;
           dispatchKb('oc:keyboard-settled', { open: true });
@@ -793,9 +817,18 @@ const useNativeMobileChrome = (): void => {
         if (!keyboardOpen) return;
         keyboardOpen = false;
         clearSettle();
-        // Keyboard dismissed → blur so the expanded composer collapses with the IME.
-        blurActiveTextField();
+        // Collapse chrome first (ChatInput flushSync), then blur. Intent-before-blur
+        // lets focusout run after collapse so interactive IME dismiss is less likely
+        // to see a still-focused composer and bail. One short confirm retries if
+        // WKWebView restored focus onto the textarea without reopening the keyboard.
         dispatchKb('oc:keyboard-intent', { open: false });
+        blurActiveTextField();
+        window.setTimeout(() => {
+          if (keyboardOpen) return;
+          if (!isComposerKeyboardTarget(document.activeElement)) return;
+          blurActiveTextField();
+          dispatchKb('oc:keyboard-intent', { open: false });
+        }, 80);
         if (caretTimer !== null) {
           window.clearTimeout(caretTimer);
           caretTimer = null;
@@ -2452,11 +2485,15 @@ const MobileShell: React.FC<{
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
   // Owning session for the turn-diff sheet; null = primary chat session.
   const [turnDiffSessionId, setTurnDiffSessionId] = React.useState<string | null>(null);
+  /** Optional file to expand/scroll when the turn-diff sheet opens (from Changes preview row). */
+  const [turnDiffTargetFilePath, setTurnDiffTargetFilePath] = React.useState<string | null>(null);
+  const [turnDiffNavigationKey, setTurnDiffNavigationKey] = React.useState(0);
   const [mcpOpen, setMcpOpen] = React.useState(false);
   const [isMcpRefreshing, setIsMcpRefreshing] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [updateOpen, setUpdateOpen] = React.useState(false);
   const [directoryDialogOpen, setDirectoryDialogOpen] = React.useState(false);
+  const [isHomeQrScanning, setIsHomeQrScanning] = React.useState(false);
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
   const [isTranscriptRefreshing, setIsTranscriptRefreshing] = React.useState(false);
@@ -2469,6 +2506,7 @@ const MobileShell: React.FC<{
   const updateAvailable = useUpdateStore((state) => state.available);
   const updateRuntimeType = useUpdateStore((state) => state.runtimeType);
   const showCapacitorOnlyFeatures = React.useMemo(() => isCapacitorMobileApp(), []);
+  const qrScanSupported = React.useMemo(() => isQrScanSupported(), []);
   const { data: mcpServers = [], refetch: refetchMcpConfigs } = useMcpConfigsQuery(currentDirectory ?? null, { enabled: mcpOpen });
   const { refetch: refetchMcpStatus } = useMcpStatusQuery(currentDirectory ?? null, { enabled: mcpOpen });
   const setMcpDraft = useMcpConfigStore((state) => state.setMcpDraft);
@@ -2500,6 +2538,53 @@ const MobileShell: React.FC<{
 
   const openInstancesSettingsPage = useEvent(() => {
     openSettingsSurface('instances');
+  });
+
+  const openInstancesSecondary = useEvent(() => {
+    useMobileNavigationStore.getState().openInstances();
+  });
+
+  const closeInstancesSecondary = useEvent(() => {
+    useMobileNavigationStore.getState().closeSecondary();
+  });
+
+  // Home-menu scan is a global Capacitor capability: open the native scanner
+  // without pushing the instances secondary page, then stay on / return to home.
+  const scanConnectionFromHome = useEvent(async () => {
+    if (isHomeQrScanning) return;
+    setIsHomeQrScanning(true);
+    try {
+      const result = await scanConnectionQr();
+      switch (result.status) {
+        case 'ok':
+          await connection.connect({
+            url: result.url,
+            clientToken: result.clientToken,
+            label: result.label,
+          });
+          break;
+        case 'pairing':
+          await connection.redeemPairingConnection(result.pairing);
+          break;
+        case 'permission-denied':
+          toast.error(t('mobile.connect.scan.permissionDenied'));
+          break;
+        case 'invalid':
+          toast.error(t('mobile.connect.scan.invalid'));
+          break;
+        case 'unsupported':
+          toast.error(t('mobile.connect.scan.unsupported'));
+          break;
+        case 'failed':
+          toast.error(t('mobile.connect.scan.failed'));
+          break;
+        case 'cancelled':
+        default:
+          break;
+      }
+    } finally {
+      setIsHomeQrScanning(false);
+    }
   });
 
   const rootBackRoutesBlocked = mobileSessionPanelOpen
@@ -2601,6 +2686,7 @@ const MobileShell: React.FC<{
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
     setTurnDiffSessionId(null);
+    setTurnDiffTargetFilePath(null);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setPendingChangesDiff(diff);
@@ -2612,13 +2698,20 @@ const MobileShell: React.FC<{
     setChangesOpen(true);
   });
 
-  const openTurnDiffSurface = useEvent((messageId?: string, sessionId?: string | null) => {
+  const openTurnDiffSurface = useEvent((
+    messageId?: string,
+    sessionId?: string | null,
+    filePath?: string | null,
+  ) => {
     setPendingChangesDiff(null);
     setChangesOpen(false);
     setFilePreviewOpen(false);
     setPendingFilePreview(null);
     setTurnDiffMessageId(messageId ?? null);
     setTurnDiffSessionId(typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null);
+    const normalizedFile = typeof filePath === 'string' && filePath.trim() ? filePath.trim() : null;
+    setTurnDiffTargetFilePath(normalizedFile);
+    setTurnDiffNavigationKey((key) => key + 1);
     if (isIPad) {
       setIpadRightPanel('turn-diff');
       if (isPortrait) setIpadSidebarOpen(false);
@@ -2630,6 +2723,7 @@ const MobileShell: React.FC<{
   const closeIpadRightPanel = useEvent(() => {
     setIpadRightPanel(null);
     setPendingChangesDiff(null);
+    setTurnDiffTargetFilePath(null);
   });
 
   const toggleIpadRightPanel = useEvent((panel: 'files' | 'changes') => {
@@ -2687,6 +2781,7 @@ const MobileShell: React.FC<{
 
   const closeTurnDiff = useEvent(() => {
     setTurnDiffOpen(false);
+    setTurnDiffTargetFilePath(null);
   });
 
   // Expose the shell's panel-opening actions to the deep-link layer so openchamber:// URLs
@@ -3188,6 +3283,8 @@ const MobileShell: React.FC<{
             <MobilePhoneShell
               className="min-h-0 flex-1"
               onAddProject={() => setDirectoryDialogOpen(true)}
+              onScanQr={showCapacitorOnlyFeatures && qrScanSupported ? () => { void scanConnectionFromHome(); } : undefined}
+              onSwitchInstance={showCapacitorOnlyFeatures ? openInstancesSecondary : undefined}
               onEnableAssistants={() => {
                 openSettingsSurface('assistants');
               }}
@@ -3197,6 +3294,24 @@ const MobileShell: React.FC<{
                   onConnect={() => undefined}
                   onActiveConnectionDeleted={onActiveConnectionDeleted}
                 />
+              ) : undefined}
+              instancesSecondaryPage={showCapacitorOnlyFeatures ? (
+                <div className="oc-settings-workspace oc-settings-workspace-mobile flex h-full min-h-0 flex-col bg-[var(--surface-background)]">
+                  <MobileDetailNavigation
+                    title={t('mobile.settings.switchInstance')}
+                    backAriaLabel={t('header.actions.backAria')}
+                    onBack={closeInstancesSecondary}
+                  />
+                  <div className="min-h-0 flex-1 overflow-y-auto px-[var(--oc-mobile-page-inline-inset)]">
+                    <MobileFloatingSurface className="oc-mobile-settings-detail-card">
+                      <MobileInstancesSurface
+                        connection={connection}
+                        onConnect={() => undefined}
+                        onActiveConnectionDeleted={onActiveConnectionDeleted}
+                      />
+                    </MobileFloatingSurface>
+                  </div>
+                </div>
               ) : undefined}
               parentSessionTarget={
                 parentSessionTarget
@@ -3337,9 +3452,12 @@ const MobileShell: React.FC<{
                       <div className="min-h-0 flex-1 overflow-hidden">
                         <DiffView
                           hideStackedFileSidebar
+                          pinSelectedFileHeaderToTopOnNavigate
                           diffScope="turn"
                           turnMessageId={turnDiffMessageId}
                           sessionId={turnDiffSessionId}
+                          targetFilePath={turnDiffTargetFilePath}
+                          navigationRequestKey={turnDiffNavigationKey}
                           flushContent
                         />
                       </div>
@@ -3475,9 +3593,12 @@ const MobileShell: React.FC<{
             <ErrorBoundary>
               <DiffView
                 hideStackedFileSidebar
+                pinSelectedFileHeaderToTopOnNavigate
                 diffScope="turn"
                 turnMessageId={turnDiffMessageId}
                 sessionId={turnDiffSessionId}
+                targetFilePath={turnDiffTargetFilePath}
+                navigationRequestKey={turnDiffNavigationKey}
                 flushContent
               />
             </ErrorBoundary>
@@ -3824,6 +3945,60 @@ export function MobileApp({ apis }: MobileAppProps) {
     return () => registerRuntimeAPIs(null);
   }, [apis]);
 
+  // Capgo app-ready must fire on load, not after server connection — readiness is
+  // about the JS shell surviving the first paint, not remote connectivity.
+  React.useEffect(() => {
+    if (!isNativeMobileApp) return;
+    void getCapgoUpdater().then((updater) => {
+      if (!updater) return;
+      void updater.notifyAppReady().catch(() => undefined);
+    });
+  }, [isNativeMobileApp]);
+
+  React.useEffect(() => {
+    if (!isNativeMobileApp) return;
+
+    let disposed = false;
+    const cleanups: Array<() => void> = [];
+
+    void getCapgoUpdater().then(async (updater) => {
+      if (!updater || disposed) return;
+
+      try {
+        const downloadComplete = await updater.addListener('downloadComplete', () => {
+          useUpdateStore.getState().setOtaPhase('pending_restart');
+        });
+        const appReloaded = await updater.addListener('appReloaded', () => {
+          useUpdateStore.getState().setOtaPhase('pending_restart');
+        });
+        const autoRevert = await updater.addListener('autoRevert', () => {
+          console.warn('[OTA] Capgo auto-reverted the last bundle');
+          useUpdateStore.getState().setOtaPhase('error', 'OTA update was reverted');
+        });
+
+        if (disposed) {
+          void downloadComplete.remove();
+          void appReloaded.remove();
+          void autoRevert.remove();
+          return;
+        }
+
+        cleanups.push(
+          () => void downloadComplete.remove(),
+          () => void appReloaded.remove(),
+          () => void autoRevert.remove(),
+        );
+      } catch (error) {
+        console.warn('[OTA] Failed to subscribe to Capgo updater events:', error);
+      }
+    });
+
+    return () => {
+      disposed = true;
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, [isNativeMobileApp]);
+
   // Switching instances (or disconnecting) only changes the runtime endpoint; the
   // stores still hold the previous instance's data. Mirror the web App.tsx reset
   // sequence so the UI fully re-bootstraps against the new server instead of going
@@ -4119,6 +4294,7 @@ export function MobileApp({ apis }: MobileAppProps) {
               <SyncAppEffects embeddedBackgroundWorkEnabled={isInitialized} />
               <OpenCodeUpdateToast />
               <MobileAppUpdateToast />
+              <MobileOtaUpdateNotice />
               <MobileShell connection={pairingConnection} onActiveConnectionDeleted={() => {
                 switchRuntimeEndpoint({ apiBaseUrl: '', clientToken: null, runtimeKey: 'mobile-disconnected' });
                 useMobileNavigationStore.getState().reset();

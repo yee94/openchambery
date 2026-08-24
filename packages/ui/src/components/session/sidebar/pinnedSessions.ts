@@ -7,7 +7,7 @@ const getSessionCreatedAt = (session: Session): number => {
 
 export const derivePinnedSessions = (
   sessions: Session[],
-  pinnedSessionIds: Set<string>,
+  pinnedSessionIds: ReadonlySet<string>,
 ): Session[] => {
   return sessions
     .filter((session) => pinnedSessionIds.has(session.id))

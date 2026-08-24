@@ -1,5 +1,7 @@
 package com.openchamber.app;
 
+import android.content.Context;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 
@@ -11,6 +13,15 @@ public class MainActivity extends BridgeActivity {
     private ImeSyncBridge imeSyncBridge;
 
     @Override
+    protected void attachBaseContext(Context newBase) {
+        // Pin fontScale only. WebView CSS density ignores Activity densityDpi;
+        // physical size uses --dpt from OpenChamberPhysicalScale instead.
+        Configuration config = new Configuration(newBase.getResources().getConfiguration());
+        config.fontScale = 1.0f;
+        super.attachBaseContext(newBase.createConfigurationContext(config));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(OpenChamberHapticsPlugin.class);
         registerPlugin(OpenChamberNavigationPlugin.class);
@@ -18,6 +29,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OpenChamberExternalBrowserPlugin.class);
         registerPlugin(OpenChamberVirtualAssetPlugin.class);
         registerPlugin(OpenChamberMediaPlugin.class);
+        registerPlugin(OpenChamberPhysicalScalePlugin.class);
         super.onCreate(savedInstanceState);
         dispatchShare(getIntent());
         // After the Keyboard plugin installs its root animation callback, remove
@@ -26,12 +38,30 @@ public class MainActivity extends BridgeActivity {
         // IME bookends for cached-height CSS composer choreography.
         // Double-post = after load.
         if (getBridge() != null && getBridge().getWebView() != null) {
+            applyDeviceParityTextZoom();
             getBridge().getWebView().post(() ->
                 getBridge().getWebView().post(() -> {
                     imeSyncBridge = new ImeSyncBridge(this);
                     imeSyncBridge.attach();
                 })
             );
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Idempotent safety net: AwSettings multiplies fontScale into textZoom
+        // only once at WebView construction and setTextZoom is an absolute
+        // override, so re-applying covers any unexpected restore path.
+        applyDeviceParityTextZoom();
+    }
+
+    private void applyDeviceParityTextZoom() {
+        // Keep CSS px at 100% so Android system font scale does not inflate
+        // WebView text relative to iOS WKWebView.
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().getSettings().setTextZoom(100);
         }
     }
 

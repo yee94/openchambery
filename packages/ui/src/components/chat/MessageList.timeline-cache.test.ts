@@ -151,6 +151,7 @@ describe('turn activity expansion state', () => {
             isLastTurn: true,
             turnCompletionDisposition: 'active',
             headerPresentationDisposition: demoted.completionDisposition,
+            hasAssistantMessages: true,
         });
         expect(expansion).toBe('active');
         expect(resolveTurnActivityExpandedByDefault({

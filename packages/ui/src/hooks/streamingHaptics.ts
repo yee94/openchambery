@@ -178,7 +178,9 @@ export function triggerMobileHaptic(
   return true;
 }
 
-const MOBILE_PRESS_TARGET_SELECTOR = 'button, [role="button"]';
+// Base UI menu items render as div[role="menuitem"] (nativeButton defaults
+// false), so they must be included alongside ordinary buttons.
+export const MOBILE_PRESS_TARGET_SELECTOR = 'button, [role="button"], [role="menuitem"]';
 
 /** Adds light feedback when an enabled mobile control completes a tap. */
 export function useMobilePressHaptics(): void {

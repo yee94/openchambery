@@ -137,4 +137,80 @@ describe('session index routes', () => {
     expect(res.statusCode).toBe(404);
     expect(res.body).toMatchObject({ error: 'session_not_found' });
   });
+
+  it('pins a session and publishes a session-index change', () => {
+    const { app, route } = registry();
+    const setPinned = vi.fn(() => true);
+    const publishChange = vi.fn();
+    registerSessionIndexRoutes(app, {
+      sessionIndexService: {
+        snapshot: () => ({ directories: [] }),
+        setPinned,
+      },
+      sessionIndexSyncRuntime: { publishChange },
+    });
+    const res = response();
+
+    route('POST', '/api/openchamber/session-index/session/:id/pin')(
+      { params: { id: 'ses_abc' } },
+      res,
+    );
+
+    expect(setPinned).toHaveBeenCalledWith('ses_abc');
+    expect(publishChange).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('unpins a session and publishes a session-index change', () => {
+    const { app, route } = registry();
+    const clearPinned = vi.fn(() => true);
+    const publishChange = vi.fn();
+    registerSessionIndexRoutes(app, {
+      sessionIndexService: {
+        snapshot: () => ({ directories: [] }),
+        clearPinned,
+      },
+      sessionIndexSyncRuntime: { publishChange },
+    });
+    const res = response();
+
+    route('DELETE', '/api/openchamber/session-index/session/:id/pin')(
+      { params: { id: 'ses_abc' } },
+      res,
+    );
+
+    expect(clearPinned).toHaveBeenCalledWith('ses_abc');
+    expect(publishChange).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('returns 404 for pin and unpin when the session is missing', () => {
+    const { app, route } = registry();
+    const publishChange = vi.fn();
+    registerSessionIndexRoutes(app, {
+      sessionIndexService: {
+        snapshot: () => ({ directories: [] }),
+        setPinned: () => false,
+        clearPinned: () => false,
+      },
+      sessionIndexSyncRuntime: { publishChange },
+    });
+
+    const pinRes = response();
+    route('POST', '/api/openchamber/session-index/session/:id/pin')(
+      { params: { id: 'ses_missing' } },
+      pinRes,
+    );
+    expect(pinRes.statusCode).toBe(404);
+    expect(pinRes.body).toMatchObject({ error: 'session_not_found' });
+
+    const unpinRes = response();
+    route('DELETE', '/api/openchamber/session-index/session/:id/pin')(
+      { params: { id: 'ses_missing' } },
+      unpinRes,
+    );
+    expect(unpinRes.statusCode).toBe(404);
+    expect(unpinRes.body).toMatchObject({ error: 'session_not_found' });
+    expect(publishChange).not.toHaveBeenCalled();
+  });
 });

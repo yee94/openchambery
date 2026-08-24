@@ -31,7 +31,7 @@ export type MobileProjectCardProps = {
   expanded: boolean;
   embedded?: boolean;
   onToggle: (project: MobileProjectCardModel) => void;
-  onOpenActions: (project: MobileProjectCardModel) => void;
+  onOpenActions?: (project: MobileProjectCardModel) => void;
   className?: string;
 };
 
@@ -81,9 +81,11 @@ export function MobileProjectCard({
     if (longPressRef.current?.consumeClick(project.id)) return;
     onToggle(project);
   });
-  const handleOpenActions = useEvent(() => onOpenActions(project));
+  const handleOpenActions = useEvent(() => onOpenActions?.(project));
   const handlePointerDown = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!onOpenActions) return;
     if ((event.pointerType !== 'touch' && event.pointerType !== 'pen') || event.button !== 0) return;
+    const openActions = onOpenActions;
     longPressRef.current?.start({
       pointerId: event.pointerId,
       key: project.id,
@@ -91,7 +93,7 @@ export function MobileProjectCard({
       clientY: event.clientY,
       onTrigger: () => {
         setPressed(false);
-        onOpenActions(project);
+        openActions(project);
       },
     });
   });
@@ -105,11 +107,13 @@ export function MobileProjectCard({
     longPressRef.current?.cancel(event.pointerId);
   });
   const handleContextMenu = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!onOpenActions) return;
+    const openActions = onOpenActions;
     event.preventDefault();
     event.stopPropagation();
     longPressRef.current?.openFromContextMenu(project.id, () => {
       setPressed(false);
-      onOpenActions(project);
+      openActions(project);
     });
   });
 
@@ -189,16 +193,18 @@ export function MobileProjectCard({
           />
         </button>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="oc-mobile-project-action self-center rounded-full text-muted-foreground"
-          aria-label={t('sessions.sidebar.project.actions.projectMenu')}
-          onClick={handleOpenActions}
-        >
-          <Icon name="more-2" className="size-4" />
-        </Button>
+        {onOpenActions ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="oc-mobile-project-action self-center rounded-full text-muted-foreground"
+            aria-label={t('sessions.sidebar.project.actions.projectMenu')}
+            onClick={handleOpenActions}
+          >
+            <Icon name="more-2" className="size-4" />
+          </Button>
+        ) : null}
     </article>
   );
 

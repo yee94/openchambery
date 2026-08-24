@@ -87,6 +87,7 @@ export const MOBILE_SETTINGS_PAGE_SLUGS = [
   'chat',
   'notifications',
   'sessions',
+  'summary-ai',
   'projects',
   'git',
   'providers',

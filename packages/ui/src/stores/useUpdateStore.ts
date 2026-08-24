@@ -17,7 +17,11 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 import { getMobileClientVersion } from '@/lib/mobileAppVersion';
 import { checkForMobileClientUpdates } from '@/lib/mobileClientUpdateCheck';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import type { MobileUpdateDecision } from '@/lib/mobile-updates/types';
+import { MobileUpdatesUnsupportedError } from '@/lib/mobile-updates/types';
 
+type OtaPhase = 'idle' | 'checking' | 'available' | 'downloading' | 'pending_restart' | 'error';
 
 type UpdateState = {
   checking: boolean;
@@ -30,6 +34,10 @@ type UpdateState = {
   runtimeType: 'desktop' | 'web' | 'vscode' | 'mobile' | null;
   lastChecked: number | null;
   nextCheckInSec: number | null;
+  /** Latest Capgo OTA decision from the mobile update service (Capacitor only). */
+  otaDecision: MobileUpdateDecision | null;
+  /** Capgo download / apply lifecycle phase (Capacitor only). */
+  otaPhase: OtaPhase;
 };
 
 interface UpdateStore extends UpdateState {
@@ -38,6 +46,7 @@ interface UpdateStore extends UpdateState {
   restartToUpdate: () => Promise<void>;
   /** Wire main-process idle/manual download events into store state. */
   subscribeDesktopUpdateEvents: () => Promise<() => void>;
+  setOtaPhase: (phase: OtaPhase, error?: string | null) => void;
   dismiss: () => void;
   reset: () => void;
 }
@@ -206,7 +215,69 @@ const initialState: UpdateState = {
   runtimeType: null,
   lastChecked: null,
   nextCheckInSec: null,
+  otaDecision: null,
+  otaPhase: 'idle',
 };
+
+function mapOtaDecisionToUpdateInfo(
+  decision: MobileUpdateDecision,
+  currentVersion: string,
+): { info: UpdateInfo; available: boolean; otaPhase: OtaPhase } {
+  if (decision.primaryAction === 'apply_ota' && decision.ota.bundle) {
+    // Capgo reports builtin for the shell-embedded zip. If that zip is already
+    // this release, showing 1.18.2-beta.36 → 1.18.2-beta.36 loops forever.
+    if (decision.ota.bundle.releaseVersion === currentVersion) {
+      return {
+        available: false,
+        otaPhase: 'idle',
+        info: {
+          available: false,
+          currentVersion,
+          nextSuggestedCheckInSec: decision.nextCheckInSec,
+        },
+      };
+    }
+    return {
+      available: true,
+      otaPhase: 'available',
+      info: {
+        available: true,
+        version: decision.ota.bundle.releaseVersion,
+        currentVersion,
+        downloadUrl: decision.ota.bundle.url,
+        nextSuggestedCheckInSec: decision.nextCheckInSec,
+        inAppApply: true,
+        ...(decision.releaseNotes ? { body: decision.releaseNotes } : {}),
+      },
+    };
+  }
+
+  if (decision.primaryAction === 'install_native_required') {
+    return {
+      available: decision.native.state === 'required' || decision.native.state === 'available',
+      otaPhase: 'idle',
+      info: {
+        available: decision.native.state === 'required' || decision.native.state === 'available',
+        version: decision.native.version,
+        currentVersion,
+        downloadUrl: decision.native.installUrl,
+        nextSuggestedCheckInSec: decision.nextCheckInSec,
+        manualUpdate: true,
+        ...(decision.releaseNotes ? { body: decision.releaseNotes } : {}),
+      },
+    };
+  }
+
+  return {
+    available: false,
+    otaPhase: 'idle',
+    info: {
+      available: false,
+      currentVersion,
+      nextSuggestedCheckInSec: decision.nextCheckInSec,
+    },
+  };
+}
 
 export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   ...initialState,
@@ -247,17 +318,69 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         suggestedSec = vscodeInfo?.nextSuggestedCheckInSec ?? null;
       } else if (runtime === 'mobile') {
         const appVersion = await getMobileClientVersion();
+        const currentVersion = appVersion ?? 'unknown';
+        const mobileUpdates = isCapacitorApp()
+          ? getRegisteredRuntimeAPIs()?.mobileUpdates
+          : undefined;
+
+        if (mobileUpdates) {
+          try {
+            set({ otaPhase: 'checking' });
+            const decision = await mobileUpdates.checkForOtaUpdate();
+            const mapped = mapOtaDecisionToUpdateInfo(decision, currentVersion);
+
+            set({
+              checking: false,
+              available: mapped.available,
+              info: mapped.info,
+              error: mapped.info.error ?? null,
+              lastChecked: Date.now(),
+              nextCheckInSec: decision.nextCheckInSec,
+              otaDecision: decision,
+              otaPhase: mapped.otaPhase,
+            });
+            return decision.nextCheckInSec;
+          } catch (error) {
+            if (error instanceof MobileUpdatesUnsupportedError) {
+              // Hosted / non-native mobile can still use the public feed below.
+            } else {
+              const message = error instanceof Error ? error.message : 'Mobile OTA check failed';
+              set({
+                checking: false,
+                available: false,
+                info: { available: false, currentVersion },
+                error: message,
+                lastChecked: Date.now(),
+                otaDecision: null,
+                otaPhase: 'error',
+              });
+              return null;
+            }
+          }
+        }
+
         // Capacitor client updates compare the native APK/IPA version against
         // public update feeds directly. Do not route this through the connected
         // OpenChamber Server — that instance's network and version are unrelated.
         info = await checkForMobileClientUpdates({
-          currentVersion: appVersion ?? 'unknown',
+          currentVersion,
           platform: detectPlatform() === 'ios' ? 'ios' : 'android',
           deviceClass: detectDeviceClass(),
           arch: detectArch(),
           reportUsage: useUIStore.getState().reportUsage,
         });
         suggestedSec = info?.nextSuggestedCheckInSec ?? null;
+        set({
+          checking: false,
+          available: info?.available ?? false,
+          info,
+          error: info?.error ?? null,
+          lastChecked: Date.now(),
+          nextCheckInSec: suggestedSec,
+          otaDecision: null,
+          otaPhase: 'idle',
+        });
+        return suggestedSec;
       }
 
       set({
@@ -279,7 +402,44 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   },
 
   downloadUpdate: async () => {
-    const { available, runtimeType } = get();
+    const { available, runtimeType, otaDecision, downloading, downloaded } = get();
+
+    if (
+      runtimeType === 'mobile'
+      && otaDecision?.primaryAction === 'apply_ota'
+      && otaDecision.ota.bundle
+    ) {
+      if (downloading || downloaded) return;
+
+      const mobileUpdates = getRegisteredRuntimeAPIs()?.mobileUpdates;
+      if (!mobileUpdates) {
+        set({
+          error: 'Mobile OTA updates are unavailable in this runtime',
+          otaPhase: 'error',
+        });
+        return;
+      }
+
+      set({ downloading: true, error: null, progress: null, otaPhase: 'downloading' });
+      try {
+        await mobileUpdates.downloadOtaUpdate(otaDecision.ota.bundle);
+        await mobileUpdates.queueOtaUpdateForNextLaunch();
+        set({
+          downloading: false,
+          downloaded: true,
+          progress: null,
+          otaPhase: 'pending_restart',
+        });
+        await mobileUpdates.applyOtaUpdateNow();
+      } catch (error) {
+        set({
+          downloading: false,
+          error: error instanceof Error ? error.message : 'Failed to download update',
+          otaPhase: 'error',
+        });
+      }
+      return;
+    }
 
     // For web runtime, there's no download - user uses in-app update or CLI
     if (runtimeType !== 'desktop' || !available) {
@@ -401,7 +561,33 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   },
 
   restartToUpdate: async () => {
-    const { downloaded, runtimeType } = get();
+    const { downloaded, runtimeType, otaDecision } = get();
+
+    if (
+      runtimeType === 'mobile'
+      && otaDecision?.primaryAction === 'apply_ota'
+    ) {
+      if (!downloaded) return;
+
+      const mobileUpdates = getRegisteredRuntimeAPIs()?.mobileUpdates;
+      if (!mobileUpdates) {
+        set({
+          error: 'Mobile OTA updates are unavailable in this runtime',
+          otaPhase: 'error',
+        });
+        return;
+      }
+
+      try {
+        await mobileUpdates.applyOtaUpdateNow();
+      } catch (error) {
+        set({
+          error: error instanceof Error ? error.message : 'Failed to restart',
+          otaPhase: 'error',
+        });
+      }
+      return;
+    }
 
     if (runtimeType !== 'desktop' || !downloaded) {
       return;
@@ -419,8 +605,15 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
     }
   },
 
+  setOtaPhase: (phase, error = null) => {
+    set({
+      otaPhase: phase,
+      ...(error !== undefined ? { error } : {}),
+    });
+  },
+
   dismiss: () => {
-    set({ available: false, downloaded: false, info: null });
+    set({ available: false, downloaded: false, info: null, otaDecision: null, otaPhase: 'idle' });
   },
 
   reset: () => {

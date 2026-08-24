@@ -244,17 +244,21 @@ describe('registerSessionTurnPageRoutes — reconcile', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.records[0].info.summary).toEqual({
+      diffs: [{
+        file: 'src/large.ts',
+        status: 'modified',
+        additions: 5,
+        deletions: 1,
+      }],
       diffCount: 1,
       hasDiffs: true,
     });
-    expect(res.body.records[0].info.summary.diffs).toBeUndefined();
     expect(res.body.records[0].parts[0]).toEqual({
       id: 'prt_1',
       type: 'text',
       text: 'full recovery text',
     });
     expect(JSON.stringify(res.body)).not.toContain(patch);
-    expect(JSON.stringify(res.body)).not.toContain('src/large.ts');
   });
 
   it('returns HTTP 200 for resetRequired (anchor lost / budget rebuild)', async () => {

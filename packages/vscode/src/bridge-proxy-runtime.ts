@@ -213,8 +213,8 @@ export async function handleProxyBridgeMessage(
         );
 
         // Exact GET /session/:id/message/:messageID must L1-project
-        // summary.diffs → diffCount/hasDiffs before the payload enters the webview.
-        // Full parts behavior is preserved.
+        // summary.diffs → thin file list + diffCount/hasDiffs before the payload
+        // enters the webview. Full parts behavior is preserved.
         if (
           normalizedMethod === 'GET'
           && /^\/session\/[^/]+\/message\/[^/]+(?:\?.*)?$/.test(normalizedPath)

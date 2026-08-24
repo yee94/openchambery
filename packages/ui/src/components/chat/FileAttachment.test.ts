@@ -127,6 +127,10 @@ describe('slim transcript image attachments', () => {
     expect(source).toContain('resolveMessageDisplayFiles(files, [...liveParts, ...fetchedParts])');
   });
 
+  test('marks composer image thumbs so mobile CSS can keep them clippers', () => {
+    expect(source).toContain('data-attachment-preview="true"');
+  });
+
   test('keeps a visible square slot for a slim image without a URL', () => {
     expect(source).toContain("const imageFiles = dedupedFileItems.filter(f => f.mime?.startsWith('image/'));");
     expect(source).toContain('relative aspect-square min-w-0 overflow-hidden');

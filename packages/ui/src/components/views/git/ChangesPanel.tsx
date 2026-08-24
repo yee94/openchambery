@@ -601,7 +601,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
   return (
     <>
-      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div className="oc-changes-panel relative flex h-full min-h-0 w-full flex-col overflow-hidden">
         {pinnedGroup ? (
           <div className={cn('shrink-0', headerBackgroundClassName)}>
             {renderHeader(pinnedGroup, { pinned: true, showToolbar: true })}

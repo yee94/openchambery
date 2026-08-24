@@ -85,7 +85,6 @@ export function MobileSessionRow({
 }: MobileSessionRowProps) {
   const { t } = useI18n();
   const [offset, setOffset] = React.useState(0);
-  const [pressed, setPressed] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);
   const gestureRef = React.useRef<ActiveGesture | null>(null);
   const suppressClickRef = React.useRef(false);
@@ -93,9 +92,7 @@ export function MobileSessionRow({
   const longPressRef = React.useRef<MobileLongPressController | null>(null);
 
   if (!longPressRef.current) {
-    longPressRef.current = createMobileLongPressController({
-      onPressedKeyChange: (key) => setPressed(key === session.id),
-    });
+    longPressRef.current = createMobileLongPressController();
   }
 
   React.useEffect(() => () => longPressRef.current?.reset(), []);
@@ -141,7 +138,6 @@ export function MobileSessionRow({
       clientX: event.clientX,
       clientY: event.clientY,
       onTrigger: () => {
-        setPressed(false);
         onOpenActions(session);
       },
     });
@@ -222,7 +218,6 @@ export function MobileSessionRow({
     event.preventDefault();
     event.stopPropagation();
     longPressRef.current?.openFromContextMenu(session.id, () => {
-      setPressed(false);
       onOpenActions(session);
     });
   });
@@ -269,7 +264,9 @@ export function MobileSessionRow({
           type="button"
           data-mobile-press-feedback="soft"
           className="oc-mobile-session-pagination-row"
+          style={{ touchAction: 'pan-y' }}
           onClick={handleSelect}
+          onPointerDown={() => undefined}
         >
           <span className="min-w-0 flex-1 truncate text-left font-medium text-foreground">
             {session.title}
@@ -330,10 +327,9 @@ export function MobileSessionRow({
           'text-foreground',
           'ease-out motion-reduce:transition-none',
           dragging ? 'transition-none' : 'transition-[transform,background-color] duration-150',
-          session.active && 'bg-interactive-selection/50',
           session.archived && 'opacity-55',
-          pressed && !session.active && 'bg-interactive-hover',
         )}
+        data-dragging={dragging ? 'true' : undefined}
         style={{
           transform: `translate3d(${offset}px, 0, 0)`,
           willChange: offset === 0 ? undefined : 'transform',

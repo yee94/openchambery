@@ -38,12 +38,12 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       // currentColor is the reliable SVG paint path; presentation-attribute
       // fill="var(--agent-color)" often resolves transparent in Chromium.
       style={{
-        width: size,
-        minWidth: size,
-        maxWidth: size,
-        height: size,
-        minHeight: size,
-        maxHeight: size,
+        width: `calc(${size}px * var(--dpt-n, 1))`,
+        minWidth: `calc(${size}px * var(--dpt-n, 1))`,
+        maxWidth: `calc(${size}px * var(--dpt-n, 1))`,
+        height: `calc(${size}px * var(--dpt-n, 1))`,
+        minHeight: `calc(${size}px * var(--dpt-n, 1))`,
+        maxHeight: `calc(${size}px * var(--dpt-n, 1))`,
         color: `var(${color.var})`,
       }}
       role={label ? 'img' : undefined}
@@ -51,7 +51,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       aria-hidden={label ? undefined : true}
     >
       {emoji ? (
-        <span aria-hidden="true" style={{ fontSize: size * 0.75, lineHeight: 1 }}>
+        <span aria-hidden="true" style={{ fontSize: `calc(${size * 0.75}px * var(--dpt-n, 1))`, lineHeight: 1 }}>
           {emoji}
         </span>
       ) : <svg

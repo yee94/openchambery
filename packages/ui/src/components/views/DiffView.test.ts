@@ -81,29 +81,44 @@ describe('projectTurnDiffStats L1 marker contract', () => {
     });
   });
 
-  test('keeps legacy summary diffs compatible', () => {
+  test('keeps thin summary diffs compatible', () => {
     expect(projectTurnDiffStats(userMessage({
       diffs: [{ file: 'a.ts', additions: 2, deletions: 1 }],
     }))).toEqual({ additions: 2, deletions: 1, files: 1, hasDiffs: true });
   });
+
+  test('prefers diffCount when thin diffs and markers are both present', () => {
+    expect(projectTurnDiffStats(userMessage({
+      diffs: [{ file: 'a.ts', additions: 2, deletions: 1 }],
+      diffCount: 3,
+      hasDiffs: true,
+    }))).toEqual({ additions: 2, deletions: 1, files: 3, hasDiffs: true });
+  });
 });
 
 describe('Turn Changes preview contract', () => {
-  test('renders a count-only entry and opens a stable turn diff tab on desktop', () => {
+  test('renders inline file rows from the L1 thin list on the wire', () => {
     expect(messageBodySource).toContain('fileCount={turnGroupingContext.diffStats.files}');
-    expect(messageBodySource).not.toContain('data-turn-change-file');
+    expect(messageBodySource).toContain('changedFiles={turnGroupingContext.changedFiles}');
+    // The thin list rides the message wire; there is no async list load.
+    expect(messageBodySource).not.toContain('useSessionTurnChangesQuery');
+    expect(messageBodySource).toContain('data-turn-change-file="true"');
+    expect(messageBodySource).toContain('TURN_CHANGES_PREVIEW_VISIBLE_LIMIT');
     expect(messageBodySource).toContain("mode: 'diff'");
     expect(messageBodySource).toContain("diffScope: 'turn'");
     expect(messageBodySource).toContain("dedupeKey: `turn-diff:${diffSessionId || 'session'}:${turnId}`");
+    expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId, file)');
     expect(messageBodySource).toContain('mobileActions.openTurnDiff(turnId, diffSessionId)');
+    expect(messageBodySource).toContain('openTurnChangedFilePreview');
   });
 });
 
 describe('DiffView staged turn changes queries', () => {
-  test('loads L2 on an opened turn scope and removes the whole-turn session diff path', () => {
-    expect(diffViewSource).toContain('useSessionTurnChangesQuery');
-    expect(diffViewSource).toContain("activeDiffScope === 'turn'");
-    expect(diffViewSource).toContain('enabled: shouldLoadTurnChanges');
+  test('renders turn file rows from sync thin diffs without any list request', () => {
+    expect(diffViewSource).toContain('const thinDiffs = listTurnDiffs(message.summary?.diffs);');
+    expect(diffViewSource).toContain('return turnChangesMarker.thinDiffs;');
+    // No async list query for turn scope — the L1 thin list is authoritative.
+    expect(diffViewSource).not.toContain('useSessionTurnChangesQuery');
     expect(diffViewSource).not.toContain('getSessionDiff');
     expect(diffViewSource).not.toContain('mergeTurnDiffSummariesWithFull');
   });
@@ -112,6 +127,8 @@ describe('DiffView staged turn changes queries', () => {
     expect(diffViewSource).toContain('useSessionTurnChangeFileQuery');
     expect(diffViewSource).toContain('enabled: loadTurnChangeFile && Boolean(turnChangesRequest) && isExpanded && isMounted');
     expect(diffViewSource).toContain("loadTurnChangeFile={activeDiffScope === 'turn' && !usesToolPatches}");
+    // A failed L3 refresh must not cover an already-rendered snapshot.
+    expect(diffViewSource).toContain('const visibleDiffLoadError = diffData');
   });
 
   test('short-circuits tool patches and protects turn scope from expand-all fanout', () => {

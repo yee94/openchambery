@@ -14,7 +14,7 @@ describe('mobile press feedback scale policy', () => {
     expect(mobileCss).toContain('[data-mobile-press-feedback="compact"]');
     // Default active state must not require compact; soft is the baseline.
     expect(mobileCss).toContain(
-      ':not(\n      [data-mobile-press-feedback="compact"]\n    ):active:not(:has(:where(button, [role="button"]):active))',
+      ':not(\n      [data-mobile-press-feedback="compact"]\n    ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active))',
     );
     expect(mobileCss).toContain('scale: var(--oc-press-soft-scale)');
     // Compact must not be the default active rule for every button.
@@ -22,6 +22,15 @@ describe('mobile press feedback scale policy', () => {
       mobileCss.indexOf('[data-mobile-press-feedback="compact"]'),
     );
     expect(compactActiveBlock).toContain('scale: var(--oc-press-compact-scale)');
+  });
+
+  test('changes panel scopes its container and lighter soft press scale', () => {
+    const containerRule = mobileCss.match(/([^{}]*\.oc-changes-panel[^{}]*)\{\s*container-type: inline-size;\s*\}/);
+    expect(containerRule?.[1]).toContain('.oc-changes-panel');
+
+    const changesPanelRule = mobileCss.match(/\.oc-changes-panel\s*\{([^}]+)\}/);
+    expect(changesPanelRule?.[1]).toContain('--oc-press-edge-inset: 2px');
+    expect(changesPanelRule?.[1]).toContain('0.985');
   });
 
   test('composer surface does not press-scale or open with a transform', () => {

@@ -40,8 +40,9 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
   - Exact `GET /session/:sessionID/message/:messageID` responses are L1-projected
-    (`summary.diffs` → `diffCount` / `hasDiffs`) on the Extension Host before the
-    payload enters the webview. Full `parts` behavior is preserved.
+    (`summary.diffs` → thin `{ file, status?, additions, deletions }[]` plus
+    additive `diffCount` / `hasDiffs`) on the Extension Host before the payload
+    enters the webview. Full `parts` behavior is preserved.
 
 - `session-turn-page-runtime.ts`
   - Pure turn-window aggregation over official OpenCode `session.messages` pages.
@@ -51,8 +52,10 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     `SLIM_PARTS_PROJECTION`, and
     `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`.
   - Turn-page `slim-v1` projection is Host-parity (first packet and prepend): message
-    `summary.diffs` is replaced with L1 markers `diffCount` / `hasDiffs` (file array
-    removed); tool / reasoning / file summaries after `selectTurnRecords`. Slim tools
+    `summary.diffs` is kept as a thin L1 file list (`file` / `status?` /
+    `additions` / `deletions` only; no patch bodies) with additive markers
+    `diffCount` / `hasDiffs`; tool / reasoning / file summaries after
+    `selectTurnRecords`. Slim tools
     keep short locator input
     (path / pattern / query / command / `subagent_type` / `description` / skill `name` / `id`),
     `metadata.sessionId`, skill `metadata.name`, and edit `additions`/`deletions`, and drop result bodies. Slim `file` parts keep identity, mime,

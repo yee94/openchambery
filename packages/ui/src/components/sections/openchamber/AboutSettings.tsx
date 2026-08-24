@@ -10,7 +10,7 @@ import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getMobileClientVersion } from '@/lib/mobileAppVersion';
+import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber } from '@/lib/mobileAppVersion';
 import {
   exportAndDownloadClientDiagnostics,
   isTranscriptDiagnosticsEnabled,
@@ -33,6 +33,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(initialUpdateDialogOpen);
   const [showChecking, setShowChecking] = React.useState(false);
   const [clientVersion, setClientVersion] = React.useState<string | null>(null);
+  const [clientBuildNumber, setClientBuildNumber] = React.useState<number | null>(null);
   const [openChamberVersion, setOpenChamberVersion] = React.useState<string | null>(null);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
   const updateStore = useUpdateStore(useShallow((s) => ({
@@ -87,11 +88,19 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     void getMobileClientVersion().then((version) => {
       if (!cancelled) setClientVersion(version);
     });
+    void getMobileClientBuildNumber().then((build) => {
+      if (!cancelled) setClientBuildNumber(build);
+    });
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // iOS marketing versions strip `-beta.N`, so append the native build number
+  // (the only stable per-shell identity there), e.g. 1.18.2 (370).
+  const currentVersionLabel = formatMobileClientVersionLabel(clientVersion, clientBuildNumber)
+    ?? currentVersion;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -185,7 +194,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
 
         <SettingsGroup>
           <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
-            <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
+            <span className="typography-ui-label font-mono text-foreground text-right">{currentVersionLabel}</span>
           </SettingsRow>
           <SettingsRow label={t('settings.openchamber.about.field.instanceOpenChamberVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">
@@ -206,7 +215,11 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 onClick={() => setUpdateDialogOpen(true)}
               >
                 <Icon name="download" className="size-4" />
-                {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
+                {updateStore.info?.inAppApply
+                  ? t('settings.openchamber.about.actions.applyOtaToVersion', { version: updateStore.info?.version || '' })
+                  : updateStore.info?.manualUpdate
+                    ? t('settings.openchamber.about.actions.installNativeToVersion', { version: updateStore.info?.version || '' })
+                    : t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
               </Button>
             ) : (
               <Button

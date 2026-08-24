@@ -35,6 +35,17 @@ describe('MobileProjectsHomeContainer session actions', () => {
     expect(containerSource).toContain('<MobileProjectEditSurface');
     expect(containerSource).not.toContain('onEditProject: undefined');
   });
+
+  test('header menu callbacks pass through to the presentational home', () => {
+    expect(containerSource).toContain('pinnedSessions={model.pinnedSessions}');
+    expect(containerSource).toContain('onScanQr={onScanQr}');
+    expect(containerSource).toContain('onSwitchInstance={onSwitchInstance}');
+  });
+
+  test('home model owns pinned derivation instead of the container', () => {
+    expect(containerSource).toContain('pinnedSessions={model.pinnedSessions}');
+    expect(containerSource).not.toContain('derivePinnedSessions');
+  });
 });
 
 describe('MobileProjectsHomeContainer git probe', () => {

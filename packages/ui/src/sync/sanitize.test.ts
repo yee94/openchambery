@@ -84,29 +84,48 @@ describe('summarizeFileDiffs', () => {
 })
 
 describe('projectSummaryDiffMarkers', () => {
-  test('replaces diffs array with diffCount/hasDiffs', () => {
+  test('keeps a thin diffs array and stamps diffCount/hasDiffs', () => {
     const owner = {
       summary: {
         title: 'turn',
-        diffs: [{ file: 'a.ts', patch: '@@' }, { file: 'b.ts' }],
+        diffs: [
+          { file: 'a.ts', status: 'modified', additions: 1, deletions: 0, patch: '@@' },
+          { file: 'b.ts', additions: 2, deletions: 1 },
+        ],
       },
     }
     const next = projectSummaryDiffMarkers(owner)
     expect(next).toEqual({
       summary: {
         title: 'turn',
+        diffs: [
+          { file: 'a.ts', status: 'modified', additions: 1, deletions: 0 },
+          { file: 'b.ts', additions: 2, deletions: 1 },
+        ],
         diffCount: 2,
         hasDiffs: true,
       },
     })
-    expect((next.summary as { diffs?: unknown }).diffs).toBeUndefined()
+    expect((next.summary as { diffs: Array<{ patch?: string }> }).diffs[0]?.patch).toBeUndefined()
   })
 
-  test('projects empty diffs to zero markers', () => {
+  test('projects empty diffs to zero markers and keeps the empty array', () => {
     const owner = { summary: { diffs: [] } }
     expect(projectSummaryDiffMarkers(owner)).toEqual({
-      summary: { diffCount: 0, hasDiffs: false },
+      summary: { diffs: [], diffCount: 0, hasDiffs: false },
     })
+  })
+
+  test('preserves identity when thin diffs already match markers', () => {
+    const owner = {
+      summary: {
+        title: 'x',
+        diffs: [{ file: 'a.ts', additions: 1, deletions: 0 }],
+        diffCount: 1,
+        hasDiffs: true,
+      },
+    }
+    expect(projectSummaryDiffMarkers(owner)).toBe(owner)
   })
 
   test('keeps identity when diffs key is absent', () => {
@@ -146,7 +165,7 @@ describe('stripSessionDiffSnapshots', () => {
 
     expect(next).not.toBe(session)
     expect(next.revert).toEqual({ messageID: 'msg_2', partID: 'part_3' })
-    expect(next.summary?.diffs).toBeUndefined()
+    expect(next.summary?.diffs).toEqual([{ additions: 2, deletions: 1 }])
     expect(next.summary?.diffCount).toBe(1)
     expect(next.summary?.hasDiffs).toBe(true)
     expect(next.summary?.additions).toBe(2)
@@ -170,7 +189,7 @@ describe('stripSessionDiffSnapshots', () => {
 })
 
 describe('stripMessageDiffSnapshots', () => {
-  test('projects message summary diffs to diffCount/hasDiffs', () => {
+  test('keeps thin message summary diffs and stamps diffCount/hasDiffs', () => {
     const message = {
       id: 'msg_1',
       sessionID: 'ses_1',
@@ -205,7 +224,14 @@ describe('stripMessageDiffSnapshots', () => {
     }
 
     expect(next).not.toBe(message)
-    expect(next.summary?.diffs).toBeUndefined()
+    expect(next.summary?.diffs).toEqual([
+      {
+        file: 'src/a.ts',
+        status: 'modified',
+        additions: 4,
+        deletions: 2,
+      },
+    ])
     expect(next.summary?.diffCount).toBe(1)
     expect(next.summary?.hasDiffs).toBe(true)
     expect(next.summary?.additions).toBe(4)
