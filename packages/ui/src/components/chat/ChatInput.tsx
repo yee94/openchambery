@@ -27,6 +27,7 @@ import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 import {
     useDirectoryStore as useChildDirectoryStore,
     useDirectorySync,
+    useSession,
     useSessionMessages,
     useSessionStatus,
     useSyncDirectory,
@@ -1126,6 +1127,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         () => parseLatestUserChoiceFromMessages(primarySessionMessages),
         [primarySessionMessages],
     );
+    // Per-session entity for restore cascade tier 3 (session-entity). Narrow
+    // subscription: one session entry, not the full sessions array.
+    const primarySessionEntity = useSession(
+        primarySessionID,
+        currentSessionDirectoryForSync ?? undefined,
+    );
+    const primarySessionEntityAgent = primarySessionEntity?.agent;
+    const primarySessionEntityModelId = primarySessionEntity?.model?.id;
+    const primarySessionEntityProviderId = primarySessionEntity?.model?.providerID;
+    const primarySessionEntityVariant = primarySessionEntity?.model?.variant;
     const primaryConfigScopeKey = useConfigStore((state) => state.activeDirectoryKey);
     const primarySelectionEditRevisionRef = React.useRef(0);
     const primarySessionRestoreKeyRef = React.useRef<string | null>(null);
@@ -1594,11 +1605,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             providers: primarySelectionProviders,
             agents: primarySelectionAgents,
         };
+        const sessionEntity =
+            primarySessionEntityProviderId && primarySessionEntityModelId
+                ? {
+                    agent: primarySessionEntityAgent,
+                    model: {
+                        id: primarySessionEntityModelId,
+                        providerID: primarySessionEntityProviderId,
+                        variant: primarySessionEntityVariant,
+                    },
+                }
+                : (primarySessionEntityAgent
+                    ? { agent: primarySessionEntityAgent }
+                    : null);
         const resolved = resolvePrimaryComposerSessionSelection({
             sessionId: primarySessionID,
             latestUserChoice: primaryLatestUserChoice,
             catalog,
             memory,
+            sessionEntity,
             fallbackAgentName: primaryAgentName,
         });
         if (!resolved) {
@@ -1661,6 +1686,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         primaryProviderID,
         primaryModelID,
         primaryVariant,
+        primarySessionEntityAgent,
+        primarySessionEntityModelId,
+        primarySessionEntityProviderId,
+        primarySessionEntityVariant,
     ]);
 
     const getVisibleAgents = useConfigStore((state) => state.getVisibleAgents);

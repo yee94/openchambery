@@ -248,6 +248,107 @@ describe('resolvePrimaryComposerSessionSelection', () => {
     expect(resolved?.agent).toBe('plan');
     expect(resolved?.variant).toBe('low');
   });
+
+  test('falls back to session-entity when history and memory cannot restore', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: null,
+      catalog,
+      memory: {},
+      sessionEntity: {
+        agent: 'plan',
+        model: {
+          id: 'claude-sonnet',
+          providerID: 'anthropic',
+          variant: undefined,
+        },
+      },
+      fallbackAgentName: 'build',
+    });
+
+    expect(resolved).toEqual({
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+      source: 'session-entity',
+    });
+  });
+
+  test('returns null when session-entity model is missing from catalog', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: null,
+      catalog,
+      memory: {},
+      sessionEntity: {
+        agent: 'plan',
+        model: {
+          id: 'gone',
+          providerID: 'missing',
+        },
+      },
+    });
+
+    expect(resolved).toBeNull();
+  });
+
+  test('falls back agent from fallbackAgentName when session-entity agent is invalid', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: null,
+      catalog,
+      memory: {},
+      sessionEntity: {
+        agent: 'ghost',
+        model: {
+          id: 'gpt-5.5',
+          providerID: 'openai',
+          variant: 'high',
+        },
+      },
+      fallbackAgentName: 'build',
+    });
+
+    expect(resolved).toEqual({
+      agent: 'build',
+      providerID: 'openai',
+      modelID: 'gpt-5.5',
+      variant: 'high',
+      source: 'session-entity',
+    });
+  });
+
+  test('prefers history over session-entity when history validates', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_1',
+        agent: 'plan',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+      },
+      catalog,
+      memory: {},
+      sessionEntity: {
+        agent: 'build',
+        model: {
+          id: 'gpt-5.5',
+          providerID: 'openai',
+          variant: 'low',
+        },
+      },
+    });
+
+    expect(resolved).toEqual({
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+      source: 'history',
+      messageId: 'msg_1',
+    });
+  });
 });
 
 describe('applyPrimaryComposerSessionRestore', () => {
