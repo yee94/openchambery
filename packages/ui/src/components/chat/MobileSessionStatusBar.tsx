@@ -1795,7 +1795,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
           </div>
         }
       >
-        <p className="px-1 py-1 typography-ui-body text-foreground">
+        <p className="px-1 py-1 typography-ui-label text-foreground">
           {t('mobile.projects.closeConfirmMessage', {
             title: closingProject ? formatProjectLabel(closingProject) : '',
           })}

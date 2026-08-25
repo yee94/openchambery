@@ -1762,7 +1762,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 								scrollToBottom={resumeToLatestInstant}
 							/>
 							<div
-								className="chat-message-column px-4 pb-10 pt-2 typography-ui text-muted-foreground"
+								className="chat-message-column px-4 pb-10 pt-2 typography-meta text-muted-foreground"
 								role="status"
 								aria-live="polite"
 							>

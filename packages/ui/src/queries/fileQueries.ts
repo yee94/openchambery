@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
+import React from 'react';
 import type { DirectoryListResult, FilesAPI } from '@/lib/api/types';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import { queryKeys, type FileQueryReadOptions } from '@/lib/queryRuntime';
+import { queryClient, queryKeys, type FileQueryReadOptions } from '@/lib/queryRuntime';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 
 type FileReadOptions = NonNullable<Parameters<NonNullable<FilesAPI['readFile']>>[1]>;
@@ -140,4 +141,52 @@ export const useFileContentQuery = (
   const { files } = useRuntimeAPIs();
   const transport = getRuntimeTransportIdentity();
   return useQuery({ ...fileContentQueryOptions(files, input, transport), ...options });
+};
+
+const FILE_STAT_WATCH_INTERVAL_MS = 2_000;
+
+/**
+ * Watch an open file for external changes while a read-only preview is active.
+ * Polls stat (cheap) and invalidates the content query only when size or
+ * mtime actually moved, mirroring the desktop FilesView poll behavior.
+ * No-op when the runtime lacks statFile.
+ */
+export const useFileStatWatcher = (
+  input: FileContentQueryInput,
+  options: { enabled?: boolean; intervalMs?: number; client?: Pick<QueryClient, 'invalidateQueries'> } = {},
+) => {
+  const { files } = useRuntimeAPIs();
+  const transport = getRuntimeTransportIdentity();
+  const enabled = Boolean(options.enabled && input.path && files.statFile);
+
+  const statQuery = useQuery({
+    ...fileStatQueryOptions(files, input, transport),
+    enabled,
+    refetchInterval: options.intervalMs ?? FILE_STAT_WATCH_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    staleTime: 0,
+  });
+
+  const watchedPathRef = React.useRef<string | null>(null);
+  const previousSignatureRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    const stat = statQuery.data;
+    if (!enabled || !stat) {
+      return;
+    }
+    // A path switch starts a fresh watch baseline — never compare stats across files.
+    if (watchedPathRef.current !== input.path) {
+      watchedPathRef.current = input.path ?? null;
+      previousSignatureRef.current = null;
+    }
+    const signature = `${stat.size}:${stat.mtimeMs ?? ''}`;
+    const previous = previousSignatureRef.current;
+    previousSignatureRef.current = signature;
+    if (previous === null || previous === signature) {
+      return;
+    }
+    const client = options.client ?? queryClient;
+    void client.invalidateQueries({ queryKey: fileContentQueryKey(input, transport) });
+  });
 };

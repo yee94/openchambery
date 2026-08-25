@@ -29,7 +29,7 @@ import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
-import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery } from '@/queries/fileQueries';
+import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery, useFileStatWatcher } from '@/queries/fileQueries';
 import { cn } from '@/lib/utils';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { useUIStore } from '@/stores/useUIStore';
@@ -190,6 +190,15 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
 
   const shouldReadFile = Boolean(filePath && files.readFile && (!isImageFile(filePath) || filePath.toLowerCase().endsWith('.svg')));
   const fileQuery = useFileContentQuery({
+    scopeDirectory: root,
+    path: filePath,
+  }, {
+    enabled: shouldReadFile,
+  });
+  // Read-only preview: watch for external changes (agent edits the file being
+  // viewed) and refetch content when stat moves. Scroll position is preserved
+  // because the preview container is not remounted on content updates.
+  useFileStatWatcher({
     scopeDirectory: root,
     path: filePath,
   }, {

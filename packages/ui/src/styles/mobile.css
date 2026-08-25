@@ -3268,6 +3268,7 @@ button.oc-mobile-worktree-label-trigger:active,
   align-items: center;
   overflow: hidden;
   color: var(--foreground);
+  font-size: calc(16 * var(--dpt));
   white-space: nowrap;
   text-overflow: ellipsis;
   pointer-events: none;

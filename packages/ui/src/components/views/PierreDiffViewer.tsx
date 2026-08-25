@@ -20,6 +20,8 @@ import {
   toPierreAnnotationId,
   useInlineCommentController,
   CodeSelectionActionBubble,
+  shouldKeepDiffSelectionActionForPointerDown,
+  shouldShowDiffSelectionActionFromPointerUp,
 } from '@/components/comments';
 
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
@@ -268,6 +270,7 @@ const preserveScrollPosition = (wrapper: HTMLElement | null, container: HTMLElem
 const waitForDiffReady = (
   container: HTMLElement,
   onReady: () => void,
+  options: { awaitRender?: boolean } = {},
 ): (() => void) => {
   if (typeof window === 'undefined') return () => {};
 
@@ -295,7 +298,12 @@ const waitForDiffReady = (
     return Boolean(root?.querySelector('[data-line]'));
   };
 
-  if (isReady()) {
+  // `awaitRender` marks a content refresh on a reused instance: the previous
+  // render's [data-line] nodes are still mounted, so a synchronous readiness
+  // check would fire before the async worker render swaps the DOM. Force the
+  // wait through at least one mutation so scroll compensation settles after
+  // the new content is laid out, not before.
+  if (!options.awaitRender && isReady()) {
     finish();
   } else if (typeof MutationObserver !== 'undefined') {
     observer = new MutationObserver(() => {
@@ -508,6 +516,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
   // to avoid loop with onLineSelected callback
   const isApplyingSelectionRef = useRef(false);
   const lastAppliedSelectionRef = useRef<SelectedLineRange | null>(null);
+  const textSelectionGestureRef = useRef(false);
 
   useEffect(() => {
     selectionRef.current = selection;
@@ -544,6 +553,10 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
       setSelection({ ...range, start, end });
     } else {
       setSelection(range);
+    }
+
+    if (!range) {
+      setSelectionAction(null);
     }
 
     // Clear editing state when selection changes user-driven
@@ -608,6 +621,24 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
   useEffect(() => {
     setSelectionAction(null);
   }, [fileName, fileDiff, original, modified]);
+
+  useEffect(() => {
+    if (!enableSelectionActions) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const path = event.composedPath();
+      const keep = shouldKeepDiffSelectionActionForPointerDown(event.target, path);
+      const insideDiff = path.some((node) => (
+        node instanceof ShadowRoot
+        || (node instanceof Element && node.localName === 'diffs-container')
+      ));
+      textSelectionGestureRef.current = insideDiff && !keep;
+      if (!keep) setSelectionAction(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [enableSelectionActions]);
 
 
   const applySelection = useCallback((range: SelectedLineRange) => {
@@ -942,7 +973,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
         target.scrollIntoView({ block: 'center' });
         lastFocusedLineRef.current = focusLine;
       }
-    });
+    }, { awaitRender: targetChanged && !shouldReset });
 
     return () => {
       cancelReady();
@@ -1084,6 +1115,9 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
 
       const onPointerUp = () => {
         if (!enableSelectionActions) return;
+        const fromTextSelectionGesture = textSelectionGestureRef.current;
+        textSelectionGestureRef.current = false;
+        if (!fromTextSelectionGesture) return;
         window.requestAnimationFrame(() => {
           const shadowSelection = (shadowRoot as ShadowRoot & { getSelection?: () => Selection | null }).getSelection?.();
           const selection = shadowSelection?.rangeCount ? shadowSelection : window.getSelection();
@@ -1100,7 +1134,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
           } else {
             return;
           }
-          if (!range.toString().trim()) return;
+          if (!shouldShowDiffSelectionActionFromPointerUp(true, range.toString())) return;
           const rect = range.getBoundingClientRect();
           const start = resolveSelectionEndpoint(range.startContainer, rect.left);
           const end = resolveSelectionEndpoint(range.endContainer, rect.right);

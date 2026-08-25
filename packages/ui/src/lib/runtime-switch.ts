@@ -201,7 +201,21 @@ export const switchRuntimeEndpoint = (options: { apiBaseUrl: string; clientToken
   // itself rides the tunnel (runtimeFetch -> tunnel.fetch).
   if (options.relay) {
     activateRelayTunnel(options.relay);
-  } else {
+  } else if (getActiveRelayTunnel()) {
+    // Dropping a live relay transport is a significant event: every runtime
+    // request silently falls back to the network base URL (the local origin on
+    // desktop), which 401s against the local password gate. A switch that does
+    // this unintentionally is a bug — surface the caller for diagnosis.
+    console.warn(
+      '[runtime-switch] dropping active relay transport',
+      {
+        runtimeKey,
+        previousRuntimeKey,
+        apiBaseUrl,
+        relayServerId: getActiveRelayDescriptor()?.serverId ?? null,
+      },
+      new Error('relay dropped here').stack,
+    );
     deactivateRelayTunnel();
   }
   void refreshRuntimeUrlAuthToken(apiBaseUrl).catch(() => {});
