@@ -10,7 +10,10 @@ import {
   compareTranscriptSortKey,
   transcriptSortKeyOf,
 } from "./transcript-durable-store"
-import { mergeTranscriptMessageUpdate } from "./transcript-event-reducer"
+import {
+  hasAnyPositiveTokenCount,
+  mergeTranscriptMessageUpdate,
+} from "./transcript-event-reducer"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
@@ -400,21 +403,29 @@ const hasError = (message: Message): boolean => Boolean(readTerminalFields(messa
  * Insert-only must not replace live messages (a lagging snapshot would clobber
  * the last turn), but Activity auto-collapse needs `finish` / `time.completed`
  * / `error` when SSE omitted them and the HTTP snapshot has them.
- * Live terminal fields are never cleared or overwritten.
+ * Tokens are filled the same way: a lost settle `message.updated` tick can leave
+ * finish/completed on the live row while counts stay zero; idle materialize is
+ * insert-only and must still copy positive snapshot tokens so TPS does not wait
+ * for a later reconcile-page upsert. Live positive tokens are never overwritten
+ * (same zero-value protection as `mergeTranscriptMessageUpdate`).
  */
 function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Message {
   const snapshotFields = readTerminalFields(snapshot)
   const snapshotFinish = snapshotFields.finish
   const snapshotCompleted = snapshotFields.time?.completed
   const snapshotError = snapshotFields.error
+  const liveTokens = (live as { tokens?: unknown }).tokens
+  const snapshotTokens = (snapshot as { tokens?: unknown }).tokens
 
   const takeFinish = !hasNonEmptyFinish(live)
     && typeof snapshotFinish === "string"
     && snapshotFinish.length > 0
   const takeCompleted = !hasCompletedTime(live) && typeof snapshotCompleted === "number"
   const takeError = !hasError(live) && Boolean(snapshotError)
+  const takeTokens = !hasAnyPositiveTokenCount(liveTokens)
+    && hasAnyPositiveTokenCount(snapshotTokens)
 
-  if (!takeFinish && !takeCompleted && !takeError) {
+  if (!takeFinish && !takeCompleted && !takeError && !takeTokens) {
     return live
   }
 
@@ -427,6 +438,9 @@ function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Mes
   }
   if (takeError) {
     next.error = snapshotError
+  }
+  if (takeTokens) {
+    ;(next as { tokens?: unknown }).tokens = snapshotTokens
   }
   return next as Message
 }
@@ -480,8 +494,8 @@ function mergeMessagesInConversationOrder(
 /**
  * Insert-only merge that still fills missing terminal settle fields.
  * New snapshot IDs keep conversation position; existing IDs keep the live
- * object unless the snapshot supplies `finish`, `time.completed`, or `error`
- * the live row lacks.
+ * object unless the snapshot supplies `finish`, `time.completed`, `error`, or
+ * positive `tokens` the live row lacks.
  */
 function insertMessagesByCreated(existing: Message[], newcomers: Message[]): Message[] {
   const next = existing.slice()

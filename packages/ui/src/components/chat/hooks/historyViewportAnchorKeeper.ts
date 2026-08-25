@@ -69,9 +69,12 @@ const resolveLiveAnchor = (
 export const createHistoryViewportAnchorKeeper = (input: {
     container: HTMLElement;
     anchor: HistoryViewportAnchor;
-    /** Quiet period after the last DOM mutation before auto-dispose. */
+    /** Quiet period after the last DOM mutation / scroll before auto-dispose. */
     quiesceMs?: number;
-    /** Hard lifetime cap to prevent leaks. */
+    /**
+     * Idle hard cap: longest survival with no scroll activity after arming.
+     * User scroll re-arms it. Leak prevention when the reading session goes idle.
+     */
     maxLifetimeMs?: number;
 }): HistoryViewportAnchorKeeper => {
     const {
@@ -120,6 +123,16 @@ export const createHistoryViewportAnchorKeeper = (input: {
             quiesceTimer = null;
             dispose();
         }, quiesceMs);
+    };
+
+    /** User scroll re-arms the idle cap; the keeper lives while the reading session is active. */
+    const resetMaxLifetimeTimer = () => {
+        clearMaxLifetimeTimer();
+        if (disposed) return;
+        maxLifetimeTimer = setTimeout(() => {
+            maxLifetimeTimer = null;
+            dispose();
+        }, maxLifetimeMs);
     };
 
     const correct = () => {
@@ -173,6 +186,12 @@ export const createHistoryViewportAnchorKeeper = (input: {
 
     const onScroll = () => {
         rebase();
+        // Scrolling means the keeper is still needed: later hydration /
+        // materialization batches keep landing while the user reads history.
+        // Rebase first (accept the new position), then stay armed for the
+        // quiet window after scrolling stops.
+        resetQuiesceTimer();
+        resetMaxLifetimeTimer();
     };
 
     const observer = new MutationObserver(() => {
@@ -191,11 +210,7 @@ export const createHistoryViewportAnchorKeeper = (input: {
 
     container.addEventListener('scroll', onScroll, { passive: true });
 
-    maxLifetimeTimer = setTimeout(() => {
-        maxLifetimeTimer = null;
-        dispose();
-    }, maxLifetimeMs);
-
+    resetMaxLifetimeTimer();
     resetQuiesceTimer();
 
     return { rebase, dispose };

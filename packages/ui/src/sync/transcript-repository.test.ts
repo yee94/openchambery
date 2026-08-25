@@ -235,6 +235,7 @@ describe("hasTailAssistantMissingSettledCompletion", () => {
       ...assistantMessage("msg_a"),
       finish: "stop",
       time: { created: 1, completed: 2 },
+      tokens: { input: 1, output: 2, reasoning: 0 },
     } as Message))).toBe(false)
     expect(hasTailAssistantMissingSettledCompletion(tail(assistantMessage("msg_a")))).toBe(false)
     expect(hasTailAssistantMissingSettledCompletion(tail({
@@ -245,6 +246,41 @@ describe("hasTailAssistantMissingSettledCompletion", () => {
       ...assistantMessage("msg_a"),
       finish: "stop",
       error: { name: "MessageAbortedError", data: { message: "aborted" } },
+    } as Message))).toBe(false)
+  })
+
+  test("terminal stop with completed but zero tokens marks the settle gap", () => {
+    // Finish/completed arrived; tokens were lost on the live channel — still
+    // a settle gap so repair can upsert authoritative counts for TPS.
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "stop",
+      time: { created: 1, completed: 2 },
+      tokens: { input: 0, output: 0, reasoning: 0 },
+    } as Message))).toBe(true)
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "stop",
+      time: { created: 1, completed: 2 },
+    } as Message))).toBe(true)
+  })
+
+  test("stop with completed and positive tokens is not a gap", () => {
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "stop",
+      time: { created: 1, completed: 2 },
+      tokens: { input: 1, output: 44, reasoning: 9 },
+    } as Message))).toBe(false)
+  })
+
+  test("non-terminal finish with zero tokens is not a tokens gap", () => {
+    // Mid-loop tool-calls must not trigger settle repair.
+    expect(hasTailAssistantMissingSettledCompletion(tail({
+      ...assistantMessage("msg_a"),
+      finish: "tool-calls",
+      time: { created: 1, completed: 2 },
+      tokens: { input: 0, output: 0, reasoning: 0 },
     } as Message))).toBe(false)
   })
 

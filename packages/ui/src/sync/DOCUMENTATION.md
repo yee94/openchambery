@@ -316,7 +316,7 @@ Modules:
 
 | Module | Role |
 |---|---|
-| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; `hasTailAssistantMissingSettledCompletion` (lost settle-tick gap detection); optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
+| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; `hasTailAssistantMissingSettledCompletion` (lost settle-tick gap detection: missing completed, or stop without positive tokens); optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
 | `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded slim or open tool/reasoning/file parts exact-fill via `session.message` after the authority tail (≤4 concurrent FIFO; settled full rows skip); post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
 | `session-authority-revalidate.ts` | Enter-and-sync 30s window keyed by transport+generation+directory+sessionID; stamped only after a successful authority pull |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
@@ -694,7 +694,7 @@ both readers agree on when a frame may shrink.
   | field | values | meaning |
   |---|---|---|
   | `onStale` | `drop` \| `backfill` | discard the page, or still apply it as hole-filling |
-  | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs. Insert-only also copies missing terminal settle fields (`finish`, `time.completed`, `error`) onto the live object; live terminal fields are never cleared |
+  | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs. Insert-only also copies missing terminal settle fields (`finish`, `time.completed`, `error`, and positive `tokens` when live counts are still zero) onto the live object; live terminal fields and positive tokens are never cleared |
   | `parts` | `replace` \| `skip-existing` | fetched parts are authoritative, or leave messages that already have parts |
   | `preserveStreaming` | `assistant` \| `all` \| `none` | which roles keep live parts the snapshot omits or truncates (streaming text/output, in-flight tools, and mid-turn completed tools) |
   | `protectOptimistic` | `none` \| `keep-unless-full` | unconfirmed optimistic parts (`__openchamberOptimistic`) keep the local set when incoming is slim or empty; a non-empty full snapshot still replaces |
@@ -1104,8 +1104,10 @@ both readers agree on when a frame may shrink.
   Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
   A lost settle tick — tail assistant with a server-stamped terminal finish
-  (`stop` / `length`) but no `time.completed`, detected via
-  `hasTailAssistantMissingSettledCompletion` — self-heals through
+  (`stop` / `length`) but no `time.completed`, or a confirmed `stop` with
+  `time.completed` but no positive token counts (tokens half of the settle
+  tick lost), detected via `hasTailAssistantMissingSettledCompletion` —
+  self-heals through
   `refreshTranscriptFromAuthority` (reconcile upsert, never stale-dropped):
   a cooldown-suppressed materialization enqueue re-checks the gap one
   microtask after the event frame (transcript SSE batches commit at flush

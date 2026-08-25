@@ -26,6 +26,7 @@ import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/li
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
+import { shouldTightenWorkingBottomGap } from './lib/activityExpansion';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
@@ -624,7 +625,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     // Live working status sits directly under this turn — drop the idle pb-8 gap
     // so "Delegating task …" etc. don't float far below the last tool row.
-    const tightenWorkingBottomGap = turnGroupingContext?.isWorking === true || isInActiveTurn;
+    // Incomplete assistants keep isInActiveTurn after an abnormal settle
+    // (no time.completed); Processed chrome must still restore pb-8 so the
+    // recap's -mt-6 has a gap to pull into instead of overlapping "已处理".
+    const tightenWorkingBottomGap = shouldTightenWorkingBottomGap({
+        isWorking: turnGroupingContext?.isWorking === true,
+        isInActiveTurn,
+        headerCompletionDisposition: turnGroupingContext?.completionDisposition,
+    });
 
     const isFollowedByAssistant = React.useMemo(() => {
         if (isUser) return false;

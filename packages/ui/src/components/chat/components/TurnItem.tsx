@@ -1,7 +1,9 @@
 import React from 'react';
 
 import type { ChatMessageEntry, TurnRecord } from '../lib/turns/types';
+import type { PendingAssistantHeaderPresentation } from '../lib/pendingAssistantHeader';
 import { useUIStore } from '@/stores/useUIStore';
+import MessageHeader from '../message/MessageHeader';
 import TurnActivity from './TurnActivity';
 import TurnAssistantBlock from './TurnAssistantBlock';
 
@@ -13,12 +15,21 @@ interface TurnItemProps {
     turn: TurnRecord;
     activityExpanded: boolean;
     showCompactionStatus: boolean;
+    pendingAssistantHeader?: PendingAssistantHeaderPresentation | null;
     onToggleActivity: () => void;
     stickyUserHeader?: boolean;
     renderMessage: (message: ChatMessageEntry, activityExpanded: boolean) => React.ReactNode;
 }
 
-const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompactionStatus, onToggleActivity, stickyUserHeader = true, renderMessage }) => {
+const TurnItem: React.FC<TurnItemProps> = ({
+    turn,
+    activityExpanded,
+    showCompactionStatus,
+    pendingAssistantHeader = null,
+    onToggleActivity,
+    stickyUserHeader = true,
+    renderMessage,
+}) => {
     const isMobile = useUIStore((state) => state.isMobile);
     const userMessageCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
     // Compact is a session command, not a user-authored bubble. Keep the turn
@@ -46,6 +57,22 @@ const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompact
             ) : (
                 renderMessage(turn.userMessage, activityExpanded)
             )}
+
+            {pendingAssistantHeader ? (
+                <div className={`group w-full ${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} ${turn.assistantMessages.length === 0 ? 'pb-1' : 'pb-0'}`}>
+                    <div className="chat-message-column relative">
+                        <MessageHeader
+                            isUser={false}
+                            isMobile={isMobile}
+                            providerID={pendingAssistantHeader.providerID}
+                            modelID={pendingAssistantHeader.modelID}
+                            agentName={pendingAssistantHeader.agentName}
+                            modelName={pendingAssistantHeader.modelName}
+                            variant={pendingAssistantHeader.variant}
+                        />
+                    </div>
+                </div>
+            ) : null}
 
             {showCompactionStatus ? (
                 <div className={`group w-full ${isMobile ? 'pt-4' : 'pt-6'} ${turn.assistantMessages.length === 0 ? 'pb-8' : 'pb-0'}`}>

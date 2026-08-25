@@ -158,12 +158,12 @@ describe('createHistoryViewportAnchorKeeper', () => {
             anchor: { messageId: 'msg-b', offsetTop: 80 },
         });
 
-        // User scrolls: msg-b now sits at 40px from the viewport top.
-        container.scrollTop = 240;
+        // User scrolls: update live rects, then scrollTop + dispatch scroll.
         setRect(aboveSpacer, { top: -160, height: 100, bottom: -60 });
         setRect(msgA, { top: -60, height: 100, bottom: 40 });
         setRect(msgB, { top: 40, height: 100, bottom: 140 });
         setRect(msgC, { top: 140, height: 100, bottom: 240 });
+        container.scrollTop = 240;
         container.dispatchEvent(new Event('scroll'));
 
         // Above content grows by 30px after rebase.

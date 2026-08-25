@@ -162,6 +162,15 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("import { formatActivityDuration } from './formatActivityDuration'");
     });
 
+    test('idle Processed chrome restores pb-8 so SessionRecapNote -mt-6 does not overlap', () => {
+        const chatMessageSource = readFileSync(join(__dirname, '../../ChatMessage.tsx'), 'utf-8');
+        const recapSource = readFileSync(join(__dirname, '../../SessionRecapSpacer.tsx'), 'utf-8');
+        expect(chatMessageSource).toContain('shouldTightenWorkingBottomGap({');
+        expect(chatMessageSource).toContain('headerCompletionDisposition: turnGroupingContext?.completionDisposition');
+        expect(chatMessageSource).not.toContain('const tightenWorkingBottomGap = turnGroupingContext?.isWorking === true || isInActiveTurn;');
+        expect(recapSource).toContain('className="-mt-6"');
+    });
+
     test('uses one full-width disclosure with identical title geometry in both states', () => {
         const activityStatusSource = progressiveGroupSource.slice(
             progressiveGroupSource.indexOf('const activityStatusLabel = completionDisposition === undefined'),
@@ -224,6 +233,10 @@ describe('progressive activity presentation', () => {
         expect(messageListSource).toContain('onToggleActivity={handleToggleTurnGroup}');
         expect(progressiveGroupSource).not.toContain('role="status"');
         expect(turnItemSource.indexOf('{showCompactionStatus ? (')).toBeLessThan(turnItemSource.indexOf('<TurnAssistantBlock'));
+        expect(turnItemSource.indexOf('{pendingAssistantHeader ? (')).toBeLessThan(turnItemSource.indexOf('{showCompactionStatus ? ('));
+        expect(turnItemSource).toContain('<MessageHeader');
+        expect(messageListSource).toContain('pendingAssistantHeader={pendingAssistantHeader}');
+        expect(messageListSource).toContain('hasActiveStreamingMessage: Boolean(activeStreamingMessageId)');
     });
 
     test('keeps live and ordinary turns on their established activity path', () => {
