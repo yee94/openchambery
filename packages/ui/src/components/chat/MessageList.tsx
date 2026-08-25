@@ -1,5 +1,5 @@
 import React from 'react';
-import { useEvent, useInterval, useIsomorphicLayoutEffect } from '@reactuses/core';
+import { useEvent, useInterval, useIsomorphicLayoutEffect, useResizeObserver, useUnmount } from '@reactuses/core';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { elementScroll, useVirtualizer as useTanstackVirtualizer, type ReactVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { isAssistantSessionDivider } from './hostedSessionHistory';
@@ -268,6 +268,24 @@ export const resolveTimelineVirtualizerCacheKey = (
     virtualizerKey: string,
     activityRenderMode: 'collapsed' | 'summary',
 ): string => `${virtualizerKey}::activity:${activityRenderMode}`;
+
+/**
+ * Context-panel / sidebar open shrinks the transcript column and reflows every
+ * wrap. Row ResizeObservers are supposed to push the new heights into
+ * virtual-core, but Electron 41 often skips those callbacks (compositor /
+ * contain:layout), so itemSizeCache keeps the wide-column sizes and later
+ * turns paint on top of earlier ones. A column-width change is the signal to
+ * drop that cache; the next measureElement pass reads live offsetHeight.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const shouldInvalidateVirtualizerMeasurementsOnColumnResize = (
+    previousWidth: number | null,
+    nextWidth: number,
+): boolean => {
+    if (!Number.isFinite(nextWidth) || nextWidth <= 0) return false;
+    if (previousWidth === null) return false;
+    return Math.round(previousWidth) !== Math.round(nextWidth);
+};
 
 /** How many rows past each fold edge may start Markdown hydration. */
 // eslint-disable-next-line react-refresh/only-export-components
@@ -1485,6 +1503,54 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         },
         initialMeasurementsCache: measurementSeedRef.current,
     });
+    const columnWidthRef = React.useRef<number | null>(null);
+    const columnMeasureTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    if (!isTanstack) {
+        columnWidthRef.current = null;
+    }
+    const handleColumnResize = useEvent(() => {
+        if (!isTanstack) return;
+        const node = sizeContainerRef.current ?? scrollRef?.current;
+        if (!node) return;
+        const nextWidth = node.offsetWidth;
+        if (!shouldInvalidateVirtualizerMeasurementsOnColumnResize(columnWidthRef.current, nextWidth)) {
+            if (columnWidthRef.current === null && nextWidth > 0) {
+                columnWidthRef.current = nextWidth;
+            }
+            return;
+        }
+        columnWidthRef.current = nextWidth;
+        if (columnMeasureTimeoutRef.current !== null) {
+            clearTimeout(columnMeasureTimeoutRef.current);
+        }
+        // ContextPanel animates width for 200ms. Measure after that transition
+        // so wrap heights match the settled column, not an in-between frame.
+        columnMeasureTimeoutRef.current = setTimeout(() => {
+            columnMeasureTimeoutRef.current = null;
+            tanstackVirtualizer.measure();
+        }, 220);
+    });
+    const canObserveColumnResize = isTanstack && typeof ResizeObserver !== 'undefined';
+    useResizeObserver(
+        canObserveColumnResize ? sizeContainerRef : null,
+        handleColumnResize,
+    );
+    useResizeObserver(
+        canObserveColumnResize && scrollRef ? scrollRef : null,
+        handleColumnResize,
+    );
+    useUnmount(() => {
+        if (columnMeasureTimeoutRef.current !== null) {
+            clearTimeout(columnMeasureTimeoutRef.current);
+            columnMeasureTimeoutRef.current = null;
+        }
+    });
+    useIsomorphicLayoutEffect(() => {
+        if (!isTanstack) return;
+        handleColumnResize();
+        // handleColumnResize is useEvent; seed once per virtualized mount.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- handleColumnResize is useEvent
+    }, [isTanstack]);
     useIsomorphicLayoutEffect(() => {
         committedEngineRef.current = engine;
         if (!isTanstack) {

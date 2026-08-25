@@ -12,6 +12,17 @@ All notable changes to this project will be documented in this file.
 - **SSH 默认开启 remote relay host：** 新建/已有 managed 实例默认 `relayHost: true`（可显式关掉）；连接时带 `--relay-host`，并在连上后写入 relay 描述符。
 - **移除 desktop 中继 SSH 路径：** 删除 `x-openchamber-target-port` 路由、`/api/openchamber/ssh-host-token`、`sshTarget` / `viaSshRelay` / pairing `sshHostId`。桌面本机仍可通过 SSH local-forward（apiUrl + clientToken）访问该实例。
 
+## [1.18.4-beta.6] - 2026-08-25
+
+### 聊天
+
+- **Electron 打开子 Agent 侧栏不再叠字：** 主会话列宽被挤窄后，虚拟列表会按新列宽重新测量行高，消息、徽章和时间戳不再互相叠在一起。
+- **停止后队列头不再提前消失：** 中止当前回合后，下一条排队消息会保持「发送中」直到真正发出，不再从队列里提前藏掉。
+
+### 会话
+
+- **上一条 / 下一条覆盖置顶：** 快捷键按侧栏实际顺序走，先置顶再项目列表，并在两端循环。
+
 ## [1.18.4-beta.5] - 2026-08-25
 
 ### 聊天

@@ -31,7 +31,7 @@ import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
 import { MessageReferenceChip } from './MessageReferenceChip';
 import { canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, buildQueuedMessagePreviewParts, isLegacyQueueItemDispatchPending, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperations, SERVER_QUEUE_SEND_PENDING_TIMEOUT_MS, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueCommittedSendShadow, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
-import { isQueueItemHiddenByAbortOptimistic, subscribeQueueAbortOptimistic, getQueueAbortOptimisticRevision } from '@/sync/queue-abort-optimistic';
+import { isQueueItemSendPendingByAbortOptimistic, subscribeQueueAbortOptimistic, getQueueAbortOptimisticRevision } from '@/sync/queue-abort-optimistic';
 import { enqueueServerQueueScopeMutation, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -72,13 +72,15 @@ interface QueuedMessageChipProps {
     pendingOperationKinds: ReadonlySet<ServerQueueOperationKind>;
     /** Client send-pending presentation timed out; restore Send/Edit until a fresh pending cycle. */
     sendPendingTimedOut: boolean;
+    /** Abort-after-queue keeps the chip in "Sending…" until OpenCode actually consumes it. */
+    abortSendPending: boolean;
     isMobile: boolean;
     onEdit: (message: QueuedMessage | MessageQueueServerDisplayItem) => void;
     onSend: (message: QueuedMessage | MessageQueueServerDisplayItem) => void;
     onRemove: (message: QueuedMessage | MessageQueueServerDisplayItem) => void;
 }
 
-const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, sendPendingTimedOut, isMobile, onEdit, onSend, onRemove }: QueuedMessageChipProps) => {
+const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, sendPendingTimedOut, abortSendPending, isMobile, onEdit, onSend, onRemove }: QueuedMessageChipProps) => {
     const { t } = useI18n();
     const pendingAdmission = isMessageQueuePendingAdmissionItem(message);
     const queueItemID = message.queueItemID || (message as QueuedMessage).id;
@@ -90,7 +92,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     const legacyDispatchPending = Boolean(legacyMessage && isLegacyQueueItemDispatchPending(legacyMessage));
     const activeAttempt = server && !pendingAdmission && isServerQueueItemActiveAttempt(message as MessageQueueItem);
     const rawSendPending = (server && pendingOperationKinds.has('send')) || authoritativeDispatchPending || legacyDispatchPending;
-    const sendPending = rawSendPending && !sendPendingTimedOut;
+    const sendPending = abortSendPending || (rawSendPending && !sendPendingTimedOut);
     // Client edit/remove remains authoritative even when delivery tracking is
     // stale. Sending and dragging an already-started attempt stay unavailable
     // because they would imply a second POST or a movable active slot.
@@ -460,15 +462,21 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         getQueueAbortOptimisticRevision,
     );
     const queuedMessages = React.useMemo(() => {
-        const sessionID = queueScope?.sessionID;
         const base = serverQueue.mode === 'server'
             ? projectServerQueueChipItems(serverQueue.items, chipOverlayOperations)
             : legacyMessages;
-        const withPending = clientPendingItems.length === 0 ? base : [...base, ...clientPendingItems];
-        if (!sessionID) return withPending;
-        const visible = withPending.filter((item) => !isQueueItemHiddenByAbortOptimistic(sessionID, item.queueItemID ?? ''));
-        return visible.length === withPending.length ? withPending : visible;
-    }, [abortOptimisticRevision, chipOverlayOperations, clientPendingItems, legacyMessages, queueScope?.sessionID, serverQueue.items, serverQueue.mode]);
+        return clientPendingItems.length === 0 ? base : [...base, ...clientPendingItems];
+    }, [chipOverlayOperations, clientPendingItems, legacyMessages, serverQueue.items, serverQueue.mode]);
+    const abortSendPendingIDs = React.useMemo(() => {
+        const sessionID = queueScope?.sessionID;
+        const ids = new Set<string>();
+        if (!sessionID) return ids;
+        for (const item of queuedMessages) {
+            const queueItemID = item.queueItemID || (item as QueuedMessage).id;
+            if (queueItemID && isQueueItemSendPendingByAbortOptimistic(sessionID, queueItemID)) ids.add(queueItemID);
+        }
+        return ids;
+    }, [abortOptimisticRevision, queuedMessages, queueScope?.sessionID]);
     const pendingKindsByItem = React.useMemo(() => {
         const result = new Map<string, Set<ServerQueueOperationKind>>();
         for (const operation of chipOverlayOperations) {
@@ -806,6 +814,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
                                         hasDispatchLock={hasDispatchLock}
                                         pendingOperationKinds={pendingKindsByItem.get(chipID) ?? EMPTY_PENDING_OPERATION_KINDS}
                                         sendPendingTimedOut={sendPendingTimedOutIDs.has(chipID)}
+                                        abortSendPending={abortSendPendingIDs.has(chipID)}
                                         isMobile={isMobile}
                                         onEdit={handleEdit}
                                         onSend={handleSend}

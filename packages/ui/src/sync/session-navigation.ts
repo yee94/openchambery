@@ -235,10 +235,20 @@ const findCurrentNavigationTargetIndex = (
     return -1;
   }
 
-  // A Recent target also carries its owning project. When Recent becomes
-  // unavailable and navigation falls back to the Project ring, keep that
-  // project identity so duplicate occurrences of the same session anchor at
-  // the row the user actually came from rather than the first matching ID.
+  // Duplicate session IDs can exist across pinned and project rows in the
+  // published snapshot. Prefer the exact focus surface, then the owning
+  // project, so wrap/cross-section jumps land on the row the user came from.
+  if (focus?.scope) {
+    const scopedMatch = targets.findIndex((target) => (
+      target.scope === focus.scope
+      && target.sessionId === rootSessionId
+      && (focus.projectId ? target.projectId === focus.projectId : true)
+    ));
+    if (scopedMatch >= 0) {
+      return scopedMatch;
+    }
+  }
+
   if (focus?.projectId) {
     const projectMatch = targets.findIndex((target) => (
       target.sessionId === rootSessionId && target.projectId === focus.projectId
@@ -250,6 +260,12 @@ const findCurrentNavigationTargetIndex = (
 
   return targets.findIndex((target) => target.sessionId === rootSessionId);
 };
+
+const getCombinedNavigationTargets = (
+  snapshot: SessionNavigationSnapshot,
+): readonly SessionNavigationTarget[] => (
+  [...snapshot.pinned, ...snapshot.project]
+);
 
 const cycleNavigationTargets = (
   targets: readonly SessionNavigationTarget[],
@@ -271,10 +287,9 @@ const cycleNavigationTargets = (
 };
 
 /**
- * Resolve the next target from the focus surface the user last interacted with.
- * Recent focus stays within the published Recent rows. Project focus cycles
- * the logically visible project rows in sidebar order, including across
- * projects. Hidden rows are never used as shortcut fallbacks.
+ * Resolve the next target in sidebar order: published pinned rows, then
+ * logically visible project rows, wrapping across both sections. Hidden
+ * project rows are never used as shortcut fallbacks.
  */
 export const resolveAdjacentNavigationTarget = (
   direction: -1 | 1,
@@ -284,34 +299,18 @@ export const resolveAdjacentNavigationTarget = (
   const allSessions = getNavigationSessionUniverse();
   const rootSessionId = resolveRootSessionId(currentSessionId, allSessions);
   const currentFocus = focus?.sessionId === currentSessionId ? focus : null;
-  const requestedScope = currentFocus?.scope ?? 'project';
   const snapshot = getSessionNavigationSnapshot();
 
   if (!snapshot) {
     return null;
   }
 
-  const scopedTargets = requestedScope === 'pinned' ? snapshot.pinned : snapshot.project;
-  const scopedTarget = cycleNavigationTargets(
-    scopedTargets,
+  return cycleNavigationTargets(
+    getCombinedNavigationTargets(snapshot),
     direction,
     rootSessionId,
     currentFocus,
   );
-  if (scopedTarget) {
-    return scopedTarget;
-  }
-
-  if (requestedScope === 'pinned') {
-    return cycleNavigationTargets(
-      snapshot.project,
-      direction,
-      rootSessionId,
-      currentFocus,
-    );
-  }
-
-  return null;
 };
 
 /**
