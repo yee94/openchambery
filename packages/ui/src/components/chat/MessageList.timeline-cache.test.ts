@@ -66,6 +66,7 @@ const {
     resolveTanstackEstimatedEntrySize,
     resolveTanstackEstimateMinSamples,
     resolveTimelineVirtualizerCacheKey,
+    shouldInvalidateVirtualizerMeasurementsOnColumnResize,
     resolveToggledActivityExpanded,
     resolveTurnActivityExpandedByDefault,
     resolveTurnActivityPresentation,
@@ -443,5 +444,22 @@ describe('MessageList history virtualization handle state', () => {
         syncCurrentHistoryVirtualization(state, true);
 
         expect(existingHandleReader()).toBe(true);
+    });
+});
+
+describe('column-width virtualizer invalidation', () => {
+    test('ignores the first observation and sub-pixel wobble, then invalidates a real column shrink', () => {
+        expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(null, 800)).toBe(false);
+        expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(800.2, 799.6)).toBe(false);
+        expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(800, 420)).toBe(true);
+        expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(420, 800)).toBe(true);
+        expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(800, 0)).toBe(false);
+    });
+
+    test('StaticHistoryList measures again after the transcript column changes width', () => {
+        const source = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+        expect(source).toContain('shouldInvalidateVirtualizerMeasurementsOnColumnResize');
+        expect(source).toContain('tanstackVirtualizer.measure()');
+        expect(source).toContain('useResizeObserver(');
     });
 });

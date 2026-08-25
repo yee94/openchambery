@@ -3,11 +3,6 @@ import { getQueueForScope, legacyQueueScope, useMessageQueueStore, type QueueIte
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch'
 import { ascendingIdAfter } from '@/sync/message-id'
 import { getSyncMessages } from '@/sync/sync-refs'
-import {
-  beginOptimisticSend,
-  rollbackOptimisticSend,
-  type OptimisticSendTicket,
-} from '@/sync/session-actions'
 import { useSessionUIStore } from '@/sync/session-ui-store'
 import { getMessageQueueCutover } from '@/sync/message-queue-cutover'
 import { getMessageQueueServerRuntime } from '@/sync/message-queue-server-runtime'
@@ -25,7 +20,6 @@ export type QueueAbortOptimisticPresentation = {
   providerID: string
   modelID: string
   agent?: string
-  ticket: OptimisticSendTicket
   source: 'server' | 'legacy'
 }
 
@@ -66,7 +60,7 @@ export const getQueueAbortOptimisticPresentation = (sessionID: string): QueueAbo
   presentations.get(sessionID)
 )
 
-export const isQueueItemHiddenByAbortOptimistic = (sessionID: string, queueItemID: string): boolean => (
+export const isQueueItemSendPendingByAbortOptimistic = (sessionID: string, queueItemID: string): boolean => (
   presentations.get(sessionID)?.queueItemID === queueItemID
 )
 
@@ -167,7 +161,11 @@ export const planQueueAbortOptimisticReconcile = (
     if (dispatchMessageID && presentationMessageID && dispatchMessageID !== presentationMessageID) {
       return 'rebind'
     }
-    return transcript.hasPinnedMessage ? 'confirm' : 'keep'
+    // Hide Sending once OpenCode is consuming, or an authoritative user row is
+    // already on screen. A waiting head without a real transcript row keeps the
+    // chip so abort matches manual jump until consume.
+    if (IN_FLIGHT.has(item.status) || transcript.hasPinnedMessage) return 'confirm'
+    return 'keep'
   }
   if (item && FAILED.has(item.status)) return 'rollback'
   if (transcript.hasPinnedMessage) return 'confirm'
@@ -184,15 +182,11 @@ const forget = (sessionID: string): QueueAbortOptimisticPresentation | undefined
 }
 
 export const rollbackQueueAbortOptimistic = (sessionID: string): void => {
-  const current = forget(sessionID)
-  if (!current) return
-  rollbackOptimisticSend(current.ticket)
+  forget(sessionID)
 }
 
 export const confirmQueueAbortOptimistic = (sessionID: string): void => {
-  const current = forget(sessionID)
-  if (!current) return
-  useSessionUIStore.getState().clearMessageSending?.(sessionID, current.messageID)
+  forget(sessionID)
 }
 
 const snapshotFor = (presentation: QueueAbortOptimisticPresentation): QueueAbortOptimisticItemSnapshot => {
@@ -231,27 +225,11 @@ const transcriptFor = (presentation: QueueAbortOptimisticPresentation): QueueAbo
 const rebindQueueAbortOptimistic = (sessionID: string, nextMessageID: string): void => {
   const current = presentations.get(sessionID)
   if (!current || !nextMessageID || current.messageID === nextMessageID) return
-  rollbackOptimisticSend(current.ticket)
-  try {
-    const ticket = beginOptimisticSend({
-      sessionId: current.sessionID,
-      content: current.content,
-      providerID: current.providerID,
-      modelID: current.modelID,
-      agent: current.agent,
-      directory: current.directory,
-      messageID: nextMessageID,
-    })
-    presentations.set(sessionID, {
-      ...current,
-      messageID: ticket.messageID,
-      ticket,
-    })
-    notify()
-  } catch {
-    presentations.delete(sessionID)
-    notify()
-  }
+  presentations.set(sessionID, {
+    ...current,
+    messageID: nextMessageID,
+  })
+  notify()
 }
 
 const applyQueueAbortOptimisticPlan = (
@@ -300,35 +278,21 @@ export const promoteQueueHeadOnAbort = (sessionID: string): QueueAbortOptimistic
     ? item.messageID
     : undefined
   const messageID = queuedMessageID ?? ascendingIdAfter('msg', latestMessageID(sessionID, directory))
-  try {
-    const ticket = beginOptimisticSend({
-      sessionId: sessionID,
-      content,
-      providerID: config.providerID,
-      modelID: config.modelID,
-      agent: config.agent,
-      directory,
-      messageID,
-    })
-    const presentation: QueueAbortOptimisticPresentation = {
-      sessionID,
-      directory,
-      queueItemID: item.queueItemID,
-      operationID: 'operationID' in item ? item.operationID : undefined,
-      messageID: ticket.messageID,
-      content,
-      providerID: config.providerID,
-      modelID: config.modelID,
-      agent: config.agent,
-      ticket,
-      source: server ? 'server' : 'legacy',
-    }
-    presentations.set(sessionID, presentation)
-    notify()
-    return presentation
-  } catch {
-    return null
+  const presentation: QueueAbortOptimisticPresentation = {
+    sessionID,
+    directory,
+    queueItemID: item.queueItemID,
+    operationID: 'operationID' in item ? item.operationID : undefined,
+    messageID,
+    content,
+    providerID: config.providerID,
+    modelID: config.modelID,
+    agent: config.agent,
+    source: server ? 'server' : 'legacy',
   }
+  presentations.set(sessionID, presentation)
+  notify()
+  return presentation
 }
 
 export const resetQueueAbortOptimisticForTests = (): void => {

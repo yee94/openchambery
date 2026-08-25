@@ -2007,10 +2007,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   React.useLayoutEffect(
     () =>
       publishSessionNavigationSnapshot({
-        pinned: pinnedNavigationTargets,
+        pinned: visiblePinnedNavigationTargets,
         project: visibleProjectNavigationTargets,
       }),
-    [pinnedNavigationTargets, visibleProjectNavigationTargets],
+    [visiblePinnedNavigationTargets, visibleProjectNavigationTargets],
   );
 
   React.useLayoutEffect(() => {
