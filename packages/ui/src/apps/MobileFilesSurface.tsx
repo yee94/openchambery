@@ -11,6 +11,7 @@ import { Icon } from '@/components/icon/Icon';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import type { ToolPopupContent } from '@/components/chat/message/types';
+import { TextSelectionMenu } from '@/components/chat/message/TextSelectionMenu';
 import { PIERRE_RUNTIME_BASE_CSS } from '@/components/views/PierreDiffViewer';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -447,6 +448,9 @@ const MobileFileDetail: React.FC<{
   onCopyContent: () => void;
 }> = ({ path, content, error, isLoading, hideHeader = false, onBack, onCopyPath, onCopyContent }) => {
   const { t } = useI18n();
+  // Selection actions (add to chat / new session / copy) surface for text
+  // selected inside the file preview, including PierreFile's shadow DOM.
+  const contentContainerRef = React.useRef<HTMLDivElement>(null);
   const imagePath = isImageFile(path) && !path.toLowerCase().endsWith('.svg') ? path : '';
   const runtimeTransportIdentity = getRuntimeTransportIdentity();
   const relayImageKey = imagePath && isRelayModeActive()
@@ -589,7 +593,7 @@ const MobileFileDetail: React.FC<{
           <MobileFileDetailActions path={path} onCopyPath={onCopyPath} onCopyContent={onCopyContent} />
         </MobileSheetHeaderActions>
       )}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div ref={contentContainerRef} className="min-h-0 flex-1 overflow-hidden">
         {isLoading || imageAuthLoading || isRelayImageLoading ? (
           <MobileFilesState loading message={t('filesView.state.loading')} />
         ) : imageError ? (
@@ -614,6 +618,7 @@ const MobileFileDetail: React.FC<{
           <MobileTextFile path={path} content={content} />
         )}
       </div>
+      <TextSelectionMenu containerRef={contentContainerRef} />
       {imagePopup.open ? (
         <React.Suspense fallback={null}>
           <ToolOutputDialog
