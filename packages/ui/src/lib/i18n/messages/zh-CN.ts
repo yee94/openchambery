@@ -88,6 +88,8 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.label.label': '名称',
   'mobile.instances.label.placeholder': '可选显示名称',
   'mobile.instances.saveNew': '保存实例',
+  'mobile.instances.status.connected': '已连接',
+  'mobile.instances.status.saved': '已保存',
   'mobile.instances.status.connectedDirect': '已连接 · 局域网',
   'mobile.instances.status.connectedRelay': '已连接 · 中继',
   'mobile.instances.status.connectedSshRelay': '已连接 · SSH 经中继',

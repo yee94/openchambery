@@ -89,6 +89,8 @@ export const dict: Record<I18nKey, string> = {
   "mobile.instances.label.label": "Nombre",
   "mobile.instances.label.placeholder": "Nombre para mostrar (opcional)",
   "mobile.instances.saveNew": "Guardar instancia",
+  "mobile.instances.status.connected": "Conectado",
+  "mobile.instances.status.saved": "Guardado",
   "mobile.instances.status.connectedDirect": "Conectado · Red local",
   "mobile.instances.status.connectedRelay": "Conectado · Relay",
   "mobile.instances.status.connectedSshRelay": "Conectado · SSH por relay",

@@ -102,7 +102,6 @@ import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { mobileBackNavigationCoordinator, useMobileNavigationDriver } from '@/mobile/mobileBackNavigation';
 import { DedicatedMobileAppProvider, type MobileAppActions } from './mobileAppContext';
 import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection, type UseMobileConnection } from './mobileConnections';
-import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { MobileConnectionMethodDivider, MobilePairingLinkForm } from './MobilePairingLinkForm';
 import { isQrScanSupported, scanConnectionQr } from './mobileQrScan';
 import { reconnectAppForTransportSwitch, resetAppForRuntimeEndpointChange } from './runtimeEndpointReset';
@@ -1223,7 +1222,7 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
                           <span className={cn('block truncate typography-small', isConnectingRow ? 'text-foreground' : 'text-muted-foreground')}>
                             {isConnectingRow
                               ? t('mobile.connect.connecting')
-                              : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge')}
+                              : t('mobile.instances.status.saved')}
                           </span>
                         </span>
                         {isConnectingRow
@@ -1331,6 +1330,7 @@ const MobileInstancesSurface: React.FC<{
   } = conn;
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const editingConnection = editingId ? connections.find((connection) => connection.id === editingId) ?? null : null;
+  const isRelayOnlyEditing = editingConnection ? !editingConnection.candidates.some((c) => c.kind === 'direct') : false;
   const [confirmingDeleteId, setConfirmingDeleteId] = React.useState<string | null>(null);
   const [url, setUrl] = React.useState('');
   const [label, setLabel] = React.useState('');
@@ -1507,15 +1507,13 @@ const MobileInstancesSurface: React.FC<{
             const confirming = confirmingDeleteId === connection.id;
             const isActive = isActiveRuntimeConnection(connection);
             const isConnectingRow = connectingId === connection.id;
-            // Status line: the active instance says HOW it is connected right
-            // now (direct vs relay); others show their address.
+            // Status line: the active instance shows "Connected"; saved ones show
+            // a generic "Saved" label — no transport/address detail.
             const statusText = isConnectingRow
               ? t('mobile.connect.connecting')
               : isActive
-                ? (isRelayModeActive()
-                  ? t('mobile.instances.status.connectedRelay')
-                  : t('mobile.instances.status.connectedDirect'))
-                : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
+                ? t('mobile.instances.status.connected')
+                : t('mobile.instances.status.saved');
             return (
               <div
                 key={connection.id}
@@ -1572,14 +1570,14 @@ const MobileInstancesSurface: React.FC<{
                     <span className="flex size-9 items-center justify-center text-muted-foreground" aria-hidden>
                       <Icon name="loader-4" className="size-[18px] animate-spin" />
                     </span>
-                  ) : connection.candidates.some((c) => c.kind === 'direct') ? (
+                  ) : (
                     <button
                       type="button"
                       aria-label={t('mobile.instances.edit')}
                       className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       onClick={() => {
                         setEditingId(connection.id);
-                        setUrl(connectionDisplayUrl(connection));
+                        setUrl(connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : '');
                         setLabel(connection.label);
                         setClientToken(connection.clientToken || '');
                         setError(null);
@@ -1588,7 +1586,7 @@ const MobileInstancesSurface: React.FC<{
                     >
                       <Icon name="edit" className="size-[18px]" />
                     </button>
-                  ) : null}
+                  )}
                   <button
                     type="button"
                     aria-label={confirming
@@ -1650,19 +1648,21 @@ const MobileInstancesSurface: React.FC<{
                 </Button>
               </div>
               <form className="flex flex-col gap-3" onSubmit={saveInstance}>
-                <label className="block space-y-1.5">
-                  <span className="block px-1 typography-ui-label text-foreground">{t('mobile.connect.url.label')}</span>
-                  <input
-                    {...mobileInputKeyboardProps}
-                    value={url}
-                    onChange={(event) => setUrl(event.target.value)}
-                    placeholder={t('mobile.connect.url.placeholder')}
-                    type="url"
-                    inputMode="url"
-                    autoCapitalize="none"
-                    className={inputClass}
-                  />
-                </label>
+                {!isRelayOnlyEditing ? (
+                  <label className="block space-y-1.5">
+                    <span className="block px-1 typography-ui-label text-foreground">{t('mobile.connect.url.label')}</span>
+                    <input
+                      {...mobileInputKeyboardProps}
+                      value={url}
+                      onChange={(event) => setUrl(event.target.value)}
+                      placeholder={t('mobile.connect.url.placeholder')}
+                      type="url"
+                      inputMode="url"
+                      autoCapitalize="none"
+                      className={inputClass}
+                    />
+                  </label>
+                ) : null}
                 <label className="block space-y-1.5">
                   <span className="block px-1 typography-ui-label text-foreground">{t('mobile.instances.label.label')}</span>
                   <input

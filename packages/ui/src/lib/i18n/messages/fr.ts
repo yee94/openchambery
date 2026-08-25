@@ -2889,6 +2889,8 @@ export const dict = {
   'mobile.instances.label.label': 'Nom',
   'mobile.instances.label.placeholder': 'Nom d\'affichage facultatif',
   'mobile.instances.saveNew': 'Enregistrer l\'instance',
+  'mobile.instances.status.connected': 'Connecté',
+  'mobile.instances.status.saved': 'Enregistré',
   'mobile.instances.status.connectedDirect': 'Connecté · Réseau local',
   'mobile.instances.status.connectedRelay': 'Connecté · Relais',
   'mobile.instances.status.connectedSshRelay': 'Connecté · SSH via relais',

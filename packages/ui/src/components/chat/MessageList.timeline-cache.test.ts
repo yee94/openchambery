@@ -67,6 +67,8 @@ const {
     resolveTanstackEstimateMinSamples,
     resolveTimelineVirtualizerCacheKey,
     shouldInvalidateVirtualizerMeasurementsOnColumnResize,
+    resolveTanstackHistoryFrameStyle,
+    applyTanstackHistoryFrameMinHeight,
     resolveToggledActivityExpanded,
     resolveTurnActivityExpandedByDefault,
     resolveTurnActivityPresentation,
@@ -461,5 +463,57 @@ describe('column-width virtualizer invalidation', () => {
         expect(source).toContain('shouldInvalidateVirtualizerMeasurementsOnColumnResize');
         expect(source).toContain('tanstackVirtualizer.measure()');
         expect(source).toContain('useResizeObserver(');
+    });
+});
+
+describe('history virtualizer frame vs live tail', () => {
+    test('reserves unrendered range with padding and minHeight instead of a fixed height box', () => {
+        expect(resolveTanstackHistoryFrameStyle(0, 0, 0)).toEqual({
+            paddingTop: 0,
+            paddingBottom: 0,
+            minHeight: 0,
+        });
+        expect(resolveTanstackHistoryFrameStyle(1000, 2500, 5000)).toEqual({
+            paddingTop: 1000,
+            paddingBottom: 2500,
+            minHeight: 5000,
+        });
+        expect(resolveTanstackHistoryFrameStyle(4000, 5000, 5000)).toEqual({
+            paddingTop: 4000,
+            paddingBottom: 0,
+            minHeight: 5000,
+        });
+        expect(resolveTanstackHistoryFrameStyle(-10, 800, 500)).toEqual({
+            paddingTop: 0,
+            paddingBottom: 0,
+            minHeight: 500,
+        });
+    });
+
+    test('a visible window taller than its cache still keeps the tail below the history frame', () => {
+        const frame = resolveTanstackHistoryFrameStyle(800, 1200, 3000);
+        const cachedVisible = 1200 - 800;
+        const actualVisible = 1685;
+        const innerHeight = frame.paddingTop + actualVisible + frame.paddingBottom;
+        expect(innerHeight).toBe(frame.minHeight + (actualVisible - cachedVisible));
+        expect(innerHeight).toBeGreaterThan(frame.minHeight);
+    });
+
+    test('scrollToFn writes minHeight and clears a leftover height lock', () => {
+        const element = { style: { height: '12000px', minHeight: '' } };
+        applyTanstackHistoryFrameMinHeight(element as unknown as HTMLElement, 3600);
+        expect(element.style.height).toBe('');
+        expect(element.style.minHeight).toBe('3600px');
+        applyTanstackHistoryFrameMinHeight(null, 3600);
+    });
+
+    test('StaticHistoryList does not lock the history frame to cached totalSize height', () => {
+        const source = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+        expect(source).toContain('resolveTanstackHistoryFrameStyle');
+        expect(source).toContain('applyTanstackHistoryFrameMinHeight');
+        expect(source).toContain('minHeight: historyFrameStyle.minHeight');
+        expect(source).toContain('paddingBottom: historyFrameStyle.paddingBottom');
+        expect(source).not.toContain('style={{ height: tanstackVirtualizer.getTotalSize() }}');
+        expect(source).not.toContain("sizeElement.style.height = `${instance.getTotalSize()}px`");
     });
 });

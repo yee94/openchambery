@@ -88,6 +88,8 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.label.label': '이름',
   'mobile.instances.label.placeholder': '표시 이름 (선택 사항)',
   'mobile.instances.saveNew': '인스턴스 저장',
+  'mobile.instances.status.connected': '연결됨',
+  'mobile.instances.status.saved': '저장됨',
   'mobile.instances.status.connectedDirect': '연결됨 · 로컬 네트워크',
   'mobile.instances.status.connectedRelay': '연결됨 · 릴레이',
   'mobile.instances.status.connectedSshRelay': '연결됨 · 릴레이 SSH',

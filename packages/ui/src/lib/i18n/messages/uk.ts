@@ -89,6 +89,8 @@ export const dict: Record<I18nKey, string> = {
   "mobile.instances.label.label": "Назва",
   "mobile.instances.label.placeholder": "Необовʼязкова назва",
   "mobile.instances.saveNew": "Зберегти інстанс",
+  "mobile.instances.status.connected": "Підключено",
+  "mobile.instances.status.saved": "Збережено",
   "mobile.instances.status.connectedDirect": "Підключено · Локальна мережа",
   "mobile.instances.status.connectedRelay": "Підключено · Relay",
   "mobile.instances.status.connectedSshRelay": "Підключено · SSH через relay",
