@@ -30,6 +30,7 @@ import {
 import { SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
 
 const GITHUB_URL = 'https://github.com/yee94/openchamber';
+const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues/new`;
 const DISCORD_URL = 'https://discord.gg/ZYRSdnwwKA';
 const X_URL = 'https://x.com/openchamber_dev';
 
@@ -278,7 +279,14 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             </span>
           </SettingsRow>
           <SettingsRow>
-            {!isChecking && updateStore.available ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button asChild variant="outline" size="sm">
+                <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
+                  <Icon name="question" className="size-4" />
+                  {t('settings.openchamber.about.actions.submitFeedback')}
+                </a>
+              </Button>
+              {!isChecking && updateStore.available ? (
               <Button
                 type="button"
                 variant="default"
@@ -304,6 +312,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 {isChecking ? t('settings.openchamber.about.state.checking') : t('settings.openchamber.about.actions.checkForUpdates')}
               </Button>
             )}
+            </div>
           </SettingsRow>
 
           {updateStore.error && (
@@ -443,6 +452,12 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
         </SettingsRow>
         <SettingsRow>
           <div className="flex flex-wrap items-center justify-end gap-3">
+            <Button asChild variant="outline" size="sm">
+              <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
+                <Icon name="question" className="size-4" />
+                {t('settings.openchamber.about.actions.submitFeedback')}
+              </a>
+            </Button>
             {updateStore.checking && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />

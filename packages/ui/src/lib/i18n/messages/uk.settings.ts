@@ -347,6 +347,7 @@ export const settingsDict = {
   "settings.openchamber.about.actions.applyOtaToVersion": "Оновити зараз до {version}",
   "settings.openchamber.about.actions.installNativeToVersion": "Встановити {version}",
   "settings.openchamber.about.actions.checkForUpdates": "Перевірити наявність оновлень",
+  "settings.openchamber.about.actions.submitFeedback": "Надіслати відгук",
   "settings.openchamber.about.toast.latestVersion": "Ви використовуєте останню версію",
   "settings.openchamber.about.toast.checkFailed": "Не вдалося перевірити наявність оновлень",
   "settings.openchamber.about.betaUpdates.label": "Приєднатися до бета-оновлень",

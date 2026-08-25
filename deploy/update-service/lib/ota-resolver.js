@@ -206,13 +206,17 @@ export function resolveMobileUpdate(manifest, request) {
     };
   }
 
-  // 壳已内嵌或不低于 active web：仅 builtin 启用（门身份常回退到 nativeVersion）。
-  // 门身份 >= activeBundle.releaseVersion → none（剥离 "1.18.2" > "1.18.2-beta.N"）。
-  // 已安装 OTA（hex bundleId / 真实 web 版本名）与误报的剥离 currentBundleId 不走此分支，
-  // 以免挡住同版本内容更正，并保留「剥离身份不得永久挡住同 core beta OTA」的 floor 语义。
+  // 壳已内嵌或不低于 active web：仅 builtin + **stable** active 启用（门身份常回退到 nativeVersion）。
+  // stable：剥离 "1.18.3" >= active "1.18.3" → 确实内嵌（营销版号即 stable 版号，剥离不损失信息）。
+  // beta active（如 1.18.4-beta.8）时禁止：iOS 剥离 "1.18.4" 在 semver 上高于任何同 core beta，
+  // 但不能证明壳内嵌了该 beta web——否则旧壳永久 none，OTA 可检测性失败。
+  // 已安装 OTA（hex bundleId / 真实 web 版本名）与误报的剥离 currentBundleId 不走此分支。
+  const activeRelease = parseReleaseVersion(activeBundle.releaseVersion);
   const shellEmbeddedActiveWeb = Boolean(
     request.currentBundleId === 'builtin'
     && gateIdentity
+    && activeRelease
+    && activeRelease.beta === null
     && compareReleaseVersions(gateIdentity, activeBundle.releaseVersion) >= 0
   );
 

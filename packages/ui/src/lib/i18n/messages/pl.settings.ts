@@ -686,6 +686,7 @@ export const settingsDict = {
   'settings.notifications.page.toast.testNotificationFailed': 'Nie udało się wysłać powiadomienia testowego',
   'settings.notifications.page.toast.testNotificationSent': 'Powiadomienie testowe zostało wysłane pomyślnie',
   'settings.openchamber.about.actions.checkForUpdates': 'Sprawdź aktualizacje',
+  'settings.openchamber.about.actions.submitFeedback': 'Wyślij opinię',
   'settings.openchamber.about.actions.checkUpdates': 'Sprawdź aktualizacje',
   'settings.openchamber.about.actions.update': 'Aktualizuj',
   'settings.openchamber.about.actions.updateToVersion': 'Aktualizuj do wersji {version}',

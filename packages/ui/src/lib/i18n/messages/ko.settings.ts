@@ -347,6 +347,7 @@ export const settingsDict = {
   'settings.openchamber.about.actions.applyOtaToVersion': '{version}으로 지금 업데이트',
   'settings.openchamber.about.actions.installNativeToVersion': '{version} 설치',
   'settings.openchamber.about.actions.checkForUpdates': '업데이트 확인',
+  'settings.openchamber.about.actions.submitFeedback': '피드백 제출',
   'settings.openchamber.about.toast.latestVersion': '최신 버전을 사용 중입니다',
   'settings.openchamber.about.toast.checkFailed': '업데이트를 확인할 수 없습니다',
   'settings.openchamber.about.betaUpdates.label': '베타 업데이트 참여',

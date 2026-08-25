@@ -358,17 +358,53 @@ test('applied newer bundle version name must not roll back to an older activeBun
   assert.equal(decision.ota.state, 'current');
 });
 
-test('builtin shell with stripped identity at or above active release is embedded (no re-apply)', () => {
-  // 门身份 1.18.2 >= active 1.18.2-beta.61 → none（不重推）。
+test('beta active: builtin + stripped iOS identity still apply_ota (not embedded)', () => {
+  // iOS 商店/TestFlight 上报剥离 nativeVersion "1.18.4"；semver 上高于 1.18.4-beta.8，
+  // 但不能证明壳内嵌了该 beta web → 必须 apply_ota（OTA 可检测性画像）。
   const manifest = parseOtaManifest(validManifest({
-    activeBundle: activeBundle({ releaseVersion: '1.18.2-beta.61' }),
+    activeBundle: activeBundle({ releaseVersion: '1.18.4-beta.8' }),
     nativeTargets: {
-      ios: { version: '1.18.2-beta.33', build: 370, installUrl: 'https://testflight.apple.com/join/xxx' },
+      ios: { version: '1.18.4-beta.2', build: 21, installUrl: 'https://testflight.apple.com/join/xxx' },
     },
   })).manifest;
   const decision = resolveMobileUpdate(manifest, baseRequest({
     currentBundleId: 'builtin',
-    nativeVersion: '1.18.2',
+    nativeVersion: '1.18.4',
+    nativeBuild: 21,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.4-beta.8');
+});
+
+test('stable active: builtin + matching stripped identity is embedded (no re-apply)', () => {
+  // stable 营销版号即 releaseVersion；剥离不损失信息 → 门身份 >= active 视为已内嵌。
+  const manifest = parseOtaManifest(validManifest({
+    channel: 'stable',
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.3',
+      rolloutSalt: 'stable-1',
+    }),
+    nativeTargets: {
+      ios: { version: '1.18.3', build: 350, installUrl: 'https://apps.apple.com/app/idxxx' },
+    },
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    channel: 'stable',
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.3',
+    nativeBuild: 350,
+  }));
+  assert.equal(decision.primaryAction, 'none');
+  assert.equal(decision.ota.state, 'current');
+});
+
+test('beta active: currentBundleId equal to active release is current (onCurrentBundle)', () => {
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.4-beta.8' }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: '1.18.4-beta.8',
+    nativeVersion: '1.18.4',
     nativeBuild: 21,
   }));
   assert.equal(decision.primaryAction, 'none');

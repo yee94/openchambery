@@ -347,6 +347,7 @@ export const settingsDict = {
   'settings.openchamber.about.actions.applyOtaToVersion': '一键更新到 {version}',
   'settings.openchamber.about.actions.installNativeToVersion': '安装 {version}',
   'settings.openchamber.about.actions.checkForUpdates': '检查更新',
+  'settings.openchamber.about.actions.submitFeedback': '提交反馈',
   'settings.openchamber.about.toast.latestVersion': '你已是最新版本',
   'settings.openchamber.about.toast.checkFailed': '无法检查更新',
   'settings.openchamber.about.betaUpdates.label': '加入 Beta 更新渠道',

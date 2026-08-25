@@ -344,6 +344,7 @@
   'settings.openchamber.about.actions.applyOtaToVersion': '一鍵更新到 {version}',
   'settings.openchamber.about.actions.installNativeToVersion': '安裝 {version}',
   'settings.openchamber.about.actions.checkForUpdates': '檢查更新',
+  'settings.openchamber.about.actions.submitFeedback': '提交反饋',
   'settings.openchamber.about.toast.latestVersion': '你已是最新版本',
   'settings.openchamber.about.toast.checkFailed': '無法檢查更新',
   'settings.openchamber.about.betaUpdates.label': '加入 Beta 更新頻道',
