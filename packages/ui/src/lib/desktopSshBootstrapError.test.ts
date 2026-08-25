@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   classifyManagedSshBootstrapError,
+  formatSshBootstrapErrorDescription,
   isManagedSshBootstrapErrorCode,
   resolveManagedSshBootstrapErrorCode,
   sshBootstrapErrorGuidanceKey,
@@ -24,7 +25,14 @@ describe('classifyManagedSshBootstrapError', () => {
   });
 
   test('classifies install and SSH transport failures', () => {
+    expect(classifyManagedSshBootstrapError(
+      'OpenChamber installation completed but the executable is unavailable',
+    )).toBe('openchamberCliMissing');
+    expect(classifyManagedSshBootstrapError(
+      'npm ERR! code ETIMEDOUT\nnpm ERR! network request to https://registry.npmjs.org/@openchambery%2fweb failed',
+    )).toBe('openchamberRegistry');
     expect(classifyManagedSshBootstrapError('Failed to install OpenChamber on remote host')).toBe('openchamberInstall');
+    expect(classifyManagedSshBootstrapError('Error: Unknown option: --relay-host')).toBe('openchamberCliIncompatible');
     expect(classifyManagedSshBootstrapError('Failed to install OpenCode CLI on remote host')).toBe('opencodeInstall');
     expect(classifyManagedSshBootstrapError('Managed OpenChamber server failed to become reachable')).toBe('serverStart');
     expect(classifyManagedSshBootstrapError('Permission denied (publickey)')).toBe('sshAuth');
@@ -43,6 +51,20 @@ describe('classifyManagedSshBootstrapError', () => {
   test('maps every code to title and guidance keys', () => {
     expect(sshBootstrapErrorTitleKey('nativeBinding')).toBe('desktopHostSwitcher.sshError.nativeBinding.title');
     expect(sshBootstrapErrorGuidanceKey('nativeBinding')).toBe('desktopHostSwitcher.sshError.nativeBinding.guidance');
+    expect(sshBootstrapErrorTitleKey('openchamberCliMissing')).toBe('desktopHostSwitcher.sshError.openchamberCliMissing.title');
+    expect(sshBootstrapErrorGuidanceKey('openchamberCliMissing')).toBe('desktopHostSwitcher.sshError.openchamberCliMissing.guidance');
+    expect(sshBootstrapErrorTitleKey('openchamberRegistry')).toBe('desktopHostSwitcher.sshError.openchamberRegistry.title');
+    expect(sshBootstrapErrorGuidanceKey('openchamberRegistry')).toBe('desktopHostSwitcher.sshError.openchamberRegistry.guidance');
     expect(sshBootstrapErrorTitleKey('unknown')).toBe('desktopHostSwitcher.sshError.unknown.title');
+    expect(sshBootstrapErrorTitleKey('openchamberCliIncompatible')).toBe(
+      'desktopHostSwitcher.sshError.openchamberCliIncompatible.title',
+    );
+  });
+
+  test('appends raw detail for unknown and incompatible errors', () => {
+    expect(formatSshBootstrapErrorDescription('guidance', 'unknown', 'Error: Unknown option: --relay-host')).toBe(
+      'guidance\nError: Unknown option: --relay-host',
+    );
+    expect(formatSshBootstrapErrorDescription('guidance', 'nativeBinding', 'gyp ERR')).toBe('guidance');
   });
 });

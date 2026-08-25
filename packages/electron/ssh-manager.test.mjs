@@ -24,6 +24,8 @@ import {
   parseRelayDescriptorFromStatus,
   parseRemoteManagedNodeVersion,
   parseSshCommand,
+  parseVersionToken,
+  remoteHelpMentionsRelayHost,
   planOpenCodeConfigSync,
   remoteRuntimeCanHostRelay,
   selectPreferredRemoteManagedNode,
@@ -163,8 +165,47 @@ describe('ElectronSshManager', () => {
       password: 'ui-secret',
       trustDevice: true,
       issueClientToken: true,
+      clientKind: 'desktop-local',
+      dedupeKey: 'desktop-local',
     });
     expect(settings.desktopHosts).toEqual([{ id: 'ssh-1', label: 'SSH Host', url: localUrl, apiUrl: localUrl, clientToken: 'ssh-client-token' }]);
+  });
+
+  test('cookie fallback still mints a desktop-local SSH operator token', async () => {
+    let createPayload = null;
+    const server = http.createServer(async (req, res) => {
+      if (req.method === 'POST' && req.url === '/auth/session') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Set-Cookie': 'oc_session=ssh-session; Path=/; HttpOnly',
+        });
+        res.end(JSON.stringify({ authenticated: true }));
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/api/client-auth/clients') {
+        createPayload = JSON.parse(await readBody(req));
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ token: 'ssh-fallback-token' }));
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    const localUrl = await listen(server);
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    tempDirs.push(tempDir);
+    const manager = new ElectronSshManager({
+      settingsFilePath: path.join(tempDir, 'settings.json'),
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+    });
+
+    const token = await manager.issueClientToken(localUrl, 'ui-secret');
+    expect(token).toBe('ssh-fallback-token');
+    expect(createPayload).toMatchObject({
+      label: 'OpenChamber Desktop SSH',
+      clientKind: 'desktop-local',
+      dedupeKey: 'desktop-local',
+    });
   });
 
   test('refuses to mint an SSH host token without a UI password', async () => {
@@ -232,6 +273,8 @@ describe('ElectronSshManager', () => {
     expect(loginPayload).toMatchObject({
       password: 'ephemeral-secret',
       issueClientToken: true,
+      clientKind: 'desktop-local',
+      dedupeKey: 'desktop-local',
     });
     const settings = JSON.parse(fs.readFileSync(settingsFilePath, 'utf8'));
     expect(settings.desktopHosts).toEqual([{
@@ -650,6 +693,11 @@ describe('managed SSH relay host defaults', () => {
     expect(buildManagedServeCommand(optedOut, 18765, 'ui-secret')).toBe(
       "OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='ui-secret' openchamber serve --hostname 127.0.0.1 --port 18765",
     );
+    expect(buildManagedServeCommand(instance, 18765, 'ui-secret', { relayHostSupported: false })).toBe(
+      "OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD='ui-secret' openchamber serve --hostname 127.0.0.1 --port 18765",
+    );
+    expect(remoteHelpMentionsRelayHost('  --relay-host [url]      serve: enable the private relay host')).toBe(true);
+    expect(remoteHelpMentionsRelayHost('  --relay                 connect-url: also include the relay')).toBe(false);
   });
 
   test('updateHostRuntime attaches a relay descriptor and preserves it when omitted', async () => {
@@ -675,12 +723,37 @@ describe('managed SSH relay host defaults', () => {
   });
 });
 
+describe('parseVersionToken', () => {
+  test('accepts stable and prerelease CLI versions', () => {
+    expect(parseVersionToken('1.18.4')).toBe('1.18.4');
+    expect(parseVersionToken('v1.18.4')).toBe('1.18.4');
+    expect(parseVersionToken('1.18.4-beta.4')).toBe('1.18.4-beta.4');
+    expect(parseVersionToken('v1.18.4-beta.4')).toBe('1.18.4-beta.4');
+    expect(parseVersionToken('1.18.4-beta.4+build.7')).toBe('1.18.4-beta.4+build.7');
+    expect(parseVersionToken('openchamber 1.18.4-beta.4')).toBe('1.18.4-beta.4');
+  });
+
+  test('keeps two-part numeric versions and ignores non-versions', () => {
+    expect(parseVersionToken('1.18')).toBe('1.18');
+    expect(parseVersionToken('not-a-version')).toBeNull();
+    expect(parseVersionToken('')).toBeNull();
+  });
+});
+
 describe('classifyManagedSshBootstrapError', () => {
   test('maps native binding dumps and missing Node to stable codes', () => {
     expect(classifyManagedSshBootstrapError(
       'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
     )).toBe('nodeRuntimeMissing');
     expect(classifyManagedSshBootstrapError('gyp ERR! ENOENT node_gyp_bins')).toBe('nativeBinding');
+    expect(classifyManagedSshBootstrapError(
+      'OpenChamber installation completed but the executable is unavailable',
+    )).toBe('openchamberCliMissing');
+    expect(classifyManagedSshBootstrapError(
+      'Failed to install OpenChamber because the remote could not reach the npm registry',
+    )).toBe('openchamberRegistry');
+    expect(classifyManagedSshBootstrapError('Failed to install OpenChamber on remote host')).toBe('openchamberInstall');
+    expect(classifyManagedSshBootstrapError('Error: Unknown option: --relay-host')).toBe('openchamberCliIncompatible');
     expect(classifyManagedSshBootstrapError('Permission denied (publickey)')).toBe('sshAuth');
   });
 
@@ -692,6 +765,12 @@ describe('classifyManagedSshBootstrapError', () => {
     expect(summarizeManagedSshBootstrapError(dump)).toBe(
       'failed to prepare better-sqlite3 for the selected remote Node runtime',
     );
+    expect(summarizeManagedSshBootstrapError(
+      'OpenChamber installation completed but the executable is unavailable',
+    )).toBe('OpenChamber installation completed but the executable is unavailable');
+    expect(summarizeManagedSshBootstrapError('npm ERR! code ENOTFOUND registry.npmjs.org')).toBe(
+      'Failed to install OpenChamber because the remote could not reach the npm registry',
+    );
   });
 });
 
@@ -702,9 +781,10 @@ describe('buildRemoteNativeBindingRepairScript', () => {
       version: '1.18.3-beta.14',
     });
     expect(script.indexOf('probe_sqlite')).toBeLessThan(script.indexOf('rebuild_sqlite'));
+    expect(script).toContain("require.resolve('better-sqlite3/package.json')");
     expect(script).toContain('rm -rf "$sqlite_dir/build"');
     expect(script).toContain('mkdir -p "$sqlite_dir/build/node_gyp_bins"');
-    expect(script).toContain('npm rebuild better-sqlite3 --foreground-scripts');
+    expect(script).toContain('npm rebuild --foreground-scripts');
     expect(script).toContain("npm install -g '@openchambery/web@1.18.3-beta.14' --force");
     expect(script).toContain('/usr/bin/python3.11');
     expect(script).toContain('/opt/rh/gcc-toolset-12');
@@ -713,7 +793,7 @@ describe('buildRemoteNativeBindingRepairScript', () => {
 
   test('omits npm reinstall when package version is unknown', () => {
     const script = buildRemoteNativeBindingRepairScript();
-    expect(script).toContain('npm rebuild better-sqlite3 --foreground-scripts');
+    expect(script).toContain('npm rebuild --foreground-scripts');
     expect(script).not.toContain('npm install -g');
   });
 });

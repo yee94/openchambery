@@ -41,6 +41,7 @@ import { openExternalUrl } from '@/lib/url';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { SshBootstrapErrorNotice } from '@/components/desktop/SshBootstrapErrorNotice';
 import {
+  formatSshBootstrapErrorDescription,
   resolveManagedSshBootstrapErrorCode,
   sshBootstrapErrorGuidanceKey,
 } from '@/lib/desktopSshBootstrapError';
@@ -1170,6 +1171,16 @@ export const RemoteInstancesPage: React.FC = () => {
     void loadDirectHosts();
   }, [loadDirectHosts]);
 
+  const readySshHostKey = Object.values(statusesById)
+    .filter((status) => status.phase === 'ready')
+    .map((status) => `${status.id}:${status.localUrl || ''}`)
+    .sort()
+    .join('|');
+  React.useEffect(() => {
+    if (!readySshHostKey) return;
+    void loadDirectHosts();
+  }, [loadDirectHosts, readySshHostKey]);
+
   const persistDirectHosts = React.useCallback(async (hosts: DesktopHost[], defaultHostId: string | null = directDefaultHostId) => {
     setDirectSaving(true);
     setDirectError(null);
@@ -1402,6 +1413,33 @@ export const RemoteInstancesPage: React.FC = () => {
       cachedProbe: directHostStatus[host.id] || null,
     });
     setDirectHostStatus((prev) => ({ ...prev, [host.id]: result.status }));
+  });
+
+  const switchToSshInstance = useEvent(async (instance: DesktopSshInstance) => {
+    if (hostSwitchPending) return;
+    const title = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
+    // Connect writes the minted clientToken after the page's initial hosts
+    // load. Always re-read so the first switch does not use a stale host
+    // without a token (that surfaces the remote UI password prompt).
+    let hosts = directHosts;
+    try {
+      const config = await desktopHostsGet();
+      hosts = config.hosts || [];
+      setDirectHosts(hosts);
+      setDirectDefaultHostId(config.defaultHostId || 'local');
+    } catch (error) {
+      toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', { host: title }), {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    const host = hosts.find((entry) => entry.id === instance.id) ?? null;
+    if (!host || !getDesktopHostApiUrl(host) || !host.clientToken) {
+      toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', { host: title }));
+      return;
+    }
+    if (isDesktopHostActive(host)) return;
+    await switchDesktopHostInstance({ host });
   });
 
   React.useEffect(() => {
@@ -2082,13 +2120,16 @@ export const RemoteInstancesPage: React.FC = () => {
             ? 'settings.remoteInstances.page.toast.disconnectFailed'
             : 'settings.remoteInstances.page.toast.cancelConnectionFailed')
           : 'settings.remoteInstances.page.toast.connectFailed';
+        const connectDetail = status?.detail || (error instanceof Error ? error.message : String(error));
+        const connectCode = resolveManagedSshBootstrapErrorCode(status?.errorCode, connectDetail);
         toast.error(t(key), {
           description: wasConnected
             ? (error instanceof Error ? error.message : String(error))
-            : t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(
-              status?.errorCode,
-              status?.detail || (error instanceof Error ? error.message : String(error)),
-            ))),
+            : formatSshBootstrapErrorDescription(
+              t(sshBootstrapErrorGuidanceKey(connectCode)),
+              connectCode,
+              connectDetail,
+            ),
         });
       })
       .finally(() => {
@@ -2112,11 +2153,14 @@ export const RemoteInstancesPage: React.FC = () => {
 
     void operation
       .catch((error) => {
+        const retryDetail = status?.detail || (error instanceof Error ? error.message : String(error));
+        const retryCode = resolveManagedSshBootstrapErrorCode(status?.errorCode, retryDetail);
         toast.error(t('settings.remoteInstances.page.toast.retryFailed'), {
-          description: t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(
-            status?.errorCode,
-            status?.detail || (error instanceof Error ? error.message : String(error)),
-          ))),
+          description: formatSshBootstrapErrorDescription(
+            t(sshBootstrapErrorGuidanceKey(retryCode)),
+            retryCode,
+            retryDetail,
+          ),
         });
       })
       .finally(() => {
@@ -2379,10 +2423,33 @@ export const RemoteInstancesPage: React.FC = () => {
                   );
                 })}
                 {instances.map((instance) => {
+                  // directRuntimeEpoch keeps isActive fresh after an in-page switch.
+                  void directRuntimeEpoch;
                   const instanceStatus = statusesById[instance.id];
                   const title = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
                   const phase = instanceStatus?.phase;
                   const ready = phase === 'ready';
+                  const sshHost = directHosts.find((host) => host.id === instance.id);
+                  const isActive = isDesktopHostActive({
+                    id: instance.id,
+                    label: title,
+                    url: instanceStatus?.localUrl || sshHost?.url || '',
+                  });
+                  const switchBlocked = isActive || hostSwitchPending || !ready;
+                  const switchButton = (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="!font-normal"
+                      onClick={() => void switchToSshInstance(instance)}
+                      disabled={switchBlocked}
+                      aria-label={t('desktopHostSwitcher.actions.switchToAria', { instance: title })}
+                    >
+                      <Icon name="arrow-left-right" className="h-3.5 w-3.5" />
+                      {isActive ? t('desktopHostSwitcher.header.current') : t('desktopHostSwitcher.actions.switchInstance')}
+                    </Button>
+                  );
                   return (
                     <div key={`ssh:${instance.id}`} className="flex items-center justify-between gap-3 py-1.5">
                       <div className="min-w-0">
@@ -2392,6 +2459,7 @@ export const RemoteInstancesPage: React.FC = () => {
                           <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
                             {t('settings.remoteInstances.channel.ssh')}
                           </span>
+                          {isActive ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.current')}</span> : null}
                         </div>
                         <p className="typography-micro text-muted-foreground truncate">
                           {t(phaseLabelKey(phase))}{instanceStatus?.localUrl ? ` · ${instanceStatus.localUrl}` : ''}
@@ -2400,49 +2468,30 @@ export const RemoteInstancesPage: React.FC = () => {
                       <div className="flex shrink-0 items-center gap-1">
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => {
                           const op = ready ? disconnect(instance.id) : connect(instance.id);
-                          void op.catch((err) => toast.error(ready ? t('settings.remoteInstances.sidebar.toast.disconnectFailed') : t('settings.remoteInstances.sidebar.toast.connectFailed'), {
-                            description: ready
-                              ? (err instanceof Error ? err.message : String(err))
-                              : t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(
-                                instanceStatus?.errorCode,
-                                instanceStatus?.detail || (err instanceof Error ? err.message : String(err)),
-                              ))),
-                          }));
+                          void op.catch((err) => {
+                            const connectDetail = instanceStatus?.detail || (err instanceof Error ? err.message : String(err));
+                            const connectCode = resolveManagedSshBootstrapErrorCode(instanceStatus?.errorCode, connectDetail);
+                            toast.error(ready ? t('settings.remoteInstances.sidebar.toast.disconnectFailed') : t('settings.remoteInstances.sidebar.toast.connectFailed'), {
+                              description: ready
+                                ? (err instanceof Error ? err.message : String(err))
+                                : formatSshBootstrapErrorDescription(
+                                  t(sshBootstrapErrorGuidanceKey(connectCode)),
+                                  connectCode,
+                                  connectDetail,
+                                ),
+                            });
+                          });
                         }}>
                           {ready ? <Icon name="stop" className="h-3.5 w-3.5" /> : <Icon name="plug-2" className="h-3.5 w-3.5" />}
                           {ready ? t('settings.remoteInstances.sidebar.actions.disconnect') : t('settings.remoteInstances.sidebar.actions.connect')}
                         </Button>
-                        {ready ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            className="!font-normal"
-                            onClick={() => void openAddDevice()}
-                            aria-label={t('settings.remoteInstances.sidebar.actions.mobileConnectAria', { instance: title })}
-                          >
-                            <Icon name="smartphone" className="h-3.5 w-3.5" />
-                            {t('settings.remoteInstances.sidebar.actions.mobileConnect')}
-                          </Button>
-                        ) : (
+                        {ready ? switchButton : (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="inline-flex">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="xs"
-                                  className="!font-normal"
-                                  disabled
-                                  aria-label={t('settings.remoteInstances.sidebar.actions.mobileConnectDisabled')}
-                                >
-                                  <Icon name="smartphone" className="h-3.5 w-3.5" />
-                                  {t('settings.remoteInstances.sidebar.actions.mobileConnect')}
-                                </Button>
-                              </span>
+                              <span className="inline-flex">{switchButton}</span>
                             </TooltipTrigger>
                             <TooltipContent sideOffset={8} className="max-w-xs">
-                              {t('settings.remoteInstances.sidebar.actions.mobileConnectDisabled')}
+                              {t('settings.remoteInstances.sidebar.actions.switchInstanceDisabled')}
                             </TooltipContent>
                           </Tooltip>
                         )}

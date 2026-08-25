@@ -80,6 +80,13 @@ const REMOTE_NODE_CANDIDATE_GLOBS = [
   '/usr/local/n/versions/node/*/bin/node',
 ];
 const LOCAL_HOST_ID = 'local';
+// This desktop starts the managed remote, so the operator token is the same
+// trusted kind as the in-process local shell. A regular 'desktop' token cannot
+// create pairing sessions or additional clients (403: Client tokens cannot
+// create remote clients).
+const SSH_DESKTOP_CLIENT_KIND = 'desktop-local';
+const SSH_DESKTOP_CLIENT_DEDUPE_KEY = 'desktop-local';
+const SSH_DESKTOP_CLIENT_LABEL = 'OpenChamber Desktop SSH';
 const DEFAULT_CONNECTION_TIMEOUT_SEC = 60;
 const DEFAULT_LOCAL_BIND_HOST = '127.0.0.1';
 const DEFAULT_CONTROL_PERSIST_SEC = 300;
@@ -110,7 +117,10 @@ export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
   'nodeRuntimeMissing',
   'packageManagerMissing',
   'nativeBinding',
+  'openchamberCliMissing',
+  'openchamberRegistry',
   'openchamberInstall',
+  'openchamberCliIncompatible',
   'opencodeInstall',
   'serverStart',
   'sshAuth',
@@ -168,13 +178,21 @@ export const parseRelayDescriptorFromStatus = (payload) => {
   return { relayUrl, serverId, hostEncPubJwk: jwk };
 };
 
+/** Published CLIs before SSH relay-host do not list `--relay-host` in help. */
+export const remoteHelpMentionsRelayHost = (raw) => /--relay-host\b/.test(String(raw || ''));
+
 /**
  * Exact remote command managed SSH uses to start OpenChamber.
- * Default instances include `--relay-host`; `relayHost: false` omits it.
+ * Default instances include `--relay-host` when the remote CLI advertises it;
+ * `relayHost: false` or an older CLI omits it.
+ * @param {{ relayHostSupported?: boolean }} [options]
  */
-export const buildManagedServeCommand = (instance, desiredPort, uiPassword) => {
+export const buildManagedServeCommand = (instance, desiredPort, uiPassword, options = {}) => {
   const envPrefix = buildManagedServeEnvPrefix(uiPassword);
-  const relayHostFlag = instanceWantsRelayHost(instance) ? buildRelayHostFlag(instance) : '';
+  const relayHostSupported = options.relayHostSupported !== false;
+  const relayHostFlag = instanceWantsRelayHost(instance) && relayHostSupported
+    ? buildRelayHostFlag(instance)
+    : '';
   return [
     envPrefix,
     'openchamber serve --hostname 127.0.0.1 --port',
@@ -194,9 +212,19 @@ export const classifyManagedSshBootstrapError = (raw) => {
   if (/requires Node\.js \d+|no supported Node runtime/i.test(text)) return 'nodeRuntimeMissing';
   if (/neither bun nor npm/i.test(text)) return 'packageManagerMissing';
   if (/better-sqlite3|node_gyp_bins|gyp ERR|failed to prepare better-sqlite3/i.test(text)) return 'nativeBinding';
-  if (/Failed to install OpenChamber|OpenChamber installation completed but the executable is unavailable/i.test(text)) {
+  if (/OpenChamber installation completed but the executable is unavailable/i.test(text)) {
+    return 'openchamberCliMissing';
+  }
+  if (/could not reach the npm registry|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|CERT_HAS_EXPIRED|UNABLE_TO_GET_ISSUER_CERT|self-signed certificate|registry\.npmjs|npm error code E404|npm ERR! code E404|getaddrinfo/i.test(text)) {
+    return 'openchamberRegistry';
+  }
+  if (/Failed to install OpenChamber/i.test(text)) {
     return 'openchamberInstall';
   }
+  if (/Unknown option:\s*--relay-host|does not advertise --relay-host|does not support --relay-host/i.test(text)) {
+    return 'openchamberCliIncompatible';
+  }
+  if (/Unknown option:/i.test(text)) return 'openchamberCliIncompatible';
   if (/Failed to install OpenCode|OpenCode CLI/i.test(text)) return 'opencodeInstall';
   if (/failed to become reachable|Managed OpenChamber server failed/i.test(text)) return 'serverStart';
   if (/Permission denied|Authentication failed|publickey|keyboard-interactive/i.test(text)) return 'sshAuth';
@@ -211,7 +239,10 @@ const SHORT_BOOTSTRAP_ERROR_DETAIL = {
   nodeRuntimeMissing: 'Managed SSH remote requires Node.js 22+; no supported Node runtime was found on the remote host',
   packageManagerMissing: 'Remote host has neither bun nor npm available to install OpenChamber',
   nativeBinding: 'failed to prepare better-sqlite3 for the selected remote Node runtime',
+  openchamberCliMissing: 'OpenChamber installation completed but the executable is unavailable',
+  openchamberRegistry: 'Failed to install OpenChamber because the remote could not reach the npm registry',
   openchamberInstall: 'Failed to install OpenChamber on remote host',
+  openchamberCliIncompatible: 'Remote OpenChamber CLI does not support --relay-host',
   opencodeInstall: 'Failed to install OpenCode CLI on remote host',
   serverStart: 'Managed OpenChamber server failed to become reachable',
   sshAuth: 'SSH authentication failed',
@@ -363,7 +394,8 @@ export PATH
 
 /**
  * Repair better-sqlite3 for the Node already selected on PATH.
- * Probe first; only then clean + rebuild, retry once, then npm reinstall.
+ * Resolve the package via Node (nested or bun-hoisted), probe first, then
+ * clean + rebuild, retry once, then npm reinstall.
  * @param {{ packageName?: string, version?: string }} [options]
  */
 export const buildRemoteNativeBindingRepairScript = (options = {}) => {
@@ -377,9 +409,23 @@ if [ -z "$openchamber_bin" ]; then
   echo "openchamber CLI is not on PATH after managed install" >&2
   exit 1
 fi
-openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
-openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
-sqlite_dir="$openchamber_root/node_modules/better-sqlite3"
+
+locate_openchamber() {
+  openchamber_bin="$(command -v openchamber)"
+  [ -n "$openchamber_bin" ] || return 1
+  openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
+  openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
+}
+
+resolve_sqlite_dir() {
+  sqlite_dir="$(cd "$openchamber_root" && node -e "try { process.stdout.write(require('path').dirname(require.resolve('better-sqlite3/package.json'))) } catch { process.exit(1) }" 2>/dev/null || true)"
+  if [ -z "$sqlite_dir" ] || [ ! -d "$sqlite_dir" ]; then
+    sqlite_dir="$openchamber_root/node_modules/better-sqlite3"
+  fi
+}
+
+locate_openchamber
+resolve_sqlite_dir
 
 probe_sqlite() {
   (cd "$openchamber_root" && node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close()") >/dev/null 2>&1
@@ -405,10 +451,11 @@ prepare_native_toolchain() {
 }
 
 rebuild_sqlite() {
+  resolve_sqlite_dir
   [ -d "$sqlite_dir" ] || return 1
   rm -rf "$sqlite_dir/build"
   mkdir -p "$sqlite_dir/build/node_gyp_bins"
-  (cd "$openchamber_root" && npm rebuild better-sqlite3 --foreground-scripts)
+  (cd "$sqlite_dir" && npm rebuild --foreground-scripts)
 }
 
 if probe_sqlite; then exit 0; fi
@@ -422,10 +469,8 @@ if probe_sqlite; then exit 0; fi
 rebuild_sqlite || true
 if probe_sqlite; then exit 0; fi
 ${quotedSpec ? `npm install -g ${quotedSpec} --force || true
-openchamber_bin="$(command -v openchamber)"
-openchamber_entry="$(node -e "process.stdout.write(require('fs').realpathSync(process.argv[1]))" "$openchamber_bin")"
-openchamber_root="$(CDPATH= cd -- "$(dirname "$openchamber_entry")/.." && pwd)"
-sqlite_dir="$openchamber_root/node_modules/better-sqlite3"
+locate_openchamber
+resolve_sqlite_dir
 if probe_sqlite; then exit 0; fi
 rebuild_sqlite || true
 if probe_sqlite; then exit 0; fi` : ''}
@@ -982,12 +1027,21 @@ const waitLocalForwardReady = async (localPort) => {
   throw new Error('Timed out waiting for forwarded OpenChamber health');
 };
 
-const parseVersionToken = (raw) => {
+/**
+ * Parse a version token from CLI output (`openchamber --version`, `opencode --version`).
+ * Accepts stable and prerelease/build semver so a matching beta is not treated as missing.
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export const parseVersionToken = (raw) => {
   for (const token of String(raw).split(/\s+/)) {
-    let candidate = token.trim().replace(/^v/, '');
+    let candidate = token.trim().replace(/^v/i, '');
     candidate = candidate.replace(/[,)]+$/g, '');
-    const parts = candidate.split('.');
-    if (parts.length >= 2 && parts.every((part) => /^\d+$/.test(part))) {
+    if (!candidate) continue;
+    const match = candidate.match(/^(\d+(?:\.\d+)+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+    if (!match) continue;
+    const numericParts = match[1].split('.');
+    if (numericParts.length >= 2 && numericParts.every((part) => /^\d+$/.test(part))) {
       return candidate;
     }
   }
@@ -1428,7 +1482,9 @@ export class ElectronSshManager {
         password,
         trustDevice: true,
         issueClientToken: true,
-        clientLabel: 'OpenChamber Desktop SSH',
+        clientLabel: SSH_DESKTOP_CLIENT_LABEL,
+        clientKind: SSH_DESKTOP_CLIENT_KIND,
+        dedupeKey: SSH_DESKTOP_CLIENT_DEDUPE_KEY,
       }),
     });
     if (!loginResponse.ok) {
@@ -1459,7 +1515,11 @@ export class ElectronSshManager {
         'Content-Type': 'application/json',
         ...extraHeaders,
       },
-      body: JSON.stringify({ label: 'OpenChamber Desktop SSH' }),
+        body: JSON.stringify({
+          label: SSH_DESKTOP_CLIENT_LABEL,
+          clientKind: SSH_DESKTOP_CLIENT_KIND,
+          dedupeKey: SSH_DESKTOP_CLIENT_DEDUPE_KEY,
+        }),
     });
     if (!tokenResponse.ok) return '';
     const tokenPayload = await tokenResponse.json().catch(() => null);
@@ -1792,10 +1852,22 @@ export class ElectronSshManager {
 
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
     const uiPassword = this.configuredOpenChamberPassword(instance) || createEphemeralUiPassword();
+    let relayHostSupported = true;
+    if (instanceWantsRelayHost(instance)) {
+      const help = await this.runManagedRemoteCommand(parsed, controlPath, 'openchamber serve --help 2>&1 || true');
+      relayHostSupported = remoteHelpMentionsRelayHost(help);
+      if (!relayHostSupported) {
+        this.appendLogWithLevel(
+          instance.id,
+          'WARN',
+          'Remote OpenChamber CLI does not advertise --relay-host; starting without a private relay host',
+        );
+      }
+    }
     const output = await this.runManagedRemoteCommand(
       parsed,
       controlPath,
-      buildManagedServeCommand(instance, desiredPort, uiPassword),
+      buildManagedServeCommand(instance, desiredPort, uiPassword, { relayHostSupported }),
     );
     const port = output.split(/\s+/).map((token) => Number.parseInt(token, 10)).find((value) => Number.isFinite(value));
     return { port: port || desiredPort, uiPassword };

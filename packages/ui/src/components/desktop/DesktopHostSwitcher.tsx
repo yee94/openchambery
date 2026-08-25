@@ -55,6 +55,7 @@ import {
 } from './desktopHostSwitcherDisplay';
 import { SshBootstrapErrorNotice } from './SshBootstrapErrorNotice';
 import {
+  formatSshBootstrapErrorDescription,
   resolveManagedSshBootstrapErrorCode,
   sshBootstrapErrorGuidanceKey,
   sshBootstrapErrorTitleKey,
@@ -638,7 +639,11 @@ export function DesktopHostSwitcherDialog({
           errorCode,
         }));
         toast.error(t('desktopHostSwitcher.toast.sshFailedToConnect', { host: redactSensitiveUrl(host.label) }), {
-          description: t(sshBootstrapErrorGuidanceKey(errorCode)),
+          description: formatSshBootstrapErrorDescription(
+            t(sshBootstrapErrorGuidanceKey(errorCode)),
+            errorCode,
+            message,
+          ),
         });
         return;
       } finally {
@@ -803,8 +808,13 @@ export function DesktopHostSwitcherDialog({
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (message !== SSH_CONNECT_CANCELLED_ERROR) {
+        const errorCode = resolveManagedSshBootstrapErrorCode(null, message);
         toast.error(t('desktopHostSwitcher.toast.sshFailedToConnect', { host: redactSensitiveUrl(host.label) }), {
-          description: t(sshBootstrapErrorGuidanceKey(resolveManagedSshBootstrapErrorCode(null, message))),
+          description: formatSshBootstrapErrorDescription(
+            t(sshBootstrapErrorGuidanceKey(errorCode)),
+            errorCode,
+            message,
+          ),
         });
       }
     } finally {
