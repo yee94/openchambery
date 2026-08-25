@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.10] - 2026-08-25
+
+### 设置
+
+- **关于页按钮同行显示：**「提交反馈」与「检查更新」按钮固定单行排列，窄屏不再折行。
+
 ## [1.18.4-beta.9] - 2026-08-25
 
 ### 移动端
