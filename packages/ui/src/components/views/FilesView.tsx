@@ -63,6 +63,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { buildCodeMirrorCommentWidgets, CodeSelectionActionBubble, normalizeLineRange, useInlineCommentController } from '@/components/comments';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
+import { collectExpandableDirectoryPaths, collectUnexpandedDirectoryPaths, isFileTreeExpandAllSettled, shouldCollapseFileTree } from '@/lib/fileTreeExpand';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -905,6 +906,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const [loadErrorsByDir, setLoadErrorsByDir] = React.useState<Record<string, string>>({});
   const loadedDirsRef = React.useRef<Set<string>>(new Set());
   const inFlightDirsRef = React.useRef<Set<string>>(new Set());
+  const expandAllInProgressRef = React.useRef(false);
   const activeDirectoryLoadIdsRef = React.useRef<Map<string, number>>(new Map());
   const nextDirectoryLoadIdRef = React.useRef(0);
 
@@ -1309,6 +1311,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
 
     if (treeKeyChanged) {
       lastFilesViewTreeKeyRef.current = treeKey;
+      expandAllInProgressRef.current = false;
       loadedDirsRef.current = new Set();
       inFlightDirsRef.current = new Set();
       activeDirectoryLoadIdsRef.current = new Map();
@@ -1333,6 +1336,32 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [expandedPaths, files.listDirectory, refreshDirectory]);
+
+  React.useEffect(() => {
+    if (!root || expandedPaths.length === 0) return;
+
+    const toLoad = expandedPaths
+      .map((path) => normalizePath(path))
+      .filter((normalized) =>
+        Boolean(normalized)
+        && normalized !== root
+        && normalized.startsWith(`${root}/`)
+        && !loadedDirsRef.current.has(normalized)
+        && !inFlightDirsRef.current.has(normalized),
+      )
+      .sort((a, b) => a.split('/').length - b.split('/').length);
+
+    if (toLoad.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      for (let i = 0; i < toLoad.length && !cancelled; i += 3) {
+        const batch = toLoad.slice(i, i + 3);
+        await Promise.all(batch.map((dir) => loadDirectory(dir)));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [expandedPaths, loadDirectory, root]);
 
   const handleDialogSubmit = React.useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -2232,26 +2261,42 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     }
   }, [loadDirectory, root, toggleExpandedPath]);
 
-  const directoryPaths = React.useMemo(() => Array.from(new Set(
-    Object.values(childrenByDir).flatMap((nodes) => nodes
-      .filter((node) => node.type === 'directory')
-      .map((node) => node.path))
-  )), [childrenByDir]);
+  const directoryPaths = React.useMemo(
+    () => (root ? collectExpandableDirectoryPaths(root, childrenByDir) : []),
+    [childrenByDir, root],
+  );
   const expandedPathSet = React.useMemo(
     () => new Set(expandedPaths.map((path) => normalizePath(path))),
     [expandedPaths],
   );
-  const allDirectoriesExpanded = directoryPaths.length > 0
-    && directoryPaths.every((path) => expandedPathSet.has(normalizePath(path)));
+  const allDirectoriesExpanded = shouldCollapseFileTree(expandedPaths);
 
   const toggleAllDirectories = React.useCallback(() => {
     if (!root) return;
     if (allDirectoriesExpanded) {
+      expandAllInProgressRef.current = false;
       removeExpandedPathsByPrefix(root, root);
       return;
     }
-    expandPaths(root, directoryPaths.map((path) => normalizePath(path)));
+    expandAllInProgressRef.current = true;
+    expandPaths(root, directoryPaths);
   }, [allDirectoriesExpanded, directoryPaths, expandPaths, removeExpandedPathsByPrefix, root]);
+
+  React.useEffect(() => {
+    if (!root || !expandAllInProgressRef.current) return;
+    const pending = collectUnexpandedDirectoryPaths(directoryPaths, expandedPaths);
+    if (pending.length > 0) {
+      expandPaths(root, pending);
+      return;
+    }
+    const loadedOrFailed = new Set([
+      ...loadedDirsRef.current,
+      ...Object.keys(loadErrorsByDir),
+    ]);
+    if (isFileTreeExpandAllSettled(directoryPaths, expandedPaths, loadedOrFailed)) {
+      expandAllInProgressRef.current = false;
+    }
+  }, [directoryPaths, expandPaths, expandedPaths, loadErrorsByDir, root]);
 
   const fileRowPermissions = React.useMemo(
     () => ({ canRename, canCreateFile, canCreateFolder, canDelete, canReveal }),
