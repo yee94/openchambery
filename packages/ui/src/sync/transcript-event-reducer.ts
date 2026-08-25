@@ -100,7 +100,13 @@ function areJsonEquivalent(left: unknown, right: unknown): boolean {
   }
 }
 
-const MESSAGE_IDENTITY_FIELDS = ["agent", "mode", "providerID", "modelID", "variant", "model"] as const
+// String identity only. `model` is an object (UserMessage since OpenCode 1.4.0
+// carries providerID/modelID/variant there) and must not use readNonEmptyString.
+const MESSAGE_IDENTITY_FIELDS = ["agent", "mode", "providerID", "modelID", "variant"] as const
+
+const isObjectModelRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === "object" && value !== null && !Array.isArray(value)
+)
 
 const TOKEN_COUNT_FIELDS = ["input", "output", "reasoning"] as const
 
@@ -149,6 +155,21 @@ export function mergeTranscriptMessageUpdate(existing: Message, incoming: Messag
     } else {
       delete mergedRecord[field]
     }
+  }
+
+  // Object-level `model` retention. Incoming wins as a whole when present;
+  // otherwise keep existing. Treating `model` like a string identity field
+  // deleted the object on every SSE message.updated (readNonEmptyString →
+  // undefined → delete), which dropped UserMessage.model.variant and hid the
+  // live thinking-intensity badge until a cold insert-only reload.
+  const incomingModel = incomingRecord.model
+  const existingModel = existingRecord.model
+  if (isObjectModelRecord(incomingModel)) {
+    mergedRecord.model = incomingModel
+  } else if (isObjectModelRecord(existingModel)) {
+    mergedRecord.model = existingModel
+  } else {
+    delete mergedRecord.model
   }
 
   if (existing.time || incoming.time) {
