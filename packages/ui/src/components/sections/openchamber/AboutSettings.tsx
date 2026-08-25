@@ -279,8 +279,8 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             </span>
           </SettingsRow>
           <SettingsRow>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button asChild variant="outline" size="sm">
+            <div className="flex flex-nowrap items-center justify-end gap-2">
+              <Button asChild variant="outline" size="sm" className="whitespace-nowrap">
                 <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
                   <Icon name="question" className="size-4" />
                   {t('settings.openchamber.about.actions.submitFeedback')}
@@ -451,8 +451,8 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           </span>
         </SettingsRow>
         <SettingsRow>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <Button asChild variant="outline" size="sm">
+          <div className="flex flex-nowrap items-center justify-end gap-3">
+            <Button asChild variant="outline" size="sm" className="whitespace-nowrap">
               <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
                 <Icon name="question" className="size-4" />
                 {t('settings.openchamber.about.actions.submitFeedback')}
