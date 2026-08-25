@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.14] - 2026-08-25
+
+### 远程实例
+
+- **同步弹窗可勾选提供商凭证：** SSH / Direct / Relay 都可直接勾选 `auth.json`，勾选时自动授权本次凭据同步，不再因缺少入口而无法勾选。
+- **同步文件列表可滚动：** 预览列表独立限高滚动，条目较多时不再被裁切。
+- **修复 SSH 同步预览失败：** 预览结果不再丢掉 `plan` 字段，弹窗不再误报「当前窗口无法同步」。
+- **修复远程清单 JSON 解析：** 远程 inventory 路径值正确转义，拉取对比不再因 JSON 损坏失败。
+
 ## [1.18.4] - 2026-08-25
 
 ### 远程实例（SSH + Relay）

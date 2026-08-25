@@ -1092,3 +1092,40 @@ describe('buildRemoteSyncProbeScript', () => {
     }
   });
 });
+
+describe('runExclusiveForTarget sync response shape', () => {
+  test('keeps the plan field in preview/apply responses (regression: stripping it broke the UI preview parser)', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-ssh-manager-test-'));
+    tempDirs.push(tempDir);
+    const manager = new ElectronSshManager({
+      settingsFilePath: path.join(tempDir, 'settings.json'),
+      appVersion: '0.0.0-test',
+      emit: () => undefined,
+    });
+
+    const plan = {
+      direction: 'push',
+      files: [{ path: 'opencode.jsonc', bytes: 10 }],
+      directories: [],
+      agentsRoot: null,
+      authFile: null,
+      deletes: [],
+      totalBytes: 10,
+    };
+    const result = await manager.runExclusiveForTarget('ssh:resp-shape', 'preview', async () => ({
+      plan,
+      remoteExisting: ['opencode.jsonc'],
+      remoteAgentsRootExists: false,
+      remoteAuthFileExists: false,
+      credentialAuthorized: false,
+    }));
+
+    // The renderer's parseConfigSyncPreview requires value.plan to be a valid
+    // plan object; stripping it made every SSH/direct preview resolve to null
+    // ("config sync unavailable in this window").
+    expect(result.plan).toEqual(plan);
+    expect(result.remoteExisting).toEqual(['opencode.jsonc']);
+    expect(typeof result.syncRunId).toBe('string');
+    expect(result.syncRunId).not.toBe('');
+  });
+});

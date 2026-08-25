@@ -21,8 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ScrollShadow } from '@/components/ui/ScrollShadow';
-import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import {
   SettingsGroup,
@@ -200,7 +199,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   onOpenChange,
 }) => {
   const { t } = useI18n();
-  const reviewListRef = React.useRef<HTMLElement | null>(null);
   const [step, setStep] = React.useState<SyncWizardStep>(1);
   const [phase, setPhase] = React.useState<SyncDialogPhase>('scanning-local');
   const [direction, setDirection] = React.useState<DesktopSshConfigSyncDirection>('push');
@@ -209,6 +207,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const [localPlan, setLocalPlan] = React.useState<DesktopSshConfigSyncPlan | null>(null);
   const [preview, setPreview] = React.useState<DesktopSshConfigSyncPreview | null>(null);
   const [credentialAuthorized, setCredentialAuthorized] = React.useState(false);
+  const [credentialGrantBusy, setCredentialGrantBusy] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [errorStep, setErrorStep] = React.useState<1 | 2 | null>(null);
   // Snapshot frozen at preview time so apply cannot drift from the reviewed plan.
@@ -224,6 +223,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     setLocalPlan(null);
     setPreview(null);
     setCredentialAuthorized(false);
+    setCredentialGrantBusy(false);
     setErrorMessage(null);
     setErrorStep(null);
     confirmedSelectionsRef.current = EMPTY_SYNC_SELECTIONS;
@@ -271,6 +271,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       setStep(3);
       setPhase('review');
     } catch (error) {
+      console.error('[remote-instances] config sync compare-remote failed', error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(2);
       setPhase('error');
@@ -348,6 +349,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       setLocalPlan(plan);
       await runCompareRemote(nextDirection, resolvedSelections);
     } catch (error) {
+      console.error('[remote-instances] config sync scan-local failed', error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(1);
       setPhase('error');
@@ -382,6 +384,30 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const deleteCount = plan
     ? plan.deletes.length + (plan.agentsRoot && preview?.remoteAgentsRootExists ? 1 : 0)
     : 0;
+
+  const handleGrantCredentialSync = useEvent(async (): Promise<boolean> => {
+    if (!instanceId || credentialGrantBusy || isApplying) return false;
+    const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
+      ? relayHost.relay.serverId
+      : instanceId;
+    setCredentialGrantBusy(true);
+    try {
+      const grant = await desktopSshCredentialSyncGrant(grantId, { targetKind });
+      const authorized = grant?.authorized === true;
+      setCredentialAuthorized(authorized);
+      if (!authorized) {
+        toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'));
+      }
+      return authorized;
+    } catch (err) {
+      toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
+        description: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setCredentialGrantBusy(false);
+    }
+  });
 
   const handleRetry = useEvent(() => {
     if (errorStep === 2) {
@@ -425,6 +451,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       toast.success(t('settings.remoteInstances.page.sync.toast.success'));
       onOpenChange(false);
     } catch (error) {
+      console.error('[remote-instances] config sync apply failed', error);
       toast.error(t('settings.remoteInstances.page.sync.toast.failed'), {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -448,7 +475,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden sm:max-w-2xl">
+      <DialogContent className="min-h-0 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('settings.remoteInstances.page.sync.title')}</DialogTitle>
           <DialogDescription>{t('settings.remoteInstances.page.sync.description')}</DialogDescription>
@@ -538,52 +565,23 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
               checked={selections.authFile}
-              disabled={isApplying || !scopeReady || !credentialAuthorized}
+              disabled={isApplying || !scopeReady || credentialGrantBusy}
               ariaLabel={t('settings.remoteInstances.page.sync.section.authFile')}
               onChange={(checked) => {
-                if (!scopeReady || !credentialAuthorized) return;
-                const next = { ...selections, authFile: checked };
-                setSelections(next);
-                if (phase === 'review') void runCompareRemote(direction, next);
+                if (!scopeReady) return;
+                void (async () => {
+                  if (checked && !credentialAuthorized) {
+                    const authorized = await handleGrantCredentialSync();
+                    if (!authorized) return;
+                  }
+                  const next = { ...selections, authFile: checked };
+                  setSelections(next);
+                  if (phase === 'review') void runCompareRemote(direction, next);
+                })();
               }}
             />
             {t('settings.remoteInstances.page.sync.section.authFile')}
           </label>
-          {!credentialAuthorized ? (
-            <div className="space-y-2">
-              <div className="typography-micro text-muted-foreground">
-                {t('settings.remoteInstances.page.sync.scope.authRequiresGrant')}
-              </div>
-              {(targetKind === 'relay' || targetKind === 'direct') && instanceId ? (
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="outline"
-                  className="!font-normal"
-                  disabled={isApplying}
-                  onClick={() => {
-                    const ok = window.confirm(t('settings.remoteInstances.page.credentialSync.confirmGrant'));
-                    if (!ok) return;
-                    const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
-                      ? relayHost.relay.serverId
-                      : instanceId;
-                    void desktopSshCredentialSyncGrant(grantId, { targetKind })
-                      .then((grant) => {
-                        setCredentialAuthorized(grant?.authorized === true);
-                        toast.success(t('settings.remoteInstances.page.credentialSync.toast.granted'));
-                      })
-                      .catch((err) => {
-                        toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
-                          description: err instanceof Error ? err.message : String(err),
-                        });
-                      });
-                  }}
-                >
-                  {t('settings.remoteInstances.page.credentialSync.toggleLabel')}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
         </div>
 
         <div className="space-y-2">
@@ -626,12 +624,13 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
         ) : null}
 
         {isReview && hasEntries && plan ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
-            <div className="relative min-h-0 max-h-80 flex-1 overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)]">
-              <ScrollShadow
-                ref={reviewListRef}
-                size={24}
-                className="overlay-scrollbar-target overlay-scrollbar-container h-full min-h-0 overflow-x-hidden overflow-y-auto"
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)]">
+              <ScrollableOverlay
+                fillContainer={false}
+                disableHorizontal
+                outerClassName="max-h-80"
+                className="max-h-80"
               >
                 <div className="divide-y divide-border/60">
                   {plan.files.map((entry) => {
@@ -712,8 +711,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                     </div>
                   ) : null}
                 </div>
-              </ScrollShadow>
-              <OverlayScrollbar containerRef={reviewListRef} disableHorizontal />
+              </ScrollableOverlay>
             </div>
 
             <div className="space-y-1 typography-micro text-muted-foreground">

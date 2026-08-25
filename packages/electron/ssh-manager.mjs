@@ -2131,10 +2131,10 @@ export class ElectronSshManager {
           result: 'success',
           summary,
         });
-        if (result && Object.prototype.hasOwnProperty.call(result, 'plan')) {
-          const { plan: _plan, ...rest } = result;
-          return { ...rest, syncRunId };
-        }
+        // Keep `plan` in the IPC response: the renderer preview parser requires
+        // it (pull plans come from the remote inventory and exist nowhere else;
+        // push previews also rely on it). The run record above already consumed
+        // the plan for its summary, so nothing here needs it stripped.
         return { ...result, syncRunId };
       } catch (error) {
         if (!(error instanceof SyncInProgressError)) {

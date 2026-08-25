@@ -693,15 +693,24 @@ export const desktopSshSyncOpencodeConfigLocalScan = async (
   options: DesktopSshConfigSyncOptions = {},
 ): Promise<DesktopSshConfigSyncPlan | null> => {
   const invoke = getInvoke();
-  if (!invoke) return null;
+  if (!invoke) {
+    console.error('[desktopSsh] config sync local scan skipped: desktop IPC bridge is unavailable in this window');
+    return null;
+  }
   const raw = await invoke('desktop_ssh_sync_opencode_config', {
     stage: 'local',
     ...(options.direction ? { direction: options.direction } : {}),
     ...(options.selections ? { selections: options.selections } : {}),
   });
-  if (!isRecord(raw)) return null;
+  if (!isRecord(raw)) {
+    console.error('[desktopSsh] config sync local scan returned a non-object payload', raw);
+    return null;
+  }
   const plan = parseConfigSyncPlan(raw.plan);
-  if (!plan) return null;
+  if (!plan) {
+    console.error('[desktopSsh] config sync local scan plan payload was not recognized', raw);
+    return null;
+  }
   // Prefer top-level IPC selectionShape (desktop main contract); fall back to plan field.
   const selectionShape = parseSelectionShape(raw.selectionShape ?? raw.selection_shape)
     ?? plan.selectionShape
@@ -714,14 +723,21 @@ export const desktopSshSyncOpencodeConfigPreview = async (
   options: DesktopSshConfigSyncOptions = {},
 ): Promise<DesktopSshConfigSyncPreview | null> => {
   const invoke = getInvoke();
-  if (!invoke) return null;
+  if (!invoke) {
+    console.error('[desktopSsh] config sync preview skipped: desktop IPC bridge is unavailable in this window');
+    return null;
+  }
   const raw = await invoke('desktop_ssh_sync_opencode_config', {
     id,
     ...(options.targetKind ? { targetKind: options.targetKind } : {}),
     ...(options.direction ? { direction: options.direction } : {}),
     ...(options.selections ? { selections: options.selections } : {}),
   });
-  return parseConfigSyncPreview(raw);
+  const parsed = parseConfigSyncPreview(raw);
+  if (!parsed) {
+    console.error('[desktopSsh] config sync preview payload was not recognized', raw);
+  }
+  return parsed;
 };
 
 export const desktopSshSyncOpencodeConfigApply = async (
@@ -729,7 +745,10 @@ export const desktopSshSyncOpencodeConfigApply = async (
   options: DesktopSshConfigSyncOptions = {},
 ): Promise<DesktopSshConfigSyncResult | null> => {
   const invoke = getInvoke();
-  if (!invoke) return null;
+  if (!invoke) {
+    console.error('[desktopSsh] config sync apply skipped: desktop IPC bridge is unavailable in this window');
+    return null;
+  }
   const raw = await invoke('desktop_ssh_sync_opencode_config', {
     id,
     apply: true,
@@ -737,7 +756,11 @@ export const desktopSshSyncOpencodeConfigApply = async (
     ...(options.direction ? { direction: options.direction } : {}),
     ...(options.selections ? { selections: options.selections } : {}),
   });
-  return parseConfigSyncResult(raw);
+  const parsed = parseConfigSyncResult(raw);
+  if (!parsed) {
+    console.error('[desktopSsh] config sync apply payload was not recognized', raw);
+  }
+  return parsed;
 };
 
 export const desktopSshSyncRunsList = async (
