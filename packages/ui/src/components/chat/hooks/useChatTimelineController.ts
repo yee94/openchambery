@@ -21,6 +21,10 @@ import {
     getTranscriptRepository,
     transcriptScope,
 } from '@/sync/transcript-repository-runtime';
+import {
+    createHistoryViewportAnchorKeeper,
+    type HistoryViewportAnchorKeeper,
+} from './historyViewportAnchorKeeper';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -31,6 +35,13 @@ type PrePrependSnapshot = {
     anchor: ViewportAnchor | null;
     oldestId: string | null;
     newestId: string | null;
+    /**
+     * Height already compensated by the relative path after the user scrolled
+     * mid-load. Absolute-anchor restore would yank the viewport back to the
+     * capture-time position, so once the user scrolls during a load, every
+     * remaining batch of that load compensates relatively against this tally.
+     */
+    compensatedHeight?: number;
 };
 
 type PendingScrollRequest = {
@@ -301,6 +312,14 @@ export const resolveHistoryPageDecision = (input: {
 
 // One Host 3-turn page per user interaction (single server turn-page request).
 const HISTORY_INTERACTION_MAX_PAGES = 1;
+
+/**
+ * Scroll drift (px) between an armed load snapshot and the live scrollTop that
+ * marks "the user scrolled during this load". Below it, small programmatic
+ * adjustments are treated as noise and the absolute anchor restore still runs;
+ * above it, restoring would yank the viewport back to the pre-load position.
+ */
+const USER_SCROLLED_DURING_LOAD_PX = 8;
 
 /**
  * Short first paint / collapsed transcript that does not fill the viewport:
@@ -692,11 +711,23 @@ export const useChatTimelineController = ({
         }
     });
 
+    // Armed-window DOM keeper for non-virtual desktop: corrects materialization /
+    // hydration mutations that do not change renderedMessages (layout effect miss).
+    const historyAnchorKeeperRef = React.useRef<HistoryViewportAnchorKeeper | null>(null);
+
+    const stopKeeper = useEvent(() => {
+        const keeper = historyAnchorKeeperRef.current;
+        if (!keeper) return;
+        historyAnchorKeeperRef.current = null;
+        keeper.dispose();
+    });
+
     useUnmount(() => {
         if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(historyInteractionTimerRef.current);
             historyInteractionTimerRef.current = null;
         }
+        stopKeeper();
         resolvePendingRenderWaiters();
         resolvePendingScrollRequest(false);
     });
@@ -743,6 +774,9 @@ export const useChatTimelineController = ({
     // fetchOlderHistory stores a snapshot here before triggering the fetch and
     // keeps it armed for the whole load. Layout effect re-asserts it after
     // every commit React makes in between — before the browser paints.
+    // Desktop loading status is an overlay (no layout push). Within the armed
+    // window a MutationObserver keeper also corrects in-component mutations
+    // (slim→full / markdown hydrate) that leave renderedMessages unchanged.
     // (DOM geometry sync is intentionally layout-phase, not Query/useEffect.)
     const prePrependScrollRef = React.useRef<PrePrependSnapshot | null>(null);
 
@@ -752,6 +786,27 @@ export const useChatTimelineController = ({
 
     const restoreViewportAnchor = useEvent((anchor: ViewportAnchor): boolean => {
         return messageListRef.current?.restoreViewportAnchor(anchor) ?? false;
+    });
+
+    const startKeeper = useEvent(() => {
+        // Mobile keeps its momentum-defeating writer; the keeper is desktop.
+        if (isMobileSurfaceRuntime()) return;
+        stopKeeper();
+        const container = scrollRef.current;
+        if (!container) return;
+        const anchor = captureViewportAnchor();
+        if (!anchor) return;
+        // Active in BOTH engines. In the non-virtualized window it owns all
+        // mutation compensation (materialization / hydration); across the
+        // none→tanstack flip and inside virtualized history it only bridges the
+        // 1-2 frame gap before TanStack core's measure adjustment (which
+        // round-trips through React onChange) writes scrollTop. The keeper's
+        // scroll-rebase accepts core's absolute write instead of fighting it —
+        // unlike the old multi-frame rAF hold, it never chases core.
+        historyAnchorKeeperRef.current = createHistoryViewportAnchorKeeper({
+            container,
+            anchor,
+        });
     });
 
     // Tracks the timeline edges + height of the previous commit so a prepend
@@ -767,6 +822,7 @@ export const useChatTimelineController = ({
     } | null>(null);
 
     useIsomorphicLayoutEffect(() => {
+        stopKeeper();
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
         messageListRef.current?.cancelViewportAnchorHold();
@@ -777,6 +833,19 @@ export const useChatTimelineController = ({
         if (!container) return;
 
         let snap = prePrependScrollRef.current;
+        // Fast wheel/fling during an in-flight load: scrollTop moves
+        // synchronously while scroll events land per frame, so by the time the
+        // history page commits the snapshot anchor describes a viewport the
+        // user has already scrolled away from. Restoring it would yank the
+        // viewport back to the pre-load position (visible jump-back during
+        // fast upward scrolling). Drop the snapshot instead and let this
+        // prepend take the relative paths — background height-delta
+        // compensation when non-virtual, TanStack core's keyed adjustment
+        // when virtual — both anchored at the user's live position.
+        if (snap && Math.abs(container.scrollTop - snap.top) > USER_SCROLLED_DURING_LOAD_PX) {
+            prePrependScrollRef.current = null;
+            snap = null;
+        }
         const prev = prependTrackingRef.current;
         const currentOldestId = renderedMessages[0]?.info?.id ?? null;
         const currentNewestId = renderedMessages[renderedMessages.length - 1]?.info?.id ?? null;
@@ -839,6 +908,7 @@ export const useChatTimelineController = ({
             // best, and the source of the old up/down jiggle on send / from the
             // queue / while streaming. So for an append we do nothing and let
             // auto-follow own it.
+            stopKeeper();
             if (didPrepend) {
                 prePrependScrollRef.current = null;
                 goToBottom('instant');
@@ -915,6 +985,7 @@ export const useChatTimelineController = ({
                 }
             }
             updateTracking(measuredHeight);
+            startKeeper();
             return;
         }
 
@@ -1028,6 +1099,10 @@ export const useChatTimelineController = ({
                 prePrependScrollRef.current = null;
                 messageListRef.current?.cancelViewportAnchorHold();
             }
+            // The anchor keeper stays armed here on purpose: after the load
+            // lands, scroll-time markdown hydration / slim materialization keep
+            // mutating content heights for a while. The keeper self-retires via
+            // its quiet window once scrolling and mutations stop.
             if (historyViewportPreservationActive) {
                 historyViewportPreservationActive = false;
                 endHistoryViewportPreservation();
@@ -1074,6 +1149,7 @@ export const useChatTimelineController = ({
                     newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
                 };
                 prePrependScrollRef.current = armedSnapshot;
+                startKeeper();
             }
 
             let loadedMessageCount = beforeMessageCount;
@@ -1183,10 +1259,10 @@ export const useChatTimelineController = ({
             isLoadingOlderRef.current = false;
             setIsLoadingOlder(false);
             settleHistoryInteraction();
-            // Removing the loading row is itself a geometry change above the
-            // viewport, so the anchor stays armed until that commit has been
-            // compensated. Releasing it afterwards keeps ordinary commits
-            // (streaming, live events) free of a stale read position.
+            // Desktop loading status is overlay (no layout push). Keep the
+            // snapshot + DOM keeper armed until the next commit settles so
+            // materialization/hydration mutations still correct before paint;
+            // then release so ordinary commits stay free of a stale read position.
             void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
         }
     });

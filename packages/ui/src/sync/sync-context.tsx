@@ -416,10 +416,11 @@ function liveTailMissingSettledCompletion(directory: string, sessionID: string):
 }
 
 /**
- * Repair a lost settle tick: the tail assistant carries a server-stamped
- * terminal finish but no `time.completed`, so turn duration and assistant TPS
- * cannot render. The reconcile-page merge upserts the authoritative row and is
- * never stale-dropped, unlike a materialize page racing live SSE.
+ * Repair a lost settle tick: the tail assistant is missing `time.completed`
+ * and/or positive token counts after a terminal stop, so turn duration and
+ * assistant TPS cannot render. The reconcile-page merge upserts the
+ * authoritative row and is never stale-dropped, unlike a materialize page
+ * racing live SSE.
  */
 async function repairMissingSettleCompletion(directory: string, sessionID: string): Promise<void> {
   try {

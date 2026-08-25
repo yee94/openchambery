@@ -7555,53 +7555,55 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
                 fitContent
             >
-                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            // The native file/photo picker takes over next — restoring
-                            // the keyboard in between would flash it open and shut.
-                            restoreKeyboardAfterOverlayRef.current = false;
-                            setMobileAttachMenuOpen(false);
-                            requestAnimationFrame(handlePickLocalFiles);
-                        }}
-                    >
-                        <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            // Hand-off to the picker: don't sync-restore the
-                            // keyboard under the overlay that opens next frame.
-                            skipNextOverlayCloseRestoreRef.current = true;
-                            setMobileAttachMenuOpen(false);
-                            requestAnimationFrame(openIssuePicker);
-                        }}
-                    >
-                        <Icon name="github" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.linkGithubIssue')}</span>
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            skipNextOverlayCloseRestoreRef.current = true;
-                            setMobileAttachMenuOpen(false);
-                            requestAnimationFrame(openPrPicker);
-                        }}
-                    >
-                        <Icon name="git-pull-request" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.linkGithubPr')}</span>
-                    </Button>
+                <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
+                    <div className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            onClick={() => {
+                                // The native file/photo picker takes over next — restoring
+                                // the keyboard in between would flash it open and shut.
+                                restoreKeyboardAfterOverlayRef.current = false;
+                                setMobileAttachMenuOpen(false);
+                                requestAnimationFrame(handlePickLocalFiles);
+                            }}
+                        >
+                            <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            onClick={() => {
+                                // Hand-off to the picker: don't sync-restore the
+                                // keyboard under the overlay that opens next frame.
+                                skipNextOverlayCloseRestoreRef.current = true;
+                                setMobileAttachMenuOpen(false);
+                                requestAnimationFrame(openIssuePicker);
+                            }}
+                        >
+                            <Icon name="github" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.linkGithubIssue')}</span>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            onClick={() => {
+                                skipNextOverlayCloseRestoreRef.current = true;
+                                setMobileAttachMenuOpen(false);
+                                requestAnimationFrame(openPrPicker);
+                            }}
+                        >
+                            <Icon name="git-pull-request" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.linkGithubPr')}</span>
+                        </Button>
+                    </div>
                 </div>
             </MobileResizableSheet>
         ) : null}
@@ -7622,35 +7624,37 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
                 fitContent
             >
-                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            restoreKeyboardAfterOverlayRef.current = false;
-                            setAndroidMediaPickSheetOpen(false);
-                            requestAnimationFrame(handlePickAndroidPhotos);
-                        }}
-                    >
-                        <Icon name="file-image" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.attachPhotos')}</span>
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            restoreKeyboardAfterOverlayRef.current = false;
-                            setAndroidMediaPickSheetOpen(false);
-                            requestAnimationFrame(handlePickLocalFiles);
-                        }}
-                    >
-                        <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
-                    </Button>
+                <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
+                    <div className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            onClick={() => {
+                                restoreKeyboardAfterOverlayRef.current = false;
+                                setAndroidMediaPickSheetOpen(false);
+                                requestAnimationFrame(handlePickAndroidPhotos);
+                            }}
+                        >
+                            <Icon name="file-image" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.attachPhotos')}</span>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            onClick={() => {
+                                restoreKeyboardAfterOverlayRef.current = false;
+                                setAndroidMediaPickSheetOpen(false);
+                                requestAnimationFrame(handlePickLocalFiles);
+                            }}
+                        >
+                            <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
+                        </Button>
+                    </div>
                 </div>
             </MobileResizableSheet>
         ) : null}

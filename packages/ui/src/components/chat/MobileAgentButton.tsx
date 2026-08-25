@@ -81,6 +81,7 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
                 COMPOSER_ICON_HOVER_CLASS,
                 className
             )}
+            style={{ height: '26px', maxHeight: '26px', minHeight: '26px' }}
             title={agentLabel}
             aria-label={agentLabel}
         >
@@ -89,7 +90,7 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
                 label={agentLabel}
                 revealed={showAgentCycleLabel}
                 avatarSize={16}
-                slotClassName="h-6 w-6"
+                slotClassName="h-[26px] w-6"
                 colorVar={agentColor.var}
             />
         </button>

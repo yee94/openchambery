@@ -84,20 +84,22 @@ export function ImageSaveActionsHost() {
         resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
         fitContent
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="lg"
-            className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-            disabled={saving}
-            onClick={() => {
-              void handleSave();
-            }}
-          >
-            <Icon name={saving ? 'loader-4' : 'download'} className={saving ? 'size-5 animate-spin' : 'size-5'} />
-            <span className="truncate">{saving ? t('chat.image.actions.saving') : saveLabel}</span>
-          </Button>
+        <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
+          <div className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]">
+            <Button
+              type="button"
+              variant="ghost"
+              size="lg"
+              className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+              disabled={saving}
+              onClick={() => {
+                void handleSave();
+              }}
+            >
+              <Icon name={saving ? 'loader-4' : 'download'} className={saving ? 'size-5 animate-spin' : 'size-5'} />
+              <span className="truncate">{saving ? t('chat.image.actions.saving') : saveLabel}</span>
+            </Button>
+          </div>
         </div>
       </MobileResizableSheet>
     </div>

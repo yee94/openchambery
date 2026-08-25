@@ -29,6 +29,7 @@ import type {
 } from "./session-merge-strategy"
 import type { SessionMessagePageMeta } from "./session-message-reducer"
 import type { SessionMaterializationReason } from "./event-reducer"
+import { hasAnyPositiveTokenCount } from "./transcript-event-reducer"
 
 // ---------------------------------------------------------------------------
 // Scope identity
@@ -259,13 +260,16 @@ const SERVER_STAMPED_TERMINAL_FINISHES = new Set(["stop", "length"])
 
 /**
  * Whether the transcript tail is an assistant whose settle tick never arrived:
- * it carries a server-stamped terminal finish but no `time.completed`.
+ * it carries a server-stamped terminal finish but no `time.completed`, or a
+ * confirmed `stop` with `time.completed` but no positive token counts.
  *
  * The settle `message.updated` tick (finish + tokens, then completed) can be
  * lost on the live channel. Once the session goes idle nothing re-derives it,
  * so derived display (turn duration, assistant TPS) stays missing until an
  * authority refresh repairs the row. Interrupted finishes (`canceled`,
  * `aborted`, errors) legitimately omit `time.completed` and never count.
+ * Mid-loop finishes such as `tool-calls` are not token gaps even when counts
+ * are still zero — the turn is still running.
  */
 export function hasTailAssistantMissingSettledCompletion(
   transcript: Pick<TranscriptData, "messageOrder" | "messagesByID">,
@@ -277,7 +281,14 @@ export function hasTailAssistantMissingSettledCompletion(
   if ((message as { error?: unknown }).error) return false
   const finish = (message as { finish?: unknown }).finish
   if (typeof finish !== "string" || !SERVER_STAMPED_TERMINAL_FINISHES.has(finish)) return false
-  return typeof (message.time as { completed?: number } | undefined)?.completed !== "number"
+  const completed = (message.time as { completed?: number } | undefined)?.completed
+  if (typeof completed !== "number") return true
+  // Terminal stop with completed but no positive tokens: the tokens half of the
+  // settle tick was lost. Only `stop` — not `length` — so mid-run shapes stay quiet.
+  if (finish === "stop" && !hasAnyPositiveTokenCount((message as { tokens?: unknown }).tokens)) {
+    return true
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------

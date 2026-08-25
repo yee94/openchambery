@@ -2037,7 +2037,9 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime)
     .composer-mobile-model-controls
     [role="button"] {
-    min-height: 0 !important;
+    height: 26px !important;
+    min-height: 26px !important;
+    max-height: 26px !important;
     min-width: 0 !important;
   }
 
@@ -2157,6 +2159,7 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-card-shell,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-scheduled-task-card,
   :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel,
+  :root.mobile-pointer:not(.desktop-runtime) .pwa-overlay-panel,
   :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-message-text-export-root="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-chat-message="true"] {

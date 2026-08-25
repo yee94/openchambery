@@ -27,13 +27,20 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Consecutive `skill` calls collapse into `tool-skill-group` rows via
     `collectConsecutiveSkillTools` + `isSkillGroupTool`. A lone skill still uses the group header so adding the next name can flip-animate.
   - Live Activity headers use S1 `LatticeOrb`; settled headers keep `stack` / `fold-vertical`.
+  - While `completionDisposition === 'active'`, the Activity disclosure is locked open:
+    no collapse chevron/toggle, and the indent rail (`ml-2 pl-3` + connector line) is
+    omitted so in-flight rows do not jump horizontally when the turn settles.
+  - Live non-compaction with zero activity rows renders nothing (header stays hidden
+    until the first tool/reasoning/justification row exists). Compaction still keeps
+    its header-only chrome so the foldable summary body has an anchor.
   - Collapsed Activity hides Explored / Thought rows with the rest of the timeline.
   - Nested row React keys and expand-state ids are the projected activity id
     (`resolveActivityPartId`, i.e. `part.id` for anything the server sent).
-  - Row mounting depends **only** on the disclosure (`!showHeader || isExpanded ||
-    previewCount > 0`). It must not consult `completionDisposition` or `streamPhase`:
-    a settled-turn branch keyed on "was live" never released for aborted turns, and a
-    one-frame disposition flap unmounted every nested row. Structural stability against
+  - Row mounting depends **only** on the disclosure (`!showHeader || effectivelyExpanded ||
+    previewCount > 0`, where `effectivelyExpanded` forces open while live). It must not
+    consult `completionDisposition` or `streamPhase` beyond that lock: a settled-turn
+    branch keyed on "was live" never released for aborted turns, and a one-frame
+    disposition flap unmounted every nested row. Structural stability against
     regressing store frames belongs to `@/sync/displayParts`, not to this component.
   - If you want to change how individual `read`/`skill` compact rows look inside or outside a group, edit `StaticToolRow` here.
   - Every visible static call uses the shared tool lifecycle: a 14px desktop / 12px mobile `LatticeOrb` stays in the fixed 14px desktop / 16px mobile leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Its 3×3 grid optically spans about 12px on desktop and 10.3px on mobile; the mobile slot centers the lighter orb with 2px of space on each side. Expanded context-group children use this same row.

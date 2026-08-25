@@ -69,7 +69,7 @@ function ActionRow({
       type="button"
       variant={destructive ? 'destructive' : 'ghost'}
       size="lg"
-      className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
+      className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
       disabled={disabled}
       onClick={handleClick}
     >
@@ -98,7 +98,7 @@ function renderMenuItems(
     );
     if (!item.separated) return row;
     return (
-      <div key={item.id} className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
+      <div key={item.id} className="border-t border-[var(--surface-subtle)]">
         {row}
       </div>
     );
@@ -166,8 +166,10 @@ export function MobileRowActionsSheet({
       resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
       fitContent
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2">
-        {renderMenuItems(menuItems, t, run)}
+      <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
+        <div className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]">
+          {renderMenuItems(menuItems, t, run)}
+        </div>
       </div>
     </MobileResizableSheet>
   );

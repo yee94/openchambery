@@ -469,6 +469,92 @@ describe("materializeSessionSnapshots", () => {
     expect(result.messagesChanged).toBe(true)
   })
 
+  test("insert-only fills zero live tokens from a positive snapshot (lost settle tick)", () => {
+    // Settle message.updated can lose tokens on the live channel while idle
+    // materialize still carries the authoritative counts — insert-only must
+    // copy them so TPS does not wait for a later reconcile-page upsert.
+    const live = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 9 },
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    } as Message
+    const snapshot = {
+      ...live,
+      tokens: { input: 12, output: 44, reasoning: 9, cache: { read: 0, write: 0 } },
+    } as Message
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: { msg_1: [part("prt_1", "msg_1", "text", "the answer")] } },
+      "ses_1",
+      [{ info: snapshot, parts: [part("prt_1", "msg_1", "text", "the answer")] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    const merged = result.message.ses_1[0] as Message & {
+      tokens?: { input?: number; output?: number; reasoning?: number }
+    }
+    expect(merged).not.toBe(live)
+    expect(merged.tokens?.input).toBe(12)
+    expect(merged.tokens?.output).toBe(44)
+    expect(merged.tokens?.reasoning).toBe(9)
+    expect(result.messagesChanged).toBe(true)
+  })
+
+  test("insert-only fills absent live tokens from a positive snapshot", () => {
+    const live = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 9 },
+    } as Message
+    const snapshot = {
+      ...live,
+      tokens: { input: 3, output: 21, reasoning: 0, cache: { read: 0, write: 0 } },
+    } as Message
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: {} },
+      "ses_1",
+      [{ info: snapshot, parts: [] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    expect((result.message.ses_1[0] as { tokens?: { output?: number } }).tokens?.output).toBe(21)
+  })
+
+  test("insert-only never overwrites live positive tokens with a zero or different snapshot", () => {
+    const live = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 9 },
+      tokens: { input: 10, output: 50, reasoning: 2, cache: { read: 0, write: 0 } },
+    } as Message
+    const zeroSnapshot = {
+      ...live,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    } as Message
+    const differentSnapshot = {
+      ...live,
+      tokens: { input: 99, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    } as Message
+
+    const zeroResult = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: {} },
+      "ses_1",
+      [{ info: zeroSnapshot, parts: [] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+    expect(zeroResult.message.ses_1[0]).toBe(live)
+    expect(zeroResult.messagesChanged).toBe(false)
+
+    const differentResult = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: {} },
+      "ses_1",
+      [{ info: differentSnapshot, parts: [] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+    expect(differentResult.message.ses_1[0]).toBe(live)
+    expect((differentResult.message.ses_1[0] as { tokens?: { output?: number } }).tokens?.output).toBe(50)
+  })
+
   test("insert-only still admits the completed snapshot's final text and closed reasoning", () => {
     const live = message("msg_1")
     const openReasoning = {

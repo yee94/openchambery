@@ -51,11 +51,17 @@ import {
 } from './lib/shellBridge';
 import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants, withholdLiveRevealActivitySegments } from './lib/visibleSortedAssistants';
 import {
+    readUserMessageHeaderIdentity,
+    resolvePendingAssistantHeader,
+    shouldShowPendingAssistantHeader,
+} from './lib/pendingAssistantHeader';
+import {
     resolveActivityExpansionDisposition,
     resolveDefaultActivityExpanded,
     resolveToggledActivityExpanded,
     resolveTurnActivityPresentation,
     resolveTurnSettledForPresentation,
+    shouldTightenWorkingBottomGap,
 } from './lib/activityExpansion';
 
 // Re-export pure expansion helpers for existing MessageList.* tests.
@@ -66,6 +72,7 @@ export {
     resolveToggledActivityExpanded,
     resolveTurnActivityPresentation,
     resolveTurnSettledForPresentation,
+    shouldTightenWorkingBottomGap,
 };
 /* eslint-enable react-refresh/only-export-components */
 
@@ -1012,10 +1019,13 @@ const TurnBlock = React.memo(({
                         : message.info.id === streamingAssistantMessageId
                 ),
                 // Turn-completion chrome asks the turn, not the row.
+                // hasConfirmedFinalBody beats a lagging sessionIsWorking so live
+                // SSE settle can show TPS/duration before pending/status gates flip.
                 isTurnSettled: resolveTurnSettledForPresentation({
                     completionDisposition: turn.completionDisposition,
                     isLastTurn,
                     sessionIsWorking,
+                    hasConfirmedSettledAssistant: turn.hasConfirmedFinalBody,
                 }),
                 hasTools: turn.hasTools,
                 hasReasoning: turn.hasReasoning,
@@ -1066,6 +1076,26 @@ const TurnBlock = React.memo(({
         };
     }, [turn, visibleAssistantMessages]);
 
+    const pendingAssistantHeader = React.useMemo(() => {
+        if (!shouldShowPendingAssistantHeader({
+            isLastTurn,
+            sessionIsWorking,
+            hasAssistantMessages: turn.assistantMessages.length > 0,
+            activityPresentationKind: turn.activityPresentationKind,
+            hasActiveStreamingMessage: Boolean(activeStreamingMessageId),
+        })) {
+            return null;
+        }
+        return resolvePendingAssistantHeader(readUserMessageHeaderIdentity(turn.userMessage.info));
+    }, [
+        activeStreamingMessageId,
+        isLastTurn,
+        sessionIsWorking,
+        turn.activityPresentationKind,
+        turn.assistantMessages.length,
+        turn.userMessage.info,
+    ]);
+
     return (
         <TurnItem
             turn={renderableTurn}
@@ -1080,6 +1110,7 @@ const TurnBlock = React.memo(({
                 isLastTurn,
                 sessionIsWorking,
             })}
+            pendingAssistantHeader={pendingAssistantHeader}
             stickyUserHeader={stickyUserHeader}
             renderMessage={renderMessage}
         />

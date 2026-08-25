@@ -106,20 +106,18 @@ export const buildManagedServeEnvPrefix = (uiPassword) => {
   return `OPENCHAMBER_RUNTIME=ssh-remote OPENCHAMBER_UI_PASSWORD=${shellQuote(password)}`;
 };
 
-/**
- * Exact remote command managed SSH uses to start OpenChamber.
- * Default instances include `--relay-host`; `relayHost: false` omits it.
- */
-export const buildManagedServeCommand = (instance, desiredPort, uiPassword) => {
-  const envPrefix = buildManagedServeEnvPrefix(uiPassword);
-  const relayHostFlag = instanceWantsRelayHost(instance) ? buildRelayHostFlag(instance) : '';
-  return [
-    envPrefix,
-    'openchamber serve --hostname 127.0.0.1 --port',
-    String(desiredPort),
-    relayHostFlag,
-  ].filter(Boolean).join(' ');
-};
+export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
+  'nodeRuntimeMissing',
+  'packageManagerMissing',
+  'nativeBinding',
+  'openchamberInstall',
+  'opencodeInstall',
+  'serverStart',
+  'sshAuth',
+  'sshUnreachable',
+  'timeout',
+  'unknown',
+];
 
 /** `--relay-host` with no value uses the remote's default/stored URL. */
 export const buildRelayHostFlag = (instance) => {
@@ -170,18 +168,20 @@ export const parseRelayDescriptorFromStatus = (payload) => {
   return { relayUrl, serverId, hostEncPubJwk: jwk };
 };
 
-export const MANAGED_SSH_BOOTSTRAP_ERROR_CODES = [
-  'nodeRuntimeMissing',
-  'packageManagerMissing',
-  'nativeBinding',
-  'openchamberInstall',
-  'opencodeInstall',
-  'serverStart',
-  'sshAuth',
-  'sshUnreachable',
-  'timeout',
-  'unknown',
-];
+/**
+ * Exact remote command managed SSH uses to start OpenChamber.
+ * Default instances include `--relay-host`; `relayHost: false` omits it.
+ */
+export const buildManagedServeCommand = (instance, desiredPort, uiPassword) => {
+  const envPrefix = buildManagedServeEnvPrefix(uiPassword);
+  const relayHostFlag = instanceWantsRelayHost(instance) ? buildRelayHostFlag(instance) : '';
+  return [
+    envPrefix,
+    'openchamber serve --hostname 127.0.0.1 --port',
+    String(desiredPort),
+    relayHostFlag,
+  ].filter(Boolean).join(' ');
+};
 
 /**
  * Classify a managed SSH bootstrap failure so the desktop client can show

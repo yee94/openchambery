@@ -29,7 +29,11 @@ import JustificationBlock from './JustificationBlock';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { getExternalFaviconUrl } from '@/lib/url';
 import { getDirectoryForFilePath, getRelativeFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
-import { getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
+import {
+    getToolRowBlockClass,
+    TOOL_ROW_CHIP_GEOMETRY_CLASS,
+    TOOL_ROW_INTERACTIVE_CHROME_CLASS,
+} from './toolRowChrome';
 import { useSessionSurface } from '../../SessionSurfaceContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
@@ -1069,7 +1073,14 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         event.stopPropagation();
         requestMaterialization(true);
     });
+    // Live processing stays force-expanded: no user collapse, and no indent rail
+    // so in-flight tool rows do not jump left/right as the disclosure settles.
+    const disclosureLockedOpen = isActive;
+    const effectivelyExpanded = disclosureLockedOpen || isExpanded;
     const handleToggle = useEvent(() => {
+        if (disclosureLockedOpen) {
+            return;
+        }
         const header = activityHeaderRef.current;
         pendingToggleAnchorRef.current = header
             ? {
@@ -1077,7 +1088,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                 scrollContainer: header.closest<HTMLElement>('[data-scrollbar="chat"]'),
             }
             : null;
-        if (!isExpanded) {
+        if (!effectivelyExpanded) {
             requestMaterialization();
         }
         onToggle();
@@ -1089,11 +1100,11 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     // Failed messages are skipped here (autoSkipFailed) so a permanently slim
     // host record cannot turn every remount into another exact fetch.
     React.useEffect(() => {
-        if (isActive || !isExpanded) {
+        if (isActive || !effectivelyExpanded) {
             return;
         }
         requestMaterialization(false, true);
-    }, [isActive, isExpanded]);
+    }, [isActive, effectivelyExpanded]);
     React.useLayoutEffect(() => {
         const anchor = pendingToggleAnchorRef.current;
         const header = activityHeaderRef.current;
@@ -1126,11 +1137,11 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             pendingToggleAnchorRef.current = null;
         });
         return () => window.cancelAnimationFrame(frame);
-    }, [isExpanded]);
-    const previewCount = showHeader && !isExpanded
+    }, [effectivelyExpanded]);
+    const previewCount = showHeader && !effectivelyExpanded
         ? Math.max(0, Math.floor(collapsedPreviewCount))
         : 0;
-    const shouldRenderRows = !showHeader || isExpanded || previewCount > 0;
+    const shouldRenderRows = !showHeader || effectivelyExpanded || previewCount > 0;
     const requestedMessageIds = requestedMaterializationIdsRef.current;
     const requestedStatuses = [...requestedMessageIds]
         .map((targetMessageId): MaterializationStatus => {
@@ -1164,22 +1175,24 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     }, [shouldRenderRows, sortedParts]);
 
     const previewHiddenCount = React.useMemo(() => {
-        if (isExpanded || previewCount === 0) {
+        if (effectivelyExpanded || previewCount === 0) {
             return 0;
         }
         return Math.max(0, rows.length - previewCount);
-    }, [isExpanded, previewCount, rows.length]);
+    }, [effectivelyExpanded, previewCount, rows.length]);
 
     const visibleRows = React.useMemo(() => {
-        if (isExpanded || previewCount === 0) {
+        if (effectivelyExpanded || previewCount === 0) {
             return rows;
         }
         return rows.slice(-previewCount);
-    }, [isExpanded, previewCount, rows]);
+    }, [effectivelyExpanded, previewCount, rows]);
 
     // Header-only turns (e.g. completed compaction with foldable body text outside
     // activity rows) must still paint the disclosure chrome when showHeader is set.
-    if (!showHeader && rows.length === 0) {
+    // Live non-compaction with zero rows stays hidden — the Working header alone
+    // above WorkingPlaceholder is empty chrome; show it once the first row exists.
+    if ((!showHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0) {
         return null;
     }
 
@@ -1323,15 +1336,22 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             // Full-width row: left grows (flex-1), right trailer stays at the trailing edge.
                             'group/tool flex w-full min-w-0 flex-nowrap items-center text-left',
                             isMobile ? 'gap-x-1' : 'gap-x-2',
-                            TOOL_ROW_INTERACTIVE_CHROME_CLASS,
+                            // Locked-open live headers are not a disclosure control — drop chip hover/cursor.
+                            !disclosureLockedOpen && TOOL_ROW_INTERACTIVE_CHROME_CLASS,
+                            disclosureLockedOpen && `oc-tool-row -mx-2 ${TOOL_ROW_CHIP_GEOMETRY_CLASS} cursor-default`,
                             // Mobile only: drop chip pr so the chevron has no dead trailing slot.
                             // Desktop keeps px-2 so hover wash padding matches left (symmetric rounded chip).
                             isMobile && 'pr-0',
                         )}
-                        data-mobile-press-feedback="soft"
-                        onClick={handleToggle}
-                        aria-expanded={isExpanded}
-                        aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}
+                        data-mobile-press-feedback={disclosureLockedOpen ? undefined : 'soft'}
+                        onClick={disclosureLockedOpen ? undefined : handleToggle}
+                        aria-expanded={effectivelyExpanded}
+                        aria-disabled={disclosureLockedOpen || undefined}
+                        aria-label={disclosureLockedOpen
+                            ? activityStatusLabel
+                            : effectivelyExpanded
+                                ? t('chat.activity.collapseAria')
+                                : t('chat.activity.expandAria')}
                     >
                     <span className={cn(
                         // flex-1 absorbs free space so the trailer is pushed to the row end.
@@ -1403,24 +1423,28 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                 </span>
                             </span>
                         ) : null}
-                        <Icon
-                            name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
-                            className={cn(
-                                'flex-shrink-0 text-muted-foreground opacity-70',
-                                // Mobile optical pull after pr-0; desktop keeps chip padding intact for hover wash.
-                                isMobile && '-mr-0.5',
-                                isMobile ? 'size-3' : 'size-3.5',
-                            )}
-                        />
+                        {!disclosureLockedOpen ? (
+                            <Icon
+                                name={effectivelyExpanded ? 'arrow-down-s' : 'arrow-right-s'}
+                                className={cn(
+                                    'flex-shrink-0 text-muted-foreground opacity-70',
+                                    // Mobile optical pull after pr-0; desktop keeps chip padding intact for hover wash.
+                                    isMobile && '-mr-0.5',
+                                    isMobile ? 'size-3' : 'size-3.5',
+                                )}
+                            />
+                        ) : null}
                     </span>
                     </button>
                 {shouldShowRowsContainer ? (
-                    <div className="relative ml-2 pl-3">
-                        <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-0 top-px bottom-0 w-px opacity-40"
-                            style={{ backgroundColor: 'var(--tools-border)' }}
-                        />
+                    <div className={disclosureLockedOpen ? undefined : 'relative ml-2 pl-3'}>
+                        {!disclosureLockedOpen ? (
+                            <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute left-0 top-px bottom-0 w-px opacity-40"
+                                style={{ backgroundColor: 'var(--tools-border)' }}
+                            />
+                        ) : null}
                         {previewHiddenCount > 0 ? (
                             <button
                                 type="button"
@@ -1433,10 +1457,11 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <div className="flow-root">{renderedRows}</div>
                     </div>
                 ) : null}
-                {isExpanded && (isMaterializationLoading || hasMaterializationError || showEmptyMaterialization) ? (
+                {effectivelyExpanded && (isMaterializationLoading || hasMaterializationError || showEmptyMaterialization) ? (
                     <div
                         className={cn(
-                            'typography-meta ml-5 flex min-h-9 items-center gap-2 px-2 text-muted-foreground',
+                            'typography-meta flex min-h-9 items-center gap-2 px-2 text-muted-foreground',
+                            disclosureLockedOpen ? undefined : 'ml-5',
                             hasMaterializationError && 'text-[var(--status-error)]',
                         )}
                         role={hasMaterializationError ? 'alert' : 'status'}

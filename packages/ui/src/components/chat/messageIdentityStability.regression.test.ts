@@ -41,6 +41,16 @@ describe("message identity stability contract", () => {
     expect(source).toContain("useStickyDisplayValue<string>(stableAgentName)")
   })
 
+  test("pending send paints the assistant header before the first assistant row", () => {
+    const source = readSource("./lib/pendingAssistantHeader.ts")
+    expect(source).toContain("export const shouldShowPendingAssistantHeader")
+    expect(source).toContain("readUserMessageHeaderIdentity")
+    expect(source).toContain("resolvePendingAssistantHeader")
+    const turnItem = readSource("./components/TurnItem.tsx")
+    expect(turnItem).toContain("pendingAssistantHeader")
+    expect(turnItem).toContain("<MessageHeader")
+  })
+
   test("diagnostics expose identity-missing facts without values", () => {
     const source = readSource("../../sync/transcript-diagnostics.ts")
     expect(source).toContain("identityMissingCount")
