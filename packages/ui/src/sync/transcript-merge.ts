@@ -853,6 +853,10 @@ function messageOrderIDs(messages: readonly Message[] | undefined): string[] {
  * liveRevision counts content-meaningful changes only (matches sequential
  * apply + sharePageMessages collapse of payload-equal churn such as duplicate
  * part.updated that only stamps __dedupeNextDeltaFields).
+ *
+ * Per-session message Map / order are materialized once at batch start and
+ * rebuilt only when the reducer replaces the message array (message.updated /
+ * removed). Part events keep the prior index — mirrors sequential apply.
  */
 function applySseEventsToTranscriptData(
   previous: SessionTranscriptData | undefined,
@@ -876,7 +880,27 @@ function applySseEventsToTranscriptData(
   // Last content-committed snapshot (mirrors sequential freeze/share collapse).
   const committedParts = collectPreviousPartsByMessageID(previous)
   const committedMessages = collectPreviousMessagesByID(previous)
-  let committedOrder = messageOrderIDs(draft.message[sessionID])
+
+  // Incremental per-session message index (avoid O(messages) per event).
+  let messageList = draft.message[sessionID] ?? []
+  const messagesByID = new Map<string, Message>()
+  const indexByID = new Map<string, number>()
+  let order: string[] = []
+  const rebuildMessageIndex = (list: readonly Message[] | undefined) => {
+    messagesByID.clear()
+    indexByID.clear()
+    order = []
+    if (!list) return
+    for (let i = 0; i < list.length; i += 1) {
+      const message = list[i]
+      if (!message?.id) continue
+      messagesByID.set(message.id, message)
+      indexByID.set(message.id, i)
+      order.push(message.id)
+    }
+  }
+  rebuildMessageIndex(messageList)
+  let committedOrder = order.slice()
 
   for (const event of events) {
     if (!isTranscriptSseEventType(event.type)) continue
@@ -889,11 +913,17 @@ function applySseEventsToTranscriptData(
     }
     if (!changed) continue
 
+    const nextList = draft.message[sessionID] ?? []
+    // Part events mutate draft.part only; message array ref is stable.
+    if (nextList !== messageList) {
+      messageList = nextList
+      rebuildMessageIndex(nextList)
+    }
+
     const eventMessageID = extractEventMessageID(event)
-    const nextOrder = messageOrderIDs(draft.message[sessionID])
     const orderChanged =
-      nextOrder.length !== committedOrder.length
-      || nextOrder.some((id, index) => id !== committedOrder[index])
+      order.length !== committedOrder.length
+      || order.some((id, index) => id !== committedOrder[index])
 
     let contentChanged = orderChanged
     if (eventMessageID) {
@@ -911,16 +941,16 @@ function applySseEventsToTranscriptData(
         committedParts.delete(eventMessageID)
       }
 
-      const draftMessage = draft.message[sessionID]?.find((item) => item.id === eventMessageID)
+      const draftMessage = messagesByID.get(eventMessageID)
       const committedMessage = committedMessages.get(eventMessageID)
       if (draftMessage && committedMessage && committedMessage === draftMessage) {
         // same ref
       } else if (draftMessage && committedMessage && sameMessageIdentity(committedMessage, draftMessage)) {
         // Prefer committed message shell when identity-stable.
-        const list = draft.message[sessionID]
-        if (list) {
-          const index = list.findIndex((item) => item.id === eventMessageID)
-          if (index >= 0) list[index] = committedMessage
+        const index = indexByID.get(eventMessageID)
+        if (index !== undefined && messageList[index]) {
+          messageList[index] = committedMessage
+          messagesByID.set(eventMessageID, committedMessage)
         }
       } else if (draftMessage) {
         contentChanged = true
@@ -934,9 +964,9 @@ function applySseEventsToTranscriptData(
     }
 
     if (orderChanged) {
-      committedOrder = nextOrder
+      committedOrder = order.slice()
       // Refresh committed message map for order-only admissions.
-      for (const message of draft.message[sessionID] ?? []) {
+      for (const message of messageList) {
         if (message?.id && !committedMessages.has(message.id)) {
           committedMessages.set(message.id, message)
         }

@@ -164,27 +164,30 @@ export function listCanonicalTranscriptScopes(sessionID: string): TranscriptScop
     const repository = getTranscriptRepository() as
       | (ReturnType<typeof getTranscriptRepository> & {
         getCacheBudget?: () => {
-          listCanonical: (filter?: {
-            transport?: string
-            generation?: number
-          }) => Array<{
-            scope: {
-              directory: string
-              sessionID: string
-              transport: string
-              generation: number
-            }
+          listCanonicalScopesForSession: (
+            sessionID: string,
+            filter?: {
+              transport?: string
+              generation?: number
+            },
+          ) => Array<{
+            directory: string
+            sessionID: string
+            transport: string
+            generation: number
           }>
         }
       })
       | null
     const transport = getRuntimeTransportIdentity()
     const generation = getRuntimeGeneration()
-    return repository?.getCacheBudget?.().listCanonical({ transport, generation })
-      ?.filter((entry) => entry.scope.sessionID === sessionID)
-      .map((entry) => transcriptScope(entry.scope.directory, entry.scope.sessionID, {
-        transport: entry.scope.transport,
-        generation: entry.scope.generation,
+    return repository?.getCacheBudget?.().listCanonicalScopesForSession(sessionID, {
+      transport,
+      generation,
+    })
+      ?.map((scope) => transcriptScope(scope.directory, scope.sessionID, {
+        transport: scope.transport,
+        generation: scope.generation,
       })) ?? []
   } catch {
     return []

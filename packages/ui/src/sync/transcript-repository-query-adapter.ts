@@ -1822,6 +1822,7 @@ export function createQueryTranscriptRepository(
       p0Latches.clear()
       p0Painted.clear()
       prependFlights.clear()
+      cacheBudget.dispose()
     },
   }
 

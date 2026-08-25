@@ -52,8 +52,10 @@ const createMockResponse = () => {
   let body = '';
   let flushed = false;
   let bodyFlushCount = 0;
+  let destroyed = false;
+  let writableEnded = false;
 
-  return {
+  const res = {
     on(event, handler) {
       listeners.set(event, handler);
       return this;
@@ -80,6 +82,9 @@ const createMockResponse = () => {
       body += String(chunk);
       return true;
     },
+    destroy() {
+      destroyed = true;
+    },
     status(code) {
       statusCode = code;
       return this;
@@ -100,7 +105,21 @@ const createMockResponse = () => {
     get bodyFlushCount() {
       return bodyFlushCount;
     },
+    get destroyed() {
+      return destroyed;
+    },
+    set destroyed(value) {
+      destroyed = Boolean(value);
+    },
+    get writableEnded() {
+      return writableEnded;
+    },
+    set writableEnded(value) {
+      writableEnded = Boolean(value);
+    },
   };
+
+  return res;
 };
 
 describe('local SSE routes', () => {
@@ -162,6 +181,7 @@ describe('local SSE routes', () => {
       getOpenChamberEventClients: () => clients,
       writeSseEvent(res, payload) {
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        return true;
       },
     });
 
@@ -182,5 +202,48 @@ describe('local SSE routes', () => {
 
     req.emit('close');
     expect(clients.has(res)).toBe(false);
+  });
+
+  it('evicts half-open OpenChamber SSE clients after consecutive paused heartbeats', () => {
+    vi.useFakeTimers();
+    const { app, getRoute } = createRouteRegistry();
+    const clients = new Set();
+    let destroyCount = 0;
+
+    try {
+      registerScheduledTaskRoutes(app, {
+        getOpenChamberEventClients: () => clients,
+        writeSseEvent(res) {
+          res.__ssePaused = true;
+          return false;
+        },
+      });
+
+      const handler = getRoute('GET', '/api/openchamber/events');
+      const req = createMockRequest();
+      const res = createMockResponse();
+      res.destroy = () => {
+        destroyCount += 1;
+        res.destroyed = true;
+      };
+
+      handler(req, res);
+      expect(clients.has(res)).toBe(true);
+
+      vi.advanceTimersByTime(25_000);
+      expect(clients.has(res)).toBe(true);
+      expect(destroyCount).toBe(0);
+
+      vi.advanceTimersByTime(25_000);
+      expect(clients.has(res)).toBe(false);
+      expect(destroyCount).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+
+      // Idempotent cleanup: a late close must not throw or re-destroy.
+      req.emit('close');
+      expect(destroyCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
