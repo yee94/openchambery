@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.4] - 2026-08-25
+
+### 移动端
+
+- **附件选择弹窗更协调：** 紧凑底栏贴内容高度，标题区不再头重；「附加照片 / 附加文件」收成一组卡片，点击有按压缩放和高亮。
+- **输入框 Agent 名称垂直居中：** 展开后的 Agent 名称与模型芯片同一行高，不再偏上。
+
 ## [1.18.4-beta.3] - 2026-08-25
 
 ### 聊天

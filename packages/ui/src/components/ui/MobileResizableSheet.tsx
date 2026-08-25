@@ -61,6 +61,8 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
   });
   const [headerActionsSlot, setHeaderActionsSlot] = React.useState<HTMLDivElement | null>(null);
   const hasHeader = title != null || leading != null || trailing != null;
+  const expanded = sheetSnap.snapPoint === MOBILE_SHEET_EXPANDED_SNAP;
+  const fillAvailableHeight = expanded || !fitContent;
 
   return (
     <MobileSheetHeaderActionsContext.Provider value={headerActionsSlot}>
@@ -72,7 +74,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
         edge="bottom"
         dismissGesture={{ reservedTargetSelector: '[data-mobile-sheet-snap-handle]' }}
         ariaLabel={ariaLabel}
-        surfaceClassName={sheetSnap.snapPoint === MOBILE_SHEET_EXPANDED_SNAP
+        surfaceClassName={expanded
           ? 'h-[98dvh] max-h-[98dvh]'
           : fitContent
             ? 'h-auto max-h-[72dvh]'
@@ -80,11 +82,14 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
         surfaceElementRef={sheetSnap.surfaceRef}
         onExitComplete={sheetSnap.reset}
       >
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className={cn('flex min-h-0 flex-col', fillAvailableHeight && 'flex-1')}>
           <div className="shrink-0">
             <MobileSheetSnapHandle controller={sheetSnap} ariaLabel={resizeAriaLabel} />
             {hasHeader ? (
-              <div className="flex min-h-10 items-center gap-2 px-4 pb-2">
+              <div className={fitContent
+                ? 'flex min-h-9 items-center gap-2 px-4 pb-1'
+                : 'flex min-h-10 items-center gap-2 px-4 pb-2'}
+              >
                 {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
                 <div className="min-w-0 flex-1">{title}</div>
                 {trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
@@ -109,9 +114,14 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
             height and get clipped by overflow-hidden — no vertical scroll.
             `data-page-scroll-lock` keeps overflow:hidden under the global
             mobile-pointer rewrite that turns `.overflow-hidden` into overflow-y:auto.
+            Compact fitContent sheets stay content-sized until expanded.
           */}
           <div
-            className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', bodyClassName)}
+            className={cn(
+              'flex min-h-0 flex-col overflow-hidden',
+              fillAvailableHeight && 'flex-1',
+              bodyClassName,
+            )}
             data-page-scroll-lock="true"
           >
             {children}

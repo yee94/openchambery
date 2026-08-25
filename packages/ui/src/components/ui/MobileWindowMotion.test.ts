@@ -116,6 +116,10 @@ describe('MobileWindowMotion recipe', () => {
 
   test('keeps compact resizable sheets content-sized below the collapsed maximum', () => {
     expect(mobileResizableSheetSource).toContain("? 'h-auto max-h-[72dvh]'");
+    expect(mobileResizableSheetSource).toContain('const fillAvailableHeight = expanded || !fitContent;');
+    expect(chatInputSource).toContain('id="android-media-pick-sheet"');
+    expect(chatInputSource).toContain('overflow-hidden rounded-2xl bg-[var(--surface-muted)]');
+    expect(chatInputSource).toContain('h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0');
     expect(mobileResizableSheetSource).toContain('trailing?: React.ReactNode;');
     expect(mobileResizableSheetSource).toContain('{trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}\n                <div ref={setHeaderActionsSlot} className="contents" />');
     expect(mobileResizableSheetSource).toContain('export const MobileSheetHeaderActions');
@@ -142,7 +146,8 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileWindowMotionSource).toContain('shouldCommitOverlayScrimDismiss(event)');
     expect(mobileOverlayPanelSource).toContain('onPointerDown={markOverlayScrimPress}');
     expect(mobileOverlayPanelSource).toContain('shouldCommitOverlayScrimDismiss(event)');
-    expect(mobileResizableSheetSource).toContain("className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', bodyClassName)}");
+    expect(mobileResizableSheetSource).toContain("className={cn(\n              'flex min-h-0 flex-col overflow-hidden',\n              fillAvailableHeight && 'flex-1',\n              bodyClassName,\n            )}");
+    expect(mobileResizableSheetSource).toContain("fitContent\n                ? 'flex min-h-9 items-center gap-2 px-4 pb-1'");
     expect(mobileResizableSheetSource).toContain('data-page-scroll-lock="true"');
     expect(agentSelectorSource).toContain("from '@/components/ui/MobileResizableSheet'");
     expect(agentSelectorSource).toContain("from '@/components/ui/ScrollableOverlay'");
