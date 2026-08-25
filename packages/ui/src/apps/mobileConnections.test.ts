@@ -2,7 +2,6 @@ import { describe, expect, mock, test } from 'bun:test';
 
 import {
   loadMobileConnections,
-  mobileConnectionKey,
   upsertMobileConnection,
   validateMobileConnectionSession,
   type MobileRelayConfig,
