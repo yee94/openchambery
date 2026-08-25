@@ -712,6 +712,21 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     }
   }, [filterProjectId, hasPinnedSessions, setFilterProjectId]);
 
+  // When the recent-sessions sheet opens, default the project filter to the
+  // active project so we land on the current project instead of "All" or a
+  // stale/removed selection. Preserve an explicit user filter when it still
+  // points at a valid project or the pinned scope.
+  React.useEffect(() => {
+    if (!open) return;
+    if (!activeProjectId) return;
+    if (filterProjectId && filterProjectId !== PINNED_SESSION_FILTER_ID) {
+      const stillValid = projects.some((project) => project.id === filterProjectId);
+      if (stillValid) return;
+    }
+    if (filterProjectId === activeProjectId) return;
+    setFilterProjectId(activeProjectId);
+  }, [open, activeProjectId, filterProjectId, projects, setFilterProjectId]);
+
   React.useEffect(() => {
     if (open) return;
     setActionTarget(null);
