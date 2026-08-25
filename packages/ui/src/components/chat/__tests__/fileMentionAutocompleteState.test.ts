@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+    collectComposerMentionHighlights,
+    collectConfirmableFileMentions,
     collectSessionMentionIds,
     findSessionMentionRanges,
     getFileMentionAutocompleteQuery,
@@ -9,6 +11,7 @@ import {
     mergeAndRankFileMentionPathHits,
     replaceSessionMentionTokens,
     resolveSessionMentionDeletion,
+    shouldHighlightFileMention,
 } from '../fileMentionAutocompleteState';
 import { buildSessionMentionInstruction, type SessionMentionContext } from '@/composer/delivery';
 import type { Session } from '@opencode-ai/sdk/v2';
@@ -229,5 +232,81 @@ describe('mergeAndRankFileMentionPathHits', () => {
 
         expect(ranked.map((item) => item.path)).not.toContain('/project/src/a.ts');
         expect(ranked.find((item) => item.relativePath === 'src')?.isDirectory).toBe(true);
+    });
+});
+
+describe('file mention confirmation', () => {
+    test('does not highlight an in-progress typed path until space terminates it', () => {
+        expect(shouldHighlightFileMention({
+            mention: 'yi.ts',
+            confirmed: false,
+            terminated: false,
+        })).toBe(false);
+        expect(collectComposerMentionHighlights('@yi.ts', {
+            confirmedValues: new Set(),
+            agentNames: new Set(),
+        })).toEqual([]);
+        expect(collectComposerMentionHighlights('see @src/yi.ts', {
+            confirmedValues: new Set(),
+            agentNames: new Set(),
+        })).toEqual([]);
+        expect(collectComposerMentionHighlights('user@email.com', {
+            confirmedValues: new Set(),
+            agentNames: new Set(),
+        })).toEqual([]);
+    });
+
+    test('highlights a path-like mention after space or a confirmed autocomplete pick', () => {
+        expect(shouldHighlightFileMention({
+            mention: 'yi.ts',
+            confirmed: false,
+            terminated: true,
+        })).toBe(true);
+        expect(collectComposerMentionHighlights('@yi.ts please', {
+            confirmedValues: new Set(),
+            agentNames: new Set(),
+        })).toEqual([{ start: 0, end: 6, kind: 'file' }]);
+        expect(collectComposerMentionHighlights('@src/yi.ts', {
+            confirmedValues: new Set(['src/yi.ts']),
+            agentNames: new Set(),
+        })).toEqual([{ start: 0, end: 10, kind: 'file' }]);
+    });
+
+    test('does not treat an in-progress mention as atomically deletable', () => {
+        expect(shouldHighlightFileMention({
+            mention: 'src/yi.ts',
+            confirmed: false,
+            terminated: false,
+        })).toBe(false);
+        expect(shouldHighlightFileMention({
+            mention: 'src/yi.ts',
+            confirmed: true,
+            terminated: false,
+        })).toBe(true);
+    });
+
+    test('confirms terminated path mentions and pasted file references', () => {
+        expect(collectConfirmableFileMentions('@yi.ts')).toEqual([]);
+        expect(collectConfirmableFileMentions('@yi.ts\nnext')).toEqual([
+            { kind: 'file', value: 'yi.ts', start: 0, end: 6 },
+        ]);
+        expect(collectConfirmableFileMentions('see @src/yi.ts ', {
+            agentNames: new Set(['build']),
+        })).toEqual([
+            { kind: 'file', value: 'src/yi.ts', start: 4, end: 14 },
+        ]);
+        expect(collectConfirmableFileMentions('@src/yi.ts', {
+            includeUnterminatedPastedReferences: true,
+        })).toEqual([
+            { kind: 'file', value: 'src/yi.ts', start: 0, end: 10 },
+        ]);
+        expect(collectConfirmableFileMentions('@scope/pkg@latest', {
+            includeUnterminatedPastedReferences: true,
+        })).toEqual([]);
+        expect(collectConfirmableFileMentions('ask @build about @src/a.ts ', {
+            agentNames: new Set(['build']),
+        })).toEqual([
+            { kind: 'file', value: 'src/a.ts', start: 17, end: 26 },
+        ]);
     });
 });

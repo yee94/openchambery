@@ -438,7 +438,35 @@ type TouchGestureState = {
     settleScheduled: boolean;
 };
 
+type MomentumWriteControl = {
+    generation: number;
+};
+
 const touchGestureStates = new WeakMap<HTMLElement, TouchGestureState>();
+const momentumWriteControls = new WeakMap<HTMLElement, MomentumWriteControl>();
+
+const bumpMomentumWriteGeneration = (container: HTMLElement): number => {
+    const control = momentumWriteControls.get(container) ?? { generation: 0 };
+    control.generation += 1;
+    momentumWriteControls.set(container, control);
+    return control.generation;
+};
+
+/**
+ * Drop leftover touch-defer state and cancel in-flight momentum watchdogs.
+ * Session switches reuse the same scroll element; a pending lift-off write
+ * from the previous session (or the opening tap) must not yank the new
+ * transcript to a stale mid-timeline target.
+ */
+export const resetTouchGestureTracking = (container: HTMLElement) => {
+    const state = touchGestureStates.get(container);
+    if (state) {
+        state.touches = 0;
+        state.pending = null;
+        state.settleScheduled = false;
+    }
+    bumpMomentumWriteGeneration(container);
+};
 
 /**
  * Installs the touch gesture counter on the scroll container. Must run before
@@ -489,6 +517,7 @@ const scheduleTouchCompensationSettle = (container: HTMLElement, state: TouchGes
 };
 
 const applyDefeatingMomentumWrite = (container: HTMLElement, target: number) => {
+    const generation = bumpMomentumWriteGeneration(container);
     const previousOverflow = container.style.overflow;
     container.style.overflow = 'hidden';
     container.scrollTop = target;
@@ -505,6 +534,10 @@ const applyDefeatingMomentumWrite = (container: HTMLElement, target: number) => 
     container.addEventListener('touchstart', cancelOnUserTouch, { passive: true, once: true });
     const watch = () => {
         if (cancelled) return;
+        if ((momentumWriteControls.get(container)?.generation ?? 0) !== generation) {
+            container.removeEventListener('touchstart', cancelOnUserTouch);
+            return;
+        }
         // Only correct upward drift (residual momentum). Downward movement or
         // content growth above the viewport must not be fought here.
         if (container.scrollTop < target - MOMENTUM_WATCHDOG_TOLERANCE_PX) {
@@ -921,9 +954,9 @@ export const useChatTimelineController = ({
     useIsomorphicLayoutEffect(() => {
         if (!isMobileSurfaceRuntime()) return;
         const container = scrollRef.current;
-        if (container) {
-            attachTouchGestureTracking(container);
-        }
+        if (!container) return;
+        attachTouchGestureTracking(container);
+        resetTouchGestureTracking(container);
     }, [sessionId, scrollRef]);
 
     useIsomorphicLayoutEffect(() => {

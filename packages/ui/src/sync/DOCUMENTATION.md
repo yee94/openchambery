@@ -1394,8 +1394,14 @@ transcript (or any residual pure draft surface) as an unscoped full dump.
 - Keep a short message-ID cutoff after the response so transport-buffered copy
   events cannot refill the complete history. Newer user/assistant events pass
   through normally.
-- A current-session fork during `busy` or `retry` targets the latest user
-  message. The active assistant message remains outside the forked history.
+- OpenCode `session.fork(messageID)` copies strictly before that message.
+  Current-session `/fork` while idle — including a missing status entry, because
+  `/session/status` omits idle sessions — passes `undefined` and keeps the full
+  source history through the latest completed turn.
+- A current-session fork during `busy` or `retry` (or a missing status whose
+  transcript tail is still an open assistant) passes the first message after the
+  latest user message. That user turn is included; in-progress assistant work is
+  not. A live session with no user message after refresh is a hard failure.
 - An explicit user-message fork passes that user message ID and restores its text and file parts.
 - An explicit assistant-message fork passes the following source message ID; an assistant at the source tail passes `undefined` and retains the full history through that reply.
 - A current-session fork preserves the composer's existing resources.

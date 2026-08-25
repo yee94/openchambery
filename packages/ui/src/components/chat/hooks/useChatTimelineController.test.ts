@@ -15,6 +15,7 @@ import {
     resolveHistoryPrependCompensation,
     resolvePublishedViewportMetrics,
     attachTouchGestureTracking,
+    resetTouchGestureTracking,
     setScrollTopDefeatingMomentum,
     shouldAutoFillEarlierHistory,
     shouldHoldHistoryViewportAnchor,
@@ -743,6 +744,21 @@ describe('setScrollTopDefeatingMomentum touch-aware compensation', () => {
         await flushFrame();
 
         expect(container.scrollTop).toBe(1200);
+        container.remove();
+    });
+
+    test('session reset drops a deferred batch so lift-off cannot yank the new transcript', async () => {
+        const container = makeContainer();
+        container.scrollTop = 500;
+        container.dispatchEvent(new Event('touchstart'));
+        setScrollTopDefeatingMomentum(container, 700, 200);
+        expect(container.scrollTop).toBe(500);
+
+        resetTouchGestureTracking(container);
+        container.dispatchEvent(new Event('touchend'));
+        await flushFrame();
+
+        expect(container.scrollTop).toBe(500);
         container.remove();
     });
 });

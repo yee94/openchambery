@@ -20,6 +20,7 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import {
   getVisibleSessionMentionCandidates,
   mergeAndRankFileMentionPathHits,
+  resolveFileMentionSearchQuery,
   type FileMentionPathHit,
 } from './fileMentionAutocompleteState';
 import {
@@ -172,10 +173,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     }
 
     const normalizedQuery = (debouncedQuery ?? '').trim();
-    const normalizedQueryLower = normalizedQuery
-      .replace(/^\.\//, '')
-      .replace(/^\/+/, '')
-      .toLowerCase();
+    const normalizedQueryLower = resolveFileMentionSearchQuery(normalizedQuery);
 
     if (!normalizedQueryLower) {
       setPathHits([]);
@@ -211,7 +209,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
         setPathHits(mergeAndRankFileMentionPathHits({
           files: fileHits,
           directories: directoryHits,
-          query: normalizedQueryLower,
+          query: normalizedQuery,
           excludePaths: recentSet,
           limit: 20,
         }));

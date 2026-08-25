@@ -133,6 +133,30 @@ function setForkTransitionTarget(
   )
 }
 
+function isLiveForkStatus(status: SessionStatus | undefined): boolean {
+  return status?.type === "busy" || status?.type === "retry"
+}
+
+function lastUserMessageIndex(messages: Message[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") return index
+  }
+  return -1
+}
+
+function isOpenAssistantTail(messages: Message[]): boolean {
+  const last = messages.at(-1)
+  return last?.role === "assistant" && last.time.completed == null
+}
+
+/**
+ * Live `/fork` needs a user-turn cutoff. Missing status is not live on its own:
+ * `/session/status` omits idle sessions, so a completed tail with no entry is idle.
+ */
+function needsLiveUserForkPoint(status: SessionStatus | undefined, messages: Message[]): boolean {
+  return isLiveForkStatus(status) || (status == null && isOpenAssistantTail(messages))
+}
+
 export function resolveForkMessageId(
   messageId: string | undefined,
   messages: Message[],
@@ -143,14 +167,15 @@ export function resolveForkMessageId(
     if (messageIndex === -1 || messages[messageIndex]?.role !== "assistant") return messageId
     return messages[messageIndex + 1]?.id
   }
-  // A missing status entry is absence of signal, not proof of idle: scan the
-  // authoritative transcript for the last user message like the busy path so
-  // /fork cannot dead-end between the guards in forkSession.
-  if (status?.type === "idle") return messageId
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "user") return messages[index].id
-  }
-  return undefined
+  // OpenCode session.fork(messageID) copies strictly before that message.
+  // Idle and omitted-idle `/fork` pass undefined so the full history is kept.
+  // Busy/retry (or a missing status with an open assistant tail) pass the first
+  // message after the latest user so that user turn is included and the
+  // in-progress assistant work is not.
+  if (!needsLiveUserForkPoint(status, messages)) return undefined
+  const userIndex = lastUserMessageIndex(messages)
+  if (userIndex === -1) return undefined
+  return messages[userIndex + 1]?.id
 }
 
 async function markForkSessionAsLatest(session: Session, directory: string): Promise<Session> {
@@ -2987,7 +3012,7 @@ export async function forkSession(sessionId: string, operationId: number, messag
     messageCount: sourceMessages.length,
   })
   let forkMessageId = resolveForkMessageId(messageId, sourceMessages, sourceStatus)
-  if (!messageId && state.session_status[sessionId]?.type !== "idle" && !forkMessageId) {
+  if (!messageId && needsLiveUserForkPoint(sourceStatus, sourceMessages) && lastUserMessageIndex(sourceMessages) === -1) {
     console.info("[session-fork] refreshing messages to resolve the active fork point", {
       operationId,
       sessionId,
@@ -2998,7 +3023,7 @@ export async function forkSession(sessionId: string, operationId: number, messag
     sourceMessages = readSessionMessages(sessionId, directory)
     forkMessageId = resolveForkMessageId(undefined, sourceMessages, sourceStatus)
   }
-  if (!messageId && state.session_status[sessionId]?.type !== "idle" && !forkMessageId) {
+  if (!messageId && needsLiveUserForkPoint(sourceStatus, sourceMessages) && lastUserMessageIndex(sourceMessages) === -1) {
     console.error("[session-fork] active session has no user message fork point", {
       operationId,
       sessionId,

@@ -1,6 +1,13 @@
 import type { Session } from '@opencode-ai/sdk/v2';
-import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
+import { rankFileMentionSearch } from '@/lib/search/fileMentionSearch';
+
+export {
+  isTestFileMentionPath,
+  parseFileMentionQuery,
+  resolveFileMentionSearchQuery,
+  type FileMentionQueryIntent,
+} from '@/lib/search/fileMentionSearch';
 
 export type FileMentionAutocompleteInputSource = 'manual' | 'paste';
 
@@ -8,10 +15,24 @@ export type FileMentionPathHit = ProjectFileSearchHit & {
   isDirectory?: boolean;
 };
 
+const FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,8}$/i;
+const MENTION_BOUNDARY_BEFORE = /(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/;
+
+export const looksLikeFilePath = (mention: string): boolean => (
+  mention.includes('/') || mention.includes('\\') || mention.includes('.')
+);
+
+export const looksLikePastedFileReference = (mention: string): boolean => {
+  if (!looksLikeFilePath(mention)) return false;
+  const normalized = mention.replace(/\\/g, '/');
+  if (normalized.endsWith('/')) return true;
+  const lastSegment = normalized.split('/').filter(Boolean).pop() ?? normalized;
+  return FILE_EXTENSION_PATTERN.test(lastSegment);
+};
+
 /**
- * Merge file + directory search hits into one flat list ranked by path/name
- * similarity. Lower score is better (same tiers as scoreTextAgainstQuery).
- * Does not group by kind — folder vs file only differs by isDirectory.
+ * Merge file + directory search hits into one flat list ranked by the shared
+ * file-mention search algorithm. Does not group by kind.
  */
 export const mergeAndRankFileMentionPathHits = ({
   files,
@@ -38,37 +59,115 @@ export const mergeAndRankFileMentionPathHits = ({
     byPath.set(hit.path, { ...hit, isDirectory: hit.isDirectory === true });
   }
 
-  const normalizedQuery = query.trim().toLowerCase();
-  const items = Array.from(byPath.values());
-  if (!normalizedQuery) {
-    return items.slice(0, limit);
-  }
+  return rankFileMentionSearch(Array.from(byPath.values()), query, { limit });
+};
 
-  const scored = items.map((item) => {
-    const path = (item.relativePath || item.name || '').toLowerCase();
-    const name = (item.name || '').toLowerCase();
-    const pathScore = scoreTextAgainstQuery(path, normalizedQuery);
-    const nameScore = scoreTextAgainstQuery(name, normalizedQuery);
-    let score: number;
-    if (pathScore === null && nameScore === null) {
-      // Server may return fuzzy-only hits; keep them after substring tiers.
-      score = 10 + path.length / 1e4;
-    } else {
-      score = Math.min(
-        pathScore ?? Number.POSITIVE_INFINITY,
-        nameScore ?? Number.POSITIVE_INFINITY,
-      );
+export const isFileMentionTokenTerminated = (text: string, mentionEnd: number): boolean => {
+  const next = text[mentionEnd];
+  return next !== undefined && /\s/.test(next);
+};
+
+export const shouldHighlightFileMention = ({
+  mention,
+  confirmed,
+  terminated,
+}: {
+  mention: string;
+  confirmed: boolean;
+  terminated: boolean;
+}): boolean => {
+  if (!mention || mention.startsWith('session:')) return false;
+  if (confirmed) return true;
+  return terminated && looksLikeFilePath(mention);
+};
+
+export type ComposerMentionHighlight = {
+  start: number;
+  end: number;
+  kind: 'agent' | 'file';
+};
+
+export const collectComposerMentionHighlights = (
+  text: string,
+  {
+    confirmedValues,
+    agentNames,
+  }: {
+    confirmedValues: ReadonlySet<string>;
+    agentNames: ReadonlySet<string>;
+  },
+): ComposerMentionHighlight[] => {
+  if (!text.includes('@')) return [];
+  const ranges: ComposerMentionHighlight[] = [];
+  const mentionRegex = /@([^\s]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    const full = match[0];
+    const mention = String(match[1] || '').trim().replace(/[),.;:!?`"'>]+$/g, '');
+    const start = match.index;
+    const end = start + full.length;
+    const charBefore = start > 0 ? text[start - 1] : null;
+    const isBoundary = !charBefore || MENTION_BOUNDARY_BEFORE.test(charBefore);
+    if (!isBoundary || mention.length === 0) continue;
+    if (mention.startsWith('session:')) continue;
+    if (agentNames.has(mention.toLowerCase())) {
+      ranges.push({ start, end, kind: 'agent' });
+      continue;
     }
-    return { item, score, sortKey: path };
-  });
+    const mentionEnd = start + 1 + mention.length;
+    const terminated = isFileMentionTokenTerminated(text, mentionEnd);
+    if (shouldHighlightFileMention({
+      mention,
+      confirmed: confirmedValues.has(mention),
+      terminated,
+    })) {
+      ranges.push({ start, end, kind: 'file' });
+    }
+  }
+  return ranges;
+};
 
-  scored.sort((a, b) => {
-    if (a.score !== b.score) return a.score - b.score;
-    if (a.sortKey.length !== b.sortKey.length) return a.sortKey.length - b.sortKey.length;
-    return a.sortKey.localeCompare(b.sortKey, undefined, { sensitivity: 'accent' });
-  });
+export type ConfirmableFileMention = {
+  kind: 'file' | 'directory';
+  value: string;
+  start: number;
+  end: number;
+};
 
-  return scored.slice(0, limit).map(({ item }) => item);
+export const collectConfirmableFileMentions = (
+  text: string,
+  {
+    agentNames,
+    includeUnterminatedPastedReferences = false,
+  }: {
+    agentNames?: ReadonlySet<string>;
+    includeUnterminatedPastedReferences?: boolean;
+  } = {},
+): ConfirmableFileMention[] => {
+  if (!text.includes('@')) return [];
+  const mentions: ConfirmableFileMention[] = [];
+  const mentionRegex = /@([^\s]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    const mention = String(match[1] || '').trim().replace(/[),.;:!?`"'>]+$/g, '');
+    const start = match.index;
+    const charBefore = start > 0 ? text[start - 1] : null;
+    const isBoundary = !charBefore || MENTION_BOUNDARY_BEFORE.test(charBefore);
+    if (!isBoundary || !mention || mention.startsWith('session:')) continue;
+    if (agentNames?.has(mention.toLowerCase())) continue;
+    const end = start + 1 + mention.length;
+    const terminated = isFileMentionTokenTerminated(text, end);
+    const pastedReference = includeUnterminatedPastedReferences && looksLikePastedFileReference(mention);
+    if (!terminated && !pastedReference) continue;
+    if (!looksLikeFilePath(mention) && !pastedReference) continue;
+    mentions.push({
+      kind: mention.endsWith('/') || mention.endsWith('\\') ? 'directory' : 'file',
+      value: mention,
+      start,
+      end,
+    });
+  }
+  return mentions;
 };
 
 const SESSION_MENTION_PATTERN = /(^|[\s([{])(@session:([A-Za-z0-9_-]+))(?=$|[\s)\]},.!?;:])/g;

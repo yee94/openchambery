@@ -139,7 +139,13 @@ import {
     isInlineAttachmentCitation,
     resolveAttachmentCitationDeletion,
 } from './attachmentCitations';
-import { getFileMentionAutocompleteQuery, type FileMentionAutocompleteInputSource } from './fileMentionAutocompleteState';
+import {
+    collectComposerMentionHighlights,
+    collectConfirmableFileMentions,
+    getFileMentionAutocompleteQuery,
+    shouldHighlightFileMention,
+    type FileMentionAutocompleteInputSource,
+} from './fileMentionAutocompleteState';
 import {
     collectFileDropReferences,
     isAbsoluteFileDropPath,
@@ -1731,7 +1737,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const message = composerDocument.text;
     const { replacePlainDocument, replaceProgrammaticText, applyBrowserEdit, insertReference, deleteReference, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission, confirmedFileMentions, mentions: composerMentions } = composer;
     const applyProgrammaticEdit = React.useCallback((nextText: string, mentionsUpdater?: (mentions: readonly DraftMention[], document: ComposerDocument) => DraftMention[]) => replaceProgrammaticText(nextText, mentionsUpdater), [replaceProgrammaticText]);
-    const isConfirmedFilePath = React.useCallback((text: string): boolean => !text.startsWith('session:') && (text.includes('/') || text.includes('\\') || text.includes('.') || confirmedFileMentions.some((mention) => mention.value === text)), [confirmedFileMentions]);
+    const confirmedFileMentionValues = React.useMemo(
+        () => new Set(confirmedFileMentions.map((mention) => mention.value)),
+        [confirmedFileMentions],
+    );
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const nativeCompositionActiveRef = React.useRef(false);
     const cursorPosRef = React.useRef(0);
@@ -1991,30 +2000,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (!message || !message.includes('@') || inputMode === 'shell') {
             return [];
         }
-        const ranges: MentionRange[] = [];
-        const mentionRegex = /@([^\s]+)/g;
-        let match: RegExpExecArray | null;
-        while ((match = mentionRegex.exec(message)) !== null) {
-            const full = match[0];
-            const mention = String(match[1] || '').trim().replace(/[),.;:!?`"'>]+$/g, '');
-            const start = match.index;
-            const end = start + full.length;
-            const charBefore = start > 0 ? message[start - 1] : null;
-            const isBoundary = !charBefore || /(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/.test(charBefore);
-            if (!isBoundary || mention.length === 0) {
-                continue;
-            }
-            if (mention.startsWith('session:')) {
-                continue;
-            }
-            if (knownAgentNames.has(mention.toLowerCase())) {
-                ranges.push({ start, end, kind: 'agent' });
-            } else if (isConfirmedFilePath(mention)) {
-                ranges.push({ start, end, kind: 'file' });
-            }
-        }
-        return ranges;
-    }, [inputMode, message, knownAgentNames]);
+        return collectComposerMentionHighlights(message, {
+            confirmedValues: confirmedFileMentionValues,
+            agentNames: knownAgentNames,
+        });
+    }, [confirmedFileMentionValues, inputMode, knownAgentNames, message]);
 
     const attachmentCitationRanges = React.useMemo<HighlightRange[]>(() => {
         if (!message || !message.includes('[') || inputMode === 'shell' || sendableAttachedFiles.length === 0) {
@@ -4208,7 +4198,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     const mentionContent = token.slice(1);
                     const looksLikeFileMention = FILE_MENTION_TOKEN.test(token)
                         && !knownAgentNamesRef.current.has(mentionContent.toLowerCase())
-                        && isConfirmedFilePath(mentionContent);
+                        && shouldHighlightFileMention({
+                            mention: mentionContent,
+                            confirmed: confirmedFileMentionValues.has(mentionContent),
+                            terminated: tokenEnd < message.length && /\s/.test(message[tokenEnd]),
+                        });
 
                     if (looksLikeFileMention) {
                         const removeUntil = message[tokenEnd] === ' ' ? tokenEnd + 1 : tokenEnd;
@@ -4795,7 +4789,22 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
         }
 
-        const selection = applyBrowserEdit(textToCommit, caretStart, caretEnd);
+        const selection = applyBrowserEdit(textToCommit, caretStart, caretEnd, (mentions, document) => {
+            let next = [...mentions];
+            for (const addition of collectConfirmableFileMentions(document.text, {
+                agentNames: knownAgentNames,
+                includeUnterminatedPastedReferences: inputSource === 'paste',
+            })) {
+                next = appendUniqueDraftMention(next, {
+                    kind: addition.kind,
+                    value: addition.value,
+                    path: addition.value,
+                    label: addition.value,
+                    range: { start: addition.start, end: addition.end },
+                });
+            }
+            return next;
+        });
         const document = getDocument();
         const shouldCorrectTextarea = selection.requiresTextCorrection
             || caretStart !== selection.start
@@ -4814,7 +4823,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
         updateAutocompleteState(document.text, selection.end, inputSource, insertedText);
         return { document, selection };
-    }, [adjustTextareaHeight, applyBrowserEdit, getDocument, inputMode, knownSlashNames, updateAutocompleteState]);
+    }, [adjustTextareaHeight, applyBrowserEdit, getDocument, inputMode, knownAgentNames, knownSlashNames, updateAutocompleteState]);
 
     const insertTextAtSelection = React.useCallback((
         text: string,

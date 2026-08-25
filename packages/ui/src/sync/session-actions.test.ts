@@ -1300,14 +1300,18 @@ describe("abort queue dispatch block", () => {
 
 describe("resolveForkMessageId", () => {
   const userMessage = { id: "user-message", role: "user", sessionID: "session-a", time: { created: 2 } } as Message
-  const assistantMessage = { id: "assistant-message", role: "assistant", sessionID: "session-a", time: { created: 3 } } as Message
+  const assistantMessage = { id: "assistant-message", role: "assistant", sessionID: "session-a", time: { created: 3, completed: 4 } } as Message
   const nextMessage = { id: "next-message", role: "user", sessionID: "session-a", time: { created: 4 } } as Message
+  const laterUser = { id: "later-user", role: "user", sessionID: "session-a", time: { created: 5 } } as Message
+  const laterAssistant = { id: "later-assistant", role: "assistant", sessionID: "session-a", time: { created: 6, completed: 7 } } as Message
+  const openAssistant = { id: "open-assistant", role: "assistant", sessionID: "session-a", time: { created: 8 } } as Message
 
-  test("uses the latest user message while a response is in progress", async () => {
+  test("uses the exclusive cutoff after the latest user while a response is in progress", async () => {
     const { resolveForkMessageId } = await import("./session-actions")
 
-    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "busy" })).toBe("user-message")
-    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "retry", attempt: 1, message: "retrying", next: 0 })).toBe("user-message")
+    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "busy" })).toBe("assistant-message")
+    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "retry", attempt: 1, message: "retrying", next: 0 })).toBe("assistant-message")
+    expect(resolveForkMessageId(undefined, [userMessage], { type: "busy" })).toBe(undefined)
   })
 
   test("resolves explicit fork points against source message roles", async () => {
@@ -1320,11 +1324,18 @@ describe("resolveForkMessageId", () => {
     expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "idle" })).toBe(undefined)
   })
 
-  test("treats a missing status entry as active and pins the last user message", async () => {
+  test("copies the full history when status is missing and the tail is complete", async () => {
     const { resolveForkMessageId } = await import("./session-actions")
 
-    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], undefined)).toBe("user-message")
+    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage, laterUser, laterAssistant], undefined)).toBe(undefined)
+    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], undefined)).toBe(undefined)
     expect(resolveForkMessageId(undefined, [assistantMessage], undefined)).toBe(undefined)
+  })
+
+  test("treats a missing status entry as live only when the assistant tail is still open", async () => {
+    const { resolveForkMessageId } = await import("./session-actions")
+
+    expect(resolveForkMessageId(undefined, [userMessage, openAssistant], undefined)).toBe("open-assistant")
   })
 })
 
@@ -1362,14 +1373,17 @@ describe("forkSession input restoration", () => {
     expect(inputState.pendingInputText).toBe("existing draft")
   })
 
-  test("forks at the last user message when the session status entry is missing", async () => {
+  test("copies the full history when the session status entry is missing", async () => {
     const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
-    const userMessage = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
-    const assistantMessage = { id: "message-b", sessionID: "session-a", role: "assistant", time: { created: 2 } } as Message
-    // No session_status entry: fork must not dead-end on the fork-point guards.
+    const firstUser = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    const firstAssistant = { id: "message-b", sessionID: "session-a", role: "assistant", time: { created: 2, completed: 3 } } as Message
+    const laterUser = { id: "message-c", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
+    const laterAssistant = { id: "message-d", sessionID: "session-a", role: "assistant", time: { created: 5, completed: 6 } } as Message
+    // No session_status entry: idle snapshots omit idle sessions, so /fork
+    // must copy the complete history rather than cut before the latest user turn.
     const sessionStore = createStore({}, {
       session: [sourceSession],
-      message: { "session-a": [userMessage, assistantMessage] },
+      message: { "session-a": [firstUser, firstAssistant, laterUser, laterAssistant] },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
     const { forkSession, setActionRefs } = await import("./session-actions")
@@ -1377,7 +1391,25 @@ describe("forkSession input restoration", () => {
 
     await expect(forkSession("session-a", 1)).resolves.toBe(true)
 
-    expect(replyCalls.find((call) => call.method === "session.fork")?.params.messageID).toBe("message-a")
+    expect(replyCalls.find((call) => call.method === "session.fork")?.params.messageID).toBe(undefined)
+  })
+
+  test("busy current-session fork includes the latest user by cutting before the following assistant", async () => {
+    const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
+    const userMessage = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    const assistantMessage = { id: "message-b", sessionID: "session-a", role: "assistant", time: { created: 2 } } as Message
+    const sessionStore = createStore({}, {
+      session: [sourceSession],
+      message: { "session-a": [userMessage, assistantMessage] },
+      session_status: { "session-a": { type: "busy" } },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { forkSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    await expect(forkSession("session-a", 1)).resolves.toBe(true)
+
+    expect(replyCalls.find((call) => call.method === "session.fork")?.params.messageID).toBe("message-b")
   })
 
   test("restores selected-message text and attachments", async () => {
