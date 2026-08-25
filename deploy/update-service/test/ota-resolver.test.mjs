@@ -500,3 +500,87 @@ test('outside_rollout still reports native available when nativeTargets is newer
   assert.equal(decision.native.state, 'available');
   assert.equal(decision.native.build, 500);
 });
+
+test('stable channel: prerelease current above active is channel rollback (apply_ota + isChannelRollback)', () => {
+  const manifest = parseOtaManifest(validManifest({
+    channel: 'stable',
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.3',
+      rolloutSalt: 'stable-1',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    channel: 'stable',
+    currentBundleId: '1.18.4-beta.7',
+    nativeVersion: '1.18.4-beta.7',
+    nativeBuild: 400,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.state, 'available');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.3');
+  assert.equal(decision.isChannelRollback, true);
+});
+
+test('stable channel: normal upgrade does not set isChannelRollback', () => {
+  const manifest = parseOtaManifest(validManifest({
+    channel: 'stable',
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.4',
+      rolloutSalt: 'stable-1',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    channel: 'stable',
+    currentBundleId: '1.18.3',
+    nativeVersion: '1.18.3',
+    nativeBuild: 350,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.4');
+  assert.equal(decision.isChannelRollback, undefined);
+});
+
+test('beta channel never sets isChannelRollback even when applying a lower release', () => {
+  // Same-channel "downgrade" remains blocked by floor; a normal beta upgrade
+  // also must not emit the cross-channel rollback marker.
+  const upgrade = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.4-beta.8' }),
+  })).manifest;
+  const upgradeDecision = resolveMobileUpdate(upgrade, baseRequest({
+    channel: 'beta',
+    currentBundleId: '1.18.4-beta.7',
+    nativeVersion: '1.18.4-beta.7',
+  }));
+  assert.equal(upgradeDecision.primaryAction, 'apply_ota');
+  assert.equal(upgradeDecision.isChannelRollback, undefined);
+
+  const blocked = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({ releaseVersion: '1.18.3' }),
+  })).manifest;
+  const blockedDecision = resolveMobileUpdate(blocked, baseRequest({
+    channel: 'beta',
+    currentBundleId: '1.18.4-beta.7',
+    nativeVersion: '1.18.4-beta.7',
+  }));
+  assert.equal(blockedDecision.primaryAction, 'none');
+  assert.equal(blockedDecision.isChannelRollback, undefined);
+});
+
+test('stable channel: prerelease current at or below active is normal apply_ota without rollback mark', () => {
+  const manifest = parseOtaManifest(validManifest({
+    channel: 'stable',
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.5',
+      rolloutSalt: 'stable-1',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    channel: 'stable',
+    currentBundleId: '1.18.4-beta.7',
+    nativeVersion: '1.18.4-beta.7',
+    nativeBuild: 400,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.5');
+  assert.equal(decision.isChannelRollback, undefined);
+});

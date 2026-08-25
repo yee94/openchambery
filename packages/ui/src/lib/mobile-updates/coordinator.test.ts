@@ -123,6 +123,59 @@ describe('mobile OTA coordinator', () => {
     expect(body.shellApiVersion).toBe(1);
   });
 
+  test('channelOverride wins over the baked OpenChamberOTA.channel', async () => {
+    mocks.capacitorState.config = {
+      OpenChamberOTA: { channel: 'beta', shellApiVersion: 2 },
+    };
+    const stableBody = await assembleMobileOtaCheckRequest({
+      updater: mocks.updater,
+      channelOverride: 'stable',
+    });
+    expect(stableBody.channel).toBe('stable');
+
+    mocks.capacitorState.config = {
+      OpenChamberOTA: { channel: 'stable', shellApiVersion: 2 },
+    };
+    const betaBody = await assembleMobileOtaCheckRequest({
+      updater: mocks.updater,
+      channelOverride: 'beta',
+    });
+    expect(betaBody.channel).toBe('beta');
+  });
+
+  test('omitting channelOverride follows the baked channel', async () => {
+    mocks.capacitorState.config = {
+      OpenChamberOTA: { channel: 'stable', shellApiVersion: 2 },
+    };
+    const body = await assembleMobileOtaCheckRequest({ updater: mocks.updater });
+    expect(body.channel).toBe('stable');
+  });
+
+  test('beta channelOverride reports running web bundle even when Capgo has a marketing version', async () => {
+    // Simulate: baked channel is stable, user opts into beta — identity must
+    // follow the effective (override) channel, not the baked one.
+    mocks.capacitorState.config = {
+      OpenChamberOTA: { channel: 'stable', shellApiVersion: 2 },
+    };
+    mocks.updater.current.mockResolvedValue({
+      bundle: { id: 'builtin', version: '1.18.2' },
+      native: '1.2.3',
+    });
+    // Without a defined __APP_VERSION__ in vitest, bundled is null and beta
+    // falls through to Capgo version. Pin identity via resolveReportedBundleId
+    // for the effective-channel contract; assemble still posts override channel.
+    const body = await assembleMobileOtaCheckRequest({
+      updater: mocks.updater,
+      channelOverride: 'beta',
+    });
+    expect(body.channel).toBe('beta');
+    expect(resolveReportedBundleId(
+      { id: 'builtin', version: '1.18.2' },
+      '1.18.2-beta.66',
+      body.channel,
+    )).toBe('1.18.2-beta.66');
+  });
+
   test('builtin Capgo id reports the baked release version so same-version OTA is not re-offered', () => {
     expect(resolveReportedBundleId({ id: 'builtin', version: 'builtin' }, '1.18.2-beta.36')).toBe('1.18.2-beta.36');
     expect(resolveReportedBundleId(null, '1.18.2-beta.36')).toBe('1.18.2-beta.36');
@@ -212,6 +265,87 @@ describe('mobile OTA coordinator', () => {
         fetchImpl: fetchImpl as unknown as typeof fetch,
       }),
     ).rejects.toThrow(/Unable to check for mobile OTA updates|Mobile OTA check failed/);
+  });
+
+  test('normalizes isChannelRollback from camelCase and Capgo snake_case', async () => {
+    const camelDecision = sampleDecision({
+      primaryAction: 'apply_ota',
+      isChannelRollback: true,
+      ota: {
+        state: 'available',
+        bundle: {
+          bundleId: 'b1',
+          releaseVersion: '1.18.2',
+          url: 'https://example.com/b1.zip',
+          size: 10,
+          checksum: 'abc',
+          minShellApiVersion: 1,
+        },
+      },
+    });
+
+    const fetchCamel = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => camelDecision,
+    } as Response));
+
+    const camelResult = await checkMobileOtaUpdate({
+      updater: mocks.updater,
+      fetchImpl: fetchCamel as unknown as typeof fetch,
+      channelOverride: 'stable',
+    });
+    expect(camelResult.isChannelRollback).toBe(true);
+
+    const snakePayload = {
+      ...sampleDecision({
+        primaryAction: 'apply_ota',
+        ota: {
+          state: 'available',
+          bundle: {
+            bundleId: 'b2',
+            releaseVersion: '1.18.1',
+            url: 'https://example.com/b2.zip',
+            size: 10,
+            checksum: 'def',
+            minShellApiVersion: 1,
+          },
+        },
+      }),
+      is_channel_rollback: true,
+    };
+
+    const fetchSnake = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => snakePayload,
+    } as Response));
+
+    const snakeResult = await checkMobileOtaUpdate({
+      updater: mocks.updater,
+      fetchImpl: fetchSnake as unknown as typeof fetch,
+      channelOverride: 'stable',
+    });
+    expect(snakeResult.isChannelRollback).toBe(true);
+  });
+
+  test('posts the overridden channel in the check request body', async () => {
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { channel?: string };
+      expect(body.channel).toBe('stable');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => sampleDecision(),
+      } as Response;
+    });
+
+    await checkMobileOtaUpdate({
+      updater: mocks.updater,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      channelOverride: 'stable',
+    });
+    expect(fetchImpl).toHaveBeenCalled();
   });
 });
 

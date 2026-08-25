@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.8] - 2026-08-25
+
+### 移动端
+
+- **OTA 更新渠道开关：** 设置 → 关于新增「加入 Beta 更新渠道」开关（仅原生 App）。开启后无论安装包烘焙的渠道是什么，OTA 一律检查 beta；关闭后改为检查稳定版。开关默认跟随安装包渠道，不影响现有用户。
+- **Beta 一键回退稳定版：** 关闭开关时立即按稳定版重新检查更新；若当前运行的是 Beta 版本且存在可回退的稳定版，弹确认框说明目标版本，确认后走正常 OTA 下载/重启流程回退到稳定版最新版本，取消则保留 Beta 渠道并恢复检查。
+- **布局分隔线统一 hairline 令牌：** 侧栏、页头等布局分隔线统一改用 `--layout-chrome-divider`（0.5px + 30% 不透明度）令牌，各面板视觉上更接近同一表面。
+
 ## [1.18.4-beta.7] - 2026-08-25
 
 ### 远程实例（SSH + Private Relay）

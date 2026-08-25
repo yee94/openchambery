@@ -812,8 +812,17 @@ export interface PushAPI {
 }
 
 /** Capacitor mobile app only; optional elsewhere. Capgo-style self-hosted OTA. */
+export type MobileOtaChannelOverride = 'beta' | 'stable';
+
 export interface MobileUpdatesAPI {
-  checkForOtaUpdate(): Promise<MobileUpdateDecision>;
+  /**
+   * Ask the update service for an OTA / native decision.
+   * `channelOverride` wins over the build-time baked `OpenChamberOTA.channel`
+   * when provided (`override ?? baked`).
+   */
+  checkForOtaUpdate(options?: {
+    channelOverride?: MobileOtaChannelOverride;
+  }): Promise<MobileUpdateDecision>;
   /**
    * Downloads (or reuses) the OTA bundle. `skipped` is true when an already
    * downloaded bundle matching the target was reused instead of re-downloaded.

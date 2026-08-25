@@ -110,7 +110,8 @@ Required JSON fields:
   "ota": { "state": "current | available | outside_rollout | incompatible", "bundle": { } },
   "native": { "state": "current | available | required", "version": "", "build": 0, "installUrl": "" },
   "nextCheckInSec": 3600,
-  "releaseNotes": "optional markdown newer than currentBundleId (not stripped iOS nativeVersion) through OTA releaseVersion"
+  "releaseNotes": "optional markdown newer than currentBundleId (not stripped iOS nativeVersion) through OTA releaseVersion",
+  "isChannelRollback": "optional true only for cross-channel beta→stable rollback apply_ota"
 }
 ```
 
@@ -123,15 +124,22 @@ When `primaryAction` is `apply_ota`, the handler loads `/CHANGELOG.md` from the 
 origin and attaches filtered `releaseNotes` (same extraction as `/v1/update/check`).
 Missing or empty changelog content omits the field.
 
+`isChannelRollback` is present (and `true`) only when all of the following hold:
+request `channel` is `stable`, device `currentBundleId` is a prerelease (contains `-`,
+e.g. `1.18.4-beta.7`) whose semver ranks above the stable `activeBundle.releaseVersion`,
+and the decision is `apply_ota` (intentional cross-channel rollback onto that stable
+active). All other responses omit the field. Clients use the flag to treat the apply
+as a channel switch rather than a normal upgrade.
+
 ### Capgo response (`/v1/ota/check`)
 
 Maps the same resolver decision:
 
-- `apply_ota` → `{ version, url, checksum, session_key?, sessionKey? }`（Android 解析 `sessionKey`，iOS 解析 `session_key`，加密 bundle 两个键都返回；明文 `checksum` 为纯 64 位 hex，原生插件按字面值比较）
+- `apply_ota` → `{ version, url, checksum, session_key?, sessionKey?, is_channel_rollback? }`（Android 解析 `sessionKey`，iOS 解析 `session_key`，加密 bundle 两个键都返回；明文 `checksum` 为纯 64 位 hex，原生插件按字面值比较；跨渠道回退时额外带 `is_channel_rollback: true`）
 - `install_native_required` → `{ major: true, breaking: true, message: "native update required" }`
 - otherwise → `{ message: "No new version available", version: "", url: "" }`
 
-OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 门身份已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。同版本不同 `bundleId` 仍可作内容更正。原生壳下限用版本号 `activeBundle.minShellReleaseVersion`（`mode: native` 发布时写入本轮版本）；`platforms.*.minNativeBuild` 仅存量兼容，build 号不再参与任何判定。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报；门身份（`currentBundleId` 或回退 `nativeVersion`）不低于 `activeBundle.releaseVersion` 时视为已内嵌，避免反复 `apply_ota`。
+OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 门身份已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。例外：请求 `stable` 且设备 `currentBundleId` 为更高的 prerelease 时，允许 `apply_ota` 回退到 stable active，并标记 `isChannelRollback` / Capgo `is_channel_rollback`。同版本不同 `bundleId` 仍可作内容更正。原生壳下限用版本号 `activeBundle.minShellReleaseVersion`（`mode: native` 发布时写入本轮版本）；`platforms.*.minNativeBuild` 仅存量兼容，build 号不再参与任何判定。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报；门身份（`currentBundleId` 或回退 `nativeVersion`）不低于 `activeBundle.releaseVersion` 时视为已内嵌，避免反复 `apply_ota`。
 
 Manifest load failure returns `503 { "error": "ota_manifest_unavailable" }` on both endpoints (never a forged no-update).
 

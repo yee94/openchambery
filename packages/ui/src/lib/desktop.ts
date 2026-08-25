@@ -27,6 +27,12 @@ export type UpdateInfo = {
   manualUpdate?: boolean;
   /** Mobile web-bundle OTA that can be downloaded and applied in-app. */
   inAppApply?: boolean;
+  /**
+   * Mobile OTA only: server is offering a stable-channel rollback from a newer
+   * beta/prerelease bundle. UI should confirm "roll back to stable" before
+   * calling the existing download → restart flow.
+   */
+  isChannelRollback?: boolean;
   /** Set when the update service or instance proxy could not produce a definitive result. */
   error?: string;
 };

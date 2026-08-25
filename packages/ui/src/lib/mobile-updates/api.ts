@@ -41,11 +41,15 @@ const resolveNativeVersion = async (): Promise<string> => {
  * factory too; non-native callers get explicit unsupported semantics.
  */
 export const createMobileUpdatesAPI = (): MobileUpdatesAPI => ({
-  async checkForOtaUpdate() {
+  async checkForOtaUpdate(options) {
     if (!isCapgoUpdaterSupported() && !Capacitor.isNativePlatform()) {
       throw new MobileUpdatesUnsupportedError();
     }
-    return checkMobileOtaUpdate();
+    return checkMobileOtaUpdate(
+      options?.channelOverride
+        ? { channelOverride: options.channelOverride }
+        : {},
+    );
   },
 
   async downloadOtaUpdate(bundle: MobileOtaBundleInfo) {

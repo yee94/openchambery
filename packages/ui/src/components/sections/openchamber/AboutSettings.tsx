@@ -1,16 +1,27 @@
 import React from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 import { useUpdateStore } from '@/stores/useUpdateStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { useShallow } from 'zustand/react/shallow';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { useDeviceInfo } from '@/lib/device';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber } from '@/lib/mobileAppVersion';
+import { isCapacitorApp } from '@/lib/platform';
 import {
   exportAndDownloadClientDiagnostics,
   isTranscriptDiagnosticsEnabled,
@@ -24,6 +35,26 @@ const X_URL = 'https://x.com/openchamber_dev';
 
 const MIN_CHECKING_DURATION = 800; // ms
 
+type CapacitorOtaConfig = {
+  OpenChamberOTA?: {
+    channel?: 'beta' | 'stable';
+  };
+};
+
+const readBakedOtaChannel = (): 'beta' | 'stable' => {
+  try {
+    const capacitor = Capacitor as typeof Capacitor & {
+      getConfig?: () => CapacitorOtaConfig | undefined;
+      config?: CapacitorOtaConfig;
+    };
+    const config = (typeof capacitor.getConfig === 'function' ? capacitor.getConfig() : undefined)
+      ?? capacitor.config;
+    return config?.OpenChamberOTA?.channel === 'stable' ? 'stable' : 'beta';
+  } catch {
+    return 'beta';
+  }
+};
+
 type AboutSettingsProps = {
   initialUpdateDialogOpen?: boolean;
 };
@@ -31,6 +62,7 @@ type AboutSettingsProps = {
 export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialogOpen = false }) => {
   const { t } = useI18n();
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(initialUpdateDialogOpen);
+  const [rollbackDialogOpen, setRollbackDialogOpen] = React.useState(false);
   const [showChecking, setShowChecking] = React.useState(false);
   const [clientVersion, setClientVersion] = React.useState<string | null>(null);
   const [clientBuildNumber, setClientBuildNumber] = React.useState<number | null>(null);
@@ -50,12 +82,51 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     restartToUpdate: s.restartToUpdate,
   })));
   const { isMobile } = useDeviceInfo();
+  const otaChannelOverride = useUIStore((state) => state.otaChannelOverride);
+  const setOtaChannelOverride = useUIStore((state) => state.setOtaChannelOverride);
+  const isNativeMobileApp = isCapacitorApp();
+  const bakedOtaChannel = readBakedOtaChannel();
+  // The switch shows the effective opt-in state while preserving null as
+  // “follow the baked channel”: explicit beta, or an untouched beta build.
+  const betaUpdatesEnabled = otaChannelOverride === 'beta'
+    || (otaChannelOverride === null && bakedOtaChannel === 'beta');
   const [exportingDiagnostics, setExportingDiagnostics] = React.useState(false);
   const [diagnosticsEnabled, setDiagnosticsEnabled] = React.useState(() => isTranscriptDiagnosticsEnabled());
 
   const handleDiagnosticsEnabledChange = useEvent((enabled: boolean) => {
     setTranscriptDiagnosticsEnabled(enabled);
     setDiagnosticsEnabled(enabled);
+  });
+
+  const handleBetaUpdatesChange = useEvent(async (enabled: boolean) => {
+    if (enabled) {
+      setOtaChannelOverride('beta');
+      await useUpdateStore.getState().checkForUpdates();
+      return;
+    }
+
+    setOtaChannelOverride('stable');
+    await useUpdateStore.getState().checkForUpdates();
+    const { info, otaDecision } = useUpdateStore.getState();
+    if (info?.isChannelRollback === true && otaDecision?.primaryAction === 'apply_ota') {
+      setRollbackDialogOpen(true);
+    }
+  });
+
+  const handleRollbackCancel = useEvent(() => {
+    setRollbackDialogOpen(false);
+    setOtaChannelOverride('beta');
+    void useUpdateStore.getState().checkForUpdates();
+  });
+
+  const handleRollbackConfirm = useEvent(() => {
+    setRollbackDialogOpen(false);
+    setUpdateDialogOpen(true);
+    void useUpdateStore.getState().downloadUpdate();
+  });
+
+  const handleRollbackDialogOpenChange = useEvent((open: boolean) => {
+    if (!open) handleRollbackCancel();
   });
 
   const currentVersion = clientVersion || t('settings.openchamber.about.state.unknown');
@@ -240,6 +311,17 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
             </SettingsRow>
           )}
+          {isNativeMobileApp && (
+            <SettingsToggleRow
+              itemId="about.beta-updates"
+              checked={betaUpdatesEnabled}
+              onChange={handleBetaUpdatesChange}
+              label={t('settings.openchamber.about.betaUpdates.label')}
+              description={t('settings.openchamber.about.betaUpdates.description')}
+              ariaLabel={t('settings.openchamber.about.betaUpdates.label')}
+              disabled={isChecking}
+            />
+          )}
           <SettingsToggleRow
             itemId="about.diagnostics"
             checked={diagnosticsEnabled}
@@ -317,6 +399,27 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           onRestart={updateStore.restartToUpdate}
           runtimeType={updateStore.runtimeType}
         />
+
+        <Dialog open={rollbackDialogOpen} onOpenChange={handleRollbackDialogOpenChange}>
+          <DialogContent showCloseButton={false} className="max-w-sm gap-5">
+            <DialogHeader>
+              <DialogTitle>{t('settings.openchamber.about.betaUpdates.rollback.title')}</DialogTitle>
+              <DialogDescription>
+                {t('settings.openchamber.about.betaUpdates.rollback.description', {
+                  version: updateStore.info?.version || '',
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" size="sm" variant="ghost" onClick={handleRollbackCancel}>
+                {t('settings.openchamber.about.betaUpdates.rollback.actions.cancel')}
+              </Button>
+              <Button type="button" size="sm" onClick={handleRollbackConfirm}>
+                {t('settings.openchamber.about.betaUpdates.rollback.actions.confirm')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

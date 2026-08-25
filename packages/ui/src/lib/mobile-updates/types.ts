@@ -44,6 +44,12 @@ export interface MobileUpdateDecision {
   nextCheckInSec: number;
   /** Changelog markdown between the current native version and the OTA release. */
   releaseNotes?: string;
+  /**
+   * True when the server is offering a stable-channel OTA that rolls the device
+   * back from a newer prerelease (beta) bundle. Capgo snake_case responses use
+   * `is_channel_rollback`; the coordinator normalizes both to this field.
+   */
+  isChannelRollback?: boolean;
 }
 
 export type MobileUpdatesPhase =

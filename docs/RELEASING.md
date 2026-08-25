@@ -344,6 +344,7 @@ OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/
 - `packages/mobile/capacitor.config.ts` 在构建时读 `OPENCHAMBER_OTA_CHANNEL`：`stable` → stable，其它/缺省 → beta。写入 `OpenChamberOTA.channel` 与 `CapacitorUpdater.defaultChannel`。
 - `release.yml` 调用 `mobile-release` 时：含 `-` 的 prerelease → `ota_channel: beta`；纯 semver → `ota_channel: stable`。
 - 默认构建（TestFlight / 侧载）保持 beta；商店稳定壳走 stable。
+- 运行时覆盖（用户开关）：设置 → 关于里的「加入 Beta 更新渠道」开关把 `otaChannelOverride`（`useUIStore`，localStorage 持久化）写入 `beta`/`stable`，检查请求按 `override ?? 烘焙值` 生效。设备从 beta bundle 切回 stable 时，更新服务允许跨渠道回退（决策带 `isChannelRollback: true`，见 `deploy/update-service/README.md`），客户端确认后走正常 OTA 下载/重启流程。
 
 ### OTA 资格（eligibility）
 

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
     legacyCheck,
     isCapacitor: true,
     registeredApis: { mobileUpdates } as { mobileUpdates?: typeof mobileUpdates } | null,
+    otaChannelOverride: null as 'beta' | 'stable' | null,
   };
 });
 
@@ -56,7 +57,10 @@ vi.mock('@/contexts/runtimeAPIRegistry', () => ({
 
 vi.mock('@/stores/useUIStore', () => ({
   useUIStore: {
-    getState: () => ({ reportUsage: false }),
+    getState: () => ({
+      reportUsage: false,
+      otaChannelOverride: mocks.otaChannelOverride,
+    }),
   },
 }));
 
@@ -85,6 +89,7 @@ describe('useUpdateStore mobile OTA branch', () => {
   beforeEach(() => {
     mocks.isCapacitor = true;
     mocks.registeredApis = { mobileUpdates: mocks.mobileUpdates };
+    mocks.otaChannelOverride = null;
     mocks.mobileUpdates.checkForOtaUpdate.mockReset();
     mocks.mobileUpdates.downloadOtaUpdate.mockReset();
     mocks.mobileUpdates.queueOtaUpdateForNextLaunch.mockReset();
@@ -105,7 +110,81 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(state.otaPhase).toBe('available');
     expect(state.info?.version).toBe('1.18.3');
     expect(state.info?.inAppApply).toBe(true);
+    expect(mocks.mobileUpdates.checkForOtaUpdate).toHaveBeenCalledWith(undefined);
     expect(mocks.legacyCheck).not.toHaveBeenCalled();
+  });
+
+  test('forwards otaChannelOverride to checkForOtaUpdate', async () => {
+    mocks.otaChannelOverride = 'stable';
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue(otaAvailableDecision());
+
+    await useUpdateStore.getState().checkForUpdates();
+
+    expect(mocks.mobileUpdates.checkForOtaUpdate).toHaveBeenCalledWith({
+      channelOverride: 'stable',
+    });
+    expect(useUpdateStore.getState().lastOtaChannelOverride).toBe('stable');
+  });
+
+  test('maps isChannelRollback onto UpdateInfo', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate.mockResolvedValue({
+      ...otaAvailableDecision(),
+      isChannelRollback: true,
+      ota: {
+        state: 'available',
+        bundle: {
+          ...otaAvailableDecision().ota.bundle!,
+          releaseVersion: '1.18.2',
+        },
+      },
+    });
+
+    await useUpdateStore.getState().checkForUpdates();
+    const state = useUpdateStore.getState();
+
+    expect(state.info?.isChannelRollback).toBe(true);
+    expect(state.info?.inAppApply).toBe(true);
+    expect(state.available).toBe(true);
+  });
+
+  test('channel preference change resets stale OTA decision before re-check', async () => {
+    mocks.mobileUpdates.checkForOtaUpdate
+      .mockResolvedValueOnce(otaAvailableDecision())
+      .mockResolvedValueOnce({
+        ...otaAvailableDecision(),
+        isChannelRollback: true,
+        ota: {
+          state: 'available',
+          bundle: {
+            ...otaAvailableDecision().ota.bundle!,
+            bundleId: 'stable-bundle',
+            releaseVersion: '1.18.2',
+          },
+        },
+      });
+
+    await useUpdateStore.getState().checkForUpdates();
+    useUpdateStore.setState({
+      downloaded: true,
+      otaPhase: 'pending_restart',
+      otaDownloadSkipped: true,
+      progress: { downloaded: 100, total: 100 },
+    });
+
+    mocks.otaChannelOverride = 'stable';
+    await useUpdateStore.getState().checkForUpdates();
+
+    const state = useUpdateStore.getState();
+    expect(mocks.mobileUpdates.checkForOtaUpdate).toHaveBeenLastCalledWith({
+      channelOverride: 'stable',
+    });
+    expect(state.lastOtaChannelOverride).toBe('stable');
+    expect(state.downloaded).toBe(false);
+    expect(state.otaDownloadSkipped).toBe(false);
+    expect(state.progress).toBeNull();
+    expect(state.otaPhase).toBe('available');
+    expect(state.info?.isChannelRollback).toBe(true);
+    expect(state.info?.version).toBe('1.18.2');
   });
 
   test('same-version apply_ota is not an available update', async () => {

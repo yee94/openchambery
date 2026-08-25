@@ -100,6 +100,18 @@ Legitimate glass fallbacks:
 
 Android System WebView should be Chromium **111+** for `color-mix()` and reliable translucency (`packages/mobile/HANDOFF.md`).
 
+## Layout chrome dividers
+
+Desktop shell edges (left/right sidebars, header/content split, context panel) use one token pair in `design-system.css`:
+
+| Token / class | Role |
+|---|---|
+| `--layout-chrome-divider-width` | Hairline width (`0.5px`) |
+| `--layout-chrome-divider` | `color-mix` of `--border` at 30% |
+| `.oc-layout-divider-{t,r,b,l}` | Side-specific border using those tokens |
+
+Do not reintroduce ad-hoc `border-border/40` / `border-border/50` on layout chrome; change the tokens when the whole family should shift.
+
 ## Segmented selected pill
 
 Shared class `.oc-segmented-selected-pill` in `design-system.css` owns light/dark chrome for selected segments on muted tracks (scheduled Tasks/History, filter chips, `SortableTabsStrip` active-pill). Do not reintroduce `bg-[var(--surface-elevated)] shadow-sm dark:shadow-none` for that pattern — dark themes often collapse elevated into muted, so selection tokens carry contrast.

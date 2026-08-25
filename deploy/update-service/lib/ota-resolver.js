@@ -113,6 +113,20 @@ function isOtaDowngrade(activeVersion, floorVersion) {
   return comparison !== null && comparison < 0;
 }
 
+/**
+ * Cross-channel rollback: device on a prerelease web bundle switches to the
+ * stable channel, where activeBundle is a lower stable release. The normal
+ * "OTA never downgrades" floor would return none forever; allow apply_ota and
+ * mark the decision so clients can treat it as an intentional channel switch.
+ */
+function isStableChannelRollback(request, activeReleaseVersion) {
+  if (request.channel !== 'stable') return false;
+  const current = parseReleaseVersion(request.currentBundleId);
+  if (!current || current.beta === null) return false;
+  const comparison = compareReleaseVersions(request.currentBundleId, activeReleaseVersion);
+  return comparison !== null && comparison > 0;
+}
+
 function nativeAvailableIfNewer(nativeTarget, nativeBuild) {
   if (!nativeTarget || !(nativeTarget.build > nativeBuild)) {
     return { state: 'current' };
@@ -210,8 +224,13 @@ export function resolveMobileUpdate(manifest, request) {
   const onCurrentBundle = request.currentBundleId === activeBundle.bundleId
     || request.currentBundleId === activeBundle.releaseVersion;
   const floorVersion = resolveCurrentFloorVersion(request, nativeTarget);
-  if (!onCurrentBundle && !shellEmbeddedActiveWeb && !isOtaDowngrade(activeBundle.releaseVersion, floorVersion)) {
-    return {
+  const channelRollback = isStableChannelRollback(request, activeBundle.releaseVersion);
+  if (
+    !onCurrentBundle
+    && !shellEmbeddedActiveWeb
+    && (!isOtaDowngrade(activeBundle.releaseVersion, floorVersion) || channelRollback)
+  ) {
+    const decision = {
       status: 'ok',
       primaryAction: 'apply_ota',
       ota: {
@@ -221,6 +240,10 @@ export function resolveMobileUpdate(manifest, request) {
       native: nativeAvailableIfNewer(nativeTarget, request.nativeBuild),
       nextCheckInSec,
     };
+    if (channelRollback) {
+      decision.isChannelRollback = true;
+    }
+    return decision;
   }
 
   // 5. Already on active bundle.
