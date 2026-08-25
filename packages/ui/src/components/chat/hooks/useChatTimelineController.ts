@@ -417,8 +417,78 @@ export const shouldHoldHistoryViewportAnchor = (_input: {
 // momentum still drags the viewport upward.
 const MOMENTUM_WATCHDOG_FRAMES = 20;
 const MOMENTUM_WATCHDOG_TOLERANCE_PX = 4;
+// While the user's finger is DOWN, the same overflow toggle is fatal to the
+// gesture itself: WKWebView latches the pan to the scroll container, and the
+// synchronous overflow flip breaks that latch — the page stops following the
+// finger until lift + re-touch (reported as "gesture dead" after reversing
+// direction during a history load). Mid-gesture the write cannot stick anyway,
+// so compensation is deferred to lift-off with a live-relative anchor.
+const TOUCH_COMPENSATION_DRIFT_MARGIN_PX = 80;
 
-const setScrollTopDefeatingMomentum = (container: HTMLElement, target: number) => {
+type PendingTouchCompensation = {
+    /** Live scrollTop at the first deferred batch of the current gesture. */
+    anchorTop: number;
+    /** Cumulative above-viewport height added by deferred batches. */
+    delta: number;
+};
+
+type TouchGestureState = {
+    touches: number;
+    pending: PendingTouchCompensation | null;
+    settleScheduled: boolean;
+};
+
+const touchGestureStates = new WeakMap<HTMLElement, TouchGestureState>();
+
+/**
+ * Installs the touch gesture counter on the scroll container. Must run before
+ * the first compensation write so a gesture that is already in flight when a
+ * prepend commits is counted (lazy install inside the writer would miss the
+ * touchstart and fall through to the gesture-killing direct write).
+ */
+export const attachTouchGestureTracking = (container: HTMLElement) => {
+    resolveTouchGestureState(container);
+};
+
+const resolveTouchGestureState = (container: HTMLElement): TouchGestureState => {
+    const existing = touchGestureStates.get(container);
+    if (existing) return existing;
+
+    const state: TouchGestureState = { touches: 0, pending: null, settleScheduled: false };
+    container.addEventListener('touchstart', () => {
+        state.touches += 1;
+    }, { passive: true });
+    const release = () => {
+        state.touches = Math.max(0, state.touches - 1);
+        if (state.touches === 0 && state.pending) {
+            scheduleTouchCompensationSettle(container, state);
+        }
+    };
+    container.addEventListener('touchend', release, { passive: true });
+    container.addEventListener('touchcancel', release, { passive: true });
+    touchGestureStates.set(container, state);
+    return state;
+};
+
+const scheduleTouchCompensationSettle = (container: HTMLElement, state: TouchGestureState) => {
+    if (state.settleScheduled || typeof window === 'undefined') return;
+    state.settleScheduled = true;
+    window.requestAnimationFrame(() => {
+        state.settleScheduled = false;
+        const pending = state.pending;
+        state.pending = null;
+        if (!pending || state.touches > 0 || !container.isConnected) return;
+        // The user kept scrolling after the deferred batch landed: applying
+        // the stale anchor would yank the viewport. Only restore when the
+        // live position still matches the gesture's anchor within the
+        // uncompensated growth plus margin.
+        const drift = Math.abs(container.scrollTop - pending.anchorTop);
+        if (drift > pending.delta + TOUCH_COMPENSATION_DRIFT_MARGIN_PX) return;
+        applyDefeatingMomentumWrite(container, pending.anchorTop + pending.delta);
+    });
+};
+
+const applyDefeatingMomentumWrite = (container: HTMLElement, target: number) => {
     const previousOverflow = container.style.overflow;
     container.style.overflow = 'hidden';
     container.scrollTop = target;
@@ -448,6 +518,33 @@ const setScrollTopDefeatingMomentum = (container: HTMLElement, target: number) =
         }
     };
     window.requestAnimationFrame(watch);
+};
+
+/**
+ * Momentum-defeating scrollTop write for the mobile surface.
+ *
+ * `deltaAbove` (height the prepend added above the viewport) enables the
+ * gesture-preserving path: while a touch is active the write is deferred to
+ * lift-off instead of toggling overflow mid-gesture (which kills the pan on
+ * WKWebView). Deferred batches accumulate against the gesture's live anchor
+ * and are dropped entirely if the user scrolled on before lift-off.
+ */
+export const setScrollTopDefeatingMomentum = (
+    container: HTMLElement,
+    target: number,
+    deltaAbove?: number,
+) => {
+    const state = resolveTouchGestureState(container);
+    if (state.touches > 0 && typeof deltaAbove === 'number' && deltaAbove > 0) {
+        state.pending = state.pending
+            ? { anchorTop: state.pending.anchorTop, delta: state.pending.delta + deltaAbove }
+            : { anchorTop: container.scrollTop, delta: deltaAbove };
+        return;
+    }
+    // Gesture idle (possibly momentum-only): a stale deferred batch must not
+    // double-apply after this direct write.
+    state.pending = null;
+    applyDefeatingMomentumWrite(container, target);
 };
 
 const hasInsertedBeforeKnownOldest = (
@@ -822,6 +919,14 @@ export const useChatTimelineController = ({
     } | null>(null);
 
     useIsomorphicLayoutEffect(() => {
+        if (!isMobileSurfaceRuntime()) return;
+        const container = scrollRef.current;
+        if (container) {
+            attachTouchGestureTracking(container);
+        }
+    }, [sessionId, scrollRef]);
+
+    useIsomorphicLayoutEffect(() => {
         stopKeeper();
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
@@ -948,7 +1053,7 @@ export const useChatTimelineController = ({
             // Non-virtual only (virtual branch returned above).
             if (isMobileSurfaceRuntime()) {
                 if (heightDelta > 0) {
-                    setScrollTopDefeatingMomentum(container, snap.top + heightDelta);
+                    setScrollTopDefeatingMomentum(container, snap.top + heightDelta, heightDelta);
                 }
                 updateTracking(measuredHeight);
                 return;
@@ -979,7 +1084,7 @@ export const useChatTimelineController = ({
             if (delta > 0) {
                 const target = container.scrollTop + delta;
                 if (isMobileSurfaceRuntime()) {
-                    setScrollTopDefeatingMomentum(container, target);
+                    setScrollTopDefeatingMomentum(container, target, delta);
                 } else {
                     container.scrollTop = target;
                 }

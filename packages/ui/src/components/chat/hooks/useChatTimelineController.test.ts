@@ -14,6 +14,8 @@ import {
     resolveHistoryPageDecision,
     resolveHistoryPrependCompensation,
     resolvePublishedViewportMetrics,
+    attachTouchGestureTracking,
+    setScrollTopDefeatingMomentum,
     shouldAutoFillEarlierHistory,
     shouldHoldHistoryViewportAnchor,
     shouldLoadEarlierHistory,
@@ -674,5 +676,73 @@ describe('virtualized armed-snapshot compensation ownership', () => {
         expect(source).toContain("if (prependCompensation.owner === 'tanstack-core')");
         expect(source).toContain('restoreViewportAnchor(anchor)');
         expect(source).toContain("goToBottom('instant');");
+    });
+});
+
+describe('setScrollTopDefeatingMomentum touch-aware compensation', () => {
+    const flushFrame = () => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+    });
+
+    const makeContainer = () => {
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        attachTouchGestureTracking(container);
+        return container;
+    };
+
+    test('no touch active: writes immediately (existing behavior)', () => {
+        const container = makeContainer();
+        container.scrollTop = 100;
+        setScrollTopDefeatingMomentum(container, 300, 200);
+        expect(container.scrollTop).toBe(300);
+        container.remove();
+    });
+
+    test('touch active: defers the write, applies at lift-off anchored to the live position', async () => {
+        const container = makeContainer();
+        container.scrollTop = 500;
+        container.dispatchEvent(new Event('touchstart'));
+
+        setScrollTopDefeatingMomentum(container, 700, 200);
+        // No mid-gesture write: the pan latch must survive.
+        expect(container.scrollTop).toBe(500);
+
+        container.dispatchEvent(new Event('touchend'));
+        await flushFrame();
+
+        expect(container.scrollTop).toBe(700);
+        container.remove();
+    });
+
+    test('deferred batches accumulate against the gesture anchor', async () => {
+        const container = makeContainer();
+        container.scrollTop = 500;
+        container.dispatchEvent(new Event('touchstart'));
+
+        setScrollTopDefeatingMomentum(container, 700, 200);
+        setScrollTopDefeatingMomentum(container, 780, 80);
+
+        container.dispatchEvent(new Event('touchend'));
+        await flushFrame();
+
+        expect(container.scrollTop).toBe(780);
+        container.remove();
+    });
+
+    test('user scrolled on before lift-off: deferred compensation is dropped, not yanked', async () => {
+        const container = makeContainer();
+        container.scrollTop = 500;
+        container.dispatchEvent(new Event('touchstart'));
+
+        setScrollTopDefeatingMomentum(container, 700, 200);
+
+        // The user keeps scrolling well past the uncompensated growth.
+        container.scrollTop = 1200;
+        container.dispatchEvent(new Event('touchend'));
+        await flushFrame();
+
+        expect(container.scrollTop).toBe(1200);
+        container.remove();
     });
 });

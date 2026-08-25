@@ -1158,7 +1158,11 @@ both readers agree on when a frame may shrink.
   replaces existing messages — HTTP `recovery` / `reconcile-page` upserts
   (`materialization.ts`) route through `mergeTranscriptMessageUpdate` too, so
   a fetched snapshot can refresh content without blanking identity a live
-  event established. Assistant-header display additionally keeps a bounded
+  event established. String identity fields (`agent` / `mode` / `providerID` /
+  `modelID` / `variant`) keep omit-preserves-existing semantics; object
+  `model` (UserMessage since OpenCode 1.4.0 — carries nested `variant`) is
+  retained wholesale when incoming omits it and replaced wholesale when
+  present, never run through string emptiness checks that would delete it. Assistant-header display additionally keeps a bounded
   last-known-identity cache per message id (`ChatMessage.tsx`) so a remounted
   row renders stable identity before authoritative fields arrive, and client
   diagnostics record `identityMissingCount` / diff `identityLost` (facts

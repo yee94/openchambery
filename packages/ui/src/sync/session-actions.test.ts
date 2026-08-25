@@ -1319,6 +1319,13 @@ describe("resolveForkMessageId", () => {
     expect(resolveForkMessageId("unknown-message", [userMessage, assistantMessage], { type: "busy" })).toBe("unknown-message")
     expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "idle" })).toBe(undefined)
   })
+
+  test("treats a missing status entry as active and pins the last user message", async () => {
+    const { resolveForkMessageId } = await import("./session-actions")
+
+    expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], undefined)).toBe("user-message")
+    expect(resolveForkMessageId(undefined, [assistantMessage], undefined)).toBe(undefined)
+  })
 })
 
 describe("forkSession input restoration", () => {
@@ -1353,6 +1360,24 @@ describe("forkSession input restoration", () => {
     expect(mocks.clearAttachedFilesCalls).toBe(0)
     expect(inputState.attachedFiles).toEqual([{ url: "file:///existing.txt", mimeType: "text/plain", filename: "existing.txt" }])
     expect(inputState.pendingInputText).toBe("existing draft")
+  })
+
+  test("forks at the last user message when the session status entry is missing", async () => {
+    const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
+    const userMessage = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    const assistantMessage = { id: "message-b", sessionID: "session-a", role: "assistant", time: { created: 2 } } as Message
+    // No session_status entry: fork must not dead-end on the fork-point guards.
+    const sessionStore = createStore({}, {
+      session: [sourceSession],
+      message: { "session-a": [userMessage, assistantMessage] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { forkSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    await expect(forkSession("session-a", 1)).resolves.toBe(true)
+
+    expect(replyCalls.find((call) => call.method === "session.fork")?.params.messageID).toBe("message-a")
   })
 
   test("restores selected-message text and attachments", async () => {

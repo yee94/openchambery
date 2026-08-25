@@ -199,6 +199,99 @@ describe("applyTranscriptDirectoryEvent", () => {
     expect(next.tokens?.output).toBe(4)
   })
 
+  test("message.updated keeps UserMessage.model.variant object identity (OpenCode 1.4.0)", () => {
+    // model is an object — string identity retention used to delete it and
+    // hide the live thinking-intensity badge until a cold reload.
+    const userPlain = {
+      id: "msg_u",
+      sessionID: "ses_1",
+      role: "user",
+      time: { created: 1 },
+    } as Message
+    const draft = transcriptDraft({
+      message: { ses_1: [userPlain] },
+    })
+    const withModel = {
+      id: "msg_u",
+      sessionID: "ses_1",
+      role: "user",
+      model: { providerID: "openai", modelID: "gpt-4o", variant: "think" },
+      time: { created: 1 },
+    } as Message
+
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(withModel))).toBe(true)
+    const next = draft.message.ses_1?.[0] as Message & {
+      model?: { providerID?: string; modelID?: string; variant?: string }
+    }
+    expect(next.model?.variant).toBe("think")
+    expect(next.model?.providerID).toBe("openai")
+    expect(next.model?.modelID).toBe("gpt-4o")
+
+    // Same-payload echo must retain model (not delete via string emptiness).
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(withModel))).toBe(false)
+    expect((draft.message.ses_1?.[0] as { model?: { variant?: string } }).model?.variant).toBe("think")
+  })
+
+  test("message.updated preserves existing model when the payload omits it", () => {
+    const userWithModel = {
+      id: "msg_u",
+      sessionID: "ses_1",
+      role: "user",
+      model: { providerID: "openai", modelID: "gpt-4o", variant: "high" },
+      time: { created: 1 },
+    } as Message
+    const draft = transcriptDraft({
+      message: { ses_1: [userWithModel] },
+    })
+    // Partial update that also carries another field so merge runs; omitting
+    // model must keep existing (pre-fix: string path deleted the object).
+    const partial = {
+      id: "msg_u",
+      sessionID: "ses_1",
+      role: "user",
+      agent: "build",
+      time: { created: 1 },
+    } as Message
+
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(partial))).toBe(true)
+    const next = draft.message.ses_1?.[0] as Message & {
+      model?: { variant?: string }
+      agent?: string
+    }
+    expect(next.model?.variant).toBe("high")
+    expect(next.agent).toBe("build")
+  })
+
+  test("message.updated replaces model wholesale when the payload carries a new object", () => {
+    const userWithModel = {
+      id: "msg_u",
+      sessionID: "ses_1",
+      role: "user",
+      model: { providerID: "openai", modelID: "gpt-4o", variant: "low" },
+      time: { created: 1 },
+    } as Message
+    const draft = transcriptDraft({
+      message: { ses_1: [userWithModel] },
+    })
+    const replacement = {
+      id: "msg_u",
+      sessionID: "ses_1",
+      role: "user",
+      model: { providerID: "anthropic", modelID: "claude", variant: "think" },
+      time: { created: 1 },
+    } as Message
+
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(replacement))).toBe(true)
+    const next = draft.message.ses_1?.[0] as Message & {
+      model?: { providerID?: string; modelID?: string; variant?: string }
+    }
+    expect(next.model).toEqual({
+      providerID: "anthropic",
+      modelID: "claude",
+      variant: "think",
+    })
+  })
+
   test("does not invent empty parts for the first assistant on a cold session", () => {
     const draft = transcriptDraft()
     const nextAssistant = {
