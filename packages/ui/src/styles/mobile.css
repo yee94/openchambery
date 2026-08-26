@@ -1985,11 +1985,14 @@ button.oc-mobile-worktree-label-trigger:active,
   /* Improve touch targets for mobile.
      Gate: html.mobile-pointer from device.ts (pointer:coarse / hover:none /
      maxTouchPoints) — independent of React isMobile. Dense clusters must opt
-     out below; see packages/ui/src/styles/DOCUMENTATION.md. */
+     out below; see packages/ui/src/styles/DOCUMENTATION.md.
+     Include [data-slot="button"] so Button asChild anchors (e.g. feedback
+     links) match native <button> height — otherwise sm outline pairs look uneven. */
   :root.mobile-pointer:not(.desktop-runtime)
     button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
   :root.mobile-pointer:not(.desktop-runtime) .btn,
-  :root.mobile-pointer:not(.desktop-runtime) [role="button"] {
+  :root.mobile-pointer:not(.desktop-runtime) [role="button"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-slot="button"] {
     min-height: 36px;
     min-width: 36px;
   }

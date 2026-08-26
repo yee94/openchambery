@@ -41,11 +41,15 @@ Under `:root.mobile-pointer:not(.desktop-runtime)`, `mobile.css` raises generic 
 ```css
 button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
 .btn,
-[role="button"] {
+[role="button"],
+[data-slot="button"] {
   min-height: 36px;
   min-width: 36px;
 }
 ```
+
+`[data-slot="button"]` covers shared `Button asChild` anchors so link-styled
+actions keep the same 36px floor as native `<button>` siblings.
 
 Also note nearby spacing overrides such as `.py-2` padding inflation under the same gate.
 

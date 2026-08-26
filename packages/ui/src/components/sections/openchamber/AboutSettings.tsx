@@ -291,6 +291,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 type="button"
                 variant="default"
                 size="sm"
+                className="whitespace-nowrap"
                 onClick={() => setUpdateDialogOpen(true)}
               >
                 <Icon name="download" className="size-4" />
@@ -305,6 +306,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 type="button"
                 variant="outline"
                 size="sm"
+                className="whitespace-nowrap"
                 onClick={() => updateStore.checkForUpdates()}
                 disabled={isChecking}
               >
