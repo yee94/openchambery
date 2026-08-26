@@ -57,6 +57,7 @@ export const isSessionIndexSnapshot = (value: unknown): value is SessionIndexSna
   if (typeof value.revision !== 'number' || !Number.isFinite(value.revision)) return false;
   if (!isSessionIndexSync(value.sync)) return false;
   if (!Array.isArray(value.directories)) return false;
+  if (value.pinnedSessionIds !== undefined && !isStringArray(value.pinnedSessionIds)) return false;
   return value.directories.every(isSessionIndexDirectory);
 };
 

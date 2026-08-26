@@ -20,13 +20,19 @@ the index excludes them from every snapshot and clears prior summaries when a
   `metadata.openchamber.smallModel.purpose`. Title prefixes are human labels and
   never participate in this filter. Metadata is the ownership/isolation signal;
 `time.archived` is archive state; `time.pinned` is OpenChamber-owned pin state
-(persisted as `pinned_at`, rescued across directory rebuilds, never overwritten
-by live OpenCode upserts); titles are for recognition. The index does
+overlaid from the independent `session_pin` table (also mirrored onto in-window
+`session_summary.pinned_at` for older readers). Pins are not subject to the
+newest-20 summary bound: evicting or rebuilding a directory keeps pin
+membership, and `setPinned` can target a session that is not currently in the
+index. Archive or `remove` still clears the pin. Live OpenCode upserts never
+overwrite pin membership. Titles are for recognition. The index does
 not cache system sessions, so cold-start and live upserts stay aligned with
 ordinary sidebar lists.
 Pin and unpin use `POST` / `DELETE`
-`/api/openchamber/session-index/session/:id/pin`, update `pinned_at`, then
+`/api/openchamber/session-index/session/:id/pin`, write `session_pin`, then
 `publishChange()` so revision tips broadcast `openchamber:session-index-changed`.
+Snapshots include `pinnedSessionIds` plus `time.pinned` on any matching
+summary row.
 
 The server-side global OpenCode event subscriber writes session summary events
 directly into this index. User `message.updated` events and `session.idle`

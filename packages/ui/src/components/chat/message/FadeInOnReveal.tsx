@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { FadeInDisabledContext, useFadeInDisabled } from './fadeInDisabledContext';
 
 interface FadeInOnRevealProps {
     children: React.ReactNode;
@@ -12,15 +13,15 @@ interface FadeInOnRevealProps {
 
 const FADE_ANIMATION_ENABLED = false;
 
-// Context to allow parent components (like VirtualMessageList) to disable animations
-// for items entering the viewport due to scrolling rather than new content
-const FadeInDisabledContext = React.createContext(false);
+export const FadeInDisabledProvider: React.FC<{ disabled: boolean; children: React.ReactNode }> = ({ disabled, children }) => {
+    const parentDisabled = React.useContext(FadeInDisabledContext);
 
-export const FadeInDisabledProvider: React.FC<{ disabled: boolean; children: React.ReactNode }> = ({ disabled, children }) => (
-    <FadeInDisabledContext.Provider value={disabled}>
-        {children}
-    </FadeInDisabledContext.Provider>
-);
+    return (
+        <FadeInDisabledContext.Provider value={parentDisabled || disabled}>
+            {children}
+        </FadeInDisabledContext.Provider>
+    );
+};
 
 type AnimatedFadeInProps = Pick<FadeInOnRevealProps, 'children' | 'className'>;
 
@@ -69,7 +70,7 @@ export const FadeInOnReveal: React.FC<FadeInOnRevealProps> = ({
     ignoreContextDisabled = false,
     respectReducedMotion = false,
 }) => {
-    const contextDisabled = React.useContext(FadeInDisabledContext);
+    const contextDisabled = useFadeInDisabled();
     const reducedMotion =
         respectReducedMotion &&
         typeof window !== 'undefined' &&

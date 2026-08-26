@@ -107,7 +107,7 @@ windows do not inherit the local theme.
 
 `useUIStore` keeps context-panel tab *content* directory-scoped (`contextPanelByDirectory`), but the *open* state of the right workspace (context panel for subagent/file preview/diff, plus right sidebar git/files) is session-correlated. `syncWorkspacePanelsForSessionSwitch()` captures the previous session snapshot into in-memory `sessionWorkspacePanelById` and restores the next session (or closes panels when there is no snapshot). Callers that leave a real session must invoke it: `setCurrentSession()` on session id change, and `openNewSessionDraft()` when clearing the current session for Welcome/draft (it does not go through `setCurrentSession`).
 
-Exact tool patches selected from `edit`, `multiedit`, and `apply_patch` rows live in the transient `contextToolDiffByDirectory` map. Edit-style rows retain one file, while an `apply_patch` row retains every renderable file from that invocation. The persisted tab keeps only its target path, turn message, and focus line; regular diff navigation, scope changes, tab close, and runtime switches clear the transient patches.
+Exact tool patches selected from `edit`, `multiedit`, `write`, and `apply_patch` rows live in the transient `contextToolDiffByDirectory` map. Edit-style and write-style rows retain one file, while an `apply_patch` row retains every renderable file from that invocation. The persisted tab keeps only its target path, turn message, and focus line; regular diff navigation, scope changes, tab close, and runtime switches clear the transient patches.
 
 ContextPanel chat navigation stays component-local and is keyed by normalized
 directory plus tab ID. It owns its anchor/current/stack and retained transcript
@@ -234,7 +234,7 @@ the same order.
 `useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
 use the same instance-scoped persist helper and rehydrate when `runtimeKey`
 changes. Directory last/home caches, sidebar chrome (`oc.sessions.*`),
-session folders/pins, and settings mirrors in `persistence.ts` follow the
+session folders, and settings mirrors in `persistence.ts` follow the
 same instance key. Theme/brand remain transport-scoped
 (`runtimeScopedStorage.ts`) because packaged multi-window shares an origin
 across different API hosts.

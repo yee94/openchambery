@@ -26,6 +26,8 @@ const diffViewSource = readFileSync(join(__dirname, '../../../views/DiffView.tsx
 const contextPanelSource = readFileSync(join(__dirname, '../../../layout/ContextPanel.tsx'), 'utf-8');
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
 const toolPresentationSource = readFileSync(join(__dirname, 'toolPresentation.tsx'), 'utf-8');
+const messageBodySource = readFileSync(join(__dirname, '..', 'MessageBody.tsx'), 'utf-8');
+const globalStylesSource = readFileSync(join(__dirname, '..', '..', '..', '..', 'index.css'), 'utf-8');
 
 describe('edit slim line counts', () => {
     test('prefers metadata additions/deletions over parsing a dropped patch', () => {
@@ -92,6 +94,18 @@ describe('static navigation hit targets', () => {
 });
 
 describe('tool busy title chrome', () => {
+    test('new live tool rows receive a one-shot stream appearance class', () => {
+        expect(toolPartSource).toContain("rowAppearanceRef.current.pending && 'oc-stream-animate-fade'");
+        expect(toolPartSource).toContain('const fadeInDisabled = useFadeInDisabled();');
+        expect(toolPartSource).toContain('pending: isStreamLive && !fadeInDisabled');
+        expect(messageBodySource).toContain("isStreamLive={effectiveStreamPhase !== 'completed'}");
+        expect(progressiveGroupSource).toContain('isStreamLive={isActive}');
+        expect(toolPartSource).toContain('onAnimationEnd={handleRowAppearanceEnd}');
+        const reducedMotionStyles = globalStylesSource.slice(globalStylesSource.indexOf('@media (prefers-reduced-motion: reduce)'));
+        expect(reducedMotionStyles).toContain('.oc-stream-animate-fade');
+        expect(reducedMotionStyles).toContain('animation: none;');
+    });
+
     test('non-task tool titles stay immediate full opacity without shine busy state', () => {
         expect(toolPartSource).not.toContain('MinDurationShineText');
         expect(toolPartSource).toContain('taskBusy && \'animate-text-shimmer\'');
@@ -253,6 +267,20 @@ describe('apply_patch navigation', () => {
         expect(diffViewSource).toContain('stackedToolPatchesRef.current !== toolPatches');
         expect(diffViewSource).toContain('const resolvedSessionId = (typeof sessionId === \'string\' && sessionId.trim())');
         expect(diffViewSource).toContain('sessionID: resolvedSessionId');
+    });
+
+    test('write clicks open the synthesized added-file patch instead of last-turn changes', () => {
+        const clickHandlerStart = toolPartSource.indexOf('const handleMainClick');
+        const fileNavigationStart = toolPartSource.indexOf('let filePath: unknown;', clickHandlerStart);
+        const fileNavigationEnd = toolPartSource.indexOf('if (!isFileNavTool)', fileNavigationStart);
+        const fileNavigation = toolPartSource.slice(fileNavigationStart, fileNavigationEnd);
+
+        expect(fileNavigation).toContain("['write', 'create', 'file_write'].includes(normalizedPartTool)");
+        expect(fileNavigation).toContain('buildWritePreviewPatch(filePath, input.content)');
+        expect(fileNavigation).toContain('getToolNavigationDiffEntries(');
+        expect(fileNavigation).toContain('openContextToolDiff(');
+        expect(fileNavigation).not.toContain('supportsExactToolDiff');
+        expect(fileNavigation).toMatch(/const selectedToolDiffs = toolDiff\s*\n\s+\? getToolNavigationDiffEntries/);
     });
 
     test('keeps the owning assistant message id when memoized tool rows update', () => {

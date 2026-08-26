@@ -1975,6 +1975,70 @@ input[aria-label="Terminal input"] {
   animation: border-glow-pulse 3.8s linear infinite;
 }
 
+/* Smooth reveal variants for incremental streaming content. */
+@keyframes oc-stream-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.oc-stream-animate-fade {
+  opacity: 0;
+  animation: oc-stream-fade var(--oc-stream-duration, 600ms) ease-out
+    var(--oc-stream-delay, 0ms) forwards;
+}
+
+@keyframes oc-stream-blur {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.oc-stream-animate-blur {
+  opacity: 0;
+  filter: blur(2px);
+  animation: oc-stream-blur var(--oc-stream-duration, 600ms)
+    cubic-bezier(0, 0, 0.2, 1) var(--oc-stream-delay, 0ms) forwards;
+}
+
+@keyframes oc-stream-reveal {
+  from {
+    -webkit-mask-size: 100% 0%;
+    mask-size: 100% 0%;
+  }
+  to {
+    -webkit-mask-size: 100% calc(100% + 48px);
+    mask-size: 100% calc(100% + 48px);
+  }
+}
+
+.oc-stream-animate-reveal {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - 48px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - 48px),
+    transparent
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 0%;
+  mask-size: 100% 0%;
+  animation: oc-stream-reveal var(--oc-stream-duration, 600ms)
+    cubic-bezier(0, 0, 0.2, 1) var(--oc-stream-delay, 0ms) forwards;
+}
+
 @keyframes marquee-scroll {
   0% {
     transform: translateX(0);
@@ -2044,6 +2108,16 @@ input[aria-label="Terminal input"] {
   .oc-summary-flip-out,
   .oc-summary-flip-in {
     animation: none;
+  }
+
+  .oc-stream-animate-fade,
+  .oc-stream-animate-blur,
+  .oc-stream-animate-reveal {
+    animation: none;
+    opacity: 1;
+    filter: none;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .oc-summary-flip-out {

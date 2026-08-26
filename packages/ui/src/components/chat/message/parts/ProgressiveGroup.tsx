@@ -454,6 +454,7 @@ interface ExpandableToolRowProps {
     onToggleTool: (toolId: string) => void;
     onShowPopup: (content: ToolPopupContent) => void;
     onContentChange?: (reason?: ContentChangeReason) => void;
+    isStreamLive: boolean;
 }
 
 const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
@@ -463,6 +464,7 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
     onToggleTool,
     onShowPopup,
     onContentChange,
+    isStreamLive,
 }) => {
     const handleToggle = useEvent(() => {
         onToggleTool(activity.id);
@@ -479,6 +481,7 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
                 onContentChange={onContentChange}
                 onShowPopup={onShowPopup}
                 animateTailText={false}
+                isStreamLive={isStreamLive}
             />
         </div>
     );
@@ -490,6 +493,7 @@ const MemoExpandableToolRow = React.memo(ExpandableToolRow, (prev, next) => {
         && prev.onToggleTool === next.onToggleTool
         && prev.onShowPopup === next.onShowPopup
         && prev.onContentChange === next.onContentChange
+        && prev.isStreamLive === next.isStreamLive
         && prev.activity.id === next.activity.id
         && prev.activity.messageId === next.activity.messageId
         && prev.activity.kind === next.activity.kind
@@ -1240,6 +1244,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onToggleTool={onToggleTool}
                         onShowPopup={onShowPopup}
                         onContentChange={onContentChange}
+                        isStreamLive={isActive}
                     />
                 );
 
@@ -1309,6 +1314,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onToggleTool={onToggleTool}
                         onShowPopup={onShowPopup}
                         onContentChange={onContentChange}
+                        isStreamLive={isActive}
                     />
                 );
 

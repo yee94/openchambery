@@ -45,6 +45,11 @@ export const derivePinnedSessionIdsFromSnapshot = (
 ): ReadonlySet<string> => {
   if (!snapshot) return EMPTY_PINNED_SESSION_IDS;
   const ids = new Set<string>();
+  if (Array.isArray(snapshot.pinnedSessionIds)) {
+    for (const id of snapshot.pinnedSessionIds) {
+      if (typeof id === 'string' && id) ids.add(id);
+    }
+  }
   for (const directory of snapshot.directories) {
     for (const session of directory.sessions) {
       if (isSessionIndexPinned(session)) {
@@ -104,7 +109,17 @@ export const patchSessionIndexPinned = (
     });
     return directoryChanged ? { ...directory, sessions } : directory;
   });
-  return changed ? { ...snapshot, directories } : snapshot;
+  const currentIds = derivePinnedSessionIdsFromSnapshot(snapshot);
+  const nextIds = new Set(currentIds);
+  if (pinned == null || pinned === '') nextIds.delete(sessionId);
+  else nextIds.add(sessionId);
+  if (!samePinnedMembership(currentIds, nextIds)) changed = true;
+  if (!changed) return snapshot;
+  return {
+    ...snapshot,
+    directories,
+    pinnedSessionIds: [...nextIds],
+  };
 };
 
 type SessionPinMutationVariables = {

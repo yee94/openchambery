@@ -2210,6 +2210,7 @@ const AssistantMessageBody = React.memo(({
                                 onContentChange={onContentChange}
                                 onShowPopup={onShowPopup}
                                 animateTailText={false}
+                                isStreamLive={effectiveStreamPhase !== 'completed'}
                             />
                         </div>
                     );
