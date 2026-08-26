@@ -18,16 +18,21 @@ throttle (`TITLE_THROTTLE_MS`) when a refresh is armed.
    pattern as session-assist. Purely event-driven — dormant sessions never
    generate anything.
   2. Auto title refresh is intentionally sparse (title stability first). A newly
-    observed root `session.created` generates its first title immediately on the
-    first `session.status: idle`. A fork title (`(fork #n)`) waits for its first
-    newly-created user message; the matching assistant completion triggers an
-    immediate title refresh that bypasses inherited title metadata and throttle.
-    Ordinary later idle transitions do **not** arm another refresh. Any
-    `busy`/`retry` status or a fresh user `message.updated` still clears an
-    already-armed timer (so initial/fork timers cancel if the user keeps going).
-    A sidebar smart-title request sets `titleRefresh.requestedAt`; its
-    `session.updated` event arms the same flow immediately (forced / manual
-    refresh is unaffected by the background gate).
+     observed root `session.created` generates its first title immediately on the
+     first `session.status: idle`. A fork title (`(fork #n)`) waits for its first
+     newly-created user message; the matching assistant completion triggers an
+     immediate title refresh that bypasses inherited title metadata and throttle.
+     If the fork's `session.created` was lost (SSE reconnect gap, server or
+     OpenCode restart), the first newly-created user message lazily re-registers
+     the pending fork from the session read inside `recordUserActivity` (fork
+     title + message created after the fork + activity timestamp not yet past
+     the fork time), so the first-reply refresh still fires.
+     Ordinary later idle transitions do **not** arm another refresh. Any
+     `busy`/`retry` status or a fresh user `message.updated` still clears an
+     already-armed timer (so initial/fork timers cancel if the user keeps going).
+     A sidebar smart-title request sets `titleRefresh.requestedAt`; its
+     `session.updated` event arms the same flow immediately (forced / manual
+     refresh is unaffected by the background gate).
   3. On fire:
     - Skip when Settings → Chat → session title refresh is off.
     - Skip system-owned sessions whose metadata carries a non-empty

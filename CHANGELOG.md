@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.18] - 2026-08-26
+
+### 会话
+
+- **修复 fork 会话首次对话后不生成智能标题：** fork 会话的首次智能总结依赖 `session.created` 事件送达服务端，当 SSE 断连重连或 OpenCode 实例重启导致该事件丢失时，fork 后第一次新对话完成永远不会触发标题生成。现在 fork 后的第一条新消息会在既有会话读取中惰性补注册待刷新条目（fork 标题 + 消息晚于 fork 创建 + 活动时间未推进过 fork 时间），断连场景也能自愈；正常路径与后续对话行为不变。
+
 ## [1.18.4-beta.17] - 2026-08-26
 
 ### 移动端
