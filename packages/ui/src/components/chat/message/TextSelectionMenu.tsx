@@ -516,6 +516,28 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     };
   }, [containerRef, handleSelectionChange, hideMenu, showMenu]);
 
+  // Mobile bottom bar: any scroll of the underlying content (the bar is
+  // viewport-fixed, so it detaches from the selection the moment content
+  // moves) dismisses it. Scroll events do not bubble, so listen in the
+  // capture phase to catch scrolls inside nested containers and shadow roots.
+  // Selection-handle drags that auto-scroll the container fire selectionchange
+  // afterwards, which re-shows the bar for the adjusted selection.
+  React.useEffect(() => {
+    if (!position.show || !isMobile) return;
+
+    const handleScroll = (event: Event) => {
+      if (menuRef.current && event.target instanceof Node && menuRef.current.contains(event.target)) {
+        return;
+      }
+      hideMenu();
+    };
+
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [position.show, isMobile, hideMenu]);
+
   const addSelectionToChat = React.useCallback((markdownText: string) => {
     if (!markdownText) return;
 
