@@ -125,7 +125,13 @@ export type SessionMessageLoadState = {
   at: number
   loadGeneration: number
 }
-import { areRequestArraysReferentiallyEqual, collectScopedBlockingRequests } from "./scoped-blocking-requests"
+import {
+  areRequestArraysReferentiallyEqual,
+  collectScopedBlockingRequests,
+  collectTaskDispatchEdgesFromParts,
+  EMPTY_TASK_DISPATCH_EDGES,
+  type TaskDispatchEdge,
+} from "./scoped-blocking-requests"
 import {
   EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT,
   buildUserMessageHistorySnapshotFromSource,
@@ -3267,7 +3273,78 @@ type ScopedBlockingRequestCache<T extends { id: string }> = {
   sessionID: string | null
   sessions: Session[] | null
   requestsBySession: Record<string, T[] | undefined> | null
+  dispatchEdges: readonly TaskDispatchEdge[] | null
   result: T[]
+}
+
+/**
+ * Live subagent dispatch edges for a session, read from its transcript's
+ * running task tool parts. Fork + task_id reuse leaves the child session's
+ * catalog parentID pointing at the pre-fork lineage; these edges are the
+ * authoritative supplement that keeps a running subagent (and its pending
+ * questions/permissions) inside the dispatching session's blocking scope.
+ */
+export function readTaskDispatchEdgesFromTranscript(
+  data: { messageOrder: readonly string[]; partsByMessageID: Readonly<Record<string, readonly Part[] | undefined>> } | null | undefined,
+): readonly TaskDispatchEdge[] {
+  if (!data) return EMPTY_TASK_DISPATCH_EDGES
+  const edges: TaskDispatchEdge[] = []
+  for (const messageID of data.messageOrder) {
+    const parts = data.partsByMessageID[messageID]
+    if (!parts) continue
+    for (const edge of collectTaskDispatchEdgesFromParts(parts as Part[])) {
+      edges.push(edge)
+    }
+  }
+  return edges.length === 0 ? EMPTY_TASK_DISPATCH_EDGES : edges
+}
+
+export function useTaskDispatchEdges(
+  sessionID: string | null,
+  directory: string | undefined,
+): readonly TaskDispatchEdge[] {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  const getSnapshot = useCallback(() => {
+    if (!sessionID) return EMPTY_TASK_DISPATCH_EDGES
+    try {
+      const repository = getTranscriptRepository()
+      const data = repository?.getTranscript(transcriptScope(targetDirectory, sessionID))
+      return readTaskDispatchEdgesFromTranscript(data)
+    } catch {
+      return EMPTY_TASK_DISPATCH_EDGES
+    }
+  }, [sessionID, targetDirectory])
+
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!sessionID) return () => undefined
+      let repoUnsub = (() => {
+        const repository = getTranscriptRepository()
+          ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+        return repository?.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+          notify()
+        }) ?? (() => undefined)
+      })()
+      const unsubBinding = subscribeTranscriptRepositoryBinding(() => {
+        repoUnsub()
+        const repository = getTranscriptRepository()
+          ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+        repoUnsub = repository?.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+          notify()
+        }) ?? (() => undefined)
+        notify()
+      })
+      return () => {
+        unsubBinding()
+        repoUnsub()
+      }
+    },
+    [sessionID, store, targetDirectory],
+  )
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 function useScopedBlockingRequests<T extends { id: string }>(
@@ -3276,10 +3353,12 @@ function useScopedBlockingRequests<T extends { id: string }>(
   selectRequestsBySession: (state: State) => Record<string, T[] | undefined>,
   empty: T[],
 ): T[] {
+  const dispatchEdges = useTaskDispatchEdges(sessionID, directory)
   const cacheRef = useRef<ScopedBlockingRequestCache<T>>({
     sessionID: null,
     sessions: null,
     requestsBySession: null,
+    dispatchEdges: null,
     result: empty,
   })
 
@@ -3291,20 +3370,22 @@ function useScopedBlockingRequests<T extends { id: string }>(
         cache.sessionID === sessionID
         && cache.sessions === state.session
         && cache.requestsBySession === requestsBySession
+        && cache.dispatchEdges === dispatchEdges
       ) {
         return cache.result
       }
 
-      const next = collectScopedBlockingRequests(state.session, requestsBySession, sessionID, empty)
+      const next = collectScopedBlockingRequests(state.session, requestsBySession, sessionID, empty, dispatchEdges)
       const result = areRequestArraysReferentiallyEqual(cache.result, next) ? cache.result : next
       cacheRef.current = {
         sessionID,
         sessions: state.session,
         requestsBySession,
+        dispatchEdges,
         result,
       }
       return result
-    }, [empty, selectRequestsBySession, sessionID]),
+    }, [empty, selectRequestsBySession, sessionID, dispatchEdges]),
     directory,
   )
 }

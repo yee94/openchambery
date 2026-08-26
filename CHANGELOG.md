@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.20] - 2026-08-26
+
+### 会话
+
+- **修复 fork 会话复用子 Agent 后提问卡死：** 会话被 fork 后继续用 task_id 复用同一子 Agent 会话时，子 Agent 的归属仍指向 fork 前的旧会话，其运行中的提问永远浮不到当前会话，主会话与子 Agent 双向等待、任务永久挂起。现在阻塞请求（提问/权限）的收集范围在会话树之外补充读取运行中 task 的派发关系，子 Agent 的提问会重新出现在当前会话中，可直接回答；任务结束后不再纳入范围。
+
 ## [1.18.4-beta.19] - 2026-08-26
 
 ### 移动端
