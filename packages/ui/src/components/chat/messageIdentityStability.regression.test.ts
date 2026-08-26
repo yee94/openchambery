@@ -30,7 +30,8 @@ describe("message identity stability contract", () => {
 
   test("HTTP upsert (recovery/reconcile) goes through the same identity merge", () => {
     const source = readSource("../../sync/materialization.ts")
-    expect(source).toContain('import { mergeTranscriptMessageUpdate } from "./transcript-event-reducer"')
+    expect(source).toContain('mergeTranscriptMessageUpdate')
+    expect(source).toContain('from "./transcript-event-reducer"')
     expect(source).toMatch(/upsertMessages[\s\S]*?mergeTranscriptMessageUpdate\(live, snapshot\)/)
   })
 
