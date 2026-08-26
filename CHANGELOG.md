@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.22] - 2026-08-26
+
+### Git
+
+- **更改列表顶部可全部还原：** 全部还原从文件列表底部挪到更改区标题栏图标，放在分支按钮左侧；点按后仍先确认，再丢弃全部本地更改。
+
 ## [1.18.4-beta.21] - 2026-08-26
 
 ### 修复

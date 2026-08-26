@@ -1853,26 +1853,29 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     );
   }
 
-  const gitHeaderActions = status ? (
+  const headerLeadingActions = status ? (
+    worktreeMetadata ? (
+      <WorktreeBranchDisplay
+        currentBranch={status.current}
+        onRename={handleRenameBranch}
+        iconOnly
+      />
+    ) : (
+      <BranchSelector
+        currentBranch={status.current}
+        localBranches={localBranches}
+        remoteBranches={remoteBranches}
+        branchInfo={branches?.branches}
+        onCheckout={handleCheckoutBranch}
+        onCreate={handleCreateBranch}
+        remotes={effectiveRemotes}
+        iconOnly
+      />
+    )
+  ) : null;
+
+  const headerActions = status ? (
     <>
-      {worktreeMetadata ? (
-        <WorktreeBranchDisplay
-          currentBranch={status.current}
-          onRename={handleRenameBranch}
-          iconOnly
-        />
-      ) : (
-        <BranchSelector
-          currentBranch={status.current}
-          localBranches={localBranches}
-          remoteBranches={remoteBranches}
-          branchInfo={branches?.branches}
-          onCheckout={handleCheckoutBranch}
-          onCreate={handleCreateBranch}
-          remotes={effectiveRemotes}
-          iconOnly
-        />
-      )}
       <SyncActions
         syncAction={syncAction}
         remotes={effectiveRemotes}
@@ -1913,6 +1916,13 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </>
+  ) : null;
+
+  const gitHeaderActions = status ? (
+    <>
+      {headerLeadingActions}
+      {headerActions}
     </>
   ) : null;
 
@@ -1974,7 +1984,8 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
                         onRevertAll={handleRevertAll}
                         onRevertDirectory={handleRevertDirectory}
                         headerBackgroundClassName="bg-background"
-                        headerActions={gitHeaderActions}
+                        headerLeadingActions={headerLeadingActions}
+                        headerActions={headerActions}
                       />
                     </div>
 
