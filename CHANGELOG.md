@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.21] - 2026-08-26
+
+### 修复
+
+- **紧急修复 beta.20 中子 Agent 会话导致的渲染崩溃：** beta.20 的子 Agent 提问归属修复在读取会话派发关系时未遵守 React `useSyncExternalStore` 的快照引用稳定契约——会话数据未变时每次读取都返回新数组，触发无限重渲染直至整页崩溃。现在按派发关系的语义内容缓存结果，数据不变即返回同一引用；回退了触发崩溃的窗口（如启动早期走 store 回退路径、transcript 投影被等价重建）也保持稳定。子 Agent 提问归属修复本身保持有效。
+
 ## [1.18.4-beta.20] - 2026-08-26
 
 ### 会话

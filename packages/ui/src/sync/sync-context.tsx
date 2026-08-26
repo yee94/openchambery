@@ -3299,6 +3299,30 @@ export function readTaskDispatchEdgesFromTranscript(
   return edges.length === 0 ? EMPTY_TASK_DISPATCH_EDGES : edges
 }
 
+/**
+ * Cached transcript → dispatch-edges reader. `useSyncExternalStore` requires
+ * `getSnapshot` to return a stable reference while the underlying data is
+ * unchanged; rebuilding the edges array on every read would loop renders into
+ * a crash. Cache by the semantic signature of the extracted edges so the
+ * contract holds even when the transcript projection itself is rebuilt with
+ * equal contents (store-adapter fallback path).
+ */
+export function createTaskDispatchEdgesReader() {
+  let cache: { signature: string; edges: readonly TaskDispatchEdge[] } | null = null
+  return (data: unknown): readonly TaskDispatchEdge[] => {
+    const edges = readTaskDispatchEdgesFromTranscript(
+      data as Parameters<typeof readTaskDispatchEdgesFromTranscript>[0],
+    )
+    if (edges.length === 0) return EMPTY_TASK_DISPATCH_EDGES
+    const signature = edges
+      .map((edge) => `${edge.parentSessionId}\u0000${edge.sessionId}`)
+      .join("\u0001")
+    if (cache && cache.signature === signature) return cache.edges
+    cache = { signature, edges }
+    return edges
+  }
+}
+
 export function useTaskDispatchEdges(
   sessionID: string | null,
   directory: string | undefined,
@@ -3306,16 +3330,18 @@ export function useTaskDispatchEdges(
   const system = useSyncSystem()
   const targetDirectory = directory ?? system.directory
   const store = useDirectoryStore(targetDirectory)
+  const readRef = useRef(createTaskDispatchEdgesReader())
+  const reader = readRef.current
   const getSnapshot = useCallback(() => {
     if (!sessionID) return EMPTY_TASK_DISPATCH_EDGES
     try {
       const repository = getTranscriptRepository()
       const data = repository?.getTranscript(transcriptScope(targetDirectory, sessionID))
-      return readTaskDispatchEdgesFromTranscript(data)
+      return reader(data)
     } catch {
       return EMPTY_TASK_DISPATCH_EDGES
     }
-  }, [sessionID, targetDirectory])
+  }, [reader, sessionID, targetDirectory])
 
   const subscribe = useCallback(
     (notify: () => void) => {
