@@ -105,6 +105,28 @@ function useAllProjectSessions(): Session[] {
 }
 
 const PINNED_SESSION_FILTER_ID = '__pinned_sessions__';
+
+/**
+ * Resolve the project filter the recent-sessions sheet should land on when it
+ * opens. "All" (null) and filters pointing at a removed project default to the
+ * active project; the pinned scope and filters still matching a known project
+ * are preserved as the user's explicit choice.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure resolver is tested directly.
+export function resolveMobileSessionSheetDefaultFilter(options: {
+  activeProjectId: string | null | undefined;
+  currentFilterProjectId: string | null;
+  projects: readonly { id: string }[];
+}): string | null {
+  const { activeProjectId, currentFilterProjectId, projects } = options;
+  if (!activeProjectId) return currentFilterProjectId;
+  if (currentFilterProjectId === PINNED_SESSION_FILTER_ID) return currentFilterProjectId;
+  if (currentFilterProjectId && projects.some((project) => project.id === currentFilterProjectId)) {
+    return currentFilterProjectId;
+  }
+  return activeProjectId;
+}
+
 const DEFAULT_GROUP_SESSION_COUNT = 3;
 const GROUP_SESSION_INCREMENT = 7;
 // Normalize path for comparison
@@ -715,16 +737,22 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   // When the recent-sessions sheet opens, default the project filter to the
   // active project so we land on the current project instead of "All" or a
   // stale/removed selection. Preserve an explicit user filter when it still
-  // points at a valid project or the pinned scope.
+  // points at a valid project or the pinned scope. This only runs on the
+  // closed-to-open transition; taps made while the sheet stays open are the
+  // user's explicit choice and must not be overridden.
+  const prevSheetOpenRef = React.useRef(false);
   React.useEffect(() => {
-    if (!open) return;
-    if (!activeProjectId) return;
-    if (filterProjectId && filterProjectId !== PINNED_SESSION_FILTER_ID) {
-      const stillValid = projects.some((project) => project.id === filterProjectId);
-      if (stillValid) return;
+    const wasOpen = prevSheetOpenRef.current;
+    prevSheetOpenRef.current = open;
+    if (!open || wasOpen) return;
+    const nextFilterProjectId = resolveMobileSessionSheetDefaultFilter({
+      activeProjectId,
+      currentFilterProjectId: filterProjectId,
+      projects,
+    });
+    if (nextFilterProjectId !== filterProjectId) {
+      setFilterProjectId(nextFilterProjectId);
     }
-    if (filterProjectId === activeProjectId) return;
-    setFilterProjectId(activeProjectId);
   }, [open, activeProjectId, filterProjectId, projects, setFilterProjectId]);
 
   React.useEffect(() => {

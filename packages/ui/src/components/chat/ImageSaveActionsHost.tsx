@@ -85,12 +85,16 @@ export function ImageSaveActionsHost() {
         fitContent
       >
         <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
-          <div className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]">
+          <div
+            className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
+            data-page-scroll-lock="true"
+          >
             <Button
               type="button"
               variant="ghost"
               size="lg"
-              className="h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+              className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+              data-mobile-press-feedback="none"
               disabled={saving}
               onClick={() => {
                 void handleSave();

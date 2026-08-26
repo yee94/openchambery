@@ -10,6 +10,7 @@ import { I18nProvider } from '@/lib/i18n';
 import {
   handleMobileSessionContextMenu,
   preventMobileSessionTouchStartBaseUIHandler,
+  resolveMobileSessionSheetDefaultFilter,
   SessionItem,
 } from './MobileSessionStatusBar';
 
@@ -107,6 +108,62 @@ describe('MobileSessionStatusBar SessionItem', () => {
     expect(markup).toContain('-webkit-user-select:none');
     expect(markup).toContain('user-select:none');
     expect(markup).toContain('Touch menu session');
+  });
+});
+
+describe('MobileSessionStatusBar sheet default filter', () => {
+  const projects = [{ id: 'project-a' }, { id: 'project-b' }];
+
+  test('defaults to the active project when the filter is "All" or points at a removed project', () => {
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: null,
+        projects,
+      }),
+    ).toBe('project-a');
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: 'project-removed',
+        projects,
+      }),
+    ).toBe('project-a');
+  });
+
+  test('preserves the pinned scope and filters still matching a known project', () => {
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: '__pinned_sessions__',
+        projects,
+      }),
+    ).toBe('__pinned_sessions__');
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: 'project-b',
+        projects,
+      }),
+    ).toBe('project-b');
+  });
+
+  test('keeps the current filter when there is no active project', () => {
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: null,
+        currentFilterProjectId: null,
+        projects,
+      }),
+    ).toBeNull();
+  });
+
+  test('applies the open-time default only on the closed-to-open transition so taps made while open stick', () => {
+    // Regression: the open-time default effect must not re-run while the sheet
+    // stays open, otherwise tapping "All" is immediately overridden back to
+    // the active project.
+    expect(statusBarSource).toContain('const wasOpen = prevSheetOpenRef.current;');
+    expect(statusBarSource).toContain('if (!open || wasOpen) return;');
   });
 });
 
