@@ -843,11 +843,6 @@ function collectPreviousMessagesByID(
   return map
 }
 
-function messageOrderIDs(messages: readonly Message[] | undefined): string[] {
-  if (!messages) return []
-  return messages.map((message) => message.id).filter((id): id is string => typeof id === "string")
-}
-
 /**
  * Batch SSE merge: one flatten/clone, ordered reducer applies, one rebuild.
  * liveRevision counts content-meaningful changes only (matches sequential
