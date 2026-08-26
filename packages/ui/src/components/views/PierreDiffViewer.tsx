@@ -1239,6 +1239,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
   const selectionActionBubble = enableSelectionActions && selectionAction ? (
     <CodeSelectionActionBubble
       position={selectionAction}
+      onDismiss={() => setSelectionAction(null)}
       onAddToChat={() => {
         handleAddSelectionToChat(selectionAction.range);
         setSelectionAction(null);

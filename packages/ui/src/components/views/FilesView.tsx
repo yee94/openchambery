@@ -4406,6 +4406,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const editorSelectionBubble = editorSelectionPosition ? (
     <CodeSelectionActionBubble
       position={editorSelectionPosition}
+      onDismiss={() => setEditorSelectionPosition(null)}
       onAddToChat={addEditorSelectionToChat}
     />
   ) : null;
