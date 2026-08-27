@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.26] - 2026-08-27
+
+### 修复
+
+- **`/new` 命令文本残留输入框：** 输入框发送 `/new`（或命令菜单选中直接执行）后，新会话已建立但 `/new` 文本仍留在输入框。现在 `/new` 与 `/compact`、`/fork` 一致，执行前同步消费命令文本，切换会话时输入框已清空。
+
 ## [1.18.4-beta.25] - 2026-08-27
 
 ### 动效

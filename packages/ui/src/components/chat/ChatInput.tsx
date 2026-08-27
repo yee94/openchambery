@@ -3524,6 +3524,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 return;
             }
             else if (commandName === 'new') {
+                // resourcePolicy preserved the composer for this local command;
+                // consume the command text synchronously (same contract as
+                // compact/fork via runImmediateSessionCommand) before the
+                // immediate create switches sessions.
+                if (consumesImmediateCommandText(normalizedCommand, inputMode)) {
+                    consumeImmediateCommand();
+                }
                 await controllerWiring?.shortcut('new');
                 return;
             }
