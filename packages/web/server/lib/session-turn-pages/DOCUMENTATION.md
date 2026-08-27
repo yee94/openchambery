@@ -68,7 +68,7 @@ Success `200`:
 - `records`: chronological oldest → newest, including intermediate non-boundary rows (synthetic, tools, subtask, compaction) inside the window.
 - `turnCount`: count of authored user boundaries in `records`.
 - `cursor`: host-owned opaque token for the next `before=` request; `null` when `complete` is true. The token represents the position **just before** the earliest returned authored user (so the client can load older history without overlap).
-- `complete`: `upstreamComplete && selected.length === accumulated.length`. True when upstream history is exhausted **and** `selectTurnRecords` did not trim any older scanned rows (nothing left for the client). When the scan window held more than N turns and older rows were trimmed, `complete` stays `false` with a `cursor` so the client can fetch the trimmed history.
+- `complete`: `upstreamComplete && selected.length === accumulated.length`. True when upstream history is exhausted **and** `selectTurnRecords` did not trim any older scanned rows (nothing left for the client). When the scan window held more than N turns and older rows were trimmed, or when upstream stopped on a full page with a missing `nextCursor` (suspicious truncation), `complete` stays `false` with a `cursor` so the client can fetch / retry.
 - `partsProjection`: `"slim-v1"` on every turn-page response (first packet and prepend). Names the projection applied to `records`; see below. Reconcile responses omit this field and keep full parts.
 
 ### Turn-page payload projection
@@ -147,6 +147,7 @@ A message is an authored user turn boundary when:
 
 - Upstream pages are chronological **old→new** within each page; **do not reverse**. Older pages are **prepended** while deduping by `info.id` (global order remains old→new).
 - Continues paging with raw upstream `before` until `turns` authored boundaries are collected or upstream reports no next cursor.
+- **Suspicious truncation:** an upstream page whose `records.length >= scanLimit` (full page) but `nextCursor == null` is treated as a non-authoritative cut (observed OpenCode `x-next-cursor` race), not as end-of-history. The host stops scanning that round with `upstreamComplete=false`, so the response stays `complete=false` and still emits a boundary host cursor the client can retry. A short page (`records.length < scanLimit`) with no cursor, an empty page with no cursor, or an explicit `page.complete === true` remain authoritative exhaustion. Client no-growth handling still bounds retries if the upstream view stays truncated.
 - Every upstream record must have a non-empty `info.id`; otherwise structured error, no partial `records`, HTTP 502.
 - Hard scan caps (no partial success): **50 pages** / **5000 messages** → structured error, HTTP 413.
 - Repeated / stalled cursor, or empty page that still carries a next cursor → structured error, no partial `records`, HTTP 502.

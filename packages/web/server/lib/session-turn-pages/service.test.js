@@ -1107,4 +1107,137 @@ describe('createSessionTurnPageService', () => {
       signal: controller.signal,
     }));
   });
+
+  describe('full-page missing nextCursor (suspicious upstream truncation)', () => {
+    it('short page without cursor remains authoritative exhaustion', async () => {
+      // records < scanLimit + no cursor → real end of history.
+      const fetchPage = vi.fn(async () => pageResult([
+        user('msg_u1'),
+        assistant('msg_a1'),
+        user('msg_u2'),
+        assistant('msg_a2'),
+      ], null));
+      const service = createSessionTurnPageService({ fetchPage });
+
+      const result = await service.loadPage({
+        sessionID: 'ses_1',
+        turns: 3,
+        scanLimit: 100,
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        complete: true,
+        cursor: null,
+        turnCount: 2,
+      });
+    });
+
+    it('full page without cursor stays incomplete and emits a host cursor', async () => {
+      // Upstream race: page is full (records >= scanLimit) but x-next-cursor is
+      // missing. Must not permanently exhaust — client needs a retryable cursor.
+      const records = [];
+      for (let i = 1; i <= 10; i += 1) {
+        records.push(user(`msg_u${i}`), assistant(`msg_a${i}`));
+      }
+      expect(records.length).toBe(20);
+      const fetchPage = vi.fn(async () => pageResult(records, null));
+      const service = createSessionTurnPageService({ fetchPage });
+
+      const result = await service.loadPage({
+        sessionID: 'ses_1',
+        turns: 3,
+        scanLimit: 20,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.complete).toBe(false);
+      expect(typeof result.cursor).toBe('string');
+      expect(result.cursor.startsWith('oc1.')).toBe(true);
+      expect(result.turnCount).toBe(3);
+      expect(decodeHostCursor(result.cursor)).toEqual({
+        ok: true,
+        value: { before: null, boundaryID: 'msg_u8' },
+      });
+    });
+
+    it('page with nextCursor keeps paging (unchanged)', async () => {
+      const pages = new Map([
+        [undefined, pageResult([
+          user('msg_u2'),
+          assistant('msg_a2'),
+          user('msg_u3'),
+          assistant('msg_a3'),
+        ], 'opaque_older')],
+        ['opaque_older', pageResult([
+          user('msg_u1'),
+          assistant('msg_a1'),
+        ], null)],
+      ]);
+      const fetchPage = vi.fn(async ({ before }) => pages.get(before) ?? pageResult([], null));
+      const service = createSessionTurnPageService({ fetchPage });
+
+      const result = await service.loadPage({
+        sessionID: 'ses_1',
+        turns: 3,
+        scanLimit: 100,
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        complete: true,
+        cursor: null,
+        turnCount: 3,
+      });
+      expect(fetchPage.mock.calls.length).toBe(2);
+    });
+
+    it('empty page without cursor remains authoritative exhaustion', async () => {
+      const fetchPage = vi.fn(async () => pageResult([], null));
+      const service = createSessionTurnPageService({ fetchPage });
+
+      const result = await service.loadPage({
+        sessionID: 'ses_1',
+        turns: 3,
+        scanLimit: 100,
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        complete: true,
+        cursor: null,
+        turnCount: 0,
+      });
+      expect(result.records).toEqual([]);
+    });
+
+    it('explicit page.complete=true on a full page without cursor still exhausts', async () => {
+      // Explicit complete declaration outranks the full-page heuristic.
+      // Exactly turns=budget so selectTurnRecords does not trim — complete
+      // stays true solely because upstreamComplete was set by page.complete.
+      const records = [];
+      for (let i = 1; i <= 10; i += 1) {
+        records.push(user(`msg_u${i}`), assistant(`msg_a${i}`));
+      }
+      const fetchPage = vi.fn(async () => ({
+        records,
+        nextCursor: null,
+        complete: true,
+      }));
+      const service = createSessionTurnPageService({ fetchPage });
+
+      const result = await service.loadPage({
+        sessionID: 'ses_1',
+        turns: 10,
+        scanLimit: 20,
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        complete: true,
+        cursor: null,
+        turnCount: 10,
+      });
+    });
+  });
 });

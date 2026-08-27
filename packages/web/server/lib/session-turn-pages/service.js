@@ -719,7 +719,14 @@ export const createSessionTurnPageService = ({
 
         const rawNext = page.nextCursor;
         const nextCursor = typeof rawNext === 'string' && rawNext.length > 0 ? rawNext : null;
-        const pageComplete = page.complete === true || nextCursor == null;
+        // Explicit page.complete wins. Otherwise: no nextCursor on a short page
+        // is authoritative exhaustion; a *full* page with no nextCursor is a
+        // suspicious upstream truncation (x-next-cursor race) — stop scanning
+        // but do not mark upstreamComplete so the host still emits a retryable
+        // boundary cursor instead of permanently exhausting the client.
+        const fullPageNoCursor = nextCursor == null && records.length >= pageLimit;
+        const pageComplete = page.complete === true
+          || (nextCursor == null && !fullPageNoCursor);
 
         if (records.length === 0) {
           if (nextCursor) {
@@ -792,6 +799,12 @@ export const createSessionTurnPageService = ({
 
         if (pageComplete) {
           upstreamComplete = true;
+          break;
+        }
+
+        if (fullPageNoCursor) {
+          // Suspicious truncation: keep upstreamComplete=false so the response
+          // stays complete=false with a host cursor the client can retry.
           break;
         }
 

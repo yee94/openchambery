@@ -242,4 +242,109 @@ describe('createHistoryViewportAnchorKeeper', () => {
             keeper.rebase();
         }).not.toThrow();
     });
+
+    test('external scrollTop before mutation microtask is not rolled back', async () => {
+        // Race: mutation schedules correct() as a microtask; user changes
+        // scrollTop before the microtask runs. Without external-scroll-first,
+        // correct() uses the stale offsetTop and rolls the user back.
+        const keeper = createHistoryViewportAnchorKeeper({
+            container,
+            anchor: { messageId: 'msg-b', offsetTop: 80 },
+        });
+
+        // Mutation schedules correct microtask while scrollTop is still 200.
+        aboveSpacer.style.height = '151px';
+        // User scrolls before the microtask — no scroll event yet (same as
+        // microtask-before-scroll-handler ordering in the browser).
+        container.scrollTop = 280;
+        setRect(aboveSpacer, { top: -200, height: 150, bottom: -50 });
+        setRect(msgA, { top: -100, height: 100, bottom: 0 });
+        setRect(msgB, { top: 0, height: 100, bottom: 100 });
+        setRect(msgC, { top: 100, height: 100, bottom: 200 });
+
+        await flushMicrotasks();
+
+        expect(container.scrollTop).toBe(280);
+
+        keeper.dispose();
+    });
+
+    test('mutation with unchanged scrollTop still compensates content growth', async () => {
+        const keeper = createHistoryViewportAnchorKeeper({
+            container,
+            anchor: { messageId: 'msg-b', offsetTop: 80 },
+        });
+
+        const scrollBefore = container.scrollTop;
+        setRect(aboveSpacer, { top: -70, height: 150, bottom: 80 });
+        setRect(msgA, { top: 30, height: 100, bottom: 130 });
+        setRect(msgB, { top: 130, height: 100, bottom: 230 });
+        aboveSpacer.style.height = '150px';
+
+        await flushMicrotasks();
+
+        expect(container.scrollTop).toBe(scrollBefore + 50);
+
+        keeper.dispose();
+    });
+
+    test('after correct write, a second mutation still compensates', async () => {
+        const keeper = createHistoryViewportAnchorKeeper({
+            container,
+            anchor: { messageId: 'msg-b', offsetTop: 80 },
+        });
+
+        setRect(aboveSpacer, { top: -70, height: 150, bottom: 80 });
+        setRect(msgA, { top: 30, height: 100, bottom: 130 });
+        setRect(msgB, { top: 130, height: 100, bottom: 230 });
+        aboveSpacer.style.height = '150px';
+        await flushMicrotasks();
+        expect(container.scrollTop).toBe(250);
+
+        // Reflect the compensated viewport (msg-b back at expected 80), then grow.
+        setRect(aboveSpacer, { top: -120, height: 150, bottom: 30 });
+        setRect(msgA, { top: -20, height: 100, bottom: 80 });
+        setRect(msgB, { top: 80, height: 100, bottom: 180 });
+        setRect(msgC, { top: 180, height: 100, bottom: 280 });
+
+        const scrollAfterFirst = container.scrollTop;
+        setRect(aboveSpacer, { top: -90, height: 180, bottom: 90 });
+        setRect(msgA, { top: 10, height: 100, bottom: 110 });
+        setRect(msgB, { top: 110, height: 100, bottom: 210 });
+        aboveSpacer.style.height = '180px';
+        await flushMicrotasks();
+
+        expect(container.scrollTop).toBe(scrollAfterFirst + 30);
+
+        keeper.dispose();
+    });
+
+    test('external scroll then mutation rebases; next mutation compensates against new anchor', async () => {
+        const keeper = createHistoryViewportAnchorKeeper({
+            container,
+            anchor: { messageId: 'msg-b', offsetTop: 80 },
+        });
+
+        // User scroll without scroll event, then mutation → rebase only.
+        container.scrollTop = 240;
+        setRect(aboveSpacer, { top: -160, height: 100, bottom: -60 });
+        setRect(msgA, { top: -60, height: 100, bottom: 40 });
+        setRect(msgB, { top: 40, height: 100, bottom: 140 });
+        setRect(msgC, { top: 140, height: 100, bottom: 240 });
+        aboveSpacer.style.height = '101px';
+        await flushMicrotasks();
+        expect(container.scrollTop).toBe(240);
+
+        // scrollTop unchanged since rebase — next growth is compensated vs offset 40.
+        const scrollAfterRebase = container.scrollTop;
+        setRect(aboveSpacer, { top: -130, height: 130, bottom: 0 });
+        setRect(msgA, { top: -30, height: 100, bottom: 70 });
+        setRect(msgB, { top: 70, height: 100, bottom: 170 });
+        aboveSpacer.style.height = '130px';
+        await flushMicrotasks();
+
+        expect(container.scrollTop).toBe(scrollAfterRebase + 30);
+
+        keeper.dispose();
+    });
 });

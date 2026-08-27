@@ -3,6 +3,10 @@
  * stable across DOM mutations that land outside React's renderedMessages
  * dependency (slim→full materialization, markdown hydration, etc.).
  *
+ * External scrollTop writes (user / virtualizer) win over mutation correction:
+ * if scrollTop changed since the last keeper write/rebase, correct() rebases
+ * and skips compensation so a mutation microtask cannot roll back the user.
+ *
  * Pure DOM module. Callers gate mobile / virtualized paths.
  */
 
@@ -92,6 +96,8 @@ export const createHistoryViewportAnchorKeeper = (input: {
     let quiesceTimer: ReturnType<typeof setTimeout> | null = null;
     let maxLifetimeTimer: ReturnType<typeof setTimeout> | null = null;
     let microtaskScheduled = false;
+    /** Last scrollTop observed after our own write or an accepted rebase. */
+    let lastKnownScrollTop = container.scrollTop;
 
     const clearQuiesceTimer = () => {
         if (quiesceTimer !== null) {
@@ -135,8 +141,28 @@ export const createHistoryViewportAnchorKeeper = (input: {
         }, maxLifetimeMs);
     };
 
+    const rebase = () => {
+        if (disposed) return;
+        const live = resolveLiveAnchor(container, anchor.messageId);
+        if (!live) {
+            dispose();
+            return;
+        }
+        anchor.messageId = live.messageId;
+        anchor.offsetTop = live.offsetTop;
+        lastKnownScrollTop = container.scrollTop;
+    };
+
     const correct = () => {
         if (disposed) return;
+
+        // External scrollTop write landed before this mutation microtask
+        // (user scroll / virtualizer). Accept reality — never correct against
+        // a stale offsetTop or we roll the user's scroll back.
+        if (Math.abs(container.scrollTop - lastKnownScrollTop) > CORRECT_EPSILON_PX) {
+            rebase();
+            return;
+        }
 
         let element = findAnchorElement(container, anchor.messageId);
         if (!element) {
@@ -154,6 +180,7 @@ export const createHistoryViewportAnchorKeeper = (input: {
             anchor.messageId = messageId;
             anchor.offsetTop = replacement.getBoundingClientRect().top - containerRect.top;
             element = replacement;
+            lastKnownScrollTop = container.scrollTop;
         }
 
         const containerRect = container.getBoundingClientRect();
@@ -162,6 +189,7 @@ export const createHistoryViewportAnchorKeeper = (input: {
         if (Math.abs(delta) > CORRECT_EPSILON_PX) {
             container.scrollTop += delta;
         }
+        lastKnownScrollTop = container.scrollTop;
     };
 
     const scheduleCorrect = () => {
@@ -171,17 +199,6 @@ export const createHistoryViewportAnchorKeeper = (input: {
             microtaskScheduled = false;
             correct();
         });
-    };
-
-    const rebase = () => {
-        if (disposed) return;
-        const live = resolveLiveAnchor(container, anchor.messageId);
-        if (!live) {
-            dispose();
-            return;
-        }
-        anchor.messageId = live.messageId;
-        anchor.offsetTop = live.offsetTop;
     };
 
     const onScroll = () => {
