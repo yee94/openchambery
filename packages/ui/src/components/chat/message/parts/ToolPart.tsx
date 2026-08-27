@@ -75,7 +75,6 @@ import { navigateNestedSession, useSessionSurface } from '../../SessionSurfaceCo
 import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { LatticeOrb } from './LatticeOrb';
 import { isToolPartSettled } from './toolRenderUtils';
-import { useFadeInDisabled } from '../fadeInDisabledContext';
 import {
     diagnosticsSessionStatusType,
     taskRowDiagnosticsSignature,
@@ -148,7 +147,6 @@ interface ToolPartProps {
     onContentChange?: (reason?: ContentChangeReason) => void;
     onShowPopup?: (content: ToolPopupContent) => void;
     animateTailText?: boolean;
-    isStreamLive?: boolean;
 }
 
 const getMultiFileDescription = (
@@ -1935,7 +1933,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     onContentChange,
     onShowPopup,
     animateTailText = true,
-    isStreamLive = false,
 }) => {
     const state = part.state;
     const showToolFileIcons = useUIStore((s) => s.showToolFileIcons);
@@ -2638,21 +2635,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         && showSubagentTaskDetails
         && (taskSummaryEntries.length > 0 || effectiveActive || shouldTreatAsFinalized || !!taskSessionId);
     const shouldRenderExpandedContent = !isTaskTool && !isFileNavTool && isExpanded;
-    const fadeInDisabled = useFadeInDisabled();
-    const rowAppearanceRef = React.useRef({ partId: part.id, pending: isStreamLive && !fadeInDisabled });
-    if (rowAppearanceRef.current.partId !== part.id) {
-        rowAppearanceRef.current = { partId: part.id, pending: isStreamLive && !fadeInDisabled };
-    } else if (fadeInDisabled) {
-        rowAppearanceRef.current.pending = false;
-    }
-    const handleRowAppearanceEnd = useEvent((event: React.AnimationEvent<HTMLDivElement>) => {
-        if (event.target !== event.currentTarget) {
-            return;
-        }
-        rowAppearanceRef.current.pending = false;
-        event.currentTarget.classList.remove('oc-stream-animate-fade');
-        event.currentTarget.style.removeProperty('--oc-stream-delay');
-    });
 
     if (!shouldTreatAsFinalized && !isActive && !isTaskTool) {
         return null;
@@ -2667,15 +2649,13 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 TOOL_ROW_INTERACTIVE_CHROME_CLASS,
                 // Task 干活中也要有明确 hover 洗底（与其它工具行一致）
                 isTaskTool && 'hover:!bg-[color-mix(in_srgb,var(--surface-foreground)_6%,transparent)]',
-                isMultiFileApplyPatch ? 'flex-wrap items-start' : 'items-center',
-                rowAppearanceRef.current.pending && 'oc-stream-animate-fade'
+                isMultiFileApplyPatch ? 'flex-wrap items-start' : 'items-center'
             )}
                 // Full-width tool / subagent rows use soft press (default); never compact.
                 data-mobile-press-feedback="soft"
                 {...delegatingDataAttr}
                 onClick={handleMainClick}
                 onKeyDown={handleMainKeyDown}
-                onAnimationEnd={handleRowAppearanceEnd}
                 role="button"
                 tabIndex={0}
             >
@@ -2968,6 +2948,5 @@ export default React.memo(ToolPart, (prev, next) => {
         && prev.alwaysShowActions === next.alwaysShowActions
         && prev.onContentChange === next.onContentChange
         && prev.onShowPopup === next.onShowPopup
-        && prev.animateTailText === next.animateTailText
-        && prev.isStreamLive === next.isStreamLive;
+        && prev.animateTailText === next.animateTailText;
 });

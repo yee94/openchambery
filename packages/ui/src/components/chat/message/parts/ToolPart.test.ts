@@ -26,8 +26,6 @@ const diffViewSource = readFileSync(join(__dirname, '../../../views/DiffView.tsx
 const contextPanelSource = readFileSync(join(__dirname, '../../../layout/ContextPanel.tsx'), 'utf-8');
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
 const toolPresentationSource = readFileSync(join(__dirname, 'toolPresentation.tsx'), 'utf-8');
-const messageBodySource = readFileSync(join(__dirname, '..', 'MessageBody.tsx'), 'utf-8');
-const globalStylesSource = readFileSync(join(__dirname, '..', '..', '..', '..', 'index.css'), 'utf-8');
 
 describe('edit slim line counts', () => {
     test('prefers metadata additions/deletions over parsing a dropped patch', () => {
@@ -94,18 +92,6 @@ describe('static navigation hit targets', () => {
 });
 
 describe('tool busy title chrome', () => {
-    test('new live tool rows receive a one-shot stream appearance class', () => {
-        expect(toolPartSource).toContain("rowAppearanceRef.current.pending && 'oc-stream-animate-fade'");
-        expect(toolPartSource).toContain('const fadeInDisabled = useFadeInDisabled();');
-        expect(toolPartSource).toContain('pending: isStreamLive && !fadeInDisabled');
-        expect(messageBodySource).toContain("isStreamLive={effectiveStreamPhase !== 'completed'}");
-        expect(progressiveGroupSource).toContain('isStreamLive={isActive}');
-        expect(toolPartSource).toContain('onAnimationEnd={handleRowAppearanceEnd}');
-        const reducedMotionStyles = globalStylesSource.slice(globalStylesSource.indexOf('@media (prefers-reduced-motion: reduce)'));
-        expect(reducedMotionStyles).toContain('.oc-stream-animate-fade');
-        expect(reducedMotionStyles).toContain('animation: none;');
-    });
-
     test('non-task tool titles stay immediate full opacity without shine busy state', () => {
         expect(toolPartSource).not.toContain('MinDurationShineText');
         expect(toolPartSource).toContain('taskBusy && \'animate-text-shimmer\'');

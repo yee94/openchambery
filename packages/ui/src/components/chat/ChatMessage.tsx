@@ -251,17 +251,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const messageRole = React.useMemo(() => deriveMessageRole(message.info), [message.info]);
     const isUser = messageRole.isUser;
-    const assistantAppearanceRef = React.useRef({
-        messageId: message.info.id,
-        enabled: !isUser && isInActiveTurn,
-    });
-    if (assistantAppearanceRef.current.messageId !== message.info.id) {
-        assistantAppearanceRef.current = {
-            messageId: message.info.id,
-            enabled: !isUser && isInActiveTurn,
-        };
-    }
-    const animateAssistantOnMount = assistantAppearanceRef.current.enabled;
     const useExternalUserActionsRow = isUser && (isMobile || !stickyUserHeader);
     const showStickyInlineHoverRow = isUser && !isMobile && stickyUserHeader && !useExternalUserActionsRow;
 
@@ -1154,6 +1143,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                             <FadeInOnReveal
                                 forceAnimation
                                 skipAnimation={!animateUserOnMount}
+                                ignoreContextDisabled
                                 respectReducedMotion
                             >
                                 <div className={cn('relative flex justify-end', !isMobile ? 'group/user-shell' : undefined)}>
@@ -1250,11 +1240,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                             </FadeInOnReveal>
                         )
                     ) : (
-                        <FadeInOnReveal
-                            forceAnimation
-                            skipAnimation={!animateAssistantOnMount}
-                            respectReducedMotion
-                        >
                         <div className="relative">
                             {shouldShowHeader && (
                                 <MessageHeader
@@ -1304,7 +1289,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                             />
 
                         </div>
-                        </FadeInOnReveal>
                     )}
                 </div>
             </div>

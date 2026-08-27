@@ -46,7 +46,6 @@ import { createMobileLongPressController } from '@/components/ui/mobileLongPress
 import { openImageSaveActions } from './imageSaveActionsBus';
 import { fetchRuntimeImageObjectUrl, needsRuntimeImageStream, releaseRuntimeImageObjectUrl, resolveImageSource } from './imageSource';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
-import { animateNewStreamBlock } from './streamBlockAnimation';
 import {
   BLOCK_PATH_TOKEN_RE,
   PARAGRAPH_PATH_TOKEN_RE,
@@ -1194,8 +1193,6 @@ const useMermaidInlineInteractions = ({
 // Streaming reveal cadence varies by native platform. Step sizes are auto-scaled
 // so reveal throughput (chars/sec) stays constant across the selected cadence.
 const PACE_BASELINE_MS = 24;
-const MIN_REVEAL_CHARS_PER_FRAME = 1;
-const MAX_CATCHUP_CHARS_PER_FRAME = 12;
 const TEXT_SNAP = /[\s.,!?;:)\]]/;
 
 const paceStep = (remaining: number, textPaceMs: number): number => {
@@ -1203,13 +1200,8 @@ const paceStep = (remaining: number, textPaceMs: number): number => {
   return Math.max(1, Math.round(base * (textPaceMs / PACE_BASELINE_MS)));
 };
 
-// markdownPaceMs remains a speed-curve input by mapping each legacy step to characters per second.
-const charsPerSecond = (remaining: number, textPaceMs: number): number => (
-  paceStep(remaining, textPaceMs) * (1000 / textPaceMs)
-);
-
-const nextRevealIndex = (text: string, start: number, revealChars: number): number => {
-  const end = Math.min(text.length, start + revealChars);
+const nextRevealIndex = (text: string, start: number, textPaceMs: number): number => {
+  const end = Math.min(text.length, start + paceStep(text.length - start, textPaceMs));
   for (let i = end; i < Math.min(text.length, end + 8); i += 1) {
     if (TEXT_SNAP.test(text[i] ?? '')) return i + 1;
   }
@@ -1222,60 +1214,34 @@ const nextRevealIndex = (text: string, start: number, revealChars: number): numb
 const usePacedText = (content: string, streaming: boolean, textPaceMs: number): string => {
   const [shown, setShown] = React.useState<number>(() => (streaming ? 0 : content.length));
   const shownRef = React.useRef(shown);
-  const carryRef = React.useRef(0);
-  const lastTsRef = React.useRef<number | null>(null);
   shownRef.current = shown;
 
   React.useEffect(() => {
     if (!streaming || typeof window === 'undefined') {
-      carryRef.current = 0;
-      lastTsRef.current = null;
       setShown(content.length);
       return;
     }
     if (shownRef.current > content.length) {
-      shownRef.current = content.length;
-      carryRef.current = 0;
       setShown(content.length);
     }
 
-    let frame: number | null = null;
-    const tick = (ts: number) => {
+    let timer: number | null = null;
+    const tick = () => {
       const current = Math.min(shownRef.current, content.length);
       if (current >= content.length) {
-        frame = null;
-        lastTsRef.current = null;
+        timer = null;
         return;
       }
-
-      const lastTs = lastTsRef.current;
-      if (lastTs === null) {
-        lastTsRef.current = ts;
-        frame = window.requestAnimationFrame(tick);
-        return;
-      }
-
-      const dt = Math.min(ts - lastTs, 100);
-      lastTsRef.current = ts;
-      carryRef.current += charsPerSecond(content.length - current, textPaceMs) * (dt / 1000);
-      const revealChars = Math.min(MAX_CATCHUP_CHARS_PER_FRAME, Math.floor(carryRef.current));
-
-      if (revealChars >= MIN_REVEAL_CHARS_PER_FRAME) {
-        carryRef.current -= revealChars;
-        const next = nextRevealIndex(content, current, revealChars);
-        shownRef.current = next;
-        setShown(next);
-      }
-
-      frame = window.requestAnimationFrame(tick);
+      setShown(nextRevealIndex(content, current, textPaceMs));
+      timer = window.setTimeout(tick, textPaceMs);
     };
 
     if (shownRef.current < content.length) {
-      frame = window.requestAnimationFrame(tick);
+      timer = window.setTimeout(tick, textPaceMs);
     }
 
     return () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
+      if (timer !== null) window.clearTimeout(timer);
     };
   }, [content, streaming, textPaceMs]);
 
@@ -1381,7 +1347,6 @@ const useMorphdomMarkdown = ({
   containerRef,
   text,
   streaming,
-  animateStreamBlocks,
   cacheKey,
   syntaxVars,
   ctx,
@@ -1391,7 +1356,6 @@ const useMorphdomMarkdown = ({
   containerRef: React.RefObject<HTMLDivElement | null>;
   text: string;
   streaming: boolean;
-  animateStreamBlocks: boolean;
   cacheKey: string;
   syntaxVars: Record<string, string>;
   ctx: DecorateContext;
@@ -1403,10 +1367,6 @@ const useMorphdomMarkdown = ({
   }, []);
 
   const mermaidViewerRef = React.useRef<ReturnType<typeof createMermaidViewerRegistry> | null>(null);
-  const seenStreamBlockIdsRef = React.useRef(new Set<string>());
-  React.useEffect(() => {
-    seenStreamBlockIdsRef.current.clear();
-  }, [cacheKey]);
   const notifyRichContentReady = useEvent(() => {
     onRichContentReady?.();
   });
@@ -1497,35 +1457,19 @@ const useMorphdomMarkdown = ({
         return;
       }
       const existing = Array.from(target.children) as HTMLElement[];
-      let animatedTargetCount = 0;
-      const animateCommittedBlock = (blockElement: HTMLElement, blockId: string, hadBlockId: boolean) => {
-        animatedTargetCount += animateNewStreamBlock({
-          block: blockElement,
-          id: blockId,
-          hadBlockId,
-          seenIds: seenStreamBlockIdsRef.current,
-          enabled: animateStreamBlocks,
-          staggerIndex: animatedTargetCount,
-        });
-      };
 
       // Reconcile per block: only re-morph blocks whose content changed, leaving
       // stable leading blocks untouched. Keeps per-stream-step DOM work bounded
       // to the trailing (growing) block instead of the whole message.
       blocks.forEach((block, index) => {
         let el = existing[index];
-        const previousBlockId = el?.getAttribute('data-md-id') ?? null;
-        const hadBlockId = previousBlockId !== null;
         if (!el) {
           el = document.createElement('div');
           el.setAttribute('data-md-block', '');
           el.style.display = 'contents';
           target.appendChild(el);
         }
-        if (el.getAttribute('data-md-id') === block.id) {
-          animateCommittedBlock(el, block.id, hadBlockId);
-          return;
-        }
+        if (el.getAttribute('data-md-id') === block.id) return;
 
         const temp = document.createElement('div');
         temp.innerHTML = block.html;
@@ -1556,7 +1500,6 @@ const useMorphdomMarkdown = ({
         if (hadMermaidBlock || tempHasMermaidBlock || shouldRefreshMermaidViewers(el)) {
           refreshMermaidViewers();
         }
-        animateCommittedBlock(el, block.id, hadBlockId);
       });
 
       // Remove any trailing block elements no longer present.
@@ -1619,7 +1562,7 @@ const useMorphdomMarkdown = ({
       cancelQueuedCommit();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshMermaidViewers / notifyRichContentReady are useEvent-stable and must not control this effect.
-  }, [containerRef, text, streaming, animateStreamBlocks, cacheKey, ctx, reconcileMarkdownImageResources]);
+  }, [containerRef, text, streaming, cacheKey, ctx, reconcileMarkdownImageResources]);
 
   React.useEffect(() => {
     const container = containerRef.current;
@@ -1783,7 +1726,6 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     containerRef,
     text: pacedText,
     streaming: live,
-    animateStreamBlocks: live && variant === 'assistant',
     cacheKey,
     syntaxVars,
     ctx,
@@ -1915,7 +1857,6 @@ const SimpleMarkdownRendererImpl: React.FC<{
     containerRef,
     text: renderedContent,
     streaming: false,
-    animateStreamBlocks: false,
     cacheKey: `simple:${variant}`,
     syntaxVars,
     ctx,

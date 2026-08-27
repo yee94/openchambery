@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.25] - 2026-08-27
+
+### 动效
+
+- **回退流式输出动效：** 出于性能考虑，移除 beta.23 引入的流式渐入动画与逐帧文字插值，流式渲染恢复原有节奏。
+
 ## [1.18.4-beta.24] - 2026-08-27
 
 ### 修复
