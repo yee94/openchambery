@@ -198,4 +198,25 @@ describe('MobileWindowMotion recipe', () => {
       expect(layout).not.toContain('pwa-overlay-panel');
     }
   });
+
+  test('deactivates a committed close without a reconcile pass that re-expands the sheet', () => {
+    // A rAF reconcile used to re-settle from the pre-commit `openRef` value and
+    // flashed the surface back to full screen for a frame or two. The controlled
+    // `open` prop drives any later correction through the open-driven effect.
+    expect(mobileWindowMotionSource).not.toContain('reconcileFrameRef');
+    expect(mobileWindowMotionSource).not.toContain('cancelReconcileFrame');
+    expect(mobileWindowMotionSource).toContain('if (target === 0) deactivate();');
+    expect(mobileWindowMotionSource).toContain("settle(getMobileWindowMotionControlledTarget(open)");
+    expect(getMobileWindowMotionOperationTarget('dismiss', 'commit')).toBe(0);
+    expect(getMobileWindowMotionOperationTarget('dismiss', 'cancel')).toBe(1);
+  });
+
+  test('keeps the open prop as the only source of controlled motion truth', () => {
+    // Dismiss cancel and dismiss commit must land on opposite endpoints, and the
+    // standard-mode settle must read the prop rather than a captured interaction value.
+    expect(getMobileWindowMotionControlledTarget(true)).toBe(1);
+    expect(getMobileWindowMotionControlledTarget(false)).toBe(0);
+    expect(mobileWindowMotionSource).toContain("if (mountedRef.current && modeRef.current === 'standard')");
+    expect(mobileWindowMotionSource).toContain("if (!mounted || modeRef.current !== 'standard') return;");
+  });
 });

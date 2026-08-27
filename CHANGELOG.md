@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.4-beta.27] - 2026-08-27
+
+### 修复
+
+- **半浮层下滑关闭后闪一下全屏：** 移动端可缩放浮层（会话列表、文件、变更、设置等）下滑关闭时，收起动画结束后会短暂重新展开到全屏再收起。原因是关闭动画结束后用 `requestAnimationFrame` 读尚未同步的受控 `open` 值做校正，按旧的 `true` 又把浮层拉了回来。现在 commit 关闭在动画落点即卸载，校正完全交由受控 `open` prop 驱动，不再与 React 的渲染时机抢跑。
+
 ## [1.18.4-beta.26] - 2026-08-27
 
 ### 修复
