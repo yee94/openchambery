@@ -107,6 +107,23 @@ function useAllProjectSessions(): Session[] {
 const PINNED_SESSION_FILTER_ID = '__pinned_sessions__';
 
 /**
+ * Whether opening a session from the recent-sessions sheet should leave the
+ * active project alone.
+ *
+ * "All" (null) and "Pinned" are cross-project scopes: the user browses past
+ * project boundaries there, so selecting a conversation is navigation only and
+ * must not silently move their working project. A concrete project filter is
+ * the opposite — the user narrowed to one project, so the active project still
+ * follows the session when it belongs to another project.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure resolver is tested directly.
+export function shouldPreserveActiveProjectOnSessionOpen(
+  filterProjectId: string | null,
+): boolean {
+  return filterProjectId === null || filterProjectId === PINNED_SESSION_FILTER_ID;
+}
+
+/**
  * Resolve the project filter the recent-sessions sheet should land on when it
  * opens. "All" (null) and filters pointing at a removed project default to the
  * active project; the pinned scope and filters still matching a known project
@@ -1031,18 +1048,23 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     suppressMobileOverlayFocusRestore();
     closeSessionPanel();
     const directory = sessionDirectory(session) || null;
+    // Cross-project scopes ("All" / "Pinned") navigate without adopting the
+    // session's project; a concrete project filter still lets the active
+    // project follow the session through setCurrentSession.
+    const preserveActiveProject = shouldPreserveActiveProjectOnSessionOpen(filterProjectId);
     if (!isIPadApp()) {
       // Prefer the phone nav entry so draft → session and home → session both
       // land on the chat secondary page with the correct route override.
       useMobileNavigationStore.getState().openSession({
         sessionId: session.id,
         directory,
+        preserveActiveProject,
       });
     } else {
-      void setCurrentSession(session.id, directory);
+      void setCurrentSession(session.id, directory, { preserveActiveProject });
     }
     onSessionSwitch?.(session.id);
-  }, [closeSessionPanel, onSessionSwitch, setCurrentSession]);
+  }, [closeSessionPanel, filterProjectId, onSessionSwitch, setCurrentSession]);
 
   const handleShareSession = React.useCallback(async (session: Session) => {
     try {

@@ -483,6 +483,17 @@ type OpenNewSessionDraftOptions = Omit<Partial<NewSessionDraftState>, "draftID" 
   ensureProjectForDirectory?: boolean
 }
 
+type SetCurrentSessionOptions = {
+  /**
+   * Skip the active-project correction that normally follows the session's
+   * directory. Callers that opened the session from a cross-project list
+   * ("All" / "Pinned") pass `true` so the user's current project stays put:
+   * the conversation is a read/navigate target, not a project switch.
+   * Default false — the active project follows the selected session.
+   */
+  preserveActiveProject?: boolean
+}
+
 export type ViewportAnchor = {
   sessionId: string
   value: number
@@ -542,7 +553,7 @@ export type SessionUIState = {
   endMessageEditCommit: (sessionId: string, messageId: string) => void
 
   // Actions — UI state management
-  setCurrentSession: (id: string | null, directoryHint?: string | null) => void
+  setCurrentSession: (id: string | null, directoryHint?: string | null, options?: SetCurrentSessionOptions) => void
   prepareForRuntimeSwitch: (apiBaseUrl?: string | null) => void
   restoreForRuntimeSwitch: (apiBaseUrl?: string | null) => void
   openNewSessionDraft: (options?: OpenNewSessionDraftOptions) => void
@@ -1379,7 +1390,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // setCurrentSession
   // ---------------------------------------------------------------------------
-  setCurrentSession: (id, directoryHint?: string | null) => {
+  setCurrentSession: (id, directoryHint?: string | null, options?: SetCurrentSessionOptions) => {
     announceSessionSwitchIntent(id)
     setRuntimeInteractiveSessionRequestId(id)
     const previousSessionId = get().currentSessionId
@@ -1444,7 +1455,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (resolvedDir && directoryState.currentDirectory !== resolvedDir) {
         directoryState.setDirectory(resolvedDir, { showOverlay: false })
       }
-      if (sessionProject && projectsState.activeProjectId !== sessionProject.id) {
+      // Cross-project list scopes ("All" / "Pinned") open a session without
+      // adopting its project: the panel is a navigation surface, and moving the
+      // active project there would silently change the user's working context.
+      // Everything else keeps the active project aligned with the session.
+      if (sessionProject && options?.preserveActiveProject !== true
+        && projectsState.activeProjectId !== sessionProject.id) {
         projectsState.setActiveProjectIdOnly(sessionProject.id)
       }
       opencodeClient.setDirectory(resolvedDir ?? undefined)

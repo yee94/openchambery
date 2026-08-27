@@ -624,11 +624,11 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           bottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))',
         }}
       >
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {canUseTextSelectionActions ? <button
             onClick={handleAddToChat}
             className={cn(
-              'flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
+              'flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
               'text-sm font-medium leading-tight',
               'bg-[var(--primary-base)] text-[var(--primary-foreground)]',
               'active:opacity-80',
@@ -644,7 +644,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           {canUseTextSelectionActions ? <button
             onClick={handleCreateNewSession}
             className={cn(
-              'flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
+              'flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
               'text-sm font-medium leading-tight',
               'bg-[var(--interactive-selection)] text-[var(--interactive-selection-foreground)]',
               'active:opacity-80',
@@ -660,7 +660,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           <button
             onClick={handleCopy}
             className={cn(
-              'flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
+              'col-span-2 flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
               'text-sm font-medium leading-tight',
               'bg-[var(--surface-muted)] text-[var(--surface-foreground)]',
               'active:opacity-80',
