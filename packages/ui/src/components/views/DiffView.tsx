@@ -48,6 +48,10 @@ import {
     type ToolPatchFile,
 } from './diffPatchUtils';
 import {
+    buildDiffNavigationAlignKey,
+    shouldAlignDiffNavigation,
+} from './diffNavigationAlign';
+import {
     useSessionTurnChangeFileQuery,
 } from '@/queries/sessionTurnChangesQueries';
 import type { FileDiffMetadata } from '@pierre/diffs';
@@ -731,24 +735,13 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
     }, [file.path, onSelect]);
 
     React.useEffect(() => {
-        if (!staged) {
-            setLocalDiffData(null);
-        } else {
-            setStagedDiffData(null);
-        }
-
-        setDiffLoadError(null);
-        lastDiffRequestRef.current = null;
-    }, [fileStatusKey, staged]);
-
-    React.useEffect(() => {
         if (!isExpanded || !isMounted) return;
         if (disableGitFetch) {
             lastDiffRequestRef.current = null;
             setIsLoading(false);
             return;
         }
-        if (!directory || initialDiffData || (diffData && diffDataMatchesContextMode)) {
+        if (!directory || initialDiffData) {
             lastDiffRequestRef.current = null;
             setIsLoading(false);
             return;
@@ -758,9 +751,15 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
         if (lastDiffRequestRef.current === requestKey) {
             return;
         }
+
+        // Keep an already-rendered snapshot on screen while git status refreshes.
+        // Clearing it unmounts Pierre and jumps the preview back to the top.
+        const keepVisibleSnapshot = Boolean(diffData && diffDataMatchesContextMode);
         lastDiffRequestRef.current = requestKey;
         setDiffLoadError(null);
-        setIsLoading(true);
+        if (!keepVisibleSnapshot) {
+            setIsLoading(true);
+        }
 
         let cancelled = false;
         const contextLines = loadFullFiles ? FULL_CONTEXT_DIFF_LINES : DEFAULT_CONTEXT_DIFF_LINES;
@@ -1165,6 +1164,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const visibleSyncFrameRef = React.useRef<number | null>(null);
     const stackedStateScopeRef = React.useRef<string | null>(null);
     const stackedToolPatchesRef = React.useRef<readonly ToolPatchFile[] | null>(null);
+    const lastAlignedNavigationKeyRef = React.useRef<string | null>(null);
 
     const cancelPendingScrollAlignment = React.useCallback(() => {
         pendingScrollTargetRef.current = null;
@@ -1513,12 +1513,21 @@ export const DiffView: React.FC<DiffViewProps> = ({
         setDisplayFileStaged(activeDiffScope === 'staged');
         setDisplayFocusLine(targetLine);
 
-        // Wait until the file row exists in the list (turn L2 / git status) before
-        // scrolling/pinning — otherwise rAF retries exhaust before the DOM mounts.
-        if (!changedFiles.some((file) => file.path === normalizedTarget)) {
+        // Wait until the file row exists, then pin once per navigation identity.
+        // `changedFiles` refreshes on every edit/git status tick; re-pinning that
+        // would yank the preview back to the file header.
+        const navigationAlignKey = buildDiffNavigationAlignKey({
+            scope: activeDiffScope,
+            navigationRequestKey,
+            targetFilePath: normalizedTarget,
+            targetLine,
+        });
+        const targetExists = changedFiles.some((file) => file.path === normalizedTarget);
+        if (!shouldAlignDiffNavigation(lastAlignedNavigationKeyRef.current, navigationAlignKey, targetExists)) {
             return;
         }
 
+        lastAlignedNavigationKeyRef.current = navigationAlignKey;
         shouldPinAfterAlignRef.current = true;
         pendingScrollTargetRef.current = normalizedTarget;
         setScrollRequestNonce((value) => value + 1);

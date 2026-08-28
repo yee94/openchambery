@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.6-beta.2] - 2026-08-28
+
+### 修复
+
+- **预览 Changes 时不再被刷新拉回顶部：** 编辑或 git status 更新时不再把视图重新钉到文件头，也不再卸掉已渲染的 diff 再挂一次。
+
 ## [1.18.6-beta.1] - 2026-08-28
 
 ### 修复
