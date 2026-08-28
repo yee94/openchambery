@@ -1354,7 +1354,7 @@ Rules:
 2. If an action targets a session by ID, resolve the **session's own directory**. Do not assume the current directory is correct.
 3. Scope-sensitive session actions use `getAuthoritativeDirectoryForSession()`, which resolves worktree metadata, session attachments, sync metadata, and global session metadata.
 4. `session-ui-store.ts` should delegate to `session-actions.ts` for these mutations instead of duplicating SDK calls.
-5. `setCurrentSession()` announces a monotonic session-switch intent before directory resolution or store publication. Delayed visual/transition callbacks must validate that intent and silently discard stale work.
+5. `setCurrentSession()` announces a monotonic session-switch intent before directory resolution or store publication. Delayed visual/transition callbacks must validate that intent and silently discard stale work. Optional `skipMessageFetch` skips the same-tick transcript fetch for callers that own the subsequent load (fork).
 6. On a real session id change, `setCurrentSession()` also calls `useUIStore.syncWorkspacePanelsForSessionSwitch()` so right-side workspace panels (context/subagent chat, file preview, git changes sidebar) hide when leaving a session and restore when returning. `openNewSessionDraft()` must call the same helper when clearing a real session for Welcome/draft, because it does not go through `setCurrentSession()`. Tab content remains directory-cached; only open/active visibility is session-scoped.
 7. Edit staging restores the composer from the visible user-message snapshot captured at click time. Primary send keeps `messageEditCommitting` painted, aborts any still-busy turn, waits for idle, deletes the edited target and its old forward tail, then dispatches the replacement. OpenCode rejects `deleteMessage` while the session is busy, so the wait is required. Each local row drops only as its remote delete lands. Submit paints the target as "editing" instead of hiding it. A failed abort/wait/delete leaves the old tail and staged edit intact; a failed send after a successful delete keeps the composer draft for retry. Leaving the session disarms `stagedMessageEdit`.
 8. Sidebar previous/next navigation follows the rendered sidebar order. `SessionSidebar` publishes pinned rows plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Adjacent navigation concatenates those rings (pinned first) and wraps across both sections, never falling through to hidden project rows.
@@ -1390,8 +1390,15 @@ transcript (or any residual pure draft surface) as an unscoped full dump.
   before forking. Missing directory is a hard failure with user-visible toast.
 - Suppress copied message/part events for the target session while the request
   is active.
-- When the real session ID arrives, select it and load the normal bounded tail
-  page through `fetchMessagesForSession()`.
+- When the real session ID arrives, bind the loading shell to that session and
+  select it immediately (`setCurrentSession` with `skipMessageFetch`, which
+  writes the path route). Do not wait for `markForkSessionAsLatest`, transcript
+  reset, or the bounded tail load. After the target is bound, navigating back
+  to the source session stays fully interactive; the overlay follows the target
+  only. The caller then owns `destructiveReset` + `fetchMessagesForSession()`.
+- Restore composer text/attachments only while the user is still viewing the
+  forked session. Leaving the fork path must not dump pending input onto the
+  source conversation.
 - Keep a short message-ID cutoff after the response so transport-buffered copy
   events cannot refill the complete history. Newer user/assistant events pass
   through normally.

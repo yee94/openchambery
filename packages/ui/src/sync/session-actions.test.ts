@@ -13,6 +13,7 @@ import { create, type StoreApi } from "zustand"
 import { INITIAL_STATE } from "./types"
 import type { DirectoryStore } from "./child-store"
 import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
+import { opencodeClient } from "@/lib/opencode/client"
 
 type RestoredAttachment = { url: string; mimeType: string; filename: string }
 type DraftCommitCall = {
@@ -30,7 +31,11 @@ const mocks = vi.hoisted(() => {
   const abortBlockEvents: Array<{ event: "begin" | "clear"; scope: Record<string, unknown>; token: string }> = []
   const pendingSendTransitions: Array<{ state: "mark" | "clear"; sessionId: string; messageID: string }> = []
   const hostTurnPageCalls: Array<Record<string, unknown>> = []
-  const setCurrentSessionCalls: Array<{ sessionId: string; directory?: string | null }> = []
+  const setCurrentSessionCalls: Array<{
+    sessionId: string
+    directory?: string | null
+    options?: { skipMessageFetch?: boolean }
+  }> = []
   const draftCommits: DraftCommitCall[] = []
 
   const state = {
@@ -419,8 +424,12 @@ vi.mock("./session-ui-store", () => ({
         if (sessionId === "session-b") return "/other/project"
         return null
       },
-      setCurrentSession: (sessionId: string, directory?: string | null) => {
-        mocks.setCurrentSessionCalls.push({ sessionId, directory })
+      setCurrentSession: (
+        sessionId: string,
+        directory?: string | null,
+        options?: { skipMessageFetch?: boolean },
+      ) => {
+        mocks.setCurrentSessionCalls.push({ sessionId, directory, options })
         mocks.uiCurrentSessionId = sessionId
       },
       beginQueueAbortBlock: (scope: Record<string, unknown>) => {
@@ -1552,6 +1561,79 @@ describe("forkSession input restoration", () => {
     expect(inputState.pendingInputText).toBe("existing draft")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///existing.txt", mimeType: "text/plain", filename: "existing.txt" }])
     expect(sessionStore.getState().session.some((session) => session.id === "forked-session")).toBe(true)
+  })
+
+  test("selects the forked session as soon as OpenCode returns the id, before transcript load", async () => {
+    const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
+    let releasePromote!: () => void
+    const promoteGate = new Promise<void>((resolve) => {
+      releasePromote = resolve
+    })
+    vi.mocked(opencodeClient.updateSession).mockImplementationOnce(async (sessionId, changes, directory) => {
+      replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
+      await promoteGate
+      return mocks.sessionUpdateResult.data as Session
+    })
+    const sessionStore = createStore({}, {
+      session: [sourceSession],
+      session_status: { "session-a": { type: "idle" } },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { forkSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    const completed = forkSession("session-a", 6)
+    await vi.waitFor(() => {
+      expect(setCurrentSessionCalls[0]).toEqual({
+        sessionId: "forked-session",
+        directory: "/test/project",
+        options: { skipMessageFetch: true },
+      })
+    })
+    expect(sessionStore.getState().session.some((session) => session.id === "forked-session")).toBe(true)
+
+    releasePromote()
+    await expect(completed).resolves.toBe(true)
+  })
+
+  test("does not restore composer onto the source after the user returns from the fork", async () => {
+    const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
+    const selectedMessage = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    let releasePromote!: () => void
+    const promoteGate = new Promise<void>((resolve) => {
+      releasePromote = resolve
+    })
+    vi.mocked(opencodeClient.updateSession).mockImplementationOnce(async (sessionId, changes, directory) => {
+      replyCalls.push({ method: "session.update", params: { sessionID: sessionId, ...changes, directory } })
+      await promoteGate
+      return mocks.sessionUpdateResult.data as Session
+    })
+    const sessionStore = createStore({}, {
+      session: [sourceSession],
+      message: { "session-a": [selectedMessage] },
+      session_status: { "session-a": { type: "idle" } },
+      part: {
+        "message-a": [
+          { id: "text-a", messageID: "message-a", type: "text", text: "fork message" },
+          { id: "file-a", messageID: "message-a", type: "file", url: "file:///fork.txt", mime: "text/plain", filename: "fork.txt" },
+        ] as Part[],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { forkSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    const completed = forkSession("session-a", 7, "message-a")
+    await vi.waitFor(() => {
+      expect(setCurrentSessionCalls[0]?.sessionId).toBe("forked-session")
+    })
+    mocks.uiCurrentSessionId = "session-a"
+    releasePromote()
+    await expect(completed).resolves.toBe(true)
+
+    expect(mocks.clearAttachedFilesCalls).toBe(0)
+    expect(inputState.pendingInputText).toBe("existing draft")
+    expect(inputState.attachedFiles).toEqual([{ url: "file:///existing.txt", mimeType: "text/plain", filename: "existing.txt" }])
   })
 })
 

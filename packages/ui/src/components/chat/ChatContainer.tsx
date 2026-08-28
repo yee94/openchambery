@@ -1679,7 +1679,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     ]);
 
 	// Fork loading is session-scoped: other chats stay interactive while this runs.
-	// Before the forked id exists, pin to the source; afterwards follow the target only.
+	// Before the forked id exists, pin to the source; afterwards follow the target
+	// only so navigating back to the source conversation stays fully operable.
 	const forkTransitionForSession =
 		forkTransition &&
 		currentSessionId &&

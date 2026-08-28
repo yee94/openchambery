@@ -492,6 +492,12 @@ type SetCurrentSessionOptions = {
    * Default false — the active project follows the selected session.
    */
   preserveActiveProject?: boolean
+  /**
+   * Skip the same-tick `fetchMessagesForSession` kickoff. Fork uses this so
+   * route selection can happen as soon as OpenCode returns the id, while the
+   * caller owns the later destructiveReset + bounded tail load.
+   */
+  skipMessageFetch?: boolean
 }
 
 export type ViewportAnchor = {
@@ -1447,7 +1453,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // Kick off the message fetch on the same tick, before React commits the
     // state change and fires ChatContainer.useEffect. The fetch is
     // fire-and-forget — any transient failure gets retried by the reactive path.
-    if (id) {
+    // Fork skips this so it can select the new session immediately and then
+    // own destructiveReset + the bounded tail load without racing this fetch.
+    if (id && options?.skipMessageFetch !== true) {
       void fetchMessagesForSession(id, resolvedDir)
     }
 

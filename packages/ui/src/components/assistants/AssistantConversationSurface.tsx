@@ -8,12 +8,17 @@ import type { AssistantDTO } from '@/queries/assistantQueries';
 import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { useDeviceInfo } from '@/lib/device';
+import { isVSCodeRuntime } from '@/lib/desktop';
 import { isIPadApp } from '@/lib/platform';
+import { useI18n } from '@/lib/i18n';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
+import { useUIStore } from '@/stores/useUIStore';
 import {
   notifySessionOpenFailed,
   openSessionWithFeedback,
 } from '@/sync/openSessionWithFeedback';
+import { resolveAssistantNestedOpenMode } from './assistantNestedSession';
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO;
@@ -43,6 +48,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   pendingUserMessages,
   onPendingUserMessagesMaterialized,
 }) => {
+  const { t } = useI18n();
+  const { isMobile } = useDeviceInfo();
   const directory = assistant.effectiveWorkspacePath;
   const historyQuery = useAssistantHistoryInfiniteQuery(
     assistant.id,
@@ -71,6 +78,13 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   // Dedicated MobileApp (Capacitor phone + hosted H5 phone shell) owns chat as a
   // secondary route. Detect it the same way ChatContainer does — not Capacitor alone.
   const mobileActions = useMobileAppActions();
+  const isPhoneShell = Boolean(mobileActions && !isIPadApp());
+  const openLinkedSession = useEvent((targetSessionID: string, targetDirectory: string) => {
+    openSessionWithFeedback(targetSessionID, targetDirectory, {
+      phoneShell: isPhoneShell,
+      switchToChat: true,
+    });
+  });
   const openSourceSession = useEvent((targetSessionID: string, targetDirectory: string) => {
     const expectedDirectory = targetSessionID === sessionID ? directory : historyDirectories.get(targetSessionID);
     // History entry must carry a stable workspace path. If missing or conflicting,
@@ -81,9 +95,34 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     }
     // Leave the Assistant surface and continue the underlying OpenCode session in Chat.
     // Phone shell (native or hosted H5): secondary chat route owns mounting.
-    openSessionWithFeedback(targetSessionID, targetDirectory, {
-      phoneShell: Boolean(mobileActions && !isIPadApp()),
-      switchToChat: true,
+    openLinkedSession(targetSessionID, targetDirectory);
+  });
+  const navigateSession = useEvent((targetSessionID: string, targetDirectory: string) => {
+    const sessionId = targetSessionID.trim();
+    const targetDirectoryValue = targetDirectory.trim();
+    if (!sessionId) {
+      notifySessionOpenFailed(targetSessionID, 'missing-session-id');
+      return;
+    }
+    if (!targetDirectoryValue) {
+      notifySessionOpenFailed(sessionId, 'missing-directory');
+      return;
+    }
+    const mode = resolveAssistantNestedOpenMode({
+      isPhoneShell,
+      isMobile,
+      isIPad: isIPadApp(),
+      isVSCode: isVSCodeRuntime(),
+    });
+    if (mode === 'session') {
+      openLinkedSession(sessionId, targetDirectoryValue);
+      return;
+    }
+    useUIStore.getState().openContextPanelTab(targetDirectoryValue, {
+      mode: 'chat',
+      dedupeKey: `session:${sessionId}`,
+      label: t('contextPanel.mode.chat'),
+      readOnly: true,
     });
   });
   const sessionSurface = React.useMemo(() => ({
@@ -95,14 +134,14 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     capabilities: {
       ...PRIMARY_SESSION_SURFACE_CAPABILITIES,
       forkSession: false,
-      navigateNestedSession: false,
       mutateSession,
     },
+    navigateSession,
     onRevertMessage,
     // Continuous Assistants stage edits into surfaceDraftKey; history segments are read-only via MessageList.
     ...(onEditMessage ? { onEditMessage } : {}),
     openSourceSession,
-  }), [directory, mutateSession, onEditMessage, onRevertMessage, openSourceSession, sessionID, surface.active, surface.surfaceID]);
+  }), [directory, mutateSession, navigateSession, onEditMessage, onRevertMessage, openSourceSession, sessionID, surface.active, surface.surfaceID]);
 
   // Terminal error: stop load-older from spinning forever. Background refetches
   // must not flip loading (near-top controller). Only initial/next-page fetches load.
