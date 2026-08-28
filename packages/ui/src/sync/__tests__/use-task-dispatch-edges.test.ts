@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { Part } from "@opencode-ai/sdk/v2/client"
+import type { Part } from '@/lib/opencode/v2-types'
 
 import { createTaskDispatchEdgesReader, readTaskDispatchEdgesFromTranscript } from "../sync-context"
 import { EMPTY_TASK_DISPATCH_EDGES } from "../scoped-blocking-requests"
