@@ -385,7 +385,88 @@ describe('Electron session index', () => {
 
     expect(service.upsert({ ...session('ses_a', 11), time: { created: 9, updated: 11, archived: 12 } })).toBe(true);
     expect(service.snapshot().directories[0].sessions).toEqual([]);
+    expect(service.snapshot().pinnedSessionIds ?? []).not.toContain('ses_a');
     expect(service.clearPinned('ses_a')).toBe(false);
+    service.close();
+  });
+
+  it('keeps a pin after the session falls outside the newest-20 rebuild window', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({
+      directory: '/repo',
+      sessions: [session('ses_pinned', 10)],
+      cursor: null,
+      hasMore: false,
+    });
+    expect(service.setPinned('ses_pinned', 42)).toBe(true);
+
+    const newer = Array.from({ length: 20 }, (_, index) => session(`ses_new_${index}`, 200 - index));
+    service.replaceDirectory({ directory: '/repo', sessions: newer, cursor: null, hasMore: true, now: 3000 });
+
+    const snapshot = service.snapshot();
+    expect(snapshot.directories[0].sessions).toHaveLength(20);
+    expect(snapshot.directories[0].sessions.some((item) => item.id === 'ses_pinned')).toBe(false);
+    expect(snapshot.pinnedSessionIds).toEqual(['ses_pinned']);
+    service.close();
+  });
+
+  it('keeps a pin after live upserts evict the pinned summary row', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({
+      directory: '/repo',
+      sessions: [session('ses_pinned', 10)],
+      cursor: null,
+      hasMore: false,
+    });
+    expect(service.setPinned('ses_pinned', 43)).toBe(true);
+
+    for (let index = 0; index < 20; index += 1) {
+      service.upsert(session(`ses_new_${index}`, 200 - index));
+    }
+
+    const snapshot = service.snapshot();
+    expect(snapshot.directories[0].sessions).toHaveLength(20);
+    expect(snapshot.directories[0].sessions.some((item) => item.id === 'ses_pinned')).toBe(false);
+    expect(snapshot.pinnedSessionIds).toEqual(['ses_pinned']);
+    service.close();
+  });
+
+  it('backfills session_pin from existing summary pinned_at on open', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
+    expect(service.setPinned('ses_a', 66)).toBe(true);
+    service.close();
+
+    const dbPath = path.join(tempDirectories[tempDirectories.length - 1], 'session-index.sqlite');
+    const Database = createRequire(import.meta.url)('better-sqlite3');
+    const db = new Database(dbPath);
+    db.exec('DELETE FROM session_pin');
+    db.close();
+
+    const reopened = createSessionIndexService({
+      dbPath,
+      getRuntimeConfig: () => ({ apiBaseUrl: runtimeRef.value }),
+    });
+    expect(reopened.snapshot().pinnedSessionIds).toEqual(['ses_a']);
+    expect(reopened.snapshot().directories[0].sessions[0].time.pinned).toBe(66);
+    reopened.close();
+  });
+
+  it('pins a session that is not in the newest-20 index', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    const newest = Array.from({ length: 20 }, (_, index) => session(`ses_${index}`, 100 - index));
+    service.replaceDirectory({ directory: '/repo', sessions: newest, cursor: 80, hasMore: true, now: 1000 });
+
+    expect(service.setPinned('ses_old', 55)).toBe(true);
+    expect(service.snapshot().pinnedSessionIds).toEqual(['ses_old']);
+    expect(service.snapshot().directories[0].sessions.some((item) => item.id === 'ses_old')).toBe(false);
+
+    expect(service.clearPinned('ses_old')).toBe(true);
+    expect(service.snapshot().pinnedSessionIds ?? []).toEqual([]);
     service.close();
   });
 });

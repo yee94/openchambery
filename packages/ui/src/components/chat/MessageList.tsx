@@ -1,5 +1,5 @@
 import React from 'react';
-import { useEvent, useInterval, useIsomorphicLayoutEffect } from '@reactuses/core';
+import { useEvent, useInterval, useIsomorphicLayoutEffect, useResizeObserver, useUnmount } from '@reactuses/core';
 import type { Part } from '@/lib/opencode/v2-types';
 import { elementScroll, useVirtualizer as useTanstackVirtualizer, type ReactVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { isAssistantSessionDivider } from './hostedSessionHistory';
@@ -51,11 +51,17 @@ import {
 } from './lib/shellBridge';
 import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants, withholdLiveRevealActivitySegments } from './lib/visibleSortedAssistants';
 import {
+    readUserMessageHeaderIdentity,
+    resolvePendingAssistantHeader,
+    shouldShowPendingAssistantHeader,
+} from './lib/pendingAssistantHeader';
+import {
     resolveActivityExpansionDisposition,
     resolveDefaultActivityExpanded,
     resolveToggledActivityExpanded,
     resolveTurnActivityPresentation,
     resolveTurnSettledForPresentation,
+    shouldTightenWorkingBottomGap,
 } from './lib/activityExpansion';
 
 // Re-export pure expansion helpers for existing MessageList.* tests.
@@ -66,6 +72,7 @@ export {
     resolveToggledActivityExpanded,
     resolveTurnActivityPresentation,
     resolveTurnSettledForPresentation,
+    shouldTightenWorkingBottomGap,
 };
 /* eslint-enable react-refresh/only-export-components */
 
@@ -261,6 +268,70 @@ export const resolveTimelineVirtualizerCacheKey = (
     virtualizerKey: string,
     activityRenderMode: 'collapsed' | 'summary',
 ): string => `${virtualizerKey}::activity:${activityRenderMode}`;
+
+/**
+ * Context-panel / sidebar open shrinks the transcript column and reflows every
+ * wrap. Row ResizeObservers are supposed to push the new heights into
+ * virtual-core, but Electron 41 often skips those callbacks (compositor /
+ * contain:layout), so itemSizeCache keeps the wide-column sizes and later
+ * turns paint on top of earlier ones. A column-width change is the signal to
+ * drop that cache; the next measureElement pass reads live offsetHeight.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const shouldInvalidateVirtualizerMeasurementsOnColumnResize = (
+    previousWidth: number | null,
+    nextWidth: number,
+): boolean => {
+    if (!Number.isFinite(nextWidth) || nextWidth <= 0) return false;
+    if (previousWidth === null) return false;
+    return Math.round(previousWidth) !== Math.round(nextWidth);
+};
+
+/**
+ * History rows are in normal flow (padding, not transform) so sticky user
+ * headers still stick to the chat scroller. The live tail is a sibling after
+ * this frame. A fixed `height: totalSize` box clips the reserved range: when a
+ * visible row is taller than its cached size, the extra pixels overflow onto
+ * the tail and later turns paint on top of earlier ones. `minHeight` plus
+ * padding for the unrendered range lets an underestimated window grow and
+ * push the tail down instead.
+ */
+export type TanstackHistoryFrameStyle = {
+    paddingTop: number;
+    paddingBottom: number;
+    minHeight: number;
+};
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveTanstackHistoryFrameStyle = (
+    startOffset: number,
+    lastEnd: number,
+    totalSize: number,
+): TanstackHistoryFrameStyle => {
+    const top = Number.isFinite(startOffset) ? Math.max(0, startOffset) : 0;
+    const end = Number.isFinite(lastEnd) ? Math.max(top, lastEnd) : top;
+    const total = Number.isFinite(totalSize) ? Math.max(0, totalSize) : 0;
+    return {
+        paddingTop: top,
+        paddingBottom: Math.max(0, total - end),
+        minHeight: total,
+    };
+};
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const applyTanstackHistoryFrameMinHeight = (
+    element: HTMLElement | null,
+    totalSize: number,
+): void => {
+    if (!element) return;
+    const next = `${Math.max(0, Number.isFinite(totalSize) ? totalSize : 0)}px`;
+    if (element.style.height !== '') {
+        element.style.height = '';
+    }
+    if (element.style.minHeight !== next) {
+        element.style.minHeight = next;
+    }
+};
 
 /** How many rows past each fold edge may start Markdown hydration. */
 // eslint-disable-next-line react-refresh/only-export-components
@@ -1012,10 +1083,13 @@ const TurnBlock = React.memo(({
                         : message.info.id === streamingAssistantMessageId
                 ),
                 // Turn-completion chrome asks the turn, not the row.
+                // hasConfirmedFinalBody beats a lagging sessionIsWorking so live
+                // SSE settle can show TPS/duration before pending/status gates flip.
                 isTurnSettled: resolveTurnSettledForPresentation({
                     completionDisposition: turn.completionDisposition,
                     isLastTurn,
                     sessionIsWorking,
+                    hasConfirmedSettledAssistant: turn.hasConfirmedFinalBody,
                 }),
                 hasTools: turn.hasTools,
                 hasReasoning: turn.hasReasoning,
@@ -1066,6 +1140,26 @@ const TurnBlock = React.memo(({
         };
     }, [turn, visibleAssistantMessages]);
 
+    const pendingAssistantHeader = React.useMemo(() => {
+        if (!shouldShowPendingAssistantHeader({
+            isLastTurn,
+            sessionIsWorking,
+            hasAssistantMessages: turn.assistantMessages.length > 0,
+            activityPresentationKind: turn.activityPresentationKind,
+            hasActiveStreamingMessage: Boolean(activeStreamingMessageId),
+        })) {
+            return null;
+        }
+        return resolvePendingAssistantHeader(readUserMessageHeaderIdentity(turn.userMessage.info));
+    }, [
+        activeStreamingMessageId,
+        isLastTurn,
+        sessionIsWorking,
+        turn.activityPresentationKind,
+        turn.assistantMessages.length,
+        turn.userMessage.info,
+    ]);
+
     return (
         <TurnItem
             turn={renderableTurn}
@@ -1080,6 +1174,7 @@ const TurnBlock = React.memo(({
                 isLastTurn,
                 sessionIsWorking,
             })}
+            pendingAssistantHeader={pendingAssistantHeader}
             stickyUserHeader={stickyUserHeader}
             renderMessage={renderMessage}
         />
@@ -1434,9 +1529,13 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         scrollToFn: (offset, options, instance) => {
             // Expose the new total height before core writes an anchor
             // correction so the browser does not clamp the offset to the old
-            // height.
-            const sizeElement = sizeContainerRef.current;
-            if (sizeElement) sizeElement.style.height = `${instance.getTotalSize()}px`;
+            // height. Write minHeight (not height) so an underestimated
+            // visible row can still grow the frame instead of overflowing
+            // onto the live tail.
+            applyTanstackHistoryFrameMinHeight(
+                sizeContainerRef.current,
+                instance.getTotalSize(),
+            );
             elementScroll(offset, options, instance);
         },
         getItemKey: (index) => entriesRef.current[index]?.key ?? `index:${index}`,
@@ -1454,6 +1553,54 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         },
         initialMeasurementsCache: measurementSeedRef.current,
     });
+    const columnWidthRef = React.useRef<number | null>(null);
+    const columnMeasureTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    if (!isTanstack) {
+        columnWidthRef.current = null;
+    }
+    const handleColumnResize = useEvent(() => {
+        if (!isTanstack) return;
+        const node = sizeContainerRef.current ?? scrollRef?.current;
+        if (!node) return;
+        const nextWidth = node.offsetWidth;
+        if (!shouldInvalidateVirtualizerMeasurementsOnColumnResize(columnWidthRef.current, nextWidth)) {
+            if (columnWidthRef.current === null && nextWidth > 0) {
+                columnWidthRef.current = nextWidth;
+            }
+            return;
+        }
+        columnWidthRef.current = nextWidth;
+        if (columnMeasureTimeoutRef.current !== null) {
+            clearTimeout(columnMeasureTimeoutRef.current);
+        }
+        // ContextPanel animates width for 200ms. Measure after that transition
+        // so wrap heights match the settled column, not an in-between frame.
+        columnMeasureTimeoutRef.current = setTimeout(() => {
+            columnMeasureTimeoutRef.current = null;
+            tanstackVirtualizer.measure();
+        }, 220);
+    });
+    const canObserveColumnResize = isTanstack && typeof ResizeObserver !== 'undefined';
+    useResizeObserver(
+        canObserveColumnResize ? sizeContainerRef : null,
+        handleColumnResize,
+    );
+    useResizeObserver(
+        canObserveColumnResize && scrollRef ? scrollRef : null,
+        handleColumnResize,
+    );
+    useUnmount(() => {
+        if (columnMeasureTimeoutRef.current !== null) {
+            clearTimeout(columnMeasureTimeoutRef.current);
+            columnMeasureTimeoutRef.current = null;
+        }
+    });
+    useIsomorphicLayoutEffect(() => {
+        if (!isTanstack) return;
+        handleColumnResize();
+        // handleColumnResize is useEvent; seed once per virtualized mount.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- handleColumnResize is useEvent
+    }, [isTanstack]);
     useIsomorphicLayoutEffect(() => {
         committedEngineRef.current = engine;
         if (!isTanstack) {
@@ -1659,6 +1806,12 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
 
     if (engine === 'tanstack') {
         const startOffset = virtualItems[0]?.start ?? 0;
+        const lastEnd = virtualItems[virtualItems.length - 1]?.end ?? 0;
+        const historyFrameStyle = resolveTanstackHistoryFrameStyle(
+            startOffset,
+            lastEnd,
+            tanstackVirtualizer.getTotalSize(),
+        );
         // Rendered rows stay in normal flow inside a single offset wrapper (not
         // per-row absolute positioning) so per-turn sticky user headers keep
         // working against the scroll container. The offset MUST be padding, not
@@ -1666,10 +1819,22 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         // so headers would stick to the wrapper's (arbitrary, overscan-dependent)
         // top edge mid-list and float over the previous turn. Padding only
         // changes when the virtual window shifts — not per scroll frame — so the
-        // layout cost is negligible.
+        // layout cost is negligible. minHeight + trailing padding reserve the
+        // unrendered range without locking the frame to cached sizes: a visible
+        // row taller than its cache grows this sibling and keeps the live tail
+        // below it instead of painting through it.
         return (
-            <div ref={sizeContainerRef} className="relative w-full" style={{ height: tanstackVirtualizer.getTotalSize() }}>
-                <div style={{ paddingTop: `${startOffset}px` }}>
+            <div
+                ref={sizeContainerRef}
+                className="relative w-full"
+                style={{ minHeight: historyFrameStyle.minHeight }}
+            >
+                <div
+                    style={{
+                        paddingTop: historyFrameStyle.paddingTop,
+                        paddingBottom: historyFrameStyle.paddingBottom,
+                    }}
+                >
                     {virtualItems.map((item) => {
                         const entry = renderEntries[item.index];
                         if (!entry) return null;

@@ -259,6 +259,31 @@ describe('ui auth client credential seam', () => {
     }
   });
 
+  it('returns JSON 401 for unauthenticated API requests mounted under a sub-app', async () => {
+    const createUiAuth = await loadCreateUiAuth();
+    const auth = createUiAuth({ password: 'secret' });
+
+    // Express strips the mount prefix: app.use('/api') turns /api/mcp into
+    // req.path '/mcp'. The unauthorized response must still be identified as an
+    // API request (JSON + locked) so clients can react to the auth gate.
+    const req = {
+      method: 'GET',
+      baseUrl: '/api',
+      path: '/mcp',
+      originalUrl: '/api/mcp',
+      url: '/api/mcp',
+      headers: {},
+    };
+    const res = createResponse();
+    let called = false;
+    await auth.requireAuth(req, res, () => {
+      called = true;
+    });
+    expect(called).toBe(false);
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ error: 'UI authentication required', locked: true });
+  });
+
   it('issues desktop client tokens with the UI session expiry', async () => {
     const createUiAuth = await loadCreateUiAuth();
     let createClientInput = null;

@@ -37,6 +37,7 @@ import { useGitStatus } from '@/stores/useGitStore';
 import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { collectExpandableDirectoryPaths, collectUnexpandedDirectoryPaths, isFileTreeExpandAllSettled, shouldCollapseFileTree } from '@/lib/fileTreeExpand';
 import { cn, getRevealLabelKey } from '@/lib/utils';
 import { opencodeClient } from '@/lib/opencode/client';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -436,6 +437,7 @@ export const SidebarFilesTree: React.FC = () => {
   const loadedDirsRef = React.useRef<Set<string>>(new Set());
   const inFlightDirsRef = React.useRef<Set<string>>(new Set());
   const refreshAbortRef = React.useRef<AbortController | null>(null);
+  const expandAllInProgressRef = React.useRef(false);
 
   // Hydrate the per-root cache on mount or root change. The cache is
   // module-scoped so it survives close-and-reopen of the right sidebar;
@@ -704,6 +706,7 @@ export const SidebarFilesTree: React.FC = () => {
     // Cancel any pending refresh so stale directory listings don't land after
     // the user switches projects or toggles showHidden / showGitignored.
     refreshAbortRef.current?.abort();
+    expandAllInProgressRef.current = false;
     loadedDirsRef.current = new Set();
     inFlightDirsRef.current = new Set();
     setLoadErrorsByDir({});
@@ -884,26 +887,42 @@ export const SidebarFilesTree: React.FC = () => {
     }
   }, [loadDirectory, root, toggleExpandedPath]);
 
-  const directoryPaths = React.useMemo(() => Array.from(new Set(
-    Object.values(childrenByDir).flatMap((nodes) => nodes
-      .filter((node) => node.type === 'directory')
-      .map((node) => node.path))
-  )), [childrenByDir]);
+  const directoryPaths = React.useMemo(
+    () => (root ? collectExpandableDirectoryPaths(root, childrenByDir) : []),
+    [childrenByDir, root],
+  );
   const expandedPathSet = React.useMemo(
     () => new Set(expandedPaths.map((path) => normalizePath(path))),
     [expandedPaths],
   );
-  const allDirectoriesExpanded = directoryPaths.length > 0
-    && directoryPaths.every((path) => expandedPathSet.has(normalizePath(path)));
+  const allDirectoriesExpanded = shouldCollapseFileTree(expandedPaths);
 
   const toggleAllDirectories = React.useCallback(() => {
     if (!root) return;
     if (allDirectoriesExpanded) {
+      expandAllInProgressRef.current = false;
       removeExpandedPathsByPrefix(root, root);
       return;
     }
+    expandAllInProgressRef.current = true;
     expandPaths(root, directoryPaths);
   }, [allDirectoriesExpanded, directoryPaths, expandPaths, removeExpandedPathsByPrefix, root]);
+
+  React.useEffect(() => {
+    if (!root || !expandAllInProgressRef.current) return;
+    const pending = collectUnexpandedDirectoryPaths(directoryPaths, expandedPaths);
+    if (pending.length > 0) {
+      expandPaths(root, pending);
+      return;
+    }
+    const loadedOrFailed = new Set([
+      ...loadedDirsRef.current,
+      ...Object.keys(loadErrorsByDir),
+    ]);
+    if (isFileTreeExpandAllSettled(directoryPaths, expandedPaths, loadedOrFailed)) {
+      expandAllInProgressRef.current = false;
+    }
+  }, [directoryPaths, expandPaths, expandedPaths, loadErrorsByDir, root]);
 
   // --- Dialog submit (matching FilesView) ---
 

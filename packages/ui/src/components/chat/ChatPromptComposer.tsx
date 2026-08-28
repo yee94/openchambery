@@ -171,6 +171,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   ) : (
     <button
       type="submit"
+      data-composer-send="true"
       className="flex size-8 shrink-0 items-center justify-center rounded-md text-primary outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-30"
       disabled={disabled || pending || !hasContent}
       aria-label={sendLabel}

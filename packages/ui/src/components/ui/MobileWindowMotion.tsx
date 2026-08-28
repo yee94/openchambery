@@ -82,7 +82,6 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   const progressRef = React.useRef(0);
   const pendingProgressRef = React.useRef(0);
   const frameRef = React.useRef<number | null>(null);
-  const reconcileFrameRef = React.useRef<number | null>(null);
   const animationsRef = React.useRef<Animation[]>([]);
   const activeSettleRef = React.useRef<ActiveSettle | null>(null);
   const modeRef = React.useRef<MobileWindowMotionMode>('standard');
@@ -141,10 +140,6 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   const cancelFrame = React.useCallback(() => {
     if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     frameRef.current = null;
-  }, []);
-  const cancelReconcileFrame = React.useCallback(() => {
-    if (reconcileFrameRef.current !== null) window.cancelAnimationFrame(reconcileFrameRef.current);
-    reconcileFrameRef.current = null;
   }, []);
   const clearMotionStyles = React.useCallback(() => {
     if (scrimRef.current) scrimRef.current.style.willChange = '';
@@ -214,7 +209,6 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   }, [active]);
 
   React.useEffect(() => {
-    cancelReconcileFrame();
     if (open && !mountedRef.current) {
       pendingProgressRef.current = progressRef.current;
       setMounted(true);
@@ -228,9 +222,9 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
         if (!openRef.current && modeRef.current === 'standard') deactivate();
       });
     }
-  }, [cancelReconcileFrame, deactivate, open, settle]);
+  }, [deactivate, open, settle]);
   React.useLayoutEffect(() => {
-    if (!mounted || modeRef.current !== 'standard' || reconcileFrameRef.current !== null) return;
+    if (!mounted || modeRef.current !== 'standard') return;
     settle(open ? 1 : 0, () => {
       if (!openRef.current && modeRef.current === 'standard') deactivate();
     });
@@ -284,7 +278,6 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   controllerActionsRef.current = {
     begin: (operation) => {
       if (operation === 'dismiss' && (!activeRef.current || modeRef.current === 'interactive-present')) return false;
-      cancelReconcileFrame();
       interruptMotion();
       interactionGenerationRef.current += 1;
       interactionActiveRef.current = true;
@@ -326,18 +319,14 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
         if (operation === 'present' && finish === 'cancel' && !openRef.current) deactivate();
         modeRef.current = 'standard';
         setMode('standard');
-        reconcileFrameRef.current = window.requestAnimationFrame(() => {
-          reconcileFrameRef.current = null;
-          if (generation !== interactionGenerationRef.current) return;
-          const desired = getMobileWindowMotionControlledTarget(openRef.current);
-          settle(desired, () => {
-            if (generation === interactionGenerationRef.current && !openRef.current) deactivate();
-          });
-        });
+        // A committed close is visually complete once the settle animation lands.
+        // Unmount now instead of waiting on a reconcile pass: the controlled
+        // `open` prop drives any later correction, and re-settling from the
+        // pre-commit `openRef` value would flash the surface back to full screen.
+        if (target === 0) deactivate();
       });
     },
     interrupt: () => {
-      cancelReconcileFrame();
       interactionGenerationRef.current += 1;
       interactionActiveRef.current = false;
       const interruptedPresentation = modeRef.current === 'interactive-present' && !openRef.current;
@@ -372,14 +361,13 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
     const unregister = registerMobileWindowMotionController(id, controller);
     return () => {
       unregister();
-      cancelReconcileFrame();
       cancelFrame();
       cancelAnimations();
       activeSettleRef.current = null;
       clearMotionStyles();
       controllerActionsRef.current = null;
     };
-  }, [cancelAnimations, cancelFrame, cancelReconcileFrame, clearMotionStyles, id]);
+  }, [cancelAnimations, cancelFrame, clearMotionStyles, id]);
 
   if (!mounted || !overlayRootRef.current) return null;
   const content = (

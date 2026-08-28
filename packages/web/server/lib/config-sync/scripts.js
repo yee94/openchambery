@@ -13,6 +13,14 @@ import {
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
 
 /**
+ * JSON.stringify yields bare double quotes, which terminate the surrounding
+ * shell double-quoted string in inventory lines. Escape them so the assembled
+ * SYNC_INVENTORY payload stays valid JSON after sh evaluation.
+ * @param {string} value
+ */
+const jsonShellEscape = (value) => JSON.stringify(value).replace(/"/g, '\\"');
+
+/**
  * Sanitize syncRunId for use as a single path segment under backup roots.
  * @param {string} syncRunId
  */
@@ -202,7 +210,7 @@ export const buildRemoteSyncInventoryScript = () => {
     const quoted = shellQuote(rel);
     lines.push(`if [ -f "$CFG"/${quoted} ]; then`);
     lines.push(`  BYTES="$(wc -c < "$CFG"/${quoted} | tr -d ' ')"`);
-    lines.push(`  FILES="$FILES{\\"path\\":${JSON.stringify(rel)},\\"bytes\\":$BYTES},"`);
+    lines.push(`  FILES="$FILES{\\"path\\":${jsonShellEscape(rel)},\\"bytes\\":$BYTES},"`);
     lines.push('fi');
   }
   for (const rel of dirPaths) {
@@ -210,7 +218,7 @@ export const buildRemoteSyncInventoryScript = () => {
     lines.push(`if [ -d "$CFG"/${quoted} ]; then`);
     lines.push(`  COUNT="$(find "$CFG"/${quoted} -type f ! -path '*/node_modules/*' ! -name '*.backup' 2>/dev/null | wc -l | tr -d ' ')"`);
     lines.push(`  BYTES="$(find "$CFG"/${quoted} -type f ! -path '*/node_modules/*' ! -name '*.backup' -exec wc -c {} + 2>/dev/null | awk 'END{print $1+0}')"`);
-    lines.push(`  DIRS="$DIRS{\\"path\\":${JSON.stringify(rel)},\\"fileCount\\":$COUNT,\\"bytes\\":$BYTES},"`);
+    lines.push(`  DIRS="$DIRS{\\"path\\":${jsonShellEscape(rel)},\\"fileCount\\":$COUNT,\\"bytes\\":$BYTES},"`);
     lines.push('fi');
   }
   lines.push('AGENTS="null"');

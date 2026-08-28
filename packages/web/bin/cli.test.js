@@ -199,6 +199,31 @@ describe('cli args', () => {
     expect(parsed.options.name).toBe('My laptop');
   });
 
+  it('parses serve --relay-host with optional URL', () => {
+    expect(parseArgs(['serve', '--relay-host']).options.relayHost).toBe(true);
+    expect(parseArgs(['serve', '--relay-host', 'wss://relay.example/ws']).options.relayHost)
+      .toBe('wss://relay.example/ws');
+    expect(parseArgs(['serve', '--relay-host=wss://relay.example/ws']).options.relayHost)
+      .toBe('wss://relay.example/ws');
+  });
+
+  it('preserves ssh-remote serve runtime and writes --relay-host opt-in', async () => {
+    const { applyRelayHostOptIn, resolveServeRuntime } = await import('./lib/commands-serve.js');
+    expect(resolveServeRuntime({ OPENCHAMBER_RUNTIME: 'ssh-remote' })).toBe('ssh-remote');
+    expect(resolveServeRuntime({ OPENCHAMBER_RUNTIME: 'desktop' })).toBe('web');
+    expect(resolveServeRuntime({})).toBe('web');
+
+    const { assertServeRelayHostAllowed } = await import('./lib/commands-serve.js');
+    expect(() => assertServeRelayHostAllowed('web', { relayHost: true })).toThrow(/ssh-remote/);
+    expect(() => assertServeRelayHostAllowed('ssh-remote', { relayHost: true })).not.toThrow();
+
+    await withTempOpenChamberDataDir(async (dir) => {
+      applyRelayHostOptIn({ relayHost: true });
+      const settings = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
+      expect(settings.privateRelay).toMatchObject({ enabled: true });
+    });
+  });
+
   it('parses connect-url api-only help', () => {
     const parsed = parseArgs(['connect-url', '--api-only', '--help']);
 

@@ -23,6 +23,26 @@ import { MobileUpdatesUnsupportedError } from '@/lib/mobile-updates/types';
 
 type OtaPhase = 'idle' | 'checking' | 'available' | 'downloading' | 'pending_restart' | 'error';
 
+/**
+ * UI lane — beta switch → stable rollback confirmation flow:
+ *
+ * 1. User turns off "update to beta" → call `useUIStore.setOtaChannelOverride('stable')`
+ *    then `useUpdateStore.checkForUpdates()`.
+ * 2. If the result has `updateInfo.isChannelRollback === true` and
+ *    `primaryAction === 'apply_ota'`, show a "roll back to stable" confirmation.
+ * 3. On confirm, reuse the existing `downloadUpdate()` → `restartToUpdate()` path
+ *    (no separate download API).
+ *
+ * Turning the switch on → `setOtaChannelOverride('beta')` + `checkForUpdates()`.
+ * `null` override follows the build-time baked `OpenChamberOTA.channel`.
+ */
+export type MobileOtaChannelRollbackUiFlow = {
+  setOverride: 'useUIStore.setOtaChannelOverride';
+  check: 'useUpdateStore.checkForUpdates';
+  confirmField: 'UpdateInfo.isChannelRollback';
+  applyPath: 'downloadUpdate → restartToUpdate';
+};
+
 type UpdateState = {
   checking: boolean;
   available: boolean;
@@ -40,6 +60,12 @@ type UpdateState = {
   otaPhase: OtaPhase;
   /** Whether the current OTA download reused an existing local bundle. */
   otaDownloadSkipped: boolean;
+  /**
+   * `otaChannelOverride` value used for the last mobile OTA check
+   * (`null` = followed baked channel). Channel preference changes clear stale
+   * OTA decision / download state before the next check.
+   */
+  lastOtaChannelOverride: 'beta' | 'stable' | null;
 };
 
 interface UpdateStore extends UpdateState {
@@ -222,12 +248,17 @@ const initialState: UpdateState = {
   otaDecision: null,
   otaPhase: 'idle',
   otaDownloadSkipped: false,
+  lastOtaChannelOverride: null,
 };
 
 function mapOtaDecisionToUpdateInfo(
   decision: MobileUpdateDecision,
   currentVersion: string,
 ): { info: UpdateInfo; available: boolean; otaPhase: OtaPhase } {
+  const rollbackFields = decision.isChannelRollback === true
+    ? { isChannelRollback: true as const }
+    : {};
+
   if (decision.primaryAction === 'apply_ota' && decision.ota.bundle) {
     // Capgo reports builtin for the shell-embedded zip. If that zip is already
     // this release, showing 1.18.2-beta.36 → 1.18.2-beta.36 loops forever.
@@ -239,6 +270,7 @@ function mapOtaDecisionToUpdateInfo(
           available: false,
           currentVersion,
           nextSuggestedCheckInSec: decision.nextCheckInSec,
+          ...rollbackFields,
         },
       };
     }
@@ -253,6 +285,7 @@ function mapOtaDecisionToUpdateInfo(
         nextSuggestedCheckInSec: decision.nextCheckInSec,
         inAppApply: true,
         ...(decision.releaseNotes ? { body: decision.releaseNotes } : {}),
+        ...rollbackFields,
       },
     };
   }
@@ -269,6 +302,7 @@ function mapOtaDecisionToUpdateInfo(
         nextSuggestedCheckInSec: decision.nextCheckInSec,
         manualUpdate: true,
         ...(decision.releaseNotes ? { body: decision.releaseNotes } : {}),
+        ...rollbackFields,
       },
     };
   }
@@ -280,6 +314,7 @@ function mapOtaDecisionToUpdateInfo(
       available: false,
       currentVersion,
       nextSuggestedCheckInSec: decision.nextCheckInSec,
+      ...rollbackFields,
     },
   };
 }
@@ -327,16 +362,39 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         const mobileUpdates = isCapacitorApp()
           ? getRegisteredRuntimeAPIs()?.mobileUpdates
           : undefined;
+        const channelOverride = useUIStore.getState().otaChannelOverride;
 
         if (mobileUpdates) {
           try {
-            set({ otaPhase: 'checking' });
-            const decision = await mobileUpdates.checkForOtaUpdate();
+            // Channel preference changed — drop stale decision / download state
+            // before asking the update service again.
+            const channelChanged = get().lastOtaChannelOverride !== channelOverride;
+            if (channelChanged) {
+              set({
+                otaDecision: null,
+                otaPhase: 'checking',
+                downloaded: false,
+                otaDownloadSkipped: false,
+                progress: null,
+                available: false,
+                info: null,
+              });
+            } else {
+              set({ otaPhase: 'checking' });
+            }
+
+            const decision = await mobileUpdates.checkForOtaUpdate(
+              channelOverride === 'beta' || channelOverride === 'stable'
+                ? { channelOverride }
+                : undefined,
+            );
             const mapped = mapOtaDecisionToUpdateInfo(decision, currentVersion);
-            const previousBundleId = get().otaDecision?.ota.bundle?.bundleId;
+            const previousBundleId = channelChanged
+              ? undefined
+              : get().otaDecision?.ota.bundle?.bundleId;
             const nextBundleId = decision.ota.bundle?.bundleId;
             const bundleChanged = previousBundleId !== nextBundleId;
-            const keepPendingRestart = get().downloaded && !bundleChanged;
+            const keepPendingRestart = !channelChanged && get().downloaded && !bundleChanged;
 
             set({
               checking: false,
@@ -347,7 +405,8 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
               nextCheckInSec: decision.nextCheckInSec,
               otaDecision: decision,
               otaPhase: keepPendingRestart ? 'pending_restart' : mapped.otaPhase,
-              ...(bundleChanged
+              lastOtaChannelOverride: channelOverride,
+              ...(bundleChanged || channelChanged
                 ? { downloaded: false, otaDownloadSkipped: false, progress: null }
                 : {}),
             });
@@ -365,6 +424,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
                 lastChecked: Date.now(),
                 otaDecision: null,
                 otaPhase: 'error',
+                lastOtaChannelOverride: channelOverride,
               });
               return null;
             }

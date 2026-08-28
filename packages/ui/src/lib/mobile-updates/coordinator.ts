@@ -40,6 +40,12 @@ export type CheckMobileOtaUpdateOptions = {
   fetchImpl?: typeof fetch;
   now?: () => number;
   updater?: CapgoUpdater | null;
+  /**
+   * Runtime channel preference. When set, wins over the build-time baked
+   * `OpenChamberOTA.channel` (`override ?? baked`). Lib layer must not import
+   * the Zustand UI store — callers pass the override explicitly.
+   */
+  channelOverride?: MobileUpdateChannel;
 };
 
 const nonEmptyString = (value: unknown): string | null => (
@@ -64,7 +70,9 @@ const readOtaConfig = (): OpenChamberOtaConfig => {
   }
 };
 
-const readChannel = (): MobileUpdateChannel => {
+/** Effective channel: runtime override wins over the build-time baked value. */
+const readChannel = (channelOverride?: MobileUpdateChannel): MobileUpdateChannel => {
+  if (channelOverride === 'beta' || channelOverride === 'stable') return channelOverride;
   const channel = readOtaConfig().channel;
   return channel === 'stable' ? 'stable' : 'beta';
 };
@@ -187,9 +195,11 @@ const bundledReleaseVersion = (): string | null => (
   typeof __APP_VERSION__ !== 'undefined' ? nonEmptyString(__APP_VERSION__) : null
 );
 
-const resolveCurrentBundleId = async (updater: CapgoUpdater | null): Promise<string> => {
+const resolveCurrentBundleId = async (
+  updater: CapgoUpdater | null,
+  channel: MobileUpdateChannel,
+): Promise<string> => {
   const bundled = bundledReleaseVersion();
-  const channel = readChannel();
   if (!updater) return resolveReportedBundleId(null, bundled, channel);
   try {
     const current = await updater.current();
@@ -288,6 +298,18 @@ const isMobileUpdateDecision = (value: unknown): value is MobileUpdateDecision =
   return true;
 };
 
+/**
+ * Normalize camelCase / Capgo snake_case rollback flag onto `isChannelRollback`.
+ * Callers already validated the decision shape.
+ */
+const normalizeMobileUpdateDecision = (decision: MobileUpdateDecision): MobileUpdateDecision => {
+  const record = decision as MobileUpdateDecision & { is_channel_rollback?: unknown };
+  if (record.isChannelRollback === true || record.is_channel_rollback === true) {
+    return { ...decision, isChannelRollback: true };
+  }
+  return decision;
+};
+
 async function postUpdateCheck(
   url: string,
   body: MobileUpdateCheckRequest,
@@ -317,7 +339,8 @@ async function postUpdateCheck(
     return null;
   }
 
-  return isMobileUpdateDecision(data) ? data : null;
+  if (!isMobileUpdateDecision(data)) return null;
+  return normalizeMobileUpdateDecision(data);
 }
 
 /**
@@ -335,14 +358,15 @@ export async function checkMobileOtaUpdate(
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now;
+  const channel = readChannel(options.channelOverride);
   const [deviceId, nativeInfo, currentBundleId] = await Promise.all([
     resolveDeviceId(updater),
     resolveNativeInfo(),
-    resolveCurrentBundleId(updater),
+    resolveCurrentBundleId(updater, channel),
   ]);
 
   const body: MobileUpdateCheckRequest = {
-    channel: readChannel(),
+    channel,
     platform: resolvePlatform(),
     deviceId,
     nativeVersion: nativeInfo.version,
@@ -425,13 +449,14 @@ export async function assembleMobileOtaCheckRequest(
   options: CheckMobileOtaUpdateOptions = {},
 ): Promise<MobileUpdateCheckRequest> {
   const updater = options.updater === undefined ? await getCapgoUpdater() : options.updater;
+  const channel = readChannel(options.channelOverride);
   const [deviceId, nativeInfo, currentBundleId] = await Promise.all([
     resolveDeviceId(updater),
     resolveNativeInfo(),
-    resolveCurrentBundleId(updater),
+    resolveCurrentBundleId(updater, channel),
   ]);
   return {
-    channel: readChannel(),
+    channel,
     platform: resolvePlatform(),
     deviceId,
     nativeVersion: nativeInfo.version,

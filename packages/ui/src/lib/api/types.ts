@@ -812,8 +812,17 @@ export interface PushAPI {
 }
 
 /** Capacitor mobile app only; optional elsewhere. Capgo-style self-hosted OTA. */
+export type MobileOtaChannelOverride = 'beta' | 'stable';
+
 export interface MobileUpdatesAPI {
-  checkForOtaUpdate(): Promise<MobileUpdateDecision>;
+  /**
+   * Ask the update service for an OTA / native decision.
+   * `channelOverride` wins over the build-time baked `OpenChamberOTA.channel`
+   * when provided (`override ?? baked`).
+   */
+  checkForOtaUpdate(options?: {
+    channelOverride?: MobileOtaChannelOverride;
+  }): Promise<MobileUpdateDecision>;
   /**
    * Downloads (or reuses) the OTA bundle. `skipped` is true when an already
    * downloaded bundle matching the target was reused instead of re-downloaded.
@@ -1218,8 +1227,6 @@ export interface ClientAuthAPI {
     // to this endpoint before returning the candidate. Deployments pinned by
     // OPENCHAMBER_RELAY_URL keep using the pinned value.
     relayUrl?: string;
-    /** Bind mobile ssh-host-token mint to this desktop SSH instance after redeem. */
-    sshHostId?: string;
   }): Promise<PairingSessionCreateResult>;
   purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;

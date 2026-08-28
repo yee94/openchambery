@@ -10,7 +10,61 @@
 
 import { describe, expect, test } from 'vitest';
 
-import { resolveActivityExpansionDisposition } from './activityExpansion';
+import {
+    resolveActivityExpansionDisposition,
+    resolveTurnSettledForPresentation,
+    shouldTightenWorkingBottomGap,
+} from './activityExpansion';
+
+describe('resolveTurnSettledForPresentation', () => {
+    test('authoritative last-assistant settle overrides lagging sessionIsWorking on the last turn', () => {
+        // Live SSE: finish/stop + completed + tokens land before sessionIsWorking
+        // flips off; TPS must not wait for HTTP reconcile.
+        expect(resolveTurnSettledForPresentation({
+            completionDisposition: 'normal',
+            isLastTurn: true,
+            sessionIsWorking: true,
+            hasConfirmedSettledAssistant: true,
+        })).toBe(true);
+    });
+
+    test('without authoritative settle, last turn stays unsettled while sessionIsWorking', () => {
+        expect(resolveTurnSettledForPresentation({
+            completionDisposition: 'normal',
+            isLastTurn: true,
+            sessionIsWorking: true,
+        })).toBe(false);
+        expect(resolveTurnSettledForPresentation({
+            completionDisposition: 'normal',
+            isLastTurn: true,
+            sessionIsWorking: true,
+            hasConfirmedSettledAssistant: false,
+        })).toBe(false);
+    });
+
+    test('active disposition stays unsettled even with authoritative settle signal', () => {
+        expect(resolveTurnSettledForPresentation({
+            completionDisposition: 'active',
+            isLastTurn: true,
+            sessionIsWorking: true,
+            hasConfirmedSettledAssistant: true,
+        })).toBe(false);
+        expect(resolveTurnSettledForPresentation({
+            completionDisposition: 'active',
+            isLastTurn: true,
+            sessionIsWorking: false,
+            hasConfirmedSettledAssistant: true,
+        })).toBe(false);
+    });
+
+    test('non-last turn is settled even while sessionIsWorking', () => {
+        expect(resolveTurnSettledForPresentation({
+            completionDisposition: 'abnormal',
+            isLastTurn: false,
+            sessionIsWorking: true,
+        })).toBe(true);
+    });
+});
 
 describe('resolveActivityExpansionDisposition', () => {
     test('running non-last turn (steered/queued) stays active for expansion', () => {
@@ -53,5 +107,50 @@ describe('resolveActivityExpansionDisposition', () => {
                 hasAssistantMessages: true,
             })).toBe(disposition);
         }
+    });
+});
+
+describe('shouldTightenWorkingBottomGap', () => {
+    test('live working always tightens so StatusRow sits under the last tool', () => {
+        expect(shouldTightenWorkingBottomGap({
+            isWorking: true,
+            isInActiveTurn: false,
+            headerCompletionDisposition: 'active',
+        })).toBe(true);
+        // Queued/steered running turn is no longer last: header demotes to
+        // Processed but tools are still executing — keep the tight gap.
+        expect(shouldTightenWorkingBottomGap({
+            isWorking: true,
+            isInActiveTurn: true,
+            headerCompletionDisposition: 'abnormal',
+        })).toBe(true);
+    });
+
+    test('idle Processed chrome restores pb-8 even when isInActiveTurn never cleared', () => {
+        // Incomplete last assistant (no time.completed) keeps the
+        // streamingAssistantMessageId fallback after header demotion.
+        // SessionRecapNote's -mt-6 needs that pb-8 or it overlaps "已处理".
+        expect(shouldTightenWorkingBottomGap({
+            isWorking: false,
+            isInActiveTurn: true,
+            headerCompletionDisposition: 'abnormal',
+        })).toBe(false);
+        expect(shouldTightenWorkingBottomGap({
+            isWorking: false,
+            isInActiveTurn: true,
+            headerCompletionDisposition: 'normal',
+        })).toBe(false);
+    });
+
+    test('in-flight last assistant without isWorking still tightens', () => {
+        expect(shouldTightenWorkingBottomGap({
+            isWorking: false,
+            isInActiveTurn: true,
+            headerCompletionDisposition: 'active',
+        })).toBe(true);
+        expect(shouldTightenWorkingBottomGap({
+            isWorking: false,
+            isInActiveTurn: false,
+        })).toBe(false);
     });
 });

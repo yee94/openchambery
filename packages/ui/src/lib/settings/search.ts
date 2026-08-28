@@ -1,4 +1,5 @@
 import type { I18nKey } from '@/lib/i18n/store';
+import { isCapacitorApp } from '@/lib/platform';
 import { isTranscriptDiagnosticsEnabled } from '@/sync/transcript-diagnostics-runtime';
 import type { SettingsPageSlug, SettingsRuntimeContext } from './metadata';
 import { getSettingsPageMeta } from './metadata';
@@ -181,6 +182,14 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     descriptionKey: 'settings.openchamber.visual.field.terminalQuickKeysTooltip',
     keywords: ['terminal', 'keyboard', 'esc', 'ctrl', 'arrows'],
     isAvailable: (ctx) => !ctx.isMobile && !ctx.isDesktop && !ctx.isVSCode,
+  },
+  {
+    id: 'about.beta-updates',
+    page: 'about',
+    titleKey: 'settings.openchamber.about.betaUpdates.label',
+    descriptionKey: 'settings.openchamber.about.betaUpdates.description',
+    keywords: ['beta', 'updates', 'channel', 'ota'],
+    isAvailable: (ctx) => ctx.isMobile && isCapacitorApp(),
   },
   {
     id: 'about.diagnostics',

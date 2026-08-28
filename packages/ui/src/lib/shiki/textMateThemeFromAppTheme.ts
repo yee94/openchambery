@@ -147,7 +147,9 @@ const buildTokenColors = (theme: Theme): VSCodeTokenColorRule[] => {
     },
     {
       name: 'booleans',
-      scope: ['constant.language.boolean', 'constant.language.json'],
+      // `constant.language` also covers undefined/null/NaN/Infinity, which the
+      // TS grammar scopes as constant.language.* without a more specific child.
+      scope: ['constant.language'],
       settings: { foreground: t('boolean', base.type) },
     },
     {

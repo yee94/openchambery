@@ -1985,11 +1985,14 @@ button.oc-mobile-worktree-label-trigger:active,
   /* Improve touch targets for mobile.
      Gate: html.mobile-pointer from device.ts (pointer:coarse / hover:none /
      maxTouchPoints) — independent of React isMobile. Dense clusters must opt
-     out below; see packages/ui/src/styles/DOCUMENTATION.md. */
+     out below; see packages/ui/src/styles/DOCUMENTATION.md.
+     Include [data-slot="button"] so Button asChild anchors (e.g. feedback
+     links) match native <button> height — otherwise sm outline pairs look uneven. */
   :root.mobile-pointer:not(.desktop-runtime)
     button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
   :root.mobile-pointer:not(.desktop-runtime) .btn,
-  :root.mobile-pointer:not(.desktop-runtime) [role="button"] {
+  :root.mobile-pointer:not(.desktop-runtime) [role="button"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-slot="button"] {
     min-height: 36px;
     min-width: 36px;
   }
@@ -2015,8 +2018,12 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 0 !important;
   }
 
-  /* Composer stop control: keep the authored compact size. The generic 36px
-     touch floor would otherwise inflate the hit target. */
+  /* Composer send and stop controls share their authored compact size and width
+     placeholder. The generic 36px touch floor would otherwise inflate them. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    button[data-composer-send="true"],
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-composer-send="true"][role="button"],
   :root.mobile-pointer:not(.desktop-runtime)
     button[data-composer-stop="true"],
   :root.mobile-pointer:not(.desktop-runtime)
@@ -2033,7 +2040,9 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime)
     .composer-mobile-model-controls
     [role="button"] {
-    min-height: 0 !important;
+    height: 26px !important;
+    min-height: 26px !important;
+    max-height: 26px !important;
     min-width: 0 !important;
   }
 
@@ -2153,6 +2162,7 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-card-shell,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-scheduled-task-card,
   :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel,
+  :root.mobile-pointer:not(.desktop-runtime) .pwa-overlay-panel,
   :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-message-text-export-root="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-chat-message="true"] {
@@ -3261,6 +3271,7 @@ button.oc-mobile-worktree-label-trigger:active,
   align-items: center;
   overflow: hidden;
   color: var(--foreground);
+  font-size: calc(16 * var(--dpt));
   white-space: nowrap;
   text-overflow: ellipsis;
   pointer-events: none;

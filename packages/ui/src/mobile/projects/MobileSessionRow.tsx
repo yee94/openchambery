@@ -268,7 +268,7 @@ export function MobileSessionRow({
           onClick={handleSelect}
           onPointerDown={() => undefined}
         >
-          <span className="min-w-0 flex-1 truncate text-left font-medium text-foreground">
+          <span className="min-w-0 flex-1 truncate text-left font-medium text-foreground typography-meta">
             {session.title}
           </span>
           {session.subtitle ? <span className="text-muted-foreground">{session.subtitle}</span> : null}

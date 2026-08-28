@@ -31,7 +31,10 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - Global run history list endpoint
   - Project scheduled task CRUD endpoints
   - Manual run endpoint
-  - OpenChamber events SSE stream endpoint
+  - OpenChamber events SSE stream endpoint (`GET /api/openchamber/events`): 25s
+    heartbeat interval unchanged; half-open clients that stay paused across two
+    consecutive heartbeat cycles are destroyed and removed from the client set
+    (idempotent cleanup). SSE is best-effort; authoritative data is HTTP pull.
   - Returns persisted mutation results with `schedulerSynced`; a failed scheduler
     sync schedules one bounded retry while preserving the committed response
 

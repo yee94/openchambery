@@ -255,6 +255,20 @@ describe('apply_patch navigation', () => {
         expect(diffViewSource).toContain('sessionID: resolvedSessionId');
     });
 
+    test('write clicks open the synthesized added-file patch instead of last-turn changes', () => {
+        const clickHandlerStart = toolPartSource.indexOf('const handleMainClick');
+        const fileNavigationStart = toolPartSource.indexOf('let filePath: unknown;', clickHandlerStart);
+        const fileNavigationEnd = toolPartSource.indexOf('if (!isFileNavTool)', fileNavigationStart);
+        const fileNavigation = toolPartSource.slice(fileNavigationStart, fileNavigationEnd);
+
+        expect(fileNavigation).toContain("['write', 'create', 'file_write'].includes(normalizedPartTool)");
+        expect(fileNavigation).toContain('buildWritePreviewPatch(filePath, input.content)');
+        expect(fileNavigation).toContain('getToolNavigationDiffEntries(');
+        expect(fileNavigation).toContain('openContextToolDiff(');
+        expect(fileNavigation).not.toContain('supportsExactToolDiff');
+        expect(fileNavigation).toMatch(/const selectedToolDiffs = toolDiff\s*\n\s+\? getToolNavigationDiffEntries/);
+    });
+
     test('keeps the owning assistant message id when memoized tool rows update', () => {
         expect(toolPartSource).toContain('&& prev.messageId === next.messageId');
         expect(progressiveGroupSource).toContain('&& prev.activity.messageId === next.activity.messageId');

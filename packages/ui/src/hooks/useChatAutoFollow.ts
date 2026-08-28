@@ -132,6 +132,16 @@ const ENTRY_STICK_QUIESCENCE_MS = 600;
 const ENTRY_STICK_MAX_MS = 8000;
 const FORCE_BOTTOM_WATCHDOG_FRAMES = 24;
 const FORCE_BOTTOM_TOLERANCE_PX = 2;
+// Opening a session on iOS delivers the list-row tap onto the newly mounted
+// transcript (same finger, often a 2px+ move). That leftover gesture used to
+// trip releaseFromUserIntent / cancel the force-bottom watchdog — the pin
+// flashed at the latest message, then hydration grew rows above an already
+// released viewport and stranded the user mid-timeline.
+export const SESSION_OPEN_PIN_GRACE_MS = 450;
+
+export const isWithinSessionOpenPinGrace = (nowMs: number, graceUntilMs: number): boolean => (
+    nowMs < graceUntilMs
+);
 
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -267,6 +277,11 @@ export const useChatAutoFollow = ({
     // freeze for the whole IME session.
     const keyboardOpenRef = React.useRef(false);
     const keyboardExpandFreezeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const sessionOpenPinGraceUntilRef = React.useRef(0);
+
+    const armSessionOpenPinGrace = useEvent(() => {
+        sessionOpenPinGraceUntilRef.current = now() + SESSION_OPEN_PIN_GRACE_MS;
+    });
 
     // Last observed scrollTop, used to derive scroll DIRECTION in the scroll
     // handler so the bottom-zone re-engage only fires when arriving at the bottom
@@ -435,7 +450,10 @@ export const useChatAutoFollow = ({
 
         if (typeof window === 'undefined') return;
         let frames = 0;
-        const cancelOnUserTouch = () => cancelForcedBottom();
+        const cancelOnUserTouch = () => {
+            if (isWithinSessionOpenPinGrace(now(), sessionOpenPinGraceUntilRef.current)) return;
+            cancelForcedBottom();
+        };
         el.addEventListener('touchstart', cancelOnUserTouch, { passive: true, once: true });
         forceBottomTouchCleanupRef.current = () => el.removeEventListener('touchstart', cancelOnUserTouch);
 
@@ -549,6 +567,8 @@ export const useChatAutoFollow = ({
     const releaseFromUserIntent = useEvent(() => {
         // A genuine user gesture (wheel/touch/key/scrollbar) cancels the entry
         // window immediately so we never fight the user's read position.
+        // The session-open grace absorbs the leftover list-row tap on iOS.
+        if (isWithinSessionOpenPinGrace(now(), sessionOpenPinGraceUntilRef.current)) return;
         cancelForcedBottom();
         endEntryStick();
         stop();
@@ -630,7 +650,15 @@ export const useChatAutoFollow = ({
         // ResizeObserver re-pins instantly as late
         // history measures in, so there is no smooth scroll-from-mid artifact.
         setStateValue('following');
-        scrollToBottom(true);
+        armSessionOpenPinGrace();
+        // iOS overwrites a single scrollTop write while the opening tap's
+        // momentum / leftover touch is still settling. The force-bottom
+        // watchdog holds the pin across that window; desktop stays one-shot.
+        if (isMobileRef.current) {
+            forceBottomDefeatingMomentum();
+        } else {
+            scrollToBottom(true);
+        }
         // Hold the bottom across late async growth (e.g. task/subagent child
         // session data landing a beat after entry) until content quiesces or the
         // user scrolls.
@@ -648,6 +676,7 @@ export const useChatAutoFollow = ({
         }
         flushSave();
         cancelForcedBottom();
+        armSessionOpenPinGrace();
         lastViewportIdentityRef.current = identity;
         autoRef.current = null;
         lastScrollTopRef.current = 0;

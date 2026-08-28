@@ -77,9 +77,10 @@ This module provides notification message preparation utilities for the web serv
 ### Emitter runtime API (emitter-runtime.js)
 - `createNotificationEmitterRuntime(dependencies)`: creates runtime for unified notification emission channels.
 - Returned API:
-  - `writeSseEvent(res, payload)`
+  - `writeSseEvent(res, payload)` — best-effort SSE write with backpressure: when `res.write` returns `false`, the client is marked paused and further writes are skipped until `drain`; buffered bytes above `SSE_CLIENT_MAX_BUFFERED_BYTES` (2 MiB, aligned with relay-server) destroy the response. Authoritative data remains HTTP pull.
   - `emitDesktopNotification(payload)`
   - `broadcastUiNotification(payload)`
+- Exported constant: `SSE_CLIENT_MAX_BUFFERED_BYTES`
 
 ### Template runtime API (template-runtime.js)
 - `createNotificationTemplateRuntime(dependencies)`: creates shared notification/template runtime. Model-backed summarization was retired after the Zen provider became unavailable.

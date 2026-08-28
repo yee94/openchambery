@@ -14,6 +14,7 @@ import {
   assertTargetCapability,
   buildDefaultSyncSelections,
   buildRemoteSyncFinalizeScript,
+  buildRemoteSyncInventoryScript,
   buildRemoteSyncPrepareScript,
   createSshSyncTarget,
   filterPlanBySelections,
@@ -193,5 +194,56 @@ describe('generational prepare backups', () => {
     expect(() => execFileSync('sh', ['-c', buildRemoteSyncFinalizeScript({ syncRunId: 'missing' })], {
       env: { ...process.env, HOME: home },
     })).toThrow();
+  });
+});
+
+describe('remote inventory script', () => {
+  it('emits SYNC_INVENTORY as valid JSON with quoted path values (regression: bare quotes broke JSON.parse)', async () => {
+    const home = await makeTempDir();
+    const configDir = path.join(home, '.config', 'opencode');
+    await fsp.mkdir(path.join(configDir, 'agents'), { recursive: true });
+    await fsp.writeFile(path.join(configDir, 'opencode.jsonc'), '{"a":1}\n');
+    await fsp.writeFile(path.join(configDir, 'AGENTS.md'), '# agents\n');
+    await fsp.writeFile(path.join(configDir, 'agents', 'helper.md'), 'x'.repeat(7));
+    await fsp.mkdir(path.join(home, '.local', 'share', 'opencode'), { recursive: true });
+    await fsp.writeFile(path.join(home, '.local', 'share', 'opencode', 'auth.json'), '{}\n');
+
+    const stdout = execFileSync('sh', ['-c', buildRemoteSyncInventoryScript()], {
+      env: { ...process.env, HOME: home },
+    });
+    const line = stdout.toString().split(/\r?\n/).find((entry) => entry.startsWith('SYNC_INVENTORY='));
+    expect(line).toBeTruthy();
+
+    // This threw SyntaxError ("Unexpected token") before path values were
+    // escaped for the surrounding shell double-quoted string.
+    const inventory = JSON.parse(line.slice('SYNC_INVENTORY='.length));
+    const files = inventory.files.map((entry) => entry.path);
+    expect(files).toContain('opencode.jsonc');
+    expect(files).toContain('AGENTS.md');
+    const directories = inventory.directories.map((entry) => entry.path);
+    expect(directories).toContain('agents');
+    expect(inventory.authFile).toEqual({ bytes: 3 });
+    for (const entry of inventory.files) {
+      expect(typeof entry.path).toBe('string');
+      expect(typeof entry.bytes).toBe('number');
+    }
+    for (const entry of inventory.directories) {
+      expect(typeof entry.path).toBe('string');
+      expect(typeof entry.fileCount).toBe('number');
+      expect(typeof entry.bytes).toBe('number');
+    }
+  });
+
+  it('still parses when nothing exists on the remote', async () => {
+    const home = await makeTempDir();
+    const stdout = execFileSync('sh', ['-c', buildRemoteSyncInventoryScript()], {
+      env: { ...process.env, HOME: home },
+    });
+    const line = stdout.toString().split(/\r?\n/).find((entry) => entry.startsWith('SYNC_INVENTORY='));
+    const inventory = JSON.parse(line.slice('SYNC_INVENTORY='.length));
+    expect(inventory.files).toEqual([]);
+    expect(inventory.directories).toEqual([]);
+    expect(inventory.agentsRoot).toBeNull();
+    expect(inventory.authFile).toBeNull();
   });
 });

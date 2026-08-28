@@ -33,6 +33,8 @@ const isSessionRecapEnabled = () => {
 
 const IDLE_QUIET_MS = 60_000;
 const TRANSCRIPT_MESSAGE_LIMIT = 12;
+/** Latest real user messages fed to the recap prompt. */
+const TRANSCRIPT_USER_MESSAGE_LIMIT = 3;
 const TRANSCRIPT_PART_CHAR_LIMIT = 6_000;
 const RECAP_CHAR_LIMIT = 320;
 const FETCH_TIMEOUT_MS = 5_000;
@@ -92,13 +94,63 @@ const extractUserMessage = (payload) => {
   };
 };
 
-const messagePartsToText = (message) => {
+/** Real (non-synthetic) text parts of a message — hidden instructions excluded. */
+const realTextParts = (message) => {
   const parts = Array.isArray(message?.parts) ? message.parts : [];
   return parts
-    .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
-    .filter(Boolean)
-    .join('\n')
-    .slice(0, TRANSCRIPT_PART_CHAR_LIMIT);
+    .filter((part) => part?.type === 'text'
+      && typeof part.text === 'string'
+      && part.text.trim().length > 0
+      && part.synthetic !== true)
+    .map((part) => part.text);
+};
+
+/** Body text of a message: only its LAST text block, char-clamped. */
+const lastMessageText = (message) => {
+  const texts = realTextParts(message);
+  return texts.length > 0 ? texts[texts.length - 1].slice(0, TRANSCRIPT_PART_CHAR_LIMIT) : '';
+};
+
+/**
+ * Build the recap transcript from a bounded recent-message window.
+ * - Assistant: only the LAST text block of the last assistant message —
+ *   earlier blocks, reasoning, and tool output are token waste for a
+ *   one-line recap.
+ * - User: the latest real user messages (default 3), chronological.
+ */
+export const buildAssistTranscript = (
+  messages,
+  { userLimit = TRANSCRIPT_USER_MESSAGE_LIMIT } = {},
+) => {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { transcript: '', assistantInfo: null, userTexts: [], assistantText: '' };
+  }
+  let lastAssistant = null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.info?.role === 'assistant') {
+      lastAssistant = messages[i];
+      break;
+    }
+  }
+  const lastAssistantInfo = lastAssistant?.info ?? null;
+  if (!lastAssistantInfo?.id) {
+    return { transcript: '', assistantInfo: null, userTexts: [], assistantText: '' };
+  }
+
+  const userTexts = [];
+  for (let i = messages.length - 1; i >= 0 && userTexts.length < userLimit; i -= 1) {
+    const message = messages[i];
+    if (message?.info?.role !== 'user') continue;
+    const text = lastMessageText(message);
+    if (!text) continue;
+    userTexts.unshift(text);
+  }
+  const assistantText = lastMessageText(lastAssistant);
+  const transcript = [
+    ...userTexts.map((text) => `User:\n${text}`),
+    assistantText ? `Assistant:\n${assistantText}` : '',
+  ].filter(Boolean).join('\n\n');
+  return { transcript, assistantInfo: lastAssistantInfo, userTexts, assistantText };
 };
 
 export const createSessionAssistRuntime = ({
@@ -169,36 +221,21 @@ export const createSessionAssistRuntime = ({
       return;
     }
 
-    let lastAssistant = null;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const info = messages[i]?.info;
-      if (info?.role === 'assistant') {
-        lastAssistant = messages[i];
-        break;
-      }
-    }
-    const lastAssistantInfo = lastAssistant?.info;
+    // Trimmed extraction for a one-line recap: the last assistant text block
+    // plus the latest real user messages. Everything else (earlier blocks,
+    // reasoning, tool output, older turns) is token waste.
+    const { transcript, assistantInfo: lastAssistantInfo, userTexts, assistantText } = buildAssistTranscript(messages);
     if (!lastAssistantInfo?.id) return;
-
-    // Only the last exchange: the assistant reply plus the user message it
-    // answered (assistant info.parentID → user info.id). Everything else is
-    // token waste for a one-line recap.
-    const parentUserMessage = typeof lastAssistantInfo.parentID === 'string' && lastAssistantInfo.parentID
-      ? messages.find((message) => message?.info?.id === lastAssistantInfo.parentID && message?.info?.role === 'user')
-      : null;
-    const userText = parentUserMessage ? messagePartsToText(parentUserMessage) : '';
-    const assistantText = messagePartsToText(lastAssistant);
-    const transcript = [
-      userText ? `User:\n${userText}` : '',
-      assistantText ? `Assistant:\n${assistantText}` : '',
-    ].filter(Boolean).join('\n\n');
     if (!transcript) return;
 
     const { generateSmallModelText } = await getSmallModelService();
     // Instruct the language by example, not by description — account-side
     // personalization (e.g. the ChatGPT backend knowing the user's locale)
     // otherwise leaks a different language into the output.
-    const languageSample = (userText || assistantText).slice(0, 200).replace(/\s+/g, ' ').trim();
+    const languageSample = (userTexts[userTexts.length - 1] || assistantText)
+      .slice(0, 200)
+      .replace(/\s+/g, ' ')
+      .trim();
     let generated;
     try {
       generated = await generateSmallModelText({
@@ -206,7 +243,7 @@ export const createSessionAssistRuntime = ({
         // session's own provider unless the user explicitly picked a small
         // model (settings override / opencode config).
         restrictToPreferredProvider: true,
-        prompt: `The latest exchange in the conversation:\n\n${transcript}\n\nWrite recap in the SAME language as this sample from the conversation: "${languageSample}"`,
+        prompt: `The latest conversation excerpt:\n\n${transcript}\n\nWrite recap in the SAME language as this sample from the conversation: "${languageSample}"`,
         system: ASSIST_SYSTEM_PROMPT,
         directory,
         preferredProviderID: typeof lastAssistantInfo.providerID === 'string' ? lastAssistantInfo.providerID : undefined,
@@ -228,7 +265,7 @@ export const createSessionAssistRuntime = ({
     // no Cyrillic/CJK at all, the output must not either.
     const hasCyrillic = (text) => /[\u0400-\u04FF]/.test(text);
     const hasCjk = (text) => /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/.test(text);
-    const inputText = `${userText}\n${assistantText}`;
+    const inputText = `${userTexts.join('\n')}\n${assistantText}`;
     const scriptMismatch = (text) => (hasCyrillic(text) && !hasCyrillic(inputText))
       || (hasCjk(text) && !hasCjk(inputText));
     if (recap && scriptMismatch(recap)) {

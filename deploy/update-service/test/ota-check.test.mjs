@@ -416,3 +416,108 @@ test('answers CORS preflight for mobile update check', async () => {
   assert.equal(optionsResponse.status, 204);
   assert.equal(optionsResponse.headers.get('access-control-allow-methods'), 'POST, OPTIONS');
 });
+
+test('mobile update check: beta→stable channel rollback sets isChannelRollback', async () => {
+  stubChannel({
+    channel: 'stable',
+    manifest: channelManifest({
+      channel: 'stable',
+      activeBundle: {
+        ...channelManifest().activeBundle,
+        releaseVersion: '1.18.3',
+        rolloutSalt: 'stable-1',
+      },
+    }),
+  });
+  const response = await handleMobileUpdateCheck(mobileRequest({
+    channel: 'stable',
+    platform: 'ios',
+    deviceId: 'device-1',
+    nativeVersion: '1.18.4-beta.7',
+    nativeBuild: 400,
+    shellApiVersion: 1,
+    currentBundleId: '1.18.4-beta.7',
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'apply_ota');
+  assert.equal(body.ota.bundle.releaseVersion, '1.18.3');
+  assert.equal(body.isChannelRollback, true);
+});
+
+test('mobile update check: stable upgrade omits isChannelRollback', async () => {
+  stubChannel({
+    channel: 'stable',
+    manifest: channelManifest({
+      channel: 'stable',
+      activeBundle: {
+        ...channelManifest().activeBundle,
+        releaseVersion: '1.18.4',
+        rolloutSalt: 'stable-1',
+      },
+    }),
+  });
+  const response = await handleMobileUpdateCheck(mobileRequest({
+    channel: 'stable',
+    platform: 'ios',
+    deviceId: 'device-1',
+    nativeVersion: '1.18.3',
+    nativeBuild: 350,
+    shellApiVersion: 1,
+    currentBundleId: '1.18.3',
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'apply_ota');
+  assert.equal(body.isChannelRollback, undefined);
+});
+
+test('capgo endpoint maps is_channel_rollback for stable channel rollback', async () => {
+  stubChannel({
+    channel: 'stable',
+    manifest: channelManifest({
+      channel: 'stable',
+      activeBundle: {
+        ...channelManifest().activeBundle,
+        releaseVersion: '1.18.3',
+        rolloutSalt: 'stable-1',
+      },
+    }),
+  });
+  const response = await handleCapgoOtaCheck(mobileRequest({
+    platform: 'ios',
+    device_id: 'device-1',
+    version_build: '1.18.4-beta.7',
+    version_code: 400,
+    version_name: '1.18.4-beta.7',
+    defaultChannel: 'stable',
+    shellApiVersion: 1,
+  }, '/v1/ota/check'));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.version, '1.18.3');
+  assert.equal(body.url, 'https://updates.example.com/ota/bundles/34ab092a8e7f6d21.zip');
+  assert.equal(body.checksum, CHECKSUM);
+  assert.equal(body.is_channel_rollback, true);
+});
+
+test('capgo endpoint omits is_channel_rollback on normal apply_ota', async () => {
+  stubChannel({ manifest: channelManifest() });
+  const response = await handleCapgoOtaCheck(mobileRequest({
+    platform: 'ios',
+    device_id: 'device-1',
+    version_build: '1.18.2-beta.22',
+    version_code: 350,
+    version_name: 'builtin',
+    defaultChannel: 'beta',
+    shellApiVersion: 1,
+  }, '/v1/ota/check'));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.version, '1.18.2-beta.23');
+  assert.equal(body.is_channel_rollback, undefined);
+});

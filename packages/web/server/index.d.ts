@@ -21,10 +21,6 @@ export interface StartWebUiServerOptions {
   transcriptCacheDbPath?: string | null;
   messageQueueDbPath?: string | null;
   messageQueueAttachmentRoot?: string | null;
-  /** Live SSH local-forward ports for relay target-port routing (Electron). */
-  getSshRoutingTable?: () => { id: string; localPort: number }[];
-  /** Mint a stored SSH host clientToken for a ready session (Electron). */
-  mintSshHostToken?: (hostId: string) => Promise<string>;
   /**
    * Optional process-local lock for settings persistence (Electron in-process).
    * When provided, every settings write/migrate joins this exclusive chain so

@@ -1553,9 +1553,6 @@ const spawnLocalServer = async () => {
       apiBaseUrl: state.apiBaseUrl || state.sidecarUrl || '',
       requestHeaders: sanitizeRuntimeRequestHeaders(state.requestHeaders || {}),
     }),
-    // Live SSH local-forward ports for relay x-openchamber-target-port routing.
-    getSshRoutingTable: () => sshManager.getRoutingTable(),
-    mintSshHostToken: (hostId) => sshManager.mintSshHostToken(hostId),
     // Share Electron's settings mutation chain so web persistSettings cannot
     // race main/ssh-manager read-modify-write on the same settings.json.
     settingsPersistLock: settingsStore.runExclusive,

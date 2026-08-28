@@ -55,9 +55,11 @@ interface ChangesPanelProps {
   onRevertAll?: (paths: string[]) => Promise<void> | void;
   onRevertDirectory?: (paths: string[]) => Promise<void> | void;
   /**
-   * Extra trailing toolbar icons (branch / sync / repo) rendered only on the first
-   * sticky group header, before the stage/unstage-all action.
+   * Leading toolbar icons rendered only on the first sticky group header,
+   * after the panel-owned revert-all action.
    */
+  headerLeadingActions?: React.ReactNode;
+  /** Remaining toolbar icons rendered after branch and before stage/unstage-all. */
   headerActions?: React.ReactNode;
 }
 
@@ -81,8 +83,7 @@ const TRAILING_ICON_BUTTON_CLASSNAME =
 type PanelRow =
   | { type: 'header'; key: string; groupIndex: number }
   | { type: 'file'; key: string; groupIndex: number; file: GitStatus['files'][number]; depth: number }
-  | { type: 'directory'; key: string; groupIndex: number; directory: ChangesTreeDirectoryNode; depth: number }
-  | { type: 'revert-all'; key: string };
+  | { type: 'directory'; key: string; groupIndex: number; directory: ChangesTreeDirectoryNode; depth: number };
 
 type PendingDirectoryRevert = {
   path: string;
@@ -101,6 +102,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
   onVisiblePathsChange,
   onRevertAll,
   onRevertDirectory,
+  headerLeadingActions,
   headerActions,
 }) => {
   const { t } = useI18n();
@@ -230,14 +232,8 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
       });
     });
 
-    // Revert-all lives as the final in-flow row beneath the last file, so it
-    // scrolls with the list rather than sitting in a section header.
-    if (onRevertAll && visibleGroups.length > 0) {
-      result.push({ type: 'revert-all', key: 'revert-all' });
-    }
-
     return result;
-  }, [collapsedGroups, expandedDirectories, isTreeView, onRevertAll, trees, visibleGroups]);
+  }, [collapsedGroups, expandedDirectories, isTreeView, trees, visibleGroups]);
 
   // Pin the first group header outside the scroll container so it truly sticks.
   const pinnedGroup = visibleGroups[0] ?? null;
@@ -446,6 +442,23 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
             >
               <Icon name={isTreeView ? 'node-tree' : 'list-unordered'} className="size-3.5" />
             </button>
+            {showToolbar && onRevertAll && revertAllCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setRevertAllOpen(true)}
+                disabled={isRevertingAll}
+                className={TRAILING_ICON_BUTTON_CLASSNAME}
+                aria-label={t('gitView.changes.revertAll')}
+                title={t('gitView.changes.revertAll')}
+              >
+                {isRevertingAll ? (
+                  <Icon name="loader-4" className="size-3.5 animate-spin" />
+                ) : (
+                  <Icon name="arrow-go-back" className="size-3.5" />
+                )}
+              </button>
+            ) : null}
+            {showToolbar ? headerLeadingActions : null}
             {showToolbar ? headerActions : null}
             <button
               type="button"
@@ -460,7 +473,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         </div>
       );
     },
-    [collapseAllDirectories, collapsedGroups, directoryKeysByGroup, expandAllDirectories, expandedDirectories, headerActions, headerBackgroundClassName, isTreeView, setGitChangesViewMode, t, toggleGroupCollapsed]
+    [collapseAllDirectories, collapsedGroups, directoryKeysByGroup, expandAllDirectories, expandedDirectories, headerActions, headerBackgroundClassName, headerLeadingActions, isRevertingAll, isTreeView, onRevertAll, revertAllCount, setGitChangesViewMode, t, toggleGroupCollapsed]
   );
 
   const renderDirectory = React.useCallback(
@@ -536,23 +549,6 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
   const renderRow = React.useCallback(
     (row: PanelRow) => {
-      if (row.type === 'revert-all') {
-        return (
-          <div className={cn('flex justify-end py-2', ROW_PADDING_CLASSNAME)}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setRevertAllOpen(true)}
-              disabled={isRevertingAll}
-              className="gap-1.5 text-[var(--status-error)] hover:bg-[var(--status-error)]/10 hover:text-[var(--status-error)]"
-            >
-              <Icon name="arrow-go-back" className="size-3.5" />
-              {t('gitView.changes.revertAll')}
-            </Button>
-          </div>
-        );
-      }
-
       const group = visibleGroups[row.groupIndex];
       if (!group) return null;
 
@@ -582,7 +578,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         />
       );
     },
-    [diffStats, isRevertingAll, renderDirectory, renderHeader, revertingPaths, t, visibleGroups]
+    [diffStats, isRevertingAll, renderDirectory, renderHeader, revertingPaths, visibleGroups]
   );
 
   // A divider is drawn above a file/directory row only when the row directly above

@@ -114,7 +114,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
     <aside
       ref={sidebarRef}
       className={cn(
-        'relative flex h-full overflow-hidden border-l border-border/40 will-change-[width] motion-reduce:transition-none',
+        'relative flex h-full overflow-hidden oc-layout-divider-l will-change-[width] motion-reduce:transition-none',
         'bg-sidebar',
         !isOpen && 'border-l-0',
         className,

@@ -5,9 +5,8 @@ import {
   desktopHostsSet,
   getDesktopHostApiUrl,
   normalizeHostUrl,
-  probeRelayDesktopHost,
 } from '@/lib/desktopHosts';
-import { applySshRelayRuntime, runtimeKeyForDesktopHost } from '@/lib/desktopHostSwitch';
+import { runtimeKeyForDesktopHost } from '@/lib/desktopHostSwitch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeKey, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 
@@ -18,6 +17,15 @@ const CANDIDATE_REFRESH_DELAY_MS = 5_000;
 // takes over. A live LAN probe answers well inside this window; a dead one no
 // longer stalls startup for the probe's full timeout.
 const DIRECT_PROBE_HEADSTART_MS = 1_500;
+
+/**
+ * A probe status that proves the direct transport is USABLE, not merely
+ * reachable. Only these may replace a working relay transport: 'auth' means
+ * the address answered but rejects our credentials — switching to it would
+ * turn every request into a 401.
+ */
+const isDirectTransportUsable = (status: string): boolean =>
+  status === 'ok' || status === 'update-recommended';
 
 let candidateRefreshInFlight = false;
 
@@ -47,9 +55,6 @@ export const refreshDesktopHostCandidates = async (hostId: string): Promise<void
     const config = await desktopHostsGet().catch(() => null);
     const host = config?.hosts.find((entry) => entry.id === hostId);
     if (!config || !host?.relay) return;
-    // Imported SSH hosts route through the parent desktop; they have no LAN
-    // candidate set of their own to refresh.
-    if (host.sshTarget) return;
     const currentApiUrl = host.apiUrl ? normalizeHostUrl(host.apiUrl) : null;
     if (currentApiUrl && currentApiUrl.startsWith('https://')) return;
 
@@ -82,14 +87,16 @@ export const refreshDesktopHostCandidates = async (hostId: string): Promise<void
     }
 
     // We are on the relay for this host (the refresh call itself proves the
-    // tunnel works) — if the fresh direct address answers AND proves the same
-    // server identity, hot-switch to it.
+    // tunnel works) — only adopt the direct transport when the probe is a
+    // definitive usable answer ('ok' / 'update-recommended'). A probe 'auth'
+    // (reachable but our token is rejected) must NOT hot-switch off a working
+    // relay: direct would 401 everything.
     const probe = await desktopHostProbe(nextApiUrl, {
       clientToken: host.clientToken || null,
       requestHeaders: host.requestHeaders || null,
       expectedServerId: host.relay.serverId,
     }).catch(() => ({ status: 'unreachable' as const, latencyMs: 0 }));
-    if (probe.status === 'unreachable' || probe.status === 'wrong-service' || probe.status === 'incompatible') return;
+    if (!isDirectTransportUsable(probe.status)) return;
     if (getRuntimeKey() !== runtimeKey) return; // user switched away meanwhile
     switchRuntimeEndpoint({
       apiBaseUrl: nextApiUrl,
@@ -136,26 +143,6 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
   const runtimeKey = runtimeKeyForDesktopHost(host);
   if (getRuntimeKey() === runtimeKey) return;
 
-  // Imported SSH pairing: mint live localPort, then apply target-port routing.
-  // Do not fall back to the parent desktop's data plane.
-  if (host.sshTarget) {
-    const probe = await probeRelayDesktopHost(host.relay, {
-      keepTunnel: true,
-      sshTarget: host.sshTarget,
-    }).catch(() => ({ status: 'unreachable' as const, latencyMs: 0 }));
-    if (probe.status !== 'ok' || !('localPort' in probe) || typeof probe.localPort !== 'number') {
-      return;
-    }
-    applySshRelayRuntime({
-      token: ('sshToken' in probe && probe.sshToken) || host.clientToken || '',
-      localPort: probe.localPort,
-      runtimeKey,
-      relay: host.relay,
-      liveTunnel: 'tunnel' in probe ? probe.tunnel : undefined,
-    });
-    return;
-  }
-
   const switchToDirect = (url: string) => {
     switchRuntimeEndpoint({
       apiBaseUrl: url,
@@ -188,8 +175,10 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
   // inside the window (direct keeps priority); a dead one no longer delays
   // startup — the relay takes over and a late direct success hot-switches back
   // (stable runtimeKey → transport-only swap, same as the candidate refresh).
-  const probeOk = (probe: { status: string }) =>
-    probe.status !== 'unreachable' && probe.status !== 'wrong-service' && probe.status !== 'incompatible';
+  // Direct adoption requires a USABLE probe: 'auth' (reachable but our token
+  // is rejected) must keep the relay transport instead of stranding the
+  // session on a direct leg that 401s everything.
+  const probeUsable = (probe: { status: string }) => isDirectTransportUsable(probe.status);
   const probePromise = desktopHostProbe(directUrl, {
     clientToken: host.clientToken || null,
     requestHeaders: host.requestHeaders || null,
@@ -203,7 +192,7 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
     new Promise<null>((resolve) => setTimeout(() => resolve(null), DIRECT_PROBE_HEADSTART_MS)),
   ]);
   if (winner) {
-    if (probeOk(winner)) {
+    if (probeUsable(winner)) {
       switchToDirect(directUrl);
       return;
     }
@@ -215,7 +204,7 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
   // still-running probe succeeds a moment later.
   switchToRelay();
   void probePromise.then((probe) => {
-    if (!probeOk(probe)) return;
+    if (!probeUsable(probe)) return;
     if (getRuntimeKey() !== runtimeKey) return; // user switched away meanwhile
     switchToDirect(directUrl);
   });

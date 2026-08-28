@@ -871,9 +871,6 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
         allowedClientKinds: req.body?.allowedClientKinds,
         createdByClientId: clientIdFromAuthContext(authContext),
         usesRelay,
-        // Optional SSH instance id: binds mobile ssh-host-token mint to this
-        // pairing after redeem. Does not affect redeem itself.
-        sshHostId: req.body?.sshHostId,
       });
       void reconcileRelay();
       res.setHeader('Cache-Control', 'no-store');

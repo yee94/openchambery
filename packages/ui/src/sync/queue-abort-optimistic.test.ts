@@ -1,27 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-const beginCalls: Array<{ sessionId: string; messageID?: string; content: string }> = [];
-const rollbackCalls: string[] = [];
 let directory: string | null = '/project';
 let ownership = 'server-active';
 let serverItems: Array<{ queueItemID: string; status: string; content: string; messageID?: string; sendConfig?: { providerID: string; modelID: string }; deliveryTarget?: { kind: string } }> = [];
 let legacyItems: Array<{ queueItemID: string; operationID: string; status: string; content: string; messageID?: string; sendConfig?: { providerID: string; modelID: string }; owner: { state: string } }> = [];
 let syncMessages: Array<{ id: string; role?: string }> = [];
 const partsByMessageID: Record<string, Array<{ id?: string; __openchamberOptimistic?: boolean }>> = {};
-
-mock.module('@/sync/session-actions', () => ({
-  beginOptimisticSend: (input: { sessionId: string; messageID?: string; content: string }) => {
-    beginCalls.push({ sessionId: input.sessionId, messageID: input.messageID, content: input.content });
-    return {
-      messageID: input.messageID ?? 'msg_opt',
-      sessionId: input.sessionId,
-      directory: '/project',
-      capture: {},
-      transport: {},
-    };
-  },
-  rollbackOptimisticSend: (ticket: { messageID: string }) => { rollbackCalls.push(ticket.messageID); },
-}));
 
 mock.module('@/sync/session-ui-store', () => ({
   useSessionUIStore: {
@@ -78,7 +62,7 @@ const {
   confirmQueueAbortOptimistic,
   getQueueAbortOptimisticPresentation,
   inspectQueueAbortOptimisticTranscript,
-  isQueueItemHiddenByAbortOptimistic,
+  isQueueItemSendPendingByAbortOptimistic,
   planQueueAbortOptimisticReconcile,
   promoteQueueHeadOnAbort,
   reconcileQueueAbortOptimistic,
@@ -88,8 +72,6 @@ const {
 
 describe('queue abort optimistic presentation', () => {
   beforeEach(() => {
-    beginCalls.length = 0;
-    rollbackCalls.length = 0;
     directory = '/project';
     ownership = 'server-active';
     serverItems = [];
@@ -101,6 +83,8 @@ describe('queue abort optimistic presentation', () => {
 
   test('planner keeps a waiting or in-flight head until the pinned row or a later user lands', () => {
     expect(planQueueAbortOptimisticReconcile({ queueItemID: 'q', status: 'queued' }, { hasPinnedMessage: false, hasLaterUserMessage: false })).toBe('keep');
+    expect(planQueueAbortOptimisticReconcile({ queueItemID: 'q', status: 'queued' }, { hasPinnedMessage: true, hasLaterUserMessage: false })).toBe('confirm');
+    expect(planQueueAbortOptimisticReconcile({ queueItemID: 'q', status: 'sending' }, { hasPinnedMessage: false, hasLaterUserMessage: false })).toBe('confirm');
     expect(planQueueAbortOptimisticReconcile({ queueItemID: 'q', status: 'sending' }, { hasPinnedMessage: true, hasLaterUserMessage: false })).toBe('confirm');
     expect(planQueueAbortOptimisticReconcile({ queueItemID: 'q', status: 'failed' }, { hasPinnedMessage: false, hasLaterUserMessage: false })).toBe('rollback');
     expect(planQueueAbortOptimisticReconcile(null, { hasPinnedMessage: true, hasLaterUserMessage: false })).toBe('confirm');
@@ -126,7 +110,7 @@ describe('queue abort optimistic presentation', () => {
     ])).toEqual({ hasPinnedMessage: true, hasLaterUserMessage: false });
   });
 
-  test('promote paints the server head and hides only that chip', () => {
+  test('promote marks the server head as sending without painting a transcript row', () => {
     serverItems = [{
       queueItemID: 'queue-a',
       status: 'queued',
@@ -136,11 +120,9 @@ describe('queue abort optimistic presentation', () => {
     }];
     const presentation = promoteQueueHeadOnAbort('session-a');
     expect(presentation?.queueItemID).toBe('queue-a');
-    expect(beginCalls).toHaveLength(1);
-    expect(beginCalls[0]?.content).toBe('follow up');
-    expect(beginCalls[0]?.messageID).toBe('msg_admission');
-    expect(isQueueItemHiddenByAbortOptimistic('session-a', 'queue-a')).toBe(true);
-    expect(isQueueItemHiddenByAbortOptimistic('session-a', 'queue-b')).toBe(false);
+    expect(presentation?.messageID).toBe('msg_admission');
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(true);
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-b')).toBe(false);
     expect(promoteQueueHeadOnAbort('session-a')?.messageID).toBe(presentation?.messageID);
   });
 
@@ -158,10 +140,9 @@ describe('queue abort optimistic presentation', () => {
     serverItems = [];
     ownership = 'legacy-unsupported';
     expect(promoteQueueHeadOnAbort('session-a')).toBeNull();
-    expect(beginCalls).toEqual([]);
   });
 
-  test('legacy waiting heads paint when the server is not authoritative', () => {
+  test('legacy waiting heads mark sending when the server is not authoritative', () => {
     ownership = 'legacy-unsupported';
     legacyItems = [{
       queueItemID: 'legacy-a',
@@ -175,24 +156,23 @@ describe('queue abort optimistic presentation', () => {
     expect(presentation?.source).toBe('legacy');
     expect(presentation?.queueItemID).toBe('legacy-a');
     expect(getQueueAbortOptimisticPresentation('session-a')?.queueItemID).toBe('legacy-a');
-    expect(beginCalls[0]?.content).toBe('legacy follow up');
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'legacy-a')).toBe(true);
   });
 
-  test('rollback removes the optimistic row and unhides the chip', () => {
+  test('rollback clears the sending chip without a transcript row to remove', () => {
     serverItems = [{
       queueItemID: 'queue-a',
       status: 'queued',
       content: 'follow up',
       sendConfig: { providerID: 'openai', modelID: 'gpt' },
     }];
-    const presentation = promoteQueueHeadOnAbort('session-a');
+    promoteQueueHeadOnAbort('session-a');
     rollbackQueueAbortOptimistic('session-a');
-    expect(rollbackCalls).toEqual([presentation?.messageID]);
     expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
-    expect(isQueueItemHiddenByAbortOptimistic('session-a', 'queue-a')).toBe(false);
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(false);
   });
 
-  test('reconcile keeps the paint when only the optimistic row exists', () => {
+  test('reconcile keeps Sending while the head is still waiting', () => {
     serverItems = [{
       queueItemID: 'queue-a',
       status: 'queued',
@@ -201,12 +181,11 @@ describe('queue abort optimistic presentation', () => {
       sendConfig: { providerID: 'openai', modelID: 'gpt' },
     }];
     const presentation = promoteQueueHeadOnAbort('session-a')!;
-    serverItems = [{ ...serverItems[0]!, status: 'sending', messageID: 'msg_admission' }];
     syncMessages = [{ id: presentation.messageID, role: 'user' }];
     partsByMessageID[presentation.messageID] = [{ id: 'prt', __openchamberOptimistic: true }];
     reconcileQueueAbortOptimistic('session-a');
     expect(getQueueAbortOptimisticPresentation('session-a')?.messageID).toBe(presentation.messageID);
-    expect(rollbackCalls).toEqual([]);
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(true);
   });
 
   test('reconcile confirms when an authoritative row owns the pinned id', () => {
@@ -223,10 +202,10 @@ describe('queue abort optimistic presentation', () => {
     partsByMessageID[presentation.messageID] = [{ id: 'prt' }];
     reconcileQueueAbortOptimistic('session-a');
     expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
-    expect(rollbackCalls).toEqual([]);
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(false);
   });
 
-  test('reconcile rebinds the optimistic row to the server dispatch message id', () => {
+  test('reconcile rebinds the sending presentation to the server dispatch message id', () => {
     serverItems = [{
       queueItemID: 'queue-a',
       status: 'queued',
@@ -235,13 +214,13 @@ describe('queue abort optimistic presentation', () => {
       sendConfig: { providerID: 'openai', modelID: 'gpt' },
     }];
     const presentation = promoteQueueHeadOnAbort('session-a')!;
+    expect(presentation.messageID).toBe('msg_admission');
     serverItems = [{ ...serverItems[0]!, status: 'sending', messageID: 'msg_dispatch' }];
     syncMessages = [{ id: presentation.messageID, role: 'user' }];
     partsByMessageID[presentation.messageID] = [{ id: 'prt', __openchamberOptimistic: true }];
     reconcileQueueAbortOptimistic('session-a');
-    expect(rollbackCalls).toEqual([presentation.messageID]);
-    expect(beginCalls.map((entry) => entry.messageID)).toEqual(['msg_admission', 'msg_dispatch']);
-    expect(getQueueAbortOptimisticPresentation('session-a')?.messageID).toBe('msg_dispatch');
+    expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(false);
   });
 
   test('reconcile rolls back a failed head and a completed dispatch that used another id', () => {
@@ -251,10 +230,10 @@ describe('queue abort optimistic presentation', () => {
       content: 'follow up',
       sendConfig: { providerID: 'openai', modelID: 'gpt' },
     }];
-    const first = promoteQueueHeadOnAbort('session-a')!;
+    promoteQueueHeadOnAbort('session-a')!;
     serverItems = [{ ...serverItems[0]!, status: 'failed' }];
     reconcileQueueAbortOptimistic('session-a');
-    expect(rollbackCalls).toEqual([first.messageID]);
+    expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
 
     serverItems = [{
       queueItemID: 'queue-b',
@@ -262,12 +241,12 @@ describe('queue abort optimistic presentation', () => {
       content: 'next',
       sendConfig: { providerID: 'openai', modelID: 'gpt' },
     }];
-    const second = promoteQueueHeadOnAbort('session-a')!;
+    promoteQueueHeadOnAbort('session-a')!;
     serverItems = [];
     syncMessages = [{ id: 'msg_later_user_zzzzzzzzzzzzABCDEFGHIJKLMN', role: 'user' }];
     partsByMessageID['msg_later_user_zzzzzzzzzzzzABCDEFGHIJKLMN'] = [{ id: 'prt' }];
     reconcileQueueAbortOptimistic('session-a');
-    expect(rollbackCalls).toEqual([first.messageID, second.messageID]);
+    expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
   });
 
   test('confirm forgets the shadow without rolling back the painted row', () => {
@@ -279,7 +258,7 @@ describe('queue abort optimistic presentation', () => {
     }];
     promoteQueueHeadOnAbort('session-a');
     confirmQueueAbortOptimistic('session-a');
-    expect(rollbackCalls).toEqual([]);
     expect(getQueueAbortOptimisticPresentation('session-a')).toBeUndefined();
+    expect(isQueueItemSendPendingByAbortOptimistic('session-a', 'queue-a')).toBe(false);
   });
 });

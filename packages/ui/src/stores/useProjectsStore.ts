@@ -582,8 +582,10 @@ export const useProjectsStore = create<ProjectsStore>()(
         lastOpenedAt: now,
       };
 
-      const nextProjects = [...get().projects, entry];
-      set({ projects: nextProjects });
+      const { projects, manualProjectOrder } = get();
+      const nextProjects = [entry, ...projects];
+      const nextManualOrder = [entry.id, ...manualProjectOrder.filter((id) => id !== entry.id)];
+      set({ projects: nextProjects, manualProjectOrder: nextManualOrder });
 
       if (streamDebugEnabled()) {
         console.info('[ProjectsStore] Added project', entry);

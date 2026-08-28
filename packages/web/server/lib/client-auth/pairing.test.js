@@ -139,49 +139,4 @@ describe('client auth pairing runtime', () => {
     expect(ids).not.toContain(expired.pairing.id);
     expect(ids).toHaveLength(1);
   });
-
-  it('persists optional sshHostId and exposes it on query after redeem', async () => {
-    const { dir, runtime } = await makeRuntime();
-    const created = await runtime.createPairingSession({
-      allowedClientKinds: ['mobile'],
-      sshHostId: 'ssh-remote-1',
-    });
-    expect(created.pairing.sshHostId).toBe('ssh-remote-1');
-
-    const pending = await runtime.listPendingSessions();
-    expect(pending).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: created.pairing.id, sshHostId: 'ssh-remote-1', usedAt: null }),
-    ]));
-
-    const lookedUp = await runtime.getPairingSession(created.pairing.id);
-    expect(lookedUp).toMatchObject({ id: created.pairing.id, sshHostId: 'ssh-remote-1', usedAt: null });
-
-    const storePath = path.join(dir, 'pairing.json');
-    const storeBefore = JSON.parse(await fs.readFile(storePath, 'utf8'));
-    expect(storeBefore.sessions.find((s) => s.id === created.pairing.id)?.sshHostId).toBe('ssh-remote-1');
-
-    const redeemed = await runtime.redeemPairingSession({
-      pairingId: created.pairing.id,
-      secret: created.pairing.secret,
-      clientKind: 'mobile',
-    });
-    // Redeem still returns the desktop client token; sshHostId is metadata only.
-    expect(redeemed.token).toBe('token-1');
-    expect(redeemed.pairing).toMatchObject({
-      id: created.pairing.id,
-      sshHostId: 'ssh-remote-1',
-    });
-    expect(redeemed.pairing.usedAt).toBeTruthy();
-
-    const after = await runtime.getPairingSession(created.pairing.id);
-    expect(after).toMatchObject({
-      id: created.pairing.id,
-      sshHostId: 'ssh-remote-1',
-    });
-    expect(after.usedAt).toBeTruthy();
-
-    // Default pairing has null sshHostId.
-    const plain = await runtime.createPairingSession();
-    expect(plain.pairing.sshHostId).toBeNull();
-  });
 });

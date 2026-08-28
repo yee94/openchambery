@@ -10,7 +10,9 @@ import { I18nProvider } from '@/lib/i18n';
 import {
   handleMobileSessionContextMenu,
   preventMobileSessionTouchStartBaseUIHandler,
+  resolveMobileSessionSheetDefaultFilter,
   SessionItem,
+  shouldPreserveActiveProjectOnSessionOpen,
 } from './MobileSessionStatusBar';
 
 const statusBarSource = readFileSync(
@@ -107,6 +109,83 @@ describe('MobileSessionStatusBar SessionItem', () => {
     expect(markup).toContain('-webkit-user-select:none');
     expect(markup).toContain('user-select:none');
     expect(markup).toContain('Touch menu session');
+  });
+});
+
+describe('MobileSessionStatusBar sheet default filter', () => {
+  const projects = [{ id: 'project-a' }, { id: 'project-b' }];
+
+  test('defaults to the active project when the filter is "All" or points at a removed project', () => {
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: null,
+        projects,
+      }),
+    ).toBe('project-a');
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: 'project-removed',
+        projects,
+      }),
+    ).toBe('project-a');
+  });
+
+  test('preserves the pinned scope and filters still matching a known project', () => {
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: '__pinned_sessions__',
+        projects,
+      }),
+    ).toBe('__pinned_sessions__');
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: 'project-b',
+        projects,
+      }),
+    ).toBe('project-b');
+  });
+
+  test('keeps the current filter when there is no active project', () => {
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: null,
+        currentFilterProjectId: null,
+        projects,
+      }),
+    ).toBeNull();
+  });
+
+  test('applies the open-time default only on the closed-to-open transition so taps made while open stick', () => {
+    // Regression: the open-time default effect must not re-run while the sheet
+    // stays open, otherwise tapping "All" is immediately overridden back to
+    // the active project.
+    expect(statusBarSource).toContain('const wasOpen = prevSheetOpenRef.current;');
+    expect(statusBarSource).toContain('if (!open || wasOpen) return;');
+  });
+});
+
+describe('MobileSessionStatusBar project correction on session open', () => {
+  test('keeps the active project when the list scope is "All" or "Pinned"', () => {
+    // Browsing past project boundaries is navigation only — opening one of
+    // those sessions must not move the user's working project.
+    expect(shouldPreserveActiveProjectOnSessionOpen(null)).toBe(true);
+    expect(shouldPreserveActiveProjectOnSessionOpen('__pinned_sessions__')).toBe(true);
+  });
+
+  test('lets the active project follow the session when a concrete project is selected', () => {
+    // The user narrowed to one project, so crossing into another project is a
+    // real project switch and must stay corrected.
+    expect(shouldPreserveActiveProjectOnSessionOpen('project-a')).toBe(false);
+    expect(shouldPreserveActiveProjectOnSessionOpen('project-removed')).toBe(false);
+  });
+
+  test('forwards the choice to both the phone navigation path and the iPad store path', () => {
+    expect(statusBarSource).toContain('preserveActiveProject,');
+    expect(statusBarSource).toContain('void setCurrentSession(session.id, directory, { preserveActiveProject });');
   });
 });
 

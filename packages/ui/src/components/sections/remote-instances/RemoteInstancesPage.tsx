@@ -21,8 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ScrollShadow } from '@/components/ui/ScrollShadow';
-import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import {
   SettingsGroup,
@@ -39,6 +38,12 @@ import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n, type I18nKey } from '@/lib/i18n';
+import { SshBootstrapErrorNotice } from '@/components/desktop/SshBootstrapErrorNotice';
+import {
+  formatSshBootstrapErrorDescription,
+  resolveManagedSshBootstrapErrorCode,
+  sshBootstrapErrorGuidanceKey,
+} from '@/lib/desktopSshBootstrapError';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { PendingPairingRecord, RemoteClientRecord } from '@/lib/api/types';
 import { buildPairingConnectionPayload, encodePairingConnectionPayload, parsePairingConnectionPayload, type PairingEndpointCandidate } from '@/lib/connectionPayload';
@@ -79,7 +84,6 @@ import {
   probeRelayDesktopHost,
   redactSensitiveUrl,
   relayHostDisplayUrl,
-  requestSshHostToken,
   type DesktopHost,
   type DesktopHostRelay,
   type HostProbeResult,
@@ -195,7 +199,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   onOpenChange,
 }) => {
   const { t } = useI18n();
-  const reviewListRef = React.useRef<HTMLElement | null>(null);
   const [step, setStep] = React.useState<SyncWizardStep>(1);
   const [phase, setPhase] = React.useState<SyncDialogPhase>('scanning-local');
   const [direction, setDirection] = React.useState<DesktopSshConfigSyncDirection>('push');
@@ -204,6 +207,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const [localPlan, setLocalPlan] = React.useState<DesktopSshConfigSyncPlan | null>(null);
   const [preview, setPreview] = React.useState<DesktopSshConfigSyncPreview | null>(null);
   const [credentialAuthorized, setCredentialAuthorized] = React.useState(false);
+  const [credentialGrantBusy, setCredentialGrantBusy] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [errorStep, setErrorStep] = React.useState<1 | 2 | null>(null);
   // Snapshot frozen at preview time so apply cannot drift from the reviewed plan.
@@ -219,6 +223,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     setLocalPlan(null);
     setPreview(null);
     setCredentialAuthorized(false);
+    setCredentialGrantBusy(false);
     setErrorMessage(null);
     setErrorStep(null);
     confirmedSelectionsRef.current = EMPTY_SYNC_SELECTIONS;
@@ -266,6 +271,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       setStep(3);
       setPhase('review');
     } catch (error) {
+      console.error('[remote-instances] config sync compare-remote failed', error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(2);
       setPhase('error');
@@ -343,6 +349,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       setLocalPlan(plan);
       await runCompareRemote(nextDirection, resolvedSelections);
     } catch (error) {
+      console.error('[remote-instances] config sync scan-local failed', error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setErrorStep(1);
       setPhase('error');
@@ -377,6 +384,30 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const deleteCount = plan
     ? plan.deletes.length + (plan.agentsRoot && preview?.remoteAgentsRootExists ? 1 : 0)
     : 0;
+
+  const handleGrantCredentialSync = useEvent(async (): Promise<boolean> => {
+    if (!instanceId || credentialGrantBusy || isApplying) return false;
+    const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
+      ? relayHost.relay.serverId
+      : instanceId;
+    setCredentialGrantBusy(true);
+    try {
+      const grant = await desktopSshCredentialSyncGrant(grantId, { targetKind });
+      const authorized = grant?.authorized === true;
+      setCredentialAuthorized(authorized);
+      if (!authorized) {
+        toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'));
+      }
+      return authorized;
+    } catch (err) {
+      toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
+        description: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setCredentialGrantBusy(false);
+    }
+  });
 
   const handleRetry = useEvent(() => {
     if (errorStep === 2) {
@@ -420,6 +451,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       toast.success(t('settings.remoteInstances.page.sync.toast.success'));
       onOpenChange(false);
     } catch (error) {
+      console.error('[remote-instances] config sync apply failed', error);
       toast.error(t('settings.remoteInstances.page.sync.toast.failed'), {
         description: error instanceof Error ? error.message : String(error),
       });
@@ -443,7 +475,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden sm:max-w-2xl">
+      <DialogContent className="min-h-0 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('settings.remoteInstances.page.sync.title')}</DialogTitle>
           <DialogDescription>{t('settings.remoteInstances.page.sync.description')}</DialogDescription>
@@ -533,52 +565,23 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
               checked={selections.authFile}
-              disabled={isApplying || !scopeReady || !credentialAuthorized}
+              disabled={isApplying || !scopeReady || credentialGrantBusy}
               ariaLabel={t('settings.remoteInstances.page.sync.section.authFile')}
               onChange={(checked) => {
-                if (!scopeReady || !credentialAuthorized) return;
-                const next = { ...selections, authFile: checked };
-                setSelections(next);
-                if (phase === 'review') void runCompareRemote(direction, next);
+                if (!scopeReady) return;
+                void (async () => {
+                  if (checked && !credentialAuthorized) {
+                    const authorized = await handleGrantCredentialSync();
+                    if (!authorized) return;
+                  }
+                  const next = { ...selections, authFile: checked };
+                  setSelections(next);
+                  if (phase === 'review') void runCompareRemote(direction, next);
+                })();
               }}
             />
             {t('settings.remoteInstances.page.sync.section.authFile')}
           </label>
-          {!credentialAuthorized ? (
-            <div className="space-y-2">
-              <div className="typography-micro text-muted-foreground">
-                {t('settings.remoteInstances.page.sync.scope.authRequiresGrant')}
-              </div>
-              {(targetKind === 'relay' || targetKind === 'direct') && instanceId ? (
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="outline"
-                  className="!font-normal"
-                  disabled={isApplying}
-                  onClick={() => {
-                    const ok = window.confirm(t('settings.remoteInstances.page.credentialSync.confirmGrant'));
-                    if (!ok) return;
-                    const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
-                      ? relayHost.relay.serverId
-                      : instanceId;
-                    void desktopSshCredentialSyncGrant(grantId, { targetKind })
-                      .then((grant) => {
-                        setCredentialAuthorized(grant?.authorized === true);
-                        toast.success(t('settings.remoteInstances.page.credentialSync.toast.granted'));
-                      })
-                      .catch((err) => {
-                        toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
-                          description: err instanceof Error ? err.message : String(err),
-                        });
-                      });
-                  }}
-                >
-                  {t('settings.remoteInstances.page.credentialSync.toggleLabel')}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
         </div>
 
         <div className="space-y-2">
@@ -621,12 +624,13 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
         ) : null}
 
         {isReview && hasEntries && plan ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
-            <div className="relative min-h-0 max-h-80 flex-1 overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)]">
-              <ScrollShadow
-                ref={reviewListRef}
-                size={24}
-                className="overlay-scrollbar-target overlay-scrollbar-container h-full min-h-0 overflow-x-hidden overflow-y-auto"
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)]">
+              <ScrollableOverlay
+                fillContainer={false}
+                disableHorizontal
+                outerClassName="max-h-80"
+                className="max-h-80"
               >
                 <div className="divide-y divide-border/60">
                   {plan.files.map((entry) => {
@@ -707,8 +711,7 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
                     </div>
                   ) : null}
                 </div>
-              </ScrollShadow>
-              <OverlayScrollbar containerRef={reviewListRef} disableHorizontal />
+              </ScrollableOverlay>
             </div>
 
             <div className="space-y-1 typography-micro text-muted-foreground">
@@ -1136,19 +1139,8 @@ export const RemoteInstancesPage: React.FC = () => {
   const [addDeviceFallback, setAddDeviceFallback] = React.useState(true);
   const [addDeviceRelayUrl, setAddDeviceRelayUrl] = React.useState(DEFAULT_PAIRING_RELAY_URL);
   const [addDeviceRelayUrlError, setAddDeviceRelayUrlError] = React.useState<string | null>(null);
-  // Pairing target: 'local' = this desktop; otherwise a ready SSH instance id.
-  const [addDeviceTargetId, setAddDeviceTargetId] = React.useState<string>('local');
   const addDeviceRelayUrlInputRef = React.useRef<HTMLInputElement>(null);
   const [transportOptions, setTransportOptions] = React.useState<PairingTransportOptions | null>(null);
-  const readySshInstances = React.useMemo(
-    () => instances.filter((instance) => statusesById[instance.id]?.phase === 'ready'),
-    [instances, statusesById],
-  );
-  const addDeviceTargetIsSsh = addDeviceTargetId !== 'local';
-  const addDeviceSshInstance = React.useMemo(
-    () => (addDeviceTargetIsSsh ? instances.find((instance) => instance.id === addDeviceTargetId) ?? null : null),
-    [addDeviceTargetId, addDeviceTargetIsSsh, instances],
-  );
   const revokedClientCount = React.useMemo(() => remoteClients.filter((client) => Boolean(client.revokedAt)).length, [remoteClients]);
   const [sshAddDialogOpen, setSshAddDialogOpen] = React.useState(false);
   const [sshCommandDraft, setSshCommandDraft] = React.useState('ssh user@example.com');
@@ -1176,6 +1168,16 @@ export const RemoteInstancesPage: React.FC = () => {
   React.useEffect(() => {
     void loadDirectHosts();
   }, [loadDirectHosts]);
+
+  const readySshHostKey = Object.values(statusesById)
+    .filter((status) => status.phase === 'ready')
+    .map((status) => `${status.id}:${status.localUrl || ''}`)
+    .sort()
+    .join('|');
+  React.useEffect(() => {
+    if (!readySshHostKey) return;
+    void loadDirectHosts();
+  }, [loadDirectHosts, readySshHostKey]);
 
   const persistDirectHosts = React.useCallback(async (hosts: DesktopHost[], defaultHostId: string | null = directDefaultHostId) => {
     setDirectSaving(true);
@@ -1246,9 +1248,6 @@ export const RemoteInstancesPage: React.FC = () => {
         tunnel: ReturnType<typeof createRelayTunnelClient>;
       }
       | null = null;
-    // Keep the redeem tunnel open when sshHostId needs a follow-up mint.
-    let keepRedeemTunnel = false;
-
     for (const candidate of ordered) {
       if (candidate.type === 'relay') {
         // Open a throwaway E2EE tunnel just to redeem the one-time secret; the
@@ -1274,14 +1273,13 @@ export const RemoteInstancesPage: React.FC = () => {
               token,
               tunnel,
             };
-            keepRedeemTunnel = Boolean(payload.sshHostId?.trim());
-            if (!keepRedeemTunnel) tunnel.close();
+            tunnel.close();
             break;
           }
         } catch {
           // Relay unreachable / handshake failed — try the next candidate.
         }
-        if (!keepRedeemTunnel) tunnel.close();
+        tunnel.close();
         continue;
       }
       // Direct: the remote instance is a user-provided URL, so a plain
@@ -1306,71 +1304,6 @@ export const RemoteInstancesPage: React.FC = () => {
     }
 
     const makeId = (): string => createUuid();
-    const sshHostId = payload.sshHostId?.trim() || '';
-
-    // SSH pairing import: mint SSH token on the same relay tunnel, store as a
-    // relay-only host with sshTarget (desktop token kept for later port refresh).
-    if (sshHostId && redeemed.kind === 'relay') {
-      let sshHost: DesktopHost | null = null;
-      try {
-        const minted = await requestSshHostToken(sshHostId, {
-          pairingId: payload.pairingId,
-          fetch: (path, init) => redeemed.tunnel.fetch(path, init),
-          headers: { Authorization: `Bearer ${redeemed.token}` },
-        });
-        if (minted.reachable && typeof minted.localPort === 'number' && minted.token) {
-          sshHost = {
-            id: makeId(),
-            label: payload.label || sshHostId,
-            url: relayHostDisplayUrl(redeemed.relay.serverId),
-            clientToken: minted.token,
-            source: DESKTOP_HOST_SOURCE_CONNECT_LINK,
-            relay: redeemed.relay,
-            sshTarget: {
-              hostId: sshHostId,
-              desktopClientToken: redeemed.token,
-            },
-          };
-        }
-      } catch {
-        // SSH mint failed — do not import as the parent desktop.
-      } finally {
-        redeemed.tunnel.close();
-      }
-
-      if (sshHost) {
-        const existing = directHosts.find((host) => (
-          host.sshTarget?.hostId === sshHostId
-          && host.relay?.serverId === redeemed.relay.serverId
-          && host.relay?.relayUrl === redeemed.relay.relayUrl
-        ));
-        if (existing) {
-          const nextHosts = directHosts.map((host) => (host.id === existing.id
-            ? {
-              ...host,
-              label: sshHost!.label || host.label,
-              clientToken: sshHost!.clientToken,
-              relay: sshHost!.relay,
-              sshTarget: sshHost!.sshTarget,
-              source: DESKTOP_HOST_SOURCE_CONNECT_LINK,
-              url: sshHost!.url,
-              apiUrl: undefined,
-            }
-            : host));
-          await persistDirectHosts(nextHosts, directDefaultHostId);
-        } else {
-          await persistDirectHosts([sshHost, ...directHosts], directDefaultHostId);
-        }
-        setDirectConnectLink('');
-        setDirectError(null);
-        setDirectImportDialogOpen(false);
-        return;
-      }
-      setDirectError(t('mobile.connect.error.sshNotConnected'));
-      return;
-    } else if (redeemed.kind === 'relay') {
-      redeemed.tunnel.close();
-    }
 
     // Persist EVERY transport the link carried, not just the one that answered
     // the redeem — a multi-transport host connects directly on the home network
@@ -1417,18 +1350,15 @@ export const RemoteInstancesPage: React.FC = () => {
     };
     // One host per instance: match by relay serverId + relayUrl when the link
     // has a relay leg, else by direct URL. Same machine / same signing key can
-    // still be distinct instances when the relay endpoint differs. SSH imports
-    // are matched separately above and never collapse into a plain desktop row.
+    // still be distinct instances when the relay endpoint differs.
     const existing = directHosts.find((host) => (
-      !host.sshTarget && (
-        relay
-          ? host.relay?.serverId === relay.serverId && host.relay?.relayUrl === relay.relayUrl
-          : (!host.relay && normalizeHostUrl(host.apiUrl || host.url) === url)
-      )
+      relay
+        ? host.relay?.serverId === relay.serverId && host.relay?.relayUrl === relay.relayUrl
+        : (!host.relay && normalizeHostUrl(host.apiUrl || host.url) === url)
     ));
     if (existing) {
       const nextHosts = directHosts.map((host) => host.id === existing.id
-        ? { ...host, label: payload.label || host.label, ...transportFields, sshTarget: undefined }
+        ? { ...host, label: payload.label || host.label, ...transportFields }
         : host);
       await persistDirectHosts(nextHosts, directDefaultHostId);
     } else {
@@ -1483,6 +1413,33 @@ export const RemoteInstancesPage: React.FC = () => {
     setDirectHostStatus((prev) => ({ ...prev, [host.id]: result.status }));
   });
 
+  const switchToSshInstance = useEvent(async (instance: DesktopSshInstance) => {
+    if (hostSwitchPending) return;
+    const title = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
+    // Connect writes the minted clientToken after the page's initial hosts
+    // load. Always re-read so the first switch does not use a stale host
+    // without a token (that surfaces the remote UI password prompt).
+    let hosts = directHosts;
+    try {
+      const config = await desktopHostsGet();
+      hosts = config.hosts || [];
+      setDirectHosts(hosts);
+      setDirectDefaultHostId(config.defaultHostId || 'local');
+    } catch (error) {
+      toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', { host: title }), {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    const host = hosts.find((entry) => entry.id === instance.id) ?? null;
+    if (!host || !getDesktopHostApiUrl(host) || !host.clientToken) {
+      toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', { host: title }));
+      return;
+    }
+    if (isDesktopHostActive(host)) return;
+    await switchDesktopHostInstance({ host });
+  });
+
   React.useEffect(() => {
     if (!showInstanceManagement) return;
     return subscribeRuntimeEndpointChanged(() => {
@@ -1498,9 +1455,8 @@ export const RemoteInstancesPage: React.FC = () => {
     let cancelled = false;
     void Promise.all(visibleDirectHosts.map(async (host) => {
       const relayProbe = async (): Promise<DesktopHostProbeSnapshot> => {
-        const result = await probeRelayDesktopHost(host.relay!, {
-          sshTarget: host.sshTarget,
-        }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+        const result = await probeRelayDesktopHost(host.relay!)
+          .catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
         return result.status === 'ok'
           ? { status: result.status, latencyMs: result.latencyMs, via: 'relay' }
           : { status: result.status, latencyMs: result.latencyMs };
@@ -1630,7 +1586,7 @@ export const RemoteInstancesPage: React.FC = () => {
     return { localUrl, lanUrl, relayAvailable: false, relayUrl: null, relayUrlLocked: false };
   }, [clientAuth]);
 
-  const openAddDevice = useEvent(async (preselectSshId?: string | null) => {
+  const openAddDevice = useEvent(async () => {
     setRemoteClientError(null);
     setPairingUrl(null);
     setPairingQrDataUrl(null);
@@ -1639,13 +1595,6 @@ export const RemoteInstancesPage: React.FC = () => {
     setAddDeviceRelayUrlError(null);
     setAddDevicePhase('configure');
     setAddDeviceFallback(true);
-    const targetId = preselectSshId?.trim() || 'local';
-    setAddDeviceTargetId(targetId);
-    if (targetId !== 'local') {
-      // SSH pairing always rides relay this cycle (no LAN candidate on the phone).
-      setAddDeviceTransport('relay');
-      setAddDeviceFallback(false);
-    }
     setAddDeviceOpen(true);
     const opts = await resolveTransportOptions();
     setTransportOptions(opts);
@@ -1654,44 +1603,22 @@ export const RemoteInstancesPage: React.FC = () => {
       (opts.relayUrlLocked ? opts.relayUrl : locallySavedRelayUrl || opts.relayUrl)
       || DEFAULT_PAIRING_RELAY_URL,
     );
-    if (targetId === 'local') {
-      // "Anywhere" (relay, with home-network preference) is the right default for
-      // most people; fall back to narrower options only when relay is unavailable.
-      setAddDeviceTransport(opts.relayAvailable ? 'relay' : opts.lanUrl ? 'lan' : 'local');
-    }
+    // "Anywhere" (relay, with home-network preference) is the right default for
+    // most people; fall back to narrower options only when relay is unavailable.
+    setAddDeviceTransport(opts.relayAvailable ? 'relay' : opts.lanUrl ? 'lan' : 'local');
   });
 
   const createPairingLink = useEvent(async () => {
     if (!clientAuth?.createPairingSession || !transportOptions) return;
-    const sshTarget = addDeviceTargetId !== 'local'
-      ? instances.find((instance) => instance.id === addDeviceTargetId) ?? null
-      : null;
-    if (addDeviceTargetId !== 'local') {
-      if (!sshTarget || statusesById[addDeviceTargetId]?.phase !== 'ready') {
-        setRemoteClientError(t('settings.remoteInstances.clientAuth.addDevice.target.sshNotReady'));
-        return;
-      }
-      if (!transportOptions.relayAvailable) {
-        setRemoteClientError(t('settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid'));
-        return;
-      }
-    }
     setRemoteClientError(null);
     setAddDeviceCreating(true);
     try {
       const typedLabel = remoteClientLabel.trim() || undefined;
-      const sshTitle = sshTarget
-        ? (sshTarget.nickname?.trim() || sshTarget.sshParsed?.destination || sshTarget.id)
-        : null;
       // Map the chosen transport (+ fallback) to the per-link candidate request.
-      // SSH targets always use relay-only candidates this cycle.
       let serverUrl: string | undefined;
       let includeRelay: boolean;
       let includeDirect = true;
-      if (sshTarget) {
-        includeDirect = false;
-        includeRelay = true;
-      } else if (addDeviceTransport === 'local') {
+      if (addDeviceTransport === 'local') {
         serverUrl = transportOptions.localUrl ?? undefined;
         includeRelay = false;
       } else if (addDeviceTransport === 'lan') {
@@ -1723,21 +1650,16 @@ export const RemoteInstancesPage: React.FC = () => {
         includeRelay,
         includeDirect,
         ...(relayUrl ? { relayUrl } : {}),
-        ...(sshTarget ? { sshHostId: sshTarget.id } : {}),
       });
-      const payloadLabel = sshTitle
-        ? (typedLabel || sshTitle)
-        : (typedLabel || server.label);
       const payload = buildPairingConnectionPayload({
         pairingId: pairing.id,
         secret: pairing.secret,
         // The typed name is the instance name: this server's device list AND the
         // name the paired device stores/displays. Do not substitute hostname —
         // one machine can run several servers (and several relays).
-        label: payloadLabel,
+        label: typedLabel || server.label,
         fingerprint: pairing.fingerprint ?? undefined,
         expiresAt: pairing.expiresAt,
-        ...(sshTarget ? { sshHostId: sshTarget.id } : {}),
         candidates: server.candidates as unknown as PairingEndpointCandidate[],
       });
       const actualRelayCandidate = payload.candidates.find(
@@ -2196,14 +2118,22 @@ export const RemoteInstancesPage: React.FC = () => {
             ? 'settings.remoteInstances.page.toast.disconnectFailed'
             : 'settings.remoteInstances.page.toast.cancelConnectionFailed')
           : 'settings.remoteInstances.page.toast.connectFailed';
+        const connectDetail = status?.detail || (error instanceof Error ? error.message : String(error));
+        const connectCode = resolveManagedSshBootstrapErrorCode(status?.errorCode, connectDetail);
         toast.error(t(key), {
-          description: error instanceof Error ? error.message : String(error),
+          description: wasConnected
+            ? (error instanceof Error ? error.message : String(error))
+            : formatSshBootstrapErrorDescription(
+              t(sshBootstrapErrorGuidanceKey(connectCode)),
+              connectCode,
+              connectDetail,
+            ),
         });
       })
       .finally(() => {
         setIsPrimaryActionPending(false);
       });
-  }, [canDisconnect, connectWithPortRecovery, disconnect, draft, isReady, t]);
+  }, [canDisconnect, connectWithPortRecovery, disconnect, draft, isReady, status, t]);
 
   const handleRetryAction = React.useCallback(() => {
     if (!draft) {
@@ -2221,14 +2151,20 @@ export const RemoteInstancesPage: React.FC = () => {
 
     void operation
       .catch((error) => {
+        const retryDetail = status?.detail || (error instanceof Error ? error.message : String(error));
+        const retryCode = resolveManagedSshBootstrapErrorCode(status?.errorCode, retryDetail);
         toast.error(t('settings.remoteInstances.page.toast.retryFailed'), {
-          description: error instanceof Error ? error.message : String(error),
+          description: formatSshBootstrapErrorDescription(
+            t(sshBootstrapErrorGuidanceKey(retryCode)),
+            retryCode,
+            retryDetail,
+          ),
         });
       })
       .finally(() => {
         setIsRetryPending(false);
       });
-  }, [connectWithPortRecovery, disconnect, draft, isConnecting, isReconnecting, retry, t]);
+  }, [connectWithPortRecovery, disconnect, draft, isConnecting, isReconnecting, retry, status, t]);
 
   const retryButtonLabel = isConnecting
     ? t('settings.remoteInstances.page.actions.connecting')
@@ -2405,9 +2341,7 @@ export const RemoteInstancesPage: React.FC = () => {
                           )} />
                           <p className="typography-ui-label text-foreground truncate">{redactSensitiveUrl(host.label)}</p>
                           <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
-                            {host.sshTarget
-                              ? t('mobile.instances.sshBadge')
-                              : t('settings.remoteInstances.channel.link')}
+                            {t('settings.remoteInstances.channel.link')}
                           </span>
                           {isActive ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.current')}</span> : null}
                           {directDefaultHostId === host.id ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.default')}</span> : null}
@@ -2419,11 +2353,9 @@ export const RemoteInstancesPage: React.FC = () => {
                           </span>
                         </div>
                         <p className={cn('typography-micro text-muted-foreground truncate', host.apiUrl && 'font-mono')}>
-                          {host.sshTarget
-                            ? t('mobile.instances.sshViaDesktop')
-                            : host.relay && !host.apiUrl
-                              ? t('mobile.connect.relay.badge')
-                              : redactSensitiveUrl(host.apiUrl || host.url)}
+                          {host.relay && !host.apiUrl
+                            ? t('mobile.connect.relay.badge')
+                            : redactSensitiveUrl(host.apiUrl || host.url)}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
@@ -2446,13 +2378,11 @@ export const RemoteInstancesPage: React.FC = () => {
                           const apiUrl = getDesktopHostApiUrl(host);
                           const canDirectSync = Boolean(apiUrl)
                             && !apiUrl.startsWith('relay://')
-                            && !host.relay
-                            && !host.sshTarget;
+                            && !host.relay;
                           const canRelaySync = Boolean(host.relay?.serverId)
                             && Boolean(host.relay?.relayUrl)
                             && Boolean(host.relay?.hostEncPubJwk)
-                            && Boolean(host.clientToken)
-                            && !host.sshTarget;
+                            && Boolean(host.clientToken);
                           if (canRelaySync && host.relay) {
                             return (
                               <Button
@@ -2491,10 +2421,33 @@ export const RemoteInstancesPage: React.FC = () => {
                   );
                 })}
                 {instances.map((instance) => {
+                  // directRuntimeEpoch keeps isActive fresh after an in-page switch.
+                  void directRuntimeEpoch;
                   const instanceStatus = statusesById[instance.id];
                   const title = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
                   const phase = instanceStatus?.phase;
                   const ready = phase === 'ready';
+                  const sshHost = directHosts.find((host) => host.id === instance.id);
+                  const isActive = isDesktopHostActive({
+                    id: instance.id,
+                    label: title,
+                    url: instanceStatus?.localUrl || sshHost?.url || '',
+                  });
+                  const switchBlocked = isActive || hostSwitchPending || !ready;
+                  const switchButton = (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="!font-normal"
+                      onClick={() => void switchToSshInstance(instance)}
+                      disabled={switchBlocked}
+                      aria-label={t('desktopHostSwitcher.actions.switchToAria', { instance: title })}
+                    >
+                      <Icon name="arrow-left-right" className="h-3.5 w-3.5" />
+                      {isActive ? t('desktopHostSwitcher.header.current') : t('desktopHostSwitcher.actions.switchInstance')}
+                    </Button>
+                  );
                   return (
                     <div key={`ssh:${instance.id}`} className="flex items-center justify-between gap-3 py-1.5">
                       <div className="min-w-0">
@@ -2504,6 +2457,7 @@ export const RemoteInstancesPage: React.FC = () => {
                           <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
                             {t('settings.remoteInstances.channel.ssh')}
                           </span>
+                          {isActive ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.current')}</span> : null}
                         </div>
                         <p className="typography-micro text-muted-foreground truncate">
                           {t(phaseLabelKey(phase))}{instanceStatus?.localUrl ? ` · ${instanceStatus.localUrl}` : ''}
@@ -2512,44 +2466,30 @@ export const RemoteInstancesPage: React.FC = () => {
                       <div className="flex shrink-0 items-center gap-1">
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => {
                           const op = ready ? disconnect(instance.id) : connect(instance.id);
-                          void op.catch((err) => toast.error(ready ? t('settings.remoteInstances.sidebar.toast.disconnectFailed') : t('settings.remoteInstances.sidebar.toast.connectFailed'), {
-                            description: err instanceof Error ? err.message : String(err),
-                          }));
+                          void op.catch((err) => {
+                            const connectDetail = instanceStatus?.detail || (err instanceof Error ? err.message : String(err));
+                            const connectCode = resolveManagedSshBootstrapErrorCode(instanceStatus?.errorCode, connectDetail);
+                            toast.error(ready ? t('settings.remoteInstances.sidebar.toast.disconnectFailed') : t('settings.remoteInstances.sidebar.toast.connectFailed'), {
+                              description: ready
+                                ? (err instanceof Error ? err.message : String(err))
+                                : formatSshBootstrapErrorDescription(
+                                  t(sshBootstrapErrorGuidanceKey(connectCode)),
+                                  connectCode,
+                                  connectDetail,
+                                ),
+                            });
+                          });
                         }}>
                           {ready ? <Icon name="stop" className="h-3.5 w-3.5" /> : <Icon name="plug-2" className="h-3.5 w-3.5" />}
                           {ready ? t('settings.remoteInstances.sidebar.actions.disconnect') : t('settings.remoteInstances.sidebar.actions.connect')}
                         </Button>
-                        {ready ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            className="!font-normal"
-                            onClick={() => void openAddDevice(instance.id)}
-                            aria-label={t('settings.remoteInstances.sidebar.actions.mobileConnectAria', { instance: title })}
-                          >
-                            <Icon name="smartphone" className="h-3.5 w-3.5" />
-                            {t('settings.remoteInstances.sidebar.actions.mobileConnect')}
-                          </Button>
-                        ) : (
+                        {ready ? switchButton : (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="inline-flex">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="xs"
-                                  className="!font-normal"
-                                  disabled
-                                  aria-label={t('settings.remoteInstances.sidebar.actions.mobileConnectDisabled')}
-                                >
-                                  <Icon name="smartphone" className="h-3.5 w-3.5" />
-                                  {t('settings.remoteInstances.sidebar.actions.mobileConnect')}
-                                </Button>
-                              </span>
+                              <span className="inline-flex">{switchButton}</span>
                             </TooltipTrigger>
                             <TooltipContent sideOffset={8} className="max-w-xs">
-                              {t('settings.remoteInstances.sidebar.actions.mobileConnectDisabled')}
+                              {t('settings.remoteInstances.sidebar.actions.switchInstanceDisabled')}
                             </TooltipContent>
                           </Tooltip>
                         )}
@@ -2622,9 +2562,7 @@ export const RemoteInstancesPage: React.FC = () => {
               <DialogTitle>
                 {addDevicePhase === 'result'
                   ? t('settings.remoteInstances.clientAuth.qrDialogTitle')
-                  : addDeviceSshInstance
-                    ? `${t('settings.remoteInstances.clientAuth.actions.addDevice')} · ${addDeviceSshInstance.nickname?.trim() || addDeviceSshInstance.sshParsed?.destination || addDeviceSshInstance.id}`
-                    : t('settings.remoteInstances.clientAuth.actions.addDevice')}
+                  : t('settings.remoteInstances.clientAuth.actions.addDevice')}
               </DialogTitle>
               {/* Configure phase: what this dialog will produce. Result phase: what
                   to do with the QR code that is now on screen. */}
@@ -2632,54 +2570,6 @@ export const RemoteInstancesPage: React.FC = () => {
             </DialogHeader>
             {addDevicePhase === 'configure' ? (
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void createPairingLink(); }}>
-                <div className="space-y-1.5">
-                  <p className="typography-ui-label text-foreground">{t('settings.remoteInstances.clientAuth.addDevice.targetLabel')}</p>
-                  <div role="tablist" aria-label={t('settings.remoteInstances.clientAuth.addDevice.targetLabel')} className="flex flex-wrap gap-1.5">
-                    <Button
-                      type="button"
-                      role="tab"
-                      aria-selected={addDeviceTargetId === 'local'}
-                      size="xs"
-                      variant={addDeviceTargetId === 'local' ? 'default' : 'outline'}
-                      className="!font-normal"
-                      onClick={() => {
-                        setAddDeviceTargetId('local');
-                        setRemoteClientError(null);
-                      }}
-                    >
-                      {t('settings.remoteInstances.clientAuth.addDevice.target.local')}
-                    </Button>
-                    {readySshInstances.length === 0 ? (
-                      <span className="typography-meta text-muted-foreground self-center px-1">
-                        {t('settings.remoteInstances.clientAuth.addDevice.target.sshEmpty')}
-                      </span>
-                    ) : (
-                      readySshInstances.map((instance) => {
-                        const title = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
-                        const selected = addDeviceTargetId === instance.id;
-                        return (
-                          <Button
-                            key={instance.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={selected}
-                            size="xs"
-                            variant={selected ? 'default' : 'outline'}
-                            className="!font-normal"
-                            onClick={() => {
-                              setAddDeviceTargetId(instance.id);
-                              setAddDeviceTransport('relay');
-                              setAddDeviceFallback(false);
-                              setRemoteClientError(null);
-                            }}
-                          >
-                            {title}
-                          </Button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
                 <label className="block space-y-1.5">
                   <Input
                     className="h-8"
@@ -2693,7 +2583,6 @@ export const RemoteInstancesPage: React.FC = () => {
                     {t('settings.remoteInstances.clientAuth.field.labelHint')}
                   </span>
                 </label>
-                {!addDeviceTargetIsSsh ? (
                 <div className="space-y-1.5">
                   <p className="typography-ui-label text-foreground">{t('settings.remoteInstances.clientAuth.addDevice.transportLabel')}</p>
                   {/* Ordered by how likely a first-time user is to want each option;
@@ -2799,34 +2688,6 @@ export const RemoteInstancesPage: React.FC = () => {
                     </label>
                   ) : null}
                 </div>
-                ) : (
-                  <label className="block space-y-1.5">
-                    <span className="typography-ui-label text-foreground">
-                      {t('settings.remoteInstances.clientAuth.addDevice.relayUrlLabel')}
-                    </span>
-                    <Input
-                      ref={addDeviceRelayUrlInputRef}
-                      className="h-8 font-mono"
-                      value={addDeviceRelayUrl}
-                      onChange={(event) => {
-                        setAddDeviceRelayUrl(event.target.value);
-                        setAddDeviceRelayUrlError(null);
-                      }}
-                      placeholder={DEFAULT_PAIRING_RELAY_URL}
-                      readOnly={transportOptions?.relayUrlLocked === true}
-                      aria-readonly={transportOptions?.relayUrlLocked === true || undefined}
-                      aria-invalid={Boolean(addDeviceRelayUrlError) || undefined}
-                      spellCheck={false}
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                    />
-                    {addDeviceRelayUrlError ? (
-                      <span role="alert" className="block typography-meta text-[var(--status-error)]">
-                        {addDeviceRelayUrlError}
-                      </span>
-                    ) : null}
-                  </label>
-                )}
                 {remoteClientError ? <p className="typography-meta text-[var(--status-error)]">{remoteClientError}</p> : null}
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={() => setAddDeviceOpen(false)} disabled={addDeviceCreating}>{t('settings.common.actions.cancel')}</Button>
@@ -2980,6 +2841,9 @@ export const RemoteInstancesPage: React.FC = () => {
           {reconnectAppearsStuck ? <span>{t('settings.remoteInstances.page.status.reconnectStale')}</span> : null}
         </DialogDescription>
       </DialogHeader>
+      {statusPhase === 'error' ? (
+        <SshBootstrapErrorNotice errorCode={status?.errorCode} detail={status?.detail} />
+      ) : null}
 
       <SettingsGroup label={t('settings.remoteInstances.page.section.actions')}>
           <div className="oc-settings-group-row flex flex-wrap items-center gap-2">

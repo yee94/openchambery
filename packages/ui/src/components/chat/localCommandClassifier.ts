@@ -3,7 +3,7 @@ export const LOCAL_CHAT_COMMANDS = new Set([
 ]);
 
 export const IMMEDIATE_LOCAL_CHAT_COMMANDS = new Set([
-  'compact', 'fork', 'undo', 'redo',
+  'new', 'compact', 'fork', 'undo', 'redo',
 ]);
 
 /** Optional reserved icon em-space between `/` and the command name. */

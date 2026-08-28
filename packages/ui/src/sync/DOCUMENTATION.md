@@ -59,10 +59,11 @@ So:
 | Layer / Store | Owns | Scope |
 |---|---|---|
 | child directory stores in `sync-context.tsx` | `session`, `permission`, `question`, `session_status`, etc. — non-transcript domains only | One directory |
+| `scoped-blocking-requests.ts` | Blocking-request scope (`useScopedBlockingQuestions` / `useScopedBlockingPermissions`): catalog `parentID` subtree plus live task dispatch edges read from running `task` tool parts (`state.metadata.parentSessionId`/`sessionId`). Fork + task_id reuse can leave a reused subagent session's catalog `parentID` on the pre-fork lineage, so the dispatch edge is what keeps a running subagent's pending question reachable from the dispatching session; terminal tasks contribute no edge | One directory |
 | QueryCache / TranscriptRepository | Production sole authority for transcript message/part/pagination boundary, request lifecycle, optimistic rows, SSE transcript merge, reconnect compensation | Transport + generation + directory + session |
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort prompts, worktree metadata, SDK-facing action entrypoints | App UI state |
 | `useGlobalSessionsStore.ts` | Global active sessions, global archived sessions, `sessionsByDirectory` | All opened project/worktree session lists |
-| session-index Query (`sessionIndexQueries` / `sessionIndexPinQueries`) | Authoritative session-index snapshot; pinned IDs derived from `time.pinned` | Transport-scoped pull + optimistic pin/unpin |
+| session-index Query (`sessionIndexQueries` / `sessionIndexPinQueries`) | Authoritative session-index snapshot; pinned IDs derived from `pinnedSessionIds` plus in-window `time.pinned` | Transport-scoped pull + optimistic pin/unpin |
 | `viewport-store.ts` | Scroll anchors, session memory, loading indicators | App UI state |
 | `input-store.ts` | Legacy pending input state plus keyed draft metadata, hydration, persistence state, and DraftKey-scoped attachment views; explicit-key VS Code attach primitives (`addDraftVSCodeFileAttachment` / `addDraftVSCodeSelectionAttachment`); atomic root attachment replace via `replaceDraftRootAttachments` (single `commitDraftSnapshot` CAS, preserves text/composer/mentions/synthetic) | App UI state |
 | `draft-attachment-resource-adapter.ts` | Explicit DraftKey attachment resource adapter for ChatInput/Assistant surfaces (add local, remove by attachmentID, root-only clear, replace root AttachedFile[] via single CAS + per-draftKeyString serial flight, VS Code file/selection); owns `resolveDraftAttachmentRefID` | App UI state |
@@ -316,11 +317,11 @@ Modules:
 
 | Module | Role |
 |---|---|
-| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; `hasTailAssistantMissingSettledCompletion` (lost settle-tick gap detection); optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
+| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; `hasTailAssistantMissingSettledCompletion` (lost settle-tick gap detection: missing completed, or stop without positive tokens); optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
 | `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded slim or open tool/reasoning/file parts exact-fill via `session.message` after the authority tail (≤4 concurrent FIFO; settled full rows skip); post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
 | `session-authority-revalidate.ts` | Enter-and-sync 30s window keyed by transport+generation+directory+sessionID; stamped only after a successful authority pull |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
-| `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset |
+| `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset; incremental `sessionID → canonical scopes` index (`listCanonicalScopesForSession`) kept in sync with QueryCache add/remove and cleared on purge/evict/dispose |
 | `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40 sessions) plus durable body budgets (`getTranscriptDurableByteBudget`: 4 / 12 / 40 MiB) |
 | `session-transcript-reconcile-api.ts` | Host anchor-reconcile HTTP client (`fetchSessionTranscriptReconcile`) — runtimeFetch, timeout race, strict contract, classified retry |
 | `session-transcript-recovery-checkpoint.ts` | Stable authored-user turn anchor selection + recovery checkpoint model / QueryCache read-write |
@@ -694,7 +695,7 @@ both readers agree on when a frame may shrink.
   | field | values | meaning |
   |---|---|---|
   | `onStale` | `drop` \| `backfill` | discard the page, or still apply it as hole-filling |
-  | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs. Insert-only also copies missing terminal settle fields (`finish`, `time.completed`, `error`) onto the live object; live terminal fields are never cleared |
+  | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs. Insert-only also copies missing terminal settle fields (`finish`, `time.completed`, `error`, and positive `tokens` when live counts are still zero) onto the live object; live terminal fields and positive tokens are never cleared |
   | `parts` | `replace` \| `skip-existing` | fetched parts are authoritative, or leave messages that already have parts |
   | `preserveStreaming` | `assistant` \| `all` \| `none` | which roles keep live parts the snapshot omits or truncates (streaming text/output, in-flight tools, and mid-turn completed tools) |
   | `protectOptimistic` | `none` \| `keep-unless-full` | unconfirmed optimistic parts (`__openchamberOptimistic`) keep the local set when incoming is slim or empty; a non-empty full snapshot still replaces |
@@ -1112,8 +1113,10 @@ both readers agree on when a frame may shrink.
   Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
   A lost settle tick — tail assistant with a server-stamped terminal finish
-  (`stop` / `length`) but no `time.completed`, detected via
-  `hasTailAssistantMissingSettledCompletion` — self-heals through
+  (`stop` / `length`) but no `time.completed`, or a confirmed `stop` with
+  `time.completed` but no positive token counts (tokens half of the settle
+  tick lost), detected via `hasTailAssistantMissingSettledCompletion` —
+  self-heals through
   `refreshTranscriptFromAuthority` (reconcile upsert, never stale-dropped):
   a cooldown-suppressed materialization enqueue re-checks the gap one
   microtask after the event frame (transcript SSE batches commit at flush
@@ -1164,7 +1167,11 @@ both readers agree on when a frame may shrink.
   replaces existing messages — HTTP `recovery` / `reconcile-page` upserts
   (`materialization.ts`) route through `mergeTranscriptMessageUpdate` too, so
   a fetched snapshot can refresh content without blanking identity a live
-  event established. Assistant-header display additionally keeps a bounded
+  event established. String identity fields (`agent` / `mode` / `providerID` /
+  `modelID` / `variant`) keep omit-preserves-existing semantics; object
+  `model` (UserMessage since OpenCode 1.4.0 — carries nested `variant`) is
+  retained wholesale when incoming omits it and replaced wholesale when
+  present, never run through string emptiness checks that would delete it. Assistant-header display additionally keeps a bounded
   last-known-identity cache per message id (`ChatMessage.tsx`) so a remounted
   row renders stable identity before authoritative fields arrive, and client
   diagnostics record `identityMissingCount` / diff `identityLost` (facts
@@ -1358,8 +1365,8 @@ Rules:
 5. `setCurrentSession()` announces a monotonic session-switch intent before directory resolution or store publication. Delayed visual/transition callbacks must validate that intent and silently discard stale work.
 6. On a real session id change, `setCurrentSession()` also calls `useUIStore.syncWorkspacePanelsForSessionSwitch()` so right-side workspace panels (context/subagent chat, file preview, git changes sidebar) hide when leaving a session and restore when returning. `openNewSessionDraft()` must call the same helper when clearing a real session for Welcome/draft, because it does not go through `setCurrentSession()`. Tab content remains directory-cached; only open/active visibility is session-scoped.
 7. Edit staging restores the composer from the visible user-message snapshot captured at click time. Primary send keeps `messageEditCommitting` painted, aborts any still-busy turn, waits for idle, deletes the edited target and its old forward tail, then dispatches the replacement. OpenCode rejects `deleteMessage` while the session is busy, so the wait is required. Each local row drops only as its remote delete lands. Submit paints the target as "editing" instead of hiding it. A failed abort/wait/delete leaves the old tail and staged edit intact; a failed send after a successful delete keeps the composer draft for retry. Leaving the session disarms `stagedMessageEdit`.
-8. Sidebar previous/next navigation is scope-aware. `SessionSidebar` publishes the Recent order plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Project-origin navigation cycles those visible project rows in sidebar order, including across projects, and never falls through to hidden rows.
-9. Global Mod+1…9 navigation is session-row based, not project based. `SessionSidebar` combines the currently revealed Recent rows with logically visible project rows, caps the visual order at nine, and publishes it through `sidebar-numbered-navigation.ts`. The numbered activation preserves the selected row's exact Recent/Project Focus identity.
+8. Sidebar previous/next navigation follows the rendered sidebar order. `SessionSidebar` publishes pinned rows plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Adjacent navigation concatenates those rings (pinned first) and wraps across both sections, never falling through to hidden project rows.
+9. Global Mod+1…9 navigation is session-row based, not project based. `SessionSidebar` combines the currently revealed pinned rows with logically visible project rows, caps the visual order at nine, and publishes it through `sidebar-numbered-navigation.ts`. The numbered activation preserves the selected row's exact Pinned/Project Focus identity.
 10. `optimisticSend()` inserts the optimistic user message and local `busy` status **before** the connection grace wait (`waitForConnectionOrThrow`). Long-idle reconnect must not leave the composer cleared / status busy while the chat list still shows the pre-send snapshot. Connection failure remains a pre-dispatch rollback of that optimistic row.
   11. `fetchMessagesForSession()` may early-return on a renderable repository transcript only when pagination boundary is known (`has-more`/`exhausted`) **and** repository request state allows reuse (clean ready, not error/dirty) **and** the enter-and-sync authority window is still fresh (last successful pull < 30s). An `unknown` boundary always performs one authoritative tail ensure even when user messages are already cached. A known hot cache outside the window goes through repository `ensureInitial` (reconcile-page, not reset). It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when request state is clean **and** the window is fresh, so rapid remounts do not force a refetch or loading flash. The cold pull itself goes through production transport → `http-page`; the hot revalidate shares Query single-flight / `authorityTailInflight`, assistant-tail parent recovery, and one atomic reconcile-page commit. A switched-away stale generation completion never commits (next visit reads unknown → ensure). Concurrent callers share the in-flight Query / coordinator / inflight promise.
 
@@ -1396,8 +1403,14 @@ transcript (or any residual pure draft surface) as an unscoped full dump.
 - Keep a short message-ID cutoff after the response so transport-buffered copy
   events cannot refill the complete history. Newer user/assistant events pass
   through normally.
-- A current-session fork during `busy` or `retry` targets the latest user
-  message. The active assistant message remains outside the forked history.
+- OpenCode `session.fork(messageID)` copies strictly before that message.
+  Current-session `/fork` while idle — including a missing status entry, because
+  `/session/status` omits idle sessions — passes `undefined` and keeps the full
+  source history through the latest completed turn.
+- A current-session fork during `busy` or `retry` (or a missing status whose
+  transcript tail is still an open assistant) passes the first message after the
+  latest user message. That user turn is included; in-progress assistant work is
+  not. A live session with no user message after refresh is a hard failure.
 - An explicit user-message fork passes that user message ID and restores its text and file parts.
 - An explicit assistant-message fork passes the following source message ID; an assistant at the source tail passes `undefined` and retains the full history through that reply.
 - A current-session fork preserves the composer's existing resources.

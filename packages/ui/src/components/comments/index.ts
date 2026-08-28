@@ -5,3 +5,4 @@ export * from './CodeMirrorCommentWidgets';
 export * from './PierreDiffCommentUtils';
 export * from './PierreDiffCommentOverlays';
 export * from './CodeSelectionActionBubble';
+export * from './codeSelectionActionTarget';
