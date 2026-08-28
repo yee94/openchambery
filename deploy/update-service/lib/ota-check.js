@@ -192,6 +192,9 @@ function toCapgoResponse(decision) {
       payload.session_key = decision.ota.bundle.sessionKey;
       payload.sessionKey = decision.ota.bundle.sessionKey;
     }
+    if (decision.isChannelRollback === true) {
+      payload.is_channel_rollback = true;
+    }
     return payload;
   }
 

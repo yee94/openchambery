@@ -192,3 +192,51 @@ describe('reorderProjectEntriesById', () => {
     ]);
   });
 });
+
+describe('useProjectsStore addProject', () => {
+  beforeEach(() => {
+    useProjectsStore.setState({
+      projects: [
+        { id: 'alpha', path: '/workspace/alpha', label: 'Alpha' },
+        { id: 'beta', path: '/workspace/beta', label: 'Beta' },
+      ],
+      activeProjectId: 'alpha',
+      manualProjectOrder: [],
+    });
+  });
+
+  test('prepends the new project to the registry', () => {
+    const entry = useProjectsStore.getState().addProject('/workspace/delta');
+    expect(entry).not.toBeNull();
+    expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([
+      entry!.id,
+      'alpha',
+      'beta',
+    ]);
+  });
+
+  test('prepends the new project id to manualProjectOrder', () => {
+    useProjectsStore.setState({
+      manualProjectOrder: ['beta', 'alpha'],
+    });
+
+    const entry = useProjectsStore.getState().addProject('/workspace/delta');
+    expect(entry).not.toBeNull();
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([entry!.id, 'beta', 'alpha']);
+  });
+
+  test('seeds manualProjectOrder with only the new id when order was empty', () => {
+    const entry = useProjectsStore.getState().addProject('/workspace/delta');
+    expect(entry).not.toBeNull();
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([entry!.id]);
+  });
+
+  test('activates an existing path without duplicating the project', () => {
+    const before = useProjectsStore.getState().projects;
+    const existing = useProjectsStore.getState().addProject('/workspace/beta');
+    expect(existing?.id).toBe('beta');
+    expect(useProjectsStore.getState().projects).toBe(before);
+    expect(useProjectsStore.getState().activeProjectId).toBe('beta');
+    expect(useProjectsStore.getState().projects.filter((project) => project.path === '/workspace/beta')).toHaveLength(1);
+  });
+});

@@ -34,6 +34,7 @@ vi.mock('./host-client.js', () => ({
 import {
   createRelayService,
   DEFAULT_RELAY_URL,
+  isRelayHostRuntime,
   RELAY_HOST_DESKTOP_ONLY_MESSAGE,
 } from './service.js';
 
@@ -143,14 +144,14 @@ describe('relay service pairing endpoint', () => {
   });
 });
 
-describe('relay host desktop-only gate', () => {
+describe('relay host runtime gate', () => {
   afterEach(() => {
     relayMocks.starts.length = 0;
     relayMocks.stops.length = 0;
     relayMocks.identityReads = 0;
   });
 
-  it('does not start a host, claim, mint identity, or rewrite settings when reconcile runs off desktop', async () => {
+  it('does not start a host, claim, mint identity, or rewrite settings when reconcile runs off host runtime', async () => {
     const write = vi.fn(async (next) => next);
     const { service, settings } = createTestRelayService({
       canHostRelay: false,
@@ -175,7 +176,16 @@ describe('relay host desktop-only gate', () => {
     expect(relayMocks.identityReads).toBe(0);
   });
 
-  it('refuses relay pairing and enable off desktop', async () => {
+  it('includes the public E2EE trust anchor on host-capable status', async () => {
+    const { service } = createTestRelayService();
+    await expect(service.getStatus()).resolves.toMatchObject({
+      hostAllowed: true,
+      serverId: 'server-test',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+    });
+  });
+
+  it('refuses relay pairing and enable off host runtime', async () => {
     const { service, settings } = createTestRelayService({ canHostRelay: false });
     const app = express();
     service.registerRoutes(app);
@@ -204,6 +214,7 @@ describe('relay host desktop-only gate', () => {
     const previous = process.env.OPENCHAMBER_RUNTIME;
     process.env.OPENCHAMBER_RUNTIME = 'desktop';
     try {
+      expect(isRelayHostRuntime()).toBe(true);
       const settings = createSettingsHarness();
       const service = createRelayService({
         crypto: {},
@@ -219,10 +230,59 @@ describe('relay host desktop-only gate', () => {
     }
   });
 
-  it('defaults canHostRelay to false when OPENCHAMBER_RUNTIME is not desktop', async () => {
+  it('defaults canHostRelay from OPENCHAMBER_RUNTIME=ssh-remote', async () => {
+    const previous = process.env.OPENCHAMBER_RUNTIME;
+    process.env.OPENCHAMBER_RUNTIME = 'ssh-remote';
+    try {
+      expect(isRelayHostRuntime()).toBe(true);
+      const settings = createSettingsHarness();
+      const service = createRelayService({
+        crypto: {},
+        readSettingsFromDiskMigrated: settings.read,
+        writeSettingsToDisk: settings.write,
+        getLocalPort: () => 3000,
+      });
+      await service.ensureEnabledForPairing();
+      expect(relayMocks.starts).toEqual([DEFAULT_RELAY_URL]);
+    } finally {
+      if (previous === undefined) delete process.env.OPENCHAMBER_RUNTIME;
+      else process.env.OPENCHAMBER_RUNTIME = previous;
+    }
+  });
+
+  it('keeps an ssh-remote opt-in host running when demand is absent', async () => {
+    const previous = process.env.OPENCHAMBER_RUNTIME;
+    process.env.OPENCHAMBER_RUNTIME = 'ssh-remote';
+    try {
+      const settings = createSettingsHarness();
+      await settings.write({
+        privateRelay: { enabled: true, relayUrl: DEFAULT_RELAY_URL },
+      });
+      const service = createRelayService({
+        crypto: {},
+        readSettingsFromDiskMigrated: settings.read,
+        writeSettingsToDisk: settings.write,
+        getLocalPort: () => 3000,
+        hasRelayDemand: async () => false,
+      });
+
+      await service.reconcile();
+
+      expect(relayMocks.starts).toEqual([DEFAULT_RELAY_URL]);
+      expect(settings.current()).toMatchObject({
+        privateRelay: { enabled: true, relayUrl: DEFAULT_RELAY_URL },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.OPENCHAMBER_RUNTIME;
+      else process.env.OPENCHAMBER_RUNTIME = previous;
+    }
+  });
+
+  it('defaults canHostRelay to false when OPENCHAMBER_RUNTIME is not a host runtime', async () => {
     const previous = process.env.OPENCHAMBER_RUNTIME;
     delete process.env.OPENCHAMBER_RUNTIME;
     try {
+      expect(isRelayHostRuntime()).toBe(false);
       const settings = createSettingsHarness();
       const service = createRelayService({
         crypto: {},

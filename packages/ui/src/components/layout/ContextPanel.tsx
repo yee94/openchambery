@@ -2754,7 +2754,7 @@ export const ContextPanel: React.FC = () => {
       inert={!isOpen || undefined}
       className={cn(
         'flex min-h-0 flex-col overflow-hidden bg-background',
-        !isExpanded && 'border-l border-border/40',
+        !isExpanded && 'oc-layout-divider-l',
         isExpanded
           ? 'absolute inset-0 z-20 min-w-0'
           : 'relative h-full flex-shrink-0',

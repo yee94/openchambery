@@ -484,6 +484,30 @@ export const createSessionTitleRuntime = ({
     if (!session || typeof session !== 'object') return;
 
     const meta = readTitleRefreshMeta(session);
+
+    // Lazy fork registration: when the fork's `session.created` event was lost
+    // (SSE reconnect gap, server/OpenCode restart), the in-memory pending map
+    // never learned about the fork. The first newly-created user message on a
+    // fork-titled session (message created after the fork, before any activity
+    // timestamp advanced past the fork) rebuilds that pending entry so the
+    // matching idle still triggers the first-refresh. Idempotent: the normal
+    // session.created path already holds a pending entry, and once activity
+    // advances past the fork time later messages never re-register.
+    const forkCreated = Number(session?.time?.created);
+    if (
+      !forkFirstSendPending.has(sessionId)
+      && isForkedSessionTitle(typeof session.title === 'string' ? session.title : '')
+      && Number.isFinite(forkCreated)
+      && createdAt > forkCreated
+      && !(Number(meta.titleRefresh.activityUpdatedAt) > forkCreated)
+    ) {
+      forkFirstSendPending.set(sessionId, {
+        createdAt: forkCreated,
+        directory: directory || '',
+        hasNewUserMessage: true,
+      });
+    }
+
     const previous = Number(meta.titleRefresh.activityUpdatedAt);
     const activityUpdatedAt = Number.isFinite(previous) ? Math.max(previous, createdAt) : createdAt;
     if (activityUpdatedAt === previous) return;

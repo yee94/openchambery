@@ -140,6 +140,12 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       ON session_summary(runtime_key, directory, activity_updated_at DESC, session_id DESC);
     CREATE INDEX IF NOT EXISTS session_child_parent
       ON session_child(runtime_key, directory, parent_id);
+    CREATE TABLE IF NOT EXISTS session_pin (
+      runtime_key TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      pinned_at INTEGER NOT NULL,
+      PRIMARY KEY (runtime_key, session_id)
+    );
   `);
   const sessionSummaryColumns = new Set(
     db.prepare("SELECT name FROM pragma_table_info('session_summary')").all().map((column) => column.name),
@@ -147,6 +153,12 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
   if (!sessionSummaryColumns.has('pinned_at')) {
     db.exec('ALTER TABLE session_summary ADD COLUMN pinned_at INTEGER');
   }
+  db.prepare(`
+    INSERT OR IGNORE INTO session_pin(runtime_key, session_id, pinned_at)
+    SELECT runtime_key, session_id, pinned_at
+    FROM session_summary
+    WHERE pinned_at IS NOT NULL
+  `).run();
   db.prepare('INSERT OR REPLACE INTO session_index_meta(key, value) VALUES (?, ?)')
     .run('schema_version', String(SCHEMA_VERSION));
 
@@ -239,6 +251,23 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
   const countChildrenForParent = db.prepare(`
     SELECT COUNT(*) AS count FROM session_child
     WHERE runtime_key = ? AND directory = ? AND parent_id = ?
+  `);
+  const readPins = db.prepare(`
+    SELECT session_id AS id, pinned_at AS pinnedAt
+    FROM session_pin
+    WHERE runtime_key = ?
+    ORDER BY pinned_at DESC, session_id DESC
+  `);
+  const upsertPin = db.prepare(`
+    INSERT INTO session_pin(runtime_key, session_id, pinned_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(runtime_key, session_id) DO UPDATE SET pinned_at = excluded.pinned_at
+  `);
+  const deletePin = db.prepare('DELETE FROM session_pin WHERE runtime_key = ? AND session_id = ?');
+  const writeSummaryPinnedAt = db.prepare(`
+    UPDATE session_summary
+    SET pinned_at = ?
+    WHERE runtime_key = ? AND session_id = ?
   `);
 
   const replaceDirectoryRows = ({ directory, sessions, cursor, hasMore, fullSync = true, now = Date.now() }) => {
@@ -363,6 +392,8 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
 
   const snapshot = () => {
     const key = runtimeKey();
+    const pinRows = readPins.all(key);
+    const pinById = new Map(pinRows.map((row) => [row.id, row.pinnedAt]));
     const directories = db.prepare(`
       SELECT directory, cursor, has_more AS hasMore, last_synced_at AS lastSyncedAt,
         last_full_synced_at AS lastFullSyncedAt, last_accessed_at AS lastAccessedAt
@@ -387,7 +418,9 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
             created: session.createdAt,
             updated: session.updatedAt,
             ...(session.archivedAt ? { archived: session.archivedAt } : {}),
-            ...(session.pinnedAt ? { pinned: session.pinnedAt } : {}),
+            ...((pinById.get(session.id) ?? session.pinnedAt)
+              ? { pinned: pinById.get(session.id) ?? session.pinnedAt }
+              : {}),
           },
           metadata: {
             openchamber: {
@@ -401,13 +434,17 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
         }))
         .filter(isVisibleSession),
     }));
-    return { directories };
+    return {
+      directories,
+      pinnedSessionIds: pinRows.map((row) => row.id),
+    };
   };
 
   function remove(sessionID) {
     if (typeof sessionID !== 'string' || !sessionID) return false;
     const key = runtimeKey();
     const parent = parentForChild.get(key, sessionID);
+    const pinResult = deletePin.run(key, sessionID);
     const result = db.prepare('DELETE FROM session_summary WHERE runtime_key = ? AND session_id = ?').run(key, sessionID);
     deleteChildrenWithParent.run(key, sessionID);
     deleteChild.run(key, sessionID);
@@ -419,7 +456,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
         parent.parentID,
       );
     }
-    return result.changes > 0;
+    return result.changes > 0 || pinResult.changes > 0;
   }
 
   /**
@@ -480,36 +517,22 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     return result.changes > 0;
   };
 
-  const summaryExists = db.prepare(`
-    SELECT 1 AS present FROM session_summary
-    WHERE runtime_key = ? AND session_id = ?
-    LIMIT 1
-  `);
-
   const setPinned = (sessionID, pinnedAt = Date.now()) => {
     if (typeof sessionID !== 'string' || !sessionID) return false;
     const timestamp = toTimestamp(pinnedAt);
     if (!timestamp) return false;
     const key = runtimeKey();
-    if (!summaryExists.get(key, sessionID)) return false;
-    db.prepare(`
-      UPDATE session_summary
-      SET pinned_at = ?
-      WHERE runtime_key = ? AND session_id = ?
-    `).run(timestamp, key, sessionID);
+    upsertPin.run(key, sessionID, timestamp);
+    writeSummaryPinnedAt.run(timestamp, key, sessionID);
     return true;
   };
 
   const clearPinned = (sessionID) => {
     if (typeof sessionID !== 'string' || !sessionID) return false;
     const key = runtimeKey();
-    if (!summaryExists.get(key, sessionID)) return false;
-    db.prepare(`
-      UPDATE session_summary
-      SET pinned_at = NULL
-      WHERE runtime_key = ? AND session_id = ?
-    `).run(key, sessionID);
-    return true;
+    const pinResult = deletePin.run(key, sessionID);
+    const summaryResult = writeSummaryPinnedAt.run(null, key, sessionID);
+    return pinResult.changes > 0 || summaryResult.changes > 0;
   };
 
   const replaceChildSessions = db.transaction((directory, parentSessionID, children) => {

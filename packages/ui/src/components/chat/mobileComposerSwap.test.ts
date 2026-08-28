@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-    COMPOSER_SWAP_COMMIT_THRESHOLD,
     COMPOSER_SWAP_CSS_VAR,
     COMPOSER_SWAP_FOLLOW_RANGE_PX,
+    COMPOSER_SWAP_FULL_RANGE_PX,
     COMPOSER_SWAP_NOISE_PX,
     applyComposerSwapCommit,
     applyComposerSwapForce,
@@ -15,7 +15,6 @@ import {
     clearComposerSwap,
     publishComposerSwap,
     resolveComposerSwapCommit,
-    shouldComposerSwapAutoCommit,
 } from './mobileComposerSwap';
 
 describe('mobileComposerSwap', () => {
@@ -26,23 +25,26 @@ describe('mobileComposerSwap', () => {
         expect(state.progress).toBeGreaterThan(0);
         expect(state.progress).toBeLessThan(0.5);
 
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX / 4);
+        state = applyComposerSwapScroll(state, 10);
+        expect(state.progress).toBe(0.125);
+
+        state = applyComposerSwapScroll(state, 20);
         expect(state.progress).toBe(0.25);
 
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX / 2);
-        expect(state.progress).toBe(0.5);
-
         state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX);
+        expect(state.phase).toBe('tracking');
         expect(state.progress).toBe(0.5);
 
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX * 10);
-        expect(state.progress).toBe(0.5);
+        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FULL_RANGE_PX);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+
+        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FULL_RANGE_PX * 10);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
     });
 
-    test('idle before the follow half snaps back; finishing the half auto-commits compact', () => {
-        const short = applyComposerSwapScroll(createComposerSwapState(), COMPOSER_SWAP_FOLLOW_RANGE_PX / 4);
+    test('commit after the gesture picks the final form from progress', () => {
+        const short = applyComposerSwapScroll(createComposerSwapState(), 20);
         expect(short.progress).toBe(0.25);
-        expect(shouldComposerSwapAutoCommit(short)).toBe(false);
         expect(resolveComposerSwapCommit(short)).toBe('expanded');
         expect(applyComposerSwapCommit(short)).toMatchObject({
             phase: 'snapping',
@@ -50,11 +52,10 @@ describe('mobileComposerSwap', () => {
             progress: 0,
         });
 
-        const half = applyComposerSwapScroll(createComposerSwapState(), COMPOSER_SWAP_FOLLOW_RANGE_PX);
-        expect(half.progress).toBe(COMPOSER_SWAP_COMMIT_THRESHOLD);
-        expect(shouldComposerSwapAutoCommit(half)).toBe(true);
-        expect(resolveComposerSwapCommit(half)).toBe('compact');
-        expect(applyComposerSwapCommit(half)).toMatchObject({
+        const past = applyComposerSwapScroll(createComposerSwapState(), 60);
+        expect(past.progress).toBe(0.75);
+        expect(resolveComposerSwapCommit(past)).toBe('compact');
+        expect(applyComposerSwapCommit(past)).toMatchObject({
             phase: 'snapping',
             rest: 'compact',
             progress: 1,
@@ -63,56 +64,59 @@ describe('mobileComposerSwap', () => {
 
     test('repeat expand↔compact cycles keep working without a permanent latch', () => {
         let state = applyComposerSwapSnapDone(
-            applyComposerSwapCommit(
-                applyComposerSwapScroll(createComposerSwapState(), COMPOSER_SWAP_FOLLOW_RANGE_PX),
-            ),
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
         );
         expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
 
         // Temporary suppress (hook settle window) holds compact near the bottom.
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX / 2, {
+        state = applyComposerSwapScroll(state, 30, {
             suppressReturn: true,
         });
         expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
 
         // After settle ends, return follow works again.
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX / 2);
+        state = applyComposerSwapScroll(state, 30);
         expect(state.phase).toBe('tracking');
-        expect(state.progress).toBeCloseTo(0.75);
+        expect(state.rest).toBe('compact');
+        expect(state.progress).toBeCloseTo(0.375);
 
         state = applyComposerSwapScroll(state, 0);
-        expect(state).toMatchObject({ phase: 'snapping', rest: 'expanded', progress: 0 });
-        state = applyComposerSwapSnapDone(state);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
 
         // Second cycle from expanded still tracks and commits.
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX);
-        expect(shouldComposerSwapAutoCommit(state)).toBe(true);
-        state = applyComposerSwapSnapDone(applyComposerSwapCommit(state));
+        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FULL_RANGE_PX + 20);
         expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+
+        state = applyComposerSwapScroll(state, 10);
+        expect(state.phase).toBe('tracking');
+        expect(state.progress).toBeCloseTo(0.125);
+        state = applyComposerSwapSnapDone(applyComposerSwapCommit(state));
+        expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
     });
 
     test('scroll can interrupt an in-flight snap so the machine cannot stick', () => {
         let state = applyComposerSwapCommit(
-            applyComposerSwapScroll(createComposerSwapState(), COMPOSER_SWAP_FOLLOW_RANGE_PX),
+            applyComposerSwapScroll(createComposerSwapState(), 60),
         );
         expect(state.phase).toBe('snapping');
         expect(state.rest).toBe('compact');
 
         // User keeps scrolling while snapping — interrupt; rest stays the snap
         // target and compact return-follow can continue instead of freezing.
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX / 4);
+        state = applyComposerSwapScroll(state, 10);
         expect(state.phase).toBe('tracking');
         expect(state.rest).toBe('compact');
-        expect(state.progress).toBeCloseTo(0.625);
+        expect(state.progress).toBeCloseTo(0.125);
 
         // A later expanded cycle still works after the interrupt.
         state = applyComposerSwapSnapDone(applyComposerSwapForce(state, 'expanded'));
-        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FOLLOW_RANGE_PX);
-        expect(shouldComposerSwapAutoCommit(state)).toBe(true);
+        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FULL_RANGE_PX * 2);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
     });
 
     test('pin forces expanded', () => {
         let state = applyComposerSwapScroll(createComposerSwapState(), 20);
+        expect(state.progress).toBe(0.25);
         state = applyComposerSwapPin(state, true);
         expect(state).toMatchObject({
             phase: 'rest',
@@ -142,6 +146,8 @@ describe('mobileComposerSwap', () => {
             createComposerSwapState(),
             COMPOSER_SWAP_FOLLOW_RANGE_PX,
         );
+        expect(tracking.phase).toBe('tracking');
+        expect(tracking.progress).toBe(0.5);
         publishComposerSwap(scope, tracking, first);
         expect(scope.dataset.ocComposerSwapPhase).toBe('tracking');
 
@@ -194,6 +200,23 @@ describe('mobileComposerSwap', () => {
         );
         state = applyComposerSwapForce(state, 'expanded');
         expect(state).toMatchObject({ phase: 'snapping', rest: 'expanded', progress: 0 });
+    });
+
+    test('compact return follow maps the full range', () => {
+        let state = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+        expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+
+        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FULL_RANGE_PX / 2);
+        expect(state.phase).toBe('tracking');
+        expect(state.progress).toBe(0.5);
+
+        state = applyComposerSwapScroll(state, COMPOSER_SWAP_FULL_RANGE_PX);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+
+        state = applyComposerSwapScroll(state, COMPOSER_SWAP_NOISE_PX);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
     });
 
     test('distanceFromBottomOf never goes negative', () => {

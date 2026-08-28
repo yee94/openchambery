@@ -19,6 +19,33 @@ const IDLE_RESULT: SessionActivityResult = {
   isCooldown: false,
 };
 
+type ActivityMessage = {
+  role?: string;
+  time?: { created?: number; completed?: number };
+};
+
+/**
+ * Pending-assistant isWorking fallback is warm-cache only.
+ * During cold-start assemble (empty → slim → streaming) no assistant has
+ * `time.completed` yet; enabling the fallback there invents busy from message
+ * shape alone while status/message SSE still interleave → StatusRow flicker.
+ * Once any assistant has completed, the transcript is warm and the trailing
+ * incomplete assistant is a legitimate settle-gap signal.
+ */
+export const resolvePendingAssistantWorkingFallback = (input: {
+  messages: readonly ActivityMessage[];
+  hasPendingAssistant: boolean;
+}): boolean => {
+  if (!input.hasPendingAssistant) return false;
+  const hasCompletedAssistant = input.messages.some(
+    (message) => (
+      message.role === 'assistant'
+      && typeof message.time?.completed === 'number'
+    ),
+  );
+  return hasCompletedAssistant;
+};
+
 /**
  * Determines if a session is actively working.
  * Checks session_status and, only when status is missing, falls back to the
@@ -45,16 +72,21 @@ export function useSessionActivity(sessionId: string | null | undefined, directo
     const phase: SessionActivityPhase = (status?.type ?? 'idle') as SessionActivityPhase;
 
     // Only trust the trailing assistant message as a transient fallback while
-    // waiting for session.status/message.updated to settle.
+    // waiting for session.status/message.updated to settle — and only once the
+    // transcript is warm (see resolvePendingAssistantWorkingFallback).
     const lastMessage = messages[messages.length - 1];
     const hasPendingAssistant = Boolean(
       lastMessage
       && lastMessage.role === 'assistant'
       && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== 'number',
     );
+    const pendingAssistantFallback = resolvePendingAssistantWorkingFallback({
+      messages: messages as readonly ActivityMessage[],
+      hasPendingAssistant,
+    });
     const pendingAssistantStartedAt = (lastMessage as { time?: { created?: number } } | undefined)?.time?.created;
     const pendingAssistantCoveredBySnapshot = Boolean(
-      hasPendingAssistant
+      pendingAssistantFallback
       && typeof statusSnapshotAt === 'number'
       && typeof pendingAssistantStartedAt === 'number'
       && pendingAssistantStartedAt <= statusSnapshotAt,
@@ -62,21 +94,23 @@ export function useSessionActivity(sessionId: string | null | undefined, directo
 
     const hasAuthoritativeStatus = status !== undefined;
     const statusWorking = hasAuthoritativeStatus && phase !== 'idle';
-    const isWorking = statusWorking || (hasPendingAssistant && !pendingAssistantCoveredBySnapshot);
+    const isWorking = statusWorking || (pendingAssistantFallback && !pendingAssistantCoveredBySnapshot);
 
     const idleCoversPendingAssistant = hasAuthoritativeStatus
       && !statusWorking
       && typeof statusObservedAt === 'number'
       && typeof pendingAssistantStartedAt === 'number'
       && pendingAssistantStartedAt <= statusObservedAt;
-    if (hasAuthoritativeStatus && !statusWorking && (!hasPendingAssistant || idleCoversPendingAssistant)) return IDLE_RESULT;
+    if (hasAuthoritativeStatus && !statusWorking && (!pendingAssistantFallback || idleCoversPendingAssistant)) {
+      return IDLE_RESULT;
+    }
 
     if (!isWorking) return IDLE_RESULT;
 
     return {
       phase: statusWorking ? phase : 'busy',
       isWorking: true,
-      isBusy: phase === 'busy' || (!statusWorking && hasPendingAssistant),
+      isBusy: phase === 'busy' || (!statusWorking && pendingAssistantFallback),
       isCooldown: false,
     };
   }, [sessionId, status, statusObservedAt, messages, permissions, questions, statusSnapshotAt]);

@@ -19,8 +19,6 @@ import { Capacitor } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 import React from 'react';
 
-import { applySshRelayRuntime } from '@/lib/desktopHostSwitch';
-import { requestSshHostToken } from '@/lib/desktopHosts';
 import { useI18n } from '@/lib/i18n';
 import type { PairingConnectionPayload, PairingEndpointCandidate } from '@/lib/connectionPayload';
 import { isCapacitorApp } from '@/lib/platform';
@@ -96,18 +94,6 @@ export type MobileTransportCandidate =
   | { kind: 'direct'; url: string }
   | { kind: 'relay'; relay: MobileRelayConfig };
 
-/**
- * SSH instance reached through a paired desktop over relay (QR pairing path).
- * `clientToken` on the connection is the SSH runtime token.
- * `desktopClientToken` authorizes desktop-side mint (ssh-host-token).
- */
-export type MobileSshTarget = {
-  hostId: string;
-  desktopServerId: string;
-  /** Desktop (parent) client token — never used as the runtime bearer. */
-  desktopClientToken: string;
-};
-
 export type MobileSavedConnection = {
   id: string;
   label: string;
@@ -117,8 +103,6 @@ export type MobileSavedConnection = {
   hasToken?: boolean;
   // Web only: the token stored inline. On native this stays undefined in the list.
   clientToken?: string;
-  /** When set, runtime routes via relay + x-openchamber-target-port to this SSH host. */
-  sshTarget?: MobileSshTarget;
 };
 
 export type MobilePendingConnection = {
@@ -229,22 +213,14 @@ export const connectionDisplayUrl = (connection: { candidates: MobileTransportCa
 
 // Secure-store / dedupe key for a saved device. A device has ONE token that
 // works over all its transports; the key is stable and transport-derived: the
-// relay identity when the device can use relay, else its direct URL. SSH targets
-// on the same desktop get a distinct key suffix so tokens never collide.
+// relay identity when the device can use relay, else its direct URL.
 const secureTokenKeyOf = (connection: {
   candidates: MobileTransportCandidate[];
-  sshTarget?: MobileSshTarget | null;
 }): string => {
   const relay = relayCandidateOf(connection);
-  const base = relay
-    ? relayConnectionRuntimeKey(relay)
-    : (() => {
-      const direct = directCandidates(connection)[0];
-      return direct ? getConnectionStorageKey(direct.url) : '';
-    })();
-  const sshHostId = connection.sshTarget?.hostId?.trim();
-  if (sshHostId) return `${base}#ssh:${sshHostId}`;
-  return base;
+  if (relay) return relayConnectionRuntimeKey(relay);
+  const direct = directCandidates(connection)[0];
+  return direct ? getConnectionStorageKey(direct.url) : '';
 };
 
 export const mobileConnectionKey = secureTokenKeyOf;
@@ -266,39 +242,12 @@ const candidateSetsMatch = (a: MobileTransportCandidate[], b: MobileTransportCan
   });
 };
 
-const sshTargetsMatch = (
-  left?: MobileSshTarget | null,
-  right?: MobileSshTarget | null,
-): boolean => {
-  const leftId = left?.hostId?.trim() || '';
-  const rightId = right?.hostId?.trim() || '';
-  if (!leftId && !rightId) return true;
-  if (!leftId || !rightId) return false;
-  return leftId === rightId
-    && (left?.desktopServerId?.trim() || '') === (right?.desktopServerId?.trim() || '');
-};
-
-const parseStoredSshTarget = (value: unknown): MobileSshTarget | undefined => {
-  if (!value || typeof value !== 'object') return undefined;
-  const record = value as Record<string, unknown>;
-  const hostId = typeof record.hostId === 'string' ? record.hostId.trim() : '';
-  const desktopServerId = typeof record.desktopServerId === 'string' ? record.desktopServerId.trim() : '';
-  const desktopClientToken = typeof record.desktopClientToken === 'string'
-    ? record.desktopClientToken.trim()
-    : '';
-  // Legacy rows without desktopClientToken cannot refresh localPort — drop them
-  // rather than keep a half-broken SSH entry that will 401 on reconnect.
-  if (!hostId || !desktopServerId || !desktopClientToken) return undefined;
-  return { hostId, desktopServerId, desktopClientToken };
-};
-
 const connectionDraftsMatch = (
   existing: MobileSavedConnection,
-  draft: { id?: string; candidates: MobileTransportCandidate[]; sshTarget?: MobileSshTarget | null },
+  draft: { id?: string; candidates: MobileTransportCandidate[] },
 ): boolean => {
   if (draft.id && existing.id === draft.id) return true;
-  if (!candidateSetsMatch(existing.candidates, draft.candidates)) return false;
-  return sshTargetsMatch(existing.sshTarget, draft.sshTarget);
+  return candidateSetsMatch(existing.candidates, draft.candidates);
 };
 
 // Build the ordered candidate set for a newly typed/pasted server URL.
@@ -532,7 +481,6 @@ const switchToRelayRuntime = (
   grant?: string,
   runtimeKey?: string,
   liveTunnel?: ReturnType<typeof createRelayTunnelClient>,
-  requestHeaders?: Record<string, string> | null,
 ): void => {
   // Relay mode has no network base URL: runtimeFetch intercepts runtime paths on
   // the current window origin and rides the E2EE tunnel, so the window origin is
@@ -557,7 +505,6 @@ const switchToRelayRuntime = (
     clientToken,
     runtimeKey: runtimeKey ?? relayConnectionRuntimeKey(relay),
     relay: descriptor,
-    requestHeaders: requestHeaders || null,
   });
 };
 
@@ -610,13 +557,11 @@ const readConnections = (): MobileSavedConnection[] => {
       if (candidates.length === 0) return [];
       const inlineToken = typeof c.clientToken === 'string' && c.clientToken.trim() ? c.clientToken : undefined;
       const label = typeof c.label === 'string' && c.label.trim() ? c.label : getConnectionLabel(connectionDisplayUrl({ candidates }));
-      const sshTarget = parseStoredSshTarget(c.sshTarget);
       const base: MobileSavedConnection = {
         id: c.id,
         label,
         candidates,
         lastUsedAt: typeof c.lastUsedAt === 'number' ? c.lastUsedAt : 0,
-        ...(sshTarget ? { sshTarget } : {}),
       };
       if (native) return [{ ...base, hasToken: Boolean(c.hasToken) || Boolean(inlineToken) }];
       return [{ ...base, clientToken: inlineToken, hasToken: Boolean(inlineToken) }];
@@ -639,7 +584,6 @@ const writeConnections = (connections: MobileSavedConnection[]): void => {
       label: c.label,
       candidates: c.candidates.map(serializeCandidate),
       lastUsedAt: c.lastUsedAt,
-      ...(c.sshTarget ? { sshTarget: c.sshTarget } : {}),
     };
     return native
       ? { ...shared, hasToken: Boolean(c.hasToken || c.clientToken) }
@@ -660,20 +604,15 @@ const upsertConnectionInList = (
     candidates: MobileTransportCandidate[];
     clientToken?: string;
     hasToken?: boolean;
-    sshTarget?: MobileSshTarget | null;
   },
 ): MobileSavedConnection[] => {
   const existing = connections.find((item) => connectionDraftsMatch(item, draft));
   const native = isCapacitorApp();
-  const sshTarget = draft.sshTarget === null
-    ? undefined
-    : (draft.sshTarget ?? existing?.sshTarget);
   const next: MobileSavedConnection = {
     id: draft.id || existing?.id || createUuid(),
     label: draft.label,
     candidates: draft.candidates,
     lastUsedAt: Date.now(),
-    ...(sshTarget ? { sshTarget } : {}),
     ...(native
       ? { hasToken: draft.hasToken ?? (Boolean(draft.clientToken) || existing?.hasToken || false) }
       : { clientToken: draft.clientToken ?? existing?.clientToken, hasToken: Boolean(draft.clientToken ?? existing?.clientToken) }),
@@ -808,7 +747,6 @@ export const upsertMobileConnection = async (
     label: string;
     candidates: MobileTransportCandidate[];
     clientToken?: string;
-    sshTarget?: MobileSshTarget | null;
   },
 ): Promise<MobileSavedConnection[]> => {
   const next = upsertConnectionInList(readConnections(), connection);
@@ -1003,7 +941,6 @@ const switchToTransport = (
   options?: {
     runtimeKey?: string;
     grant?: string;
-    requestHeaders?: Record<string, string> | null;
   },
 ): void => {
   if (transport.kind === 'relay') {
@@ -1013,23 +950,18 @@ const switchToTransport = (
       options?.grant,
       options?.runtimeKey,
       transport.tunnel,
-      options?.requestHeaders,
     );
   } else {
     switchRuntimeEndpoint({
       apiBaseUrl: transport.url,
       clientToken: token,
       runtimeKey: options?.runtimeKey,
-      requestHeaders: options?.requestHeaders || null,
     });
   }
   // Every live connection is an opportunity to learn the server's CURRENT LAN
   // addresses (pairing-payload candidates go stale when DHCP reassigns the
   // host's IP). Background-only: never blocks or repaints the connect flow.
-  // SSH-via-relay targets skip candidate refresh (they are not the desktop host).
-  if (!options?.requestHeaders?.['x-openchamber-target-port']) {
-    scheduleCandidateRefresh();
-  }
+  scheduleCandidateRefresh();
 };
 
 // The display label of the instance cold-launch auto-connect will try (the
@@ -1062,41 +994,6 @@ export const autoConnectLastInstance = async (): Promise<boolean> => {
   } else {
     token = candidate.clientToken;
     if (!token) return false;
-  }
-
-  // SSH-via-relay: refresh live localPort before switching.
-  if (candidate.sshTarget) {
-    const live = await establishLiveTransport(candidate.candidates);
-    if (!live || live.kind !== 'relay') return false;
-    try {
-      // Desktop-side mint requires the parent desktop token, not the SSH runtime token.
-      const minted = await requestSshHostToken(candidate.sshTarget.hostId, {
-        fetch: (path, init) => live.tunnel.fetch(path, init),
-        headers: { Authorization: `Bearer ${candidate.sshTarget.desktopClientToken}` },
-      });
-      if (!minted.reachable || typeof minted.localPort !== 'number') {
-        live.tunnel.close();
-        return false;
-      }
-      await upsertMobileConnection({
-        id: candidate.id,
-        label: candidate.label,
-        candidates: candidate.candidates,
-        clientToken: minted.token,
-        sshTarget: candidate.sshTarget,
-      });
-      applySshRelayRuntime({
-        token: minted.token,
-        localPort: minted.localPort,
-        runtimeKey: secureTokenKeyOf(candidate),
-        relay: live.relay,
-        liveTunnel: live.tunnel,
-      });
-      return true;
-    } catch {
-      live.tunnel.close();
-      return false;
-    }
   }
 
   const result = await probeConnectionCandidates(candidate.candidates, token);
@@ -1500,7 +1397,6 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
     label: string;
     candidates: MobileTransportCandidate[];
     clientToken?: string;
-    sshTarget?: MobileSshTarget | null;
   }) => {
     const next = upsertConnectionInList(connectionsRef.current, draft);
     applyConnections(next);
@@ -1519,10 +1415,9 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       }
       const saved = input.id
         ? connectionsRef.current.find((c) => c.id === input.id)
-        : connectionsRef.current.find((c) => candidateSetsMatch(c.candidates, candidates) && !c.sshTarget);
+        : connectionsRef.current.find((c) => candidateSetsMatch(c.candidates, candidates));
       const label = input.label?.trim() || saved?.label || getConnectionLabel(connectionDisplayUrl({ candidates }));
       const grant = input.relayGrant;
-      const sshTarget = saved?.sshTarget;
 
       // Resolve a token: explicit input wins, otherwise read the saved one.
       let token = input.clientToken?.trim() || undefined;
@@ -1538,54 +1433,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       logConnect('connect:start', {
         candidates: candidates.map((c) => c.kind),
         hasToken: Boolean(token),
-        sshHostId: sshTarget?.hostId ?? null,
       });
-
-      // SSH-via-relay: establish desktop transport, then refresh live localPort
-      // with the parent desktop token (not the SSH runtime token).
-      if (sshTarget) {
-        const live = await establishLiveTransport(candidates);
-        if (!live || live.kind !== 'relay') {
-          setError(t('mobile.connect.error.sshNotConnected'));
-          return;
-        }
-        let minted;
-        try {
-          minted = await requestSshHostToken(sshTarget.hostId, {
-            fetch: (path, init) => live.tunnel.fetch(path, init),
-            headers: { Authorization: `Bearer ${sshTarget.desktopClientToken}` },
-          });
-        } catch {
-          live.tunnel.close();
-          setError(t('mobile.connect.error.sshNotConnected'));
-          return;
-        }
-        if (!minted.reachable || typeof minted.localPort !== 'number') {
-          live.tunnel.close();
-          setError(t('mobile.connect.error.sshNotConnected'));
-          return;
-        }
-        const runtimeKey = secureTokenKeyOf({ candidates, sshTarget });
-        if (isCapacitorApp()) {
-          await writeSecureToken(runtimeKey, minted.token);
-        }
-        persistMetadata({
-          id: saved?.id,
-          label,
-          candidates,
-          clientToken: minted.token,
-          sshTarget,
-        });
-        applySshRelayRuntime({
-          token: minted.token,
-          localPort: minted.localPort,
-          runtimeKey,
-          relay: live.relay,
-          liveTunnel: live.tunnel,
-        });
-        notifyConnected();
-        return;
-      }
 
       const result = await probeConnectionCandidates(candidates, token);
       logConnect('connect:probe', { status: result.status });
@@ -1595,7 +1443,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
         return;
       }
       if (result.status === 'needs-login') {
-        persistMetadata({ id: saved?.id, label, candidates, sshTarget: null });
+        persistMetadata({ id: saved?.id, label, candidates });
         setPendingConnection({
           id: saved?.id ?? createUuid(),
           label,
@@ -1612,7 +1460,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       if (token && tokenIsNew && isCapacitorApp()) {
         await writeSecureToken(runtimeKey, token);
       }
-      persistMetadata({ id: saved?.id, label, candidates, clientToken: token, sshTarget: null });
+      persistMetadata({ id: saved?.id, label, candidates, clientToken: token });
       switchToTransport(result.transport, token ?? null, { runtimeKey, grant });
       notifyConnected();
     } catch (error) {
@@ -1677,57 +1525,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       const serverLabel = typeof result?.server?.label === 'string' ? result.server.label : '';
       const label = payload.label || serverLabel || getConnectionLabel(connectionDisplayUrl({ candidates: deviceCandidates }));
 
-      // 3a. SSH pairing: mint SSH host token on the same tunnel, then route with
-      // target-port. Failure stays on the SSH path — never save as the parent desktop.
-      const sshHostId = payload.sshHostId?.trim() || '';
-      const relayChosen = chosen.kind === 'relay' ? chosen : null;
-      if (sshHostId && relayChosen) {
-        try {
-          const minted = await requestSshHostToken(sshHostId, {
-            pairingId: payload.pairingId,
-            fetch: (path, init) => relayChosen.tunnel.fetch(path, init),
-            headers: { Authorization: `Bearer ${issuedToken}` },
-          });
-          if (minted.reachable && typeof minted.localPort === 'number') {
-            const sshTarget: MobileSshTarget = {
-              hostId: sshHostId,
-              desktopServerId: relayChosen.relay.serverId,
-              // Parent desktop token — used only for later ssh-host-token mints.
-              desktopClientToken: issuedToken,
-            };
-            const runtimeKey = secureTokenKeyOf({ candidates: deviceCandidates, sshTarget });
-            if (isCapacitorApp()) {
-              const stored = await writeSecureToken(runtimeKey, minted.token);
-              if (!stored) {
-                setError(t('mobile.connect.error.authRequired'));
-                return;
-              }
-            }
-            persistMetadata({
-              label,
-              candidates: deviceCandidates,
-              clientToken: minted.token,
-              sshTarget,
-            });
-            applySshRelayRuntime({
-              token: minted.token,
-              localPort: minted.localPort,
-              runtimeKey,
-              relay: relayChosen.relay,
-              liveTunnel: relayChosen.tunnel,
-            });
-            adopted = true;
-            notifyConnected();
-            return;
-          }
-        } catch {
-          // SSH mint failed; report instead of pairing the parent desktop.
-        }
-        setError(t('mobile.connect.error.sshNotConnected'));
-        return;
-      }
-
-      // 3b. Persist the device with ALL its candidates + one token, then switch to
+      // 3. Persist the device with ALL its candidates + one token, then switch to
       // whichever transport answered. Reconnect re-probes the full set so the
       // device works at home (direct) and away (relay) with no re-pairing.
       const runtimeKey = secureTokenKeyOf({ candidates: deviceCandidates });
@@ -1738,7 +1536,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
           return;
         }
       }
-      persistMetadata({ label, candidates: deviceCandidates, clientToken: issuedToken, sshTarget: null });
+      persistMetadata({ label, candidates: deviceCandidates, clientToken: issuedToken });
       // A relay transport hands its live redeem tunnel to the runtime (adopted
       // inside switchToTransport) — closing it here would tear down the runtime.
       switchToTransport(

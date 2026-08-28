@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 const here = dirname(fileURLToPath(import.meta.url));
 const mobileCss = readFileSync(join(here, 'mobile.css'), 'utf-8');
 const chatInputSource = readFileSync(join(here, '../components/chat/ChatInput.tsx'), 'utf-8');
+const chatPromptComposerSource = readFileSync(join(here, '../components/chat/ChatPromptComposer.tsx'), 'utf-8');
 const chatContainerSource = readFileSync(join(here, '../components/chat/ChatContainer.tsx'), 'utf-8');
 const autoFollowSource = readFileSync(join(here, '../hooks/useChatAutoFollow.ts'), 'utf-8');
 const swapHookSource = readFileSync(join(here, '../components/chat/useMobileComposerSwap.ts'), 'utf-8');
@@ -40,6 +41,18 @@ function mountStyledFixture(html: string): HTMLElement {
 }
 
 describe('mobile composer overflow and swap contract', () => {
+    test('keeps composer send and stop controls at their authored compact size', () => {
+        expect(mobileCss).toContain('button[data-composer-send="true"]');
+        expect(mobileCss).toContain('[data-composer-send="true"][role="button"]');
+        expect(mobileCss).toContain('button[data-composer-stop="true"]');
+        expect(mobileCss).toContain('[data-composer-stop="true"][role="button"]');
+        expect(mobileCss).toMatch(
+            /button\[data-composer-send="true"\][\s\S]*button\[data-composer-stop="true"\][^{]*\{[^}]*min-height:\s*0\s*!important;[^}]*min-width:\s*0\s*!important;/,
+        );
+        expect(chatInputSource.match(/data-composer-send="true"/g)).toHaveLength(2);
+        expect(chatPromptComposerSource).toContain('data-composer-send="true"');
+    });
+
     test('keeps Composer clippers, min-content surface, and highlight dpt contract', () => {
         expect(mobileCss).toContain('[data-composer-content="true"] .overflow-hidden');
         expect(mobileCss).toContain('[data-composer-input-shell="true"]');

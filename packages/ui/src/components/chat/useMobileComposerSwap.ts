@@ -3,7 +3,7 @@ import { useEvent, useEventListener } from '@reactuses/core';
 
 import {
     COMPOSER_SWAP_COMPACT_SETTLE_MS,
-    COMPOSER_SWAP_FOLLOW_RANGE_PX,
+    COMPOSER_SWAP_FULL_RANGE_PX,
     COMPOSER_SWAP_IDLE_MS,
     COMPOSER_SWAP_SNAP_MS,
     applyComposerSwapCommit,
@@ -15,7 +15,6 @@ import {
     createComposerSwapState,
     distanceFromBottomOf,
     publishComposerSwap,
-    shouldComposerSwapAutoCommit,
     type ComposerSwapState,
 } from './mobileComposerSwap';
 
@@ -53,6 +52,8 @@ export const useMobileComposerSwap = (args: {
     const compactSettleUntilRef = React.useRef(0);
     /** Once the user leaves the bottom band after compact, settle ends early. */
     const compactSettleArmedRef = React.useRef(false);
+    /** Active touches on the scroller; commits wait for the finger to lift. */
+    const touchActiveRef = React.useRef(0);
     const enabledRef = React.useRef(args.enabled);
     enabledRef.current = args.enabled;
 
@@ -102,7 +103,7 @@ export const useMobileComposerSwap = (args: {
             return false;
         }
         // Leaving the bottom band ends settle early so the next return can track.
-        if (distance >= COMPOSER_SWAP_FOLLOW_RANGE_PX) {
+        if (distance >= COMPOSER_SWAP_FULL_RANGE_PX) {
             compactSettleArmedRef.current = false;
             compactSettleUntilRef.current = 0;
             return false;
@@ -113,10 +114,19 @@ export const useMobileComposerSwap = (args: {
     const commitIdle = useEvent(() => {
         clearTimer(idleTimerRef);
         if (!enabledRef.current) return;
+        if (touchActiveRef.current > 0) return;
         if (stateRef.current.phase !== 'tracking') return;
         const next = applyComposerSwapCommit(stateRef.current);
         replaceState(next);
         armSnapDone();
+    });
+
+    const handleTouchStart = useEvent(() => {
+        if (!enabledRef.current) return;
+        touchActiveRef.current += 1;
+        // A held finger owns the gesture; pending idle commits from prior
+        // touch-less scrolls (wheel/trackpad/programmatic) must not fire now.
+        clearTimer(idleTimerRef);
     });
 
     const handleScroll = useEvent(() => {
@@ -132,17 +142,9 @@ export const useMobileComposerSwap = (args: {
                 suppressReturn: resolveSuppressReturn(distance),
             });
         }
-        // Follow half finished → snap the rest immediately.
-        if (shouldComposerSwapAutoCommit(next)) {
-            clearTimer(idleTimerRef);
-            next = applyComposerSwapCommit(next);
-            replaceState(next);
-            armSnapDone();
-            return;
-        }
         replaceState(next);
         clearTimer(idleTimerRef);
-        if (next.phase === 'tracking') {
+        if (next.phase === 'tracking' && touchActiveRef.current === 0) {
             idleTimerRef.current = window.setTimeout(() => {
                 idleTimerRef.current = null;
                 commitIdle();
@@ -155,8 +157,11 @@ export const useMobileComposerSwap = (args: {
     });
 
     const handleTouchEnd = useEvent(() => {
-        // iOS often omits scrollend; arm the same idle commit after the finger lifts.
         if (!enabledRef.current) return;
+        touchActiveRef.current = Math.max(0, touchActiveRef.current - 1);
+        if (touchActiveRef.current > 0) return;
+        // iOS often omits scrollend; arm the same idle commit after the finger
+        // lifts. Momentum scroll events keep deferring it until quiescence.
         if (stateRef.current.phase !== 'tracking') return;
         clearTimer(idleTimerRef);
         idleTimerRef.current = window.setTimeout(() => {
@@ -206,6 +211,7 @@ export const useMobileComposerSwap = (args: {
         publishedRef.current = undefined;
         compactSettleArmedRef.current = false;
         compactSettleUntilRef.current = 0;
+        touchActiveRef.current = 0;
         replaceState(createComposerSwapState());
     });
     React.useLayoutEffect(() => {
@@ -227,6 +233,7 @@ export const useMobileComposerSwap = (args: {
 
     useEventListener('scroll', handleScroll, scrollTarget, passive);
     useEventListener('scrollend', handleScrollEnd, scrollTarget, passive);
+    useEventListener('touchstart', handleTouchStart, scrollTarget, passive);
     useEventListener('touchend', handleTouchEnd, scrollTarget, passive);
     useEventListener('touchcancel', handleTouchEnd, scrollTarget, passive);
     useEventListener('pointerdown', handleCompactActivate, scopeTarget);

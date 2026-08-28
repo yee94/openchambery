@@ -714,7 +714,9 @@ export const createUiAuth = ({
   const respondUnauthorized = (req, res) => {
     res.status(401);
     const acceptsJson = req.headers.accept?.includes('application/json');
-    if (acceptsJson || req.path?.startsWith('/api')) {
+    // Express strips the mount prefix from req.path (e.g. app.use('/api') turns
+    // /api/mcp into /mcp), so resolve the original pathname instead.
+    if (acceptsJson || getRequestPathname(req).startsWith('/api')) {
       res.json({ error: 'UI authentication required', locked: true });
     } else {
       res.type('text/plain').send('Authentication required');

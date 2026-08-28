@@ -131,6 +131,31 @@ describe('toolDiffUtils', () => {
         expect(entries.map((entry) => entry.title)).toEqual(['src/a.ts', 'src/b.ts']);
     });
 
+    test('treats a write-style added-file patch as a navigable single-file diff', () => {
+        const patch = [
+            '--- /dev/null',
+            '+++ b/app/service/__typeprobe.ts',
+            '@@ -0,0 +1,3 @@',
+            '+line one',
+            '+line two',
+            '+line three',
+        ].join('\n');
+
+        const entries = getToolNavigationDiffEntries(
+            'write',
+            undefined,
+            patch,
+            'app/service/__typeprobe.ts',
+            identity,
+        );
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0]?.renderMode).toBe('diff');
+        expect(entries[0]?.title).toBe('app/service/__typeprobe.ts');
+        expect(entries[0]?.patch).toContain('--- /dev/null');
+        expect(entries[0]?.patch).toContain('+line one');
+    });
+
     test('keeps edit navigation scoped to its selected file', () => {
         const metadata = {
             files: [

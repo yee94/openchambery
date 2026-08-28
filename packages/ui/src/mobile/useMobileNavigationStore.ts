@@ -19,6 +19,12 @@ import type { MobileTabId } from './mobileTabs';
 type OpenSessionTarget = {
   sessionId: string;
   directory?: string | null;
+  /**
+   * Opened from a cross-project list scope ("All" / "Pinned"): navigate to the
+   * conversation without adopting its project as the active one. Forwarded to
+   * `setCurrentSession` so the project correction can be skipped.
+   */
+  preserveActiveProject?: boolean;
 };
 
 type OpenDraftOptions = Parameters<
@@ -108,7 +114,9 @@ const mirrorCurrentSession = (target: OpenSessionTarget): void => {
   } else {
     expectMobileSessionMirror(target);
   }
-  void sessionState.setCurrentSession(target.sessionId, target.directory ?? null);
+  void sessionState.setCurrentSession(target.sessionId, target.directory ?? null, {
+    preserveActiveProject: target.preserveActiveProject,
+  });
 };
 
 /**

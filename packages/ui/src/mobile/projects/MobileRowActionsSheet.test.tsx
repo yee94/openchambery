@@ -45,5 +45,9 @@ describe('MobileRowActionsSheet project actions', () => {
     );
 
     expect(html).toContain('Sync sessions');
+    expect(html).toContain('rounded-none');
+    expect(html).toContain('supports-[corner-shape:squircle]:rounded-none');
+    expect(html).toContain('data-mobile-press-feedback="none"');
+    expect(html).toContain('data-page-scroll-lock="true"');
   });
 });

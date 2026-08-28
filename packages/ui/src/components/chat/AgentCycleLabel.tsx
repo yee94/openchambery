@@ -41,7 +41,7 @@ export const AgentCycleLabel: React.FC<AgentCycleLabelProps> = ({
       </span>
       <span
         className={cn(
-          'grid min-w-0 ease-in-out',
+          'grid min-w-0 items-center ease-in-out',
           revealed ? 'grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0',
         )}
         style={{
@@ -51,9 +51,9 @@ export const AgentCycleLabel: React.FC<AgentCycleLabelProps> = ({
         }}
         aria-hidden={!revealed}
       >
-        <span className="min-w-0 overflow-hidden">
+        <span className="flex min-w-0 items-center overflow-hidden">
           <span
-            className="inline-block whitespace-nowrap pl-1.5 pr-0.5 typography-micro font-medium"
+            className="inline-block whitespace-nowrap pl-1.5 pr-0.5 typography-micro leading-none font-medium"
             style={colorVar ? { color: `var(${colorVar})` } : undefined}
           >
             {label}

@@ -1,19 +1,11 @@
 import React from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessions } from '@/sync/sync-context';
 import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
-import { useProjectsStore } from '@/stores/useProjectsStore';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import { toast } from '@/components/ui';
 import { Icon } from "@/components/icon/Icon";
-import { OPENCHAMBER_PROJECT_NOTES_MAX_LENGTH, getProjectNotesAndTodos, saveProjectNotesAndTodos } from '@/lib/openchamberConfig';
-import { summarizeSelectionForNotes } from '@/lib/smallModel';
-import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
-import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { ShortcutKbd } from '@/components/ui/kbd';
 import { subscribeSessionSwitchIntent } from '@/lib/sessionSwitchIntent';
@@ -34,16 +26,6 @@ interface SelectionPayload {
   markdownText: string;
   rect: DOMRect;
 }
-
-const appendDistilledInsightToNotes = (existingNotes: string, insight: string): string => {
-  const trimmedInsight = insight.trim().replace(/^[-*+]\s+/, '').slice(0, OPENCHAMBER_PROJECT_NOTES_MAX_LENGTH);
-  if (!trimmedInsight) {
-    return existingNotes;
-  }
-
-  const trimmedNotes = existingNotes.trimEnd();
-  return trimmedNotes ? `${trimmedNotes}\n${trimmedInsight}` : trimmedInsight;
-};
 
 const DESKTOP_MENU_SIDE_MARGIN_PX = 8;
 const DESKTOP_MENU_FALLBACK_WIDTH_PX = 280;
@@ -269,7 +251,6 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const [selectedTextMarkdown, setSelectedTextMarkdown] = React.useState('');
   const isDraggingRef = React.useRef(false);
   const [isOpening, setIsOpening] = React.useState(false);
-  const [isAddingToNotes, setIsAddingToNotes] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const menuWidthRef = React.useRef(DESKTOP_MENU_FALLBACK_WIDTH_PX);
   const pendingSelectionRef = React.useRef<SelectionPayload | null>(null);
@@ -277,13 +258,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const mouseUpTimeoutRef = React.useRef<number | null>(null);
   const isMenuVisibleRef = React.useRef(false);
   const createSession = useSessionUIStore((state) => state.createSession);
-  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setPendingInputText = useInputStore((state) => state.setPendingInputText);
   const isMobile = useUIStore((state) => state.isMobile);
-  const projects = useProjectsStore((state) => state.projects);
-  const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
-  const effectiveDirectory = useEffectiveDirectory();
-  const sessions = useSessions();
   const sessionSurface = useSessionSurface();
   const canUseTextSelectionActions = getSessionSurfaceActionAvailability(sessionSurface).textSelectionMutation;
 
@@ -540,6 +516,29 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     };
   }, [containerRef, handleSelectionChange, hideMenu, showMenu]);
 
+  // The selection menu is viewport-fixed (mobile bottom bar and the desktop
+  // popup alike), so it detaches from the selection the moment the underlying
+  // content scrolls — dismiss it. Scroll events do not bubble, so listen in
+  // the capture phase to catch scrolls inside nested containers and shadow
+  // roots. Selection-handle drags that auto-scroll the container fire
+  // selectionchange afterwards, which re-shows the bar for the adjusted
+  // selection.
+  React.useEffect(() => {
+    if (!position.show) return;
+
+    const handleScroll = (event: Event) => {
+      if (menuRef.current && event.target instanceof Node && menuRef.current.contains(event.target)) {
+        return;
+      }
+      hideMenu();
+    };
+
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [position.show, hideMenu]);
+
   const addSelectionToChat = React.useCallback((markdownText: string) => {
     if (!markdownText) return;
 
@@ -606,57 +605,6 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     window.getSelection()?.removeAllRanges();
   }, [selectedText, hideMenu]);
 
-  const currentSession = React.useMemo(() => {
-    if (!currentSessionId) {
-      return null;
-    }
-    return sessions.find((session) => session.id === currentSessionId) ?? null;
-  }, [currentSessionId, sessions]);
-
-  const currentProjectRef = React.useMemo(() => {
-    const directory = effectiveDirectory
-      ?? (typeof currentSession?.directory === 'string' ? currentSession.directory : '');
-    const resolved = resolveProjectForSessionDirectory(projects, availableWorktreesByProject, directory);
-    return resolved ? { id: resolved.id, path: resolved.path } : null;
-  }, [availableWorktreesByProject, currentSession?.directory, effectiveDirectory, projects]);
-
-  const handleAddToNotes = React.useCallback(async () => {
-    if (!selectedText || !currentProjectRef) {
-      if (!currentProjectRef) {
-        toast.error(t('chat.textSelection.toast.noProject'));
-      }
-      return;
-    }
-
-    try {
-      setIsAddingToNotes(true);
-      // Long selections are distilled into a compact note by the small model;
-      // short ones (and any generation failure) go in verbatim.
-      const noteText = await summarizeSelectionForNotes(selectedTextMarkdown || selectedText, currentSessionId);
-      const projectData = await getProjectNotesAndTodos(currentProjectRef);
-      const nextNotes = appendDistilledInsightToNotes(projectData.notes, noteText);
-      const saved = await saveProjectNotesAndTodos(currentProjectRef, {
-        notes: nextNotes,
-        todos: projectData.todos,
-      });
-      if (!saved) {
-        toast.error(t('chat.textSelection.toast.addToNotesFailed'));
-        return;
-      }
-      window.dispatchEvent(new CustomEvent('openchamber:project-notes-updated', {
-        detail: { projectId: currentProjectRef.id },
-      }));
-      toast.success(t('chat.textSelection.toast.addToNotesSuccess'));
-      hideMenu();
-      window.getSelection()?.removeAllRanges();
-    } catch (error) {
-      const description = error instanceof Error ? error.message : undefined;
-      toast.error(t('chat.textSelection.toast.addToNotesFailed'), description ? { description } : undefined);
-    } finally {
-      setIsAddingToNotes(false);
-    }
-  }, [currentProjectRef, currentSessionId, hideMenu, selectedText, selectedTextMarkdown, t]);
-
   if (!position.show) return null;
 
   // Mobile: Show as a bar at the bottom of the screen, above the keyboard
@@ -712,7 +660,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           <button
             onClick={handleCopy}
             className={cn(
-              'flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
+              'col-span-2 flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
               'text-sm font-medium leading-tight',
               'bg-[var(--surface-muted)] text-[var(--surface-foreground)]',
               'active:opacity-80',
@@ -724,25 +672,6 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
             <Icon name="file-copy" className="h-5 w-5 flex-shrink-0" />
             <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.copy')}</span>
           </button>
-
-          {canUseTextSelectionActions && !isVSCodeRuntime() ? (
-            <button
-              onClick={handleAddToNotes}
-              disabled={isAddingToNotes}
-              className={cn(
-                'flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
-                'text-sm font-medium leading-tight',
-                'bg-[var(--surface-muted)] text-[var(--surface-foreground)]',
-                'active:opacity-80 disabled:opacity-60 disabled:cursor-not-allowed',
-                'transition-opacity duration-150'
-              )}
-              title={t('chat.textSelection.title.saveInsightToNotes')}
-              type="button"
-            >
-              {isAddingToNotes ? <Icon name="loader-4" className="h-5 w-5 flex-shrink-0 animate-spin" /> : <Icon name="booklet" className="h-5 w-5 flex-shrink-0" />}
-              <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.addToNotes')}</span>
-            </button>
-          ) : null}
         </div>
       </div>,
       document.body
@@ -822,29 +751,6 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
           <Icon name="file-copy" className="h-4 w-4" />
           <span className="whitespace-nowrap">{t('chat.textSelection.actions.copy')}</span>
         </button>
-
-        {canUseTextSelectionActions && !isVSCodeRuntime() ? (
-          <>
-            <div className="w-px h-4 bg-[var(--interactive-border)]" />
-
-            <button
-              onClick={handleAddToNotes}
-              disabled={isAddingToNotes}
-              className={cn(
-                'flex items-center gap-1.5 px-2 py-1 rounded-md',
-                'text-sm font-medium',
-                'text-[var(--surface-foreground)]',
-                'hover:bg-[var(--interactive-hover)] disabled:opacity-60 disabled:cursor-not-allowed',
-                'transition-colors duration-150'
-              )}
-              title={t('chat.textSelection.title.saveInsightToNotes')}
-              type="button"
-            >
-              {isAddingToNotes ? <Icon name="loader-4" className="h-4 w-4 animate-spin" /> : <Icon name="booklet" className="h-4 w-4" />}
-              <span className="whitespace-nowrap">{t('chat.textSelection.actions.addToNotes')}</span>
-            </button>
-          </>
-        ) : null}
       </div>
     </div>,
     document.body

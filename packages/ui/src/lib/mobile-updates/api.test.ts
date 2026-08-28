@@ -78,6 +78,17 @@ describe('createMobileUpdatesAPI', () => {
     await expect(api.checkForOtaUpdate()).rejects.toBeInstanceOf(MobileUpdatesUnsupportedError);
   });
 
+  test('checkForOtaUpdate forwards channelOverride to the coordinator', async () => {
+    mocks.isNativePlatform = true;
+    mocks.isPluginAvailable = true;
+    const api = createMobileUpdatesAPI();
+    await api.checkForOtaUpdate({ channelOverride: 'stable' });
+    expect(mocks.checkMobileOtaUpdate).toHaveBeenCalledWith({ channelOverride: 'stable' });
+
+    await api.checkForOtaUpdate();
+    expect(mocks.checkMobileOtaUpdate).toHaveBeenLastCalledWith({});
+  });
+
   test('non-native download / apply / queue throw unsupported', async () => {
     const api = createMobileUpdatesAPI();
     await expect(api.downloadOtaUpdate(sampleBundle)).rejects.toBeInstanceOf(MobileUpdatesUnsupportedError);

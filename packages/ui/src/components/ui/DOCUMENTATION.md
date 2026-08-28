@@ -30,7 +30,7 @@ Searchable picker sheets must not treat a click as activation unless the same co
 
 Feature-owned sheets may pass `bodyClassName` to `MobileResizableSheet` for local body layout treatment. When present, the shared header remains borderless and owns its close action and accessibility contract; features must not restore an empty picker header or picker-title divider locally. The shared sheet always owns its motion and resize handle.
 
-`MobileResizableSheet` also supports `fitContent` for compact action surfaces. In that mode the collapsed sheet follows its content height up to the shared `72dvh` maximum instead of being forced to that height. Dragging still expands toward `98dvh`, and downward dismissal uses the measured content-sized collapsed height as its threshold baseline.
+`MobileResizableSheet` also supports `fitContent` for compact action surfaces. In that mode the collapsed sheet follows its content height up to the shared `72dvh` maximum instead of being forced to that height. The header uses a tighter row (`min-h-9` / `pb-1`) and the body stays content-sized so short menus do not read as top-heavy. Dragging still expands toward `98dvh`, at which point the body grows with `flex-1`; downward dismissal uses the measured content-sized collapsed height as its threshold baseline.
 
 `keepMounted` preserves a surface's Portal subtree after its first presentation. A preserved hidden surface leaves the modal stack, releases body and focus ownership, becomes inert and invisible, and retains child state and native scroll position for its next presentation. The mobile Sessions window enables this behavior while continuing to refresh authoritative session snapshots when opened.
 

@@ -223,7 +223,7 @@ describe('session-navigation', () => {
     expect(resolveAdjacentRootSession(-1, 'root-b')?.id).toBe('root-a');
   });
 
-  test('cycles within the published pinned order when focus came from pinned', () => {
+  test('cycles through pinned then visible project sessions in sidebar order', () => {
     publishSessionNavigationSnapshot({
       pinned: [
         makeNavigationTarget('pinned', 'pinned-a', 'p1'),
@@ -244,11 +244,30 @@ describe('session-navigation', () => {
 
     expect(resolveAdjacentNavigationTarget(1, 'pinned-b', pinnedFocus)?.sessionId).toBe('pinned-c');
     expect(resolveAdjacentNavigationTarget(-1, 'pinned-b', pinnedFocus)?.sessionId).toBe('pinned-a');
-    expect(resolveAdjacentNavigationTarget(1, 'pinned-c', {
+
+    const leavePinned = resolveAdjacentNavigationTarget(1, 'pinned-c', {
       ...pinnedFocus,
       sessionId: 'pinned-c',
       projectId: 'p1',
-    })?.sessionId).toBe('pinned-a');
+    });
+    expect(leavePinned?.scope).toBe('project');
+    expect(leavePinned?.sessionId).toBe('project-a');
+
+    const wrapToPinned = resolveAdjacentNavigationTarget(1, 'project-b', {
+      scope: 'project',
+      sessionId: 'project-b',
+      projectId: 'p2',
+    });
+    expect(wrapToPinned?.scope).toBe('pinned');
+    expect(wrapToPinned?.sessionId).toBe('pinned-a');
+
+    const wrapFromFirstPinned = resolveAdjacentNavigationTarget(-1, 'pinned-a', {
+      scope: 'pinned',
+      sessionId: 'pinned-a',
+      projectId: 'p1',
+    });
+    expect(wrapFromFirstPinned?.scope).toBe('project');
+    expect(wrapFromFirstPinned?.sessionId).toBe('project-b');
   });
 
   test('cycles across visible project sessions in sidebar order', () => {
@@ -280,12 +299,36 @@ describe('session-navigation', () => {
     expect(nextAcrossProjects?.sessionId).toBe('project-c');
     expect(nextAcrossProjects?.projectId).toBe('p2');
 
-    const wrapAcrossProjects = resolveAdjacentNavigationTarget(-1, 'project-a', {
+    const wrapIntoPinned = resolveAdjacentNavigationTarget(-1, 'project-a', {
       ...projectFocus,
       sessionId: 'project-a',
     });
-    expect(wrapAcrossProjects?.sessionId).toBe('project-c');
-    expect(wrapAcrossProjects?.projectId).toBe('p2');
+    expect(wrapIntoPinned?.scope).toBe('pinned');
+    expect(wrapIntoPinned?.sessionId).toBe('project-a');
+    expect(wrapIntoPinned?.projectId).toBe('p1');
+  });
+
+  test('includes a pinned-only session even when the current focus is still project-scoped', () => {
+    publishSessionNavigationSnapshot({
+      pinned: [makeNavigationTarget('pinned', 'pinned-a', 'p1')],
+      project: [makeNavigationTarget('project', 'project-b', 'p1')],
+    });
+
+    const fromPinned = resolveAdjacentNavigationTarget(1, 'pinned-a', {
+      scope: 'project',
+      sessionId: 'pinned-a',
+      projectId: 'p1',
+    });
+    expect(fromPinned?.scope).toBe('project');
+    expect(fromPinned?.sessionId).toBe('project-b');
+
+    const backToPinned = resolveAdjacentNavigationTarget(-1, 'project-b', {
+      scope: 'project',
+      sessionId: 'project-b',
+      projectId: 'p1',
+    });
+    expect(backToPinned?.scope).toBe('pinned');
+    expect(backToPinned?.sessionId).toBe('pinned-a');
   });
 
   test('updates focus scope before committing a scoped navigation target', () => {
@@ -315,7 +358,7 @@ describe('session-navigation', () => {
     });
   });
 
-  test('falls back from an unavailable pinned sequence to visible project sessions', () => {
+  test('uses visible project sessions when the published pinned sequence is empty', () => {
     publishSessionNavigationSnapshot({
       pinned: [],
       project: [
@@ -346,7 +389,7 @@ describe('session-navigation', () => {
     expect(wrapTarget?.projectId).toBe('p2');
   });
 
-  test('anchors a pinned-to-project fallback at the matching project occurrence', () => {
+  test('anchors a pinned-origin session at the matching project occurrence when pinned is empty', () => {
     publishSessionNavigationSnapshot({
       pinned: [],
       project: [

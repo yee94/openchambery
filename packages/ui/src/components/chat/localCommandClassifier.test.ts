@@ -43,6 +43,8 @@ describe('getLocalChatCommand', () => {
   });
   test('consumes text only for immediate local actions', () => {
     for (const command of IMMEDIATE_LOCAL_CHAT_COMMANDS) expect(consumesImmediateCommandText(`/${command}`, 'normal')).toBe(true);
+    // /new fires an immediate session create; its text is consumed like compact.
+    expect(consumesImmediateCommandText('/new', 'normal')).toBe(true);
     expect(consumesImmediateCommandText('/summary', 'normal')).toBe(false);
     expect(consumesImmediateCommandText('/compact', 'shell')).toBe(false);
   });

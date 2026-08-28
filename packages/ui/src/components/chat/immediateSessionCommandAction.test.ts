@@ -95,4 +95,23 @@ describe('ChatInput compact flight contract', () => {
         // disabled Send/Queue and swallowed Enter for the whole compaction.
         expect(compactBranch.slice(0, 1200)).toContain('void runImmediateSessionCommand');
     });
+
+    test('/new consumes its command text before the immediate create switches sessions', () => {
+        const source = readFileSync(
+            join(dirname(fileURLToPath(import.meta.url)), 'ChatInput.tsx'),
+            'utf8',
+        );
+        const branchStart = source.indexOf("commandName === 'new'");
+        expect(branchStart).toBeGreaterThan(-1);
+        // End at the redo branch head; the plain `commandName === 'redo'` text
+        // also appears earlier inside the undo/redo pre-consume condition.
+        const branch = source.slice(branchStart, source.indexOf("commandName === 'redo' && currentSessionId"));
+        // resourcePolicy keeps the composer intact for local commands, so the
+        // branch itself must synchronously consume the /new text (like
+        // compact/fork) or the command stays parked in the input box.
+        const consumeAt = branch.indexOf('consumeImmediateCommand()');
+        const shortcutAt = branch.indexOf("shortcut('new')");
+        expect(consumeAt).toBeGreaterThan(-1);
+        expect(shortcutAt).toBeGreaterThan(consumeAt);
+    });
 });

@@ -1,3 +1,41 @@
+// Align with relay-server per-connection queue cap (2 MiB).
+export const SSE_CLIENT_MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
+
+const isSseResponseClosed = (res) => Boolean(res?.writableEnded || res?.destroyed);
+
+const getSseBufferedBytes = (res) => {
+  if (typeof res?.writableLength === 'number' && Number.isFinite(res.writableLength)) {
+    return res.writableLength;
+  }
+  const tracked = res?.__sseBufferedBytes;
+  return typeof tracked === 'number' && Number.isFinite(tracked) ? tracked : 0;
+};
+
+const attachSseDrainListener = (res) => {
+  if (res.__sseDrainAttached) {
+    return;
+  }
+  res.__sseDrainAttached = true;
+  res.once('drain', () => {
+    res.__ssePaused = false;
+    res.__sseBufferedBytes = 0;
+    res.__sseDrainAttached = false;
+    res.__ssePausedHeartbeatCycles = 0;
+  });
+};
+
+// Intentional resource protection for slow/zombie SSE clients.
+// SSE is best-effort; authoritative data is fetched over HTTP.
+const destroySseClientForBackpressure = (res) => {
+  try {
+    if (!res.destroyed) {
+      res.destroy();
+    }
+  } catch {
+    // ignore — cleanup must stay idempotent
+  }
+};
+
 export const createNotificationEmitterRuntime = (dependencies) => {
   const {
     process,
@@ -23,7 +61,46 @@ export const createNotificationEmitterRuntime = (dependencies) => {
   };
 
   const writeSseEvent = (res, payload) => {
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    if (!res || isSseResponseClosed(res)) {
+      throw new Error('SSE response closed');
+    }
+
+    // Drop while backpressured — SSE is best-effort; authoritative data is HTTP pull.
+    if (res.__ssePaused) {
+      return false;
+    }
+
+    const data = `data: ${JSON.stringify(payload)}\n\n`;
+    const byteLength = Buffer.byteLength(data);
+
+    let ok;
+    try {
+      ok = res.write(data);
+    } catch (error) {
+      destroySseClientForBackpressure(res);
+      throw error;
+    }
+
+    const bufferedBytes = ok === false
+      ? Math.max(getSseBufferedBytes(res), (res.__sseBufferedBytes || 0) + byteLength)
+      : getSseBufferedBytes(res);
+    res.__sseBufferedBytes = bufferedBytes;
+
+    if (bufferedBytes > SSE_CLIENT_MAX_BUFFERED_BYTES) {
+      // Intentional resource protection: a slow client must not unbounded-buffer
+      // response body in host memory. SSE is best-effort; authoritative data is
+      // fetched over HTTP.
+      destroySseClientForBackpressure(res);
+      throw new Error('SSE client buffer exceeded');
+    }
+
+    if (ok === false) {
+      res.__ssePaused = true;
+      attachSseDrainListener(res);
+      return false;
+    }
+
+    return true;
   };
 
   const emitDesktopNotification = (payload) => {

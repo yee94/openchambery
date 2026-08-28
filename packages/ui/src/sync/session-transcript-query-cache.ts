@@ -422,6 +422,18 @@ export type TranscriptQueryCacheBudget = {
     directory?: string
   }) => CanonicalTranscriptCacheEntry[]
   /**
+   * O(scopes-for-session) lookup via incremental sessionID → scope index.
+   * Prefer this over scanning `listCanonical` on the transcript SSE hot path.
+   */
+  listCanonicalScopesForSession: (
+    sessionID: string,
+    filter?: {
+      transport?: string
+      generation?: number
+      directory?: string
+    },
+  ) => TranscriptCacheScope[]
+  /**
    * Cancel then remove every key family for one session.
    * Does not re-ensure a tail (delete / eviction path).
    */
@@ -454,6 +466,8 @@ export type TranscriptQueryCacheBudget = {
    * immediate inactive LRU eviction (Oracle F4).
    */
   noteScopeObserved: (scope: TranscriptCacheScope) => void
+  /** Drop QueryCache subscription + session scope index (budget teardown). */
+  dispose: () => void
 }
 
 /** Minimum residency after first observe/ensure before inactive LRU may evict (Oracle F4). */
@@ -513,6 +527,64 @@ export function createTranscriptQueryCacheBudget(
   const minResidencyMs = input.minResidencyMs ?? TRANSCRIPT_CACHE_MIN_RESIDENCY_MS
   /** First observe/ensure timestamp per scope key (Oracle F4 minimum residency). */
   const firstSeenAt = new Map<string, number>()
+  /**
+   * Incremental canonical inventory: sessionID → (scopeKey → scope).
+   * Bound to QueryCache add/remove so SSE broadcast never scans getAll().
+   */
+  const scopesBySessionID = new Map<string, Map<string, TranscriptCacheScope>>()
+
+  const indexAddCanonicalScope = (scope: TranscriptCacheScope) => {
+    const n = normalizeTranscriptCacheScope(scope)
+    const key = transcriptCacheScopeKey(n)
+    let byKey = scopesBySessionID.get(n.sessionID)
+    if (!byKey) {
+      byKey = new Map()
+      scopesBySessionID.set(n.sessionID, byKey)
+    }
+    byKey.set(key, n)
+  }
+
+  const indexRemoveCanonicalScope = (scope: TranscriptCacheScope) => {
+    const n = normalizeTranscriptCacheScope(scope)
+    const key = transcriptCacheScopeKey(n)
+    const byKey = scopesBySessionID.get(n.sessionID)
+    if (!byKey) return
+    byKey.delete(key)
+    if (byKey.size === 0) scopesBySessionID.delete(n.sessionID)
+  }
+
+  const indexRemoveGeneration = (transport: string, generation: number) => {
+    for (const [sessionID, byKey] of scopesBySessionID) {
+      for (const [scopeKey, scope] of byKey) {
+        if (scope.transport === transport && scope.generation === generation) {
+          byKey.delete(scopeKey)
+        }
+      }
+      if (byKey.size === 0) scopesBySessionID.delete(sessionID)
+    }
+    const prefix = `${transport}\n${generation}\n`
+    for (const key of firstSeenAt.keys()) {
+      if (key.startsWith(prefix)) firstSeenAt.delete(key)
+    }
+  }
+
+  // Seed from any pre-existing canonical queries, then stay in sync via cache events.
+  for (const query of client.getQueryCache().getAll()) {
+    const scope = parseCanonicalScope(query.queryKey)
+    if (scope) indexAddCanonicalScope(scope)
+  }
+
+  const unsubscribeCache = client.getQueryCache().subscribe((event) => {
+    if (event.type === "added" || event.type === "updated") {
+      const scope = parseCanonicalScope(event.query.queryKey)
+      if (scope) indexAddCanonicalScope(scope)
+      return
+    }
+    if (event.type === "removed") {
+      const scope = parseCanonicalScope(event.query.queryKey)
+      if (scope) indexRemoveCanonicalScope(scope)
+    }
+  })
 
   /** Call after ensureInitial / first subscribe so residency starts now. */
   const noteScopeObserved = (scope: TranscriptCacheScope) => {
@@ -571,6 +643,30 @@ export function createTranscriptQueryCacheBudget(
     return entries
   }
 
+  const listCanonicalScopesForSession = (
+    sessionID: string,
+    filter?: {
+      transport?: string
+      generation?: number
+      directory?: string
+    },
+  ): TranscriptCacheScope[] => {
+    const byKey = scopesBySessionID.get(sessionID)
+    if (!byKey || byKey.size === 0) return []
+    const directory =
+      filter?.directory === undefined
+        ? undefined
+        : normalizeDirectory(filter.directory)
+    const scopes: TranscriptCacheScope[] = []
+    for (const scope of byKey.values()) {
+      if (filter?.transport !== undefined && scope.transport !== filter.transport) continue
+      if (filter?.generation !== undefined && scope.generation !== filter.generation) continue
+      if (directory !== undefined && scope.directory !== directory) continue
+      scopes.push(scope)
+    }
+    return scopes
+  }
+
   const cancelAndRemoveFilter = (filter: {
     queryKey: QueryKey
     exact?: boolean
@@ -583,7 +679,11 @@ export function createTranscriptQueryCacheBudget(
 
   const purgeSession = (scope: TranscriptCacheScope) => {
     counters.purgeSession += 1
-    firstSeenAt.delete(transcriptCacheScopeKey(normalizeTranscriptCacheScope(scope)))
+    const normalized = normalizeTranscriptCacheScope(scope)
+    firstSeenAt.delete(transcriptCacheScopeKey(normalized))
+    // Explicit index drop before removeQueries so hot-path lookups never see a
+    // ghost scope if a notify is coalesced or delayed.
+    indexRemoveCanonicalScope(normalized)
     for (const filter of transcriptSessionKeyFamilyFilters(scope)) {
       cancelAndRemoveFilter(filter)
     }
@@ -591,6 +691,8 @@ export function createTranscriptQueryCacheBudget(
 
   const purgeGeneration = (transport: string, generation: number) => {
     counters.purgeGeneration += 1
+    // Drop index + residency before broad remove so SSE cannot target ghosts.
+    indexRemoveGeneration(transport, generation)
     // Broad cancel/remove for every transcript family under this generation.
     const roots: QueryKey[] = [
       [transport, generation, TRANSCRIPT_QUERY_KEY_DOMAINS.canonical],
@@ -720,6 +822,12 @@ export function createTranscriptQueryCacheBudget(
     }
   }
 
+  const dispose = () => {
+    unsubscribeCache()
+    scopesBySessionID.clear()
+    firstSeenAt.clear()
+  }
+
   return {
     client,
     activeRegistry,
@@ -727,11 +835,13 @@ export function createTranscriptQueryCacheBudget(
     getLimit,
     isActive,
     listCanonical,
+    listCanonicalScopesForSession,
     purgeSession,
     purgeGeneration,
     enforce,
     destructiveReset,
     noteScopeObserved,
+    dispose,
   }
 }
 

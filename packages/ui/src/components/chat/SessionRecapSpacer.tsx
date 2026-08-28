@@ -21,7 +21,7 @@ export const SessionRecapNote: React.FC<SessionRecapNoteProps> = React.memo(({ s
 
   return (
     <div className="chat-message-column">
-      {/* The last assistant turn carries pb-8 — pull the recap up into that gap. */}
+      {/* Idle last assistant keeps pb-8 (see shouldTightenWorkingBottomGap) — pull the recap up into that gap. */}
       <div className="-mt-6" aria-label={t('chat.recap.aria')}>
         <span className={`typography-markdown-body text-muted-foreground/70 ${isMobile ? 'line-clamp-4' : 'line-clamp-2'}`}>
           <span className="italic text-muted-foreground/50">{t('chat.recap.label')} </span>

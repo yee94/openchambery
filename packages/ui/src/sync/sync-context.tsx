@@ -139,7 +139,13 @@ export type SessionMessageLoadState = {
   at: number
   loadGeneration: number
 }
-import { areRequestArraysReferentiallyEqual, collectScopedBlockingRequests } from "./scoped-blocking-requests"
+import {
+  areRequestArraysReferentiallyEqual,
+  collectScopedBlockingRequests,
+  collectTaskDispatchEdgesFromParts,
+  EMPTY_TASK_DISPATCH_EDGES,
+  type TaskDispatchEdge,
+} from "./scoped-blocking-requests"
 import {
   EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT,
   buildUserMessageHistorySnapshotFromSource,
@@ -402,10 +408,11 @@ function liveTailMissingSettledCompletion(directory: string, sessionID: string):
 }
 
 /**
- * Repair a lost settle tick: the tail assistant carries a server-stamped
- * terminal finish but no `time.completed`, so turn duration and assistant TPS
- * cannot render. The reconcile-page merge upserts the authoritative row and is
- * never stale-dropped, unlike a materialize page racing live SSE.
+ * Repair a lost settle tick: the tail assistant is missing `time.completed`
+ * and/or positive token counts after a terminal stop, so turn duration and
+ * assistant TPS cannot render. The reconcile-page merge upserts the
+ * authoritative row and is never stale-dropped, unlike a materialize page
+ * racing live SSE.
  */
 async function repairMissingSettleCompletion(directory: string, sessionID: string): Promise<void> {
   try {
@@ -1783,27 +1790,30 @@ function listCanonicalScopesForTranscriptEvent(sessionID: string): TranscriptSco
     const repository = getTranscriptRepository() as
       | (ReturnType<typeof getTranscriptRepository> & {
         getCacheBudget?: () => {
-          listCanonical: (filter?: {
-            transport?: string
-            generation?: number
-          }) => Array<{
-            scope: {
-              directory: string
-              sessionID: string
-              transport: string
-              generation: number
-            }
+          listCanonicalScopesForSession: (
+            sessionID: string,
+            filter?: {
+              transport?: string
+              generation?: number
+            },
+          ) => Array<{
+            directory: string
+            sessionID: string
+            transport: string
+            generation: number
           }>
         }
       })
       | null
     const transport = getRuntimeTransportIdentity()
     const generation = getRuntimeGeneration()
-    return repository?.getCacheBudget?.().listCanonical({ transport, generation })
-      ?.filter((entry) => entry.scope.sessionID === sessionID)
-      .map((entry) => transcriptScope(entry.scope.directory, entry.scope.sessionID, {
-        transport: entry.scope.transport,
-        generation: entry.scope.generation,
+    return repository?.getCacheBudget?.().listCanonicalScopesForSession(sessionID, {
+      transport,
+      generation,
+    })
+      ?.map((scope) => transcriptScope(scope.directory, scope.sessionID, {
+        transport: scope.transport,
+        generation: scope.generation,
       })) ?? []
   } catch {
     return []
@@ -3264,7 +3274,104 @@ type ScopedBlockingRequestCache<T extends { id: string }> = {
   sessionID: string | null
   sessions: Session[] | null
   requestsBySession: Record<string, T[] | undefined> | null
+  dispatchEdges: readonly TaskDispatchEdge[] | null
   result: T[]
+}
+
+/**
+ * Live subagent dispatch edges for a session, read from its transcript's
+ * running task tool parts. Fork + task_id reuse leaves the child session's
+ * catalog parentID pointing at the pre-fork lineage; these edges are the
+ * authoritative supplement that keeps a running subagent (and its pending
+ * questions/permissions) inside the dispatching session's blocking scope.
+ */
+export function readTaskDispatchEdgesFromTranscript(
+  data: { messageOrder: readonly string[]; partsByMessageID: Readonly<Record<string, readonly Part[] | undefined>> } | null | undefined,
+): readonly TaskDispatchEdge[] {
+  if (!data) return EMPTY_TASK_DISPATCH_EDGES
+  const edges: TaskDispatchEdge[] = []
+  for (const messageID of data.messageOrder) {
+    const parts = data.partsByMessageID[messageID]
+    if (!parts) continue
+    for (const edge of collectTaskDispatchEdgesFromParts(parts as Part[])) {
+      edges.push(edge)
+    }
+  }
+  return edges.length === 0 ? EMPTY_TASK_DISPATCH_EDGES : edges
+}
+
+/**
+ * Cached transcript → dispatch-edges reader. `useSyncExternalStore` requires
+ * `getSnapshot` to return a stable reference while the underlying data is
+ * unchanged; rebuilding the edges array on every read would loop renders into
+ * a crash. Cache by the semantic signature of the extracted edges so the
+ * contract holds even when the transcript projection itself is rebuilt with
+ * equal contents (store-adapter fallback path).
+ */
+export function createTaskDispatchEdgesReader() {
+  let cache: { signature: string; edges: readonly TaskDispatchEdge[] } | null = null
+  return (data: unknown): readonly TaskDispatchEdge[] => {
+    const edges = readTaskDispatchEdgesFromTranscript(
+      data as Parameters<typeof readTaskDispatchEdgesFromTranscript>[0],
+    )
+    if (edges.length === 0) return EMPTY_TASK_DISPATCH_EDGES
+    const signature = edges
+      .map((edge) => `${edge.parentSessionId}\u0000${edge.sessionId}`)
+      .join("\u0001")
+    if (cache && cache.signature === signature) return cache.edges
+    cache = { signature, edges }
+    return edges
+  }
+}
+
+export function useTaskDispatchEdges(
+  sessionID: string | null,
+  directory: string | undefined,
+): readonly TaskDispatchEdge[] {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  const readRef = useRef(createTaskDispatchEdgesReader())
+  const reader = readRef.current
+  const getSnapshot = useCallback(() => {
+    if (!sessionID) return EMPTY_TASK_DISPATCH_EDGES
+    try {
+      const repository = getTranscriptRepository()
+      const data = repository?.getTranscript(transcriptScope(targetDirectory, sessionID))
+      return reader(data)
+    } catch {
+      return EMPTY_TASK_DISPATCH_EDGES
+    }
+  }, [reader, sessionID, targetDirectory])
+
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!sessionID) return () => undefined
+      let repoUnsub = (() => {
+        const repository = getTranscriptRepository()
+          ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+        return repository?.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+          notify()
+        }) ?? (() => undefined)
+      })()
+      const unsubBinding = subscribeTranscriptRepositoryBinding(() => {
+        repoUnsub()
+        const repository = getTranscriptRepository()
+          ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+        repoUnsub = repository?.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+          notify()
+        }) ?? (() => undefined)
+        notify()
+      })
+      return () => {
+        unsubBinding()
+        repoUnsub()
+      }
+    },
+    [sessionID, store, targetDirectory],
+  )
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 function useScopedBlockingRequests<T extends { id: string }>(
@@ -3273,10 +3380,12 @@ function useScopedBlockingRequests<T extends { id: string }>(
   selectRequestsBySession: (state: State) => Record<string, T[] | undefined>,
   empty: T[],
 ): T[] {
+  const dispatchEdges = useTaskDispatchEdges(sessionID, directory)
   const cacheRef = useRef<ScopedBlockingRequestCache<T>>({
     sessionID: null,
     sessions: null,
     requestsBySession: null,
+    dispatchEdges: null,
     result: empty,
   })
 
@@ -3288,20 +3397,22 @@ function useScopedBlockingRequests<T extends { id: string }>(
         cache.sessionID === sessionID
         && cache.sessions === state.session
         && cache.requestsBySession === requestsBySession
+        && cache.dispatchEdges === dispatchEdges
       ) {
         return cache.result
       }
 
-      const next = collectScopedBlockingRequests(state.session, requestsBySession, sessionID, empty)
+      const next = collectScopedBlockingRequests(state.session, requestsBySession, sessionID, empty, dispatchEdges)
       const result = areRequestArraysReferentiallyEqual(cache.result, next) ? cache.result : next
       cacheRef.current = {
         sessionID,
         sessions: state.session,
         requestsBySession,
+        dispatchEdges,
         result,
       }
       return result
-    }, [empty, selectRequestsBySession, sessionID]),
+    }, [empty, selectRequestsBySession, sessionID, dispatchEdges]),
     directory,
   )
 }

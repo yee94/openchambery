@@ -41,11 +41,15 @@ Under `:root.mobile-pointer:not(.desktop-runtime)`, `mobile.css` raises generic 
 ```css
 button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
 .btn,
-[role="button"] {
+[role="button"],
+[data-slot="button"] {
   min-height: 36px;
   min-width: 36px;
 }
 ```
+
+`[data-slot="button"]` covers shared `Button asChild` anchors so link-styled
+actions keep the same 36px floor as native `<button>` siblings.
 
 Also note nearby spacing overrides such as `.py-2` padding inflation under the same gate.
 
@@ -57,8 +61,8 @@ Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h
 |---|---|---|
 | Tool expandable rows | `.oc-tool-row[role="button"]` | `mobile.css` |
 | Composer footer mobile actions | `.composer-mobile-actions button` | `mobile.css` |
-| Composer stop chip | `button[data-composer-stop="true"]` | `mobile.css` |
-| Composer agent + model chips | `.composer-mobile-model-controls button` | `mobile.css` |
+| Composer send + stop controls | `button[data-composer-send="true"]` / `button[data-composer-stop="true"]` | `mobile.css` |
+| Composer agent + model chips | `.composer-mobile-model-controls button` (locked to 26px so the revealed agent name stays vertically centered with the model chip) | `mobile.css` |
 | Message action / footer icons | `[data-message-action-group="true"] button` | `mobile.css` |
 | Composer queued-message chips | `.oc-composer-queue button` / `[role="button"]` | `mobile.css` |
 | Composer attachment thumbs | `[data-attachment-preview="true"] button` | `mobile.css` |
@@ -99,6 +103,18 @@ Legitimate glass fallbacks:
 | Settings detail canvas | `.oc-mobile-settings-detail-card` stays transparent (group cards own material) |
 
 Android System WebView should be Chromium **111+** for `color-mix()` and reliable translucency (`packages/mobile/HANDOFF.md`).
+
+## Layout chrome dividers
+
+Desktop shell edges (left/right sidebars, header/content split, context panel) use one token pair in `design-system.css`:
+
+| Token / class | Role |
+|---|---|
+| `--layout-chrome-divider-width` | Hairline width (`0.5px`) |
+| `--layout-chrome-divider` | `color-mix` of `--border` at 30% |
+| `.oc-layout-divider-{t,r,b,l}` | Side-specific border using those tokens |
+
+Do not reintroduce ad-hoc `border-border/40` / `border-border/50` on layout chrome; change the tokens when the whole family should shift.
 
 ## Segmented selected pill
 

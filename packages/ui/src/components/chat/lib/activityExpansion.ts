@@ -87,18 +87,57 @@ export const resolveTurnActivityPresentation = (input: {
  * either. Requiring both means the footer only appears when neither authority
  * claims work is in flight.
  *
+ * Exception: when the last assistant is authoritatively settled
+ * (`hasConfirmedSettledAssistant`, typically `turn.hasConfirmedFinalBody` —
+ * confirmed terminal stop + model text, no error), prefer that over a lagging
+ * `sessionIsWorking`. Live SSE settle reaches the message before pending-user /
+ * status-observedAt gates flip working off; without this override TPS and
+ * duration stay hidden until a later HTTP reconcile (often 7s–90s).
+ *
  * Deliberately ignores `resolveTurnActivityPresentation`'s output: that demotes
  * `active` to `abnormal` on idle for header chrome, which would read as settled.
+ * Never overrides `completionDisposition === 'active'` (step-gap flicker guard).
  */
 export const resolveTurnSettledForPresentation = (input: {
   completionDisposition: TurnRecord['completionDisposition'] | undefined;
   isLastTurn: boolean;
   sessionIsWorking: boolean;
+  /**
+   * Authoritative last-assistant settle (prefer `turn.hasConfirmedFinalBody`).
+   * When true, a lagging sessionIsWorking no longer suppresses completion chrome.
+   */
+  hasConfirmedSettledAssistant?: boolean;
 }): boolean => {
   if (input.completionDisposition === 'active') {
     return false;
   }
-  return !(input.isLastTurn && input.sessionIsWorking);
+  if (input.isLastTurn && input.sessionIsWorking && !input.hasConfirmedSettledAssistant) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Last-assistant bottom padding: live work uses `pb-1` so StatusRow sits
+ * under the last tool; idle Processed rows keep the between-turns `pb-8`
+ * that SessionRecapNote's `-mt-6` pulls into. `isInActiveTurn` stays true
+ * after an abnormal settle whenever `time.completed` never lands (the
+ * incomplete-assistant fallback in MessageList), so it cannot own the
+ * tighten by itself once header chrome has already demoted to Processed.
+ */
+export const shouldTightenWorkingBottomGap = (input: {
+  isWorking: boolean;
+  isInActiveTurn: boolean;
+  headerCompletionDisposition?: TurnRecord['completionDisposition'];
+}): boolean => {
+  if (input.isWorking) {
+    return true;
+  }
+  if (!input.isInActiveTurn) {
+    return false;
+  }
+  return input.headerCompletionDisposition !== 'normal'
+    && input.headerCompletionDisposition !== 'abnormal';
 };
 
 /**

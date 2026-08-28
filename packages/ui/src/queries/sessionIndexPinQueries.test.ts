@@ -136,4 +136,26 @@ describe('sessionIndexPinQueries', () => {
     const pinned = patchSessionIndexPinned(cleared, 'ses_2', '2026-02-01T00:00:00.000Z');
     expect(isSessionIndexPinned(pinned.directories[0]?.sessions[1])).toBe(true);
   });
+
+  test('derivePinnedSessionIdsFromSnapshot includes snapshot.pinnedSessionIds outside the newest page', () => {
+    const base = snapshot([{ id: 'ses_visible' }]);
+    const ids = derivePinnedSessionIdsFromSnapshot({
+      ...base,
+      pinnedSessionIds: ['ses_old'],
+    });
+    expect([...ids]).toEqual(['ses_old']);
+  });
+
+  test('togglePinnedSession can pin a session missing from the newest-page snapshot', async () => {
+    writeSessionIndexSnapshotQuery(snapshot([{ id: 'ses_visible' }]), {
+      client,
+      transport: 'transport-a',
+      persist: false,
+    });
+
+    await togglePinnedSession('ses_old', { client, transport: 'transport-a' });
+
+    expect(readPinnedSessionIds(client, 'transport-a').has('ses_old')).toBe(true);
+    expect(pinSessionMock).toHaveBeenCalledWith('ses_old');
+  });
 });

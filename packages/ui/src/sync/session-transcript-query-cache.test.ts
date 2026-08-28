@@ -481,6 +481,92 @@ describe("TranscriptQueryCacheBudget with real QueryClient", () => {
     )).toBeUndefined()
   })
 
+  test("listCanonicalScopesForSession tracks seed / purge / eviction without ghosts", () => {
+    seedCanonicalTranscriptQuery(client, scope("ses_idx"), infinitePages(1), 10)
+    seedCanonicalTranscriptQuery(
+      client,
+      { ...scope("ses_idx"), directory: "/other" },
+      infinitePages(1),
+      20,
+    )
+    seedCanonicalTranscriptQuery(client, scope("ses_other"), infinitePages(1), 30)
+
+    expect(
+      budget.listCanonicalScopesForSession("ses_idx", {
+        transport: TRANSPORT,
+        generation: GENERATION,
+      }).map((s) => s.directory).sort(),
+    ).toEqual(["/other", DIRECTORY])
+    expect(
+      budget.listCanonicalScopesForSession("ses_idx", {
+        transport: TRANSPORT,
+        generation: GENERATION,
+        directory: DIRECTORY,
+      }),
+    ).toEqual([scope("ses_idx")])
+
+    budget.purgeSession(scope("ses_idx"))
+    expect(
+      budget.listCanonicalScopesForSession("ses_idx", {
+        transport: TRANSPORT,
+        generation: GENERATION,
+      }).map((s) => s.directory),
+    ).toEqual(["/other"])
+    expect(
+      budget.listCanonicalScopesForSession("ses_other", {
+        transport: TRANSPORT,
+        generation: GENERATION,
+      }),
+    ).toEqual([scope("ses_other")])
+
+    // LRU eviction must drop the index entry (ghost scope would re-broadcast SSE).
+    seedCanonicalTranscriptQuery(client, scope("ses_1"), infinitePages(1), 10)
+    seedCanonicalTranscriptQuery(client, scope("ses_2"), infinitePages(1), 20)
+    seedCanonicalTranscriptQuery(client, scope("ses_3"), infinitePages(1), 30)
+    seedCanonicalTranscriptQuery(client, scope("ses_4"), infinitePages(1), 40)
+    const { evicted } = budget.enforce()
+    expect(evicted.map((s) => s.sessionID)).toContain("ses_1")
+    expect(
+      budget.listCanonicalScopesForSession("ses_1", {
+        transport: TRANSPORT,
+        generation: GENERATION,
+      }),
+    ).toEqual([])
+  })
+
+  test("purgeGeneration and dispose clear session scope index", () => {
+    seedCanonicalTranscriptQuery(client, scope("ses_g1", 1), infinitePages(1), 10)
+    seedCanonicalTranscriptQuery(client, scope("ses_g2", 2), infinitePages(1), 20)
+    expect(
+      budget.listCanonicalScopesForSession("ses_g1", {
+        transport: TRANSPORT,
+        generation: 1,
+      }),
+    ).toHaveLength(1)
+
+    budget.purgeGeneration(TRANSPORT, 1)
+    expect(
+      budget.listCanonicalScopesForSession("ses_g1", {
+        transport: TRANSPORT,
+        generation: 1,
+      }),
+    ).toEqual([])
+    expect(
+      budget.listCanonicalScopesForSession("ses_g2", {
+        transport: TRANSPORT,
+        generation: 2,
+      }),
+    ).toHaveLength(1)
+
+    budget.dispose()
+    expect(
+      budget.listCanonicalScopesForSession("ses_g2", {
+        transport: TRANSPORT,
+        generation: 2,
+      }),
+    ).toEqual([])
+  })
+
   test("purgeGeneration isolates runtime generations", () => {
     seedCanonicalTranscriptQuery(client, scope("ses_g1", 1), infinitePages(1), 10)
     seedCanonicalTranscriptQuery(client, scope("ses_g2", 2), infinitePages(1), 20)

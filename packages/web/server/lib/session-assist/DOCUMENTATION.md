@@ -14,8 +14,10 @@ under `metadata.openchamber.assist`.
    `retry` status or a user `message.updated` clears it (the "1 minute of
    quiet" rule).
 3. On fire: fetch the session (skip sub-agent sessions with `parentID`),
-   take the LAST exchange only — the final assistant reply plus the user
-   message it answered (assistant `parentID` → user id) — and call
+   then build a trimmed excerpt via `buildAssistTranscript`: the LAST text
+   block of the last assistant message (earlier blocks, reasoning, and tool
+   output are excluded) plus the latest 3 real user messages (synthetic
+   hidden-instruction parts never count). The excerpt is sent to
    `generateSmallModelText` with the
    session's own provider/model taken from the last assistant message — so
    the utility call spends the same subscription as the conversation.

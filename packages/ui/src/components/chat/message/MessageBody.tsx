@@ -1981,11 +1981,10 @@ const AssistantMessageBody = React.memo(({
                     const visibleSegmentParts = showReasoningTraces
                         ? segment.parts
                         : segment.parts.filter((activity) => activity.kind !== 'reasoning');
-                    // Always keep the Activity chrome once a segment exists.
-                    // Dropping the header when filtered parts are briefly empty
-                    // (reasoning-only mid-reconcile, lagging tool materialize)
-                    // unmounts the whole disclosure and makes tool rows flash
-                    // away — including the live last turn vanishing for a beat.
+                    // Still push once a segment exists. ProgressiveGroup hides a
+                    // live empty non-compaction header (no rows yet); settled and
+                    // compaction headers stay mounted so mid-reconcile empty
+                    // filters cannot flash tool rows away.
                     pushActivityHeader(segment.id, visibleSegmentParts, segment.parts);
                 });
             } else if (isCompactionTurn) {

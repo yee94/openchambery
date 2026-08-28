@@ -28,6 +28,7 @@ import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/li
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
+import { shouldTightenWorkingBottomGap } from './lib/activityExpansion';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
@@ -301,13 +302,29 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         const agent = getMessageInfoProp(previousMessage.info, 'agent');
         const providerID = getMessageInfoProp(previousMessage.info, 'providerID');
         const modelID = getMessageInfoProp(previousMessage.info, 'modelID');
-        const variant = getMessageInfoProp(previousMessage.info, 'variant');
+        // OpenCode 1.4.0 moved variant from top-level to model.variant on UserMessage.
+        const model = getMessageInfoProp(previousMessage.info, 'model') as
+            | { variant?: unknown; providerID?: unknown; modelID?: unknown }
+            | undefined;
+        const nestedVariant = typeof model === 'object' && model !== null ? model.variant : undefined;
+        const topLevelVariant = getMessageInfoProp(previousMessage.info, 'variant');
+        const variant = nestedVariant ?? topLevelVariant;
+        const nestedProvider = typeof model === 'object' && model !== null ? model.providerID : undefined;
+        const nestedModelId = typeof model === 'object' && model !== null ? model.modelID : undefined;
         const resolvedAgent =
             typeof mode === 'string' && mode.trim().length > 0
                 ? mode
                 : (typeof agent === 'string' && agent.trim().length > 0 ? agent : undefined);
-        const resolvedProvider = typeof providerID === 'string' && providerID.trim().length > 0 ? providerID : undefined;
-        const resolvedModel = typeof modelID === 'string' && modelID.trim().length > 0 ? modelID : undefined;
+        const resolvedProvider = (
+            typeof providerID === 'string' && providerID.trim().length > 0
+                ? providerID
+                : (typeof nestedProvider === 'string' && nestedProvider.trim().length > 0 ? nestedProvider : undefined)
+        );
+        const resolvedModel = (
+            typeof modelID === 'string' && modelID.trim().length > 0
+                ? modelID
+                : (typeof nestedModelId === 'string' && nestedModelId.trim().length > 0 ? nestedModelId : undefined)
+        );
         const resolvedVariant = typeof variant === 'string' && variant.trim().length > 0 ? variant : undefined;
 
         if (!resolvedAgent && !resolvedProvider && !resolvedModel && !resolvedVariant) {
@@ -630,7 +647,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     // Live working status sits directly under this turn — drop the idle pb-8 gap
     // so "Delegating task …" etc. don't float far below the last tool row.
-    const tightenWorkingBottomGap = turnGroupingContext?.isWorking === true || isInActiveTurn;
+    // Incomplete assistants keep isInActiveTurn after an abnormal settle
+    // (no time.completed); Processed chrome must still restore pb-8 so the
+    // recap's -mt-6 has a gap to pull into instead of overlapping "已处理".
+    const tightenWorkingBottomGap = shouldTightenWorkingBottomGap({
+        isWorking: turnGroupingContext?.isWorking === true,
+        isInActiveTurn,
+        headerCompletionDisposition: turnGroupingContext?.completionDisposition,
+    });
 
     const isFollowedByAssistant = React.useMemo(() => {
         if (isUser) return false;

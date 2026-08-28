@@ -17,6 +17,7 @@ describe('mobile press feedback scale policy', () => {
       ':not(\n      [data-mobile-press-feedback="compact"]\n    ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active))',
     );
     expect(mobileCss).toContain('scale: var(--oc-press-soft-scale)');
+    expect(mobileCss).toContain('.pwa-overlay-panel,');
     // Compact must not be the default active rule for every button.
     const compactActiveBlock = mobileCss.slice(
       mobileCss.indexOf('[data-mobile-press-feedback="compact"]'),
@@ -47,5 +48,6 @@ describe('mobile press feedback scale policy', () => {
     expect(buttonSource).toContain('"mobileIcon"');
     expect(buttonSource).toContain('"xs"');
     expect(buttonSource).toContain('data-mobile-press-feedback={compactPress}');
+    expect(buttonSource).toContain('active:bg-interactive-active');
   });
 });

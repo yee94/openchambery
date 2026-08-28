@@ -32,6 +32,10 @@
  *   Fixture B — legacy manifest without minShellReleaseVersion:
  *     Old shell, nativeBuild 21 + old web identity → apply_ota (no gate)
  *
+ *   Fixture C — stable channel rollback (beta identity device → stable active):
+ *     Device currentBundleId "1.18.4-beta.7" requests channel "stable" while
+ *     stable activeBundle is "1.18.3" → apply_ota + isChannelRollback: true
+ *
  * Live probes (after fixtures) still hit Vercel + EdgeOne. Expectations are
  * derived from the fetched manifest's minShellReleaseVersion and --mode.
  *
@@ -357,6 +361,45 @@ function buildFixtureBProfiles() {
   ]
 }
 
+function fixtureCManifest() {
+  return {
+    activeBundle: {
+      bundleId: 'cccccccccccccccc',
+      releaseVersion: '1.18.3',
+      url: '/ota/bundles/cccccccccccccccc.zip',
+      size: 1,
+      checksum: '0'.repeat(64),
+      rolloutPercent: 100,
+      rolloutSalt: 'fixture-c',
+      minShellApiVersion: 1,
+      platforms: {
+        ios: { minNativeBuild: 1 },
+        android: { minNativeBuild: 1 },
+      },
+    },
+  }
+}
+
+function buildFixtureCProfiles() {
+  return [
+    {
+      name: 'fixtureC beta→stable channel rollback',
+      body: {
+        channel: 'stable',
+        platform: 'android',
+        deviceId: 'fixture-c-rollback',
+        nativeVersion: '1.18.4-beta.7',
+        nativeBuild: 21,
+        shellApiVersion: 1,
+        currentBundleId: '1.18.4-beta.7',
+      },
+      expect: 'apply_ota',
+      expectIsChannelRollback: true,
+      activeVersion: '1.18.3',
+    },
+  ]
+}
+
 function assertFixtureTables() {
   const fixtureA = fixtureAManifest()
   if (fixtureA.activeBundle.minShellReleaseVersion !== '1.18.3-beta.1') {
@@ -401,6 +444,18 @@ function assertFixtureTables() {
     throw new Error('fixture B must use nativeBuild 21 (legacy minNativeBuild must not gate)')
   }
 
+  const fixtureC = fixtureCManifest()
+  if (fixtureC.activeBundle.releaseVersion !== '1.18.3') {
+    throw new Error('fixture C must set stable activeBundle.releaseVersion to 1.18.3')
+  }
+  const tableC = buildFixtureCProfiles()
+  if (tableC.length !== 1 || tableC[0].expect !== 'apply_ota' || tableC[0].expectIsChannelRollback !== true) {
+    throw new Error('fixture C must assert apply_ota + isChannelRollback for beta→stable rollback')
+  }
+  if (tableC[0].body.channel !== 'stable' || tableC[0].body.currentBundleId !== '1.18.4-beta.7') {
+    throw new Error('fixture C must request stable with prerelease currentBundleId 1.18.4-beta.7')
+  }
+
   // Live builder must also stop keying off minNativeBuild.
   const liveFromA = buildProfiles(fixtureA, '1.18.3-beta.2')
   if (liveFromA.some((p) => p.body.nativeBuild !== 21)) {
@@ -414,9 +469,10 @@ function assertFixtureTables() {
     throw new Error('live profile builder must treat missing minShellReleaseVersion as ungated')
   }
 
-  console.log('  ok fixtures: A (gated version) + B (legacy ungated)')
-  for (const row of [...tableA, ...tableB]) {
-    console.log(`    ${row.name} -> ${row.expect}`)
+  console.log('  ok fixtures: A (gated version) + B (legacy ungated) + C (stable channel rollback)')
+  for (const row of [...tableA, ...tableB, ...tableC]) {
+    const rollback = row.expectIsChannelRollback ? ' + isChannelRollback' : ''
+    console.log(`    ${row.name} -> ${row.expect}${rollback}`)
   }
 }
 

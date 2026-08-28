@@ -2489,10 +2489,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
             if (isFileNavTool) {
                 const relativePath = getRelativePath(absolutePath, currentDirectory);
-                const supportsExactToolDiff = normalizedPartTool === 'edit'
-                    || normalizedPartTool === 'multiedit'
-                    || normalizedPartTool === 'apply_patch';
-                const selectedToolDiffs = toolDiff && supportsExactToolDiff
+                const selectedToolDiffs = toolDiff
                     ? getToolNavigationDiffEntries(
                         normalizedPartTool,
                         metadata,

@@ -17,7 +17,11 @@ export const runCliEntryIfMain = (dependencies) => {
   // OPENCHAMBER_RUNTIME=desktop from the parent shell — that would open a relay
   // host-control socket from `bun run dev` / `dev:server`. Electron sets desktop
   // before importing this module and never takes this CLI path.
-  process.env.OPENCHAMBER_RUNTIME = 'web';
+  // SSH-manager remotes set OPENCHAMBER_RUNTIME=ssh-remote (and may pass
+  // --relay-host); preserve that so the remote can host a private relay.
+  if (process.env.OPENCHAMBER_RUNTIME !== 'ssh-remote') {
+    process.env.OPENCHAMBER_RUNTIME = 'web';
+  }
 
   const cliOptions = parseServeCliOptions({
     argv: process.argv.slice(2),

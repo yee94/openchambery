@@ -410,6 +410,149 @@ describe('session-title helpers', () => {
     }
   });
 
+  it('recovers the fork first-refresh when the fork session.created event was lost', async () => {
+    const originalFetch = globalThis.fetch;
+    const forkCreated = 100;
+    const session = {
+      id: 'ses-fork-lost',
+      title: 'Original work (fork #1)',
+      time: { created: forkCreated },
+      metadata: {
+        openchamber: {
+          titleRefresh: {
+            // Inherited from the parent: activity predates the fork.
+            activityUpdatedAt: 50,
+            lastAutoTitle: 'Original work',
+            generatedAt: 40,
+            forMessageID: 'assistant-original',
+          },
+        },
+      },
+    };
+    const messages = [
+      { info: { id: 'user-fork', role: 'user' }, parts: [{ type: 'text', text: 'Try a different approach' }] },
+      { info: { id: 'assistant-fork', role: 'assistant' }, parts: [{ type: 'text', text: 'Different approach ready' }] },
+    ];
+    let generationCalls = 0;
+
+    globalThis.fetch = async (input, init = {}) => {
+      const url = String(input);
+      if (url.includes('/message')) {
+        return new Response(JSON.stringify(messages), { status: 200 });
+      }
+      if (init.method === 'PATCH') {
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+        if (typeof body?.title === 'string') session.title = body.title;
+        if (body?.metadata) session.metadata = body.metadata;
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    try {
+      const runtime = createSessionTitleRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => {
+            generationCalls += 1;
+            return { text: 'Different approach', providerID: 'test', modelID: 'test' };
+          },
+        }),
+        now: () => 1_000,
+        isTitleRefreshEnabled: () => true,
+      });
+
+      // No session.created — it was lost across an SSE reconnect gap. The first
+      // newly-sent fork message lazily re-registers the pending fork entry.
+      runtime.processPayload({
+        type: 'message.updated',
+        properties: { directory: '/repo', info: { sessionID: 'ses-fork-lost', role: 'user', id: 'user-fork', time: { created: 200 } } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-fork-lost', directory: '/repo', status: { type: 'idle' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(generationCalls).toBe(1);
+      expect(session.title).toBe('Different approach');
+      runtime.stop();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('does not lazily re-register a fork after its activity already moved past the fork', async () => {
+    const originalFetch = globalThis.fetch;
+    const forkCreated = 100;
+    const session = {
+      id: 'ses-fork-advanced',
+      title: 'Original work (fork #1)',
+      time: { created: forkCreated },
+      metadata: {
+        openchamber: {
+          titleRefresh: {
+            // A fork message already advanced activity past the fork time.
+            activityUpdatedAt: 300,
+            lastAutoTitle: 'Original work',
+            generatedAt: 40,
+            forMessageID: 'assistant-original',
+          },
+        },
+      },
+    };
+    let generationCalls = 0;
+
+    globalThis.fetch = async (input, init = {}) => {
+      if (String(input).includes('/message')) {
+        return new Response(JSON.stringify([
+          { info: { id: 'user-x', role: 'user' }, parts: [{ type: 'text', text: 'later message' }] },
+          { info: { id: 'assistant-x', role: 'assistant' }, parts: [{ type: 'text', text: 'later reply' }] },
+        ]), { status: 200 });
+      }
+      if (init.method === 'PATCH') {
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+        if (body?.metadata) session.metadata = body.metadata;
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    try {
+      const runtime = createSessionTitleRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => {
+            generationCalls += 1;
+            return { text: 'Should not run', providerID: 'test', modelID: 'test' };
+          },
+        }),
+        now: () => 1_000,
+        isTitleRefreshEnabled: () => true,
+      });
+
+      runtime.processPayload({
+        type: 'message.updated',
+        properties: { directory: '/repo', info: { sessionID: 'ses-fork-advanced', role: 'user', id: 'user-x', time: { created: 400 } } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-fork-advanced', directory: '/repo', status: { type: 'idle' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(generationCalls).toBe(0);
+      runtime.stop();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('refreshes a new session on first idle, then ignores later idle transitions', async () => {
     const originalFetch = globalThis.fetch;
     const session = {

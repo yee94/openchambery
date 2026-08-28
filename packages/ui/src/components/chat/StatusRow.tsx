@@ -132,8 +132,22 @@ export const StatusRow: React.FC<StatusRowProps> = ({
 
   const hasTodoContent = showTodos && statusSummary.left > 0;
   const hasAbortPrompt = Boolean(showAbortPrompt);
+  // Keep the assistant status slot mounted briefly after isWorking drops so
+  // WorkingPlaceholder can linger (~600ms) across step gaps without collapsing
+  // the row (scrollHeight ±28px chase).
+  const [assistantStatusLinger, setAssistantStatusLinger] = React.useState(false);
+  React.useEffect(() => {
+    if (isWorking) {
+      setAssistantStatusLinger(true);
+      return;
+    }
+    if (!assistantStatusLinger) return;
+    const timer = window.setTimeout(() => setAssistantStatusLinger(false), 600);
+    return () => window.clearTimeout(timer);
+  }, [isWorking, assistantStatusLinger]);
   const hasAssistantContent = showAssistantStatus && (
     isWorking ||
+    assistantStatusLinger ||
     Boolean(wasAborted) ||
     Boolean(showAbortStatus)
   );

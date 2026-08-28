@@ -31,6 +31,8 @@ export type TimeFormatPreference = 'auto' | '12h' | '24h';
 export type WeekStartPreference = 'auto' | 'sunday' | 'monday';
 export type DesktopWindowControlsPosition = 'auto' | 'left' | 'right';
 export type FileEditorKeymap = 'default' | 'vim';
+/** Mobile OTA channel preference. null = follow the build-time baked channel. */
+export type OtaChannelOverride = 'beta' | 'stable' | null;
 
 function normalizeFileEditorKeymap(value: unknown): FileEditorKeymap {
   return value === 'vim' ? 'vim' : 'default';
@@ -850,6 +852,8 @@ interface UIStore {
   isMobileSessionStatusBarCollapsed: boolean;
   mobileSessionPanelOpen: boolean;
   mobileSessionFilterProjectId: string | null;
+  /** User-selected mobile OTA update channel override; null follows the baked channel. */
+  otaChannelOverride: OtaChannelOverride;
   isExpandedInput: boolean;
   reportUsage: boolean;
   shortcutOverrides: Record<string, ShortcutCombo>;
@@ -1023,6 +1027,7 @@ interface UIStore {
   setIsMobileSessionStatusBarCollapsed: (value: boolean) => void;
   setMobileSessionPanelOpen: (value: boolean) => void;
   setMobileSessionFilterProjectId: (value: string | null) => void;
+  setOtaChannelOverride: (value: OtaChannelOverride) => void;
   viewPagerPage: 'left' | 'center' | 'right';
   setViewPagerPage: (page: 'left' | 'center' | 'right') => void;
   toggleExpandedInput: () => void;
@@ -1182,6 +1187,7 @@ export const useUIStore = create<UIStore>()(
         isMobileSessionStatusBarCollapsed: false,
         mobileSessionPanelOpen: false,
         mobileSessionFilterProjectId: null,
+        otaChannelOverride: null,
         isExpandedInput: false,
         reportUsage: false,
         shortcutOverrides: {},
@@ -2667,6 +2673,9 @@ export const useUIStore = create<UIStore>()(
         setMobileSessionFilterProjectId: (value) => {
           set({ mobileSessionFilterProjectId: value });
         },
+        setOtaChannelOverride: (value) => {
+          set({ otaChannelOverride: value });
+        },
         setReportUsage: (value) => {
           set({ reportUsage: value });
         },
@@ -2915,6 +2924,7 @@ export const useUIStore = create<UIStore>()(
           allowPromptingSubagentSessions: state.allowPromptingSubagentSessions,
           isMobileSessionStatusBarCollapsed: state.isMobileSessionStatusBarCollapsed,
           mobileSessionFilterProjectId: state.mobileSessionFilterProjectId,
+          otaChannelOverride: state.otaChannelOverride,
           shortcutOverrides: state.shortcutOverrides,
           fileEditorKeymap: state.fileEditorKeymap,
         })

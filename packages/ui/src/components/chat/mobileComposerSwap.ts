@@ -5,13 +5,19 @@
  *
  * Model:
  * - Any upward scroll from expanded starts tracking immediately (no dead zone).
- * - The first half follows scroll; finishing that half (or idle past it) snaps the rest.
+ * - Follow maps the full FULL_RANGE px to progress 0…1 so a held drag never
+ *   parks at the 0.5 handoff where both layers are invisible.
+ * - While a finger is down the machine only follows; commit happens after the
+ *   gesture ends (touchend / scrollend / scroll idle) and picks the final form
+ *   from progress vs the commit threshold.
  * - After a compact snap, the hook may suppress return-follow briefly so iOS
  *   momentum cannot bounce straight back — that is NOT a permanent latch.
  */
 
-/** Gesture delta that maps to the follow half (progress 0 → 0.5). */
+/** Half-range px; commit threshold sits at this distance from the bottom. */
 export const COMPOSER_SWAP_FOLLOW_RANGE_PX = 40;
+/** Full follow map: distance 0…FULL → progress 0…1. */
+export const COMPOSER_SWAP_FULL_RANGE_PX = COMPOSER_SWAP_FOLLOW_RANGE_PX * 2;
 /** Treat this near-bottom band as "at the bottom" for expand recovery. */
 export const COMPOSER_SWAP_NOISE_PX = 2;
 export const COMPOSER_SWAP_COMMIT_THRESHOLD = 0.5;
@@ -105,18 +111,18 @@ export const applyComposerSwapForce = (
     });
 };
 
-/** Expanded follow: distance 0…FOLLOW → progress 0…0.5. Starts immediately. */
+/** Expanded follow: distance 0…FULL maps progress 0…1. Starts immediately. */
 const followFromExpanded = (distanceFromBottom: number): number => (
-    clamp(distanceFromBottom / COMPOSER_SWAP_FOLLOW_RANGE_PX, 0, 0.5)
+    clamp(distanceFromBottom / COMPOSER_SWAP_FULL_RANGE_PX, 0, 1)
 );
 
 /**
- * Compact return follow: only the last FOLLOW px toward the bottom map
- * progress 1…0.5. Farther away stays fully compact.
+ * Compact return follow: the last FULL px toward the bottom map progress
+ * 1…0. Farther away stays fully compact.
  */
 const followFromCompact = (distanceFromBottom: number): number => {
-    if (distanceFromBottom >= COMPOSER_SWAP_FOLLOW_RANGE_PX) return 1;
-    return 0.5 + 0.5 * (distanceFromBottom / COMPOSER_SWAP_FOLLOW_RANGE_PX);
+    if (distanceFromBottom >= COMPOSER_SWAP_FULL_RANGE_PX) return 1;
+    return clamp(distanceFromBottom / COMPOSER_SWAP_FULL_RANGE_PX, 0, 1);
 };
 
 /**
@@ -150,17 +156,26 @@ export const applyComposerSwapScroll = (
                 progress: 0,
             });
         }
+        const progress = followFromExpanded(distance);
+        // Full follow reached the compact end — settle without a snap animation.
+        if (progress >= 1) {
+            return settle(base, {
+                phase: 'rest',
+                rest: 'compact',
+                progress: 1,
+            });
+        }
         return settle(base, {
             phase: 'tracking',
             rest: 'expanded',
-            progress: followFromExpanded(distance),
+            progress,
         });
     }
 
-    // Compact rest — near the true bottom expands immediately.
+    // Compact rest — reaching the true bottom completes expansion via follow.
     if (distance <= COMPOSER_SWAP_NOISE_PX) {
         return settle(base, {
-            phase: 'snapping',
+            phase: 'rest',
             rest: 'expanded',
             progress: 0,
         });
@@ -195,15 +210,6 @@ export const resolveComposerSwapCommit = (state: ComposerSwapState): ComposerSwa
         return state.progress >= COMPOSER_SWAP_COMMIT_THRESHOLD ? 'compact' : 'expanded';
     }
     return state.progress <= COMPOSER_SWAP_COMMIT_THRESHOLD ? 'expanded' : 'compact';
-};
-
-/** True when the follow half is finished and the remaining snap should run now. */
-export const shouldComposerSwapAutoCommit = (state: ComposerSwapState): boolean => {
-    if (state.pinned || state.phase !== 'tracking') return false;
-    if (state.rest === 'expanded') {
-        return state.progress >= COMPOSER_SWAP_COMMIT_THRESHOLD;
-    }
-    return state.progress <= COMPOSER_SWAP_COMMIT_THRESHOLD;
 };
 
 export const applyComposerSwapCommit = (state: ComposerSwapState): ComposerSwapState => {

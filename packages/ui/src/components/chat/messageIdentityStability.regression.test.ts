@@ -30,7 +30,8 @@ describe("message identity stability contract", () => {
 
   test("HTTP upsert (recovery/reconcile) goes through the same identity merge", () => {
     const source = readSource("../../sync/materialization.ts")
-    expect(source).toContain('import { mergeTranscriptMessageUpdate } from "./transcript-event-reducer"')
+    expect(source).toContain('mergeTranscriptMessageUpdate')
+    expect(source).toContain('from "./transcript-event-reducer"')
     expect(source).toMatch(/upsertMessages[\s\S]*?mergeTranscriptMessageUpdate\(live, snapshot\)/)
   })
 
@@ -39,6 +40,16 @@ describe("message identity stability contract", () => {
     expect(source).toContain("messageIdentitiesCache")
     expect(source).toContain("const stableAgentName = agentName ?? cachedMessageIdentity?.agent")
     expect(source).toContain("useStickyDisplayValue<string>(stableAgentName)")
+  })
+
+  test("pending send paints the assistant header before the first assistant row", () => {
+    const source = readSource("./lib/pendingAssistantHeader.ts")
+    expect(source).toContain("export const shouldShowPendingAssistantHeader")
+    expect(source).toContain("readUserMessageHeaderIdentity")
+    expect(source).toContain("resolvePendingAssistantHeader")
+    const turnItem = readSource("./components/TurnItem.tsx")
+    expect(turnItem).toContain("pendingAssistantHeader")
+    expect(turnItem).toContain("<MessageHeader")
   })
 
   test("diagnostics expose identity-missing facts without values", () => {

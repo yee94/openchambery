@@ -584,7 +584,7 @@ export const MainLayout: React.FC = () => {
                                 <>
                                     <Header />
                                     <div className="relative flex flex-1 min-h-0 overflow-hidden bg-background" data-page-scroll-lock="true">
-                                <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden border-t border-border/50 bg-background" data-page-scroll-lock="true">
+                                <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden oc-layout-divider-t bg-background" data-page-scroll-lock="true">
                                     <div className="flex flex-1 min-h-0 overflow-hidden" data-page-scroll-lock="true">
                                         <div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden" data-page-scroll-lock="true">
                                             <main className="flex-1 overflow-hidden bg-background relative" data-page-scroll-lock="true">
@@ -614,7 +614,7 @@ export const MainLayout: React.FC = () => {
                                 </div>
                                 <RightSidebar
                                     isOpen={isRightSidebarOpen}
-                                    className="bg-background border-t border-border/50"
+                                    className="bg-background oc-layout-divider-t"
                                 >
                                     <ErrorBoundary><RightSidebarTabs /></ErrorBoundary>
                                 </RightSidebar>

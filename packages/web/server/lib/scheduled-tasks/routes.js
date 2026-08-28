@@ -321,6 +321,33 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     const clients = getOpenChamberEventClients();
     clients.add(res);
 
+    let closed = false;
+    let heartbeatTimer = null;
+    // Half-open / stalled-drain eviction: destroy after this many consecutive
+    // heartbeat cycles while the socket remains paused (no drain). Interval
+    // itself is unchanged — only failure cleanup was added.
+    // SSE is best-effort; authoritative data is fetched over HTTP.
+    const maxPausedHeartbeatCycles = 2;
+
+    const cleanup = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+      clients.delete(res);
+      try {
+        if (!res.destroyed && !res.writableEnded) {
+          res.destroy();
+        }
+      } catch {
+        // ignore — destroy + delete must stay idempotent
+      }
+    };
+
     try {
       writeSseEvent(res, {
         type: 'openchamber:event-stream-ready',
@@ -329,25 +356,41 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
         },
       });
     } catch {
+      cleanup();
+      return;
     }
 
-    const heartbeat = setInterval(() => {
+    heartbeatTimer = setInterval(() => {
+      if (closed || res.writableEnded || res.destroyed) {
+        cleanup();
+        return;
+      }
+
       try {
-        writeSseEvent(res, {
+        const ok = writeSseEvent(res, {
           type: 'openchamber:heartbeat',
           properties: {
             timestamp: Date.now(),
           },
         });
+        if (ok === false || res.__ssePaused) {
+          const cycles = (res.__ssePausedHeartbeatCycles || 0) + 1;
+          res.__ssePausedHeartbeatCycles = cycles;
+          if (cycles >= maxPausedHeartbeatCycles) {
+            // Intentional half-open cleanup: TCP may still look open while the
+            // relay tunnel is dead and drain never fires. SSE is best-effort;
+            // authoritative data is fetched over HTTP.
+            cleanup();
+          }
+          return;
+        }
+        res.__ssePausedHeartbeatCycles = 0;
       } catch {
-        clearInterval(heartbeat);
-        clients.delete(res);
+        cleanup();
       }
     }, 25_000);
 
-    req.on('close', () => {
-      clearInterval(heartbeat);
-      clients.delete(res);
-    });
+    req.on('close', cleanup);
+    res.on('error', cleanup);
   });
 };

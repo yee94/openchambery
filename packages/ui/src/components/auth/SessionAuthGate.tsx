@@ -15,7 +15,7 @@ import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeExtraHeadersSync } from '@/lib/runtime-auth';
-import { getRuntimeApiBaseUrl, getRuntimeKey, isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
+import { getActiveRelayDescriptor, getRuntimeApiBaseUrl, getRuntimeKey, isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { desktopHostsGet, desktopHostsSet, getDesktopHostApiUrl, normalizeHostUrl } from '@/lib/desktopHosts';
 import { resolveStatusCheckFailureState, type GateState } from './sessionAuthGateState';
 import {
@@ -225,10 +225,14 @@ const applyDesktopClientToken = async (clientToken: string): Promise<void> => {
   const apiBaseUrl = getRuntimeApiBaseUrl();
   const requestHeaders = getRuntimeExtraHeadersSync();
   await persistDesktopClientToken(apiBaseUrl, clientToken);
+  // Re-applying the token must preserve the active transport: passing the
+  // current relay descriptor keeps the E2EE tunnel alive (switchRuntimeEndpoint
+  // without `relay` deactivates relay mode and leaks requests to the local origin).
   switchRuntimeEndpoint({
     apiBaseUrl,
     clientToken,
     requestHeaders: Object.keys(requestHeaders).length > 0 ? requestHeaders : null,
+    relay: getActiveRelayDescriptor(),
   });
 };
 

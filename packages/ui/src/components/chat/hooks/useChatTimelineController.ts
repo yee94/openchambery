@@ -21,6 +21,10 @@ import {
     getTranscriptRepository,
     transcriptScope,
 } from '@/sync/transcript-repository-runtime';
+import {
+    createHistoryViewportAnchorKeeper,
+    type HistoryViewportAnchorKeeper,
+} from './historyViewportAnchorKeeper';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -31,6 +35,13 @@ type PrePrependSnapshot = {
     anchor: ViewportAnchor | null;
     oldestId: string | null;
     newestId: string | null;
+    /**
+     * Height already compensated by the relative path after the user scrolled
+     * mid-load. Absolute-anchor restore would yank the viewport back to the
+     * capture-time position, so once the user scrolls during a load, every
+     * remaining batch of that load compensates relatively against this tally.
+     */
+    compensatedHeight?: number;
 };
 
 type PendingScrollRequest = {
@@ -303,6 +314,14 @@ export const resolveHistoryPageDecision = (input: {
 const HISTORY_INTERACTION_MAX_PAGES = 1;
 
 /**
+ * Scroll drift (px) between an armed load snapshot and the live scrollTop that
+ * marks "the user scrolled during this load". Below it, small programmatic
+ * adjustments are treated as noise and the absolute anchor restore still runs;
+ * above it, restoring would yank the viewport back to the pre-load position.
+ */
+const USER_SCROLLED_DURING_LOAD_PX = 8;
+
+/**
  * Short first paint / collapsed transcript that does not fill the viewport:
  * keep loading earlier Host turn pages while still pinned at bottom.
  *
@@ -398,8 +417,107 @@ export const shouldHoldHistoryViewportAnchor = (_input: {
 // momentum still drags the viewport upward.
 const MOMENTUM_WATCHDOG_FRAMES = 20;
 const MOMENTUM_WATCHDOG_TOLERANCE_PX = 4;
+// While the user's finger is DOWN, the same overflow toggle is fatal to the
+// gesture itself: WKWebView latches the pan to the scroll container, and the
+// synchronous overflow flip breaks that latch — the page stops following the
+// finger until lift + re-touch (reported as "gesture dead" after reversing
+// direction during a history load). Mid-gesture the write cannot stick anyway,
+// so compensation is deferred to lift-off with a live-relative anchor.
+const TOUCH_COMPENSATION_DRIFT_MARGIN_PX = 80;
 
-const setScrollTopDefeatingMomentum = (container: HTMLElement, target: number) => {
+type PendingTouchCompensation = {
+    /** Live scrollTop at the first deferred batch of the current gesture. */
+    anchorTop: number;
+    /** Cumulative above-viewport height added by deferred batches. */
+    delta: number;
+};
+
+type TouchGestureState = {
+    touches: number;
+    pending: PendingTouchCompensation | null;
+    settleScheduled: boolean;
+};
+
+type MomentumWriteControl = {
+    generation: number;
+};
+
+const touchGestureStates = new WeakMap<HTMLElement, TouchGestureState>();
+const momentumWriteControls = new WeakMap<HTMLElement, MomentumWriteControl>();
+
+const bumpMomentumWriteGeneration = (container: HTMLElement): number => {
+    const control = momentumWriteControls.get(container) ?? { generation: 0 };
+    control.generation += 1;
+    momentumWriteControls.set(container, control);
+    return control.generation;
+};
+
+/**
+ * Drop leftover touch-defer state and cancel in-flight momentum watchdogs.
+ * Session switches reuse the same scroll element; a pending lift-off write
+ * from the previous session (or the opening tap) must not yank the new
+ * transcript to a stale mid-timeline target.
+ */
+export const resetTouchGestureTracking = (container: HTMLElement) => {
+    const state = touchGestureStates.get(container);
+    if (state) {
+        state.touches = 0;
+        state.pending = null;
+        state.settleScheduled = false;
+    }
+    bumpMomentumWriteGeneration(container);
+};
+
+/**
+ * Installs the touch gesture counter on the scroll container. Must run before
+ * the first compensation write so a gesture that is already in flight when a
+ * prepend commits is counted (lazy install inside the writer would miss the
+ * touchstart and fall through to the gesture-killing direct write).
+ */
+export const attachTouchGestureTracking = (container: HTMLElement) => {
+    resolveTouchGestureState(container);
+};
+
+const resolveTouchGestureState = (container: HTMLElement): TouchGestureState => {
+    const existing = touchGestureStates.get(container);
+    if (existing) return existing;
+
+    const state: TouchGestureState = { touches: 0, pending: null, settleScheduled: false };
+    container.addEventListener('touchstart', () => {
+        state.touches += 1;
+    }, { passive: true });
+    const release = () => {
+        state.touches = Math.max(0, state.touches - 1);
+        if (state.touches === 0 && state.pending) {
+            scheduleTouchCompensationSettle(container, state);
+        }
+    };
+    container.addEventListener('touchend', release, { passive: true });
+    container.addEventListener('touchcancel', release, { passive: true });
+    touchGestureStates.set(container, state);
+    return state;
+};
+
+const scheduleTouchCompensationSettle = (container: HTMLElement, state: TouchGestureState) => {
+    if (state.settleScheduled || typeof window === 'undefined') return;
+    state.settleScheduled = true;
+    window.requestAnimationFrame(() => {
+        state.settleScheduled = false;
+        const pending = state.pending;
+        state.pending = null;
+        if (!pending || state.touches > 0 || !container.isConnected) return;
+        // The user kept scrolling after the deferred batch landed: applying
+        // the stale anchor would yank the viewport. Only restore when the
+        // live position still matches the gesture's anchor within the
+        // uncompensated growth plus margin.
+        const drift = Math.abs(container.scrollTop - pending.anchorTop);
+        if (drift > pending.delta + TOUCH_COMPENSATION_DRIFT_MARGIN_PX) return;
+        applyDefeatingMomentumWrite(container, pending.anchorTop + pending.delta);
+    });
+};
+
+const applyDefeatingMomentumWrite = (container: HTMLElement, target: number) => {
+    const generation = bumpMomentumWriteGeneration(container);
     const previousOverflow = container.style.overflow;
     container.style.overflow = 'hidden';
     container.scrollTop = target;
@@ -416,6 +534,10 @@ const setScrollTopDefeatingMomentum = (container: HTMLElement, target: number) =
     container.addEventListener('touchstart', cancelOnUserTouch, { passive: true, once: true });
     const watch = () => {
         if (cancelled) return;
+        if ((momentumWriteControls.get(container)?.generation ?? 0) !== generation) {
+            container.removeEventListener('touchstart', cancelOnUserTouch);
+            return;
+        }
         // Only correct upward drift (residual momentum). Downward movement or
         // content growth above the viewport must not be fought here.
         if (container.scrollTop < target - MOMENTUM_WATCHDOG_TOLERANCE_PX) {
@@ -429,6 +551,33 @@ const setScrollTopDefeatingMomentum = (container: HTMLElement, target: number) =
         }
     };
     window.requestAnimationFrame(watch);
+};
+
+/**
+ * Momentum-defeating scrollTop write for the mobile surface.
+ *
+ * `deltaAbove` (height the prepend added above the viewport) enables the
+ * gesture-preserving path: while a touch is active the write is deferred to
+ * lift-off instead of toggling overflow mid-gesture (which kills the pan on
+ * WKWebView). Deferred batches accumulate against the gesture's live anchor
+ * and are dropped entirely if the user scrolled on before lift-off.
+ */
+export const setScrollTopDefeatingMomentum = (
+    container: HTMLElement,
+    target: number,
+    deltaAbove?: number,
+) => {
+    const state = resolveTouchGestureState(container);
+    if (state.touches > 0 && typeof deltaAbove === 'number' && deltaAbove > 0) {
+        state.pending = state.pending
+            ? { anchorTop: state.pending.anchorTop, delta: state.pending.delta + deltaAbove }
+            : { anchorTop: container.scrollTop, delta: deltaAbove };
+        return;
+    }
+    // Gesture idle (possibly momentum-only): a stale deferred batch must not
+    // double-apply after this direct write.
+    state.pending = null;
+    applyDefeatingMomentumWrite(container, target);
 };
 
 const hasInsertedBeforeKnownOldest = (
@@ -692,11 +841,23 @@ export const useChatTimelineController = ({
         }
     });
 
+    // Armed-window DOM keeper for non-virtual desktop: corrects materialization /
+    // hydration mutations that do not change renderedMessages (layout effect miss).
+    const historyAnchorKeeperRef = React.useRef<HistoryViewportAnchorKeeper | null>(null);
+
+    const stopKeeper = useEvent(() => {
+        const keeper = historyAnchorKeeperRef.current;
+        if (!keeper) return;
+        historyAnchorKeeperRef.current = null;
+        keeper.dispose();
+    });
+
     useUnmount(() => {
         if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(historyInteractionTimerRef.current);
             historyInteractionTimerRef.current = null;
         }
+        stopKeeper();
         resolvePendingRenderWaiters();
         resolvePendingScrollRequest(false);
     });
@@ -743,6 +904,9 @@ export const useChatTimelineController = ({
     // fetchOlderHistory stores a snapshot here before triggering the fetch and
     // keeps it armed for the whole load. Layout effect re-asserts it after
     // every commit React makes in between — before the browser paints.
+    // Desktop loading status is an overlay (no layout push). Within the armed
+    // window a MutationObserver keeper also corrects in-component mutations
+    // (slim→full / markdown hydrate) that leave renderedMessages unchanged.
     // (DOM geometry sync is intentionally layout-phase, not Query/useEffect.)
     const prePrependScrollRef = React.useRef<PrePrependSnapshot | null>(null);
 
@@ -752,6 +916,27 @@ export const useChatTimelineController = ({
 
     const restoreViewportAnchor = useEvent((anchor: ViewportAnchor): boolean => {
         return messageListRef.current?.restoreViewportAnchor(anchor) ?? false;
+    });
+
+    const startKeeper = useEvent(() => {
+        // Mobile keeps its momentum-defeating writer; the keeper is desktop.
+        if (isMobileSurfaceRuntime()) return;
+        stopKeeper();
+        const container = scrollRef.current;
+        if (!container) return;
+        const anchor = captureViewportAnchor();
+        if (!anchor) return;
+        // Active in BOTH engines. In the non-virtualized window it owns all
+        // mutation compensation (materialization / hydration); across the
+        // none→tanstack flip and inside virtualized history it only bridges the
+        // 1-2 frame gap before TanStack core's measure adjustment (which
+        // round-trips through React onChange) writes scrollTop. The keeper's
+        // scroll-rebase accepts core's absolute write instead of fighting it —
+        // unlike the old multi-frame rAF hold, it never chases core.
+        historyAnchorKeeperRef.current = createHistoryViewportAnchorKeeper({
+            container,
+            anchor,
+        });
     });
 
     // Tracks the timeline edges + height of the previous commit so a prepend
@@ -767,6 +952,15 @@ export const useChatTimelineController = ({
     } | null>(null);
 
     useIsomorphicLayoutEffect(() => {
+        if (!isMobileSurfaceRuntime()) return;
+        const container = scrollRef.current;
+        if (!container) return;
+        attachTouchGestureTracking(container);
+        resetTouchGestureTracking(container);
+    }, [sessionId, scrollRef]);
+
+    useIsomorphicLayoutEffect(() => {
+        stopKeeper();
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
         messageListRef.current?.cancelViewportAnchorHold();
@@ -777,6 +971,19 @@ export const useChatTimelineController = ({
         if (!container) return;
 
         let snap = prePrependScrollRef.current;
+        // Fast wheel/fling during an in-flight load: scrollTop moves
+        // synchronously while scroll events land per frame, so by the time the
+        // history page commits the snapshot anchor describes a viewport the
+        // user has already scrolled away from. Restoring it would yank the
+        // viewport back to the pre-load position (visible jump-back during
+        // fast upward scrolling). Drop the snapshot instead and let this
+        // prepend take the relative paths — background height-delta
+        // compensation when non-virtual, TanStack core's keyed adjustment
+        // when virtual — both anchored at the user's live position.
+        if (snap && Math.abs(container.scrollTop - snap.top) > USER_SCROLLED_DURING_LOAD_PX) {
+            prePrependScrollRef.current = null;
+            snap = null;
+        }
         const prev = prependTrackingRef.current;
         const currentOldestId = renderedMessages[0]?.info?.id ?? null;
         const currentNewestId = renderedMessages[renderedMessages.length - 1]?.info?.id ?? null;
@@ -839,6 +1046,7 @@ export const useChatTimelineController = ({
             // best, and the source of the old up/down jiggle on send / from the
             // queue / while streaming. So for an append we do nothing and let
             // auto-follow own it.
+            stopKeeper();
             if (didPrepend) {
                 prePrependScrollRef.current = null;
                 goToBottom('instant');
@@ -878,7 +1086,7 @@ export const useChatTimelineController = ({
             // Non-virtual only (virtual branch returned above).
             if (isMobileSurfaceRuntime()) {
                 if (heightDelta > 0) {
-                    setScrollTopDefeatingMomentum(container, snap.top + heightDelta);
+                    setScrollTopDefeatingMomentum(container, snap.top + heightDelta, heightDelta);
                 }
                 updateTracking(measuredHeight);
                 return;
@@ -909,12 +1117,13 @@ export const useChatTimelineController = ({
             if (delta > 0) {
                 const target = container.scrollTop + delta;
                 if (isMobileSurfaceRuntime()) {
-                    setScrollTopDefeatingMomentum(container, target);
+                    setScrollTopDefeatingMomentum(container, target, delta);
                 } else {
                     container.scrollTop = target;
                 }
             }
             updateTracking(measuredHeight);
+            startKeeper();
             return;
         }
 
@@ -1028,6 +1237,10 @@ export const useChatTimelineController = ({
                 prePrependScrollRef.current = null;
                 messageListRef.current?.cancelViewportAnchorHold();
             }
+            // The anchor keeper stays armed here on purpose: after the load
+            // lands, scroll-time markdown hydration / slim materialization keep
+            // mutating content heights for a while. The keeper self-retires via
+            // its quiet window once scrolling and mutations stop.
             if (historyViewportPreservationActive) {
                 historyViewportPreservationActive = false;
                 endHistoryViewportPreservation();
@@ -1074,6 +1287,7 @@ export const useChatTimelineController = ({
                     newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
                 };
                 prePrependScrollRef.current = armedSnapshot;
+                startKeeper();
             }
 
             let loadedMessageCount = beforeMessageCount;
@@ -1183,10 +1397,10 @@ export const useChatTimelineController = ({
             isLoadingOlderRef.current = false;
             setIsLoadingOlder(false);
             settleHistoryInteraction();
-            // Removing the loading row is itself a geometry change above the
-            // viewport, so the anchor stays armed until that commit has been
-            // compensated. Releasing it afterwards keeps ordinary commits
-            // (streaming, live events) free of a stale read position.
+            // Desktop loading status is overlay (no layout push). Keep the
+            // snapshot + DOM keeper armed until the next commit settles so
+            // materialization/hydration mutations still correct before paint;
+            // then release so ordinary commits stay free of a stale read position.
             void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
         }
     });

@@ -1,10 +1,7 @@
 import { getActiveRelayTunnel } from './relay/runtime-tunnel';
 import { TUNNEL_PARSE_BASE } from './relay/tunnel-payloads';
-import { buildRuntimeAuthHeaders, getRuntimeAuthGeneration, getRuntimeExtraHeadersSync } from './runtime-auth';
+import { buildRuntimeAuthHeaders, getRuntimeAuthGeneration } from './runtime-auth';
 import { getRuntimeUrlResolver, type RuntimeUrlQuery } from './runtime-url';
-
-/** Must match `OPENCHAMBER_TARGET_PORT_HEADER` in runtime-switch (avoid import cycle). */
-const TARGET_PORT_HEADER = 'x-openchamber-target-port';
 
 export interface RuntimeFetchOptions extends RequestInit {
   query?: RuntimeUrlQuery;
@@ -350,33 +347,6 @@ const relayCoalesceId = (relay: object): number => {
   return id;
 };
 
-const readTargetPortFromHeaders = (headers?: HeadersInit): string | null => {
-  if (!headers) return null;
-  try {
-    const value = new Headers(headers).get(TARGET_PORT_HEADER);
-    const trimmed = value?.trim() || '';
-    return trimmed || null;
-  } catch {
-    return null;
-  }
-};
-
-const resolveCoalesceTargetPort = (
-  initHeaders?: HeadersInit,
-  inputHeaders?: HeadersInit,
-): string => {
-  // Prefer per-request headers, then the active runtime routing hint.
-  const explicit = readTargetPortFromHeaders(initHeaders) || readTargetPortFromHeaders(inputHeaders);
-  if (explicit) return explicit;
-  const extras = getRuntimeExtraHeadersSync();
-  for (const [key, value] of Object.entries(extras)) {
-    if (key.trim().toLowerCase() !== TARGET_PORT_HEADER) continue;
-    const trimmed = value.trim();
-    if (trimmed) return trimmed;
-  }
-  return '';
-};
-
 const coalesceReadKey = (
   method: string,
   url: string,
@@ -384,7 +354,6 @@ const coalesceReadKey = (
   authGeneration: number,
   authGenerationStable: boolean,
   relay: object | null,
-  targetPort: string,
 ): string | null => {
   if (hasSignal) return null;
   if (!authGenerationStable) return null;
@@ -392,8 +361,7 @@ const coalesceReadKey = (
   if (url.includes('/event')) return null;
   if (!COALESCE_READ_PATH.test(url)) return null;
   const transport = relay ? `relay:${relayCoalesceId(relay)}` : `url:${url}`;
-  const target = targetPort ? ` target-port:${targetPort}` : '';
-  return `GET ${transport} ${url} auth:${authGeneration}${target}`;
+  return `GET ${transport} ${url} auth:${authGeneration}`;
 };
 
 export const runtimeFetch = async (input: string | URL | Request, init: RuntimeFetchOptions = {}): Promise<Response> => {
@@ -440,8 +408,6 @@ export const runtimeFetch = async (input: string | URL | Request, init: RuntimeF
   // A Request always carries a (possibly default) signal; treat any Request, or
   // an explicit init.signal, as "has signal" and skip coalescing for safety.
   const hasSignal = requestInit.signal != null || input instanceof Request;
-  const inputHeadersForKey = input instanceof Request ? input.headers : undefined;
-  const targetPort = resolveCoalesceTargetPort(requestInit.headers, inputHeadersForKey);
 
   const key = coalesceReadKey(
     method,
@@ -450,7 +416,6 @@ export const runtimeFetch = async (input: string | URL | Request, init: RuntimeF
     authGeneration,
     authGeneration === getRuntimeAuthGeneration(),
     relay && relayPath !== null ? relay : null,
-    targetPort,
   );
   if (!key) return doFetch();
 

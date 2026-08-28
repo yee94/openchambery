@@ -37,3 +37,17 @@ describe('DirectoryExplorerDialog mobile layout', () => {
     expect(componentSource).toContain('{showHiddenToggle}\n          </div>');
   });
 });
+
+describe('DirectoryExplorerDialog post-add navigation', () => {
+  test('finalize path opens a new session draft for the added project', () => {
+    expect(componentSource).toContain('openNewSessionForAddedProject');
+    expect(componentSource).toContain('useMobileNavigationStore.getState().openDraft(draftOptions)');
+    expect(componentSource).toContain('useSessionUIStore.getState().openNewSessionDraft(draftOptions)');
+    expect(componentSource).toContain('openNewSessionForAddedProject(project)');
+    expect(componentSource).toContain('selectAddedProjectForDraft(project)');
+  });
+
+  test('imports mobile navigation store for draft open on mobile', () => {
+    expect(componentSource).toContain("from '@/mobile/useMobileNavigationStore'");
+  });
+});

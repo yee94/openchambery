@@ -2531,7 +2531,7 @@ export const Header: React.FC<HeaderProps> = ({
     // Mobile keeps a full-width divider. On desktop the divider lives on the chat
     // content wrapper instead, so it doesn't run between the header and the right
     // sidebar (they read as one continuous surface).
-    isMobile && 'border-b border-border/50'
+    isMobile && 'oc-layout-divider-b'
   );
 
   return (

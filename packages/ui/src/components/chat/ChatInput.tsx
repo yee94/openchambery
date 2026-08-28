@@ -140,7 +140,13 @@ import {
     isInlineAttachmentCitation,
     resolveAttachmentCitationDeletion,
 } from './attachmentCitations';
-import { getFileMentionAutocompleteQuery, type FileMentionAutocompleteInputSource } from './fileMentionAutocompleteState';
+import {
+    collectComposerMentionHighlights,
+    collectConfirmableFileMentions,
+    getFileMentionAutocompleteQuery,
+    shouldHighlightFileMention,
+    type FileMentionAutocompleteInputSource,
+} from './fileMentionAutocompleteState';
 import {
     collectFileDropReferences,
     isAbsoluteFileDropPath,
@@ -870,6 +876,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     const sendButton = (
         <button
             type={isMobile ? 'button' : 'submit'}
+            data-composer-send="true"
             disabled={actionAvailability.sendDisabled}
             aria-busy={inFlight || undefined}
             {...keepKeyboardFocusProps}
@@ -908,6 +915,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
             {(hasContent || queueInFlight) ? (
                 <button
                     type="button"
+                    data-composer-send="true"
                     disabled={actionAvailability.sendDisabled || queueInFlight}
                     aria-busy={queueInFlight || undefined}
                     {...keepKeyboardFocusProps}
@@ -1744,7 +1752,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const message = composerDocument.text;
     const { replacePlainDocument, replaceProgrammaticText, applyBrowserEdit, insertReference, deleteReference, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission, confirmedFileMentions, mentions: composerMentions } = composer;
     const applyProgrammaticEdit = React.useCallback((nextText: string, mentionsUpdater?: (mentions: readonly DraftMention[], document: ComposerDocument) => DraftMention[]) => replaceProgrammaticText(nextText, mentionsUpdater), [replaceProgrammaticText]);
-    const isConfirmedFilePath = React.useCallback((text: string): boolean => !text.startsWith('session:') && (text.includes('/') || text.includes('\\') || text.includes('.') || confirmedFileMentions.some((mention) => mention.value === text)), [confirmedFileMentions]);
+    const confirmedFileMentionValues = React.useMemo(
+        () => new Set(confirmedFileMentions.map((mention) => mention.value)),
+        [confirmedFileMentions],
+    );
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const nativeCompositionActiveRef = React.useRef(false);
     const cursorPosRef = React.useRef(0);
@@ -2004,30 +2015,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (!message || !message.includes('@') || inputMode === 'shell') {
             return [];
         }
-        const ranges: MentionRange[] = [];
-        const mentionRegex = /@([^\s]+)/g;
-        let match: RegExpExecArray | null;
-        while ((match = mentionRegex.exec(message)) !== null) {
-            const full = match[0];
-            const mention = String(match[1] || '').trim().replace(/[),.;:!?`"'>]+$/g, '');
-            const start = match.index;
-            const end = start + full.length;
-            const charBefore = start > 0 ? message[start - 1] : null;
-            const isBoundary = !charBefore || /(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/.test(charBefore);
-            if (!isBoundary || mention.length === 0) {
-                continue;
-            }
-            if (mention.startsWith('session:')) {
-                continue;
-            }
-            if (knownAgentNames.has(mention.toLowerCase())) {
-                ranges.push({ start, end, kind: 'agent' });
-            } else if (isConfirmedFilePath(mention)) {
-                ranges.push({ start, end, kind: 'file' });
-            }
-        }
-        return ranges;
-    }, [inputMode, message, knownAgentNames]);
+        return collectComposerMentionHighlights(message, {
+            confirmedValues: confirmedFileMentionValues,
+            agentNames: knownAgentNames,
+        });
+    }, [confirmedFileMentionValues, inputMode, knownAgentNames, message]);
 
     const attachmentCitationRanges = React.useMemo<HighlightRange[]>(() => {
         if (!message || !message.includes('[') || inputMode === 'shell' || sendableAttachedFiles.length === 0) {
@@ -3570,6 +3562,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 return;
             }
             else if (commandName === 'new') {
+                // resourcePolicy preserved the composer for this local command;
+                // consume the command text synchronously (same contract as
+                // compact/fork via runImmediateSessionCommand) before the
+                // immediate create switches sessions.
+                if (consumesImmediateCommandText(normalizedCommand, inputMode)) {
+                    consumeImmediateCommand();
+                }
                 await controllerWiring?.shortcut('new');
                 return;
             }
@@ -4246,7 +4245,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     const mentionContent = token.slice(1);
                     const looksLikeFileMention = FILE_MENTION_TOKEN.test(token)
                         && !knownAgentNamesRef.current.has(mentionContent.toLowerCase())
-                        && isConfirmedFilePath(mentionContent);
+                        && shouldHighlightFileMention({
+                            mention: mentionContent,
+                            confirmed: confirmedFileMentionValues.has(mentionContent),
+                            terminated: tokenEnd < message.length && /\s/.test(message[tokenEnd]),
+                        });
 
                     if (looksLikeFileMention) {
                         const removeUntil = message[tokenEnd] === ' ' ? tokenEnd + 1 : tokenEnd;
@@ -4835,7 +4838,22 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
         }
 
-        const selection = applyBrowserEdit(textToCommit, caretStart, caretEnd);
+        const selection = applyBrowserEdit(textToCommit, caretStart, caretEnd, (mentions, document) => {
+            let next = [...mentions];
+            for (const addition of collectConfirmableFileMentions(document.text, {
+                agentNames: knownAgentNames,
+                includeUnterminatedPastedReferences: inputSource === 'paste',
+            })) {
+                next = appendUniqueDraftMention(next, {
+                    kind: addition.kind,
+                    value: addition.value,
+                    path: addition.value,
+                    label: addition.value,
+                    range: { start: addition.start, end: addition.end },
+                });
+            }
+            return next;
+        });
         const document = getDocument();
         const shouldCorrectTextarea = selection.requiresTextCorrection
             || caretStart !== selection.start
@@ -4854,7 +4872,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
         updateAutocompleteState(document.text, selection.end, inputSource, insertedText);
         return { document, selection };
-    }, [adjustTextareaHeight, applyBrowserEdit, getDocument, inputMode, knownSlashNames, updateAutocompleteState]);
+    }, [adjustTextareaHeight, applyBrowserEdit, getDocument, inputMode, knownAgentNames, knownSlashNames, updateAutocompleteState]);
 
     const insertTextAtSelection = React.useCallback((
         text: string,
@@ -7631,53 +7649,61 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
                 fitContent
             >
-                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            // The native file/photo picker takes over next — restoring
-                            // the keyboard in between would flash it open and shut.
-                            restoreKeyboardAfterOverlayRef.current = false;
-                            setMobileAttachMenuOpen(false);
-                            requestAnimationFrame(handlePickLocalFiles);
-                        }}
+                <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
+                    <div
+                        className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
+                        data-page-scroll-lock="true"
                     >
-                        <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            // Hand-off to the picker: don't sync-restore the
-                            // keyboard under the overlay that opens next frame.
-                            skipNextOverlayCloseRestoreRef.current = true;
-                            setMobileAttachMenuOpen(false);
-                            requestAnimationFrame(openIssuePicker);
-                        }}
-                    >
-                        <Icon name="github" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.linkGithubIssue')}</span>
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            skipNextOverlayCloseRestoreRef.current = true;
-                            setMobileAttachMenuOpen(false);
-                            requestAnimationFrame(openPrPicker);
-                        }}
-                    >
-                        <Icon name="git-pull-request" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.linkGithubPr')}</span>
-                    </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            data-mobile-press-feedback="none"
+                            onClick={() => {
+                                // The native file/photo picker takes over next — restoring
+                                // the keyboard in between would flash it open and shut.
+                                restoreKeyboardAfterOverlayRef.current = false;
+                                setMobileAttachMenuOpen(false);
+                                requestAnimationFrame(handlePickLocalFiles);
+                            }}
+                        >
+                            <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            data-mobile-press-feedback="none"
+                            onClick={() => {
+                                // Hand-off to the picker: don't sync-restore the
+                                // keyboard under the overlay that opens next frame.
+                                skipNextOverlayCloseRestoreRef.current = true;
+                                setMobileAttachMenuOpen(false);
+                                requestAnimationFrame(openIssuePicker);
+                            }}
+                        >
+                            <Icon name="github" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.linkGithubIssue')}</span>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            data-mobile-press-feedback="none"
+                            onClick={() => {
+                                skipNextOverlayCloseRestoreRef.current = true;
+                                setMobileAttachMenuOpen(false);
+                                requestAnimationFrame(openPrPicker);
+                            }}
+                        >
+                            <Icon name="git-pull-request" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.linkGithubPr')}</span>
+                        </Button>
+                    </div>
                 </div>
             </MobileResizableSheet>
         ) : null}
@@ -7698,35 +7724,42 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
                 fitContent
             >
-                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            restoreKeyboardAfterOverlayRef.current = false;
-                            setAndroidMediaPickSheetOpen(false);
-                            requestAnimationFrame(handlePickAndroidPhotos);
-                        }}
+                <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
+                    <div
+                        className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
+                        data-page-scroll-lock="true"
                     >
-                        <Icon name="file-image" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.attachPhotos')}</span>
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="lg"
-                        className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
-                        onClick={() => {
-                            restoreKeyboardAfterOverlayRef.current = false;
-                            setAndroidMediaPickSheetOpen(false);
-                            requestAnimationFrame(handlePickLocalFiles);
-                        }}
-                    >
-                        <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
-                        <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
-                    </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            data-mobile-press-feedback="none"
+                            onClick={() => {
+                                restoreKeyboardAfterOverlayRef.current = false;
+                                setAndroidMediaPickSheetOpen(false);
+                                requestAnimationFrame(handlePickAndroidPhotos);
+                            }}
+                        >
+                            <Icon name="file-image" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.attachPhotos')}</span>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="lg"
+                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+                            data-mobile-press-feedback="none"
+                            onClick={() => {
+                                restoreKeyboardAfterOverlayRef.current = false;
+                                setAndroidMediaPickSheetOpen(false);
+                                requestAnimationFrame(handlePickLocalFiles);
+                            }}
+                        >
+                            <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
+                            <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
+                        </Button>
+                    </div>
                 </div>
             </MobileResizableSheet>
         ) : null}

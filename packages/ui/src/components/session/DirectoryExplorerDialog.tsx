@@ -24,6 +24,7 @@ import { Icon } from "@/components/icon/Icon";
 import { opencodeClient } from '@/lib/opencode/client';
 import { useI18n } from '@/lib/i18n';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { resolveDirectoryExplorerMobileLayout } from './directoryExplorerLayout';
 
 interface DirectoryExplorerDialogProps {
@@ -382,6 +383,19 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     }, { force: true });
   });
 
+  const openNewSessionForAddedProject = useEvent((project: { id: string; path: string }) => {
+    const draftOptions = {
+      selectedProjectId: project.id,
+      directoryOverride: project.path,
+      preserveDirectoryOverride: true,
+    } as const;
+    if (isMobile) {
+      useMobileNavigationStore.getState().openDraft(draftOptions);
+      return;
+    }
+    useSessionUIStore.getState().openNewSessionDraft(draftOptions);
+  });
+
   const handleQuickAdd = useEvent((event: React.MouseEvent, path: string) => {
     event.stopPropagation();
     const normalized = normalizeDirectoryPath(path);
@@ -427,7 +441,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         });
         return;
       }
-      selectAddedProjectForDraft(project);
+      openNewSessionForAddedProject(project);
       handleClose();
     } catch (error) {
       toast.error(t('directoryExplorerDialog.toast.failedToSelectDirectory'), {

@@ -62,9 +62,6 @@ export const createBootstrapRuntime = (dependencies) => {
       sessionIndexService,
       sessionIndexSyncRuntime,
       transcriptCacheService,
-      getSshRoutingTable,
-      mintSshHostToken,
-      getPairingSession,
     } = options;
 
     const uiAuthController = createUiAuth({
@@ -154,9 +151,6 @@ export const createBootstrapRuntime = (dependencies) => {
       sessionIndexService,
       sessionIndexSyncRuntime,
       transcriptCacheService,
-      getSshRoutingTable,
-      mintSshHostToken,
-      getPairingSession,
       express,
     });
 

@@ -34,6 +34,11 @@ export type SessionIndexSnapshot = {
     enriching?: boolean;
   };
   directories: SessionIndexDirectory[];
+  /**
+   * Authoritative pin membership. Survives the newest-20 summary bound, so a
+   * pinned id may be absent from `directories[].sessions`.
+   */
+  pinnedSessionIds?: string[];
 };
 
 /** Coalesce dense revision tips before the next full snapshot GET. */
@@ -53,6 +58,9 @@ const ensureOk = async (response: Response): Promise<void> => {
 
 const parseSessionIndexSnapshot = (payload: Partial<SessionIndexSnapshot> & { available?: boolean }): SessionIndexSnapshot | null => {
   if (payload.available !== true || !Array.isArray(payload.directories)) return null;
+  const pinnedSessionIds = Array.isArray(payload.pinnedSessionIds)
+    ? payload.pinnedSessionIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    : undefined;
   return {
     revision: typeof payload.revision === 'number' ? payload.revision : 0,
     sync: payload.sync ?? {
@@ -65,6 +73,7 @@ const parseSessionIndexSnapshot = (payload: Partial<SessionIndexSnapshot> & { av
       enriching: false,
     },
     directories: payload.directories,
+    ...(pinnedSessionIds ? { pinnedSessionIds } : {}),
   };
 };
 
@@ -227,7 +236,7 @@ export const waitForSessionIndexInvalidation = (
 
 /**
  * Pin a session in the server session-index.
- * 404 = session not in the index; 501 = capability unsupported.
+ * 404 = pin rejected; 501 = capability unsupported.
  */
 export const pinSession = async (
   sessionId: string,

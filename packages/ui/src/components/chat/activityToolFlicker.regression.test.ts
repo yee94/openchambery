@@ -265,6 +265,8 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
     // when one shell step ends — while that message is still the turn's last
     // assistant. Turn-completion chrome must ask the turn, and must not believe the
     // projection alone during the gap, because the projection settles there too.
+    // Step-gap assistants lack hasConfirmedFinalBody (continuation tool / no final
+    // body), so omit hasConfirmedSettledAssistant — same as the MessageList wire.
     const settled = { completionDisposition: 'normal' as const, isLastTurn: true };
 
     // Step gap on the live turn: the projection reads settled, the session does not.
@@ -285,6 +287,15 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
         completionDisposition: 'abnormal',
         isLastTurn: false,
         sessionIsWorking: true,
+      }),
+    ).toBe(true);
+    // Authoritative final body (live SSE settle) may show chrome before
+    // sessionIsWorking flips — not a step-gap; step gaps lack this signal.
+    expect(
+      resolveTurnSettledForPresentation({
+        ...settled,
+        sessionIsWorking: true,
+        hasConfirmedSettledAssistant: true,
       }),
     ).toBe(true);
   });

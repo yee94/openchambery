@@ -224,14 +224,15 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
     const parsed = parseDraftComposerDocument(next.text, next.references)
     return parsed ? commit(materializeComposerDocument(parsed, titlesRef.current), mentions) : undefined
   }, [commit, promotePreview])
-  const applyBrowserEdit = useCallback((nextText: string, selectionStart: number, selectionEnd = selectionStart): { start: number; end: number; requiresTextCorrection: boolean } => {
+  const applyBrowserEdit = useCallback((nextText: string, selectionStart: number, selectionEnd = selectionStart, mentionsUpdater?: ComposerMentionsUpdater): { start: number; end: number; requiresTextCorrection: boolean } => {
     const preview = promotePreview()
     const before = cloneDocument(documentRef.current)
     const beforeMentions = preview ? [] : mentionsRef.current
     const result = applyBrowserComposerEdit(before, beforeMentions, nextText, selectionStart, selectionEnd)
-    commit(result.document, result.mentions)
+    const nextMentions = mentionsUpdater ? mentionsUpdater(result.mentions, result.document) : result.mentions
+    commit(result.document, nextMentions)
     if (result.removedReferences.length > 0) {
-      recordReferenceHistory(before, beforeMentions, { start: result.selectionStart, end: result.selectionEnd }, result.document, result.mentions, { start: result.selectionStart, end: result.selectionEnd })
+      recordReferenceHistory(before, beforeMentions, { start: result.selectionStart, end: result.selectionEnd }, result.document, nextMentions, { start: result.selectionStart, end: result.selectionEnd })
     }
     return { start: result.selectionStart, end: result.selectionEnd, requiresTextCorrection: result.requiresTextCorrection }
   }, [commit, promotePreview, recordReferenceHistory])

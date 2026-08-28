@@ -16,6 +16,8 @@ interface WorkingPlaceholderProps {
 }
 
 const STATUS_DISPLAY_TIME_MS = 1200;
+/** Keep the last status painted briefly after isWorking drops so step gaps do not collapse the row. */
+const STATUS_CLEAR_LINGER_MS = 600;
 
 const EPOCH_SECONDS_THRESHOLD = 1_000_000_000;
 const EPOCH_MILLISECONDS_THRESHOLD = 1_000_000_000_000;
@@ -51,6 +53,7 @@ export function WorkingPlaceholder({
   const statusShownAtRef = React.useRef<number>(0);
   const queuedStatusRef = React.useRef<{ text: string; permission: boolean; generic: boolean } | null>(null);
   const processQueueTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearLingerTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Countdown state for retry mode
   const [retryCountdown, setRetryCountdown] = React.useState<number | null>(null);
@@ -89,6 +92,10 @@ export function WorkingPlaceholder({
       clearTimeout(processQueueTimerRef.current);
       processQueueTimerRef.current = null;
     }
+    if (clearLingerTimerRef.current) {
+      clearTimeout(clearLingerTimerRef.current);
+      clearLingerTimerRef.current = null;
+    }
   });
 
   const showStatus = useEvent((text: string, permission: boolean, generic = false) => {
@@ -116,12 +123,32 @@ export function WorkingPlaceholder({
 
   React.useEffect(() => {
     if (!isWorking) {
-      clearTimers();
+      // Cancel status-queue work; keep the painted text briefly so a step gap
+      // that flips isWorking off/on does not collapse the status row (±28px).
+      if (processQueueTimerRef.current) {
+        clearTimeout(processQueueTimerRef.current);
+        processQueueTimerRef.current = null;
+      }
       queuedStatusRef.current = null;
-      setDisplayedText(null);
-      setDisplayedPermission(false);
-      displayedGenericRef.current = false;
+      if (!displayedTextRef.current) {
+        return;
+      }
+      if (clearLingerTimerRef.current) {
+        return;
+      }
+      clearLingerTimerRef.current = setTimeout(() => {
+        clearLingerTimerRef.current = null;
+        setDisplayedText(null);
+        setDisplayedPermission(false);
+        displayedGenericRef.current = false;
+      }, STATUS_CLEAR_LINGER_MS);
       return;
+    }
+
+    // Working again — cancel a pending clear from a brief idle flap.
+    if (clearLingerTimerRef.current) {
+      clearTimeout(clearLingerTimerRef.current);
+      clearLingerTimerRef.current = null;
     }
 
     // Retry state has its own display — skip the normal queue
@@ -148,20 +175,21 @@ export function WorkingPlaceholder({
       return;
     }
 
-    // Ignore generic→generic churn. A specific status such as "sending"
-    // must still yield to the next generic working phrase.
+    // Ignore generic→generic churn entirely (do not queue).
     if (incomingGeneric && displayedGenericRef.current) {
       return;
     }
 
-    const elapsed = Date.now() - statusShownAtRef.current;
-    if (elapsed >= STATUS_DISPLAY_TIME_MS) {
-      showStatus(incomingText, incomingPermission, incomingGeneric);
+    // Generic is a low-info fallback: never paint it immediately over a
+    // specific status — always wait out the display window via the queue.
+    // Specific / permission remain progressive and paint immediately.
+    if (incomingGeneric) {
+      queuedStatusRef.current = { text: incomingText, permission: incomingPermission, generic: incomingGeneric };
+      scheduleQueueProcess();
       return;
     }
 
-    queuedStatusRef.current = { text: incomingText, permission: incomingPermission, generic: incomingGeneric };
-    scheduleQueueProcess();
+    showStatus(incomingText, incomingPermission, incomingGeneric);
     // useEvent identities are stable; rerun only when status inputs change.
   }, [
     isWorking,
@@ -174,12 +202,13 @@ export function WorkingPlaceholder({
 
   React.useEffect(() => () => clearTimers(), []);
 
-  if (!isWorking) {
+  // Linger: keep painting after isWorking drops until the clear timer fires.
+  if (!isWorking && !displayedText) {
     return null;
   }
 
   // Retry state: show countdown and attempt info
-  if (retryInfo) {
+  if (retryInfo && isWorking) {
     const retryDuration = retryCountdown !== null && retryCountdown > 0
       ? new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: 'short' }).format(retryCountdown, 'second')
       : null;
@@ -215,7 +244,7 @@ export function WorkingPlaceholder({
   }
 
   const label = displayedText;
-  const elapsed = typeof turnStartedAt === 'number'
+  const elapsed = typeof turnStartedAt === 'number' && isWorking
     ? formatGoalDuration(Math.max(0, now - turnStartedAt))
     : null;
 
