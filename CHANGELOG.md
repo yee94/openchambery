@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.11] - 2026-08-29
+
+### Fixed
+
+- Opening a session that is still streaming now lands on its newest message instead of gliding partway and stopping mid-conversation with follow disengaged.
+
 ## [1.19.0-beta.10] - 2026-08-29
 
 ### Changed
