@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.18] - 2026-08-30
+
+### Changed
+
+- Android now uses the same 10/9 design-pt scale as iOS, so type and spacing can be compared side by side.
+
 ## [1.19.0-beta.17] - 2026-08-30
 
 ### Changed
