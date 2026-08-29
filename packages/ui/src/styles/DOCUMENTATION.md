@@ -158,10 +158,16 @@ The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and a
 ## Design pt (`--dpt`)
 
 `--dpt` is `1px` everywhere except Capacitor native shells, where
-`packages/ui/src/lib/designPtScale.ts` overwrites it. Android reads
-`DisplayMetrics.xdpi/ydpi` so `1dpt ≈ 1/163in` (iPhone pt), then caps
-at `1`. iOS uses `10/9` — the same proportional bump as lifting the
-previous Android visibility-experiment ceiling from `0.9` → `1`.
+`packages/ui/src/lib/designPtScale.ts` overwrites it. The two native
+platforms keep separate parameters — Android CSS px is 1 dp, so iOS
+numbers read too large if copied over.
+
+- Android: physical `xdpi/ydpi` so `1dpt ≈ 1/163in`, then × `1.05`
+  (about half the iOS lift; typical ~0.9 becomes ~0.945) and cap at `1`.
+- iOS: `10/9` directly.
+
+Cache key `openchamber.designPtScale.v3` drops v1 (`0.9`) and v2
+(shared `10/9`) so neither can mask the split.
 
 `scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.
