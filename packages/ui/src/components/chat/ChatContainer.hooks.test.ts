@@ -129,6 +129,27 @@ describe('ChatContainer source contracts', () => {
         expect(timelineSource).toContain('endHistoryViewportPreservation();');
     });
 
+    test('legend path releases end pinning before an explicit older-history fetch', () => {
+        // A prepend is a data change, and maintainScrollAtEnd fires on
+        // dataChange: with follow still armed the list reads the content
+        // growth as an end correction and throws the viewport to the live
+        // edge. Mobile only reaches history through this button, so the
+        // gesture-driven release never covers it.
+        const clickStart = source.indexOf('const handleLoadOlderClick = useEvent');
+        const clickEnd = source.indexOf('});', clickStart);
+
+        expect(clickStart).toBeGreaterThan(-1);
+        const clickBody = source.slice(clickStart, clickEnd);
+        expect(clickBody).toContain('if (!legendIsAtEnd) {');
+        expect(clickBody).toContain('setLegendFollowReleased(true);');
+        // Release must precede the fetch that commits the prepend.
+        expect(clickBody.indexOf('setLegendFollowReleased(true);'))
+            .toBeLessThan(clickBody.indexOf('timelineLoadEarlier('));
+        // Released state reaches the list as suspended follow.
+        expect(source).toContain('timelineFollowSuspended={legendFollowReleased}');
+        expect(source).toContain('timelineFollowEnabled={!pendingRevealWork && !timelineFollowSuspended}');
+    });
+
     test('latches confirmed subagent footer identity through temporary session identity gaps', () => {
         // session.updated hides subagents from the live directory list, so
         // parentSessionTarget can go null while the child is still on screen.

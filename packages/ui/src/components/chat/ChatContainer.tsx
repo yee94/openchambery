@@ -291,6 +291,7 @@ type ChatViewportProps = {
     handleHistoryScroll: () => void;
     handleHistoryUpwardIntent: () => void;
     onTimelineIsAtEndChange: (isAtEnd: boolean) => void;
+    timelineFollowSuspended: boolean;
     scrollToBottom: () => void;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
@@ -327,6 +328,7 @@ const ChatViewport = React.memo(({
     handleHistoryScroll,
     handleHistoryUpwardIntent,
     onTimelineIsAtEndChange,
+    timelineFollowSuspended,
     scrollToBottom,
     sessionQuestions,
     sessionPermissions,
@@ -484,7 +486,7 @@ const ChatViewport = React.memo(({
                         timelineScrollStyle={CHAT_SCROLL_STYLE}
                         timelineScrollDataset={LEGEND_SCROLL_DATASET}
                         timelineOnScroll={handleHistoryScroll}
-                        timelineFollowEnabled={!pendingRevealWork}
+                        timelineFollowEnabled={!pendingRevealWork && !timelineFollowSuspended}
                         timelineOnIsAtEndChange={onTimelineIsAtEndChange}
                         headerSlot={(
                             <>
@@ -707,6 +709,7 @@ const ChatViewport = React.memo(({
         && prev.handleHistoryScroll === next.handleHistoryScroll
         && prev.handleHistoryUpwardIntent === next.handleHistoryUpwardIntent
         && prev.onTimelineIsAtEndChange === next.onTimelineIsAtEndChange
+        && prev.timelineFollowSuspended === next.timelineFollowSuspended
         && prev.scrollToBottom === next.scrollToBottom
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
@@ -1358,9 +1361,26 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // auto-follow reports a permanent `following` pin, which would silently
     // block every scroll-triggered load of earlier history.
     const [legendIsAtEnd, setLegendIsAtEnd] = React.useState(true);
+    // Sticky "the user scrolled away" — what the previous engine called
+    // `released`. The list's own guard is a bare proximity test: it stops
+    // maintaining the end only while the viewport sits more than a tenth of a
+    // screen away, so a small upward nudge during streaming gets pulled back,
+    // and follow can silently resume without the user ever scrolling down.
+    // Gestures set this; only arriving at the true end or an explicit jump
+    // clears it.
+    const [legendFollowReleased, setLegendFollowReleased] = React.useState(false);
     const handleTimelineIsAtEndChange = useEvent((atEnd: boolean) => {
         setLegendIsAtEnd(atEnd);
+        if (atEnd) {
+            setLegendFollowReleased(false);
+        }
     });
+    // A fresh session opens at the live edge, so a release carried over from the
+    // previous one would leave the new transcript unfollowed.
+    React.useEffect(() => {
+        setLegendIsAtEnd(true);
+        setLegendFollowReleased(false);
+    }, [currentSessionId]);
 
     const {
         scrollRef,
@@ -1532,7 +1552,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         autoFillEnabled: active && !isDesktopExpandedInput,
     });
     const resumeToLatestInstant = useEvent(() => {
+        setLegendFollowReleased(false);
         goToBottom('instant');
+    });
+    // An explicit upward gesture releases follow on top of its history
+    // pagination duty, so the list stops chasing the end while the user reads.
+    // Gesture-only by construction: the hook ignores nested scrollables that
+    // can still consume the scroll, and overlay-scrollbar drags.
+    const handleTimelineUpwardIntent = useEvent(() => {
+        setLegendFollowReleased(true);
+        timelineController.handleHistoryUpwardIntent();
     });
     // Mobile loads older history via an explicit top button instead of a
     // scroll-position trigger (see handleHistoryScroll in the controller).
@@ -1555,6 +1584,14 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const isLoadOlderBusy = timelineController.isLoadingOlder;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = useEvent(() => {
+        // Loading older history is an explicit move into the past: release
+        // follow before the fetch, or the prepend's content growth reads as
+        // an end correction and throws the viewport to the live edge. Held
+        // at the end, where that correction is a no-op and releasing would
+        // strand follow off until the next scroll re-arms the at-end signal.
+        if (!legendIsAtEnd) {
+            setLegendFollowReleased(true);
+        }
         void timelineLoadEarlier({ userInitiated: true });
     });
 
@@ -2176,8 +2213,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 handleMessageContentChange={handleMessageContentChange}
                 getAnimationHandlers={getAnimationHandlers}
                 handleHistoryScroll={timelineController.handleHistoryScroll}
-                handleHistoryUpwardIntent={timelineController.handleHistoryUpwardIntent}
+                handleHistoryUpwardIntent={handleTimelineUpwardIntent}
                 onTimelineIsAtEndChange={handleTimelineIsAtEndChange}
+                timelineFollowSuspended={legendFollowReleased}
                 scrollToBottom={resumeToLatestInstant}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
