@@ -161,13 +161,12 @@ The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and a
 `packages/ui/src/lib/designPtScale.ts` overwrites it.
 
 - iOS: `10/9`.
-- Android: `DisplayMetrics.xdpi/ydpi` so `1dpt ≈ 1/163in` (iPhone pt),
-  then cap at `0.9`. A bare `1` or iOS `10/9` is too large because
-  WebView CSS px is 1 dp. `--padding-scale` also multiplies `--dpt-n`,
-  so fonts and spacing shrink together.
+- Android: physical `xdpi/ydpi` so `1dpt ≈ 1/163in`, then × `0.95/0.9`
+  and cap at `0.95`. Typical math already sits at ~0.9, so a cap-only
+  change stays 0.9; the multiply is what actually moves those phones.
+  A bare `1` or iOS `10/9` is too large because WebView CSS px is 1 dp.
 
-Cache key `openchamber.designPtScale.v6` drops pinned-`1` / shared-`10/9`
-caches so physical math can apply again.
+Cache key `openchamber.designPtScale.v7` drops v6 (`0.9`).
 
 `scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.

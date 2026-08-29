@@ -5,13 +5,19 @@ export const DESIGN_PT_SCALE_MAX = 1.2;
 /** iOS --dpt. Confirmed readability lift from the previous 1.0. */
 export const IOS_DESIGN_PT_SCALE = 10 / 9;
 /**
- * Android --dpt ceiling. WebView CSS px is 1 dp, so a bare 1 (or iOS 10/9)
- * reads much larger than iPhone pt. Physical math usually lands near 0.9;
- * this cap is the original visibility experiment.
+ * Previous Android ceiling. Typical xdpi/density math already lands at or
+ * below this, so raising only the cap is a no-op — the result stays 0.9.
  */
-export const ANDROID_DESIGN_PT_SCALE_MAX = 0.9;
-/** v6 invalidates pinned-1 / shared-10/9 caches so physical math can apply. */
-export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v6';
+export const ANDROID_DESIGN_PT_PREVIOUS_CAP = 0.9;
+/**
+ * Android --dpt ceiling. Halfway from the old 0.9 (a bit small) toward 1
+ * (too large). Applied as a multiply so phones already at ~0.9 actually move.
+ */
+export const ANDROID_DESIGN_PT_SCALE_MAX = 0.95;
+export const ANDROID_DESIGN_PT_READABILITY_BUMP =
+  ANDROID_DESIGN_PT_SCALE_MAX / ANDROID_DESIGN_PT_PREVIOUS_CAP;
+/** v7 invalidates v6 (raw 0.9) so the 0.95 lift is not masked. */
+export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v7';
 
 export interface PhysicalScaleMetrics {
   xdpi: number;
@@ -26,17 +32,15 @@ export function clampDesignPtScale(value: number): number {
 
 /**
  * CSS px per physical inch is ppi/density in Android WebView (1 CSS px = 1 dp).
- * Scale so 1 design pt ≈ 1/163 inch, then cap at ANDROID_DESIGN_PT_SCALE_MAX.
+ * Scale so 1 design pt ≈ 1/163 inch, multiply by the 0.9→0.95 lift, then cap.
  */
 export function computeDesignPtScale(metrics: PhysicalScaleMetrics | null | undefined): number {
   if (!metrics) return ANDROID_DESIGN_PT_SCALE_MAX;
   const density = metrics.density;
   const ppi = (metrics.xdpi + metrics.ydpi) / 2;
   if (!(density > 0) || !(ppi >= 50) || ppi > 800) return ANDROID_DESIGN_PT_SCALE_MAX;
-  return Math.min(
-    ANDROID_DESIGN_PT_SCALE_MAX,
-    clampDesignPtScale((ppi / density) / DESIGN_PT_PER_INCH),
-  );
+  const physical = clampDesignPtScale((ppi / density) / DESIGN_PT_PER_INCH);
+  return Math.min(ANDROID_DESIGN_PT_SCALE_MAX, physical * ANDROID_DESIGN_PT_READABILITY_BUMP);
 }
 
 export function readCachedDesignPtScale(): number {

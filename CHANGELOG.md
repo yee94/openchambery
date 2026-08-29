@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.23] - 2026-08-30
+
+### Changed
+
+- Android type and spacing lift from the old ~0.9 density result to about 0.95 (still below 1). Typical phones already compute 0.9, so the value is multiplied rather than only raising the cap.
+
 ## [1.19.0-beta.22] - 2026-08-30
 
 ### Changed
