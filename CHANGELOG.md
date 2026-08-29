@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.12] - 2026-08-29
+
+### Fixed
+
+- Services panel shortcuts now toggle closed when already on the requested tab, and switch tab when the panel is open on a different one. Desktop toggle opens instance; the usage shortcut opens usage.
+
 ## [1.19.0-beta.11] - 2026-08-29
 
 ### Fixed
