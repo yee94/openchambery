@@ -6,6 +6,7 @@ export const openChamberComposerContract = {
     ios: [
       'packages/mobile/ios/App/App/OpenChamberComposerPlugin.swift',
       'packages/mobile/ios/App/App/OpenChamberComposerView.swift',
+      'packages/mobile/ios/App/App/OpenChamberComposerAutocomplete.swift',
     ],
   },
   methods: {

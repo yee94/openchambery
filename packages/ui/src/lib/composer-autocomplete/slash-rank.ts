@@ -21,7 +21,7 @@ export const rankCommandsForQuery = <T extends RankableSlashCommand>(
   }
 
   const ranked = scoreByFuzzyQuery(
-    commands,
+    [...commands],
     normalizedQuery,
     (command) => [command.name, command.description ?? ''],
   );

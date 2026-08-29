@@ -297,7 +297,10 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
       const next = emptyNativeComposerAutocomplete();
       if (!nativeComposerAutocompleteEqual(autocompleteRef.current, next)) {
         autocompleteRef.current = next;
-        if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, autocomplete: next };
+        if (lastStateRef.current) {
+          lastStateRef.current = { ...lastStateRef.current, autocomplete: next };
+          nativeIosComposerSession.rememberState(lastStateRef.current);
+        }
         void getNativeIosComposerPlugin().update({ autocomplete: next });
       }
       return;
@@ -311,7 +314,10 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
       };
       if (nativeComposerAutocompleteEqual(autocompleteRef.current, next)) return;
       autocompleteRef.current = next;
-      if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, autocomplete: next };
+      if (lastStateRef.current) {
+        lastStateRef.current = { ...lastStateRef.current, autocomplete: next };
+        nativeIosComposerSession.rememberState(lastStateRef.current);
+      }
       void getNativeIosComposerPlugin().update({ autocomplete: next });
     });
     return () => { cancelled = true; };

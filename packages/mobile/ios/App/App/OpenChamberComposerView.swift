@@ -722,6 +722,9 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         if next < 36 {
             autocomplete.isHidden = true
             autocomplete.isUserInteractionEnabled = false
+            let visible = showScrollToBottom && !isHidden
+            scrollChrome.isHidden = !visible
+            scrollButton.isHidden = !visible
         }
     }
 

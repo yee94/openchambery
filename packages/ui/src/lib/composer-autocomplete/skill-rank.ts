@@ -20,7 +20,7 @@ export const rankSkillsForQuery = <T extends RankableSkill>(
   }
 
   const ranked = scoreByFuzzyQuery(
-    skills,
+    [...skills],
     normalizedQuery,
     (skill) => [skill.name, skill.description ?? ''],
   );

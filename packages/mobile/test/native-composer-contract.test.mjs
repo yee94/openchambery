@@ -126,3 +126,25 @@ test('native composer attach presents a document picker and expanded chrome matc
   assert.match(view, /templateModelIcon/);
   assert.match(view, /footerSpacer/);
 });
+
+test('native composer autocomplete sits above the card and accepts Return or tap', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const popup = await source('ios/App/App/OpenChamberComposerAutocomplete.swift');
+  const contract = await source('contracts/openchamber-composer.mjs');
+  assert.match(contract, /autocompleteAccept/);
+  assert.match(contract, /OpenChamberComposerAutocomplete.swift/);
+  assert.match(plugin, /parseAutocomplete/);
+  assert.match(plugin, /applyAutocomplete/);
+  assert.match(plugin, /selectionStart/);
+  assert.match(plugin, /autocompleteAccept/);
+  assert.match(view, /applyAutocomplete/);
+  assert.match(view, /clampAutocompleteHeight/);
+  assert.match(view, /acceptHighlighted/);
+  assert.match(view, /autocomplete.bottomAnchor.constraint\(equalTo: card.topAnchor, constant: -8\)/);
+  assert.match(view, /headerFloor/);
+  assert.match(popup, /GlassBackdropView/);
+  assert.match(popup, /UITableView/);
+  const restTop = view.match(/func restTop\(in host: UIView\) -> CGFloat \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.doesNotMatch(restTop, /autocomplete/);
+});

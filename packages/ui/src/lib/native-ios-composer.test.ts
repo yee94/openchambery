@@ -13,8 +13,10 @@ import {
   NATIVE_IOS_COMPOSER_CLASS,
   NATIVE_IOS_COMPOSER_HEIGHT_VAR,
   packNativeIosComposerIdenticon,
+  parseNativeComposerAcceptIndex,
   parseNativeComposerHeight,
   parseNativeComposerRemoveAttachmentId,
+  parseNativeComposerSelection,
   rasterizeAttachmentThumbnailBase64,
   rasterizeLogoPngBase64,
   resolveCssVarToHex,
@@ -138,6 +140,18 @@ describe('native iOS composer contract', () => {
       attachmentPreviews: [{ id: 'a', filename: 'a.png', mime: 'image/png', thumbnailBase64: '', removeAria: 'Remove a.png' }],
     }))).toBe(false);
     expect(nativeComposerStatesEqual(state(), state({ citationRanges: [{ start: 0, end: 4 }] }))).toBe(false);
+    expect(nativeComposerStatesEqual(state(), state({
+      autocomplete: { open: true, highlightedIndex: 0, rows: [{ id: 'a', title: '/undo', subtitle: '', badge: '', iconBase64: '' }] },
+    }))).toBe(false);
+  });
+
+  test('parses native text selection and accept index', () => {
+    expect(parseNativeComposerSelection({ selectionStart: 3, selectionEnd: 5 })).toEqual({ start: 3, end: 5 });
+    expect(parseNativeComposerSelection({ selectionStart: 2 })).toEqual({ start: 2, end: 2 });
+    expect(parseNativeComposerSelection({})).toBeNull();
+    expect(parseNativeComposerAcceptIndex({ index: 2 })).toBe(2);
+    expect(parseNativeComposerAcceptIndex({ index: -1 })).toBe(0);
+    expect(parseNativeComposerAcceptIndex({})).toBe(0);
   });
 
   test('reads a remove-attachment id and ignores empty payloads', () => {

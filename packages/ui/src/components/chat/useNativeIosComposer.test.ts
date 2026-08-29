@@ -48,5 +48,8 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('attachPhotosLabel');
     expect(source).toContain('attachFilesLabel');
     expect(source).toContain('attachCancelLabel');
+    expect(source).toContain('autocompleteRows');
+    expect(source).toContain('onAutocompleteAccept');
+    expect(source).toContain('rasterizeSpriteIconPngBase64');
   });
 });

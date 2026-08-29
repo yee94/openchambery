@@ -223,4 +223,32 @@ describe('native iOS composer session', () => {
     expect(onText).toHaveBeenCalledWith('ni', true, null);
     expect(onRemoveAttachment).toHaveBeenCalledWith('att-1');
   });
+
+  test('forwards autocomplete accept and caret on textChanged', async () => {
+    const { plugin, listeners } = createPlugin();
+    const session = createNativeIosComposerSession(() => plugin);
+    const onText = vi.fn();
+    const onAutocompleteAccept = vi.fn();
+    session.bind({
+      onText,
+      onSend: () => undefined,
+      onAbort: () => undefined,
+      onAttach: () => undefined,
+      onFiles: () => undefined,
+      onRemoveAttachment: () => undefined,
+      onOpenModel: () => undefined,
+      onCycleAgent: () => undefined,
+      onOpenAgent: () => undefined,
+      onHeight: () => undefined,
+      onScrollToBottom: () => undefined,
+      onAutocompleteAccept,
+      onAutocompleteDismiss: () => undefined,
+    });
+    await session.retain(document.documentElement, state());
+    await Promise.resolve();
+    listeners.get('textChanged')?.({ text: '/un', composing: false, selectionStart: 3, selectionEnd: 3 });
+    listeners.get('autocompleteAccept')?.({ index: 1 });
+    expect(onText).toHaveBeenCalledWith('/un', false, { start: 3, end: 3 });
+    expect(onAutocompleteAccept).toHaveBeenCalledWith(1);
+  });
 });

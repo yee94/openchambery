@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.25] - 2026-08-30
+
+### Added
+
+- On iPhone, typing `/` or `@` in the native composer opens a liquid-glass suggestion list above the input — same width as the card, with a small gap, internal scroll, and room so it does not collide with the header. Search as you type; tap a row or press Return to insert. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
 ## [1.19.0-beta.24] - 2026-08-30
 
 ### Added
