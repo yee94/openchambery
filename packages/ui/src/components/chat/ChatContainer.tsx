@@ -1565,6 +1565,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     });
     const resumeToLatestInstant = useEvent(() => {
         setLegendFollowReleased(false);
+        // Auto-follow is disabled on the legend path, so goToBottom is a
+        // no-op there. The list handle talks to LegendList.scrollToEnd.
+        messageListRef.current?.scrollToBottom();
         goToBottom('instant');
     });
     // An explicit upward gesture releases follow on top of its history
@@ -1625,7 +1628,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         activeTurnId: timelineController.activeTurnId,
         scrollToTurn: timelineController.scrollToTurn,
         scrollToMessage: timelineController.scrollToMessage,
-        resumeToBottom: timelineController.resumeToBottomInstant,
+        resumeToBottom: resumeToLatestInstant,
     });
     // Expanded scroll-to-bottom stays a foot sibling (original bottom-full mb-2).
     // Compact scroll-to-bottom is mounted on the pill inside ChatInput.

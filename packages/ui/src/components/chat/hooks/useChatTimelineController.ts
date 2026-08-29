@@ -1772,6 +1772,9 @@ export const useChatTimelineController = ({
         setPendingRevealWork(false);
         isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
+        // The legend list owns the scroll position; auto-follow's goToBottom
+        // is a no-op there (`enabled: false`). The handle talks to the list.
+        messageListRef.current?.scrollToBottom();
         goToBottom('smooth');
     });
 
@@ -1779,6 +1782,7 @@ export const useChatTimelineController = ({
         setPendingRevealWork(false);
         isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
+        messageListRef.current?.scrollToBottom();
         goToBottom('instant');
     });
 

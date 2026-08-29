@@ -85,4 +85,20 @@ describe('TimelineList end maintenance contracts', () => {
         expect(latch).toBeGreaterThan(resolve);
         expect(source.slice(resolve, latch)).toContain('onIsAtEndChange?.(atEnd);');
     });
+
+    /**
+     * The scroll-to-bottom control re-arms follow and jumps in the same tick.
+     * A still-running prepend hold would then restore the old read position
+     * and swallow the jump. Reaching the live edge, or follow coming back on,
+     * must drop the hold without waiting for the next React commit.
+     */
+    test('a jump to the live edge drops a held prepend anchor', () => {
+        const holdStep = source.indexOf('if (resolveTimelineIsAtEnd(state) ?? state.isAtEnd)');
+        expect(holdStep).toBeGreaterThan(-1);
+        expect(source.slice(holdStep, holdStep + 160)).toContain('stop(true);');
+
+        const followRelease = source.indexOf('if (!followEnabled) return;');
+        expect(followRelease).toBeGreaterThan(-1);
+        expect(source.slice(followRelease, followRelease + 120)).toContain('setHistoryAnchor(null);');
+    });
 });

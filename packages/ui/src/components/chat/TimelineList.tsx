@@ -336,6 +336,13 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         setHistoryAnchor((current) => (current?.token === token ? null : current));
     });
 
+    // Resume-to-latest re-arms follow. A held prepend anchor would then fight
+    // the jump: its correction loop keeps restoring the old read position.
+    React.useEffect(() => {
+        if (!followEnabled) return;
+        setHistoryAnchor(null);
+    }, [followEnabled]);
+
     React.useLayoutEffect(() => {
         if (historyAnchorToken <= 0) return;
         const list = listRef.current;
@@ -426,6 +433,15 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             frame = null;
             if (stopped) return;
             const state = list.getState();
+            // An explicit jump to the live edge (the scroll-to-bottom control)
+            // outranks the hold. Checked here rather than via followEnabled,
+            // because the click handler scrolls in the same tick that it
+            // re-arms follow — the hold would otherwise still be running and
+            // pull the viewport back to the old read position.
+            if (resolveTimelineIsAtEnd(state) ?? state.isAtEnd) {
+                stop(true);
+                return;
+            }
             const now = Date.now();
             const outcome = resolveTimelineAnchorHoldStep({
                 drift: measureTimelineAnchorDrift(state, anchor),
