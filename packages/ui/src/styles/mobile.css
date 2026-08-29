@@ -11,6 +11,13 @@
      inside keeps its own fixed touch size. */
   --oc-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
   --oc-mobile-detail-action-edge-inset: 1rem;
+  /* Shared overlay/collapsing-header fade. Low enough that transcript
+     content remains visible through the chrome. */
+  --oc-mobile-header-fade: color-mix(
+    in srgb,
+    var(--surface-background) 70%,
+    transparent
+  );
 }
 
 /* Projects home floating material. Project capsule, session container, and
@@ -35,6 +42,13 @@
     var(--surface-foreground) 9%,
     transparent
   );
+  /* Momentary row/card press only — a wash, not a slab. Full
+     --interactive-hover reads too dense on Projects home glass. */
+  --oc-mobile-press-fill: color-mix(
+    in srgb,
+    var(--surface-foreground) 4%,
+    transparent
+  );
   --oc-mobile-surface-radius: 1.5rem;
   --oc-mobile-inset-radius: 1rem;
   --oc-mobile-control-radius: 1.25rem;
@@ -50,7 +64,7 @@
   --oc-mobile-entity-title-line-height: 1.25rem;
   --oc-mobile-entity-meta-size: 0.8125rem;
   --oc-mobile-entity-meta-line-height: 1rem;
-  /* 2.875rem × 0.9 = 41.4px — still above the 36px touch minimum. */
+  /* 2.875rem at --dpt 1 = 46px — still above the 36px touch minimum. */
   --oc-mobile-session-row-height: calc(2.875rem * var(--padding-scale, 1));
   --oc-mobile-session-actions-width: 7rem;
   --oc-mobile-worktree-action-width: 3.5rem;
@@ -149,6 +163,11 @@
   --form-control-border: var(--oc-mobile-control-border);
   --form-surface-border: var(--oc-mobile-border);
   --form-row-divider: var(--oc-mobile-divider);
+  --oc-mobile-press-fill: color-mix(
+    in srgb,
+    var(--surface-foreground) 6%,
+    transparent
+  );
   --oc-mobile-shadow-far: rgb(0 0 0 / 0.24);
   --oc-mobile-shadow-near: rgb(0 0 0 / 0.14);
   --oc-mobile-shadow-control: rgb(0 0 0 / 0.22);
@@ -473,8 +492,8 @@
   opacity: var(--oc-mobile-title-collapse);
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--surface-background) 95%, transparent) 0%,
-    color-mix(in srgb, var(--surface-background) 95%, transparent)
+    var(--oc-mobile-header-fade) 0%,
+    var(--oc-mobile-header-fade)
       calc(var(--oc-safe-area-top, 0px) + 35%),
     transparent 100%
   );
@@ -747,7 +766,12 @@ button.oc-mobile-worktree-label-trigger:active,
    that looked like a stuck tap highlight after returning to Home. */
 .oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"]),
 .oc-mobile-session-pagination-row:active {
-  background: var(--interactive-hover);
+  background: var(--oc-mobile-press-fill);
+}
+
+.oc-mobile-project-card:has([data-mobile-press-surface-trigger]:active),
+.oc-mobile-project-card[data-pressed="true"] {
+  background: var(--oc-mobile-press-fill);
 }
 
 .oc-mobile-session-row-main {
@@ -1465,8 +1489,8 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: none;
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--surface-background) 95%, transparent) 0%,
-    color-mix(in srgb, var(--surface-background) 95%, transparent)
+    var(--oc-mobile-header-fade) 0%,
+    var(--oc-mobile-header-fade)
       calc(var(--oc-safe-area-top, 0px) + 35%),
     transparent 100%
   );
@@ -3278,18 +3302,19 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-composer-compact-chrome--with-scroll
-  ~ .oc-mobile-composer-compact-preview {
-  right: 2.75rem;
-}
-
+  ~ .oc-mobile-composer-compact-preview,
 .oc-mobile-composer-compact-chrome--aborting
+  ~ .oc-mobile-composer-compact-preview,
+.oc-mobile-composer-compact-chrome--sending
   ~ .oc-mobile-composer-compact-preview {
-  right: 2.75rem;
+  right: 2.25rem;
 }
 
 .oc-mobile-composer-compact-chrome--with-scroll.oc-mobile-composer-compact-chrome--aborting
+  ~ .oc-mobile-composer-compact-preview,
+.oc-mobile-composer-compact-chrome--with-scroll.oc-mobile-composer-compact-chrome--sending
   ~ .oc-mobile-composer-compact-preview {
-  /* Attach left + scroll + stop on the right. */
+  /* Attach left + scroll + send/stop on the right. */
   right: 5rem;
 }
 
@@ -3309,7 +3334,10 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-composer-compact-chrome {
   position: absolute;
   z-index: 40;
-  inset: 0 0.25rem 0 0.625rem;
+  /* 0.625rem right/left: 24px action circle (same as expanded) sits concentric
+     in the 2.75rem pill — (44px - 24px) / 2 = 10px. Vertical stays 0 so attach
+     keeps the full cap; flex centering supplies the matching 10px ring. */
+  inset: 0 0.625rem;
   display: flex;
   align-items: center;
   justify-content: space-between;

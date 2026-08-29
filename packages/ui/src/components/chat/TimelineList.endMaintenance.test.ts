@@ -39,7 +39,7 @@ describe('TimelineList end maintenance contracts', () => {
 
     test('the config recomputes when the latch flips', () => {
         const deps = source.indexOf(
-            '}, [anchoredEndSpace, endSettledOnce, followEnabled, historyAnchor, sessionIsWorking]);',
+            '}, [anchoredEndSpace, endSettledOnce, followEnabled, historyAnchor, parkReleased, sessionIsWorking]);',
         );
         expect(deps).toBeGreaterThan(-1);
     });

@@ -46,7 +46,6 @@ import MessageList, { type MessageListHandle } from './MessageList';
 import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
 import { StatusRowContainer } from './StatusRowContainer';
-import { SessionRecapNote } from '@/components/chat/SessionRecapSpacer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
@@ -179,11 +178,18 @@ const CHAT_SCROLL_STYLE = {
     overscrollBehavior: 'contain',
     overscrollBehaviorY: 'contain',
 } as const;
-// The list owns its scroll element, so `data-scrollbar` cannot be declared in
-// JSX on that path. Several consumers reach the chat scroller through
-// `closest('[data-scrollbar="chat"]')`, and the chat scrollbar skin is keyed on
-// it too. Stable identity: it feeds a ref callback.
-const LEGEND_SCROLL_DATASET = { scrollbar: 'chat' } as const;
+// The list owns its scroll element, so `data-scrollbar` / `data-scroll-shadow`
+// cannot be declared in JSX on that path. Several consumers reach the chat
+// scroller through `closest('[data-scrollbar="chat"]')`, and the chat scrollbar
+// skin is keyed on it too. Stable identity: it feeds a ref callback.
+const LEGEND_SCROLL_DATASET = { scrollbar: 'chat', scrollShadow: 'true', orientation: 'vertical' } as const;
+
+const DesktopComposerEdgeFade: React.FC = () => (
+    <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-full z-0 h-11 bg-gradient-to-t from-[var(--surface-background)] to-transparent"
+    />
+);
 // Mobile head/foot clearance for the floating navigation header and composer.
 // The old path takes this from CSS padding on the scroll container's content
 // div. The list derives its content size analytically — measured header/footer
@@ -549,12 +555,6 @@ const ChatViewport = React.memo(({
                                     </div>
                                 )}
 
-                                <SessionRecapNote sessionId={currentSessionId} directory={directory} isMobile={isMobile} />
-
-                                <div className="mb-1">
-                                    <StatusRowContainer />
-                                </div>
-
                                 <div className="flex-shrink-0" style={{ height: isMobile ? MOBILE_TIMELINE_FOOT_SPACER_HEIGHT : '10vh' }} aria-hidden="true" />
                             </>
                         )}
@@ -666,8 +666,6 @@ const ChatViewport = React.memo(({
                                 ))}
                             </div>
                         )}
-
-                        <SessionRecapNote sessionId={currentSessionId} directory={directory} isMobile={isMobile} />
 
                         <div className="mb-1">
                             <StatusRowContainer />
@@ -1570,6 +1568,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         messageListRef.current?.scrollToBottom();
         goToBottom('instant');
     });
+    // Send always re-engages follow so a just-sent turn can park near the top
+    // even if the user was reading history. The list then owns the park via
+    // `anchoredEndSpace`; auto-follow's on-send pin is a no-op on this path.
+    const scrollViewportOnSend = useEvent(() => {
+        setLegendFollowReleased(false);
+        scrollToBottomOnSend();
+    });
     // An explicit upward gesture releases follow on top of its history
     // pagination duty, so the list stops chasing the end while the user reads.
     // Gesture-only by construction: the hook ignores nested scrollables that
@@ -1639,7 +1644,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             : (
                 <ChatInput
                     surface={composerSurface}
-                    scrollToBottom={scrollToBottomOnSend}
+                    scrollToBottom={scrollViewportOnSend}
                     showScrollToBottom={isMobile && timelineController.showScrollToBottom}
                     onScrollToBottom={navigation.resumeToLatest}
                     submissionBlocked={promptAvailability.blockSubmission}
@@ -2157,6 +2162,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 							: 'bg-background'
 					)}
 				>
+                    {!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}
                     {promptSurface}
 				</div>
             </div>
@@ -2256,6 +2262,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                         : 'bg-background'
                 )}
             >
+                {!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}
                 {!isDesktopExpandedInput && renderedViewportMessages.length > 0 && (
                     isMobile ? (
                         <ScrollToBottomButton

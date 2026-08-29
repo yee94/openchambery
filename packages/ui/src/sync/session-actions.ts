@@ -15,6 +15,7 @@ import { mergeSessionDirectoryMetadata, useGlobalSessionsStore } from "@/stores/
 import { useConfigStore } from "@/stores/useConfigStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
+import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { getAllSyncSessionMap } from "./sync-refs"
 import { sessionDraftKey, type DraftKey } from "./input-draft-types"
 import {
@@ -1450,8 +1451,10 @@ export function beginOptimisticSend(input: BeginOptimisticSendInput): Optimistic
     input.onMessageID?.(messageID)
 
     // Mark pending send before the optimistic user row so the assistant status
-    // can show "sending message" for every runtime while the request is in flight.
+    // can show "sending message" for every runtime while the request is in flight,
+    // and so MessageList can latch `anchoring-new-turn` on that same insert.
     useSessionUIStore.getState().markMessageSending?.(input.sessionId, messageID)
+    markPendingUserSendAnimation(input.sessionId)
 
     // Paint the user bubble + busy status immediately. Connection recovery may
     // take up to CONNECTION_GRACE_MS; the list must not wait on that.

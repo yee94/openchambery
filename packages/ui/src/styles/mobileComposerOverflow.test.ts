@@ -93,6 +93,7 @@ describe('mobile composer overflow and swap contract', () => {
         expect(chatInputSource).toContain('placement="compact"');
         expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--with-scroll');
         expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--aborting');
+        expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--sending');
         expect(chatInputSource).toContain('data-mobile-composer-compact-slot="trailing"');
         expect(readFileSync(join(here, '../components/chat/components/ScrollToBottomButton.tsx'), 'utf-8')).toContain(
             "isCompactInline ? 'ghost' : 'outline'",

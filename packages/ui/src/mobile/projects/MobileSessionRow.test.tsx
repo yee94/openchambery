@@ -44,7 +44,22 @@ describe('Mobile project group chrome', () => {
     expect(paginationPressIndex).toBeGreaterThan(pressIndex);
     expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-active="true"]');
     expect(mobileStyles).not.toContain('.oc-mobile-session-row-content[data-pressed="true"]');
-    expect(mobileStyles.slice(pressIndex)).toContain('background: var(--interactive-hover)');
+    expect(mobileStyles.slice(pressIndex)).toContain('background: var(--oc-mobile-press-fill)');
+    expect(mobileStyles).toContain('--oc-mobile-press-fill: color-mix(');
+    expect(mobileStyles).toContain('.oc-mobile-project-card:has([data-mobile-press-surface-trigger]:active)');
+    expect(mobileStyles).toContain('.oc-mobile-project-card[data-pressed="true"]');
+    expect(mobileStyles).not.toContain(
+      '.oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"]),\n.oc-mobile-session-pagination-row:active {\n  background: var(--interactive-hover);',
+    );
+  });
+
+  test('project cards share the faint press fill instead of interactive-hover', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'MobileProjectCard.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('data-pressed={pressed ? \'true\' : undefined}');
+    expect(source).not.toContain('bg-interactive-hover');
   });
 });
 

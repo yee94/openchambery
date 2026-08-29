@@ -1,9 +1,14 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import { TimelineList } from './TimelineList';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 /**
  * The DOM-based chat machinery (overlay scrollbar, `data-turn-entry` lookups,
@@ -19,7 +24,7 @@ const TUNING = {
     resolveVisibleReleaseLimit: () => 4,
 };
 
-const SCROLL_DATASET = { scrollbar: 'chat' };
+const SCROLL_DATASET = { scrollbar: 'chat', scrollShadow: 'true', orientation: 'vertical' };
 
 const renderTimeline = async (scrollRef: React.RefObject<HTMLDivElement | null>) => {
     const host = document.createElement('div');
@@ -90,8 +95,21 @@ describe('TimelineList scroll element bridge', () => {
         const { host, cleanup } = await renderTimeline(scrollRef);
 
         expect(scrollRef.current?.dataset.scrollbar).toBe('chat');
+        expect(scrollRef.current?.dataset.scrollShadow).toBe('true');
+        expect(scrollRef.current?.dataset.orientation).toBe('vertical');
         expect(host.querySelector('[data-scrollbar="chat"]')).toBe(scrollRef.current);
 
         await cleanup();
+    });
+});
+
+describe('TimelineList scroll-shadow wiring', () => {
+    test('keeps the list-owned scroller on the same mask the old viewport used', () => {
+        const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf-8');
+        const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf-8');
+        expect(timelineSource).toContain('prepareScrollShadowElement');
+        expect(timelineSource).toContain('applyVerticalScrollShadow');
+        expect(messageListSource).toContain('hideTopScrollShadow={isMobile && stickyUserHeader}');
+        expect(messageListSource).toContain('hideBottomScrollShadow={isMobile}');
     });
 });

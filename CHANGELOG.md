@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.14] - 2026-08-29
+
+### Added
+
+- Sending a message on the new timeline now parks that message near the top of the transcript, with the sending or thinking status staying under the bubble. Space below is reserved for the reply (capped at about 60% of the viewport), and you can still scroll away and back.
+
+### Changed
+
+- Composer Send and Stop use a filled circular control so the stop square stays visible on WebKit.
+- Long file paths in diffs and change lists keep the filename readable by truncating the middle.
+- Stopping generation shows muted “Generation stopped” copy instead of an error banner.
+
+### Removed
+
+- Session recap is gone: the setting, transcript spacer, and server assist runtime. The small-model description now refers to session titles and summaries.
+
 ## [1.19.0-beta.13] - 2026-08-29
 
 ### Fixed

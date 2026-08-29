@@ -2,8 +2,13 @@
 export const DESIGN_PT_PER_INCH = 163;
 export const DESIGN_PT_SCALE_MIN = 0.85;
 export const DESIGN_PT_SCALE_MAX = 1.2;
-/** Temporary Android experiment: never let --dpt exceed 0.9. iOS stays 1. */
-export const ANDROID_DESIGN_PT_SCALE_MAX = 0.9;
+/** Android --dpt ceiling. Was 0.9 as a visibility experiment. */
+export const ANDROID_DESIGN_PT_SCALE_MAX = 1;
+/**
+ * iOS --dpt. Same 10/9 bump as lifting the Android ceiling from 0.9 → 1,
+ * so fonts and `--padding-scale` grow together on both native platforms.
+ */
+export const IOS_DESIGN_PT_SCALE = 10 / 9;
 export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v1';
 
 export interface PhysicalScaleMetrics {
@@ -19,7 +24,8 @@ export function clampDesignPtScale(value: number): number {
 
 /**
  * CSS px per physical inch is ppi/density in Android WebView (1 CSS px = 1 dp).
- * Scale so 1 design pt ≈ 1/163 inch. iOS stays 1.
+ * Scale so 1 design pt ≈ 1/163 inch, then cap at ANDROID_DESIGN_PT_SCALE_MAX.
+ * iOS uses IOS_DESIGN_PT_SCALE (same 10/9 bump as lifting the Android ceiling).
  */
 export function computeDesignPtScale(metrics: PhysicalScaleMetrics | null | undefined): number {
   if (!metrics) return ANDROID_DESIGN_PT_SCALE_MAX;
@@ -37,10 +43,15 @@ export function readCachedDesignPtScale(): number {
   try {
     const raw = Number.parseFloat(window.localStorage.getItem(DESIGN_PT_STORAGE_KEY) ?? '');
     // Android Capacitor must never restore a pre-cap cache (e.g. 1.04 written
-    // by early physical-math builds) above the experiment ceiling.
+    // by early physical-math builds) above the Android ceiling. iOS always
+    // uses the readability bump — do not restore a stale 1.0 from before it.
     const capacitor = (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor;
-    if (capacitor?.getPlatform?.() === 'android') {
+    const platform = capacitor?.getPlatform?.();
+    if (platform === 'android') {
       return Math.min(ANDROID_DESIGN_PT_SCALE_MAX, clampDesignPtScale(raw));
+    }
+    if (platform === 'ios') {
+      return IOS_DESIGN_PT_SCALE;
     }
     return clampDesignPtScale(raw);
   } catch {
@@ -71,7 +82,16 @@ export async function applyDesignPtScaleFromNative(): Promise<number> {
   const cached = readCachedDesignPtScale();
   applyDesignPtScaleToRoot(cached);
   const { Capacitor, registerPlugin } = await import('@capacitor/core');
-  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+  if (!Capacitor.isNativePlatform()) {
+    applyDesignPtScaleToRoot(1);
+    return 1;
+  }
+  if (Capacitor.getPlatform() === 'ios') {
+    applyDesignPtScaleToRoot(IOS_DESIGN_PT_SCALE);
+    writeCachedDesignPtScale(IOS_DESIGN_PT_SCALE);
+    return IOS_DESIGN_PT_SCALE;
+  }
+  if (Capacitor.getPlatform() !== 'android') {
     applyDesignPtScaleToRoot(1);
     return 1;
   }

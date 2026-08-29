@@ -47,8 +47,8 @@ describe('TimelineList prepend anchor contracts', () => {
         // Once the list's maintain pass has latched it stops caring how far the
         // viewport is from the end and simply scrolls there, so the stand-down
         // cannot wait for the rows to arrive.
-        expect(source).toMatch(
-            /if \(anchoredEndSpace \|\| !followEnabled \|\| historyAnchor\) return false;/,
+        expect(source).toContain(
+            'if ((anchoredEndSpace && !parkReleased) || !followEnabled || historyAnchor) return false;',
         );
         // Being at the live edge is not a reason to skip anchoring: that is
         // precisely the state in which the prepend pins to the newest message.
@@ -61,7 +61,7 @@ describe('TimelineList prepend anchor contracts', () => {
         // naming a single row forfeits all compensation on any frame where that
         // row is off screen.
         expect(source).toMatch(
-            /shouldRestorePosition:\s*\(entry: TEntry\) => knownKeys\.has\(entry\.key\)/,
+            /shouldRestorePosition:\s*\(entry: \{ key: string \}\) => knownKeys\.has\(entry\.key\)/,
         );
         expect(source).not.toContain('entry.key === anchorKey');
         // Size compensation is unconditional while a row is held: the inserted

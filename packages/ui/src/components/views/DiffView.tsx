@@ -20,6 +20,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { TruncatedPath } from '@/components/ui/truncated-path';
 import { toast } from '@/components/ui';
 
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -367,13 +368,12 @@ const FileList = React.memo<FileListProps>(({
                                 >
                                     {descriptor.code}
                                 </span>
-                                <span
-                                    className="min-w-0 flex-1 truncate typography-code"
-                                    style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
-                                    title={file.path}
-                                >
-                                    {file.path}
-                                </span>
+                                <TruncatedPath
+                                    path={file.path}
+                                    className="min-w-0 flex-1 typography-code"
+                                    dirClassName={isActive ? 'text-interactive-selection-foreground' : 'text-muted-foreground'}
+                                    nameClassName={isActive ? 'text-interactive-selection-foreground' : 'text-foreground'}
+                                />
                                 {formatDiffTotals(file.insertions, file.deletions)}
                             </button>
                         </li>
@@ -893,37 +893,7 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                         >
                             <span className="flex min-w-0 items-center gap-1.5">
                                 <FileTypeIcon filePath={file.path} className="size-3 flex-shrink-0 align-middle" />
-                                {(() => {
-                                    const lastSlash = file.path.lastIndexOf('/');
-                                    if (lastSlash === -1) {
-                                        return (
-                                            <span
-                                                className="block min-w-0 truncate typography-code text-foreground"
-                                                style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
-                                            >
-                                                {file.path}
-                                            </span>
-                                        );
-                                    }
-
-                                    const dir = file.path.slice(0, lastSlash);
-                                    const name = file.path.slice(lastSlash + 1);
-
-                                    return (
-                                        <span className="flex min-w-0 items-baseline overflow-hidden">
-                                            <span
-                                                className="min-w-0 truncate typography-code text-muted-foreground"
-                                                style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
-                                            >
-                                                {dir}
-                                            </span>
-                                            <span className="flex-shrink-0 typography-code">
-                                                <span className="text-muted-foreground">/</span>
-                                                <span className="text-foreground">{name}</span>
-                                            </span>
-                                        </span>
-                                    );
-                                })()}
+                                <TruncatedPath path={file.path} className="min-w-0 flex-1 typography-code" />
                             </span>
                         </span>
                     </div>

@@ -199,6 +199,26 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('resumeToBottom: timelineController.resumeToBottomInstant,');
     });
 
+    test('legend footer keeps composer inset without the live status row', () => {
+        const footerStart = source.indexOf('footerSlot={(');
+        expect(footerStart).toBeGreaterThan(-1);
+        const footSpacer = source.indexOf('MOBILE_TIMELINE_FOOT_SPACER_HEIGHT', footerStart);
+        expect(footSpacer).toBeGreaterThan(footerStart);
+        const footer = source.slice(footerStart, footSpacer);
+        expect(footer).not.toContain('StatusRowContainer');
+        expect(source).toContain('<StatusRowContainer />');
+    });
+
+    test('composer send re-arms legend follow so a mid-history send can park', () => {
+        expect(source).toContain('const scrollViewportOnSend = useEvent');
+        const sendStart = source.indexOf('const scrollViewportOnSend = useEvent');
+        const sendBody = source.slice(sendStart, source.indexOf('});', sendStart));
+        expect(sendBody).toContain('setLegendFollowReleased(false);');
+        expect(sendBody).toContain('scrollToBottomOnSend()');
+        expect(source).toContain('scrollToBottom={scrollViewportOnSend}');
+        expect(source).not.toContain('scrollToBottom={scrollToBottomOnSend}');
+    });
+
     test('latches confirmed subagent footer identity through temporary session identity gaps', () => {
         // session.updated hides subagents from the live directory list, so
         // parentSessionTarget can go null while the child is still on screen.
@@ -211,6 +231,18 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('agentName={bannerExecution.agentName}');
         expect(source).toContain('modelId={bannerExecution.modelId}');
         expect(source).not.toContain('const readOnlyPromptBanner = parentSessionTarget ? (');
+    });
+
+    test('desktop composer keeps a page-background fade above the input', () => {
+        expect(source).toContain('const DesktopComposerEdgeFade');
+        expect(source).toContain('bg-gradient-to-t from-[var(--surface-background)] to-transparent');
+        expect(source).toContain('{!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}');
+        expect(source.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(2);
+    });
+
+    test('legend scroller dataset restores the transcript scroll-shadow mask', () => {
+        expect(source).toContain("scrollShadow: 'true'");
+        expect(source).toContain("orientation: 'vertical'");
     });
 
     test('timeline viewport metrics are ResizeObserver-owned and identity-stable on no-op', () => {

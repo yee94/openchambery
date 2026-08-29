@@ -11,6 +11,7 @@ import { useContextStore } from '@/stores/contextStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useDeviceInfo } from '@/lib/device';
+import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatAutoFollow';
@@ -22,12 +23,12 @@ import { deriveMessageRole } from './message/messageRole';
 import { filterVisibleParts, normalizeParts } from './message/partUtils';
 import { hasVisibleUserBubbleContent, normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
-import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/lib/messages/providerAuthError';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
 import { shouldTightenWorkingBottomGap } from './lib/activityExpansion';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { resolveAssistantErrorPresentation } from './message/assistantErrorPresentation';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { areOptionalRenderRelevantMessagesEqual, areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './message/renderCompare';
@@ -182,6 +183,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     onUserAnimationConsumed,
     reviewTransferDirection = null,
 }) => {
+    const { t } = useI18n();
     const { isMobile, isTablet, hasTouchInput } = useDeviceInfo();
     const sessionSurface = useSessionSurface();
     const sessionSurfaceActions = getSessionSurfaceActionAvailability(sessionSurface);
@@ -643,7 +645,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     // so "Delegating task …" etc. don't float far below the last tool row.
     // Incomplete assistants keep isInActiveTurn after an abnormal settle
     // (no time.completed); Processed chrome must still restore pb-8 so the
-    // recap's -mt-6 has a gap to pull into instead of overlapping "已处理".
+    // next turn does not sit on top of the Processed header.
     const tightenWorkingBottomGap = shouldTightenWorkingBottomGap({
         isWorking: turnGroupingContext?.isWorking === true,
         isInActiveTurn,
@@ -743,42 +745,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (isUser) {
             return undefined;
         }
-        const errorInfo = (message.info as { error?: unknown } | undefined)?.error as
-            | { data?: { message?: unknown }; message?: unknown; name?: unknown }
-            | undefined;
-        if (!errorInfo) {
-            return undefined;
-        }
-        const dataMessage = typeof errorInfo.data?.message === 'string' ? errorInfo.data.message : undefined;
-        const errorMessage = typeof errorInfo.message === 'string' ? errorInfo.message : undefined;
-        const errorName = typeof errorInfo.name === 'string' ? errorInfo.name : undefined;
-        const detail = dataMessage || errorMessage || errorName;
-        if (!detail) {
-            return undefined;
-        }
-        if (errorName === 'SessionRetry') {
-            return {
-                text: `Opencode failed to send a message. Retry attempt info: \n\`${detail}\``,
-                variant: 'info' as const,
-            };
-        }
-        if (isLikelyProviderAuthFailure(detail)) {
-            return {
-                text: PROVIDER_AUTH_FAILURE_MESSAGE,
-                variant: 'error' as const,
-            };
-        }
-        if (detail.trim().toLowerCase() === 'aborted') {
-            return {
-                text: 'The running turn was stopped before OpenCode could send the next message.',
-                variant: 'info' as const,
-            };
-        }
-        return {
-            text: `Opencode failed to send message with error:\n\`${detail}\``,
-            variant: 'error' as const,
-        };
-    }, [isUser, message.info]);
+        return resolveAssistantErrorPresentation(
+            (message.info as { error?: unknown } | undefined)?.error,
+            t('chat.messageBody.aborted'),
+        );
+    }, [isUser, message.info, t]);
 
     const assistantErrorText = assistantError?.text;
     const assistantErrorVariant = assistantError?.variant;

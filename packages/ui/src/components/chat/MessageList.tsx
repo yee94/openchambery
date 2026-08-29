@@ -6,6 +6,7 @@ import { isAssistantSessionDivider } from './hostedSessionHistory';
 import { useI18n } from '@/lib/i18n';
 
 import ChatMessage from './ChatMessage';
+import { StatusRowContainer } from './StatusRowContainer';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
 import TurnItem from './components/TurnItem';
 import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatAutoFollow';
@@ -16,7 +17,10 @@ import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
 import { getNormalizedMessageForDisplay, isCompactionCommandMessage } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
 import { FadeInDisabledProvider } from './message/FadeInOnReveal';
-import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/lib/userSendAnimation';
+import {
+    clearConsumedUserSendAnimation,
+    resolveConsumedSendMessageId,
+} from '@/lib/userSendAnimation';
 import { streamPerfCount, streamPerfMeasure } from '@/stores/utils/streamDebug';
 import type { StreamPhase } from './message/types';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
@@ -34,6 +38,11 @@ import {
 } from './message/parts/taskToolModel';
 import { MarkdownHydrationProvider } from './markdown/MarkdownHydrationProvider';
 import { TimelineList, type TimelineHydrationTuning } from './TimelineList';
+import {
+    CHAT_LIST_ANCHOR_OFFSET,
+    resolveChatListAnchoredEndSpace,
+    resolveNextAnchoredUserMessageId,
+} from './lib/scroll/timelineScrollAnchoring';
 import type { LegendListRef } from '@legendapp/list/react';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { SessionSurfaceContext, useSessionSurface } from './SessionSurfaceContext';
@@ -655,7 +664,7 @@ interface MessageListProps {
     /**
      * Legend timeline path only. The list owns the scroll container there, so
      * content that used to be a sibling of the list (load-older control,
-     * question/permission cards, recap note, status row, tail spacer) has to be
+     * question/permission cards, status row, tail spacer) has to be
      * handed over as the list's header/footer and the scroller styling has to
      * come from the viewport that used to own it.
      */
@@ -684,6 +693,11 @@ interface MessageListProps {
      * scroll-to-bottom button, both of which used to read auto-follow's pin.
      */
     timelineOnIsAtEndChange?: (isAtEnd: boolean) => void;
+    /**
+     * Primary chat owns the send-to-park latch. Secondary transcripts
+     * (context panel) must not consume or clear it.
+     */
+    enableSendPark?: boolean;
 }
 
 export interface MessageListHandle {
@@ -706,6 +720,11 @@ type RenderEntry =
         nextMessage?: ChatMessageEntry;
     }
     | { kind: 'turn'; key: string; turn: TurnRecord; isLastTurn: boolean };
+
+const getTimelineEntryAnchorId = (entry: RenderEntry): string | null => {
+    if (entry.kind === 'turn') return entry.turn.userMessage.info.id;
+    return resolveMessageRole(entry.message) === 'user' ? entry.message.info.id : null;
+};
 
 type TurnUiState = { isExpanded: boolean };
 
@@ -1294,6 +1313,7 @@ interface MessageListEntryProps {
     activeStreamingMessageId?: string | null;
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
+    showLiveStatusRow?: boolean;
 }
 
 const MessageListEntry = React.memo(({
@@ -1312,26 +1332,23 @@ const MessageListEntry = React.memo(({
     activeStreamingMessageId,
     activeStreamingPhase,
     reviewTransferDirection,
+    showLiveStatusRow = false,
 }: MessageListEntryProps) => {
-    if (entry.kind === 'ungrouped') {
-        return (
-            <UngroupedMessageRow
-                message={entry.message}
-                previousMessage={entry.previousMessage}
-                nextMessage={entry.nextMessage}
-                onMessageContentChange={onMessageContentChange}
-                getAnimationHandlers={getAnimationHandlers}
-                scrollToBottom={scrollToBottom}
-                shouldAnimateUserMessage={shouldAnimateUserMessage}
-                onUserAnimationConsumed={onUserAnimationConsumed}
-                activeStreamingMessageId={activeStreamingMessageId}
-                activeStreamingPhase={activeStreamingPhase}
-                reviewTransferDirection={reviewTransferDirection}
-            />
-        );
-    }
-
-    return (
+    const body = entry.kind === 'ungrouped' ? (
+        <UngroupedMessageRow
+            message={entry.message}
+            previousMessage={entry.previousMessage}
+            nextMessage={entry.nextMessage}
+            onMessageContentChange={onMessageContentChange}
+            getAnimationHandlers={getAnimationHandlers}
+            scrollToBottom={scrollToBottom}
+            shouldAnimateUserMessage={shouldAnimateUserMessage}
+            onUserAnimationConsumed={onUserAnimationConsumed}
+            activeStreamingMessageId={activeStreamingMessageId}
+            activeStreamingPhase={activeStreamingPhase}
+            reviewTransferDirection={reviewTransferDirection}
+        />
+    ) : (
         <TurnBlock
             turn={entry.turn}
             isLastTurn={entry.isLastTurn}
@@ -1350,6 +1367,15 @@ const MessageListEntry = React.memo(({
             scrollToBottom={scrollToBottom}
             stickyUserHeader={stickyUserHeader}
         />
+    );
+    if (!showLiveStatusRow) return body;
+    return (
+        <>
+            {body}
+            <div className="mb-1">
+                <StatusRowContainer />
+            </div>
+        </>
     );
 });
 
@@ -2068,6 +2094,8 @@ type LegendTimelineHostProps = {
     followEnabled?: boolean;
     historyAnchorToken?: number;
     onIsAtEndChange?: (isAtEnd: boolean) => void;
+    anchoredUserMessageId?: string | null;
+    onAnchoredTurnParkReleased?: (reserveId: string) => void;
 };
 
 const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
@@ -2103,7 +2131,10 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
     followEnabled = true,
     historyAnchorToken,
     onIsAtEndChange,
+    anchoredUserMessageId = null,
+    onAnchoredTurnParkReleased,
 }) => {
+    const isMobile = useUIStore((state) => state.isMobile);
     const historyCount = historyEntries.length;
 
     const newestTailEntry = tailEntries.length > 0 ? tailEntries[tailEntries.length - 1] : undefined;
@@ -2145,6 +2176,23 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
         () => (liveTailEntries.length > 0 ? [...historyEntries, ...liveTailEntries] : historyEntries),
         [historyEntries, liveTailEntries],
     );
+
+    const anchoredEndSpace = React.useMemo(
+        () => resolveChatListAnchoredEndSpace(
+            allEntries,
+            anchoredUserMessageId,
+            getTimelineEntryAnchorId,
+            { anchorOffset: CHAT_LIST_ANCHOR_OFFSET },
+        ),
+        [allEntries, anchoredUserMessageId],
+    );
+    const timelineScrollDatasetWithPark = React.useMemo(() => {
+        if (!anchoredEndSpace?.anchorId) return scrollDataset;
+        return {
+            ...scrollDataset,
+            ocAnchoredUserId: anchoredEndSpace.anchorId,
+        };
+    }, [anchoredEndSpace, scrollDataset]);
 
     const hydrationTuning = React.useMemo<TimelineHydrationTuning>(() => ({
         resolvePreloadEntries: (visibleCount: number) => resolveMarkdownPreloadEntries(activityRenderMode, visibleCount),
@@ -2217,6 +2265,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
                         activeStreamingMessageId={isNewest ? activeStreamingMessageId : null}
                         activeStreamingPhase={isNewest ? activeStreamingPhase : null}
                         reviewTransferDirection={reviewTransferDirection}
+                        showLiveStatusRow={isNewest}
                     />
                 </MarkdownHydrationProvider>
             </FadeInDisabledProvider>
@@ -2236,12 +2285,16 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
                 registerList={registerList}
                 followEnabled={followEnabled}
                 historyAnchorToken={historyAnchorToken}
+                anchoredEndSpace={anchoredEndSpace}
+                onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}
                 sessionIsWorking={sessionIsWorking}
                 header={header}
                 footer={footer}
                 className={scrollClassName}
                 style={scrollStyle}
-                scrollElementDataset={scrollDataset}
+                scrollElementDataset={timelineScrollDatasetWithPark}
+                hideTopScrollShadow={isMobile && stickyUserHeader}
+                hideBottomScrollShadow={isMobile}
                 onScroll={onScroll}
                 onIsAtEndChange={onIsAtEndChange}
             />
@@ -2273,6 +2326,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     timelineFollowEnabled,
     timelineHistoryAnchorToken,
     timelineOnIsAtEndChange,
+    enableSendPark = true,
 }, ref) => {
     streamPerfCount('ui.message_list.render');
     const { sessionKey: domainSessionKey, virtualizerKey: resolvedVirtualizerKey } = resolveMessageListKeys(sessionKey, virtualizerKey);
@@ -2289,6 +2343,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         previousOrder: string[];
         animatedIds: Set<string>;
     }>({ sessionKey: undefined, previousOrder: [], animatedIds: new Set() });
+    const [anchoredUserMessageId, setAnchoredUserMessageId] = React.useState<string | null>(null);
+    const anchoredUserMessageIdRef = React.useRef<string | null>(null);
+    anchoredUserMessageIdRef.current = anchoredUserMessageId;
+    const pendingScrollToEndAfterAnchorClearRef = React.useRef(false);
+    const onAnchoredTurnParkReleased = useEvent((reserveId: string) => {
+        clearConsumedUserSendAnimation(sessionKey);
+        if (anchoredUserMessageIdRef.current === reserveId) {
+            setAnchoredUserMessageId(null);
+        }
+    });
     const stableGetAnimationHandlers = useEvent(getAnimationHandlers);
     const stableScrollToBottom = useEvent(() => {
         scrollToBottom?.();
@@ -2543,32 +2607,49 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     // Detect new user messages SYNCHRONOUSLY during render.
     // This keeps the first render of a new message in the same animation state
-    // as its append lifecycle.
-    {
-        const anim = userAnimationRef.current;
-
-        // Reset on session switch
-        if (anim.sessionKey !== sessionKey) {
-            anim.sessionKey = sessionKey;
-            anim.previousOrder = currentUserOrder;
-            anim.animatedIds = new Set();
+    // as its append lifecycle, and latches `anchoring-new-turn` before paint so
+    // end maintenance cannot pin the just-sent row to the bottom for a frame.
+    // Pass `nextAnchorId` (not the previous state's `anchoredUserMessageId`)
+    // into the list — waiting a commit lets end maintenance pin to the bottom.
+    const anim = userAnimationRef.current;
+    const sessionChanged = anim.sessionKey !== sessionKey;
+    const previousUserOrder = anim.previousOrder;
+    if (sessionChanged) {
+        // A remount starts with sessionKey undefined, which must not clear
+        // the module latch. Secondary transcripts never own that latch.
+        if (enableSendPark && anim.sessionKey !== undefined) {
+            clearConsumedUserSendAnimation(anim.sessionKey);
         }
-
-        // Detect appended user messages
-        const prev = anim.previousOrder;
-        if (currentUserOrder.length > prev.length) {
-            const isAppendOnly = prev.every((id, i) => currentUserOrder[i] === id);
-            if (isAppendOnly && hasPendingUserSendAnimation(sessionKey)) {
-                for (let i = prev.length; i < currentUserOrder.length; i += 1) {
-                    const id = currentUserOrder[i];
-                    if (id && !anim.animatedIds.has(id)) {
-                        if (!consumePendingUserSendAnimation(sessionKey)) break;
-                        anim.animatedIds.add(id);
-                    }
-                }
-            }
-        }
+        anim.sessionKey = sessionKey;
         anim.previousOrder = currentUserOrder;
+        anim.animatedIds = new Set();
+    }
+
+    const consumedSendMessageId = enableSendPark
+        ? resolveConsumedSendMessageId({
+            sessionId: sessionKey,
+            sessionChanged,
+            previousUserOrder,
+            currentUserOrder,
+            animatedIds: anim.animatedIds,
+        })
+        : null;
+    anim.previousOrder = currentUserOrder;
+
+    const nextAnchorId = enableSendPark
+        ? resolveNextAnchoredUserMessageId({
+            sessionChanged,
+            previousUserOrder,
+            currentUserOrder,
+            currentAnchorId: anchoredUserMessageId,
+            consumedSendMessageId,
+        })
+        : null;
+    if (enableSendPark && nextAnchorId !== anchoredUserMessageId) {
+        setAnchoredUserMessageId(nextAnchorId);
+    }
+    if (enableSendPark) {
+        anchoredUserMessageIdRef.current = nextAnchorId;
     }
 
     const shouldAnimateUserMessage = useEvent((message: ChatMessageEntry): boolean => {
@@ -2663,6 +2744,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         container.scrollTo({ top, behavior });
         return true;
     });
+
+    useIsomorphicLayoutEffect(() => {
+        if (!pendingScrollToEndAfterAnchorClearRef.current) return;
+        if (anchoredUserMessageId !== null) return;
+        pendingScrollToEndAfterAnchorClearRef.current = false;
+        legendListRef.current?.scrollToEnd({ animated: false });
+    }, [anchoredUserMessageId]);
 
     React.useEffect(() => {
         if (!ref) {
@@ -2850,6 +2938,14 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
             scrollToBottom: () => {
                 if (legendTimelineEnabled) {
+                    // Drop reserved tail space before scrolling to the live
+                    // edge; otherwise scrollToEnd lands on the padded park.
+                    if (anchoredUserMessageIdRef.current !== null) {
+                        pendingScrollToEndAfterAnchorClearRef.current = true;
+                        clearConsumedUserSendAnimation(sessionKey);
+                        setAnchoredUserMessageId(null);
+                        return;
+                    }
                     legendListRef.current?.scrollToEnd({ animated: false });
                     return;
                 }
@@ -2917,6 +3013,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 followEnabled={timelineFollowEnabled}
                 historyAnchorToken={timelineHistoryAnchorToken}
                 onIsAtEndChange={timelineOnIsAtEndChange}
+                anchoredUserMessageId={nextAnchorId}
+                onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}
             />
         );
     }

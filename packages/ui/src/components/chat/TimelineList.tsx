@@ -13,8 +13,11 @@
 //   • `maintainVisibleContentPosition` preserves the read position when older
 //     history is prepended, replacing the manual anchor hold and the mobile
 //     quiet-window prepend deferral.
-//   • `anchoredEndSpace` reserves the tail space that parks a just-sent
-//     message near the top of the viewport.
+//   • A just-sent turn keeps its natural height. Unused space below it is a
+//     real trailing list item (`usableViewport - content`) with a fixed size
+//     so the virtualizer can park the user row. Collapse, hydration, and
+//     streaming keep writing the turn. The spacer only shrinks with content;
+//     a later collapse that would reopen it drops the reserve.
 //
 // Rows are never recycled: chat rows own internal state (expanded tool calls,
 // reveal animations) that recycling would carry into a different turn.
@@ -37,7 +40,7 @@
 //     identity does not change when a prepend shifts its index.
 
 import React from 'react';
-import { useEvent } from '@reactuses/core';
+import { useEvent, useResizeObserver } from '@reactuses/core';
 import { LegendList, type LegendListRef } from '@legendapp/list/react';
 
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
@@ -58,9 +61,17 @@ import {
     TIMELINE_ANCHOR_ARM_EXPIRY_MS,
     type TimelineAnchorArm,
 } from './lib/scroll/timelinePrependAnchor';
+import { applyVerticalScrollShadow, prepareScrollShadowElement } from '@/components/ui/scrollShadowState';
 import {
+    CHAT_LIST_ANCHOR_OFFSET,
     didPrependTimelineEntries,
+    getAnchoredTurnMetrics,
+    isReplyReserveOverflowing,
+    resolveReplyReserveUpdate,
+    resolveShrunkItemSizeUpdate,
     resolveTimelineIsAtEnd,
+    resolveUsableViewportHeight,
+    type ReplyReserveSnapshot,
     TIMELINE_ANCHORING_ATTRIBUTE,
     TIMELINE_PREPEND_SETTLE_MS,
 } from './lib/scroll/timelineScrollAnchoring';
@@ -82,6 +93,10 @@ const TIMELINE_SCROLL_IDLE_MS = 100;
 // remounted. One frame past the idle threshold, so the pass reads as settled.
 const TIMELINE_HYDRATION_IDLE_PASS_MS = TIMELINE_SCROLL_IDLE_MS + 16;
 
+// Browser `behavior: 'smooth'` duration is not spec'd; this is long enough to
+// cover the park glide so a same-key `onReady` reveal cannot cancel it.
+const NEW_TURN_PARK_SCROLL_MS = 500;
+
 const EMPTY_HYDRATED_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
@@ -94,6 +109,36 @@ const TimelineHydrationContext = React.createContext<ReadonlySet<string>>(EMPTY_
 export type TimelineRowEntry = {
     key: string;
     kind: string;
+};
+
+const TIMELINE_REPLY_RESERVE_KIND = 'oc-reply-reserve';
+
+type ReplyReserveListEntry = {
+    readonly key: string;
+    readonly kind: typeof TIMELINE_REPLY_RESERVE_KIND;
+    readonly spacerHeight: number;
+};
+
+type TimelineListItem<TEntry extends TimelineRowEntry> = TEntry | ReplyReserveListEntry;
+
+const isReplyReserveListEntry = (entry: { kind: string }): entry is ReplyReserveListEntry => (
+    entry.kind === TIMELINE_REPLY_RESERVE_KIND
+);
+
+const getReplyReserveFixedSize = (item: { kind: string; spacerHeight?: number }): number | undefined => {
+    if (!isReplyReserveListEntry(item)) return undefined;
+    return item.spacerHeight > 0 ? item.spacerHeight : undefined;
+};
+
+const resolveMeasuredViewportHeight = (
+    element: HTMLElement | null | undefined,
+    scrollLength: number | undefined,
+): number => {
+    if (typeof scrollLength === 'number' && Number.isFinite(scrollLength) && scrollLength > 0) {
+        return scrollLength;
+    }
+    const fromElement = element?.clientHeight ?? 0;
+    return fromElement > 0 ? fromElement : 0;
 };
 
 /** The subset of the list's ScrollView methods object this module relies on. */
@@ -110,6 +155,7 @@ export type TimelineHydrationTuning = {
 export type TimelineAnchoredEndSpace = {
     anchorIndex: number;
     anchorOffset?: number;
+    anchorId?: string;
 };
 
 export type TimelineListProps<TEntry extends TimelineRowEntry> = {
@@ -142,8 +188,21 @@ export type TimelineListProps<TEntry extends TimelineRowEntry> = {
      * Must be referentially stable: it participates in the ref callback.
      */
     scrollElementDataset?: Record<string, string>;
+    /**
+     * LegendList owns the scroller, so it cannot wrap in `ScrollShadow`.
+     * When the dataset stamps `data-scroll-shadow`, the list keeps the same
+     * top/bottom mask the old viewport path used.
+     */
+    hideTopScrollShadow?: boolean;
+    hideBottomScrollShadow?: boolean;
     registerList?: (list: LegendListRef | null) => void;
     anchoredEndSpace?: TimelineAnchoredEndSpace;
+    /**
+     * The list released this send's reserve (overflow, collapse that would
+     * reopen leftover space). The owner must drop the remount latch so a
+     * later remount cannot recreate the hole.
+     */
+    onAnchoredTurnParkReleased?: (reserveId: string) => void;
     /** Height of the composer floating over the list. */
     composerOverlayHeight?: number;
     /**
@@ -174,7 +233,7 @@ export type TimelineListProps<TEntry extends TimelineRowEntry> = {
     onScroll?: () => void;
     /**
      * Content that used to be a sibling of the list inside the shared scroll
-     * container (load-older control; question/permission cards, recap, status
+     * container (load-older control; question/permission cards, status
      * row, tail spacer). The list owns the scroll container here, so they have
      * to live in its header/footer slots — `maintainScrollAtEnd.footerLayout`
      * keeps the end maintained when the footer's height changes.
@@ -191,6 +250,7 @@ type TimelineRowProps<TEntry extends TimelineRowEntry> = {
     entry: TEntry;
     index: number;
     renderEntryRef: React.RefObject<TimelineListProps<TEntry>['renderEntry']>;
+    onMeasuredSizeRef: React.RefObject<(key: string, size: { height: number; width: number }) => void>;
 };
 
 /**
@@ -203,10 +263,29 @@ const TimelineRow = <TEntry extends TimelineRowEntry>({
     entry,
     index,
     renderEntryRef,
+    onMeasuredSizeRef,
 }: TimelineRowProps<TEntry>) => {
     const hydratedKeys = React.useContext(TimelineHydrationContext);
+    const rootRef = React.useRef<HTMLDivElement>(null);
+    React.useLayoutEffect(() => {
+        const node = rootRef.current;
+        if (!node || typeof ResizeObserver === 'undefined') return;
+        const notify = () => {
+            const height = node.offsetHeight;
+            const width = node.offsetWidth;
+            if (height > 0) onMeasuredSizeRef.current?.(entry.key, { height, width });
+        };
+        const observer = new ResizeObserver(notify);
+        observer.observe(node);
+        notify();
+        return () => observer.disconnect();
+    }, [entry.key, onMeasuredSizeRef]);
     return (
-        <div data-turn-entry={entry.key} className="oc-chat-message-layout-boundary">
+        <div
+            ref={rootRef}
+            data-turn-entry={entry.key}
+            className="oc-chat-message-layout-boundary"
+        >
             {renderEntryRef.current?.(entry, index, hydratedKeys.has(entry.key))}
         </div>
     );
@@ -221,8 +300,11 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     rowInvalidationKey,
     scrollElementRef,
     scrollElementDataset,
+    hideTopScrollShadow = false,
+    hideBottomScrollShadow = false,
     registerList,
     anchoredEndSpace,
+    onAnchoredTurnParkReleased,
     composerOverlayHeight = 0,
     followEnabled = true,
     historyAnchorToken = 0,
@@ -254,18 +336,54 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     // getScrollableNode, …), not the element. Everything downstream expects an
     // element, so unwrap it here and publish that.
     const listScrollElementRef = React.useRef<HTMLDivElement | null>(null);
+    const [scrollElement, setScrollElement] = React.useState<HTMLDivElement | null>(null);
+    const [viewportHeight, setViewportHeight] = React.useState(0);
+    const hideTopScrollShadowRef = React.useRef(hideTopScrollShadow);
+    hideTopScrollShadowRef.current = hideTopScrollShadow;
+    const hideBottomScrollShadowRef = React.useRef(hideBottomScrollShadow);
+    hideBottomScrollShadowRef.current = hideBottomScrollShadow;
+    const syncScrollShadow = useEvent((element: HTMLElement | null = listScrollElementRef.current) => {
+        if (!element || scrollElementDataset?.scrollShadow !== 'true') return;
+        prepareScrollShadowElement(element);
+        applyVerticalScrollShadow(element, {
+            hideTopShadow: hideTopScrollShadowRef.current,
+            hideBottomShadow: hideBottomScrollShadowRef.current,
+        });
+    });
     const setScrollView = React.useCallback((scrollView: ScrollViewLike | null) => {
         const element = scrollView?.getScrollableNode?.() ?? null;
         if (element && scrollElementDataset) {
             for (const [key, value] of Object.entries(scrollElementDataset)) {
                 element.dataset[key] = value;
             }
+            syncScrollShadow(element);
         }
         listScrollElementRef.current = element;
         if (scrollElementRef) {
             scrollElementRef.current = element;
         }
-    }, [scrollElementRef, scrollElementDataset]);
+        setScrollElement(element);
+        const nextHeight = resolveMeasuredViewportHeight(
+            element,
+            listRef.current?.getState()?.scrollLength,
+        );
+        setViewportHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+    }, [scrollElementDataset, scrollElementRef, syncScrollShadow]);
+    const publishViewportHeight = useEvent(() => {
+        const nextHeight = resolveMeasuredViewportHeight(
+            listScrollElementRef.current,
+            listRef.current?.getState()?.scrollLength,
+        );
+        setViewportHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+        syncScrollShadow();
+    });
+    React.useLayoutEffect(() => {
+        syncScrollShadow(scrollElement);
+    }, [hideBottomScrollShadow, hideTopScrollShadow, scrollElement, syncScrollShadow]);
+    useResizeObserver(
+        typeof ResizeObserver !== 'undefined' ? scrollElement : null,
+        publishViewportHeight,
+    );
 
     // --- Prepend settle window ---------------------------------------------
     // Key-anchored prepends are only exact while the inserted rows keep the
@@ -519,7 +637,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         return {
             data: true,
             size: true,
-            shouldRestorePosition: (entry: TEntry) => knownKeys.has(entry.key),
+            shouldRestorePosition: (entry: { key: string }) => knownKeys.has(entry.key),
         };
     }, [historyAnchor, prependSettling]);
 
@@ -671,6 +789,13 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             }
             // Edge-triggered: this drives React state upstream, and scroll fires
             // every frame.
+            const nextViewport = resolveMeasuredViewportHeight(
+                listScrollElementRef.current,
+                state.scrollLength,
+            );
+            if (nextViewport > 0) {
+                setViewportHeight((previous) => (previous === nextViewport ? previous : nextViewport));
+            }
             const atEnd = resolveTimelineIsAtEnd(state) ?? state.isAtEnd;
             if (atEnd !== lastIsAtEndRef.current) {
                 lastIsAtEndRef.current = atEnd;
@@ -684,6 +809,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             }
         }
         onScroll?.();
+        syncScrollShadow();
         scheduleMarkdownHydration();
         // The pass above runs in this frame and is therefore never settled: it
         // may only release off-screen preload. The rows that entered the
@@ -691,27 +817,276 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         armIdleMarkdownHydration();
     });
 
-    const keyExtractor = React.useCallback((entry: TEntry) => entry.key, []);
+    const keyExtractor = React.useCallback((entry: TimelineListItem<TEntry>) => entry.key, []);
 
     // Rows are pooled by kind so a turn moving from the live tail into history
     // reuses the same container kind instead of tearing its subtree down.
-    const getItemType = React.useCallback((entry: TEntry) => entry.kind, []);
+    const getItemType = React.useCallback((entry: TimelineListItem<TEntry>) => entry.kind, []);
 
     const renderEntryRef = React.useRef(renderEntry);
     renderEntryRef.current = renderEntry;
+    const [replyReserve, setReplyReserve] = React.useState<ReplyReserveSnapshot | null>(null);
+    const replyReserveRef = React.useRef<ReplyReserveSnapshot | null>(null);
+    const parkReleasedRef = React.useRef(false);
+    const reserveIdRef = React.useRef<string | null>(null);
+    const parkAnchorKeyRef = React.useRef<string | null>(null);
+    const usableViewportHeightRef = React.useRef(0);
+    const viewportHeightRef = React.useRef(0);
+    const parkedReserveIdRef = React.useRef<string | null>(null);
 
-    const renderItem = React.useCallback(({ item, index }: { item: TEntry; index: number }) => (
-        <TimelineRow<TEntry> entry={item} index={index} renderEntryRef={renderEntryRef} />
-    ), []);
+    const handleMeasuredSize = useEvent((key: string, size: { height: number; width: number }) => {
+        const list = listRef.current;
+        const known = list?.getState().sizes.get(key);
+        if (list) {
+            const shrunk = resolveShrunkItemSizeUpdate(known, size.height);
+            if (shrunk !== null) {
+                list.setItemSize(key, size);
+            }
+        }
+        if (parkReleasedRef.current) return;
+        if (key !== parkAnchorKeyRef.current) return;
+        const currentReserveId = reserveIdRef.current;
+        if (currentReserveId === null) return;
+        const { snapshot, release } = resolveReplyReserveUpdate({
+            previous: replyReserveRef.current,
+            reserveId: currentReserveId,
+            entryKey: key,
+            contentHeight: size.height,
+            usableViewportHeight: usableViewportHeightRef.current,
+            viewportHeight: viewportHeightRef.current,
+        });
+        if (release) {
+            setReplyReserve(null);
+            releaseAnchoredTurnPark(currentReserveId);
+            applyAnchoredTurnScroll('reveal');
+            return;
+        }
+        const previous = replyReserveRef.current;
+        if (
+            previous?.spacerHeight !== snapshot.spacerHeight
+            || previous?.contentHeight !== snapshot.contentHeight
+            || previous?.entryKey !== snapshot.entryKey
+            || previous?.reserveId !== snapshot.reserveId
+        ) {
+            setReplyReserve(snapshot);
+        }
+        if (parkedReserveIdRef.current === currentReserveId) return;
+        if (!applyAnchoredTurnScroll('park')) return;
+        parkedReserveIdRef.current = currentReserveId;
+    });
+    const onMeasuredSizeRef = React.useRef(handleMeasuredSize);
+    onMeasuredSizeRef.current = handleMeasuredSize;
+
+    const renderItem = React.useCallback(({
+        item,
+        index,
+    }: {
+        item: TimelineListItem<TEntry>;
+        index: number;
+    }) => {
+        if (isReplyReserveListEntry(item)) {
+            return (
+                <div
+                    data-oc-reply-reserve="true"
+                    aria-hidden="true"
+                    style={{ height: item.spacerHeight, flexShrink: 0 }}
+                />
+            );
+        }
+        return (
+            <TimelineRow<TEntry>
+                entry={item}
+                index={index}
+                renderEntryRef={renderEntryRef}
+                onMeasuredSizeRef={onMeasuredSizeRef}
+            />
+        );
+    }, []);
+
+    const followEnabledRef = React.useRef(followEnabled);
+    followEnabledRef.current = followEnabled;
+    const historyAnchorRef = React.useRef(historyAnchor);
+    historyAnchorRef.current = historyAnchor;
+    const anchoredEndSpaceRef = React.useRef(anchoredEndSpace);
+    anchoredEndSpaceRef.current = anchoredEndSpace;
+    const composerOverlayHeightRef = React.useRef(composerOverlayHeight);
+    composerOverlayHeightRef.current = composerOverlayHeight;
+    const parkAnimatingUntilRef = React.useRef(0);
+    const releasedParkKeyRef = React.useRef<string | null>(null);
+    const [releasedParkKey, setReleasedParkKey] = React.useState<string | null>(null);
+    const parkAnchorKey = anchoredEndSpace
+        ? (entries[anchoredEndSpace.anchorIndex]?.key ?? null)
+        : null;
+    const reserveId = anchoredEndSpace?.anchorId ?? parkAnchorKey;
+    const parkReleased = reserveId !== null && releasedParkKey === reserveId;
+    if (!anchoredEndSpace) {
+        parkedReserveIdRef.current = null;
+        parkAnimatingUntilRef.current = 0;
+    }
+
+    const resolvedViewportHeight = viewportHeight > 0
+        ? viewportHeight
+        : resolveMeasuredViewportHeight(
+            listScrollElementRef.current,
+            listRef.current?.getState()?.scrollLength,
+        );
+    const usableViewportHeight = resolveUsableViewportHeight({
+        viewportHeight: resolvedViewportHeight,
+        composerOverlayHeight,
+        anchorOffset: anchoredEndSpace?.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET,
+    });
+
+    let activeReplyReserve = replyReserve;
+    if (!reserveId || !parkAnchorKey || parkReleased) {
+        if (replyReserve !== null) {
+            setReplyReserve(null);
+        }
+        activeReplyReserve = null;
+    } else if (usableViewportHeight <= 0) {
+        // A 0 viewport is "not measured yet", not "drop the park". Wiping
+        // here loses the sibling reserve item and lets end-maintenance pin.
+        if (
+            replyReserve !== null
+            && replyReserve.reserveId === reserveId
+            && replyReserve.entryKey === parkAnchorKey
+        ) {
+            activeReplyReserve = replyReserve;
+        } else {
+            activeReplyReserve = null;
+        }
+    } else if (
+        replyReserve === null
+        || replyReserve.reserveId !== reserveId
+        || replyReserve.entryKey !== parkAnchorKey
+    ) {
+        const { snapshot } = resolveReplyReserveUpdate({
+            previous: replyReserve?.reserveId === reserveId ? replyReserve : null,
+            reserveId,
+            entryKey: parkAnchorKey,
+            contentHeight: replyReserve?.reserveId === reserveId ? replyReserve.contentHeight : null,
+            usableViewportHeight,
+            viewportHeight: resolvedViewportHeight,
+        });
+        setReplyReserve(snapshot);
+        activeReplyReserve = snapshot;
+    }
+    replyReserveRef.current = activeReplyReserve;
+    parkReleasedRef.current = parkReleased;
+    reserveIdRef.current = reserveId;
+    parkAnchorKeyRef.current = parkAnchorKey;
+    usableViewportHeightRef.current = usableViewportHeight;
+    viewportHeightRef.current = resolvedViewportHeight;
+
+    React.useLayoutEffect(() => {
+        parkedReserveIdRef.current = null;
+        parkAnimatingUntilRef.current = 0;
+        releasedParkKeyRef.current = null;
+        setReleasedParkKey(null);
+    }, [timelineCacheKey]);
+
+    React.useLayoutEffect(() => {
+        if (!anchoredEndSpace) return;
+        publishViewportHeight();
+    }, [anchoredEndSpace]);
+
+    const releaseAnchoredTurnPark = useEvent((key: string | null) => {
+        if (key === null || releasedParkKeyRef.current === key) return;
+        releasedParkKeyRef.current = key;
+        setReleasedParkKey(key);
+        onAnchoredTurnParkReleased?.(key);
+    });
+
+    const applyAnchoredTurnScroll = useEvent((mode: 'park' | 'reveal'): boolean => {
+        const space = anchoredEndSpaceRef.current;
+        if (!space || historyAnchorRef.current) return false;
+        const list = listRef.current;
+        if (!list) return false;
+        const state = list.getState();
+        const anchorOffset = space.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET;
+        const metrics = getAnchoredTurnMetrics({
+            state,
+            anchorIndex: space.anchorIndex,
+            lastIndex: space.anchorIndex,
+            composerOverlayHeight: composerOverlayHeightRef.current,
+            anchorOffset,
+        });
+        if (!metrics) return false;
+        if (mode === 'park') {
+            const offset = Math.max(0, metrics.anchorTop - anchorOffset);
+            const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            const reducedMotion = typeof window !== 'undefined'
+                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const animated = !reducedMotion && Math.abs(state.scroll - offset) >= 1;
+            if (animated) {
+                parkAnimatingUntilRef.current = now + NEW_TURN_PARK_SCROLL_MS;
+            }
+            void list.scrollToOffset({ offset, animated });
+            return true;
+        }
+        if (isReplyReserveOverflowing(metrics.turnHeight, usableViewportHeightRef.current)) {
+            releaseAnchoredTurnPark(space.anchorId ?? entries[space.anchorIndex]?.key ?? null);
+        }
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (now < parkAnimatingUntilRef.current) return false;
+        if (!followEnabledRef.current) return false;
+        if (metrics.scrollDeltaToRevealEnd < 1) return false;
+        void list.scrollToOffset({ offset: metrics.targetScrollToRevealEnd, animated: false });
+        return true;
+    });
+
+    React.useLayoutEffect(() => {
+        if (!reserveId || !parkAnchorKey || parkReleased) return;
+        if (usableViewportHeight <= 0) return;
+        const previous = replyReserveRef.current;
+        if (previous === null) return;
+        if (previous.reserveId !== reserveId || previous.entryKey !== parkAnchorKey) return;
+        const { snapshot, release } = resolveReplyReserveUpdate({
+            previous,
+            reserveId,
+            entryKey: parkAnchorKey,
+            contentHeight: previous.contentHeight,
+            usableViewportHeight,
+            viewportHeight: resolvedViewportHeight,
+        });
+        if (release) {
+            setReplyReserve(null);
+            releaseAnchoredTurnPark(reserveId);
+            applyAnchoredTurnScroll('reveal');
+            return;
+        }
+        if (snapshot.spacerHeight !== previous.spacerHeight) {
+            setReplyReserve(snapshot);
+        }
+    }, [parkAnchorKey, parkReleased, reserveId, resolvedViewportHeight, usableViewportHeight]);
+
+    React.useLayoutEffect(() => {
+        if (!activeReplyReserve || historyAnchor) return;
+        if (parkedReserveIdRef.current === reserveId) return;
+        if (!applyAnchoredTurnScroll('park')) return;
+        parkedReserveIdRef.current = reserveId;
+    }, [activeReplyReserve, historyAnchor, reserveId]);
+
+    const listEntries = React.useMemo((): readonly TimelineListItem<TEntry>[] => {
+        const spacerHeight = activeReplyReserve?.spacerHeight ?? 0;
+        if (!activeReplyReserve || spacerHeight <= 0) return entries;
+        return [
+            ...entries,
+            {
+                key: `${TIMELINE_REPLY_RESERVE_KIND}:${activeReplyReserve.reserveId}`,
+                kind: TIMELINE_REPLY_RESERVE_KIND,
+                spacerHeight,
+            },
+        ];
+    }, [activeReplyReserve, entries]);
 
     const maintainScrollAtEnd = React.useMemo(() => {
-        // While a turn is anchored, the reserved end space — not the live edge —
+        // While a turn is reserved, the parked user row — not the live edge —
         // defines where the viewport rests. A history anchor owns the scroll
         // position outright for the same reason, from the moment the load is
         // requested: once the list's maintain pass has latched it stops caring
         // how far the viewport is from the end and simply scrolls there, so
         // standing it down has to happen before the rows arrive, not after.
-        if (anchoredEndSpace || !followEnabled || historyAnchor) return false;
+        if ((anchoredEndSpace && !parkReleased) || !followEnabled || historyAnchor) return false;
         return {
             // Animated only once the transcript has reached its live edge, and
             // only while it streams: there the block-step growth turns each
@@ -720,22 +1095,22 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             animated: sessionIsWorking && endSettledOnce,
             on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true },
         } as const;
-    }, [anchoredEndSpace, endSettledOnce, followEnabled, historyAnchor, sessionIsWorking]);
+    }, [anchoredEndSpace, endSettledOnce, followEnabled, historyAnchor, parkReleased, sessionIsWorking]);
 
     return (
         <TimelineHydrationContext.Provider value={activeHydratedMarkdownEntryKeys}>
-            <LegendList<TEntry>
+            <LegendList<TimelineListItem<TEntry>>
                 ref={setListRef}
                 refScrollView={setScrollView as unknown as React.Ref<HTMLElement>}
-                data={entries as TEntry[]}
+                data={listEntries as TimelineListItem<TEntry>[]}
                 extraData={rowInvalidationKey}
                 keyExtractor={keyExtractor}
                 getItemType={getItemType}
+                getFixedItemSize={getReplyReserveFixedSize}
                 renderItem={renderItem}
                 estimatedItemSize={estimatedItemSize}
                 initialScrollAtEnd
                 recycleItems={false}
-                {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
                 contentInsetEndAdjustment={composerOverlayHeight}
                 maintainScrollAtEnd={maintainScrollAtEnd}
                 // Prepending older history must not move what the user is

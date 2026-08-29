@@ -18,10 +18,13 @@
 // composer floats over the list) minus the anchor offset, so a turn is only
 // considered overflowing when it genuinely cannot be read.
 //
-// Only `resolveTimelineIsAtEnd` is wired today: the timeline currently runs
-// `following-end` and `free-scrolling` only. The `anchoring-new-turn` geometry
-// below is complete but not yet driven by anything — reserving tail space for
-// a just-sent turn is a separate step from opening a session at the live edge.
+// Send latches the just-sent user message and TimelineList drives
+// `anchoring-new-turn`. Occupancy is a sibling spacer AFTER the last turn,
+// not a minHeight on the turn itself — collapse, hydration, and streaming
+// keep writing that row's natural height. The spacer starts as
+// `usableViewport - content` and only shrinks; a later collapse that would
+// reopen it drops the reserve instead. Overflow or jump-to-latest also
+// drops it and returns to `following-end`.
 
 export type TimelineScrollMode = 'following-end' | 'anchoring-new-turn' | 'free-scrolling';
 
@@ -29,6 +32,165 @@ export type TimelineScrollMode = 'following-end' | 'anchoring-new-turn' | 'free-
 // parks. Small enough to read as "at the top", large enough not to collide
 // with the timeline's top fade.
 export const CHAT_LIST_ANCHOR_OFFSET = 16;
+
+/** Blank hole under the parked turn. A full leftover viewport shoves StatusRow off-screen. */
+export const CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO = 0.6;
+
+export const resolveReplyReserveMaxHeight = (viewportHeight: number): number => {
+    if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
+    return viewportHeight * CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO;
+};
+
+export const resolveUsableViewportHeight = ({
+    viewportHeight,
+    composerOverlayHeight,
+    anchorOffset = CHAT_LIST_ANCHOR_OFFSET,
+}: {
+    readonly viewportHeight: number;
+    readonly composerOverlayHeight: number;
+    readonly anchorOffset?: number;
+}): number => {
+    if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
+    return Math.max(0, viewportHeight - composerOverlayHeight - anchorOffset);
+};
+
+/**
+ * Sibling spacer after the last turn (user + live status). Unmeasured
+ * content still gets the capped hole so the first paint can park. Once
+ * the turn reports a natural height, the spacer is the leftover, never
+ * more than 60% of the list viewport.
+ */
+export const resolveReplyReserveSpacerHeight = ({
+    usableViewportHeight,
+    viewportHeight,
+    contentHeight,
+}: {
+    readonly usableViewportHeight: number;
+    readonly viewportHeight: number;
+    readonly contentHeight: number | null;
+}): number => {
+    if (!Number.isFinite(usableViewportHeight) || usableViewportHeight <= 0) return 0;
+    const maxHole = resolveReplyReserveMaxHeight(
+        Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : usableViewportHeight,
+    );
+    const cap = maxHole > 0 ? Math.min(usableViewportHeight, maxHole) : usableViewportHeight;
+    if (contentHeight === null || !Number.isFinite(contentHeight) || contentHeight <= 0) {
+        return cap;
+    }
+    return Math.min(cap, Math.max(0, usableViewportHeight - contentHeight));
+};
+
+export const isReplyReserveOverflowing = (
+    contentHeight: number,
+    usableViewportHeight: number,
+): boolean => {
+    if (!Number.isFinite(contentHeight) || !Number.isFinite(usableViewportHeight)) return false;
+    if (usableViewportHeight <= 0) return false;
+    return contentHeight > usableViewportHeight + 1;
+};
+
+export type ReplyReserveSnapshot = {
+    readonly reserveId: string;
+    readonly entryKey: string;
+    readonly contentHeight: number | null;
+    readonly spacerHeight: number;
+};
+
+/**
+ * Drop the reserved spacer once real content has consumed it, or once a later
+ * shrink would reopen it.
+ *
+ * The spacer is `min(usableViewport - turnNaturalHeight, 60% viewport)`.
+ * A long streaming turn drives that leftover to 0; collapsed activity then
+ * shortens the same row and the leftover comes back as blank space under
+ * the transcript. Overflow is the same moment we start revealing the live
+ * edge — keeping the reserve after that only exists to restore padding on
+ * shrink.
+ */
+export const shouldReleaseAnchoredTurnPark = ({
+    overflowsUsableViewport = false,
+    previousEndSpaceSize,
+    nextEndSpaceSize,
+}: {
+    readonly overflowsUsableViewport?: boolean;
+    readonly previousEndSpaceSize?: number;
+    readonly nextEndSpaceSize?: number;
+}): boolean => {
+    if (overflowsUsableViewport) return true;
+    if (
+        previousEndSpaceSize === undefined
+        || nextEndSpaceSize === undefined
+        || !Number.isFinite(previousEndSpaceSize)
+        || !Number.isFinite(nextEndSpaceSize)
+    ) {
+        return false;
+    }
+    return nextEndSpaceSize > previousEndSpaceSize + 1;
+};
+
+/**
+ * Owns the reserved spacer. The last turn's height is an input, never a
+ * write target: a new row key relatches, growth consumes the spacer, and a
+ * same-row shrink that would reopen it (collapsed activity) drops the park.
+ */
+export const resolveReplyReserveUpdate = ({
+    previous,
+    reserveId,
+    entryKey,
+    contentHeight,
+    usableViewportHeight,
+    viewportHeight,
+}: {
+    readonly previous: ReplyReserveSnapshot | null;
+    readonly reserveId: string;
+    readonly entryKey: string;
+    readonly contentHeight: number | null;
+    readonly usableViewportHeight: number;
+    readonly viewportHeight: number;
+}): { readonly snapshot: ReplyReserveSnapshot; readonly release: boolean } => {
+    const nextSpacer = resolveReplyReserveSpacerHeight({
+        usableViewportHeight,
+        viewportHeight,
+        contentHeight,
+    });
+    const overflows = contentHeight !== null
+        && isReplyReserveOverflowing(contentHeight, usableViewportHeight);
+    const snapshot: ReplyReserveSnapshot = {
+        reserveId,
+        entryKey,
+        contentHeight,
+        spacerHeight: overflows ? 0 : nextSpacer,
+    };
+
+    if (overflows) {
+        return { snapshot, release: true };
+    }
+
+    const sameRow = previous !== null
+        && previous.reserveId === reserveId
+        && previous.entryKey === entryKey;
+    if (!sameRow) {
+        return { snapshot, release: false };
+    }
+
+    // Only a content shrink (collapsed activity) may reopen leftover space.
+    // A taller usable viewport — keyboard dismiss, rotate — must keep filling
+    // the new hole instead of dropping the park.
+    const contentShrank = previous.contentHeight !== null
+        && contentHeight !== null
+        && contentHeight + 1 < previous.contentHeight;
+    if (contentShrank && shouldReleaseAnchoredTurnPark({
+        previousEndSpaceSize: previous.spacerHeight,
+        nextEndSpaceSize: nextSpacer,
+    })) {
+        return {
+            snapshot: { ...snapshot, spacerHeight: 0 },
+            release: true,
+        };
+    }
+
+    return { snapshot, release: false };
+};
 
 export interface TimelineListMeasurementState {
     readonly data: readonly unknown[];
@@ -73,20 +235,26 @@ export const getAnchoredTurnMetrics = ({
     anchorIndex,
     composerOverlayHeight,
     anchorOffset,
+    lastIndex,
 }: {
     readonly state: TimelineListMeasurementState;
     readonly anchorIndex: number;
     readonly composerOverlayHeight: number;
     readonly anchorOffset: number;
+    readonly lastIndex?: number;
 }): AnchoredTurnMetrics | null => {
     if (state.data.length === 0) return null;
 
     const boundedAnchorIndex = Math.max(0, Math.min(anchorIndex, state.data.length - 1));
     const anchorTop = state.positionAtIndex(boundedAnchorIndex);
-    // The LAST row bottom, not the content length: the reserved anchored end
-    // space lives past it, and targeting that reserved tail would scroll the
-    // real content off the top.
-    const lastBottom = getRowBottom(state, state.data.length - 1);
+    // Last CONTENT row, not a trailing reserve item and not the full content
+    // length: targeting the reserved tail would scroll the real turn off the
+    // top, and including it would make every parked turn look viewport-tall.
+    const resolvedLastIndex = Math.max(
+        0,
+        Math.min(lastIndex ?? state.data.length - 1, state.data.length - 1),
+    );
+    const lastBottom = getRowBottom(state, resolvedLastIndex);
     if (typeof anchorTop !== 'number' || !Number.isFinite(anchorTop) || lastBottom === null) {
         return null;
     }
@@ -187,11 +355,12 @@ export const TIMELINE_PREPEND_SETTLE_MS = 1200;
 export interface ChatListAnchoredEndSpace {
     readonly anchorIndex: number;
     readonly anchorOffset: number;
+    readonly anchorId: string;
 }
 
 // Finds the anchored row from the BACK of the list: a retried or re-sent
 // message id can appear more than once, and the live one is always the last.
-export const resolveChatListAnchoredEndSpace = <Item, AnchorId>(
+export const resolveChatListAnchoredEndSpace = <Item, AnchorId extends string>(
     items: readonly Item[],
     anchorId: AnchorId | null,
     getAnchorId: (item: Item) => AnchorId | null,
@@ -205,9 +374,66 @@ export const resolveChatListAnchoredEndSpace = <Item, AnchorId>(
             return {
                 anchorIndex: index,
                 anchorOffset: options.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET,
+                anchorId,
             };
         }
     }
 
     return undefined;
+};
+
+/**
+ * Next parked user-message id after a transcript update.
+ *
+ * A consumed send always wins (including a send that lands as the first paint
+ * of a new session). Otherwise a session swap drops the park; an id that is
+ * still in the user order is kept; a same-length replacement of the last user
+ * row (optimistic id → authoritative id) follows the new last id.
+ */
+export const resolveNextAnchoredUserMessageId = ({
+    sessionChanged,
+    previousUserOrder,
+    currentUserOrder,
+    currentAnchorId,
+    consumedSendMessageId,
+}: {
+    readonly sessionChanged: boolean;
+    readonly previousUserOrder: readonly string[];
+    readonly currentUserOrder: readonly string[];
+    readonly currentAnchorId: string | null;
+    readonly consumedSendMessageId: string | null;
+}): string | null => {
+    if (consumedSendMessageId !== null) return consumedSendMessageId;
+    if (sessionChanged) return null;
+    if (currentAnchorId === null) return null;
+    if (currentUserOrder.includes(currentAnchorId)) return currentAnchorId;
+
+    const previousLast = previousUserOrder[previousUserOrder.length - 1];
+    const currentLast = currentUserOrder[currentUserOrder.length - 1];
+    if (
+        currentAnchorId === previousLast
+        && currentLast !== undefined
+        && currentUserOrder.length === previousUserOrder.length
+        && previousUserOrder.length > 0
+    ) {
+        return currentLast;
+    }
+
+    // A transient hole (optimistic row briefly missing) must not drop the
+    // park — the next authoritative paint still owns the same send.
+    return currentAnchorId;
+};
+
+/**
+ * Known virtualizer height that is still taller than the live DOM. Returning
+ * null means "do not write" — growth and first measure stay with the list.
+ */
+export const resolveShrunkItemSizeUpdate = (
+    knownSize: number | undefined,
+    measuredHeight: number,
+): number | null => {
+    if (!Number.isFinite(measuredHeight) || measuredHeight <= 0) return null;
+    if (typeof knownSize !== 'number' || !Number.isFinite(knownSize)) return null;
+    if (measuredHeight + 1 >= knownSize) return null;
+    return measuredHeight;
 };

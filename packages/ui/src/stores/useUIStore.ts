@@ -758,7 +758,6 @@ interface UIStore {
   eventStreamStatus: EventStreamStatus;
   eventStreamHint: string | null;
   showReasoningTraces: boolean;
-  sessionRecapEnabled: boolean;
   sessionTitleRefreshEnabled: boolean;
   sessionGoalEnabled: boolean;
   sessionGoalDefaultBudgetEnabled: boolean;
@@ -934,7 +933,6 @@ interface UIStore {
   setSettingsRemoteInstancesSelectedId: (instanceId: string | null) => void;
   setEventStreamStatus: (status: EventStreamStatus, hint?: string | null) => void;
   setShowReasoningTraces: (value: boolean) => void;
-  setSessionRecapEnabled: (value: boolean) => void;
   setSessionTitleRefreshEnabled: (value: boolean) => void;
   setSessionGoalEnabled: (value: boolean) => void;
   setSessionGoalDefaultBudgetEnabled: (value: boolean) => void;
@@ -1100,7 +1098,6 @@ export const useUIStore = create<UIStore>()(
         eventStreamStatus: 'idle',
         eventStreamHint: null,
         showReasoningTraces: true,
-        sessionRecapEnabled: true,
         sessionTitleRefreshEnabled: true,
         sessionGoalEnabled: true,
         sessionGoalDefaultBudgetEnabled: false,
@@ -2069,10 +2066,6 @@ export const useUIStore = create<UIStore>()(
           set({ showReasoningTraces: value });
         },
 
-        setSessionRecapEnabled: (value) => {
-          set({ sessionRecapEnabled: value });
-        },
-
         setSessionTitleRefreshEnabled: (value) => {
           set({ sessionTitleRefreshEnabled: value });
         },
@@ -2855,7 +2848,6 @@ export const useUIStore = create<UIStore>()(
           isSessionCreateDialogOpen: state.isSessionCreateDialogOpen,
           // Note: isSettingsDialogOpen intentionally NOT persisted
           showReasoningTraces: state.showReasoningTraces,
-          sessionRecapEnabled: state.sessionRecapEnabled,
           sessionTitleRefreshEnabled: state.sessionTitleRefreshEnabled,
           sessionGoalEnabled: state.sessionGoalEnabled,
           sessionGoalDefaultBudgetEnabled: state.sessionGoalDefaultBudgetEnabled,
