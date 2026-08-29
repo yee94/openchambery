@@ -169,6 +169,28 @@ describe('stream completion reuses the streamed DOM', () => {
     });
 });
 
+describe('paced streaming reveal scheduling', () => {
+    const revealStart = markdownRendererSource.indexOf('const usePacedText');
+    const revealEnd = markdownRendererSource.indexOf('// Mermaid layout', revealStart);
+    const revealSource = markdownRendererSource.slice(revealStart, revealEnd);
+
+    test('interpolates reveal progress on animation frames', () => {
+        expect(revealSource).toContain('window.requestAnimationFrame(tick)');
+        expect(revealSource).not.toContain('setTimeout(tick, textPaceMs)');
+    });
+
+    test('bounds per-frame work and elapsed-time catch-up', () => {
+        expect(markdownRendererSource).toContain('const MIN_REVEAL_CHARS_PER_FRAME = 1;');
+        expect(markdownRendererSource).toContain('const MAX_CATCHUP_CHARS_PER_FRAME = 12;');
+        expect(revealSource).toContain('Math.min(ts - lastTs, 100)');
+    });
+
+    test('keeps word-end snapping and cancels the scheduled frame on cleanup', () => {
+        expect(markdownRendererSource).toContain('const TEXT_SNAP = /[\\s.,!?;:)\\]]/;');
+        expect(revealSource).toContain('window.cancelAnimationFrame(frame)');
+    });
+});
+
 describe('markdown hydration while scrolling', () => {
     test('only visible rows are withheld while the list is scrolling', () => {
         // Swapping a size spacer for real Markdown mid-scroll makes the

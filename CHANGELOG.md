@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.6-beta.2] - 2026-08-28
+
+### 修复
+
+- **预览 Changes 时不再被刷新拉回顶部：** 编辑或 git status 更新时不再把视图重新钉到文件头，也不再卸掉已渲染的 diff 再挂一次。
+
+## [1.18.6-beta.1] - 2026-08-28
+
+### 修复
+
+- **助理聊天里的 subagent 可以打开了：** PC / iPad 点 task 行会在右侧 ContextPanel 打开子会话；手机和 VS Code 直接跳进该 subagent 会话。历史记录里的 subagent 同样可点。
+- **`/fork` 后源会话不再卡住：** 一拿到新会话 id 就切路由，源会话可以马上继续操作；离开 fork 路径时不会把草稿写回源会话。
+- **流式文字渐入更跟手：** 改用 `requestAnimationFrame` 按实际帧间隔揭示，避免定时器堆积导致的卡顿与追赶。
+
 ## [1.18.5] - 2026-08-27
 
 汇总 1.18.4-beta.1 ~ beta.29。

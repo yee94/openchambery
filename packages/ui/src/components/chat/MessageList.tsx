@@ -751,8 +751,9 @@ const MessageRow = React.memo<MessageRowProps>(({
             ...sessionSurface,
             sessionId: message.sourceSessionID,
             directory: message.sourceDirectory ?? null,
-            // Archived assistant history is read-only; only copy/selection stay on.
-            // Drop hosted mutation callbacks so edit/revert cannot target a prior binding.
+            // Archived assistant history is read-only; only copy/selection and
+            // nested-subagent navigation stay on. Drop hosted mutation callbacks
+            // so edit/revert cannot target a prior binding.
             onRevertMessage: undefined,
             onEditMessage: undefined,
             capabilities: {
@@ -762,7 +763,6 @@ const MessageRow = React.memo<MessageRowProps>(({
                 answerRequests: false,
                 openTimeline: false,
                 forkSession: false,
-                navigateNestedSession: false,
             },
         }
         : sessionSurface;
