@@ -33,6 +33,9 @@ import {
     readTaskSessionIdFromRecord,
 } from './message/parts/taskToolModel';
 import { MarkdownHydrationProvider } from './markdown/MarkdownHydrationProvider';
+import { TimelineList, type TimelineHydrationTuning } from './TimelineList';
+import type { LegendListRef } from '@legendapp/list/react';
+import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { SessionSurfaceContext, useSessionSurface } from './SessionSurfaceContext';
 import {
     createInitialMarkdownHydratedKeys,
@@ -649,6 +652,31 @@ interface MessageListProps {
     scrollToBottom?: () => void;
     scrollRef?: React.RefObject<HTMLDivElement | null>;
     directory?: string;
+    /**
+     * Legend timeline path only. The list owns the scroll container there, so
+     * content that used to be a sibling of the list (load-older control,
+     * question/permission cards, recap note, status row, tail spacer) has to be
+     * handed over as the list's header/footer and the scroller styling has to
+     * come from the viewport that used to own it.
+     */
+    headerSlot?: React.ReactNode;
+    footerSlot?: React.ReactNode;
+    timelineScrollClassName?: string;
+    timelineScrollStyle?: React.CSSProperties;
+    /** Forwarded to the list-owned scroll container (history pagination). */
+    timelineOnScroll?: () => void;
+    /**
+     * False while something else owns the scroll position (an explicit jump to
+     * an older turn), so the list stops maintaining the end instead of pulling
+     * the viewport back off the target.
+     */
+    timelineFollowEnabled?: boolean;
+    /**
+     * The list owns the scroll position, so "is the viewport at the live edge"
+     * is only knowable from inside it. It gates load-older and the
+     * scroll-to-bottom button, both of which used to read auto-follow's pin.
+     */
+    timelineOnIsAtEndChange?: (isAtEnd: boolean) => void;
 }
 
 export interface MessageListHandle {
@@ -1989,6 +2017,227 @@ const StreamingTailContent: React.FC<{
 
 StreamingTailContent.displayName = 'StreamingTailContent';
 
+/**
+ * Legend timeline path: history turns AND the streaming tail are rows of one
+ * list, so a single scroll position exists instead of a virtualizer and a
+ * separately-rendered tail arbitrating over one container.
+ *
+ * The live-parts subscription stays here at container level (as it did in the
+ * tail) rather than moving into the newest row. A row-level subscription would
+ * drop whenever virtualization unmounted the tail and re-subscribe on remount,
+ * re-streaming the turn into a different height — exactly the kind of late
+ * async growth this path exists to stop producing.
+ */
+type LegendTimelineHostProps = {
+    historyEntries: RenderEntry[];
+    tailEntries: RenderEntry[];
+    timelineCacheKey: string;
+    directory?: string;
+    sessionId?: string | null;
+    scrollRef?: React.RefObject<HTMLDivElement | null>;
+    registerList: (list: LegendListRef | null) => void;
+    onHistoryContentChange: (reason?: ContentChangeReason) => void;
+    onTailContentChange: (reason?: ContentChangeReason) => void;
+    getAnimationHandlers: (messageId: string) => AnimationHandlers;
+    scrollToBottom?: () => void;
+    stickyUserHeader: boolean;
+    sessionIsWorking: boolean;
+    activityRenderMode: 'collapsed' | 'summary';
+    turnUiStates: Map<string, TurnUiState>;
+    onToggleTurnGroup: (turnId: string, defaultExpanded: boolean) => void;
+    chatRenderMode: 'sorted' | 'live';
+    showTurnChangedFiles: boolean;
+    shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
+    onUserAnimationConsumed: (messageId: string) => void;
+    activeStreamingMessageId?: string | null;
+    activeStreamingPhase?: StreamPhase | null;
+    reviewTransferDirection?: ReviewTransferDirection | null;
+    header?: React.ReactNode;
+    footer?: React.ReactNode;
+    scrollClassName?: string;
+    scrollStyle?: React.CSSProperties;
+    onScroll?: () => void;
+    followEnabled?: boolean;
+    onIsAtEndChange?: (isAtEnd: boolean) => void;
+};
+
+const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
+    historyEntries,
+    tailEntries,
+    timelineCacheKey,
+    directory,
+    sessionId,
+    scrollRef,
+    registerList,
+    onHistoryContentChange,
+    onTailContentChange,
+    getAnimationHandlers,
+    scrollToBottom,
+    stickyUserHeader,
+    sessionIsWorking,
+    activityRenderMode,
+    turnUiStates,
+    onToggleTurnGroup,
+    chatRenderMode,
+    showTurnChangedFiles,
+    shouldAnimateUserMessage,
+    onUserAnimationConsumed,
+    activeStreamingMessageId,
+    activeStreamingPhase,
+    reviewTransferDirection,
+    header,
+    footer,
+    scrollClassName,
+    scrollStyle,
+    onScroll,
+    followEnabled = true,
+    onIsAtEndChange,
+}) => {
+    const historyCount = historyEntries.length;
+
+    const newestTailEntry = tailEntries.length > 0 ? tailEntries[tailEntries.length - 1] : undefined;
+    const newestTailKey = newestTailEntry?.key ?? null;
+
+    const liveParts = useSessionParts(
+        activeStreamingMessageId ?? '',
+        directory,
+        sessionId ?? undefined,
+    );
+
+    // The tail entry from the snapshot store does not change as parts stream in
+    // — live text arrives through the raw part store instead. Overlaying it here,
+    // into the data the list receives, is what makes the newest row's item
+    // identity change per chunk; overlaying it inside the render callback would
+    // leave the row memoized on a stale item and freeze the stream on screen.
+    const liveTailEntries = React.useMemo(() => {
+        if (!newestTailEntry) return tailEntries;
+        const live = buildLiveStreamingEntry(newestTailEntry, {
+            activeStreamingMessageId,
+            liveParts,
+            showTextJustificationActivity: chatRenderMode === 'sorted',
+            showTurnChangedFiles,
+        });
+        if (live === newestTailEntry) return tailEntries;
+        const next = tailEntries.slice();
+        next[next.length - 1] = live;
+        return next;
+    }, [
+        activeStreamingMessageId,
+        chatRenderMode,
+        liveParts,
+        newestTailEntry,
+        showTurnChangedFiles,
+        tailEntries,
+    ]);
+
+    const allEntries = React.useMemo(
+        () => (liveTailEntries.length > 0 ? [...historyEntries, ...liveTailEntries] : historyEntries),
+        [historyEntries, liveTailEntries],
+    );
+
+    const hydrationTuning = React.useMemo<TimelineHydrationTuning>(() => ({
+        resolvePreloadEntries: (visibleCount: number) => resolveMarkdownPreloadEntries(activityRenderMode, visibleCount),
+        resolvePreloadReleaseWhileScrolling: () => resolveMarkdownPreloadReleaseWhileScrolling(activityRenderMode),
+        resolveVisibleReleaseLimit: () => resolveMarkdownVisibleReleaseLimit(activityRenderMode),
+    }), [activityRenderMode]);
+
+    // The list memoizes each row on `[itemKey, itemData, extraData]`, so a row
+    // whose own item did not change is otherwise frozen on screen. Anything the
+    // render callback closes over that can change *without* changing an item
+    // has to invalidate through here — expanding a tool call (turnUiStates),
+    // switching activity density, or a stream phase change would otherwise
+    // simply never reach the screen.
+    //
+    // Markdown hydration is deliberately NOT in here: it travels by context so
+    // a release re-renders only the rows whose flag actually flipped, instead
+    // of every mounted row.
+    const rowInvalidationKey = React.useMemo(() => ({
+        historyCount,
+        newestTailKey,
+        sessionIsWorking,
+        activityRenderMode,
+        turnUiStates,
+        chatRenderMode,
+        showTurnChangedFiles,
+        stickyUserHeader,
+        activeStreamingMessageId,
+        activeStreamingPhase,
+        reviewTransferDirection,
+    }), [
+        historyCount,
+        newestTailKey,
+        sessionIsWorking,
+        activityRenderMode,
+        turnUiStates,
+        chatRenderMode,
+        showTurnChangedFiles,
+        stickyUserHeader,
+        activeStreamingMessageId,
+        activeStreamingPhase,
+        reviewTransferDirection,
+    ]);
+
+    const renderEntry = useRenderPhaseCallback((
+        entry: RenderEntry,
+        index: number,
+        hydrateMarkdown: boolean,
+    ) => {
+        const isTail = index >= historyCount;
+        const isNewest = newestTailKey !== null && entry.key === newestTailKey;
+        return (
+            // History rows unmount/remount as the window moves; re-running the
+            // reveal fade on every remount reads as blinking. History content is
+            // never "new" — only the tail keeps its fade.
+            <FadeInDisabledProvider disabled={!isTail}>
+                <MarkdownHydrationProvider enabled={hydrateMarkdown}>
+                    <MessageListEntry
+                        entry={entry}
+                        onMessageContentChange={isTail ? onTailContentChange : onHistoryContentChange}
+                        getAnimationHandlers={getAnimationHandlers}
+                        scrollToBottom={scrollToBottom}
+                        stickyUserHeader={stickyUserHeader}
+                        sessionIsWorking={isNewest ? sessionIsWorking : false}
+                        activityRenderMode={activityRenderMode}
+                        turnUiStates={turnUiStates}
+                        onToggleTurnGroup={onToggleTurnGroup}
+                        chatRenderMode={chatRenderMode}
+                        shouldAnimateUserMessage={shouldAnimateUserMessage}
+                        onUserAnimationConsumed={onUserAnimationConsumed}
+                        activeStreamingMessageId={isNewest ? activeStreamingMessageId : null}
+                        activeStreamingPhase={isNewest ? activeStreamingPhase : null}
+                        reviewTransferDirection={reviewTransferDirection}
+                    />
+                </MarkdownHydrationProvider>
+            </FadeInDisabledProvider>
+        );
+    });
+
+    return (
+        <DeferredToolHydrationProvider enabled={true}>
+            <TimelineList<RenderEntry>
+                entries={allEntries}
+                timelineCacheKey={timelineCacheKey}
+                estimatedItemSize={resolveTanstackEstimatedEntrySize(activityRenderMode)}
+                hydrationTuning={hydrationTuning}
+                renderEntry={renderEntry}
+                rowInvalidationKey={rowInvalidationKey}
+                scrollElementRef={scrollRef}
+                registerList={registerList}
+                followEnabled={followEnabled}
+                sessionIsWorking={sessionIsWorking}
+                header={header}
+                footer={footer}
+                className={scrollClassName}
+                style={scrollStyle}
+                onScroll={onScroll}
+                onIsAtEndChange={onIsAtEndChange}
+            />
+        </DeferredToolHydrationProvider>
+    );
+};
+
+LegendTimelineHost.displayName = 'LegendTimelineHost';
+
 const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     sessionKey,
     virtualizerKey,
@@ -2002,6 +2251,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     scrollToBottom,
     scrollRef,
     directory,
+    headerSlot,
+    footerSlot,
+    timelineScrollClassName,
+    timelineScrollStyle,
+    timelineOnScroll,
+    timelineFollowEnabled,
+    timelineOnIsAtEndChange,
 }, ref) => {
     streamPerfCount('ui.message_list.render');
     const { sessionKey: domainSessionKey, virtualizerKey: resolvedVirtualizerKey } = resolveMessageListKeys(sessionKey, virtualizerKey);
@@ -2240,6 +2496,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const currentHistoryVirtualizationRef = React.useRef(shouldVirtualizeHistory);
     syncCurrentHistoryVirtualization(currentHistoryVirtualizationRef, shouldVirtualizeHistory);
     const historyEngine: HistoryEngine = shouldVirtualizeHistory ? 'tanstack' : 'none';
+    const legendTimelineEnabled = useFeatureFlagsStore((state) => state.legendTimelineEnabled);
+    const legendListRef = React.useRef<LegendListRef | null>(null);
+    const registerLegendList = useEvent((list: LegendListRef | null) => {
+        legendListRef.current = list;
+    });
     const tanstackVirtualizerRef = React.useRef<TanstackVirtualizerInstance | null>(null);
     const registerTanstackVirtualizer = useEvent((virtualizer: TanstackVirtualizerInstance | null) => {
         tanstackVirtualizerRef.current = virtualizer;
@@ -2342,6 +2603,19 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const scrollHistoryIndexIntoView = useEvent((index: number, behavior: ScrollBehavior = 'auto') => {
         if (index < 0 || index >= historyEntries.length) {
             return false;
+        }
+
+        if (legendTimelineEnabled) {
+            const list = legendListRef.current;
+            if (!list) {
+                return false;
+            }
+            list.scrollToIndex({
+                index,
+                animated: behavior === 'smooth',
+                viewOffset: 0,
+            });
+            return true;
         }
 
         if (!shouldVirtualizeHistory) {
@@ -2486,7 +2760,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
             cancelViewportAnchorHold,
 
-            isHistoryVirtualized: () => currentHistoryVirtualizationRef.current,
+            isHistoryVirtualized: () => (
+                legendTimelineEnabled ? true : currentHistoryVirtualizationRef.current
+            ),
 
             captureViewportAnchor: () => {
                 const container = resolveScrollContainer();
@@ -2558,6 +2834,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             },
 
             scrollToBottom: () => {
+                if (legendTimelineEnabled) {
+                    legendListRef.current?.scrollToEnd({ animated: false });
+                    return;
+                }
                 if (shouldVirtualizeHistory && historyEntries.length > 0 && tanstackVirtualizerRef.current) {
                     tanstackVirtualizerRef.current.scrollToEnd();
                     return;
@@ -2582,9 +2862,47 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         };
         // useEvent callbacks are identity-stable; semantic inputs below drive handle re-publish.
         // eslint-disable-next-line react-hooks/exhaustive-deps -- resolveScrollContainer/findMessageElement/scroll* are useEvent
-    }, [cancelViewportAnchorHold, historyEntries.length, messageIndexMap, shouldVirtualizeHistory, hasTrailingStreamingEntries, turnIndexMap, ref]);
+    }, [cancelViewportAnchorHold, historyEntries.length, legendTimelineEnabled, messageIndexMap, shouldVirtualizeHistory, hasTrailingStreamingEntries, turnIndexMap, ref]);
 
     const disableFadeIn = false;
+
+    if (legendTimelineEnabled) {
+        return (
+            <LegendTimelineHost
+                key={resolvedVirtualizerKey}
+                historyEntries={historyEntries}
+                tailEntries={trailingStreamingEntries}
+                timelineCacheKey={resolveTimelineVirtualizerCacheKey(resolvedVirtualizerKey, activityRenderMode)}
+                directory={directory}
+                sessionId={domainSessionKey}
+                scrollRef={scrollRef}
+                registerList={registerLegendList}
+                onHistoryContentChange={stableHistoryContentChange}
+                onTailContentChange={stableTailContentChange}
+                getAnimationHandlers={stableGetAnimationHandlers}
+                scrollToBottom={stableScrollToBottom}
+                stickyUserHeader={stickyUserHeader}
+                sessionIsWorking={sessionIsWorking}
+                activityRenderMode={activityRenderMode}
+                turnUiStates={turnUiStates}
+                onToggleTurnGroup={toggleTurnGroup}
+                chatRenderMode={chatRenderMode}
+                showTurnChangedFiles={showTurnChangedFiles}
+                shouldAnimateUserMessage={shouldAnimateUserMessage}
+                onUserAnimationConsumed={onUserAnimationConsumed}
+                activeStreamingMessageId={activeStreamingMessageId}
+                activeStreamingPhase={activeStreamingPhase}
+                reviewTransferDirection={reviewTransferDirection}
+                header={headerSlot}
+                footer={footerSlot}
+                scrollClassName={timelineScrollClassName}
+                scrollStyle={timelineScrollStyle}
+                onScroll={timelineOnScroll}
+                followEnabled={timelineFollowEnabled}
+                onIsAtEndChange={timelineOnIsAtEndChange}
+            />
+        );
+    }
 
     return (
         <div>

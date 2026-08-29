@@ -50,7 +50,9 @@ import { SessionRecapNote } from '@/components/chat/SessionRecapSpacer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
+import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import { useHistoryUpwardIntent } from '@/hooks/lib/chatUpwardIntent';
 import { useMobileComposerSwap } from './useMobileComposerSwap';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
 import { createAssistantSessionDivider, mergeHostedCurrentSessionHistory, stitchHostedSessionHistory } from './hostedSessionHistory';
@@ -274,6 +276,8 @@ type ChatViewportProps = {
     handleMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     handleHistoryScroll: () => void;
+    handleHistoryUpwardIntent: () => void;
+    onTimelineIsAtEndChange: (isAtEnd: boolean) => void;
     scrollToBottom: () => void;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
@@ -308,6 +312,8 @@ const ChatViewport = React.memo(({
     handleMessageContentChange,
     getAnimationHandlers,
     handleHistoryScroll,
+    handleHistoryUpwardIntent,
+    onTimelineIsAtEndChange,
     scrollToBottom,
     sessionQuestions,
     sessionPermissions,
@@ -323,6 +329,7 @@ const ChatViewport = React.memo(({
     onLoadEarlierPrompts,
 }: ChatViewportProps) => {
     const { t } = useI18n();
+    const legendTimelineEnabled = useFeatureFlagsStore((state) => state.legendTimelineEnabled);
     // Spinner/disabled is mutation-owned only (isLoadingOlder); background
     // prefetch/SWR loading never drives the button.
     const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });
@@ -422,6 +429,129 @@ const ChatViewport = React.memo(({
 
         scrollRef.current?.focus({ preventScroll: true });
     });
+
+    // Auto-follow is off on the legend path, and it used to be what listened for
+    // explicit upward gestures. Without this, reaching the top would stop firing
+    // scroll events and earlier history could never be requested again.
+    useHistoryUpwardIntent({
+        scrollRef,
+        enabled: legendTimelineEnabled,
+        onUpwardIntent: handleHistoryUpwardIntent,
+    });
+
+    if (legendTimelineEnabled) {
+        return (
+            <div
+                className={cn(
+                    'relative min-h-0',
+                    isDesktopExpandedInput
+                        ? 'absolute inset-0 opacity-0 pointer-events-none'
+                        : 'flex-1'
+                )}
+                aria-hidden={isDesktopExpandedInput}
+            >
+                <div className="absolute inset-0">
+                    <MessageList
+                        ref={messageListRef}
+                        sessionKey={currentSessionId}
+                        virtualizerKey={virtualizerKey}
+                        disableStaging={pendingRevealWork}
+                        messages={renderedMessages}
+                        sessionIsWorking={sessionIsWorking}
+                        activeStreamingMessageId={streamingMessageId}
+                        activeStreamingPhase={activeStreamingPhase}
+                        retryOverlay={retryOverlay}
+                        onMessageContentChange={handleMessageContentChange}
+                        getAnimationHandlers={getAnimationHandlers}
+                        isLoadingOlder={isLoadingOlder}
+                        scrollToBottom={scrollToBottom}
+                        scrollRef={scrollRef}
+                        directory={directory}
+                        timelineScrollClassName={cn(
+                            'absolute inset-0 z-0 chat-scroll overlay-scrollbar-target',
+                            isMobile && 'chat-scroll-foot-inset',
+                        )}
+                        timelineScrollStyle={CHAT_SCROLL_STYLE}
+                        timelineOnScroll={handleHistoryScroll}
+                        timelineFollowEnabled={!pendingRevealWork}
+                        timelineOnIsAtEndChange={onTimelineIsAtEndChange}
+                        headerSlot={(
+                            <>
+                                {showLoadOlderButton && (
+                                    <div className="flex justify-center pt-3 pb-1">
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={onLoadOlder}
+                                            disabled={loadOlderBusy}
+                                            aria-busy={loadOlderBusy}
+                                        >
+                                            {loadOlderBusy && (
+                                                <Icon name="loader-4" className="size-4 animate-spin" />
+                                            )}
+                                            {t('chat.history.loadOlder')}
+                                        </Button>
+                                    </div>
+                                )}
+                                {showDesktopLoadOlderStatus && (
+                                    <div
+                                        className="absolute inset-x-0 top-0 z-20 flex justify-center pointer-events-none"
+                                        role="status"
+                                        aria-live="polite"
+                                    >
+                                        <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
+                                            <Icon
+                                                name="loader-4"
+                                                className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]"
+                                                aria-hidden="true"
+                                            />
+                                            <span className="typography-meta text-[var(--surface-mutedForeground)]">
+                                                {t('chat.history.loadingMore')}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                        footerSlot={(
+                            <>
+                                {(sessionQuestions.length > 0 || sessionPermissions.length > 0) && (
+                                    <div>
+                                        {sessionQuestions.map((question) => (
+                                            <QuestionCard key={question.id} question={question} />
+                                        ))}
+                                        {sessionPermissions.map((permission) => (
+                                            <PermissionCard key={permission.id} permission={permission} />
+                                        ))}
+                                    </div>
+                                )}
+
+                                <SessionRecapNote sessionId={currentSessionId} directory={directory} isMobile={isMobile} />
+
+                                <div className="mb-1">
+                                    <StatusRowContainer />
+                                </div>
+
+                                <div className="flex-shrink-0" style={{ height: isMobile ? '40px' : '10vh' }} aria-hidden="true" />
+                            </>
+                        )}
+                    />
+                    <OverlayScrollbar containerRef={scrollRef} suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
+                    {showPromptNavigator && promptTurnIds.length >= 2 ? (
+                        <PromptNavigatorRail
+                            turnIds={promptTurnIds}
+                            previewsByTurnId={promptPreviewsByTurnId}
+                            activeTurnId={railActiveTurnId}
+                            onSelectTurn={onSelectTurn}
+                            canLoadEarlier={canLoadEarlierPrompts}
+                            isLoadingOlder={isLoadingOlderPrompts}
+                            onLoadEarlier={onLoadEarlierPrompts}
+                        />
+                    ) : null}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div
@@ -557,6 +687,8 @@ const ChatViewport = React.memo(({
         && prev.handleMessageContentChange === next.handleMessageContentChange
         && prev.getAnimationHandlers === next.getAnimationHandlers
         && prev.handleHistoryScroll === next.handleHistoryScroll
+        && prev.handleHistoryUpwardIntent === next.handleHistoryUpwardIntent
+        && prev.onTimelineIsAtEndChange === next.onTimelineIsAtEndChange
         && prev.scrollToBottom === next.scrollToBottom
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
@@ -1200,6 +1332,18 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         historyUpwardIntentRef.current();
     });
 
+    const legendTimelineEnabled = useFeatureFlagsStore((state) => state.legendTimelineEnabled);
+
+    // The legend list owns the scroll position, so its at-end state — not
+    // auto-follow's pin — is what load-older and the scroll-to-bottom button
+    // must read on that path. Auto-follow is disabled there, and a disabled
+    // auto-follow reports a permanent `following` pin, which would silently
+    // block every scroll-triggered load of earlier history.
+    const [legendIsAtEnd, setLegendIsAtEnd] = React.useState(true);
+    const handleTimelineIsAtEndChange = useEvent((atEnd: boolean) => {
+        setLegendIsAtEnd(atEnd);
+    });
+
     const {
         scrollRef,
         notifyContentChange: handleMessageContentChange,
@@ -1214,7 +1358,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         isFollowingProgrammatically,
         showScrollButton,
     } = useChatAutoFollow({
-        enabled: active,
+        // The legend timeline owns its scroll position. Leaving auto-follow on
+        // would put two writers on one container: its pin/force-bottom writes
+        // and the list's end maintenance would each correct the other.
+        enabled: active && !legendTimelineEnabled,
         currentSessionId,
         viewportKey: sessionViewKey,
         sessionMessageCount,
@@ -1360,8 +1507,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         releaseAutoFollow,
         beginHistoryViewportPreservation,
         endHistoryViewportPreservation,
-        isPinned,
-        showScrollButton,
+        isPinned: legendTimelineEnabled ? legendIsAtEnd : isPinned,
+        showScrollButton: legendTimelineEnabled ? !legendIsAtEnd : showScrollButton,
         // Only the active desktop transcript auto-fills short first paint;
         // expanded-input and mobile keep explicit load paths only.
         autoFillEnabled: active && !isDesktopExpandedInput,
@@ -2011,6 +2158,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 handleMessageContentChange={handleMessageContentChange}
                 getAnimationHandlers={getAnimationHandlers}
                 handleHistoryScroll={timelineController.handleHistoryScroll}
+                handleHistoryUpwardIntent={timelineController.handleHistoryUpwardIntent}
+                onTimelineIsAtEndChange={handleTimelineIsAtEndChange}
                 scrollToBottom={resumeToLatestInstant}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
