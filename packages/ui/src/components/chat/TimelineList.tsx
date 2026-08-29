@@ -66,6 +66,14 @@ const TIMELINE_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 0 } as const;
 // swap never happens under the user's eyes mid-scroll.
 const TIMELINE_SCROLL_IDLE_MS = 100;
 
+// Delay of the pass that runs *after* scrolling stops. Scroll events are the
+// only thing the list reports here, so without a trailing pass the settled
+// branch above is unreachable: every pass a scroll schedules runs in that same
+// frame, is therefore never settled, and withholds exactly the visible rows the
+// user is now looking at — they stay placeholders until the transcript is
+// remounted. One frame past the idle threshold, so the pass reads as settled.
+const TIMELINE_HYDRATION_IDLE_PASS_MS = TIMELINE_SCROLL_IDLE_MS + 16;
+
 const EMPTY_HYDRATED_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
@@ -303,6 +311,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const lastIsAtEndRef = React.useRef(true);
     const scrollDirectionRef = React.useRef<MarkdownHydrationScrollDirection>(null);
     const hydrationScheduledRef = React.useRef(false);
+    const idleHydrationTimerRef = React.useRef<number | null>(null);
 
     // A turn that finished streaming in the tail is already painted rich; it
     // must not fall back to a placeholder for a frame when it becomes history.
@@ -364,6 +373,12 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
 
         if (batch.length === 0) return;
 
+        // A settled pass releases a capped batch (a screenful of rich Markdown
+        // in one commit is a visible stall), so whatever it left deferred needs
+        // another pass. Self-terminating: the pass that finds nothing left to
+        // release does not re-arm.
+        armIdleMarkdownHydration();
+
         React.startTransition(() => {
             setHydratedMarkdownEntryKeys((current) => {
                 let changed = false;
@@ -386,6 +401,30 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         // the list remeasure within its own layout pass.
         scheduleAfterPaintTask(releaseMarkdownHydration);
     });
+
+    /**
+     * Schedules the pass that runs once the transcript has stopped moving.
+     *
+     * Debounced: every scroll frame pushes it back, so it lands only after the
+     * scroll (and its momentum) has actually settled — which is the only moment
+     * visible rows are allowed to swap their placeholder for rich Markdown.
+     */
+    const armIdleMarkdownHydration = useEvent(() => {
+        if (typeof window === 'undefined') return;
+        if (idleHydrationTimerRef.current !== null) {
+            window.clearTimeout(idleHydrationTimerRef.current);
+        }
+        idleHydrationTimerRef.current = window.setTimeout(() => {
+            idleHydrationTimerRef.current = null;
+            scheduleMarkdownHydration();
+        }, TIMELINE_HYDRATION_IDLE_PASS_MS);
+    });
+
+    React.useEffect(() => () => {
+        if (idleHydrationTimerRef.current === null) return;
+        window.clearTimeout(idleHydrationTimerRef.current);
+        idleHydrationTimerRef.current = null;
+    }, []);
 
     const handleViewableItemsChanged = useEvent(() => {
         scheduleMarkdownHydration();
@@ -411,6 +450,10 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         }
         onScroll?.();
         scheduleMarkdownHydration();
+        // The pass above runs in this frame and is therefore never settled: it
+        // may only release off-screen preload. The rows that entered the
+        // viewport during a fast scroll are hydrated by the trailing pass.
+        armIdleMarkdownHydration();
     });
 
     const keyExtractor = React.useCallback((entry: TEntry) => entry.key, []);
