@@ -18,6 +18,11 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import type { Session } from '@opencode-ai/sdk/v2';
 import {
+  buildMentionRows,
+  resolveFileMentionIconName,
+  type ComposerAutocompleteVisibleRows,
+} from '@/lib/composer-autocomplete';
+import {
   getVisibleSessionMentionCandidates,
   mergeAndRankFileMentionPathHits,
   resolveFileMentionSearchQuery,
@@ -37,6 +42,7 @@ type AgentInfo = {
 
 export interface FileMentionHandle {
   handleKeyDown: (key: string) => void;
+  acceptIndex: (index: number) => void;
 }
 
 interface FileMentionAutocompleteProps {
@@ -46,6 +52,7 @@ interface FileMentionAutocompleteProps {
   onSessionSelect?: (session: Session) => void;
   onClose: () => void;
   style?: React.CSSProperties;
+  onRowsChange?: (rows: ComposerAutocompleteVisibleRows) => void;
 }
 
 export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileMentionAutocompleteProps>(({
@@ -55,6 +62,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   onSessionSelect,
   onClose,
   style,
+  onRowsChange,
 }, ref) => {
   const { t } = useI18n();
   const currentDirectory = useChatSearchDirectory() ?? '';
@@ -371,7 +379,58 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     onMouseMove: () => setSelectedIndex(index),
   });
 
+  const acceptMentionIndex = (index: number) => {
+    const total = visibleAgents.length + visibleSessions.length + visibleRecentFiles.length + visiblePathHits.length;
+    if (total === 0) return;
+    const safeIndex = ((index % total) + total) % total;
+    if (safeIndex < visibleAgents.length) {
+      const agent = visibleAgents[safeIndex];
+      if (agent) handleAgentPick(agent.name);
+      return;
+    }
+    const sessionIndex = safeIndex - visibleAgents.length;
+    if (sessionIndex < visibleSessions.length) {
+      const session = visibleSessions[sessionIndex];
+      if (session) handleSessionPick(session);
+      return;
+    }
+    const pathIndex = sessionIndex - visibleSessions.length;
+    const selectedPath = pathIndex < visibleRecentFiles.length
+      ? visibleRecentFiles[pathIndex]
+      : visiblePathHits[pathIndex - visibleRecentFiles.length];
+    if (selectedPath) handleFileSelect(selectedPath);
+  };
+
+  React.useEffect(() => {
+    onRowsChange?.({
+      rows: buildMentionRows({
+        agents: visibleAgents,
+        sessions: visibleSessions,
+        recentFiles: visibleRecentFiles,
+        pathHits: visiblePathHits,
+        untitledSession: t('chat.fileMentionAutocomplete.untitledSession'),
+        sessionBadge: t('chat.fileMentionAutocomplete.sessionType'),
+      }),
+      highlightedIndex: selectedIndex,
+    });
+  }, [
+    onRowsChange,
+    selectedIndex,
+    t,
+    visibleAgents,
+    visiblePathHits,
+    visibleRecentFiles,
+    visibleSessions,
+  ]);
+
+  React.useEffect(() => () => {
+    onRowsChange?.({ rows: [], highlightedIndex: 0 });
+  }, [onRowsChange]);
+
   React.useImperativeHandle(ref, () => ({
+    acceptIndex: (index: number) => {
+      acceptMentionIndex(index);
+    },
     handleKeyDown: (key: string) => {
       if (key === 'Escape') {
         onClose();
@@ -394,59 +453,14 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
       }
 
       if (key === 'Enter' || key === 'Tab') {
-        const safeIndex = ((selectedIndexRef.current % total) + total) % total;
-        if (safeIndex < visibleAgents.length) {
-          const agent = visibleAgents[safeIndex];
-          if (agent) {
-            handleAgentPick(agent.name);
-          }
-          return;
-        }
-        const sessionIndex = safeIndex - visibleAgents.length;
-        if (sessionIndex < visibleSessions.length) {
-          const session = visibleSessions[sessionIndex];
-          if (session) {
-            handleSessionPick(session);
-          }
-          return;
-        }
-        const pathIndex = sessionIndex - visibleSessions.length;
-        const selectedPath = pathIndex < visibleRecentFiles.length
-          ? visibleRecentFiles[pathIndex]
-          : visiblePathHits[pathIndex - visibleRecentFiles.length];
-        if (selectedPath) {
-          handleFileSelect(selectedPath);
-        }
+        acceptMentionIndex(selectedIndexRef.current);
       }
     }
   }), [visiblePathHits, visibleRecentFiles, visibleAgents, visibleSessions, onClose, handleFileSelect, handleAgentPick, handleSessionPick]);
 
-  const getPathIcon = (file: FileInfo) => {
-    if (file.isDirectory) {
-      return <Icon name="folder-3-fill" className="h-3.5 w-3.5 text-current" />;
-    }
-    const ext = file.extension?.toLowerCase();
-    switch (ext) {
-      case 'ts':
-      case 'tsx':
-      case 'js':
-      case 'jsx':
-        return <Icon name="code" className="h-3.5 w-3.5 text-current" />;
-      case 'json':
-        return <Icon name="code" className="h-3.5 w-3.5 text-current" />;
-      case 'md':
-      case 'mdx':
-        return <Icon name="file" className="h-3.5 w-3.5 text-current" />;
-      case 'png':
-      case 'jpg':
-      case 'jpeg':
-      case 'gif':
-      case 'svg':
-        return <Icon name="file-image" className="h-3.5 w-3.5 text-current" />;
-      default:
-        return <Icon name="file-pdf" className="h-3.5 w-3.5 text-current" />;
-    }
-  };
+  const getPathIcon = (file: FileInfo) => (
+    <Icon name={resolveFileMentionIconName(file)} className="h-3.5 w-3.5 text-current" />
+  );
 
   return (
       <div

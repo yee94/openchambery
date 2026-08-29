@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { NATIVE_IOS_COMPOSER_CLASS } from './native-ios-composer';
+import { emptyNativeComposerAutocomplete, NATIVE_IOS_COMPOSER_CLASS } from './native-ios-composer';
 import { createNativeIosComposerSession } from './native-ios-composer-session';
 import type { NativeIosComposerPlugin, NativeIosComposerState } from './native-ios-composer';
 
@@ -32,6 +32,7 @@ const state = (overrides: Partial<NativeIosComposerState> = {}): NativeIosCompos
   suppressed: false,
   showScrollToBottom: false,
   scrollAria: 'Scroll',
+  autocomplete: emptyNativeComposerAutocomplete(),
   ...overrides,
 });
 
@@ -41,6 +42,7 @@ const createPlugin = () => {
     present: vi.fn(async () => undefined),
     update: vi.fn(async () => undefined),
     hide: vi.fn(async () => undefined),
+    show: vi.fn(async () => undefined),
     dismiss: vi.fn(async () => undefined),
     setSuppressed: vi.fn(async () => undefined),
     focus: vi.fn(async () => undefined),
@@ -70,7 +72,7 @@ describe('native iOS composer session', () => {
     await session.retain(root, state({ text: 'a' }));
     await Promise.resolve();
     expect(plugin.present).toHaveBeenCalledTimes(1);
-    expect(plugin.addListener).toHaveBeenCalledTimes(11);
+    expect(plugin.addListener).toHaveBeenCalledTimes(13);
     expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(true);
 
     session.release(root);
@@ -78,7 +80,7 @@ describe('native iOS composer session', () => {
 
     await session.retain(root, state({ text: 'b' }));
     expect(plugin.present).toHaveBeenCalledTimes(2);
-    expect(plugin.addListener).toHaveBeenCalledTimes(11);
+    expect(plugin.addListener).toHaveBeenCalledTimes(13);
     expect(session.snapshot()).toMatchObject({
       retainCount: 1,
       hidePending: false,
@@ -131,8 +133,38 @@ describe('native iOS composer session', () => {
     expect(plugin.hide).toHaveBeenCalledTimes(1);
 
     session.reveal();
-    expect(plugin.present).toHaveBeenCalledTimes(2);
+    expect(plugin.present).toHaveBeenCalledTimes(1);
+    expect(plugin.show).toHaveBeenCalledTimes(1);
     expect(session.snapshot().concealed).toBe(false);
+  });
+
+  test('send dispatches the live owner without calling present or update', async () => {
+    const { plugin, listeners } = createPlugin();
+    const session = createNativeIosComposerSession(() => plugin);
+    const onSend = vi.fn();
+    session.bind({
+      onText: () => undefined,
+      onSend,
+      onAbort: () => undefined,
+      onAttach: () => undefined,
+      onFiles: () => undefined,
+      onRemoveAttachment: () => undefined,
+      onOpenModel: () => undefined,
+      onCycleAgent: () => undefined,
+      onOpenAgent: () => undefined,
+      onHeight: () => undefined,
+      onScrollToBottom: () => undefined,
+      onAutocompleteAccept: () => undefined,
+      onAutocompleteDismiss: () => undefined,
+    });
+    await session.retain(document.documentElement, state({ text: 'ready' }));
+    await Promise.resolve();
+    vi.mocked(plugin.present).mockClear();
+    vi.mocked(plugin.update).mockClear();
+    listeners.get('send')?.({ text: 'ready' });
+    expect(onSend).toHaveBeenCalledWith('ready');
+    expect(plugin.present).not.toHaveBeenCalled();
+    expect(plugin.update).not.toHaveBeenCalled();
   });
 
   test('rebinding owners keeps send and text on the live page', async () => {
@@ -150,6 +182,8 @@ describe('native iOS composer session', () => {
       onOpenAgent: () => undefined,
       onHeight: () => undefined,
       onScrollToBottom: () => undefined,
+      onAutocompleteAccept: () => undefined,
+      onAutocompleteDismiss: () => undefined,
     };
 
     session.bind({ ...noop, onSend: first.onSend, onText: first.onText });
@@ -179,12 +213,14 @@ describe('native iOS composer session', () => {
       onOpenAgent: () => undefined,
       onHeight: () => undefined,
       onScrollToBottom: () => undefined,
+      onAutocompleteAccept: () => undefined,
+      onAutocompleteDismiss: () => undefined,
     });
     await session.retain(document.documentElement, state());
     await Promise.resolve();
     listeners.get('textChanged')?.({ text: 'ni', composing: true });
     listeners.get('removeAttachment')?.({ id: 'att-1' });
-    expect(onText).toHaveBeenCalledWith('ni', true);
+    expect(onText).toHaveBeenCalledWith('ni', true, null);
     expect(onRemoveAttachment).toHaveBeenCalledWith('att-1');
   });
 });

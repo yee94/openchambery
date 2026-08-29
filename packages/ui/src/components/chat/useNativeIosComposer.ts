@@ -1,25 +1,63 @@
 import { useEffect, useRef } from 'react';
 import { useEvent } from '@reactuses/core';
 
+import { findAttachmentCitationRanges } from '@/components/chat/attachmentCitations';
+import type { ComposerAutocompleteListRow } from '@/lib/composer-autocomplete';
+import { rasterizeSpriteIconPngBase64 } from '@/lib/composer-autocomplete';
 import { resolveModelLogoSrc } from '@/hooks/useModelLogo';
 import { attachNativeIosComposerLeaveConceal } from '@/lib/native-ios-composer-leave';
 import { nativeIosComposerSession } from '@/lib/native-ios-composer-session';
-import { findAttachmentCitationRanges } from '@/components/chat/attachmentCitations';
 import {
   applyNativeComposerHeightVar,
   attachmentPreviewSourceSignature,
+  buildNativeComposerUpdatePayload,
   canUseNativeIosComposer,
+  emptyNativeComposerAutocomplete,
   getNativeIosComposerPlugin,
+  nativeComposerAutocompleteEqual,
   nativeComposerStatesEqual,
   nativeIosComposerAgentColor,
   nativeIosComposerAppearanceFromRoot,
   packNativeIosComposerIdenticon,
   rasterizeAttachmentThumbnailBase64,
   rasterizeLogoPngBase64,
+  resolveCssVarToHex,
   resolveNativeComposerTextWrite,
   type NativeIosComposerAttachmentPreview,
+  type NativeIosComposerAutocomplete,
   type NativeIosComposerState,
 } from '@/lib/native-ios-composer';
+
+const nativeSuggestionIconCache = new Map<string, string>();
+
+const autocompleteRowSignature = (
+  rows: readonly ComposerAutocompleteListRow[],
+  open: boolean,
+  highlightedIndex: number,
+): string => `${open ? 1 : 0}:${highlightedIndex}:${rows.map((row) => (
+  `${row.id}\0${row.title}\0${row.subtitle ?? ''}\0${row.badge ?? ''}\0${row.iconName}`
+)).join('|')}`;
+
+const rasterizeAutocompleteRows = async (
+  rows: readonly ComposerAutocompleteListRow[],
+): Promise<NativeIosComposerAutocomplete['rows']> => {
+  const color = resolveCssVarToHex('--surface-foreground');
+  return Promise.all(rows.slice(0, 40).map(async (row) => {
+    const cacheKey = `${row.iconName}:${color}`;
+    let iconBase64 = nativeSuggestionIconCache.get(cacheKey);
+    if (iconBase64 === undefined) {
+      iconBase64 = (await rasterizeSpriteIconPngBase64(row.iconName, color)) ?? '';
+      nativeSuggestionIconCache.set(cacheKey, iconBase64);
+    }
+    return {
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle ?? '',
+      badge: row.badge ?? '',
+      iconBase64,
+    };
+  }));
+};
 
 export type NativeIosComposerAttachmentSource = {
   id: string;
@@ -57,7 +95,7 @@ export type UseNativeIosComposerArgs = {
   scrollAria: string;
   attachments: readonly NativeIosComposerAttachmentSource[];
   removeAttachmentNamedAria: (name: string) => string;
-  onText: (text: string, composing: boolean) => void;
+  onText: (text: string, composing: boolean, selection: { start: number; end: number } | null) => void;
   onSend: (text: string) => void;
   onAbort: () => void;
   onAttach: () => void;
@@ -67,7 +105,16 @@ export type UseNativeIosComposerArgs = {
   onCycleAgent: () => void;
   onOpenAgent: () => void;
   onScrollToBottom: () => void;
+  onAutocompleteAccept?: (index: number) => void;
+  onAutocompleteDismiss?: () => void;
+  autocompleteOpen?: boolean;
+  autocompleteHighlightedIndex?: number;
+  autocompleteRows?: readonly ComposerAutocompleteListRow[];
 };
+
+const EMPTY_AUTOCOMPLETE_ROWS: ComposerAutocompleteListRow[] = [];
+const noopAutocompleteAccept = (_index: number): void => undefined;
+const noopAutocompleteDismiss = (): void => undefined;
 
 /**
  * Drives the Capacitor iOS native composer overlay. Send, attach, model, and
@@ -82,6 +129,7 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   const echoingNativeRef = useRef(false);
   const modelIconRef = useRef('');
   const previewRef = useRef<NativeIosComposerAttachmentPreview[]>([]);
+  const autocompleteRef = useRef<NativeIosComposerAutocomplete>(emptyNativeComposerAutocomplete());
 
   const onText = useEvent(args.onText);
   const onSend = useEvent(args.onSend);
@@ -93,18 +141,21 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   const onCycleAgent = useEvent(args.onCycleAgent);
   const onOpenAgent = useEvent(args.onOpenAgent);
   const onScrollToBottom = useEvent(args.onScrollToBottom);
+  const onAutocompleteAccept = useEvent(args.onAutocompleteAccept ?? noopAutocompleteAccept);
+  const onAutocompleteDismiss = useEvent(args.onAutocompleteDismiss ?? noopAutocompleteDismiss);
   const onHeight = useEvent((height: number) => {
     if (typeof document === 'undefined') return;
     applyNativeComposerHeightVar(document.documentElement, height);
   });
   nativeIosComposerSession.bind({
-    onText: (text, composing) => {
+    onText: (text, composing, selection) => {
       nativeTextRef.current = text;
       echoingNativeRef.current = true;
-      onText(text, composing);
+      onText(text, composing, selection);
     },
     onSend: (text) => {
       nativeTextRef.current = text;
+      echoingNativeRef.current = true;
       onSend(text);
     },
     onAbort,
@@ -116,6 +167,8 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     onOpenAgent,
     onHeight,
     onScrollToBottom,
+    onAutocompleteAccept,
+    onAutocompleteDismiss,
   });
 
   const readState = (): NativeIosComposerState => ({
@@ -151,6 +204,7 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     suppressed: args.suppressed,
     showScrollToBottom: args.showScrollToBottom,
     scrollAria: args.scrollAria,
+    autocomplete: autocompleteRef.current,
   });
 
   useEffect(() => {
@@ -227,6 +281,42 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     return () => { cancelled = true; };
   }, [available, attachmentSignature]);
 
+  const autocompleteRows = args.autocompleteRows ?? EMPTY_AUTOCOMPLETE_ROWS;
+  const autocompleteOpen = args.autocompleteOpen === true;
+  const autocompleteHighlightedIndex = args.autocompleteHighlightedIndex ?? 0;
+  const suggestionSignature = autocompleteRowSignature(
+    autocompleteRows,
+    autocompleteOpen,
+    autocompleteHighlightedIndex,
+  );
+  useEffect(() => {
+    if (!available) return;
+    let cancelled = false;
+    const open = autocompleteOpen && autocompleteRows.length > 0;
+    if (!open) {
+      const next = emptyNativeComposerAutocomplete();
+      if (!nativeComposerAutocompleteEqual(autocompleteRef.current, next)) {
+        autocompleteRef.current = next;
+        if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, autocomplete: next };
+        void getNativeIosComposerPlugin().update({ autocomplete: next });
+      }
+      return;
+    }
+    void rasterizeAutocompleteRows(autocompleteRows).then((rows) => {
+      if (cancelled) return;
+      const next: NativeIosComposerAutocomplete = {
+        open: rows.length > 0,
+        highlightedIndex: Math.max(0, Math.min(autocompleteHighlightedIndex, Math.max(rows.length - 1, 0))),
+        rows,
+      };
+      if (nativeComposerAutocompleteEqual(autocompleteRef.current, next)) return;
+      autocompleteRef.current = next;
+      if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, autocomplete: next };
+      void getNativeIosComposerPlugin().update({ autocomplete: next });
+    });
+    return () => { cancelled = true; };
+  }, [available, suggestionSignature]);
+
   useEffect(() => {
     if (!available) return;
     const next = readState();
@@ -243,14 +333,10 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
       echoingNative: echoingNativeRef.current,
     });
     echoingNativeRef.current = false;
-    if (write.omitText) {
-      nativeTextRef.current = next.text;
-      const { text: _text, ...rest } = next;
-      void getNativeIosComposerPlugin().update(rest);
-      return;
-    }
     nativeTextRef.current = next.text;
-    void getNativeIosComposerPlugin().update({ ...next, forceText: write.forceText });
+    const payload = buildNativeComposerUpdatePayload(previous, next, write);
+    if (!payload) return;
+    void getNativeIosComposerPlugin().update(payload);
     // readState closes over the latest ChatInput props; listing them is the contract.
   }, [
     available,

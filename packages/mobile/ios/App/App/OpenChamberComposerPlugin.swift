@@ -11,6 +11,7 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         CAPPluginMethod(name: "present", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "hide", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "show", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "dismiss", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setSuppressed", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "focus", returnType: CAPPluginReturnPromise),
@@ -32,6 +33,8 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
     private var attachFilesLabel = ""
     private static let maxPickedFileBytes = 32 * 1024 * 1024
     private static let maxPickedPhotoCount = 20
+    private var lastPreviewSignature = ""
+    private var lastModelIcon = ""
 
     @objc func present(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
@@ -75,6 +78,18 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         }
     }
 
+    @objc func show(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                call.resolve()
+                return
+            }
+            self.composerView?.isHidden = false
+            self.reportHeight()
+            call.resolve()
+        }
+    }
+
     @objc func dismiss(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             self?.hideOverlay()
@@ -105,15 +120,27 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         }
     }
 
-    func composerViewDidChangeText(_ view: OpenChamberComposerView, text: String) {
+    func composerViewDidChangeText(
+        _ view: OpenChamberComposerView,
+        text: String,
+        selectionStart: Int,
+        selectionEnd: Int
+    ) {
         notifyListeners("textChanged", data: [
             "text": text,
             "composing": view.isComposing,
+            "selectionStart": selectionStart,
+            "selectionEnd": selectionEnd,
         ])
     }
 
     func composerViewDidRequestSend(_ view: OpenChamberComposerView, text: String) {
-        notifyListeners("send", data: ["text": text])
+        // Leave the tap / Return handler before crossing to JS so a Web
+        // submit cannot deadlock the main queue on plugin.update.
+        let payload: [String: Any] = ["text": text]
+        DispatchQueue.main.async { [weak self] in
+            self?.notifyListeners("send", data: payload)
+        }
     }
 
     func composerViewDidRequestAbort(_ view: OpenChamberComposerView) {
@@ -159,6 +186,14 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         notifyListeners("removeAttachment", data: ["id": id])
     }
 
+    func composerViewDidRequestAutocompleteAccept(_ view: OpenChamberComposerView, index: Int) {
+        notifyListeners("autocompleteAccept", data: ["index": index])
+    }
+
+    func composerViewDidRequestAutocompleteDismiss(_ view: OpenChamberComposerView) {
+        notifyListeners("autocompleteDismiss", data: [:])
+    }
+
     @discardableResult
     private func installIfNeeded() -> Bool {
         if composerView != nil { return true }
@@ -194,29 +229,41 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
             placeholder: call.getString("placeholder"),
             modelLabel: call.getString("modelLabel"),
             modelVariantLabel: call.getString("modelVariantLabel"),
-            canSend: call.getBool("canSend") ?? false,
-            canAbort: call.getBool("canAbort") ?? false,
-            attachmentCount: call.getInt("attachmentCount") ?? 0,
+            canSend: Self.optionalBool(call, "canSend"),
+            canAbort: Self.optionalBool(call, "canAbort"),
+            attachmentCount: Self.optionalInt(call, "attachmentCount"),
             appearance: call.getString("appearance"),
             attachAria: call.getString("attachAria"),
             sendAria: call.getString("sendAria"),
             queueAria: call.getString("queueAria"),
             stopAria: call.getString("stopAria"),
             modelAria: call.getString("modelAria"),
-            modelIcon: call.getString("modelIcon"),
+            modelIcon: {
+                guard let icon = call.getString("modelIcon") else { return nil }
+                if icon == lastModelIcon { return nil }
+                lastModelIcon = icon
+                return icon
+            }(),
             agentAria: call.getString("agentAria"),
             agentLabel: call.getString("agentLabel"),
             agentColor: call.getString("agentColor"),
             agentIdenticon: Self.parseIdenticon(call.getArray("agentIdenticon")),
-            showScrollToBottom: call.getBool("showScrollToBottom"),
+            showScrollToBottom: Self.optionalBool(call, "showScrollToBottom"),
             scrollAria: call.getString("scrollAria"),
             forceText: call.getBool("forceText") ?? false
         )
         if let previews = call.getArray("attachmentPreviews") {
-            composerView?.applyAttachmentPreviews(Self.parseAttachmentPreviews(previews))
+            let signature = Self.previewSignature(previews)
+            if signature != lastPreviewSignature {
+                lastPreviewSignature = signature
+                composerView?.applyAttachmentPreviews(Self.parseAttachmentPreviews(previews))
+            }
         }
         if let ranges = call.getArray("citationRanges") {
             composerView?.applyCitationRanges(Self.parseCitationRanges(ranges))
+        }
+        if let autocomplete = call.getObject("autocomplete") {
+            composerView?.applyAutocomplete(Self.parseAutocomplete(autocomplete))
         }
         if let photos = call.getString("attachPhotosLabel"), !photos.isEmpty {
             attachPhotosLabel = photos
@@ -545,6 +592,29 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         }
     }
 
+    /// Capacitor's one-arg `getBool`/`getInt` default missing keys to false/0.
+    /// Slim chrome updates omit those keys and must not clobber live state.
+    private static func optionalBool(_ call: CAPPluginCall, _ key: String) -> Bool? {
+        guard call.hasOption(key) else { return nil }
+        return call.getBool(key)
+    }
+
+    private static func optionalInt(_ call: CAPPluginCall, _ key: String) -> Int? {
+        guard call.hasOption(key) else { return nil }
+        return call.getInt(key)
+    }
+
+    private static func previewSignature(_ raw: JSArray) -> String {
+        raw.compactMap { entry -> String? in
+            guard let object = entry as? JSObject else { return nil }
+            guard let id = object["id"] as? String, !id.isEmpty else { return nil }
+            let filename = object["filename"] as? String ?? ""
+            let mime = object["mime"] as? String ?? ""
+            let thumb = (object["thumbnailBase64"] as? String)?.count ?? 0
+            return "\(id):\(filename):\(mime):\(thumb)"
+        }.joined(separator: "|")
+    }
+
     private static func parseAttachmentPreviews(_ raw: JSArray) -> [AttachmentPreviewItem] {
         raw.compactMap { entry -> AttachmentPreviewItem? in
             guard let object = entry as? JSObject else { return nil }
@@ -561,6 +631,23 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
                 removeAria: removeAria
             )
         }
+    }
+
+    private static func parseAutocomplete(_ raw: JSObject) -> ComposerAutocompleteState {
+        let open = (raw["open"] as? Bool) ?? false
+        let highlighted = (raw["highlightedIndex"] as? NSNumber)?.intValue
+            ?? (raw["highlightedIndex"] as? Int)
+            ?? 0
+        let rows = (raw["rows"] as? JSArray)?.compactMap { entry -> ComposerAutocompleteRow? in
+            guard let object = entry as? JSObject else { return nil }
+            guard let id = object["id"] as? String, !id.isEmpty else { return nil }
+            let title = object["title"] as? String ?? ""
+            let subtitle = object["subtitle"] as? String ?? ""
+            let badge = object["badge"] as? String ?? ""
+            let icon = (object["iconBase64"] as? String).flatMap { OpenChamberComposerView.decodePreviewImage($0) }
+            return ComposerAutocompleteRow(id: id, title: title, subtitle: subtitle, badge: badge, icon: icon)
+        } ?? []
+        return ComposerAutocompleteState(open: open, highlightedIndex: highlighted, rows: rows)
     }
 
     private static func parseCitationRanges(_ raw: JSArray) -> [NSRange] {

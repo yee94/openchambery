@@ -20,6 +20,7 @@ test('native composer pins to the keyboard end-frame and rest safe area, not a s
   assert.match(plugin, /handleHostTap/);
   assert.match(plugin, /hideOverlay/);
   assert.match(plugin, /@objc func hide\(_ call: CAPPluginCall\)/);
+  assert.match(plugin, /@objc func show\(_ call: CAPPluginCall\)/);
   assert.match(plugin, /composerView\?\.isHidden = true/);
   const hideOverlay = plugin.match(/private func hideOverlay\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
   assert.match(hideOverlay, /isHidden = true/);
@@ -69,7 +70,15 @@ test('native composer rest height stays collapsed and scroll lives above send', 
   assert.match(view, /returnKeyType = \.send/);
   assert.match(view, /shouldChangeTextIn/);
   assert.match(view, /queueSendButton/);
-  assert.match(view, /let showQueueSend = isExpanded && canAbort && canSend/);
+  assert.match(view, /let showQueueSend = isExpanded && canAbort && \(canSend \|\| hasSendableText\)/);
+  assert.match(view, /hasSendableText/);
+  assert.match(view, /refreshSendButton\(\)/);
+  assert.match(plugin, /DispatchQueue\.main\.async \{ \[weak self\] in\s+self\?\.notifyListeners\("send"/);
+  assert.doesNotMatch(view, /func sendTapped\(\)[\s\S]*guard canSend/);
+  assert.doesNotMatch(view, /if canSend \{\s+delegate\?\.composerViewDidRequestSend/);
+  assert.match(plugin, /previewSignature/);
+  assert.match(plugin, /optionalBool/);
+  assert.match(plugin, /must not clobber live state/);
   assert.match(plugin, /setAttachChooser/);
   assert.match(plugin, /keepExpandedThroughPicker/);
   assert.match(plugin, /beginAttachPicker/);

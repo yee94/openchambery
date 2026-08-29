@@ -1,7 +1,7 @@
 import UIKit
 
 protocol OpenChamberComposerViewDelegate: AnyObject {
-    func composerViewDidChangeText(_ view: OpenChamberComposerView, text: String)
+    func composerViewDidChangeText(_ view: OpenChamberComposerView, text: String, selectionStart: Int, selectionEnd: Int)
     func composerViewDidRequestSend(_ view: OpenChamberComposerView, text: String)
     func composerViewDidRequestAbort(_ view: OpenChamberComposerView)
     func composerViewDidRequestAttachPhotos(_ view: OpenChamberComposerView)
@@ -13,6 +13,8 @@ protocol OpenChamberComposerViewDelegate: AnyObject {
     func composerViewDidChangeHeight(_ view: OpenChamberComposerView)
     func composerViewDidRequestScrollToBottom(_ view: OpenChamberComposerView)
     func composerViewDidRequestRemoveAttachment(_ view: OpenChamberComposerView, id: String)
+    func composerViewDidRequestAutocompleteAccept(_ view: OpenChamberComposerView, index: Int)
+    func composerViewDidRequestAutocompleteDismiss(_ view: OpenChamberComposerView)
 }
 
 /// Floating iOS chat composer: collapsed glass pill, expanded glass card.
@@ -39,6 +41,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private let queueSendButton = OpenChamberComposerView.makeCircleButton(systemName: "arrow.up")
     private let scrollChrome = GlassBackdropView()
     private let scrollButton = OpenChamberComposerView.makeCircleButton(systemName: "arrow.down")
+    private let autocomplete = OpenChamberComposerAutocompleteView()
     private let expandedPlus = OpenChamberComposerView.makeCircleButton(systemName: "plus")
     private let footer = UIStackView()
 
@@ -50,6 +53,8 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private var attachmentHeightConstraint: NSLayoutConstraint?
     private var scrollAboveCardConstraint: NSLayoutConstraint?
     private var scrollAboveQueueConstraint: NSLayoutConstraint?
+    private var autocompleteHeightConstraint: NSLayoutConstraint?
+    private var autocompleteState = ComposerAutocompleteState.closed
 
     private var attachmentItems: [AttachmentPreviewItem] = []
     private var citationRanges: [NSRange] = []
@@ -104,6 +109,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        clampAutocompleteHeight()
         delegate?.composerViewDidChangeHeight(self)
     }
 
@@ -112,9 +118,9 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         placeholder: String?,
         modelLabel: String?,
         modelVariantLabel: String?,
-            canSend nextCanSend: Bool,
-            canAbort nextCanAbort: Bool,
-            attachmentCount nextAttachmentCount: Int,
+            canSend nextCanSend: Bool?,
+            canAbort nextCanAbort: Bool?,
+            attachmentCount nextAttachmentCount: Int?,
         appearance: String?,
         attachAria: String?,
         sendAria: String?,
@@ -142,9 +148,15 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         modelButton.accessibilityLabel = self.modelAria
         agentButton.accessibilityLabel = self.agentAria
 
-        canSend = nextCanSend
-        canAbort = nextCanAbort
-        attachmentCount = nextAttachmentCount
+        let attachmentCountChanged: Bool
+        if let nextCanSend { canSend = nextCanSend }
+        if let nextCanAbort { canAbort = nextCanAbort }
+        if let nextAttachmentCount {
+            attachmentCountChanged = nextAttachmentCount != attachmentCount
+            attachmentCount = nextAttachmentCount
+        } else {
+            attachmentCountChanged = false
+        }
         if let appearance {
             appearanceIsDark = appearance != "light"
             applyAppearance()
@@ -176,7 +188,9 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             modelVariantText = modelVariantLabel
         }
         refreshModelButton()
-        refreshAttachmentStrip()
+        if attachmentCountChanged {
+            refreshAttachmentStrip()
+        }
         refreshSendButton()
         if let nextShowScroll {
             showScrollToBottom = nextShowScroll
@@ -196,6 +210,12 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     func applyCitationRanges(_ ranges: [NSRange]) {
         citationRanges = ranges
+    }
+
+    func applyAutocomplete(_ state: ComposerAutocompleteState) {
+        autocompleteState = state
+        refreshAutocomplete()
+        setNeedsLayout()
     }
 
     private func shouldApplyText(_ incoming: String?, forceText: Bool) -> Bool {
@@ -230,6 +250,10 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
            queueSendButton.convert(queueSendButton.bounds, to: host).contains(point) {
             return true
         }
+        if !autocomplete.isHidden,
+           autocomplete.convert(autocomplete.bounds, to: host).contains(point) {
+            return true
+        }
         guard !scrollChrome.isHidden else { return false }
         return scrollChrome.convert(scrollChrome.bounds, to: host).contains(point)
     }
@@ -247,6 +271,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         if super.point(inside: point, with: event) { return true }
         if !queueSendButton.isHidden, queueSendButton.frame.contains(point) { return true }
+        if !autocomplete.isHidden, autocomplete.frame.contains(point) { return true }
         guard !scrollChrome.isHidden else { return false }
         return scrollChrome.frame.contains(point)
     }
@@ -256,6 +281,12 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             let local = convert(point, to: queueSendButton)
             if queueSendButton.point(inside: local, with: event) {
                 return queueSendButton.hitTest(local, with: event) ?? queueSendButton
+            }
+        }
+        if !autocomplete.isHidden {
+            let local = convert(point, to: autocomplete)
+            if autocomplete.point(inside: local, with: event) {
+                return autocomplete.hitTest(local, with: event) ?? autocomplete
             }
         }
         if !scrollChrome.isHidden {
@@ -404,6 +435,11 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         addSubview(card)
         addSubview(queueSendButton)
         addSubview(scrollChrome)
+        addSubview(autocomplete)
+        autocomplete.onAccept = { [weak self] index in
+            guard let self else { return }
+            self.delegate?.composerViewDidRequestAutocompleteAccept(self, index: index)
+        }
         scrollChrome.contentView.addSubview(scrollButton)
         scrollChrome.setCornerRadius(18)
         card.contentView.addSubview(collapsedPlus)
@@ -489,6 +525,14 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         scrollAboveCardConstraint = scrollChrome.bottomAnchor.constraint(equalTo: card.topAnchor, constant: -8)
         scrollAboveQueueConstraint = scrollChrome.bottomAnchor.constraint(equalTo: queueSendButton.topAnchor, constant: -8)
         scrollAboveCardConstraint?.isActive = true
+        let autocompleteHeight = autocomplete.heightAnchor.constraint(equalToConstant: 0)
+        autocompleteHeightConstraint = autocompleteHeight
+        NSLayoutConstraint.activate([
+            autocomplete.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            autocomplete.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            autocomplete.bottomAnchor.constraint(equalTo: card.topAnchor, constant: -8),
+            autocompleteHeight,
+        ])
 
         collapsedAgentConstraints = [
             agentCluster.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
@@ -541,6 +585,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             self.collapsedFooterConstraints.forEach { $0.isActive = !expanded }
             self.expandedFooterConstraints.forEach { $0.isActive = expanded }
             self.refreshScrollButton()
+            self.refreshAutocomplete()
             self.relayoutTextHeight()
             self.layoutIfNeeded()
         }
@@ -609,9 +654,13 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         }
     }
 
+    private var hasSendableText: Bool {
+        !(textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func refreshSendButton() {
         let symbol = canAbort ? "stop.fill" : "arrow.up"
-        let enabled = canAbort || canSend
+        let enabled = canAbort || canSend || hasSendableText
         sendButton.setImage(Self.symbol(symbol), for: .normal)
         sendButton.accessibilityLabel = canAbort ? stopAria : sendAria
         sendButton.isEnabled = enabled
@@ -619,7 +668,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         sendButton.tintColor = chromeColor()
         sendButton.alpha = enabled ? 1 : 0.38
 
-        let showQueueSend = isExpanded && canAbort && canSend
+        let showQueueSend = isExpanded && canAbort && (canSend || hasSendableText)
         queueSendButton.isHidden = !showQueueSend
         queueSendButton.isEnabled = showQueueSend
         queueSendButton.backgroundColor = .clear
@@ -635,7 +684,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     }
 
     private func refreshScrollButton() {
-        let visible = showScrollToBottom && !isHidden
+        let visible = showScrollToBottom && !isHidden && autocomplete.isHidden
         scrollChrome.isHidden = !visible
         scrollButton.isHidden = !visible
         scrollButton.accessibilityLabel = scrollAria
@@ -643,6 +692,47 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         scrollButton.tintColor = chromeColor()
         scrollChrome.appearanceIsDark = appearanceIsDark
         scrollChrome.refreshEffect()
+    }
+
+    private func refreshAutocomplete() {
+        autocomplete.applyAppearance(isDark: appearanceIsDark)
+        autocomplete.apply(autocompleteState, expanded: isExpanded)
+        clampAutocompleteHeight()
+        let visible = showScrollToBottom && !isHidden && autocomplete.isHidden
+        scrollChrome.isHidden = !visible
+        scrollButton.isHidden = !visible
+    }
+
+    private func clampAutocompleteHeight() {
+        guard !autocomplete.isHidden else {
+            autocompleteHeightConstraint?.constant = 0
+            return
+        }
+        let host = window ?? superview
+        let headerFloor = (host?.safeAreaInsets.top ?? 0) + 56
+        let cardTop: CGFloat
+        if let host {
+            cardTop = card.convert(card.bounds, to: host).minY
+        } else {
+            cardTop = card.frame.minY
+        }
+        let available = max(0, cardTop - 8 - headerFloor)
+        let next = min(autocomplete.contentHeight, available)
+        autocompleteHeightConstraint?.constant = next
+        if next < 36 {
+            autocomplete.isHidden = true
+            autocomplete.isUserInteractionEnabled = false
+        }
+    }
+
+    private func notifyText() {
+        let range = textView.selectedRange
+        delegate?.composerViewDidChangeText(
+            self,
+            text: textView.text ?? "",
+            selectionStart: range.location,
+            selectionEnd: range.location + range.length
+        )
     }
 
     private func refreshAgentButton() {
@@ -672,6 +762,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         refreshModelButton()
         refreshSendButton()
         refreshScrollButton()
+        refreshAutocomplete()
         refreshAgentButton()
         agentNameLabel.textColor = label.withAlphaComponent(0.8)
         card.refreshEffect()
@@ -769,12 +860,10 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             delegate?.composerViewDidRequestAbort(self)
             return
         }
-        guard canSend else { return }
         delegate?.composerViewDidRequestSend(self, text: currentText)
     }
 
     @objc private func queueSendTapped() {
-        guard canSend else { return }
         delegate?.composerViewDidRequestSend(self, text: currentText)
     }
 
@@ -786,6 +875,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     func textViewDidBeginEditing(_ textView: UITextView) {
         setExpanded(true, animated: false)
+        notifyText()
     }
 
     func textViewDidEndEditing(_ textView: UITextView) {
@@ -796,17 +886,16 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         refreshPlaceholder()
         relayoutTextHeight()
+        refreshSendButton()
         delegate?.composerViewDidChangeHeight(self)
         guard !applyingExternalText else { return }
-        delegate?.composerViewDidChangeText(self, text: textView.text ?? "")
+        emitTextChange()
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         if text == "\n" {
             if textView.markedTextRange != nil { return true }
-            if canSend {
-                delegate?.composerViewDidRequestSend(self, text: textView.text ?? "")
-            }
+            delegate?.composerViewDidRequestSend(self, text: textView.text ?? "")
             return false
         }
         if textView.markedTextRange != nil { return true }
@@ -831,9 +920,20 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         applyingExternalText = false
         refreshPlaceholder()
         relayoutTextHeight()
+        refreshSendButton()
         delegate?.composerViewDidChangeHeight(self)
-        delegate?.composerViewDidChangeText(self, text: textView.text ?? "")
+        emitTextChange()
         return false
+    }
+
+    private func emitTextChange() {
+        let range = textView.selectedRange
+        delegate?.composerViewDidChangeText(
+            self,
+            text: textView.text ?? "",
+            selectionStart: range.location,
+            selectionEnd: range.location + range.length
+        )
     }
 
     private func expandedCitationEdit(range: NSRange) -> NSRange? {
@@ -1035,7 +1135,7 @@ private final class AttachmentPreviewCell: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
 }
 
-private final class GlassBackdropView: UIView {
+final class GlassBackdropView: UIView {
     var appearanceIsDark = true { didSet { refreshEffect() } }
 
     private let blurView = UIVisualEffectView(effect: nil)

@@ -1,5 +1,10 @@
 import React from 'react';
-import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
+import {
+  buildSlashCommandRows,
+  rankCommandsForQuery,
+  resolveSlashCommandIconName,
+  type ComposerAutocompleteVisibleRows,
+} from '@/lib/composer-autocomplete';
 import { cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionMessages } from '@/sync/sync-context';
@@ -31,6 +36,7 @@ export interface CommandInfo {
 
 export interface CommandAutocompleteHandle {
   handleKeyDown: (key: string) => void;
+  acceptIndex: (index: number, submitIntent?: boolean) => void;
 }
 
 const BASE_BADGE_CLASS = "text-[10px] leading-none uppercase font-bold tracking-tight px-1.5 py-1 rounded border flex-shrink-0";
@@ -50,34 +56,6 @@ const NEUTRAL_BADGE_CLASS = cn(
   BASE_BADGE_CLASS,
   "bg-[var(--surface-muted)] text-muted-foreground border-[var(--interactive-border)]/60"
 );
-
-const rankCommandsForQuery = (commands: CommandInfo[], searchQuery: string): CommandInfo[] => {
-  const normalizedQuery = searchQuery.trim();
-  if (!normalizedQuery) {
-    return [...commands].sort((a, b) => {
-      if (a.isBuiltIn !== b.isBuiltIn) {
-        return a.isBuiltIn ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  }
-
-  const ranked = scoreByFuzzyQuery(
-    commands,
-    normalizedQuery,
-    (cmd) => [cmd.name, cmd.description ?? ''],
-  );
-  ranked.sort((a, b) => {
-    if (a.score !== b.score) {
-      return a.score - b.score;
-    }
-    if (a.item.isBuiltIn !== b.item.isBuiltIn) {
-      return a.item.isBuiltIn ? -1 : 1;
-    }
-    return a.item.name.localeCompare(b.item.name);
-  });
-  return ranked.map((entry) => entry.item);
-};
 
 /**
  * Explicit command availability context. Callers (ChatInput, MultiRun, agent
@@ -122,6 +100,7 @@ interface CommandAutocompleteProps {
   commandPolicy?: (command: CommandInfo) => boolean;
   /** Explicit command availability context; when omitted, no session-scoped commands are eligible. */
   commandContext?: CommandAutocompleteContext;
+  onRowsChange?: (rows: ComposerAutocompleteVisibleRows) => void;
 }
 
 export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, CommandAutocompleteProps>(({
@@ -132,6 +111,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   style,
   commandPolicy,
   commandContext,
+  onRowsChange,
 }, ref) => {
   const { t } = useI18n();
   const isMobile = useUIStore((state) => state.isMobile);
@@ -373,7 +353,28 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     });
   }, [selectedIndex]);
 
+  React.useEffect(() => {
+    onRowsChange?.({
+      rows: buildSlashCommandRows(commands, {
+        skill: t('chat.commandAutocomplete.badge.skill'),
+        command: t('chat.commandAutocomplete.badge.command'),
+        system: t('chat.commandAutocomplete.badge.system'),
+      }),
+      highlightedIndex: selectedIndex,
+    });
+  }, [commands, onRowsChange, selectedIndex, t]);
+
+  React.useEffect(() => () => {
+    onRowsChange?.({ rows: [], highlightedIndex: 0 });
+  }, [onRowsChange]);
+
   React.useImperativeHandle(ref, () => ({
+    acceptIndex: (index: number, submitIntent = true) => {
+      const command = commands[index];
+      if (command) {
+        onCommandSelect(command, shouldSubmitCommandOnSelection(command, submitIntent));
+      }
+    },
     handleKeyDown: (key: string) => {
       const total = commands.length;
       if (key === 'Escape') {
@@ -412,33 +413,33 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   }), [commands, onClose, onCommandSelect]);
 
   const getCommandIcon = (command: CommandInfo) => {
-
+    const iconName = resolveSlashCommandIconName(command);
     switch (command.name) {
       case 'new':
-        return <Icon name="add" className="h-3.5 w-3.5" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5" />;
       case 'init':
-        return <Icon name="file" className="h-3.5 w-3.5 text-green-500" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5 text-green-500" />;
       case 'undo':
-        return <Icon name="arrow-go-back" className="h-3.5 w-3.5 text-orange-500" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5 text-orange-500" />;
       case 'redo':
-        return <Icon name="arrow-go-forward" className="h-3.5 w-3.5 text-orange-500" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5 text-orange-500" />;
       case 'timeline':
-        return <Icon name="time" className="h-3.5 w-3.5" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5" />;
       case 'compact':
-        return <Icon name="scissors" className="h-3.5 w-3.5 text-purple-500" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5 text-purple-500" />;
       case 'goal':
-        return <Icon name="target" className="h-3.5 w-3.5" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5" />;
       case 'review':
-        return <Icon name="search-eye" className="h-3.5 w-3.5 text-blue-500" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5 text-blue-500" />;
       case 'test':
       case 'build':
       case 'run':
-        return <Icon name="terminal-box" className="h-3.5 w-3.5 text-cyan-500" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5 text-cyan-500" />;
       default:
         if (command.isBuiltIn) {
-          return <Icon name="flashlight" className="h-3.5 w-3.5 text-yellow-500" />;
+          return <Icon name={iconName} className="h-3.5 w-3.5 text-yellow-500" />;
         }
-        return <Icon name="command" className="h-3.5 w-3.5 text-muted-foreground" />;
+        return <Icon name={iconName} className="h-3.5 w-3.5 text-muted-foreground" />;
     }
   };
 

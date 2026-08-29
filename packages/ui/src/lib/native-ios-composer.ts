@@ -27,6 +27,26 @@ export type NativeIosComposerCitationRange = {
   end: number;
 };
 
+export type NativeIosComposerSuggestionRow = {
+  id: string;
+  title: string;
+  subtitle: string;
+  badge: string;
+  iconBase64: string;
+};
+
+export type NativeIosComposerAutocomplete = {
+  open: boolean;
+  highlightedIndex: number;
+  rows: NativeIosComposerSuggestionRow[];
+};
+
+export const emptyNativeComposerAutocomplete = (): NativeIosComposerAutocomplete => ({
+  open: false,
+  highlightedIndex: 0,
+  rows: [],
+});
+
 export type NativeIosComposerState = {
   text: string;
   placeholder: string;
@@ -55,6 +75,7 @@ export type NativeIosComposerState = {
   suppressed: boolean;
   showScrollToBottom: boolean;
   scrollAria: string;
+  autocomplete: NativeIosComposerAutocomplete;
 };
 
 export type NativeIosComposerPlugin = {
@@ -62,6 +83,8 @@ export type NativeIosComposerPlugin = {
   update: (state: Partial<NativeIosComposerState> & { forceText?: boolean }) => Promise<void>;
   /** Visual hide only. The overlay stays installed (singleton). */
   hide: () => Promise<void>;
+  /** Undo `hide` without rewriting the live UITextView. */
+  show: () => Promise<void>;
   dismiss: () => Promise<void>;
   setSuppressed: (options: { suppressed: boolean }) => Promise<void>;
   focus: () => Promise<void>;
@@ -84,7 +107,9 @@ export type NativeIosComposerEventName =
   | 'openAgent'
   | 'heightChanged'
   | 'expandedChanged'
-  | 'scrollToBottom';
+  | 'scrollToBottom'
+  | 'autocompleteAccept'
+  | 'autocompleteDismiss';
 
 export type NativeIosComposerEventPayload = {
   text?: string;
@@ -94,6 +119,9 @@ export type NativeIosComposerEventPayload = {
   id?: string;
   files?: unknown;
   skipped?: unknown;
+  selectionStart?: number;
+  selectionEnd?: number;
+  index?: number;
 };
 
 const OpenChamberComposer = registerPlugin<NativeIosComposerPlugin>(NATIVE_IOS_COMPOSER_PLUGIN);
@@ -209,6 +237,27 @@ export const nativeComposerStatesEqual = (
   && left.suppressed === right.suppressed
   && left.showScrollToBottom === right.showScrollToBottom
   && left.scrollAria === right.scrollAria
+  && nativeComposerAutocompleteEqual(left.autocomplete, right.autocomplete)
+);
+
+export const nativeComposerAutocompleteEqual = (
+  left: NativeIosComposerAutocomplete,
+  right: NativeIosComposerAutocomplete,
+): boolean => (
+  left.open === right.open
+  && left.highlightedIndex === right.highlightedIndex
+  && left.rows.length === right.rows.length
+  && left.rows.every((row, index) => {
+    const other = right.rows[index];
+    return Boolean(
+      other
+      && row.id === other.id
+      && row.title === other.title
+      && row.subtitle === other.subtitle
+      && row.badge === other.badge
+      && row.iconBase64 === other.iconBase64,
+    );
+  })
 );
 
 export const nativeComposerAttachmentPreviewsEqual = (
@@ -250,6 +299,24 @@ export const parseNativeComposerRemoveAttachmentId = (
   return typeof id === 'string' && id.trim() ? id : '';
 };
 
+export const parseNativeComposerSelection = (
+  payload: NativeIosComposerEventPayload | null | undefined,
+): { start: number; end: number } | null => {
+  const start = payload?.selectionStart;
+  const end = payload?.selectionEnd;
+  if (typeof start !== 'number' || !Number.isFinite(start) || start < 0) return null;
+  const resolvedEnd = typeof end === 'number' && Number.isFinite(end) && end >= start ? end : start;
+  return { start, end: resolvedEnd };
+};
+
+export const parseNativeComposerAcceptIndex = (
+  payload: NativeIosComposerEventPayload | null | undefined,
+): number => {
+  const index = payload?.index;
+  if (typeof index !== 'number' || !Number.isFinite(index) || index < 0) return 0;
+  return Math.floor(index);
+};
+
 export type NativeComposerTextWrite = {
   omitText: boolean;
   forceText: boolean;
@@ -265,6 +332,88 @@ export const resolveNativeComposerTextWrite = (input: {
     return { omitText: true, forceText: false };
   }
   return { omitText: false, forceText: true };
+};
+
+/** Native send only hands the draft to Web. It must not force-write the field. */
+export const resolveNativeComposerSendHandoff = (): NativeComposerTextWrite => ({
+  omitText: true,
+  forceText: false,
+});
+
+/** Stage the document now; run Web send/queue after the Capacitor listener returns. */
+export const scheduleNativeComposerWebHandoff = (run: () => void): ReturnType<typeof setTimeout> => (
+  setTimeout(run, 0)
+);
+
+export const handoffNativeComposerSendToWeb = (input: {
+  text: string;
+  applyDocument: (text: string) => void;
+  submit: () => void;
+}): void => {
+  input.applyDocument(input.text);
+  scheduleNativeComposerWebHandoff(input.submit);
+};
+
+const scalarEqual = <T>(left: T, right: T): boolean => left === right;
+
+/**
+ * Echoed typing must not push text, JPEG thumbs, or the model icon back across
+ * the bridge. Chrome-only diffs stay slim so a burst after resume cannot stall
+ * the main thread on decode.
+ */
+export const buildNativeComposerUpdatePayload = (
+  previous: NativeIosComposerState | null,
+  next: NativeIosComposerState,
+  write: NativeComposerTextWrite,
+): (Partial<NativeIosComposerState> & { forceText?: boolean }) | null => {
+  if (write.omitText && previous && nativeComposerStatesEqual(previous, next)) {
+    return null;
+  }
+  const payload: Partial<NativeIosComposerState> & { forceText?: boolean } = {};
+  if (!write.omitText) {
+    payload.text = next.text;
+    if (write.forceText) payload.forceText = true;
+  }
+  if (!previous) {
+    const { text: _text, ...rest } = next;
+    Object.assign(payload, rest);
+    return payload;
+  }
+  const assignIfChanged = <K extends keyof NativeIosComposerState>(
+    key: K,
+    equal: (left: NativeIosComposerState[K], right: NativeIosComposerState[K]) => boolean,
+  ): void => {
+    if (equal(previous[key], next[key])) return;
+    payload[key] = next[key];
+  };
+  assignIfChanged('placeholder', scalarEqual);
+  assignIfChanged('modelLabel', scalarEqual);
+  assignIfChanged('modelVariantLabel', scalarEqual);
+  assignIfChanged('modelIcon', scalarEqual);
+  assignIfChanged('canSend', scalarEqual);
+  assignIfChanged('canAbort', scalarEqual);
+  assignIfChanged('attachmentCount', scalarEqual);
+  assignIfChanged('attachmentPreviews', nativeComposerAttachmentPreviewsEqual);
+  assignIfChanged('citationRanges', nativeComposerCitationRangesEqual);
+  assignIfChanged('appearance', scalarEqual);
+  assignIfChanged('attachAria', scalarEqual);
+  assignIfChanged('attachTitle', scalarEqual);
+  assignIfChanged('attachPhotosLabel', scalarEqual);
+  assignIfChanged('attachFilesLabel', scalarEqual);
+  assignIfChanged('attachCancelLabel', scalarEqual);
+  assignIfChanged('sendAria', scalarEqual);
+  assignIfChanged('queueAria', scalarEqual);
+  assignIfChanged('stopAria', scalarEqual);
+  assignIfChanged('modelAria', scalarEqual);
+  assignIfChanged('agentAria', scalarEqual);
+  assignIfChanged('agentLabel', scalarEqual);
+  assignIfChanged('agentColor', scalarEqual);
+  assignIfChanged('agentIdenticon', (left, right) => left.join('') === right.join(''));
+  assignIfChanged('suppressed', scalarEqual);
+  assignIfChanged('showScrollToBottom', scalarEqual);
+  assignIfChanged('scrollAria', scalarEqual);
+  assignIfChanged('autocomplete', nativeComposerAutocompleteEqual);
+  return Object.keys(payload).length === 0 ? null : payload;
 };
 
 export const shouldApplyNativeComposerText = (input: {

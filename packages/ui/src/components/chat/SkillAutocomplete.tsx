@@ -1,5 +1,9 @@
 import React from 'react';
-import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
+import {
+  buildSkillRows,
+  rankSkillsForQuery,
+  type ComposerAutocompleteVisibleRows,
+} from '@/lib/composer-autocomplete';
 import { cn } from '@/lib/utils';
 import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { useUIStore } from '@/stores/useUIStore';
@@ -15,6 +19,7 @@ export interface SkillInfo {
 
 export interface SkillAutocompleteHandle {
   handleKeyDown: (key: string) => void;
+  acceptIndex: (index: number) => void;
 }
 
 interface SkillAutocompleteProps {
@@ -23,6 +28,7 @@ interface SkillAutocompleteProps {
   onClose: () => void;
   directory?: string | null;
   style?: React.CSSProperties;
+  onRowsChange?: (rows: ComposerAutocompleteVisibleRows) => void;
 }
 
 export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, SkillAutocompleteProps>(({
@@ -31,6 +37,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   onClose,
   directory,
   style,
+  onRowsChange,
 }, ref) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const isMobile = useUIStore((state) => state.isMobile);
@@ -44,31 +51,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
 
   React.useEffect(() => {
-    const normalizedQuery = searchQuery.trim();
-    if (!normalizedQuery.length) {
-      const sorted = [...skills].sort((a, b) => {
-        if (a.scope === 'project' && b.scope !== 'project') return -1;
-        if (a.scope !== 'project' && b.scope === 'project') return 1;
-        return a.name.localeCompare(b.name);
-      });
-      setFilteredSkills(sorted);
-      setSelectedIndex(0);
-      return;
-    }
-
-    const ranked = scoreByFuzzyQuery(
-      skills,
-      normalizedQuery,
-      (skill) => [skill.name, skill.description ?? ''],
-    );
-    ranked.sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score;
-      if (a.item.scope === 'project' && b.item.scope !== 'project') return -1;
-      if (a.item.scope !== 'project' && b.item.scope === 'project') return 1;
-      return a.item.name.localeCompare(b.item.name);
-    });
-
-    setFilteredSkills(ranked.map((entry) => entry.item));
+    setFilteredSkills(rankSkillsForQuery(skills, searchQuery));
     setSelectedIndex(0);
   }, [skills, searchQuery]);
 
@@ -99,7 +82,22 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
     };
   }, [onClose]);
 
+  React.useEffect(() => {
+    onRowsChange?.({
+      rows: buildSkillRows(filteredSkills),
+      highlightedIndex: selectedIndex,
+    });
+  }, [filteredSkills, onRowsChange, selectedIndex]);
+
+  React.useEffect(() => () => {
+    onRowsChange?.({ rows: [], highlightedIndex: 0 });
+  }, [onRowsChange]);
+
   React.useImperativeHandle(ref, () => ({
+    acceptIndex: (index: number) => {
+      const skill = filteredSkills[index];
+      if (skill) onSkillSelect(skill);
+    },
     handleKeyDown: (key: string) => {
       if (key === 'Escape') {
         onClose();

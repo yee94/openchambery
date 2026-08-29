@@ -3,8 +3,10 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import {
   filesFromNativeComposerPayload,
   getNativeIosComposerPlugin,
+  parseNativeComposerAcceptIndex,
   parseNativeComposerHeight,
   parseNativeComposerRemoveAttachmentId,
+  parseNativeComposerSelection,
   setNativeComposerDocumentClass,
   skippedNamesFromNativeComposerPayload,
   type NativeIosComposerEventPayload,
@@ -13,7 +15,7 @@ import {
 } from './native-ios-composer';
 
 export type NativeIosComposerSessionHandlers = {
-  onText: (text: string, composing: boolean) => void;
+  onText: (text: string, composing: boolean, selection: { start: number; end: number } | null) => void;
   onSend: (text: string) => void;
   onAbort: () => void;
   onAttach: () => void;
@@ -24,6 +26,8 @@ export type NativeIosComposerSessionHandlers = {
   onOpenAgent: () => void;
   onHeight: (height: number) => void;
   onScrollToBottom: () => void;
+  onAutocompleteAccept: (index: number) => void;
+  onAutocompleteDismiss: () => void;
 };
 
 /**
@@ -42,7 +46,6 @@ export const createNativeIosComposerSession = (
   let listeners: PluginListenerHandle[] = [];
   let handlers: NativeIosComposerSessionHandlers | null = null;
   let lastText = '';
-  let lastState: NativeIosComposerState | null = null;
   let concealed = false;
 
   const cancelHide = (): void => {
@@ -67,7 +70,7 @@ export const createNativeIosComposerSession = (
       plugin.addListener('textChanged', (payload: NativeIosComposerEventPayload) => {
         const text = typeof payload.text === 'string' ? payload.text : '';
         lastText = text;
-        dispatch('onText', text, payload.composing === true);
+        dispatch('onText', text, payload.composing === true, parseNativeComposerSelection(payload));
       }),
       plugin.addListener('send', (payload: NativeIosComposerEventPayload) => {
         const text = typeof payload.text === 'string' ? payload.text : lastText;
@@ -95,6 +98,10 @@ export const createNativeIosComposerSession = (
         dispatch('onHeight', parseNativeComposerHeight(payload));
       }),
       plugin.addListener('scrollToBottom', () => { dispatch('onScrollToBottom'); }),
+      plugin.addListener('autocompleteAccept', (payload: NativeIosComposerEventPayload) => {
+        dispatch('onAutocompleteAccept', parseNativeComposerAcceptIndex(payload));
+      }),
+      plugin.addListener('autocompleteDismiss', () => { dispatch('onAutocompleteDismiss'); }),
     ]);
     if (generation !== gen || retainCount === 0) {
       for (const handle of next) void handle.remove();
@@ -108,7 +115,6 @@ export const createNativeIosComposerSession = (
     generation += 1;
     handlers = null;
     concealed = false;
-    lastState = null;
     for (const handle of listeners) void handle.remove();
     listeners = [];
     setNativeComposerDocumentClass(root, false);
@@ -123,12 +129,12 @@ export const createNativeIosComposerSession = (
       lastText = text;
     },
     rememberState(state: NativeIosComposerState): void {
-      lastState = state;
       lastText = state.text;
     },
     /**
      * Visual hide now. The UITextView / glass view stay installed so a later
      * retain or cancelled back can show them again. Teardown is `release`.
+     * Reveal only unhides — it must not present last JS state over live text.
      */
     conceal(): void {
       if (concealed || retainCount === 0) return;
@@ -136,15 +142,14 @@ export const createNativeIosComposerSession = (
       void getPlugin().hide();
     },
     reveal(): void {
-      if (!concealed || retainCount === 0 || !lastState) return;
+      if (!concealed || retainCount === 0) return;
       concealed = false;
-      void getPlugin().present(lastState);
+      void getPlugin().show();
     },
     async retain(root: HTMLElement, state: NativeIosComposerState): Promise<void> {
       cancelHide();
       retainCount += 1;
       concealed = false;
-      lastState = state;
       lastText = state.text;
       setNativeComposerDocumentClass(root, true);
       if (listeners.length === 0) await attachListeners();

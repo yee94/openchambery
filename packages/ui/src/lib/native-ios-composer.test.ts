@@ -1,10 +1,13 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import {
   applyNativeComposerAccessoryVar,
   applyNativeComposerHeightVar,
+  buildNativeComposerUpdatePayload,
+  emptyNativeComposerAutocomplete,
   evaluateNativeIosComposerAvailability,
   filesFromNativeComposerPayload,
+  handoffNativeComposerSendToWeb,
   nativeComposerStatesEqual,
   nativeIosComposerAppearanceFromRoot,
   NATIVE_IOS_COMPOSER_CLASS,
@@ -15,6 +18,7 @@ import {
   rasterizeAttachmentThumbnailBase64,
   rasterizeLogoPngBase64,
   resolveCssVarToHex,
+  resolveNativeComposerSendHandoff,
   resolveNativeComposerTextWrite,
   shouldApplyNativeComposerText,
   setNativeComposerDocumentClass,
@@ -50,6 +54,7 @@ const state = (overrides: Partial<NativeIosComposerState> = {}): NativeIosCompos
   suppressed: false,
   showScrollToBottom: false,
   scrollAria: 'Scroll to bottom',
+  autocomplete: emptyNativeComposerAutocomplete(),
   ...overrides,
 });
 
@@ -178,6 +183,78 @@ describe('native iOS composer contract', () => {
       isFirstResponder: false,
       forceText: false,
     })).toBe(false);
+  });
+
+  test('echoed keystrokes skip the bridge and never resend preview or icon bytes', () => {
+    const previous = state({
+      text: 'hel',
+      canSend: true,
+      modelIcon: 'icon-bytes',
+      attachmentPreviews: [{
+        id: 'a',
+        filename: 'a.png',
+        mime: 'image/png',
+        thumbnailBase64: 'thumb-bytes',
+        removeAria: 'Remove a.png',
+      }],
+    });
+    const echoed = state({
+      ...previous,
+      text: 'hello',
+    });
+    expect(buildNativeComposerUpdatePayload(previous, echoed, {
+      omitText: true,
+      forceText: false,
+    })).toBeNull();
+
+    const canSendFlipped = state({
+      ...echoed,
+      canSend: false,
+    });
+    expect(buildNativeComposerUpdatePayload(previous, canSendFlipped, {
+      omitText: true,
+      forceText: false,
+    })).toEqual({ canSend: false });
+
+    const jsClear = state({
+      ...previous,
+      text: '',
+      canSend: false,
+    });
+    expect(buildNativeComposerUpdatePayload(previous, jsClear, {
+      omitText: false,
+      forceText: true,
+    })).toEqual({
+      text: '',
+      forceText: true,
+      canSend: false,
+    });
+  });
+
+  test('native send is a web handoff: no forceText and submit waits for the next macrotask', () => {
+    expect(resolveNativeComposerSendHandoff()).toEqual({ omitText: true, forceText: false });
+    expect(resolveNativeComposerTextWrite({
+      nextText: 'burst then send',
+      nativeOwnedText: 'burst then send',
+      echoingNative: true,
+    })).toEqual({ omitText: true, forceText: false });
+
+    const applyDocument = vi.fn();
+    const submit = vi.fn();
+    vi.useFakeTimers();
+    try {
+      handoffNativeComposerSendToWeb({
+        text: 'burst then send',
+        applyDocument,
+        submit,
+      });
+      expect(applyDocument).toHaveBeenCalledWith('burst then send');
+      expect(submit).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      expect(submit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('decodes native picker files and skips oversize or malformed payloads', () => {

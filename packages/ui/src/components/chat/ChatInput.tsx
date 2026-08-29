@@ -4,7 +4,7 @@ import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { useNativeIosComposer } from './useNativeIosComposer';
-import { applyNativeComposerAccessoryVar } from '@/lib/native-ios-composer';
+import { applyNativeComposerAccessoryVar, handoffNativeComposerSendToWeb } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -143,9 +143,13 @@ import {
     resolveAttachmentCitationDeletion,
 } from './attachmentCitations';
 import {
+    resolveComposerAutocompleteTrigger,
+    type ComposerAutocompleteListRow,
+    type ComposerAutocompleteVisibleRows,
+} from '@/lib/composer-autocomplete';
+import {
     collectComposerMentionHighlights,
     collectConfirmableFileMentions,
-    getFileMentionAutocompleteQuery,
     shouldHighlightFileMention,
     type FileMentionAutocompleteInputSource,
 } from './fileMentionAutocompleteState';
@@ -1064,6 +1068,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const [skillQuery, setSkillQuery] = React.useState('');
     const [showSnippetAutocomplete, setShowSnippetAutocomplete] = React.useState(false);
     const [snippetQuery, setSnippetQuery] = React.useState('');
+    const [nativeSuggestionRows, setNativeSuggestionRows] = React.useState<ComposerAutocompleteListRow[]>([]);
+    const [nativeSuggestionHighlight, setNativeSuggestionHighlight] = React.useState(0);
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
     const [mobileControlsPanel, setMobileControlsPanel] = React.useState<MobileControlsPanel>(null);
     // PWA overlay keyboard-reveal retries (300/650ms). Cleared on unmount so
@@ -4714,79 +4720,48 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         inputSource: FileMentionAutocompleteInputSource = 'manual',
         insertedText?: string,
     ) => {
-        if (inputMode === 'shell') {
+        const trigger = resolveComposerAutocompleteTrigger({
+            text: value,
+            cursor: cursorPosition,
+            inputMode,
+            mentionInputSource: inputSource,
+            insertedText,
+        });
+        if (!trigger) {
             setShowCommandAutocomplete(false);
+            setShowFileMention(false);
+            setShowSkillAutocomplete(false);
+            setShowSnippetAutocomplete(false);
+            setSkillQuery('');
+            return;
+        }
+        if (trigger.kind === 'slash-command') {
+            setCommandQuery(trigger.query);
+            setShowCommandAutocomplete(true);
             setShowFileMention(false);
             setShowSkillAutocomplete(false);
             setShowSnippetAutocomplete(false);
             return;
         }
-
-        if (value.startsWith('/')) {
-            const firstSpace = value.indexOf(' ');
-            const firstNewline = value.indexOf('\n');
-            const commandEnd = Math.min(
-                firstSpace === -1 ? value.length : firstSpace,
-                firstNewline === -1 ? value.length : firstNewline
-            );
-
-            if (cursorPosition <= commandEnd && firstSpace === -1) {
-                // Strip the reserved icon slot so autocomplete ranking still
-                // matches hand-typed `/␠undo` chips against `undo`.
-                const commandText = stripLeadingSlashCommandSlot(value.substring(1, commandEnd));
-                setCommandQuery(commandText);
-                setShowCommandAutocomplete(true);
-                setShowFileMention(false);
-                setShowSkillAutocomplete(false);
-                setShowSnippetAutocomplete(false);
-                return;
-            }
-        }
-
         setShowCommandAutocomplete(false);
-
-        const textBeforeCursor = value.substring(0, cursorPosition);
-
-        const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
-        if (lastSlashSymbol !== -1) {
-            const charBefore = lastSlashSymbol > 0 ? textBeforeCursor[lastSlashSymbol - 1] : null;
-            const textAfterSlash = stripLeadingSlashCommandSlot(textBeforeCursor.substring(lastSlashSymbol + 1));
-            const hasSeparator = textAfterSlash.includes(' ') || textAfterSlash.includes('\n');
-            const isWordBoundary = !charBefore || /\s/.test(charBefore);
-
-            if (isWordBoundary && !hasSeparator) {
-                setSkillQuery(textAfterSlash);
-                setShowSkillAutocomplete(true);
-                setShowFileMention(false);
-                return;
-            }
+        if (trigger.kind === 'slash-skill') {
+            setSkillQuery(trigger.query);
+            setShowSkillAutocomplete(true);
+            setShowFileMention(false);
+            setShowSnippetAutocomplete(false);
+            return;
         }
-
         setShowSkillAutocomplete(false);
         setSkillQuery('');
-
-        const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
-        if (lastHashSymbol !== -1) {
-            const charBefore = lastHashSymbol > 0 ? textBeforeCursor[lastHashSymbol - 1] : null;
-            const textAfterHash = textBeforeCursor.substring(lastHashSymbol + 1);
-            const isWordBoundary = !charBefore || /\s/.test(charBefore);
-            if (isWordBoundary && !textAfterHash.includes(' ') && !textAfterHash.includes('\n')) {
-                setSnippetQuery(textAfterHash);
-                setShowSnippetAutocomplete(true);
-                setShowFileMention(false);
-                return;
-            }
-        }
-
-        setShowSnippetAutocomplete(false);
-
-        const nextMentionQuery = getFileMentionAutocompleteQuery({ value, cursorPosition, inputSource, insertedText });
-        if (nextMentionQuery === null) {
+        if (trigger.kind === 'snippet') {
+            setSnippetQuery(trigger.query);
+            setShowSnippetAutocomplete(true);
             setShowFileMention(false);
-        } else {
-            setMentionQuery(nextMentionQuery);
-            setShowFileMention(true);
+            return;
         }
+        setShowSnippetAutocomplete(false);
+        setMentionQuery(trigger.query);
+        setShowFileMention(true);
     }, [
         inputMode,
         setCommandQuery,
@@ -6247,6 +6222,31 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         t('chat.modelControls.selectModel'),
     );
     const nativeModelVariant = surface.selection.value.variant?.trim();
+    const handleNativeSuggestionRows = useEvent((payload: ComposerAutocompleteVisibleRows) => {
+        setNativeSuggestionRows([...payload.rows]);
+        setNativeSuggestionHighlight(payload.highlightedIndex);
+    });
+    const handleNativeAutocompleteAccept = useEvent((index: number) => {
+        if (showCommandAutocomplete) {
+            commandRef.current?.acceptIndex(index, true);
+            return;
+        }
+        if (showSkillAutocomplete) {
+            skillRef.current?.acceptIndex(index);
+            return;
+        }
+        if (showFileMention) {
+            mentionRef.current?.acceptIndex(index);
+        }
+    });
+    const handleNativeAutocompleteDismiss = useEvent(() => {
+        setShowCommandAutocomplete(false);
+        setShowSkillAutocomplete(false);
+        setShowSnippetAutocomplete(false);
+        setShowFileMention(false);
+        setNativeSuggestionRows([]);
+        setNativeSuggestionHighlight(0);
+    });
     const nativeIosComposerActive = useNativeIosComposer({
         enabled: isMobile && surface.kind === 'primary',
         isMobile,
@@ -6274,7 +6274,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         agentAria: t('chat.modelControls.selectAgent'),
         attachments: attachedFiles,
         removeAttachmentNamedAria: (name) => t('chat.fileAttachment.actions.removeNamed', { name }),
-        onText: (text, composing) => {
+        onText: (text, composing, selection) => {
             if (composing) {
                 if (textareaRef.current) textareaRef.current.value = text;
                 applyProgrammaticEdit(text);
@@ -6289,6 +6289,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             const nextText = reconciled?.text ?? text;
             if (textareaRef.current) textareaRef.current.value = nextText;
             applyProgrammaticEdit(nextText);
+            const cursor = Math.max(0, Math.min(selection?.start ?? nextText.length, nextText.length));
+            updateAutocompleteState(nextText, cursor);
             if (!reconciled) return;
             const removed = new Set(reconciled.removedFilenames.map((filename) => filename.toLowerCase()));
             for (const attachment of attachedFiles) {
@@ -6299,8 +6301,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         },
         onSend: (text) => {
             if (textareaRef.current) textareaRef.current.value = text;
-            applyProgrammaticEdit(text);
-            handlePrimaryAction();
+            handoffNativeComposerSendToWeb({
+                text,
+                applyDocument: applyProgrammaticEdit,
+                submit: handlePrimaryAction,
+            });
         },
         onAbort: handleAbort,
         onAttach: markComposerActionGesture,
@@ -6320,6 +6325,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         showScrollToBottom: Boolean(showScrollToBottom && onScrollToBottom),
         scrollAria: t('chat.scrollToBottom.aria'),
         onScrollToBottom: onScrollToBottom ?? (() => {}),
+        autocompleteOpen: nativeSuggestionRows.length > 0 && (
+            showCommandAutocomplete || showSkillAutocomplete || showFileMention
+        ),
+        autocompleteHighlightedIndex: nativeSuggestionHighlight,
+        autocompleteRows: nativeSuggestionRows,
+        onAutocompleteAccept: handleNativeAutocompleteAccept,
+        onAutocompleteDismiss: handleNativeAutocompleteDismiss,
     });
     const nativeAccessoryRef = React.useRef<HTMLDivElement>(null);
     useResizeObserver(nativeIosComposerActive ? nativeAccessoryRef : null, () => {
@@ -7499,6 +7511,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             onClose={() => setShowCommandAutocomplete(false)}
                             commandPolicy={(command) => isChatInputCommandAllowed(surface, command)}
                             commandContext={commandContext}
+                            onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
                             style={isDesktopExpanded && autocompleteOverlayPosition
                                 ? {
                                     left: `${autocompleteOverlayPosition.left}px`,
@@ -7519,6 +7532,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             directory={currentDirectory}
                             onSkillSelect={handleSkillSelect}
                             onClose={() => setShowSkillAutocomplete(false)}
+                            onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
                             style={isDesktopExpanded && autocompleteOverlayPosition
                                 ? {
                                     left: `${autocompleteOverlayPosition.left}px`,
@@ -7560,6 +7574,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             onAgentSelect={handleAgentSelect}
                             onSessionSelect={handleSessionSelect}
                             onClose={() => setShowFileMention(false)}
+                            onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
                             style={isDesktopExpanded && autocompleteOverlayPosition
                                 ? {
                                     left: `${autocompleteOverlayPosition.left}px`,

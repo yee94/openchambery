@@ -27,8 +27,9 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('onScrollToBottom');
     expect(source).toContain('showScrollToBottom: args.showScrollToBottom');
     expect(source).toContain('resolveNativeComposerTextWrite');
+    expect(source).toContain('buildNativeComposerUpdatePayload');
     expect(source).toContain('echoingNativeRef');
-    expect(source).toContain('forceText');
+    expect(source).toContain('echoingNativeRef.current = true');
     expect(source).toContain('nativeIosComposerSession.retain');
     expect(source).toContain('nativeIosComposerSession.release');
     expect(source).toContain('nativeIosComposerSession.bind');
@@ -38,6 +39,10 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('getNativeIosComposerPlugin().update');
     expect(source).toContain('applyNativeComposerHeightVar');
     expect(source).toContain('packNativeIosComposerIdenticon');
+    const chatInput = readFileSync(join(here, 'ChatInput.tsx'), 'utf-8');
+    expect(chatInput).toContain('handoffNativeComposerSendToWeb');
+    expect(chatInput).toContain('submit: handlePrimaryAction');
+    expect(chatInput).not.toContain('applyProgrammaticEdit(text);\n            handlePrimaryAction();');
     expect(source).toContain('modelVariantLabel');
     expect(source).toContain('queueAria');
     expect(source).toContain('attachPhotosLabel');

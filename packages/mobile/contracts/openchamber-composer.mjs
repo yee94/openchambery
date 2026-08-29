@@ -9,9 +9,9 @@ export const openChamberComposerContract = {
     ],
   },
   methods: {
-    ios: ['present', 'update', 'hide', 'dismiss', 'setSuppressed', 'focus', 'blur'],
+    ios: ['present', 'update', 'hide', 'show', 'dismiss', 'setSuppressed', 'focus', 'blur'],
   },
   events: {
-    ios: ['textChanged', 'send', 'abort', 'attach', 'filesPicked', 'removeAttachment', 'openModel', 'cycleAgent', 'openAgent', 'heightChanged', 'expandedChanged', 'scrollToBottom'],
+    ios: ['textChanged', 'send', 'abort', 'attach', 'filesPicked', 'removeAttachment', 'openModel', 'cycleAgent', 'openAgent', 'heightChanged', 'expandedChanged', 'scrollToBottom', 'autocompleteAccept', 'autocompleteDismiss'],
   },
 }
