@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.13] - 2026-08-29
+
+### Fixed
+
+- Clicking scroll-to-bottom now actually jumps to the newest message on the new timeline. The control previously called a no-op writer that is disabled there.
+
 ## [1.19.0-beta.12] - 2026-08-29
 
 ### Fixed
