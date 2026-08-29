@@ -17,7 +17,6 @@ Own the direction-agnostic OpenCode config sync contract: allowlist planning on 
 | `local-backup.js` | Local (pull destination) generational backup + tar extract |
 | `tar.js` | `collectLocalTarBuffer` (buffered) |
 | `engine.js` | `applyConfigSyncPlan` orchestration for **push** (prepare → putTar* → finalize) |
-| `credential-auth.js` | Credential grant enforcement helpers |
 | `target-id.js` | `ssh:<instanceId>` namespace helper |
 
 ## Contract shape
@@ -28,6 +27,7 @@ Own the direction-agnostic OpenCode config sync contract: allowlist planning on 
 - **Plan** (source-computed): `{ direction: 'push' | 'pull', syncRunId?, sourceTargetId?, targetId?, files, directories, agentsRoot, authFile, deletes, totalBytes, selections? }`
 - **Selections**: `{ fileGroups: boolean[], singleFiles: boolean[], directories: boolean[], agentsRoot: boolean, authFile: boolean }`
   - Preview and apply must share one selections snapshot so the confirmed scope cannot drift.
+  - `authFile` defaults unchecked like an opt-in ordinary selection; once checked it syncs the same way as other allowlisted files (no extra grant).
 
 ## Direction flow
 
@@ -45,7 +45,7 @@ Switching direction in the wizard **must** discard the previous preview and re-c
 - Prepare (remote or local) writes generational backups under `<backupRoot>/<syncRunId>/` and prunes older than `OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS`. Failed runs keep their scene until pruned.
 - Finalize confirms the run's backup directory exists.
 - Run records (Electron `sync-run-store`) persist `direction` alongside `syncRunId` / summary; they are not stored in `settings.json`.
-- **Credential sync:** target reachability ≠ credential transfer. `auth.json` is omitted unless the SSH target has an explicit grant. Push and pull reuse the same grant. Unauthorized credential plans fail with `code: credential_sync_unauthorized`.
+- **`auth.json` sync:** treated like any other selected allowlist item. Default selection leaves it unchecked; when selected, push/pull transfer it under the dedicated auth backup directory with no separate credential grant.
 
 ## HTTP receive protocol (direct / later relay)
 
@@ -53,18 +53,17 @@ Routes under `/api/openchamber/config-sync/*` (global `/api` auth gate: session 
 
 | Method | Path | Role |
 |--------|------|------|
-| POST | `/probe` | Inventory + existence vs plan; reports `inboundCredentialAuthorized` |
+| POST | `/probe` | Inventory + existence vs plan |
 | POST | `/prepare` | Generational local backup + deletes; one inflight `syncRunId` |
 | PUT | `/put/:kind?syncRunId=` | Stream tar.gz (`config` \| `agents` \| `auth`) |
 | GET | `/download/:kind` | Stream tar.gz for pull source |
 | POST | `/finalize` | Confirm backup generation + success receipt |
 | POST | `/abort` | Clear inflight |
-| GET/PUT | `/credential-auth` | Host inbound credential grant (`configSyncInboundCredentialAuthorized`) |
 
-`auth` put/download requires inbound credential authorization (`credential_sync_unauthorized`). Concurrent prepare → `sync_in_progress`.
+`auth` put/download follows the same selection/plan rules as other kinds. Concurrent prepare → `sync_in_progress`.
 
 ## Composition
 
 - Electron SSH: `TargetExecutor` push + inventory/tar pull.
-- Electron direct hosts: `direct-config-sync.mjs` calls these HTTP routes (`host:<id>` grants in `desktopCredentialSyncGrants`, channel `host-settings`).
-- **Relay hosts (ticket 06):** UI opens an E2EE tunnel (`packages/ui/src/lib/relay/relay-config-sync.ts`) and calls the same HTTP routes via `tunnel.fetch`. Target id is `relay:<serverId>` (signing-key fingerprint). Preview/apply refresh candidates and refuse on `serverId` mismatch (`relay_identity_changed`) with no fallback identity. Outbound credential grants use channel `pairing-settings` (pairing trust UX / host trust settings for the paired relay). Inbound credential grants remain `configSyncInboundCredentialAuthorized` on the receiving Host. Auth is always bearer + grant — never “reachable ⇒ trusted”.
+- Electron direct hosts: `direct-config-sync.mjs` calls these HTTP routes.
+- **Relay hosts (ticket 06):** UI opens an E2EE tunnel (`packages/ui/src/lib/relay/relay-config-sync.ts`) and calls the same HTTP routes via `tunnel.fetch`. Target id is `relay:<serverId>` (signing-key fingerprint). Preview/apply refresh candidates and refuse on `serverId` mismatch (`relay_identity_changed`) with no fallback identity. Auth remains the global `/api` bearer gate; selected `auth.json` transfers without a separate credential grant.

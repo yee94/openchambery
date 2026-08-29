@@ -2320,6 +2320,8 @@ describe("optimisticSend target directory", () => {
     })
 
     expect(ticket.messageID).toBe("message-begin")
+    const { hasPendingUserSendAnimation } = await import("@/lib/userSendAnimation")
+    expect(hasPendingUserSendAnimation("session-begin")).toBe(true)
     expect(optimisticAdd).not.toBeNull()
     expect((optimisticAdd as unknown as OptimisticAddCall).message.id).toBe("message-begin")
     expect(targetStore.getState().session_status["session-begin"]?.type).toBe("busy")
@@ -2341,6 +2343,8 @@ describe("optimisticSend target directory", () => {
       { state: "mark", sessionId: "session-begin", messageID: "message-begin" },
       { state: "clear", sessionId: "session-begin", messageID: "message-begin" },
     ])
+    const { resetUserSendAnimationForTests } = await import("@/lib/userSendAnimation")
+    resetUserSendAnimationForTests()
   })
 
   test("ticket settle failure rolls back the optimistic row without double insert", async () => {

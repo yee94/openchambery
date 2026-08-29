@@ -11,7 +11,7 @@
 // has no channel to settle its own goal. When the small model is unavailable
 // the loop still terminates via the budget and the continuation cap.
 //
-// Purely event-driven like session-assist: no polling, no backfill, no session
+// Purely event-driven: no polling, no backfill, no session
 // scans. Only sessions that emit events while the server runs ever tick.
 
 import fs from 'fs';
@@ -110,8 +110,8 @@ const buildAuditSystemPrompt = () => [
 ].join('\n');
 
 // Hard guard against language hallucination (account-side personalization
-// can leak a different language despite the instruction — same issue
-// session-assist hit): if the note uses a script absent from the objective
+// can leak a different language despite the instruction): if the note uses
+// a script absent from the objective
 // and the agent's reply, drop the note but keep the verdict.
 const SCRIPT_RANGES = [
   /[Ѐ-ӿ]/, // Cyrillic

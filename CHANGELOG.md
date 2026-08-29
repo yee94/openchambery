@@ -4,6 +4,122 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.14] - 2026-08-29
+
+### Added
+
+- Sending a message on the new timeline now parks that message near the top of the transcript, with the sending or thinking status staying under the bubble. Space below is reserved for the reply (capped at about 60% of the viewport), and you can still scroll away and back.
+
+### Changed
+
+- Composer Send and Stop use a filled circular control so the stop square stays visible on WebKit.
+- Long file paths in diffs and change lists keep the filename readable by truncating the middle.
+- Stopping generation shows muted “Generation stopped” copy instead of an error banner.
+
+### Removed
+
+- Session recap is gone: the setting, transcript spacer, and server assist runtime. The small-model description now refers to session titles and summaries.
+
+## [1.19.0-beta.13] - 2026-08-29
+
+### Fixed
+
+- Clicking scroll-to-bottom now actually jumps to the newest message on the new timeline. The control previously called a no-op writer that is disabled there.
+
+## [1.19.0-beta.12] - 2026-08-29
+
+### Fixed
+
+- Services panel shortcuts now toggle closed when already on the requested tab, and switch tab when the panel is open on a different one. Desktop toggle opens instance; the usage shortcut opens usage.
+
+## [1.19.0-beta.11] - 2026-08-29
+
+### Fixed
+
+- Opening a session that is still streaming now lands on its newest message instead of gliding partway and stopping mid-conversation with follow disengaged.
+
+## [1.19.0-beta.10] - 2026-08-29
+
+### Changed
+
+- Credential sync is now an opt-in item of the config sync selection instead of a separate per-target authorization, removing the standalone grant step that previously gated `auth.json` transfers.
+
+## [1.19.0-beta.9] - 2026-08-29
+
+### Fixed
+
+- Loading older history no longer jumps the transcript to the newest message. The at-end signal could stay stale after switching sessions, which made the load-older button skip releasing end pinning, and the list then treated the prepended history as a reason to scroll to the live edge.
+- The read position is now captured when older history is requested rather than when it arrives, so end pinning is stood down before the new rows can move the viewport.
+
+## [1.19.0-beta.8] - 2026-08-29
+
+### 聊天
+
+- **加载更早历史时，你正在看的那条消息一动不动：** 上一版让列表在插入历史后多补偿一段时间，但真正的问题不是补偿多久，而是列表**按哪一条消息**来对齐——它选的是「视口里最上面那条」。点「加载更多」时你正处在最顶端，于是新插进来的消息立刻变成了最上面那条，而它们刚落位时用的还是估算高度；列表于是死死盯住一条估算高度的消息，随着逐行实测，整段历史的误差全部累加到你的阅读位置上方，最后视口就停到了会话中间。现在改为显式记住你点击前正在看的那条消息（取数据之前就已记录），并一直把它钉在原来的屏幕位置上，直到新插入的这批内容彻底停止变化——这比固定时间窗更久，因为消息正文的排版会在稍后再变一次高度。位置校正走列表自己的滚动接口、且每次都是绝对目标，不再与列表内部的位置调整互相抢写。你一旦上滑或触屏，锚点立即让位给你。
+- **加载过程中输入框不再闪出：** 上一版已让滚动容器在重新锚定期间对外声明状态，但这个声明是在画面绘制之后才挂上的，而列表在同一次提交里就已经调整了滚动位置——浏览器把那一帧的滚动事件抢在声明之前发了出去。就这一帧没被标记，却是一次很大的「离底距离」变化，被输入框读成了用户的主动下滑。现在声明改在绘制之前完成，并覆盖整个锚定过程。
+
+包含 1.19.0-beta.1 ~ beta.7 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.7] - 2026-08-29
+
+### 聊天
+
+- **滚动经过的消息不再卡在 loading 骨架：** 消息正文先以骨架挂载，等一次「水合」把它换成正式排版；而滚动中途换排版会顶动正在读的内容，所以只允许在滚动停下来之后换。但新引擎只有滚动事件这一个触发点，它调度的那一次水合就在同一帧里执行，永远不算「已停下」——于是快速滚动时越过预加载窗口的消息被跳过后再也没有第二次机会，只能退出重进对话才恢复。现在滚动停下来后会补一次水合，单次提交超过上限而剩下的部分也会继续排队补完。
+
+包含 1.19.0-beta.1 ~ beta.6 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.6] - 2026-08-29
+
+### 聊天
+
+- **加载更早历史时视口原地不动：** 上一版已经先释放端部跟随，但插入的历史是先按估算高度落位、随后才逐行实测，而新引擎当初关掉了列表默认的尺寸补偿，于是这些实测差值全部累加到阅读位置上方——加载完成的一瞬间视口被推到了别处。现在每次插入更早历史后会在一个短窗口内开启尺寸补偿，把这批新行的实测差值吸收掉；窗口之外，工具调用展开之类的原地增长照旧向下生长。
+- **加载过程中输入框不再闪出：** 插入内容与列表的位置纠正落在不同帧，「离底距离」先跳远再跳回，回来那一帧和用户快速下滑无法区分，于是输入框在加载中途闪成展开态。现在滚动容器会在重新锚定期间对外声明状态，这些帧不再计入手势行程，输入框保持原样直到锚定结束。
+
+包含 1.19.0-beta.1 ~ beta.5 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.5] - 2026-08-29
+
+### 聊天
+
+- **加载更早历史不再把视图甩走：** 新引擎把「插入更早消息」当成一次内容增长，而此时端部跟随还开着，于是列表立刻把视口纠回最新消息处。现在点「加载更多」（以及滚动到顶部触发的加载）会先释放端部跟随再取数据，插入的历史落在阅读位置上方，读到哪儿还在哪儿。已经贴在底部时不做释放——那种情况下纠正本身就是空操作。
+- **手动上滑后不会再被自动拉回底部：** 新引擎原本只按「离底距离」判断是否继续跟随，离底不足十分之一屏就照旧跟随，流式回复时轻轻上滑会被拽回去，而且无需下滑就会悄悄恢复跟随。现在上滑手势会粘性地交出跟随权，只有真正回到底部、点「回到底部」或切换会话才重新接管。
+
+包含 1.19.0-beta.1 ~ beta.4 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.4] - 2026-08-29
+
+### 移动端
+
+- **流式回复时输入框不再闪成收起态：** 新引擎在会话进行中用动画方式把视图滑回底部，收起判定只看「离底距离」，于是把这段动画误读成用户上滑。现在收起只由真实手势触发，内容增长和列表自身的回滑不再影响输入框的吸底展开；滑到真正底部仍会展开，抬手后的惯性滑动照旧生效。
+
+包含 1.19.0-beta.1 ~ beta.3 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.3] - 2026-08-29
+
+### 移动端
+
+- **顶部导航与输入框不再压住正文：** 新时间线引擎下聊天记录上下两侧的留白丢失，首条消息被顶部导航遮住、末条被输入框遮住。留白改为由列表实际测量的占位承担，安全区、导航高度、输入框高度等变量继续动态生效。
+- **顺带修好三处新引擎下的静默失效：** 附件定位、展开/折叠工具调用后的滚动位置回补、以及聊天容器的兜底查询——它们都通过 `data-scrollbar="chat"` 找滚动容器，而新引擎下这个标记丢了；聊天滚动条样式同时恢复。
+
+包含 1.19.0-beta.1 ~ beta.2 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.2] - 2026-08-29
+
+### 移动端
+
+- **往下滚动时输入框会回来了：** 之前输入框收起后，只有滚到接近底部（离底 80px 内）才重新出现，从很上面往下滑要一路滑到底才看得到。现在只要往下滑动一小段就会唤出，唤出后在同一次下滑手势里保持展开，直到再次上滑才收起。离底 80px 内的按位置比例跟随、以及收起后的惯性沉降窗口保持原样；顶部橡皮筋回弹不再被误当成下滑意图。
+
+包含 1.19.0-beta.1 的全部内容（Beta 新时间线引擎）。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.1] - 2026-08-29
+
+### 聊天（Beta 新时间线引擎）
+
+- **进入会话不再闪动：** 聊天记录改由单一列表持有滚动位置（替换 TanStack 虚拟化 + 自动跟随钉底的组合），打开会话直接落在最新消息；迟到的异步内容增长由列表自身跟随，不再触发逐帧滚动校正。默认启用，可在 DevTools 控制台执行 `localStorage.setItem('oc:legend-timeline', '0')` 并刷新回退旧引擎。
+- **新引擎下交互与流式正常：** 展开工具调用、切换活动密度等行内状态即时生效；流式回复按块即时上屏；Markdown 渐进加载只重绘真正变化的行。
+- **加载更早历史与"回到底部"按钮改读列表真实位置：** 修复新引擎下滚动到顶部附近不再触发历史加载、按钮不再常隐的问题。
+- 本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
 ## [1.18.6-beta.2] - 2026-08-28
 
 ### 修复

@@ -2,15 +2,19 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { TIMELINE_ANCHORING_ATTRIBUTE } from './lib/scroll/timelineScrollAnchoring';
 import { COMPOSER_SWAP_CSS_VAR, COMPOSER_SWAP_SNAP_MS } from './mobileComposerSwap';
 import { useMobileComposerSwap } from './useMobileComposerSwap';
 
 const SCROLL_HEIGHT = 1000;
 const CLIENT_HEIGHT = 600;
 
+/** Mutable so a test can append content the way a streaming tail does. */
+let scrollHeight = SCROLL_HEIGHT;
+
 const setDistance = (scrollEl: HTMLElement, distance: number) => {
     // distance = scrollHeight - scrollTop - clientHeight
-    scrollEl.scrollTop = SCROLL_HEIGHT - CLIENT_HEIGHT - distance;
+    scrollEl.scrollTop = scrollHeight - CLIENT_HEIGHT - distance;
 };
 
 const readSwap = (scopeEl: HTMLElement) => ({
@@ -35,9 +39,10 @@ describe('useMobileComposerSwap gesture commit', () => {
         document.body.appendChild(container);
         scrollEl = document.createElement('div');
         scopeEl = document.createElement('div');
+        scrollHeight = SCROLL_HEIGHT;
         Object.defineProperty(scrollEl, 'scrollHeight', {
             configurable: true,
-            get: () => SCROLL_HEIGHT,
+            get: () => scrollHeight,
         });
         Object.defineProperty(scrollEl, 'clientHeight', {
             configurable: true,
@@ -86,6 +91,15 @@ describe('useMobileComposerSwap gesture commit', () => {
     const fireTouch = async (type: 'touchstart' | 'touchend') => {
         await act(async () => {
             scrollEl.dispatchEvent(new Event(type));
+        });
+    };
+
+    // Overscroll cannot be expressed as a distance: iOS drives scrollTop below
+    // zero, so these tests set it directly.
+    const fireScrollTop = async (scrollTop: number) => {
+        await act(async () => {
+            scrollEl.scrollTop = scrollTop;
+            scrollEl.dispatchEvent(new Event('scroll'));
         });
     };
 
@@ -166,6 +180,112 @@ describe('useMobileComposerSwap gesture commit', () => {
             phase: 'rest',
             rest: 'expanded',
         });
+    });
+
+    /**
+     * The list follows its own streaming growth: the tail appends, the end
+     * jumps away from the viewport, and end maintenance glides back over
+     * several frames. Every one of those frames reports a large distance from
+     * the bottom, which used to flash the composer into its compact form even
+     * though the user never touched the screen.
+     */
+    test('streaming growth and the glide back never collapse the composer', async () => {
+        await mount();
+
+        // The tail appends 300px: scrollTop is untouched, so the end moves away.
+        scrollHeight += 300;
+        await act(async () => {
+            scrollEl.dispatchEvent(new Event('scroll'));
+        });
+        expect(readSwap(scopeEl).rest).not.toBe('compact');
+
+        // Animated end maintenance glides back over several frames, each one
+        // reporting a large distance from the bottom.
+        for (const distance of [240, 180, 120, 60, 12, 0]) {
+            await fireScroll(distance);
+            expect(readSwap(scopeEl).rest).not.toBe('compact');
+        }
+
+        await advance(500);
+        expect(readSwap(scopeEl).rest).not.toBe('compact');
+
+        // Not vacuous: the same scroller, with the same geometry, still
+        // collapses the moment a finger is behind the motion.
+        await fireTouch('touchstart');
+        await fireScroll(300);
+        expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
+    });
+
+    test('travel toward the bottom reveals the composer far from the live edge', async () => {
+        await mount();
+
+        await fireTouch('touchstart');
+        await fireScroll(300);
+        expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
+
+        // One short downward step stays below the reveal threshold.
+        await fireScroll(280);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        // Travel accumulates across events, so a slow scroll qualifies too.
+        await fireScroll(270);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
+        await advance(COMPOSER_SWAP_SNAP_MS);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'expanded' });
+
+        // Later events of the same gesture are still far from the bottom; the
+        // reveal has to survive them instead of collapsing on absolute distance.
+        await fireScroll(260);
+        expect(readSwap(scopeEl).rest).toBe('expanded');
+
+        // Scrolling back up hands the endpoint back to distance follow.
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+    });
+
+    test('iOS top rubber-band spring-back is not downward travel', async () => {
+        await mount();
+
+        await fireTouch('touchstart');
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        // Overscroll past the top, then let the spring return to rest. The
+        // second event is 60px of downward motion with no intent behind it.
+        await fireScrollTop(-60);
+        expect(scrollEl.scrollTop).toBe(-60);
+        await fireScrollTop(0);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+    });
+
+    /**
+     * Loading older history prepends content and the list moves the scroll
+     * position to keep the read position: content growth and the correction
+     * land in separate frames, so the distance from the bottom leaps away and
+     * back. That return leg is indistinguishable from a fast scroll toward the
+     * live edge, and it flashed the composer open in the middle of a load.
+     */
+    test('the transcript re-anchoring a prepend never moves the composer', async () => {
+        await mount();
+
+        await fireTouch('touchstart');
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        scrollEl.setAttribute(TIMELINE_ANCHORING_ATTRIBUTE, 'true');
+        // The prepend lands: 2000px of older history above the viewport, then
+        // the list's correction puts the read position back where it was.
+        scrollHeight += 2000;
+        await fireScroll(2300);
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        // Not vacuous: the same two frames, with no re-anchoring in flight,
+        // still read as travel toward the bottom and reveal the composer.
+        scrollEl.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
+        await fireScroll(2300);
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('expanded');
     });
 
     test('multi-touch counts until the last finger lifts', async () => {

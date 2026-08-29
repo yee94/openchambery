@@ -219,6 +219,76 @@ describe('mobileComposerSwap', () => {
         expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
     });
 
+    test('travel toward the bottom reveals a compact composer outside the follow band', () => {
+        const compact = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+
+        // Far from the bottom, distance alone keeps it compact forever.
+        expect(applyComposerSwapScroll(compact, 600)).toMatchObject({
+            phase: 'rest',
+            rest: 'compact',
+            progress: 1,
+        });
+
+        // Same distance, but the viewport is travelling back toward the edge.
+        const revealed = applyComposerSwapScroll(compact, 600, { towardBottom: true });
+        expect(revealed).toMatchObject({ phase: 'snapping', rest: 'expanded', progress: 0 });
+
+        // The post-compact settle window still wins so momentum cannot bounce.
+        expect(applyComposerSwapScroll(compact, 600, {
+            towardBottom: true,
+            suppressReturn: true,
+        })).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+    });
+
+    test('geometry with no gesture behind it cannot start a collapse', () => {
+        const expanded = createComposerSwapState();
+
+        // Streaming growth pushes the end far away for several frames.
+        expect(applyComposerSwapScroll(expanded, 300, { userDriven: false })).toMatchObject({
+            phase: 'rest',
+            rest: 'expanded',
+            progress: 0,
+        });
+
+        // The same distance from a real gesture still collapses.
+        expect(applyComposerSwapScroll(expanded, 300, { userDriven: true })).toMatchObject({
+            phase: 'rest',
+            rest: 'compact',
+            progress: 1,
+        });
+    });
+
+    test('inside the follow band the tuned proportional return is unchanged', () => {
+        const compact = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+        const inBand = applyComposerSwapScroll(compact, 10, { towardBottom: true });
+        expect(inBand.phase).toBe('tracking');
+        expect(inBand.progress).toBeCloseTo(0.125);
+    });
+
+    test('holdExpanded keeps a revealed composer up until the user scrolls away', () => {
+        let state = applyComposerSwapSnapDone(
+            applyComposerSwapScroll(
+                applyComposerSwapSnapDone(applyComposerSwapForce(createComposerSwapState(), 'compact')),
+                600,
+                { towardBottom: true },
+            ),
+        );
+        expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
+
+        // Still hundreds of px from the bottom: absolute-distance follow would
+        // collapse it on the next event of the same downward gesture.
+        state = applyComposerSwapScroll(state, 560, { towardBottom: true, holdExpanded: true });
+        expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
+
+        // Once the hold is released, upward distance collapses it as before.
+        state = applyComposerSwapScroll(state, 560);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+    });
+
     test('distanceFromBottomOf never goes negative', () => {
         expect(distanceFromBottomOf({
             scrollHeight: 100,

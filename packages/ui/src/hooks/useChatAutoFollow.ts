@@ -3,6 +3,11 @@ import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
+import {
+    TOUCH_FINGER_DOWN_THRESHOLD,
+    isReleaseKey,
+    nestedScrollableCanConsumeUp,
+} from '@/hooks/lib/chatUpwardIntent';
 import { getViewportSessionMemory, useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
 
 type AutoFollowState = 'following' | 'released';
@@ -103,7 +108,6 @@ export interface UseChatAutoFollowResult {
 const BOTTOM_SPACER_DESKTOP_VH = 0.10;
 const BOTTOM_SPACER_MOBILE_PX = 40;
 const SAVE_DEBOUNCE_MS = 150;
-const TOUCH_FINGER_DOWN_THRESHOLD = 2;
 // How long an "auto" (programmatic) scroll position stays trusted. Browsers can
 // dispatch the `scroll` event for our write asynchronously, after newer content
 // has already changed the geometry; the window keeps us from reading that lag as
@@ -186,40 +190,6 @@ const canScrollGeometry = (geometry: ScrollGeometry): boolean => {
 
 const isNearBottomOf = (geometry: ScrollGeometry, isMobile: boolean): boolean => {
     return distanceFromBottomOf(geometry) <= computeBottomZoneThresholdFor(isMobile, geometry.clientHeight);
-};
-
-const isReleaseKey = (event: KeyboardEvent): boolean => {
-    if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-    }
-    switch (event.key) {
-        case 'ArrowUp':
-        case 'PageUp':
-        case 'Home':
-            return true;
-        default:
-            return false;
-    }
-};
-
-// Wheel/touch upward intent must not fire while a nested scroller inside the
-// chat root can still consume the gesture. Walk ancestors from event.target to
-// (but not including) root; geometry alone — no selectors, no getComputedStyle.
-const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | null): boolean => {
-    let node: Element | null = target instanceof Element
-        ? target
-        : target instanceof Node
-            ? target.parentElement
-            : null;
-    while (node && node !== root) {
-        if (node instanceof HTMLElement) {
-            if (node.scrollTop > 0 && node.scrollHeight > node.clientHeight + 1) {
-                return true;
-            }
-        }
-        node = node.parentElement;
-    }
-    return false;
 };
 
 export const useChatAutoFollow = ({
@@ -426,6 +396,7 @@ export const useChatAutoFollow = ({
     React.useEffect(() => () => cancelForcedBottom(), [containerEl]);
 
     const forceBottomDefeatingMomentum = useEvent(() => {
+        if (!enabled) return;
         const el = scrollRef.current;
         if (!el) return;
 
@@ -489,6 +460,7 @@ export const useChatAutoFollow = ({
     // `force` true = user-intent jump (clears released and always scrolls).
     // `force` false = passive follow (only while still following — idle ok).
     const scrollToBottom = useEvent((force: boolean, behavior: ScrollBehavior = 'auto') => {
+        if (!enabled) return;
         const el = scrollRef.current;
 
         if (force && stateRef.current !== 'following') {

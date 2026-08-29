@@ -368,10 +368,6 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
     delete restChanges.summaryCustomAPIToken;
   }
 
-  if ('sessionRecapEnabled' in restChanges && typeof restChanges.sessionRecapEnabled !== 'boolean') {
-    delete restChanges.sessionRecapEnabled;
-  }
-
   if ('sessionTitleRefreshEnabled' in restChanges && typeof restChanges.sessionTitleRefreshEnabled !== 'boolean') {
     delete restChanges.sessionTitleRefreshEnabled;
   }

@@ -166,10 +166,18 @@ Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne)
 | --- | --- |
 | `/ota/bundles/(.*)` (full GET) | `public, max-age=31536000, immutable` |
 | `/ota/bundles/(.*)` (client `Range` or upstream `206`) | `no-store` (never edge-cache partial bodies) |
-| `/ota/channels/(.*)` | `no-cache, max-age=0` |
+| `/ota/channels/(.*)` | `no-cache, max-age=0` (Vercel static); EdgeOne proxy uses `s-maxage=60` + stale-while-revalidate |
+| `/CHANGELOG.md` | Vercel static: `max-age=300`; EdgeOne proxy: same short TTL as channels (`s-maxage=60`) |
 
 ### Deploying bundles and channels
 
 CI publishes a static snapshot: place zip artifacts under `ota/bundles/<bundleId>.zip` and update the matching `ota/channels/<channel>.json`. The Vercel origin (`openchamber-update.vercel.app`) is authoritative — CI deploys snapshots there via `vercel deploy --prebuilt`.
 
-The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries the seeds. To keep it current, `edge-functions/ota/[...path].js` reverse-proxies `/ota/channels/*.json` and `/ota/bundles/*.zip` to the Vercel origin with edge-friendly cache headers (channels `s-maxage=60` + stale-while-revalidate, full bundles `immutable`). For bundle paths only, the proxy forwards client `Range` and passes through `content-range` / `accept-ranges` so Capgo native resume works; channel paths never forward `Range`. Partial responses use `cache-control: no-store` so an edge never caches a byte-range body that would poison later full GETs. The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative no-update.
+The EdgeOne host (`openchamber.xiaobe.top`) deploys from git and therefore only carries git-time seeds. To keep it current, EdgeOne reverse-proxies allowlisted paths to the Vercel origin:
+
+- `edge-functions/ota/[[default]].js` → `/ota/channels/*.json` and `/ota/bundles/*.zip`
+- `edge-functions/CHANGELOG.md.js` → exact `/CHANGELOG.md` (so mobile `releaseNotes` on EdgeOne match Vercel)
+
+Cache headers: channels and CHANGELOG use `s-maxage=60` + stale-while-revalidate; full bundles use `immutable`. For bundle paths only, the proxy forwards client `Range` and passes through `content-range` / `accept-ranges` so Capgo native resume works; channel and CHANGELOG paths never forward `Range`. Partial responses use `cache-control: no-store` so an edge never caches a byte-range body that would poison later full GETs. The proxy is path-allowlisted and surfaces upstream failures as `502` — it never fabricates an authoritative empty body.
+
+**Static assets shadow edge functions on EdgeOne**, so the EdgeOne build (`edgeone.json`) sets `OPENCHAMBER_UPDATE_SKIP_OTA_COPY=1` and `OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY=1` — the `dist/` output must not contain `ota/` or `CHANGELOG.md`, or the proxies never run. Vercel still emits both as real static files (authoritative origin).

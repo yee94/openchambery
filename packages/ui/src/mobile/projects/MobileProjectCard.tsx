@@ -125,9 +125,9 @@ export function MobileProjectCard({
   const card = (
     <article
         data-mobile-press-surface="soft"
+        data-pressed={pressed ? 'true' : undefined}
         className={cn(
           'oc-mobile-project-card relative flex items-stretch overflow-hidden rounded-[var(--oc-mobile-surface-radius)]',
-          pressed && 'bg-interactive-hover',
           className,
         )}
       >

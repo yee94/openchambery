@@ -291,45 +291,6 @@ export function useTranscriptMessages(
   )
 }
 
-export type TranscriptLastMessageSnapshot = {
-  readonly id: string
-  readonly role: string
-  readonly timestamp: number
-}
-
-/**
- * Narrow last-message projection for assist/recap (id/role/time only).
- * Stable reference when the trailing message identity is unchanged.
- */
-export function useTranscriptLastMessageSnapshot(
-  sessionID: string,
-  directory: string,
-  store: StoreApi<DirectoryStore>,
-): TranscriptLastMessageSnapshot | null {
-  return useTranscriptSelector(
-    sessionID,
-    directory,
-    store,
-    (data) => {
-      if (data.messageOrder.length === 0) return null
-      const lastID = data.messageOrder[data.messageOrder.length - 1]
-      const message = lastID ? data.messagesByID[lastID] : undefined
-      if (!message?.id) return null
-      const time = (message as { time?: { completed?: number; created?: number } }).time
-      return {
-        id: message.id,
-        role: typeof message.role === "string" ? message.role : "",
-        timestamp: time?.completed ?? time?.created ?? 0,
-      }
-    },
-    (a, b) => {
-      if (a === b) return true
-      if (!a || !b) return false
-      return a.id === b.id && a.role === b.role && a.timestamp === b.timestamp
-    },
-  )
-}
-
 function transcriptDataEqual(a: TranscriptData, b: TranscriptData): boolean {
   if (a === b) return true
   if (a.sessionID !== b.sessionID || a.liveRevision !== b.liveRevision) return false

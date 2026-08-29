@@ -480,7 +480,7 @@ textarea[data-chat-input="true"]:focus-visible {
 /* Safari/WebKit fixes for buttons and SVG icons */
 /* Remixicon puts fill="currentColor" on root SVG which WebKit renders as background */
 /* Only stroke-sprite roots need fill:none — do NOT blanket all button svg
-   (that hides filled custom glyphs like StopIcon / brand marks). */
+   (that hides filled custom glyphs like brand marks). */
 button svg.oc-icon,
 [role="button"] svg.oc-icon,
 button svg.remixicon,

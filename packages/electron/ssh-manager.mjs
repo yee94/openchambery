@@ -16,7 +16,6 @@ import {
   SYNC_DIRECTION_PULL,
   SYNC_DIRECTION_PUSH,
   applyConfigSyncPlan,
-  assertCredentialSyncAuthorized,
   assertTargetCapability,
   buildRemoteAgentsTarScript,
   buildRemoteAuthTarScript,
@@ -36,7 +35,6 @@ import {
   shellQuote,
 } from '@openchambery/web/server/lib/config-sync/index.js';
 
-import { createCredentialSyncAuthStore } from './credential-sync-auth-store.mjs';
 import { createSettingsStore } from './settings-store.mjs';
 import {
   createSyncRunStore,
@@ -1066,8 +1064,6 @@ export class ElectronSshManager {
       || createSyncRunStore({
         resolveDataDir: () => path.dirname(this.settingsStore.resolveFilePath()),
       });
-    this.credentialSyncAuthStore = options.credentialSyncAuthStore
-      || createCredentialSyncAuthStore({ settingsStore: this.settingsStore });
     this.appVersion = options.appVersion;
     this.opencodeCliVersion = options.opencodeCliVersion;
     this.emit = options.emit;
@@ -1082,32 +1078,6 @@ export class ElectronSshManager {
     this.ephemeralUiPasswords = new Map();
     /** @type {Map<string, { syncRunId: string, promise: Promise<unknown> }>} targetId → in-flight sync */
     this.syncInFlight = new Map();
-  }
-
-  /**
-   * Query credential-sync grant for an SSH instance (trust-channel surface).
-   * @param {string} instanceId
-   */
-  getCredentialSyncGrant(instanceId) {
-    return this.credentialSyncAuthStore.getGrantForSshInstance(instanceId);
-  }
-
-  /**
-   * Grant credential sync for an SSH instance via instance-settings channel.
-   * @param {string} instanceId
-   */
-  async grantCredentialSync(instanceId) {
-    return this.credentialSyncAuthStore.grantForSshInstance(instanceId, {
-      channel: 'instance-settings',
-    });
-  }
-
-  /**
-   * Revoke credential sync for an SSH instance.
-   * @param {string} instanceId
-   */
-  async revokeCredentialSync(instanceId) {
-    return this.credentialSyncAuthStore.revokeForSshInstance(instanceId);
   }
 
   readSettingsRoot() {
@@ -2168,16 +2138,12 @@ export class ElectronSshManager {
 
   /**
    * @param {unknown} raw
-   * @param {{ includeAuthFile?: boolean }} [options]
    */
-  normalizeSyncOptions(raw = {}, options = {}) {
+  normalizeSyncOptions(raw = {}) {
     const direction = raw?.direction === SYNC_DIRECTION_PULL ? SYNC_DIRECTION_PULL : SYNC_DIRECTION_PUSH;
     const selections = normalizeSyncSelections(raw?.selections, {
-      includeAuthFile: options.includeAuthFile === true || raw?.selections?.authFile === true,
+      includeAuthFile: raw?.selections?.authFile === true,
     });
-    if (options.includeAuthFile !== true) {
-      selections.authFile = false;
-    }
     return { direction, selections };
   }
 
@@ -2226,10 +2192,7 @@ export class ElectronSshManager {
     return this.runExclusiveSync(id, 'preview', async ({ syncRunId, targetId }) => {
       const { session, target } = this.resolveManagedReadySession(id);
       assertTargetCapability(target, 'tarExtract');
-      const credentialAuthorized = this.credentialSyncAuthStore.isAuthorized(targetId);
-      const { direction, selections } = this.normalizeSyncOptions(options, {
-        includeAuthFile: credentialAuthorized,
-      });
+      const { direction, selections } = this.normalizeSyncOptions(options);
 
       if (direction === SYNC_DIRECTION_PULL) {
         const inventory = await this.collectRemoteInventory(session);
@@ -2239,9 +2202,7 @@ export class ElectronSshManager {
           sourceTargetId: targetId,
           targetId: 'local',
           selections,
-          includeAuthFile: credentialAuthorized,
         });
-        assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
         const localExisting = [];
         const home = os.homedir();
         const configDir = path.join(home, '.config', 'opencode');
@@ -2270,7 +2231,6 @@ export class ElectronSshManager {
           remoteExisting: localExisting,
           remoteAgentsRootExists: localAgentsRootExists,
           remoteAuthFileExists: localAuthFileExists,
-          credentialAuthorized,
         };
       }
 
@@ -2280,15 +2240,13 @@ export class ElectronSshManager {
         sourceTargetId: 'local',
         targetId,
         selections,
-        includeAuthFile: credentialAuthorized,
       });
-      assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
       if (plan.authFile) {
         assertTargetCapability(target, 'authFileWrite');
       }
       const executor = this.createSshTargetExecutor(session);
       const probe = await executor.probe(plan);
-      return { plan, ...probe, credentialAuthorized };
+      return { plan, ...probe };
     });
   }
 
@@ -2303,10 +2261,7 @@ export class ElectronSshManager {
       const { id: trimmed, session, target } = this.resolveManagedReadySession(id);
       assertTargetCapability(target, 'tarExtract');
       const home = os.homedir();
-      const credentialAuthorized = this.credentialSyncAuthStore.isAuthorized(targetId);
-      const { direction, selections } = this.normalizeSyncOptions(options, {
-        includeAuthFile: credentialAuthorized,
-      });
+      const { direction, selections } = this.normalizeSyncOptions(options);
 
       if (direction === SYNC_DIRECTION_PULL) {
         const inventory = await this.collectRemoteInventory(session);
@@ -2316,9 +2271,7 @@ export class ElectronSshManager {
           sourceTargetId: targetId,
           targetId: 'local',
           selections,
-          includeAuthFile: credentialAuthorized,
         });
-        assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
         this.appendLogWithLevel(trimmed, 'INFO', 'Pulling OpenCode config from remote');
         const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
         if (!hasPayload) {
@@ -2377,9 +2330,7 @@ export class ElectronSshManager {
         sourceTargetId: 'local',
         targetId,
         selections,
-        includeAuthFile: credentialAuthorized,
       });
-      assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
       if (plan.authFile) {
         assertTargetCapability(target, 'authFileWrite');
       }
@@ -2404,7 +2355,6 @@ export class ElectronSshManager {
         executor,
         syncRunId,
         sourceHomedir: home,
-        credentialSyncAuthorized: credentialAuthorized,
       });
       this.appendLogWithLevel(trimmed, 'INFO', 'OpenCode config sync completed');
       return result;

@@ -2,7 +2,6 @@ import {
   SYNC_DIRECTION_PULL,
   SYNC_DIRECTION_PUSH,
   applyConfigSyncPlan,
-  assertCredentialSyncAuthorized,
   collectLocalTarBuffer,
   createDirectHostSyncTarget,
   extractTarGzBuffer,
@@ -90,7 +89,6 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
         remoteAgentsRootExists: result.remoteAgentsRootExists === true,
         remoteAuthFileExists: result.remoteAuthFileExists === true,
         inventory: result.inventory,
-        inboundCredentialAuthorized: result.inboundCredentialAuthorized === true,
       };
     },
 
@@ -148,19 +146,16 @@ export const createDirectTargetExecutor = ({ host, fetchImpl = fetch }) => {
  * Desktop-side orchestration for direct-host config sync (push + pull).
  */
 export const createDirectConfigSyncController = ({
-  credentialSyncAuthStore,
   syncRunStore,
   runExclusiveForTarget,
 }) => {
   const preview = async (host, options = {}) => {
     const target = createDirectHostSyncTarget(host.id);
     const targetId = target.id;
-    const credentialAuthorized = credentialSyncAuthStore.isAuthorized(targetId);
     const direction = options.direction === SYNC_DIRECTION_PULL ? SYNC_DIRECTION_PULL : SYNC_DIRECTION_PUSH;
     const selections = normalizeSyncSelections(options.selections, {
-      includeAuthFile: credentialAuthorized && options.selections?.authFile === true,
+      includeAuthFile: options.selections?.authFile === true,
     });
-    if (!credentialAuthorized) selections.authFile = false;
 
     return runExclusiveForTarget(targetId, 'preview', async ({ syncRunId }) => {
       const executor = createDirectTargetExecutor({ host });
@@ -172,9 +167,7 @@ export const createDirectConfigSyncController = ({
           sourceTargetId: targetId,
           targetId: 'local',
           selections,
-          includeAuthFile: credentialAuthorized,
         });
-        assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
         const home = os.homedir();
         const configDir = path.join(home, '.config', 'opencode');
         const localExisting = [];
@@ -197,7 +190,6 @@ export const createDirectConfigSyncController = ({
           remoteAuthFileExists: (() => {
             try { return fs.statSync(path.join(home, '.local', 'share', 'opencode', 'auth.json')).isFile(); } catch { return false; }
           })(),
-          credentialAuthorized,
         };
       }
 
@@ -207,23 +199,19 @@ export const createDirectConfigSyncController = ({
         sourceTargetId: 'local',
         targetId,
         selections,
-        includeAuthFile: credentialAuthorized,
       });
-      assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
       const probe = await executor.probe(plan);
-      return { plan, ...probe, credentialAuthorized };
+      return { plan, ...probe };
     });
   };
 
   const apply = async (host, options = {}) => {
     const target = createDirectHostSyncTarget(host.id);
     const targetId = target.id;
-    const credentialAuthorized = credentialSyncAuthStore.isAuthorized(targetId);
     const direction = options.direction === SYNC_DIRECTION_PULL ? SYNC_DIRECTION_PULL : SYNC_DIRECTION_PUSH;
     const selections = normalizeSyncSelections(options.selections, {
-      includeAuthFile: credentialAuthorized && options.selections?.authFile === true,
+      includeAuthFile: options.selections?.authFile === true,
     });
-    if (!credentialAuthorized) selections.authFile = false;
 
     return runExclusiveForTarget(targetId, 'apply', async ({ syncRunId }) => {
       const executor = createDirectTargetExecutor({ host });
@@ -237,9 +225,7 @@ export const createDirectConfigSyncController = ({
           sourceTargetId: targetId,
           targetId: 'local',
           selections,
-          includeAuthFile: credentialAuthorized,
         });
-        assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
         const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
         if (!hasPayload) {
           return {
@@ -284,9 +270,7 @@ export const createDirectConfigSyncController = ({
         sourceTargetId: 'local',
         targetId,
         selections,
-        includeAuthFile: credentialAuthorized,
       });
-      assertCredentialSyncAuthorized(plan, { targetId, authorized: credentialAuthorized });
       const hasPayload = plan.files.length > 0 || plan.directories.length > 0 || Boolean(plan.agentsRoot) || Boolean(plan.authFile);
       if (!hasPayload) {
         return {
@@ -312,7 +296,6 @@ export const createDirectConfigSyncController = ({
         executor: wrapped,
         syncRunId,
         sourceHomedir: home,
-        credentialSyncAuthorized: credentialAuthorized,
         collectTar: collectLocalTarBuffer,
       });
     });

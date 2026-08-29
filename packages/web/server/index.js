@@ -58,7 +58,6 @@ import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolut
 import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
-import { createSessionAssistRuntime } from './lib/session-assist/runtime.js';
 import { createSessionTitleRuntime } from './lib/session-title/runtime.js';
 import { createSessionIndexService } from './lib/session-index/service.js';
 import { createSessionIndexSyncRuntime } from './lib/session-index/sync-runtime.js';
@@ -685,12 +684,6 @@ const getSmallModelService = async () => {
   return smallModelServiceInstance;
 };
 
-const sessionAssistRuntime = createSessionAssistRuntime({
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders,
-  getSmallModelService,
-});
-
 const sessionTitleRuntime = createSessionTitleRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
@@ -769,9 +762,8 @@ const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
   },
 });
 
-// Session-assist, session-title, and session-goal subscribe to the hub directly: they need the
+// Session-title and session-goal subscribe to the hub directly: they need the
 // envelope's directory to route their own OpenCode calls to the right instance.
-console.log('[session-assist] listening for session events');
 console.log('[session-title] listening for session events');
 console.log('[session-goal] listening for session events');
 globalMessageStreamHub.subscribeEvent((event) => {
@@ -781,7 +773,6 @@ globalMessageStreamHub.subscribeEvent((event) => {
   const directory = typeof event?.directory === 'string' && event.directory && event.directory !== 'global'
     ? event.directory
     : '';
-  sessionAssistRuntime.processPayload(payload, directory);
   sessionTitleRuntime.processPayload(payload, directory);
   sessionGoalRuntime.processPayload(payload, directory);
 });
@@ -1065,9 +1056,9 @@ const completeOpenCodeStartup = () => {
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
   }
-  // The global watcher used to start only for desktop notifications; the
-  // session-assist runtime also rides its event hub, so it now starts
-  // unconditionally once OpenCode is up.
+  // The global watcher used to start only for desktop notifications; session-title
+  // and session-goal also ride its event hub, so it now starts unconditionally
+  // once OpenCode is up.
   void ensureGlobalWatcherStarted().catch((error) => {
     console.warn(`Global event watcher startup failed: ${error?.message || error}`);
   });
@@ -1099,7 +1090,6 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   },
   syncToHmrState,
   openCodeWatcherRuntime,
-  sessionAssistRuntime,
   sessionTitleRuntime,
   sessionGoalRuntime,
   sessionRuntime,

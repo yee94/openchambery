@@ -499,6 +499,16 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('pass');
   });
 
+  test('landed rows stay visible while a refetch is in flight, even before P0', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: true,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'loading',
+      syncLoading: true,
+      p0Satisfied: false,
+    })).toBe('pass');
+  });
+
   test('keeps the original safe gate for an ordinary empty session', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: false,
@@ -541,14 +551,34 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('pass');
   });
 
-  test('a latched P0 result remains visible through a later fetch failure', () => {
+  test('a latched P0 result remains visible through a later fetch failure when rows still exist', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: true,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'error',
+      syncLoading: false,
+      p0Satisfied: true,
+    })).toBe('pass');
+  });
+
+  test('a P0 latch without rows does not invent the empty-chat welcome', () => {
+    // Session-view remount after Query GC: latch survived, rows did not.
+    // Passing here flashes "Start a new chat" until the tail returns.
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'ready',
+      syncLoading: false,
+      p0Satisfied: true,
+    })).toBe('hydrating');
+
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: false,
       hasRenderableSessionSnapshot: false,
       prefetchStatus: 'error',
       syncLoading: false,
       p0Satisfied: true,
-    })).toBe('pass');
+    })).toBe('load-error');
   });
 });
 

@@ -104,6 +104,8 @@ Legitimate glass fallbacks:
 
 Android System WebView should be Chromium **111+** for `color-mix()` and reliable translucency (`packages/mobile/HANDOFF.md`).
 
+Phone conversation headers (session chat and Assistant) share `--oc-mobile-header-fade` for the overlay/collapsing gradient. Change that token when the fade strength should shift; do not restyle one surface with a local mix.
+
 ## Layout chrome dividers
 
 Desktop shell edges (left/right sidebars, header/content split, context panel) use one token pair in `design-system.css`:
@@ -155,10 +157,11 @@ The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and a
 
 ## Design pt (`--dpt`)
 
-`--dpt` is `1px` everywhere except Capacitor Android, where
-`packages/ui/src/lib/designPtScale.ts` overwrites it from
+`--dpt` is `1px` everywhere except Capacitor native shells, where
+`packages/ui/src/lib/designPtScale.ts` overwrites it. Android reads
 `DisplayMetrics.xdpi/ydpi` so `1dpt ≈ 1/163in` (iPhone pt), then caps
-Android at `0.9` as a visibility experiment. iOS stays `1`.
+at `1`. iOS uses `10/9` — the same proportional bump as lifting the
+previous Android visibility-experiment ceiling from `0.9` → `1`.
 
 `scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.
@@ -172,9 +175,9 @@ depends on the PostCSS `font-size` rewrite.
 
 The composer highlight overlay (`[data-composer-highlight="true"]`) must
 use the same `calc(16 * var(--dpt))` as the textarea. Attachment chips
-turn the overlay on (textarea becomes `text-transparent`); a 16px overlay
-against a 14.4px field looks like the font suddenly grew and puts the
-caret in the wrong place.
+turn the overlay on (textarea becomes `text-transparent`); a fixed-px
+overlay against a `--dpt`-scaled field looks like the font suddenly grew
+and puts the caret in the wrong place.
 
 ## Related owners
 

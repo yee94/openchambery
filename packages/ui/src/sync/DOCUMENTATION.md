@@ -399,8 +399,8 @@ Modules:
   `useSessionMessagesResolved` / `useSessionTranscriptPagination` /
   `useSessionMessageRecords` / `useSessionMaterializationStatus` /
   `useEnsureSessionMessages` / `useUserMessageHistory` facades in
-  `sync-context.tsx`. Chat, Context Panel, timeline, activity, session-assist
-  last-message, queue auto-send completion/turn, and RevertedMessageDock
+  `sync-context.tsx`. Chat, Context Panel, timeline, activity, queue auto-send
+  completion/turn, and RevertedMessageDock
   consume repository projections only (session.revert metadata may still come
   from the directory session list). Message-record snapshots and materialization
   status are built from repository TranscriptData + catalog `session.revert`;

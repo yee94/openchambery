@@ -26,7 +26,12 @@ mock.module('./lib/messageDisplayNormalization', () => ({
 }));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: () => false }));
 mock.module('./message/FadeInOnReveal', () => ({ FadeInDisabledProvider: ({ children }: { children: unknown }) => children }));
-mock.module('@/lib/userSendAnimation', () => ({ consumePendingUserSendAnimation: () => false, hasPendingUserSendAnimation: () => false }));
+mock.module('@/lib/userSendAnimation', () => ({
+    consumePendingUserSendAnimation: () => false,
+    hasPendingUserSendAnimation: () => false,
+    resolveConsumedSendMessageId: () => null,
+    clearConsumedUserSendAnimation: () => undefined,
+}));
 mock.module('@/stores/utils/streamDebug', () => ({ streamPerfCount: () => undefined, streamPerfMeasure: (_name: string, measure: () => unknown) => measure() }));
 mock.module('@/stores/useGlobalSessionsStore', () => ({ useGlobalSessionsStore: () => null }));
 mock.module('@/sync/sync-context', () => ({ useSessionParts: () => [] }));

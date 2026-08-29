@@ -41,3 +41,28 @@ test('build emits an update manifest from the published release manifest and cha
     rmSync(outputPath, { recursive: true, force: true });
   }
 });
+
+test('EdgeOne build skips OTA seed tree and CHANGELOG so edge proxies are not shadowed', () => {
+  const outputDirectory = `.test-dist-edgeone-${process.pid}-${Date.now()}`;
+  const outputPath = path.join(projectRoot, outputDirectory);
+
+  try {
+    execFileSync(process.execPath, ['scripts/build.mjs'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENCHAMBER_UPDATE_OUTPUT_DIR: outputDirectory,
+        OPENCHAMBER_UPDATE_SKIP_OTA_COPY: '1',
+        OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY: '1',
+      },
+      stdio: 'pipe',
+    });
+
+    assert.equal(existsSync(path.join(outputPath, 'update-manifest.json')), true);
+    assert.equal(existsSync(path.join(outputPath, 'health.json')), true);
+    assert.equal(existsSync(path.join(outputPath, 'CHANGELOG.md')), false);
+    assert.equal(existsSync(path.join(outputPath, 'ota')), false);
+  } finally {
+    rmSync(outputPath, { recursive: true, force: true });
+  }
+});

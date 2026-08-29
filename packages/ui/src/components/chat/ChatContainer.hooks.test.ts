@@ -129,6 +129,96 @@ describe('ChatContainer source contracts', () => {
         expect(timelineSource).toContain('endHistoryViewportPreservation();');
     });
 
+    test('legend path releases end pinning before an explicit older-history fetch', () => {
+        // A prepend is a data change, and maintainScrollAtEnd fires on
+        // dataChange: with follow still armed the list reads the content
+        // growth as an end correction and throws the viewport to the live
+        // edge. Mobile only reaches history through this button, so the
+        // gesture-driven release never covers it.
+        const clickStart = source.indexOf('const handleLoadOlderClick = useEvent');
+        const clickEnd = source.indexOf('});', clickStart);
+
+        expect(clickStart).toBeGreaterThan(-1);
+        const clickBody = source.slice(clickStart, clickEnd);
+        expect(clickBody).toContain('setLegendFollowReleased(true);');
+        // Unconditional. Gating this on being away from the live edge trusted
+        // the at-end signal, and a stale-true reading skipped the release
+        // silently — which is how the prepend could still reach the live edge.
+        expect(clickBody).not.toContain('if (!legendIsAtEnd)');
+        // Release must precede the fetch that commits the prepend.
+        expect(clickBody.indexOf('setLegendFollowReleased(true);'))
+            .toBeLessThan(clickBody.indexOf('timelineLoadEarlier('));
+        // Released state reaches the list as suspended follow.
+        expect(source).toContain('timelineFollowSuspended={legendFollowReleased}');
+        expect(source).toContain('timelineFollowEnabled={!pendingRevealWork && !timelineFollowSuspended}');
+    });
+
+    /**
+     * Releasing follow is not enough on its own: the list decides what to do
+     * with a prepend inside the commit that delivers it, so the read position
+     * has to be captured — and end maintenance stood down — while the
+     * transcript is still untouched. Every load path funnels through the
+     * controller's `loadEarlier`, so the arm hangs off that rather than off the
+     * button, which is the only path mobile uses but not the only one there is.
+     */
+    test('an older-history fetch arms the timeline anchor before it goes out', () => {
+        const controllerSource = readFileSync(join(here, 'hooks/useChatTimelineController.ts'), 'utf8');
+
+        expect(controllerSource).toContain('onWillLoadEarlier?: () => void;');
+        expect(controllerSource).toContain('onWillLoadEarlier?.();');
+        // Only for user-initiated loads: automatic backfill has no read
+        // position to protect and must leave end maintenance alone.
+        const armIndex = controllerSource.indexOf('onWillLoadEarlier?.();');
+        expect(controllerSource.slice(0, armIndex)).toContain('if (options?.userInitiated) {');
+        // Armed before the fetch, not after it resolves.
+        expect(armIndex).toBeLessThan(controllerSource.indexOf('loadEarlierMutation.mutateAsync('));
+
+        expect(source).toContain('onWillLoadEarlier: armTimelineHistoryAnchor,');
+        expect(source).toContain('setTimelineHistoryAnchorToken((token) => token + 1);');
+        expect(source).toContain('timelineHistoryAnchorToken={timelineHistoryAnchorToken}');
+    });
+
+    /**
+     * Auto-follow is disabled on the legend path so it cannot fight the list
+     * for the scroll position. Its goToBottom therefore returns without
+     * writing. The visible scroll-to-bottom control used to call that no-op
+     * and nothing moved. The list handle talks to LegendList.scrollToEnd.
+     */
+    test('resume-to-latest scrolls the legend list, not the disabled auto-follow writer', () => {
+        const resumeStart = source.indexOf('const resumeToLatestInstant = useEvent');
+        expect(resumeStart).toBeGreaterThan(-1);
+        const resumeBody = source.slice(resumeStart, source.indexOf('});', resumeStart));
+        expect(resumeBody).toContain('setLegendFollowReleased(false);');
+        expect(resumeBody).toContain('messageListRef.current?.scrollToBottom();');
+        expect(resumeBody.indexOf('messageListRef.current?.scrollToBottom();'))
+            .toBeLessThan(resumeBody.indexOf("goToBottom('instant')"));
+        // The visible control goes through turn navigation, which must use
+        // this wrapper — the controller's own resume still calls goToBottom
+        // and would otherwise remain a no-op for the button.
+        expect(source).toContain('resumeToBottom: resumeToLatestInstant,');
+        expect(source).not.toContain('resumeToBottom: timelineController.resumeToBottomInstant,');
+    });
+
+    test('legend footer keeps composer inset without the live status row', () => {
+        const footerStart = source.indexOf('footerSlot={(');
+        expect(footerStart).toBeGreaterThan(-1);
+        const footSpacer = source.indexOf('MOBILE_TIMELINE_FOOT_SPACER_HEIGHT', footerStart);
+        expect(footSpacer).toBeGreaterThan(footerStart);
+        const footer = source.slice(footerStart, footSpacer);
+        expect(footer).not.toContain('StatusRowContainer');
+        expect(source).toContain('<StatusRowContainer />');
+    });
+
+    test('composer send re-arms legend follow so a mid-history send can park', () => {
+        expect(source).toContain('const scrollViewportOnSend = useEvent');
+        const sendStart = source.indexOf('const scrollViewportOnSend = useEvent');
+        const sendBody = source.slice(sendStart, source.indexOf('});', sendStart));
+        expect(sendBody).toContain('setLegendFollowReleased(false);');
+        expect(sendBody).toContain('scrollToBottomOnSend()');
+        expect(source).toContain('scrollToBottom={scrollViewportOnSend}');
+        expect(source).not.toContain('scrollToBottom={scrollToBottomOnSend}');
+    });
+
     test('latches confirmed subagent footer identity through temporary session identity gaps', () => {
         // session.updated hides subagents from the live directory list, so
         // parentSessionTarget can go null while the child is still on screen.
@@ -141,6 +231,18 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('agentName={bannerExecution.agentName}');
         expect(source).toContain('modelId={bannerExecution.modelId}');
         expect(source).not.toContain('const readOnlyPromptBanner = parentSessionTarget ? (');
+    });
+
+    test('desktop composer keeps a page-background fade above the input', () => {
+        expect(source).toContain('const DesktopComposerEdgeFade');
+        expect(source).toContain('bg-gradient-to-t from-[var(--surface-background)] to-transparent');
+        expect(source).toContain('{!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}');
+        expect(source.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(2);
+    });
+
+    test('legend scroller dataset restores the transcript scroll-shadow mask', () => {
+        expect(source).toContain("scrollShadow: 'true'");
+        expect(source).toContain("orientation: 'vertical'");
     });
 
     test('timeline viewport metrics are ResizeObserver-owned and identity-stable on no-op', () => {

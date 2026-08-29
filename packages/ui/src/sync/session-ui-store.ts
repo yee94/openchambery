@@ -2215,7 +2215,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const currentSessionDirectory = targetSessionId
       ? normalizePath(options?.directoryHint) ?? normalizePath(get().getDirectoryForSession(targetSessionId))
       : null
-    if (targetSessionId) {
+    if (targetSessionId && !options?.ticket) {
       markPendingUserSendAnimation(targetSessionId)
     }
 

@@ -144,6 +144,7 @@ describe('Assistant UI product contract', () => {
     expect(navigation.indexOf('selectAssistant(assistantID)')).toBeLessThan(navigation.indexOf("set({ secondary: { kind: 'assistant' } })"));
     expect(view).toContain('onMobileBack?: () => void');
     expect(view).toContain('<MobileDetailNavigation');
+    expect(view).toContain('overlay');
     expect(view).not.toContain('<MobileOverlayPanel');
     expect(view).not.toContain('mobileSelectorOpen');
   });
@@ -550,6 +551,10 @@ describe('Assistant UI product contract', () => {
     expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
     expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) +');
     expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');
+    expect(view).toContain('overlay');
+    expect(mobileStyles).toContain('--oc-mobile-header-fade');
+    expect(mobileStyles).toContain('var(--surface-background) 70%');
+    expect(mobileStyles.match(/var\(--oc-mobile-header-fade\)/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
   test('shows the native share welcome once when a supported Assistant is opened', async () => {

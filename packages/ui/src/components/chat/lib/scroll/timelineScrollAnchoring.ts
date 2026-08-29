@@ -1,0 +1,439 @@
+// Anchored-turn scroll geometry for the chat timeline.
+//
+// The timeline has three mutually exclusive scroll modes:
+//
+//   • `following-end`      — stay pinned to the live edge as content grows.
+//   • `anchoring-new-turn` — the just-sent user message is parked near the TOP
+//     of the viewport and the reply streams into reserved space below it. The
+//     viewport does NOT move until the turn outgrows the usable viewport.
+//   • `free-scrolling`     — the user took over; nothing moves the scroll
+//     position until they opt back in.
+//
+// This module is pure geometry: it reads measurements from the virtualized
+// list and answers "how far, if at all, must we scroll to reveal the end of
+// the anchored turn". Keeping it free of DOM and React makes the mode machine
+// testable without a renderer.
+//
+// "Usable viewport" is the visible height minus the composer overlay (the
+// composer floats over the list) minus the anchor offset, so a turn is only
+// considered overflowing when it genuinely cannot be read.
+//
+// Send latches the just-sent user message and TimelineList drives
+// `anchoring-new-turn`. Occupancy is a sibling spacer AFTER the last turn,
+// not a minHeight on the turn itself — collapse, hydration, and streaming
+// keep writing that row's natural height. The spacer starts as
+// `usableViewport - content` and only shrinks; a later collapse that would
+// reopen it drops the reserve instead. Overflow or jump-to-latest also
+// drops it and returns to `following-end`.
+
+export type TimelineScrollMode = 'following-end' | 'anchoring-new-turn' | 'free-scrolling';
+
+// Distance from the top of the viewport at which an anchored user message
+// parks. Small enough to read as "at the top", large enough not to collide
+// with the timeline's top fade.
+export const CHAT_LIST_ANCHOR_OFFSET = 16;
+
+/** Blank hole under the parked turn. A full leftover viewport shoves StatusRow off-screen. */
+export const CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO = 0.6;
+
+export const resolveReplyReserveMaxHeight = (viewportHeight: number): number => {
+    if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
+    return viewportHeight * CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO;
+};
+
+export const resolveUsableViewportHeight = ({
+    viewportHeight,
+    composerOverlayHeight,
+    anchorOffset = CHAT_LIST_ANCHOR_OFFSET,
+}: {
+    readonly viewportHeight: number;
+    readonly composerOverlayHeight: number;
+    readonly anchorOffset?: number;
+}): number => {
+    if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
+    return Math.max(0, viewportHeight - composerOverlayHeight - anchorOffset);
+};
+
+/**
+ * Sibling spacer after the last turn (user + live status). Unmeasured
+ * content still gets the capped hole so the first paint can park. Once
+ * the turn reports a natural height, the spacer is the leftover, never
+ * more than 60% of the list viewport.
+ */
+export const resolveReplyReserveSpacerHeight = ({
+    usableViewportHeight,
+    viewportHeight,
+    contentHeight,
+}: {
+    readonly usableViewportHeight: number;
+    readonly viewportHeight: number;
+    readonly contentHeight: number | null;
+}): number => {
+    if (!Number.isFinite(usableViewportHeight) || usableViewportHeight <= 0) return 0;
+    const maxHole = resolveReplyReserveMaxHeight(
+        Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : usableViewportHeight,
+    );
+    const cap = maxHole > 0 ? Math.min(usableViewportHeight, maxHole) : usableViewportHeight;
+    if (contentHeight === null || !Number.isFinite(contentHeight) || contentHeight <= 0) {
+        return cap;
+    }
+    return Math.min(cap, Math.max(0, usableViewportHeight - contentHeight));
+};
+
+export const isReplyReserveOverflowing = (
+    contentHeight: number,
+    usableViewportHeight: number,
+): boolean => {
+    if (!Number.isFinite(contentHeight) || !Number.isFinite(usableViewportHeight)) return false;
+    if (usableViewportHeight <= 0) return false;
+    return contentHeight > usableViewportHeight + 1;
+};
+
+export type ReplyReserveSnapshot = {
+    readonly reserveId: string;
+    readonly entryKey: string;
+    readonly contentHeight: number | null;
+    readonly spacerHeight: number;
+};
+
+/**
+ * Drop the reserved spacer once real content has consumed it, or once a later
+ * shrink would reopen it.
+ *
+ * The spacer is `min(usableViewport - turnNaturalHeight, 60% viewport)`.
+ * A long streaming turn drives that leftover to 0; collapsed activity then
+ * shortens the same row and the leftover comes back as blank space under
+ * the transcript. Overflow is the same moment we start revealing the live
+ * edge — keeping the reserve after that only exists to restore padding on
+ * shrink.
+ */
+export const shouldReleaseAnchoredTurnPark = ({
+    overflowsUsableViewport = false,
+    previousEndSpaceSize,
+    nextEndSpaceSize,
+}: {
+    readonly overflowsUsableViewport?: boolean;
+    readonly previousEndSpaceSize?: number;
+    readonly nextEndSpaceSize?: number;
+}): boolean => {
+    if (overflowsUsableViewport) return true;
+    if (
+        previousEndSpaceSize === undefined
+        || nextEndSpaceSize === undefined
+        || !Number.isFinite(previousEndSpaceSize)
+        || !Number.isFinite(nextEndSpaceSize)
+    ) {
+        return false;
+    }
+    return nextEndSpaceSize > previousEndSpaceSize + 1;
+};
+
+/**
+ * Owns the reserved spacer. The last turn's height is an input, never a
+ * write target: a new row key relatches, growth consumes the spacer, and a
+ * same-row shrink that would reopen it (collapsed activity) drops the park.
+ */
+export const resolveReplyReserveUpdate = ({
+    previous,
+    reserveId,
+    entryKey,
+    contentHeight,
+    usableViewportHeight,
+    viewportHeight,
+}: {
+    readonly previous: ReplyReserveSnapshot | null;
+    readonly reserveId: string;
+    readonly entryKey: string;
+    readonly contentHeight: number | null;
+    readonly usableViewportHeight: number;
+    readonly viewportHeight: number;
+}): { readonly snapshot: ReplyReserveSnapshot; readonly release: boolean } => {
+    const nextSpacer = resolveReplyReserveSpacerHeight({
+        usableViewportHeight,
+        viewportHeight,
+        contentHeight,
+    });
+    const overflows = contentHeight !== null
+        && isReplyReserveOverflowing(contentHeight, usableViewportHeight);
+    const snapshot: ReplyReserveSnapshot = {
+        reserveId,
+        entryKey,
+        contentHeight,
+        spacerHeight: overflows ? 0 : nextSpacer,
+    };
+
+    if (overflows) {
+        return { snapshot, release: true };
+    }
+
+    const sameRow = previous !== null
+        && previous.reserveId === reserveId
+        && previous.entryKey === entryKey;
+    if (!sameRow) {
+        return { snapshot, release: false };
+    }
+
+    // Only a content shrink (collapsed activity) may reopen leftover space.
+    // A taller usable viewport — keyboard dismiss, rotate — must keep filling
+    // the new hole instead of dropping the park.
+    const contentShrank = previous.contentHeight !== null
+        && contentHeight !== null
+        && contentHeight + 1 < previous.contentHeight;
+    if (contentShrank && shouldReleaseAnchoredTurnPark({
+        previousEndSpaceSize: previous.spacerHeight,
+        nextEndSpaceSize: nextSpacer,
+    })) {
+        return {
+            snapshot: { ...snapshot, spacerHeight: 0 },
+            release: true,
+        };
+    }
+
+    return { snapshot, release: false };
+};
+
+export interface TimelineListMeasurementState {
+    readonly data: readonly unknown[];
+    readonly scroll: number;
+    readonly scrollLength: number;
+    readonly positionAtIndex: (index: number) => number | undefined;
+    readonly sizeAtIndex: (index: number) => number | undefined;
+}
+
+export interface AnchoredTurnMetrics {
+    readonly anchorTop: number;
+    readonly lastBottom: number;
+    readonly turnHeight: number;
+    readonly usableViewportHeight: number;
+    readonly visibleUsableBottom: number;
+    readonly overflowsUsableViewport: boolean;
+    readonly targetScrollToRevealEnd: number;
+    readonly scrollDeltaToRevealEnd: number;
+}
+
+export const getRowBottom = (
+    state: TimelineListMeasurementState,
+    index: number,
+): number | null => {
+    const top = state.positionAtIndex(index);
+    const height = state.sizeAtIndex(index);
+    if (
+        typeof top !== 'number'
+        || typeof height !== 'number'
+        || !Number.isFinite(top)
+        || !Number.isFinite(height)
+    ) {
+        return null;
+    }
+    // Rows measured at zero height would make an anchored turn look empty and
+    // suppress the reveal scroll; treat them as one pixel tall instead.
+    return top + Math.max(1, height);
+};
+
+export const getAnchoredTurnMetrics = ({
+    state,
+    anchorIndex,
+    composerOverlayHeight,
+    anchorOffset,
+    lastIndex,
+}: {
+    readonly state: TimelineListMeasurementState;
+    readonly anchorIndex: number;
+    readonly composerOverlayHeight: number;
+    readonly anchorOffset: number;
+    readonly lastIndex?: number;
+}): AnchoredTurnMetrics | null => {
+    if (state.data.length === 0) return null;
+
+    const boundedAnchorIndex = Math.max(0, Math.min(anchorIndex, state.data.length - 1));
+    const anchorTop = state.positionAtIndex(boundedAnchorIndex);
+    // Last CONTENT row, not a trailing reserve item and not the full content
+    // length: targeting the reserved tail would scroll the real turn off the
+    // top, and including it would make every parked turn look viewport-tall.
+    const resolvedLastIndex = Math.max(
+        0,
+        Math.min(lastIndex ?? state.data.length - 1, state.data.length - 1),
+    );
+    const lastBottom = getRowBottom(state, resolvedLastIndex);
+    if (typeof anchorTop !== 'number' || !Number.isFinite(anchorTop) || lastBottom === null) {
+        return null;
+    }
+
+    const usableViewportHeight = Math.max(
+        0,
+        state.scrollLength - composerOverlayHeight - anchorOffset,
+    );
+    const turnHeight = Math.max(0, lastBottom - anchorTop);
+    const visibleUsableBottom = state.scroll + usableViewportHeight;
+    const targetScrollToRevealEnd = Math.max(0, lastBottom - usableViewportHeight);
+    // Never negative: revealing the end must not scroll the timeline backwards.
+    const scrollDeltaToRevealEnd = Math.max(0, targetScrollToRevealEnd - state.scroll);
+
+    return {
+        anchorTop,
+        lastBottom,
+        turnHeight,
+        usableViewportHeight,
+        visibleUsableBottom,
+        overflowsUsableViewport: turnHeight > usableViewportHeight,
+        targetScrollToRevealEnd,
+        scrollDeltaToRevealEnd,
+    };
+};
+
+// "At the end" for follow purposes is a tight band, not the list's isNearEnd
+// (half a viewport): that band hid the scroll-to-bottom pill and re-armed
+// follow while the user had genuinely scrolled away, yanking them back on the
+// next stream chunk. Distance is measured against the full content length —
+// reserved anchored end space included — so a parked anchored turn counts as
+// the live edge.
+export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
+
+export const resolveTimelineIsAtEnd = (
+    state: {
+        readonly contentLength?: number;
+        readonly scroll?: number;
+        readonly scrollLength?: number;
+        readonly isNearEnd?: boolean;
+        readonly isAtEnd?: boolean;
+    } | undefined,
+): boolean | undefined => {
+    if (!state) return undefined;
+    const { contentLength, scroll, scrollLength } = state;
+    if (
+        typeof contentLength === 'number'
+        && typeof scroll === 'number'
+        && typeof scrollLength === 'number'
+        && Number.isFinite(contentLength)
+    ) {
+        return contentLength - (scroll + scrollLength) <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
+    }
+    return state.isNearEnd ?? state.isAtEnd;
+};
+
+/**
+ * True when `next` is `previous` with older entries inserted at the head.
+ *
+ * The head key changing is the cheap gate: a streaming chunk replaces the tail
+ * entry and leaves the head alone, so the linear membership check below only
+ * runs for a head change on a list that also grew — a prepend or a session
+ * swap, not a per-chunk cost.
+ */
+export const didPrependTimelineEntries = (
+    previous: readonly string[],
+    next: readonly string[],
+): boolean => {
+    if (previous.length === 0 || next.length <= previous.length) return false;
+    const previousHead = previous[0];
+    if (previousHead === undefined || next[0] === previousHead) return false;
+    // A swap to a different session replaces every key; a prepend keeps the old
+    // head somewhere below the inserted block.
+    return next.includes(previousHead);
+};
+
+/**
+ * Written on the timeline's scroll element while a prepend is being absorbed.
+ *
+ * The transcript's scroll position is moved by the list itself across several
+ * frames here, so DOM-level scroll observers that infer user intent from the
+ * scroll geometry (the mobile composer swap) have to know to sit this out.
+ * An attribute rather than a prop: those observers hold the scroll element, not
+ * a path through the component tree.
+ */
+export const TIMELINE_ANCHORING_ATTRIBUTE = 'data-oc-timeline-anchoring';
+
+/**
+ * How long after a prepend the list keeps compensating for size changes.
+ *
+ * Long enough to cover the newly mounted rows replacing their estimated
+ * heights with measured ones (including the deferred Markdown hydration that
+ * follows), short enough that ordinary in-place growth is back to growing
+ * downward well before the user's next gesture.
+ */
+export const TIMELINE_PREPEND_SETTLE_MS = 1200;
+
+export interface ChatListAnchoredEndSpace {
+    readonly anchorIndex: number;
+    readonly anchorOffset: number;
+    readonly anchorId: string;
+}
+
+// Finds the anchored row from the BACK of the list: a retried or re-sent
+// message id can appear more than once, and the live one is always the last.
+export const resolveChatListAnchoredEndSpace = <Item, AnchorId extends string>(
+    items: readonly Item[],
+    anchorId: AnchorId | null,
+    getAnchorId: (item: Item) => AnchorId | null,
+    options: { readonly anchorOffset?: number } = {},
+): ChatListAnchoredEndSpace | undefined => {
+    if (anchorId === null) return undefined;
+
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+        const item = items[index];
+        if (item !== undefined && getAnchorId(item) === anchorId) {
+            return {
+                anchorIndex: index,
+                anchorOffset: options.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET,
+                anchorId,
+            };
+        }
+    }
+
+    return undefined;
+};
+
+/**
+ * Next parked user-message id after a transcript update.
+ *
+ * A consumed send always wins (including a send that lands as the first paint
+ * of a new session). Otherwise a session swap drops the park; an id that is
+ * still in the user order is kept; a same-length replacement of the last user
+ * row (optimistic id → authoritative id) follows the new last id.
+ */
+export const resolveNextAnchoredUserMessageId = ({
+    sessionChanged,
+    previousUserOrder,
+    currentUserOrder,
+    currentAnchorId,
+    consumedSendMessageId,
+}: {
+    readonly sessionChanged: boolean;
+    readonly previousUserOrder: readonly string[];
+    readonly currentUserOrder: readonly string[];
+    readonly currentAnchorId: string | null;
+    readonly consumedSendMessageId: string | null;
+}): string | null => {
+    if (consumedSendMessageId !== null) return consumedSendMessageId;
+    if (sessionChanged) return null;
+    if (currentAnchorId === null) return null;
+    if (currentUserOrder.includes(currentAnchorId)) return currentAnchorId;
+
+    const previousLast = previousUserOrder[previousUserOrder.length - 1];
+    const currentLast = currentUserOrder[currentUserOrder.length - 1];
+    if (
+        currentAnchorId === previousLast
+        && currentLast !== undefined
+        && currentUserOrder.length === previousUserOrder.length
+        && previousUserOrder.length > 0
+    ) {
+        return currentLast;
+    }
+
+    // A transient hole (optimistic row briefly missing) must not drop the
+    // park — the next authoritative paint still owns the same send.
+    return currentAnchorId;
+};
+
+/**
+ * Known virtualizer height that is still taller than the live DOM. Returning
+ * null means "do not write" — growth and first measure stay with the list.
+ */
+export const resolveShrunkItemSizeUpdate = (
+    knownSize: number | undefined,
+    measuredHeight: number,
+): number | null => {
+    if (!Number.isFinite(measuredHeight) || measuredHeight <= 0) return null;
+    if (typeof knownSize !== 'number' || !Number.isFinite(knownSize)) return null;
+    if (measuredHeight + 1 >= knownSize) return null;
+    return measuredHeight;
+};

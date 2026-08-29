@@ -231,16 +231,10 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['streaming', 'sse', 'websocket'],
   },
   {
-    id: 'chat.session-recap',
-    page: 'chat',
-    titleKey: 'settings.openchamber.visual.field.sessionRecap',
-    keywords: ['recap', 'assist', 'small model', 'summary'],
-  },
-  {
     id: 'chat.session-assistance',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.sessionAssistance',
-    keywords: ['recap', 'assist', 'subagent'],
+    keywords: ['title', 'assist', 'subagent'],
   },
   {
     id: 'chat.session-title-refresh',

@@ -45,7 +45,6 @@ describe('direct config sync helpers', () => {
           remoteAgentsRootExists: false,
           remoteAuthFileExists: false,
           inventory: { files: [{ path: 'opencode.jsonc', bytes: 2 }], directories: [], agentsRoot: null, authFile: null },
-          inboundCredentialAuthorized: false,
         }),
       };
     };
@@ -61,6 +60,5 @@ describe('direct config sync helpers', () => {
 
   test('direct sync IPC commands are not remote-safe', () => {
     expect(isRemoteIpcCommandAllowed('desktop_ssh_sync_opencode_config', { targetKind: 'direct' })).toBe(false);
-    expect(isRemoteIpcCommandAllowed('desktop_ssh_credential_sync_grant', { targetKind: 'direct' })).toBe(false);
   });
 });
