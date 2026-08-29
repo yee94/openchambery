@@ -2,43 +2,29 @@ import { createConfigSyncReceiver } from './receiver.js';
 
 /**
  * Register HTTP config-sync receive/download routes for direct (and later relay) hosts.
- * Auth is the global `/api` UI/client-token gate. Credential kinds additionally
- * require inbound credential authorization on this host.
+ * Auth is the global `/api` UI/client-token gate. Selected kinds (including auth)
+ * sync when present in the plan — no extra credential grant checks.
  *
  * @param {import('express').Express} app
  * @param {{
  *   receiver?: ReturnType<typeof createConfigSyncReceiver>,
- *   readSettingsFromDiskMigrated?: () => Promise<object>,
- *   persistSettings?: (changes: object) => Promise<object>,
  *   express?: typeof import('express'),
  * }} deps
  */
 export const registerConfigSyncRoutes = (app, deps = {}) => {
   const {
-    readSettingsFromDiskMigrated,
-    persistSettings,
     express,
   } = deps;
 
-  const receiver = deps.receiver || createConfigSyncReceiver({
-    readSettings: async () => (typeof readSettingsFromDiskMigrated === 'function'
-      ? readSettingsFromDiskMigrated()
-      : {}),
-    writeSettingsPatch: async (patch) => {
-      if (typeof persistSettings === 'function') {
-        await persistSettings(patch);
-      }
-    },
-  });
+  const receiver = deps.receiver || createConfigSyncReceiver();
 
   const sendError = (res, error, fallbackStatus = 500) => {
     const code = typeof error?.code === 'string' ? error.code : undefined;
-    const status = code === 'credential_sync_unauthorized' ? 403
-      : code === 'sync_in_progress' ? 409
-        : code === 'sync_not_prepared' ? 409
-          : code === 'sync_payload_too_large' || code === 'sync_too_many_files' ? 413
-            : code === 'sync_invalid_kind' ? 400
-              : fallbackStatus;
+    const status = code === 'sync_in_progress' ? 409
+      : code === 'sync_not_prepared' ? 409
+        : code === 'sync_payload_too_large' || code === 'sync_too_many_files' ? 413
+          : code === 'sync_invalid_kind' ? 400
+            : fallbackStatus;
     res.status(status).json({
       error: error instanceof Error ? error.message : String(error),
       ...(code ? { code } : {}),
@@ -113,25 +99,6 @@ export const registerConfigSyncRoutes = (app, deps = {}) => {
     try {
       const syncRunId = typeof req.body?.syncRunId === 'string' ? req.body.syncRunId.trim() : '';
       res.json(receiver.abort({ syncRunId: syncRunId || undefined }));
-    } catch (error) {
-      sendError(res, error);
-    }
-  });
-
-  app.get('/api/openchamber/config-sync/credential-auth', async (_req, res) => {
-    try {
-      const authorized = await receiver.isInboundCredentialAuthorized();
-      res.json({ authorized });
-    } catch (error) {
-      sendError(res, error);
-    }
-  });
-
-  app.put('/api/openchamber/config-sync/credential-auth', express?.json?.({ limit: '16kb' }) || ((req, _res, next) => next()), async (req, res) => {
-    try {
-      const authorized = req.body?.authorized === true;
-      const result = await receiver.setInboundCredentialAuthorized(authorized);
-      res.json(result);
     } catch (error) {
       sendError(res, error);
     }

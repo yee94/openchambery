@@ -49,13 +49,6 @@ export {
 export { collectLocalTarBuffer } from './tar.js';
 export { applyConfigSyncPlan, probePathsForPlan } from './engine.js';
 export {
-  CREDENTIAL_SYNC_UNAUTHORIZED_CODE,
-  CREDENTIAL_SYNC_GRANT_CHANNEL_INSTANCE_SETTINGS,
-  CredentialSyncUnauthorizedError,
-  planIncludesCredentials,
-  assertCredentialSyncAuthorized,
-} from './credential-auth.js';
-export {
   buildDefaultSyncSelections,
   normalizeSyncSelections,
   filterPlanBySelections,

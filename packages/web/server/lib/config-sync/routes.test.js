@@ -8,7 +8,6 @@ import request from 'supertest';
 
 import { createConfigSyncReceiver } from './receiver.js';
 import { registerConfigSyncRoutes } from './routes.js';
-import { CREDENTIAL_SYNC_UNAUTHORIZED_CODE } from './credential-auth.js';
 
 const tempDirs = [];
 
@@ -31,18 +30,13 @@ const createApp = async () => {
   await fsp.writeFile(path.join(configDir, 'opencode.jsonc'), '{}\n');
   await fsp.writeFile(path.join(configDir, 'AGENTS.md'), 'hi\n');
 
-  let settings = {};
   const receiver = createConfigSyncReceiver({
     homedir: () => home,
-    readSettings: async () => ({ ...settings }),
-    writeSettingsPatch: async (patch) => {
-      settings = { ...settings, ...patch };
-    },
   });
 
   const app = express();
   registerConfigSyncRoutes(app, { receiver, express });
-  return { app, home, receiver, getSettings: () => settings };
+  return { app, home, receiver };
 };
 
 describe('config-sync HTTP routes', () => {
@@ -79,27 +73,6 @@ describe('config-sync HTTP routes', () => {
     await expect(fsp.stat(backup)).resolves.toMatchObject({ });
   });
 
-  it('rejects auth put without inbound credential authorization', async () => {
-    const { app } = await createApp();
-    const plan = {
-      direction: 'push',
-      files: [],
-      directories: [],
-      deletes: [],
-      agentsRoot: null,
-      authFile: { bytes: 2 },
-      totalBytes: 2,
-    };
-    await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'run-auth' });
-    const put = await request(app)
-      .put('/api/openchamber/config-sync/put/auth?syncRunId=run-auth')
-      .set('Content-Type', 'application/gzip')
-      .send(Buffer.from('xx'));
-    expect(put.status).toBe(403);
-    expect(put.body.code).toBe(CREDENTIAL_SYNC_UNAUTHORIZED_CODE);
-    await request(app).post('/api/openchamber/config-sync/abort').send({ syncRunId: 'run-auth' });
-  });
-
   it('rejects a second concurrent prepare', async () => {
     const { app } = await createApp();
     const plan = {
@@ -131,7 +104,6 @@ describe('config-sync HTTP routes', () => {
       totalBytes: 0,
     };
     await request(app).post('/api/openchamber/config-sync/prepare').send({ plan, syncRunId: 'run-stream' });
-    await receiver.setInboundCredentialAuthorized(true);
 
     // Tiny invalid tar still proves chunk aggregation reached extract.
     await expect(receiver.put({
@@ -141,14 +113,5 @@ describe('config-sync HTTP routes', () => {
     })).rejects.toThrow(/tar|failed|Local tar extract/i);
 
     await request(app).post('/api/openchamber/config-sync/abort').send({ syncRunId: 'run-stream' });
-  });
-
-  it('persists inbound credential authorization flag', async () => {
-    const { app, getSettings } = await createApp();
-    const before = await request(app).get('/api/openchamber/config-sync/credential-auth');
-    expect(before.body.authorized).toBe(false);
-    const after = await request(app).put('/api/openchamber/config-sync/credential-auth').send({ authorized: true });
-    expect(after.body.authorized).toBe(true);
-    expect(getSettings().configSyncInboundCredentialAuthorized).toBe(true);
   });
 });
