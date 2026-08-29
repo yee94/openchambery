@@ -143,6 +143,47 @@ export const resolveTimelineIsAtEnd = (
     return state.isNearEnd ?? state.isAtEnd;
 };
 
+/**
+ * True when `next` is `previous` with older entries inserted at the head.
+ *
+ * The head key changing is the cheap gate: a streaming chunk replaces the tail
+ * entry and leaves the head alone, so the linear membership check below only
+ * runs for a head change on a list that also grew — a prepend or a session
+ * swap, not a per-chunk cost.
+ */
+export const didPrependTimelineEntries = (
+    previous: readonly string[],
+    next: readonly string[],
+): boolean => {
+    if (previous.length === 0 || next.length <= previous.length) return false;
+    const previousHead = previous[0];
+    if (previousHead === undefined || next[0] === previousHead) return false;
+    // A swap to a different session replaces every key; a prepend keeps the old
+    // head somewhere below the inserted block.
+    return next.includes(previousHead);
+};
+
+/**
+ * Written on the timeline's scroll element while a prepend is being absorbed.
+ *
+ * The transcript's scroll position is moved by the list itself across several
+ * frames here, so DOM-level scroll observers that infer user intent from the
+ * scroll geometry (the mobile composer swap) have to know to sit this out.
+ * An attribute rather than a prop: those observers hold the scroll element, not
+ * a path through the component tree.
+ */
+export const TIMELINE_ANCHORING_ATTRIBUTE = 'data-oc-timeline-anchoring';
+
+/**
+ * How long after a prepend the list keeps compensating for size changes.
+ *
+ * Long enough to cover the newly mounted rows replacing their estimated
+ * heights with measured ones (including the deferred Markdown hydration that
+ * follows), short enough that ordinary in-place growth is back to growing
+ * downward well before the user's next gesture.
+ */
+export const TIMELINE_PREPEND_SETTLE_MS = 1200;
+
 export interface ChatListAnchoredEndSpace {
     readonly anchorIndex: number;
     readonly anchorOffset: number;

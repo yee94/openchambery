@@ -20,6 +20,7 @@ import {
     publishComposerSwap,
     type ComposerSwapState,
 } from './mobileComposerSwap';
+import { TIMELINE_ANCHORING_ATTRIBUTE } from './lib/scroll/timelineScrollAnchoring';
 
 const readScrollGeometry = (el: HTMLElement) => ({
     scrollHeight: el.scrollHeight,
@@ -157,6 +158,20 @@ export const useMobileComposerSwap = (args: {
         const distance = distanceFromBottomOf(geometry);
         const previousDistance = lastDistanceRef.current;
         lastDistanceRef.current = distance;
+
+        // A history prepend is absorbed by the list, not the user: it grows the
+        // content and moves the scroll position to match, and the correction
+        // lands over several frames. Each of those frames is a distance change
+        // with no gesture behind it — and the transients read as travel in both
+        // directions, so the composer would flash open (or collapse) in the
+        // middle of loading older history. The baseline above still advances,
+        // so the first frame after the anchor settles measures from where the
+        // transcript actually is.
+        if (scrollEl.hasAttribute(TIMELINE_ANCHORING_ATTRIBUTE)) {
+            downwardTravelRef.current = 0;
+            upwardTravelRef.current = 0;
+            return;
+        }
 
         // The transcript scrolls for two very different reasons on this path:
         // the user dragging, and the list following its own streaming growth.

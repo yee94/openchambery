@@ -50,7 +50,12 @@ import {
     writeMarkdownHydrationRestore,
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
-import { resolveTimelineIsAtEnd } from './lib/scroll/timelineScrollAnchoring';
+import {
+    didPrependTimelineEntries,
+    resolveTimelineIsAtEnd,
+    TIMELINE_ANCHORING_ATTRIBUTE,
+    TIMELINE_PREPEND_SETTLE_MS,
+} from './lib/scroll/timelineScrollAnchoring';
 
 // Any sliver of a row counts as visible: the Markdown hydration window needs
 // the full mounted span, not a "mostly on screen" subset.
@@ -221,6 +226,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     // `refScrollView` hands back a ScrollView methods object (scrollTo,
     // getScrollableNode, …), not the element. Everything downstream expects an
     // element, so unwrap it here and publish that.
+    const listScrollElementRef = React.useRef<HTMLDivElement | null>(null);
     const setScrollView = React.useCallback((scrollView: ScrollViewLike | null) => {
         const element = scrollView?.getScrollableNode?.() ?? null;
         if (element && scrollElementDataset) {
@@ -228,10 +234,55 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 element.dataset[key] = value;
             }
         }
+        listScrollElementRef.current = element;
         if (scrollElementRef) {
             scrollElementRef.current = element;
         }
     }, [scrollElementRef, scrollElementDataset]);
+
+    // --- Prepend settle window ---------------------------------------------
+    // Key-anchored prepends are only exact while the inserted rows keep the
+    // heights they were anchored with. They arrive at their estimated heights
+    // and are measured a frame or two later, and those corrections land ABOVE
+    // the read position: uncompensated, the viewport moves by the whole
+    // estimation error, which is what threw the transcript somewhere unrelated
+    // after loading older history. So size compensation is switched on for the
+    // window that follows a prepend and off again outside it, where rows
+    // growing in place (a tool result expanding) must still grow downward.
+    const [prependToken, setPrependToken] = React.useState(0);
+    const [settledPrependToken, setSettledPrependToken] = React.useState(0);
+    const prependSettling = prependToken !== settledPrependToken;
+    const committedEntryKeysRef = React.useRef(entryKeys);
+    React.useLayoutEffect(() => {
+        const previous = committedEntryKeysRef.current;
+        committedEntryKeysRef.current = entryKeys;
+        if (!didPrependTimelineEntries(previous, entryKeys)) return;
+        // Before paint: the measurements that need compensating are reported
+        // once this commit is on screen.
+        setPrependToken((token) => token + 1);
+    }, [entryKeys]);
+    React.useEffect(() => {
+        if (!prependSettling) return;
+        const timer = window.setTimeout(() => {
+            setSettledPrependToken(prependToken);
+        }, TIMELINE_PREPEND_SETTLE_MS);
+        return () => window.clearTimeout(timer);
+    }, [prependSettling, prependToken]);
+    // Announced on the element so scroll observers outside this tree can tell
+    // the list's own re-anchoring from the user's travel.
+    React.useEffect(() => {
+        const element = listScrollElementRef.current;
+        if (!element || !prependSettling) return;
+        element.setAttribute(TIMELINE_ANCHORING_ATTRIBUTE, 'true');
+        return () => {
+            element.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
+        };
+    }, [prependSettling]);
+
+    const maintainVisibleContentPosition = React.useMemo(
+        () => ({ data: true, size: prependSettling }) as const,
+        [prependSettling],
+    );
 
     // --- Markdown hydration window -----------------------------------------
     // The window planner is engine-agnostic: it only needs the mounted span,
@@ -405,10 +456,10 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
                 contentInsetEndAdjustment={composerOverlayHeight}
                 maintainScrollAtEnd={maintainScrollAtEnd}
-                // Prepending older history must not move what the user is reading.
-                // Size restoration stays off: re-anchoring on every measurement is
-                // what made late row measurements read as a jump.
-                maintainVisibleContentPosition={{ data: true, size: false }}
+                // Prepending older history must not move what the user is
+                // reading — see the settle window above for why size
+                // restoration is scoped to it rather than always on.
+                maintainVisibleContentPosition={maintainVisibleContentPosition}
                 onScroll={handleScroll}
                 onViewableItemsChanged={handleViewableItemsChanged}
                 viewabilityConfig={TIMELINE_VIEWABILITY_CONFIG}

@@ -2,6 +2,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { TIMELINE_ANCHORING_ATTRIBUTE } from './lib/scroll/timelineScrollAnchoring';
 import { COMPOSER_SWAP_CSS_VAR, COMPOSER_SWAP_SNAP_MS } from './mobileComposerSwap';
 import { useMobileComposerSwap } from './useMobileComposerSwap';
 
@@ -255,6 +256,36 @@ describe('useMobileComposerSwap gesture commit', () => {
         expect(scrollEl.scrollTop).toBe(-60);
         await fireScrollTop(0);
         expect(readSwap(scopeEl).rest).toBe('compact');
+    });
+
+    /**
+     * Loading older history prepends content and the list moves the scroll
+     * position to keep the read position: content growth and the correction
+     * land in separate frames, so the distance from the bottom leaps away and
+     * back. That return leg is indistinguishable from a fast scroll toward the
+     * live edge, and it flashed the composer open in the middle of a load.
+     */
+    test('the transcript re-anchoring a prepend never moves the composer', async () => {
+        await mount();
+
+        await fireTouch('touchstart');
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        scrollEl.setAttribute(TIMELINE_ANCHORING_ATTRIBUTE, 'true');
+        // The prepend lands: 2000px of older history above the viewport, then
+        // the list's correction puts the read position back where it was.
+        scrollHeight += 2000;
+        await fireScroll(2300);
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        // Not vacuous: the same two frames, with no re-anchoring in flight,
+        // still read as travel toward the bottom and reveal the composer.
+        scrollEl.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
+        await fireScroll(2300);
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('expanded');
     });
 
     test('multi-touch counts until the last finger lifts', async () => {
