@@ -13,6 +13,8 @@ interface WorkingPlaceholderProps {
   retryInfo?: { attempt?: number; next?: number } | null;
   turnStartedAt?: number;
   agentName?: string;
+  /** Authoritative turn settle — hide immediately, no step-gap linger. */
+  isTurnSettled?: boolean;
 }
 
 const STATUS_DISPLAY_TIME_MS = 1200;
@@ -40,6 +42,7 @@ export function WorkingPlaceholder({
   isWaitingForPermission,
   retryInfo,
   turnStartedAt,
+  isTurnSettled = false,
 }: WorkingPlaceholderProps) {
   const { locale, t } = useI18n();
   const [displayedText, setDisplayedText] = React.useState<string | null>(null);
@@ -122,6 +125,17 @@ export function WorkingPlaceholder({
   });
 
   React.useEffect(() => {
+    if (isTurnSettled) {
+      clearTimers();
+      queuedStatusRef.current = null;
+      if (displayedTextRef.current) {
+        setDisplayedText(null);
+        setDisplayedPermission(false);
+        displayedGenericRef.current = false;
+      }
+      return;
+    }
+
     if (!isWorking) {
       // Cancel status-queue work; keep the painted text briefly so a step gap
       // that flips isWorking off/on does not collapse the status row (±28px).
@@ -193,6 +207,7 @@ export function WorkingPlaceholder({
     // useEvent identities are stable; rerun only when status inputs change.
   }, [
     isWorking,
+    isTurnSettled,
     statusText,
     isGenericStatus,
     isWaitingForPermission,
@@ -201,6 +216,13 @@ export function WorkingPlaceholder({
   ]);
 
   React.useEffect(() => () => clearTimers(), []);
+
+  // Settled turn: hide in this commit. Do not wait for the linger timer or
+  // the clear-state effect — that afterglow is what jitters height after
+  // Changes chrome is already visible.
+  if (isTurnSettled) {
+    return null;
+  }
 
   // Linger: keep painting after isWorking drops until the clear timer fires.
   if (!isWorking && !displayedText) {
