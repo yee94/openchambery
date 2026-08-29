@@ -134,8 +134,9 @@ describe('TimelineList prepend anchor contracts', () => {
      * gated on being away from the end reads the wrong answer.
      */
     test('the at-end edge detector resets with the transcript', () => {
-        const reset = source.indexOf('lastIsAtEndRef.current = true;\n    }, [timelineCacheKey]);');
+        const reset = source.indexOf('lastIsAtEndRef.current = true;');
         expect(reset).toBeGreaterThan(-1);
         expect(source.slice(reset - 200, reset)).toContain('React.useLayoutEffect');
+        expect(source.slice(reset, reset + 240)).toContain('}, [timelineCacheKey]);');
     });
 });

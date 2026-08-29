@@ -282,6 +282,21 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
 
     // A fresh list opens at the live edge (`initialScrollAtEnd`).
     const lastIsAtEndRef = React.useRef(true);
+    // Whether this transcript has ever actually reached its live edge.
+    //
+    // Gates the animated form of end maintenance, which must never be what
+    // covers the opening catch-up. Rows arrive at their estimated heights, so
+    // the end keeps moving as they measure, while an animated pass scrolls
+    // toward the offset that was current when it was requested — and a smooth
+    // scroll lasts long enough for those measurements to leave that target far
+    // short of the real end. Everything raised during a pass is coalesced into
+    // a single replay, so the catch-up gets two glides and stops; once the
+    // pass-in-flight exemption lapses, a remaining gap wider than a tenth of a
+    // screen retires end maintenance outright and parks the transcript
+    // mid-conversation. Instant passes land exactly on the end every time,
+    // which is why only actively streaming sessions ever showed this.
+    const [endSettledOnce, setEndSettledOnce] = React.useState(false);
+    const endSettledOnceRef = React.useRef(false);
     // Reset with the transcript, because this ref is the edge detector for the
     // at-end signal published upstream and a stale one stops publishing
     // silently. A swapped-in session opens at the live edge, so a ref still
@@ -292,6 +307,8 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     // before a history load is exactly such a gate.
     React.useLayoutEffect(() => {
         lastIsAtEndRef.current = true;
+        endSettledOnceRef.current = false;
+        setEndSettledOnce(false);
     }, [timelineCacheKey]);
 
     // --- Held read-position anchor ------------------------------------------
@@ -643,6 +660,12 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 lastIsAtEndRef.current = atEnd;
                 onIsAtEndChange?.(atEnd);
             }
+            // One-way for this transcript: leaving the end again is ordinary
+            // streaming growth, which is precisely what the glide is for.
+            if (atEnd && !endSettledOnceRef.current) {
+                endSettledOnceRef.current = true;
+                setEndSettledOnce(true);
+            }
         }
         onScroll?.();
         scheduleMarkdownHydration();
@@ -674,14 +697,14 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         // standing it down has to happen before the rows arrive, not after.
         if (anchoredEndSpace || !followEnabled || historyAnchor) return false;
         return {
-            // Animated only while the session actively streams: there the
-            // block-step growth turns each correction into a glide. Opening a
-            // historical session must be instant, otherwise the catch-up
-            // scrolls visibly through the whole conversation.
-            animated: sessionIsWorking,
+            // Animated only once the transcript has reached its live edge, and
+            // only while it streams: there the block-step growth turns each
+            // correction into a glide. The opening catch-up has to be instant —
+            // see `endSettledOnce` for what an animated one does to it.
+            animated: sessionIsWorking && endSettledOnce,
             on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true },
         } as const;
-    }, [anchoredEndSpace, followEnabled, historyAnchor, sessionIsWorking]);
+    }, [anchoredEndSpace, endSettledOnce, followEnabled, historyAnchor, sessionIsWorking]);
 
     return (
         <TimelineHydrationContext.Provider value={activeHydratedMarkdownEntryKeys}>
