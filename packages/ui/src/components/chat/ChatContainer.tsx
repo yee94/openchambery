@@ -196,9 +196,9 @@ const DesktopComposerEdgeFade: React.FC = () => (
 // plus padding read from *style objects*, never from classes — so CSS padding
 // there would be invisible to its scroll math (`isAtEnd`, end maintenance).
 // Measured spacers in the header/footer slots keep that math honest.
-// The list also subtracts this measured footer from send-park usable
-// height so the reserved hole — not this inset sitting under it — is
-// the live edge.
+// The list subtracts the measured header (safe area + nav) and this
+// footer from send-park usable height so the reserved hole is the
+// middle window, not a leftover of the full immersive scroller.
 const MOBILE_TIMELINE_HEAD_SPACER_HEIGHT = 'calc(max(0.625rem, var(--oc-safe-area-top, 0px)) + var(--oc-mobile-detail-navigation-height) + 1.25rem)';
 const MOBILE_TIMELINE_FOOT_SPACER_HEIGHT = 'calc(40px + var(--oc-chat-foot-inset))';
 const CHAT_NAVIGATION_IGNORED_TARGET_SELECTOR = [

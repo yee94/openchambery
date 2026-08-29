@@ -111,8 +111,10 @@ describe('TimelineList new-turn anchor contracts', () => {
         expect(body).not.toContain('setAnchoredUserMessageId(null)');
     });
 
-    test('the parked edge subtracts the measured list footer so the hole is the bottom', () => {
+    test('the parked edge is the chrome-aware middle window', () => {
         expect(source).toContain('endInsetHeight: footerHeight');
+        expect(source).toContain('resolveParkAnchorOffset(headerHeight)');
+        expect(source).toContain('data-oc-timeline-header');
         expect(source).toContain('data-oc-timeline-footer');
         expect(source).toContain('writeTimelineParkEndOffset');
         expect(source).toContain('resolveTimelineDistanceFromParkedEnd');

@@ -9,6 +9,7 @@ import {
     resolveNextAnchoredUserMessageId,
     CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO,
     readTimelineParkEndOffset,
+    resolveParkAnchorOffset,
     resolveParkedLiveEdgeOffset,
     resolveParkedScrollSlack,
     resolveReplyReserveMaxHeight,
@@ -239,6 +240,12 @@ describe('resolveUsableViewportHeight', () => {
             composerOverlayHeight: 0,
             endInsetHeight: 180,
         })).toBe(800 - 180 - CHAT_LIST_ANCHOR_OFFSET);
+        expect(resolveUsableViewportHeight({
+            viewportHeight: 800,
+            composerOverlayHeight: 0,
+            endInsetHeight: 180,
+            anchorOffset: 120,
+        })).toBe(800 - 180 - 120);
     });
 
     test('ignores an unmeasured viewport', () => {
@@ -258,9 +265,9 @@ describe('resolveReplyReserveSpacerHeight', () => {
     const usable = 784;
     const cap = resolveReplyReserveMaxHeight(viewport);
 
-    test('the hole never exceeds 60% of the list viewport', () => {
-        expect(CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO).toBe(0.6);
-        expect(cap).toBe(480);
+    test('the hole never exceeds 40% of the list viewport', () => {
+        expect(CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO).toBe(0.4);
+        expect(cap).toBe(320);
     });
 
     test('unmeasured content reserves the capped hole', () => {
@@ -285,8 +292,8 @@ describe('resolveReplyReserveSpacerHeight', () => {
         expect(resolveReplyReserveSpacerHeight({
             usableViewportHeight: usable,
             viewportHeight: viewport,
-            contentHeight: 400,
-        })).toBe(384);
+            contentHeight: 500,
+        })).toBe(284);
         expect(resolveReplyReserveSpacerHeight({
             usableViewportHeight: usable,
             viewportHeight: viewport,
@@ -357,13 +364,13 @@ describe('resolveReplyReserveUpdate', () => {
             previous: afterFirstMeasure.snapshot,
             reserveId: 'user-1',
             entryKey: 'turn:1',
-            contentHeight: 400,
+            contentHeight: 500,
             usableViewportHeight: usable,
             viewportHeight: viewport,
         });
         expect(afterGrowth.release).toBe(false);
-        expect(afterGrowth.snapshot.spacerHeight).toBe(384);
-        expect(afterGrowth.snapshot.contentHeight).toBe(400);
+        expect(afterGrowth.snapshot.spacerHeight).toBe(284);
+        expect(afterGrowth.snapshot.contentHeight).toBe(500);
     });
 
     test('the optimistic row becoming a turn relatches instead of releasing', () => {
@@ -499,47 +506,63 @@ describe('resolveShrunkItemSizeUpdate', () => {
 });
 
 describe('parked live edge', () => {
-    test('a footer-aware spacer leaves no downward room under the park', () => {
+    test('immersive chrome is the middle window and the hole stays at most 40% VH', () => {
         const viewport = 800;
+        const header = 120;
         const footer = 220;
-        const content = 200;
+        const content = 80;
+        const parkOffset = resolveParkAnchorOffset(header);
+        expect(parkOffset).toBe(header);
+        expect(resolveParkAnchorOffset(0)).toBe(CHAT_LIST_ANCHOR_OFFSET);
         const usable = resolveUsableViewportHeight({
             viewportHeight: viewport,
             composerOverlayHeight: 0,
             endInsetHeight: footer,
+            anchorOffset: parkOffset,
         });
+        expect(usable).toBe(viewport - header - footer);
         const spacer = resolveReplyReserveSpacerHeight({
             usableViewportHeight: usable,
             viewportHeight: viewport,
             contentHeight: content,
         });
+        expect(spacer).toBe(resolveReplyReserveMaxHeight(viewport));
+        expect(spacer).toBeLessThanOrEqual(viewport * CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO);
         expect(resolveParkedScrollSlack({
             contentHeight: content,
             spacerHeight: spacer,
             endInsetHeight: footer,
             viewportHeight: viewport,
+            anchorOffset: parkOffset,
         })).toBe(0);
     });
 
-    test('ignoring the footer inset leaves slack the user can still scroll', () => {
+    test('a chrome-aware leftover smaller than the cap is the hole', () => {
         const viewport = 800;
+        const header = 120;
         const footer = 220;
         const content = 200;
+        const parkOffset = resolveParkAnchorOffset(header);
         const usable = resolveUsableViewportHeight({
             viewportHeight: viewport,
             composerOverlayHeight: 0,
+            endInsetHeight: footer,
+            anchorOffset: parkOffset,
         });
         const spacer = resolveReplyReserveSpacerHeight({
             usableViewportHeight: usable,
             viewportHeight: viewport,
             contentHeight: content,
         });
+        expect(usable).toBe(460);
+        expect(spacer).toBe(260);
         expect(resolveParkedScrollSlack({
             contentHeight: content,
             spacerHeight: spacer,
             endInsetHeight: footer,
             viewportHeight: viewport,
-        })).toBeGreaterThan(TIMELINE_SCROLL_BUTTON_SHOW_THRESHOLD_PX);
+            anchorOffset: parkOffset,
+        })).toBe(0);
     });
 
     test('distance from the parked edge ignores slack below that offset', () => {

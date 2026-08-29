@@ -14,11 +14,12 @@
 // the anchored turn". Keeping it free of DOM and React makes the mode machine
 // testable without a renderer.
 //
-// "Usable viewport" is the visible height minus the composer overlay, minus
-// the list footer inset (the measured composer clearance already in the
-// list), minus the anchor offset. The footer must be in that subtraction:
-// leaving it out sizes the hole as if the inset were not there, then the
-// inset becomes extra scroll range under the parked row.
+// "Usable viewport" is the middle visible window on an immersive page:
+// list height minus the measured header (safe area + floating nav), minus
+// the composer overlay / list footer inset, minus the park fade when no
+// header has been measured. That window is the leftover the hole may
+// fill. The hole itself is capped at 40% of the list viewport — a 60%
+// leftover of the full immersive scroller was half the phone.
 //
 // Send latches the just-sent user message and TimelineList drives
 // `anchoring-new-turn`. Occupancy is a sibling spacer AFTER the last turn,
@@ -36,12 +37,28 @@ export type TimelineScrollMode = 'following-end' | 'anchoring-new-turn' | 'free-
 // with the timeline's top fade.
 export const CHAT_LIST_ANCHOR_OFFSET = 16;
 
-/** Blank hole under the parked turn. A full leftover viewport shoves StatusRow off-screen. */
-export const CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO = 0.6;
+/**
+ * Blank hole under the parked turn, as a fraction of the list viewport
+ * (full-screen on immersive mobile). The middle chat window after chrome
+ * is subtracted is typically at or under this.
+ */
+export const CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO = 0.4;
 
 export const resolveReplyReserveMaxHeight = (viewportHeight: number): number => {
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
     return viewportHeight * CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO;
+};
+
+/**
+ * Where the just-sent row parks. On immersive mobile the measured list
+ * header (safe area + nav spacer) is that offset; otherwise the fade gap.
+ */
+export const resolveParkAnchorOffset = (
+    startInsetHeight: number,
+    fallback = CHAT_LIST_ANCHOR_OFFSET,
+): number => {
+    if (Number.isFinite(startInsetHeight) && startInsetHeight > 0) return startInsetHeight;
+    return fallback;
 };
 
 export const resolveUsableViewportHeight = ({
@@ -169,7 +186,7 @@ export const resolveScrollDistanceFromLiveEdge = (
  * Sibling spacer after the last turn (user + live status). Unmeasured
  * content still gets the capped hole so the first paint can park. Once
  * the turn reports a natural height, the spacer is the leftover, never
- * more than 60% of the list viewport.
+ * more than 40% of the list viewport.
  */
 export const resolveReplyReserveSpacerHeight = ({
     usableViewportHeight,
@@ -211,7 +228,7 @@ export type ReplyReserveSnapshot = {
  * Drop the reserved spacer once real content has consumed it, or once a later
  * shrink would reopen it.
  *
- * The spacer is `min(usableViewport - turnNaturalHeight, 60% viewport)`.
+ * The spacer is `min(usableViewport - turnNaturalHeight, 40% viewport)`.
  * A long streaming turn drives that leftover to 0; collapsed activity then
  * shortens the same row and the leftover comes back as blank space under
  * the transcript. Overflow is the same moment we start revealing the live

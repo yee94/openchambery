@@ -781,18 +781,24 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
             'oc-composer-queue relative z-0 -mb-5 w-full',
             isMobile ? 'px-2' : 'px-4',
         )}>
-            <div className={cn(
-                // Match composer surface (subtle + border, no elevation shadow). PC radius = chat input 1.5rem.
-                'overflow-hidden border border-border/60 bg-[var(--surface-subtle)] text-foreground',
-                isMobile ? 'rounded-[1.25rem]' : 'rounded-3xl',
-            )}>
-                <div className={cn(
-                    'flex flex-col',
-                    isMobile
-                        // Match composer footer left inset.
-                        ? 'px-1.5 py-1'
-                        : 'gap-0.5 px-3 pb-1 pt-1.5',
-                )}>
+            <div
+                data-oc-queue-card=""
+                className={cn(
+                    // Match composer surface (subtle + border, no elevation shadow). PC radius = chat input 1.5rem.
+                    'overflow-hidden border border-border/60 bg-[var(--surface-subtle)] text-foreground',
+                    isMobile ? 'rounded-[1.25rem]' : 'rounded-3xl',
+                )}
+            >
+                <div
+                    data-oc-queue-card-body=""
+                    className={cn(
+                        'flex flex-col',
+                        isMobile
+                            // Match composer footer left inset.
+                            ? 'px-1.5 py-1'
+                            : 'gap-0.5 px-3 pb-1 pt-1.5',
+                    )}
+                >
                     {hasQueueSurface ? (
                         <DndContext
                             sensors={sensors}
@@ -837,7 +843,11 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
                         </>
                     ) : null}
                 </div>
-                <div aria-hidden="true" className={isMobile ? 'h-4' : 'h-5'} />
+                <div
+                    data-oc-queue-composer-overlap=""
+                    aria-hidden="true"
+                    className={isMobile ? 'h-4' : 'h-5'}
+                />
             </div>
         </div>
     );

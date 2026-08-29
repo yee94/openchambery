@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.24] - 2026-08-30
+
+### Added
+
+- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Fixed
+
+- On a new chat, project and branch pickers sit above the input, same as Changes and To-do.
+- After sending, the reserved reply space is the middle of the screen (safe area and header counted, about 40% max). You can no longer scroll into empty space under the parked message.
+
+### Changed
+
+- Leaving chat hides the native composer immediately so it does not linger over Projects.
+- Changes and the queue sit closer against the native composer pill.
+
 ## [1.19.0-beta.23] - 2026-08-30
 
 ### Changed

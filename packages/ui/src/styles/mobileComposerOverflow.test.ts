@@ -10,6 +10,7 @@ const chatPromptComposerSource = readFileSync(join(here, '../components/chat/Cha
 const chatContainerSource = readFileSync(join(here, '../components/chat/ChatContainer.tsx'), 'utf-8');
 const autoFollowSource = readFileSync(join(here, '../hooks/useChatAutoFollow.ts'), 'utf-8');
 const swapHookSource = readFileSync(join(here, '../components/chat/useMobileComposerSwap.ts'), 'utf-8');
+const queuedChipsSource = readFileSync(join(here, '../components/chat/QueuedMessageChips.tsx'), 'utf-8');
 const mobileAppSource = readFileSync(join(here, '../apps/MobileApp.tsx'), 'utf-8');
 const injected = new Set<HTMLElement>();
 
@@ -153,6 +154,9 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileCss).toMatch(
             /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*calc\(\s*var\(--oc-native-composer-height/,
         );
+        expect(mobileCss).not.toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*padding-bottom:\s*8px/,
+        );
         expect(mobileCss).toMatch(
             /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*opacity:\s*calc\(1 - min\(1, var\(--oc-native-composer-dock/,
         );
@@ -164,6 +168,17 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileCss).toMatch(
             /:root\.oc-native-ios-composer \.oc-composer-queue\s*\{[^}]*margin-bottom:\s*0/,
         );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-composer-queue \[data-oc-queue-composer-overlap\]\s*\{[^}]*display:\s*none/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-composer-queue \[data-oc-queue-card-body\]\s*\{[^}]*padding-top:\s*0\.375rem;[^}]*padding-bottom:\s*0\.375rem/,
+        );
+        expect(queuedChipsSource).toContain('data-oc-queue-composer-overlap');
+        expect(queuedChipsSource).toContain('data-oc-queue-card');
+        expect(queuedChipsSource).toContain("'oc-composer-queue relative z-0 -mb-5 w-full'");
+        expect(queuedChipsSource).toMatch(/data-oc-queue-composer-overlap[\s\S]*isMobile \? 'h-4' : 'h-5'/);
+        expect(mobileCss.match(/\.oc-composer-queue\s*\{[^}]*margin-bottom:\s*0/g)).toHaveLength(1);
         expect(mobileCss).toMatch(
             /:root\.oc-native-ios-composer \.oc-scroll-to-bottom--expanded,\s*:root\.oc-native-ios-composer \.oc-scroll-to-bottom--compact/,
         );
@@ -189,6 +204,56 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileAppSource).toContain("setVar('--oc-kb-layout', 0)");
     });
 
+    test('queue card tuck stays on web and Android; native iOS hides the overlap', () => {
+        const start = mobileCss.indexOf(':root.oc-native-ios-composer .oc-composer-queue {');
+        const end = mobileCss.indexOf('/* Static ancestors so absolute docking', start);
+        expect(start).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(start);
+        const queueCss = mobileCss.slice(start, end);
+
+        const mountQueue = (nativeIos: boolean) => {
+            document.documentElement.className = nativeIos ? 'oc-native-ios-composer' : '';
+            const style = document.createElement('style');
+            style.textContent = `
+              .oc-composer-queue { margin-bottom: -1.25rem; }
+              [data-oc-queue-card-body] { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+              [data-oc-queue-composer-overlap] { height: 1rem; }
+              ${queueCss}
+            `;
+            document.head.appendChild(style);
+            injected.add(style);
+            const host = document.createElement('div');
+            host.innerHTML = `
+              <div class="oc-composer-queue">
+                <div data-oc-queue-card="">
+                  <div data-oc-queue-card-body=""></div>
+                  <div data-oc-queue-composer-overlap=""></div>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(host);
+            injected.add(host);
+            return {
+                queue: host.querySelector<HTMLElement>('.oc-composer-queue')!,
+                body: host.querySelector<HTMLElement>('[data-oc-queue-card-body]')!,
+                overlap: host.querySelector<HTMLElement>('[data-oc-queue-composer-overlap]')!,
+            };
+        };
+
+        const web = mountQueue(false);
+        expect(getComputedStyle(web.queue).marginBottom).toBe('-20px');
+        expect(getComputedStyle(web.overlap).display).not.toBe('none');
+        expect(getComputedStyle(web.overlap).height).toBe('16px');
+        expect(getComputedStyle(web.body).paddingTop).toBe('4px');
+        expect(getComputedStyle(web.body).paddingBottom).toBe('4px');
+
+        const ios = mountQueue(true);
+        expect(getComputedStyle(ios.queue).marginBottom).toBe('0px');
+        expect(getComputedStyle(ios.overlap).display).toBe('none');
+        expect(getComputedStyle(ios.body).paddingTop).toBe('6px');
+        expect(getComputedStyle(ios.body).paddingBottom).toBe('6px');
+    });
+
     test('settings inputBarOffset applies only in the native app while the keyboard is down', () => {
         expect(chatInputSource).toContain('isMobile && isCapacitorApp() && !nativeIosComposerActive && inputBarOffset > 0 && !mobileTextareaFocused');
     });
@@ -203,6 +268,56 @@ describe('mobile composer overflow and swap contract', () => {
         expect(swapHookSource).toContain('clearComposerSwap');
         expect(chatContainerSource.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(2);
         expect(chatContainerSource).toContain('oc-draft-center');
+    });
+
+    test('native iOS in-flow feet reserve the pill so draft pickers sit above the input', () => {
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer\s+\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s*\{[^}]*padding-bottom:\s*calc\(\s*var\(--oc-native-composer-height/,
+        );
+        expect(chatInputSource).toContain('oc-mobile-draft-target-selectors');
+        expect(chatInputSource).toContain('data-native-composer-accessories');
+
+        const start = mobileCss.indexOf(
+            ':root.oc-native-ios-composer\n  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {',
+        );
+        expect(start).toBeGreaterThan(-1);
+        const end = mobileCss.indexOf('}', start);
+        const inFlowNativeCss = mobileCss.slice(start, end + 1);
+
+        const mountFeet = (nativeIos: boolean) => {
+            document.documentElement.className = nativeIos ? 'oc-native-ios-composer' : '';
+            const style = document.createElement('style');
+            style.textContent = `
+              :root { --oc-native-composer-height: 88px; }
+              .oc-mobile-composer-foot { padding-bottom: 0; }
+              ${inFlowNativeCss}
+            `;
+            document.head.appendChild(style);
+            injected.add(style);
+            const host = document.createElement('div');
+            host.innerHTML = `
+              <div class="oc-mobile-composer-foot">
+                <div data-native-composer-accessories="" data-testid="draft-accessories"></div>
+              </div>
+              <div class="oc-mobile-composer-foot oc-mobile-composer-foot--overlay">
+                <div data-native-composer-accessories="" data-testid="overlay-accessories"></div>
+              </div>
+            `;
+            document.body.appendChild(host);
+            injected.add(host);
+            return {
+                draft: host.querySelector<HTMLElement>('.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)')!,
+                overlay: host.querySelector<HTMLElement>('.oc-mobile-composer-foot--overlay')!,
+            };
+        };
+
+        const web = mountFeet(false);
+        expect(getComputedStyle(web.draft).paddingBottom).toBe('0px');
+        expect(getComputedStyle(web.overlay).paddingBottom).toBe('0px');
+
+        const ios = mountFeet(true);
+        expect(getComputedStyle(ios.draft).paddingBottom).toBe('calc(88px - 8px)');
+        expect(getComputedStyle(ios.overlay).paddingBottom).toBe('0px');
     });
 
     test('leftover session swap cannot cover the in-flow draft composer', () => {

@@ -3543,15 +3543,20 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
 }
 
 /* Capacitor iOS native composer overlay owns the input chrome. Queue, status,
-   and draft pickers stay in the WebView, docked to the overlay (not a
-   collapsed layer) just above the pill. The native field does not morph.
+   and draft pickers stay in the WebView, just above the pill (not a
+   collapsed layer). Overlay pages dock that strip absolutely; draft /
+   empty / history-error keep the in-flow foot and reserve the collapsed
+   pill height so the same strip (project / branch) sits above the input.
+   The native field does not morph.
    --oc-native-composer-dock (distance from the live edge, not swap rest)
    fades that strip. Approaching stays hidden until the true bottom; leaving
    fades over the first follow-range px. Swap can rest expanded far from the
    bottom; these rows have no background and must stay hidden until the
-   viewport is actually there. The native scroll-to-bottom control stays on
-   the overlay, appears after ~80px of upward travel, and does not change
-   published occupancy.
+   viewport is actually there. The queue card drops the composer-overlap
+   tail (the padding that used to tuck behind the web input) and sits fully
+   above the pill with symmetric padding. The native scroll-to-bottom
+   control stays on the overlay, appears after ~80px of upward travel, and
+   does not change published occupancy.
    --oc-native-composer-height is collapsed pill occupancy only. */
 :root.oc-native-ios-composer .oc-chat-composer-swap-scope {
   --oc-chat-foot-inset: calc(
@@ -3580,9 +3585,19 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
   margin-bottom: 0;
 }
 
+:root.oc-native-ios-composer .oc-composer-queue [data-oc-queue-composer-overlap] {
+  display: none;
+}
+
+:root.oc-native-ios-composer .oc-composer-queue [data-oc-queue-card-body] {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+
 /* Static ancestors so absolute docking uses the inset:0 overlay, not a
-   zero-height stack. Nudge 8px toward the pill. Occupancy never reserves
-   the native scroll button. */
+   zero-height stack. Accessories settle 8px into the pill so Changes /
+   Tasks sit against the overlay, not a floating gap. Occupancy never
+   reserves the native scroll button. */
 :root.oc-native-ios-composer .oc-mobile-composer-foot--overlay {
   overflow: visible;
 }
@@ -3608,6 +3623,17 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
   pointer-events: auto;
   /* Default 1 keeps the strip hidden until JS publishes a real distance. */
   opacity: calc(1 - min(1, var(--oc-native-composer-dock, 1) * 2));
+}
+
+/* Draft / empty / history-error stay in-flow (no overlay, no compact leak).
+   The web textarea is display:none, so without this hole the project /
+   branch chips sit under the native pill. Same occupancy Changes / TODO
+   get from `bottom: calc(var(--oc-native-composer-height) - 8px)` on
+   overlay pages. These pages have no transcript to leave, so the strip
+   stays visible. */
+:root.oc-native-ios-composer
+  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {
+  padding-bottom: calc(var(--oc-native-composer-height, 5.5rem) - 8px);
 }
 
 :root.oc-native-ios-composer

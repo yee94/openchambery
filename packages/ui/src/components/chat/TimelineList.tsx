@@ -15,11 +15,12 @@
 //     quiet-window prepend deferral.
 //   • A just-sent turn keeps its natural height. Unused space below it is a
 //     real trailing list item (`usableViewport - content`) with a fixed size
-//     so the virtualizer can park the user row. Usable height subtracts the
-//     measured list footer (composer inset) so that hole is the live edge —
-//     there is no further downward room under it. Collapse, hydration, and
-//     streaming keep writing the turn. The spacer only shrinks with content;
-//     a later collapse that would reopen it drops the reserve.
+//     so the virtualizer can park the user row. Usable height is the middle
+//     window: list viewport minus the measured header (safe area + nav) and
+//     footer (composer inset), capped at 40% of the list viewport. That hole
+//     is the live edge — no further downward room under it. Collapse,
+//     hydration, and streaming keep writing the turn. The spacer only shrinks
+//     with content; a later collapse that would reopen it drops the reserve.
 //
 // Rows are never recycled: chat rows own internal state (expanded tool calls,
 // reveal animations) that recycling would carry into a different turn.
@@ -69,6 +70,7 @@ import {
     didPrependTimelineEntries,
     getAnchoredTurnMetrics,
     isReplyReserveOverflowing,
+    resolveParkAnchorOffset,
     resolveParkedLiveEdgeOffset,
     resolveReplyReserveUpdate,
     resolveShrunkItemSizeUpdate,
@@ -143,20 +145,20 @@ const resolveParkOffsetForState = (
     parkReleased: boolean,
     state: Parameters<typeof getAnchoredTurnMetrics>[0]['state'],
     occlusion: number,
+    parkAnchorOffset: number,
 ): number | null => {
     if (!space || parkReleased) return null;
-    const anchorOffset = space.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET;
     const metrics = getAnchoredTurnMetrics({
         state,
         anchorIndex: space.anchorIndex,
         lastIndex: space.anchorIndex,
         composerOverlayHeight: occlusion,
-        anchorOffset,
+        anchorOffset: parkAnchorOffset,
     });
     if (!metrics) return null;
     return resolveParkedLiveEdgeOffset({
         anchorTop: metrics.anchorTop,
-        anchorOffset,
+        anchorOffset: parkAnchorOffset,
     });
 };
 
@@ -368,10 +370,24 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const listScrollElementRef = React.useRef<HTMLDivElement | null>(null);
     const [scrollElement, setScrollElement] = React.useState<HTMLDivElement | null>(null);
     const [viewportHeight, setViewportHeight] = React.useState(0);
+    const [headerElement, setHeaderElement] = React.useState<HTMLDivElement | null>(null);
+    const [headerHeight, setHeaderHeight] = React.useState(0);
+    const headerElementRef = React.useRef<HTMLDivElement | null>(null);
+    const headerHeightRef = React.useRef(0);
     const [footerElement, setFooterElement] = React.useState<HTMLDivElement | null>(null);
     const [footerHeight, setFooterHeight] = React.useState(0);
     const footerElementRef = React.useRef<HTMLDivElement | null>(null);
     const footerHeightRef = React.useRef(0);
+    const publishHeaderHeight = useEvent((element: HTMLElement | null = headerElementRef.current) => {
+        const nextHeight = element?.offsetHeight ?? 0;
+        headerHeightRef.current = nextHeight;
+        setHeaderHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+    });
+    const setHeaderMeasureElement = useEvent((element: HTMLDivElement | null) => {
+        headerElementRef.current = element;
+        setHeaderElement((previous) => (previous === element ? previous : element));
+        publishHeaderHeight(element);
+    });
     const publishFooterHeight = useEvent((element: HTMLElement | null = footerElementRef.current) => {
         const nextHeight = element?.offsetHeight ?? 0;
         footerHeightRef.current = nextHeight;
@@ -383,9 +399,18 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         publishFooterHeight(element);
     });
     useResizeObserver(
+        typeof ResizeObserver !== 'undefined' ? headerElement : null,
+        () => publishHeaderHeight(headerElementRef.current),
+    );
+    useResizeObserver(
         typeof ResizeObserver !== 'undefined' ? footerElement : null,
         () => publishFooterHeight(footerElementRef.current),
     );
+    const measuredHeader = header != null ? (
+        <div ref={setHeaderMeasureElement} data-oc-timeline-header="">
+            {header}
+        </div>
+    ) : null;
     const measuredFooter = footer != null ? (
         <div ref={setFooterMeasureElement} data-oc-timeline-footer="">
             {footer}
@@ -856,6 +881,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 parkReleasedRef.current,
                 state,
                 composerOverlayHeightRef.current + footerHeightRef.current,
+                parkAnchorOffsetRef.current,
             );
             writeTimelineParkEndOffset(listScrollElementRef.current, parkOffset);
             const distanceFromEnd = parkOffset !== null
@@ -1000,6 +1026,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const composerOverlayHeightRef = React.useRef(composerOverlayHeight);
     composerOverlayHeightRef.current = composerOverlayHeight;
     const parkAnimatingUntilRef = React.useRef(0);
+    const parkAnchorOffsetRef = React.useRef(CHAT_LIST_ANCHOR_OFFSET);
     const releasedParkKeyRef = React.useRef<string | null>(null);
     const [releasedParkKey, setReleasedParkKey] = React.useState<string | null>(null);
     const parkAnchorKey = anchoredEndSpace
@@ -1018,11 +1045,12 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             listScrollElementRef.current,
             listRef.current?.getState()?.scrollLength,
         );
+    const parkAnchorOffset = resolveParkAnchorOffset(headerHeight);
     const usableViewportHeight = resolveUsableViewportHeight({
         viewportHeight: resolvedViewportHeight,
         composerOverlayHeight,
         endInsetHeight: footerHeight,
-        anchorOffset: anchoredEndSpace?.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET,
+        anchorOffset: parkAnchorOffset,
     });
 
     let activeReplyReserve = replyReserve;
@@ -1065,6 +1093,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     parkAnchorKeyRef.current = parkAnchorKey;
     usableViewportHeightRef.current = usableViewportHeight;
     viewportHeightRef.current = resolvedViewportHeight;
+    parkAnchorOffsetRef.current = parkAnchorOffset;
 
     React.useLayoutEffect(() => {
         parkedReserveIdRef.current = null;
@@ -1091,7 +1120,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         const list = listRef.current;
         if (!list) return false;
         const state = list.getState();
-        const anchorOffset = space.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET;
+        const anchorOffset = parkAnchorOffsetRef.current;
         const metrics = getAnchoredTurnMetrics({
             state,
             anchorIndex: space.anchorIndex,
@@ -1170,9 +1199,10 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 parkReleased,
                 list.getState(),
                 composerOverlayHeight + footerHeight,
+                parkAnchorOffset,
             ),
         );
-    }, [anchoredEndSpace, composerOverlayHeight, footerHeight, parkReleased]);
+    }, [anchoredEndSpace, composerOverlayHeight, footerHeight, parkAnchorOffset, parkReleased]);
 
     const listEntries = React.useMemo((): readonly TimelineListItem<TEntry>[] => {
         const spacerHeight = activeReplyReserve?.spacerHeight ?? 0;
@@ -1228,7 +1258,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 onScroll={handleScroll}
                 onViewableItemsChanged={handleViewableItemsChanged}
                 viewabilityConfig={TIMELINE_VIEWABILITY_CONFIG}
-                ListHeaderComponent={header as React.ReactElement | null | undefined}
+                ListHeaderComponent={measuredHeader as React.ReactElement | null | undefined}
                 ListFooterComponent={measuredFooter as React.ReactElement | null | undefined}
                 className={className}
                 style={style}
