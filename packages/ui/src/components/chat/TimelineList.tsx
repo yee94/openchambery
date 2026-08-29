@@ -51,6 +51,14 @@ import {
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
 import {
+    captureTimelinePrependAnchor,
+    measureTimelineAnchorDrift,
+    resolveTimelineAnchorHoldStep,
+    resolveTimelineAnchorScrollTarget,
+    type TimelineAnchorReadState,
+    type TimelinePrependAnchor,
+} from './lib/scroll/timelinePrependAnchor';
+import {
     didPrependTimelineEntries,
     resolveTimelineIsAtEnd,
     TIMELINE_ANCHORING_ATTRIBUTE,
@@ -260,6 +268,35 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const [prependToken, setPrependToken] = React.useState(0);
     const [settledPrependToken, setSettledPrependToken] = React.useState(0);
     const prependSettling = prependToken !== settledPrependToken;
+
+    // A fresh list opens at the live edge (`initialScrollAtEnd`).
+    const lastIsAtEndRef = React.useRef(true);
+
+    // --- Held read-position anchor ------------------------------------------
+    // Widening the window above only extends the list's own compensation; it
+    // does not change WHICH row the list holds still, and for a load-older tap
+    // that choice is the actual defect. The reader is at the very top when they
+    // press the control, so the rows that arrive above them become the list's
+    // first-in-view anchor while their heights are still estimates, and every
+    // later measurement moves the transcript out from under the reader.
+    //
+    // So the row to hold is named explicitly and held until the inserted block
+    // stops resizing. See ./lib/scroll/timelinePrependAnchor.
+    const [prependAnchor, setPrependAnchor] = React.useState<TimelinePrependAnchor | null>(null);
+    // Refreshed from frames that already read the list state: by the time a
+    // prepend commits, the rows have moved, so the anchor cannot be chosen then.
+    const anchorCandidateRef = React.useRef<{
+        anchor: TimelinePrependAnchor;
+        headKey: string | undefined;
+    } | null>(null);
+    const refreshAnchorCandidate = useEvent((state?: TimelineAnchorReadState) => {
+        const resolved = state ?? listRef.current?.getState();
+        if (!resolved) return;
+        const keys = entryKeysRef.current;
+        const anchor = captureTimelinePrependAnchor(resolved, keys);
+        anchorCandidateRef.current = anchor === null ? null : { anchor, headKey: keys[0] };
+    });
+
     const committedEntryKeysRef = React.useRef(entryKeys);
     React.useLayoutEffect(() => {
         const previous = committedEntryKeysRef.current;
@@ -268,7 +305,19 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         // Before paint: the measurements that need compensating are reported
         // once this commit is on screen.
         setPrependToken((token) => token + 1);
+
+        // At the live edge, end maintenance is already the right owner: the
+        // block lands off-screen above and the end does not move. Anchoring too
+        // would put two owners on one scroll position.
+        if (lastIsAtEndRef.current) return;
+        const candidate = anchorCandidateRef.current;
+        // The candidate must predate this commit. One captured afterwards would
+        // name a row from the inserted block, and holding one of those steady
+        // while it is measured is the drift itself, not the fix.
+        if (!candidate || candidate.headKey !== previous[0]) return;
+        setPrependAnchor(candidate.anchor);
     }, [entryKeys]);
+
     React.useEffect(() => {
         if (!prependSettling) return;
         const timer = window.setTimeout(() => {
@@ -276,21 +325,120 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         }, TIMELINE_PREPEND_SETTLE_MS);
         return () => window.clearTimeout(timer);
     }, [prependSettling, prependToken]);
-    // Announced on the element so scroll observers outside this tree can tell
-    // the list's own re-anchoring from the user's travel.
+
+    // Holds the named row still until it stops moving on its own.
+    //
+    // Read-only per frame, and corrections are absolute offsets issued through
+    // the list's own scroll API rather than `scrollTop` writes — a relative
+    // per-frame writer racing the list's adjustment pass is what produced the
+    // huge load-more swaps this replaces.
     React.useEffect(() => {
+        if (!prependAnchor) return;
+        const list = listRef.current;
+        if (!list || typeof window === 'undefined') {
+            setPrependAnchor(null);
+            return;
+        }
         const element = listScrollElementRef.current;
-        if (!element || !prependSettling) return;
+
+        const startedAt = Date.now();
+        let stableFrames = 0;
+        let lastCorrectionAt: number | null = null;
+        let frame: number | null = null;
+        let stopped = false;
+        const listeners: Array<[string, EventListener]> = [];
+
+        const stop = (clearAnchor: boolean) => {
+            if (stopped) return;
+            stopped = true;
+            if (frame !== null) {
+                window.cancelAnimationFrame(frame);
+                frame = null;
+            }
+            for (const [type, listener] of listeners) {
+                element?.removeEventListener(type, listener);
+            }
+            if (clearAnchor) setPrependAnchor(null);
+        };
+
+        const step = () => {
+            frame = null;
+            if (stopped) return;
+            const state = list.getState();
+            const now = Date.now();
+            const outcome = resolveTimelineAnchorHoldStep({
+                drift: measureTimelineAnchorDrift(state, prependAnchor),
+                elapsedMs: now - startedAt,
+                stableFrames,
+                msSinceLastCorrection: lastCorrectionAt === null
+                    ? Number.POSITIVE_INFINITY
+                    : now - lastCorrectionAt,
+            });
+            stableFrames = outcome.stableFrames;
+            if (outcome.action === 'release') {
+                stop(true);
+                return;
+            }
+            if (outcome.action === 'correct') {
+                const target = resolveTimelineAnchorScrollTarget(state, prependAnchor);
+                if (target !== null) {
+                    lastCorrectionAt = now;
+                    void list.scrollToOffset({ offset: target, animated: false });
+                }
+            }
+            frame = window.requestAnimationFrame(step);
+        };
+
+        // The reader taking over outranks the anchor: once they move, where the
+        // transcript should sit is their business, not the load's.
+        const releaseToUser = () => {
+            stop(true);
+        };
+        for (const type of ['touchstart', 'touchmove', 'wheel', 'pointerdown', 'keydown']) {
+            listeners.push([type, releaseToUser]);
+        }
+        for (const [type, listener] of listeners) {
+            element?.addEventListener(type, listener, { passive: true });
+        }
+        frame = window.requestAnimationFrame(step);
+
+        return () => {
+            stop(false);
+        };
+    }, [prependAnchor]);
+
+    // Announced on the element so scroll observers outside this tree can tell
+    // the list's own re-anchoring from the user's travel. Covers the whole
+    // hold, which outlasts the settle window when measurements keep landing.
+    //
+    // Before paint, not after: the list adjusts the scroll position during this
+    // same commit, and the browser dispatches the resulting scroll event before
+    // a passive effect would have raised the flag. That one unflagged frame is
+    // a large distance change with no gesture behind it, which is exactly what
+    // the mobile composer reads as a deliberate swipe.
+    const timelineAnchoring = prependSettling || prependAnchor !== null;
+    React.useLayoutEffect(() => {
+        const element = listScrollElementRef.current;
+        if (!element || !timelineAnchoring) return;
         element.setAttribute(TIMELINE_ANCHORING_ATTRIBUTE, 'true');
         return () => {
             element.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
         };
-    }, [prependSettling]);
+    }, [timelineAnchoring]);
 
-    const maintainVisibleContentPosition = React.useMemo(
-        () => ({ data: true, size: prependSettling }) as const,
-        [prependSettling],
-    );
+    const maintainVisibleContentPosition = React.useMemo(() => {
+        const anchorKey = prependAnchor?.key;
+        if (anchorKey === undefined) {
+            return { data: true, size: prependSettling };
+        }
+        // Scoped to the held row, so the list cannot choose a freshly inserted
+        // row — still carrying an estimated height — as its own anchor.
+        return {
+            data: true,
+            size: true,
+            shouldRestorePosition: (entry: TEntry) => entry.key === anchorKey,
+        };
+    }, [prependAnchor, prependSettling]);
 
     // --- Markdown hydration window -----------------------------------------
     // The window planner is engine-agnostic: it only needs the mounted span,
@@ -307,8 +455,6 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
 
     const lastScrollAtRef = React.useRef(0);
     const lastScrollOffsetRef = React.useRef(0);
-    // A fresh list opens at the live edge (`initialScrollAtEnd`).
-    const lastIsAtEndRef = React.useRef(true);
     const scrollDirectionRef = React.useRef<MarkdownHydrationScrollDirection>(null);
     const hydrationScheduledRef = React.useRef(false);
     const idleHydrationTimerRef = React.useRef<number | null>(null);
@@ -427,6 +573,9 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     }, []);
 
     const handleViewableItemsChanged = useEvent(() => {
+        // Also the anchor seed for a transcript short enough that the
+        // load-older control is reachable without ever scrolling.
+        refreshAnchorCandidate();
         scheduleMarkdownHydration();
     });
 
@@ -447,6 +596,9 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 lastIsAtEndRef.current = atEnd;
                 onIsAtEndChange?.(atEnd);
             }
+            // Names the row a prepend would have to hold still, from the state
+            // this frame already read.
+            refreshAnchorCandidate(state);
         }
         onScroll?.();
         scheduleMarkdownHydration();
@@ -471,8 +623,9 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
 
     const maintainScrollAtEnd = React.useMemo(() => {
         // While a turn is anchored, the reserved end space — not the live edge —
-        // defines where the viewport rests.
-        if (anchoredEndSpace || !followEnabled) return false;
+        // defines where the viewport rests. A held prepend anchor owns the
+        // scroll position outright for the same reason.
+        if (anchoredEndSpace || !followEnabled || prependAnchor) return false;
         return {
             // Animated only while the session actively streams: there the
             // block-step growth turns each correction into a glide. Opening a
@@ -481,7 +634,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             animated: sessionIsWorking,
             on: { dataChange: true, itemLayout: true, layout: true, footerLayout: true },
         } as const;
-    }, [anchoredEndSpace, followEnabled, sessionIsWorking]);
+    }, [anchoredEndSpace, followEnabled, prependAnchor, sessionIsWorking]);
 
     return (
         <TimelineHydrationContext.Provider value={activeHydratedMarkdownEntryKeys}>
