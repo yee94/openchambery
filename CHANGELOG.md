@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.10] - 2026-08-29
+
+### Changed
+
+- Credential sync is now an opt-in item of the config sync selection instead of a separate per-target authorization, removing the standalone grant step that previously gated `auth.json` transfers.
 
 ## [1.19.0-beta.9] - 2026-08-29
 
