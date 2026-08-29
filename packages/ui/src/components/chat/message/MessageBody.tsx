@@ -457,21 +457,22 @@ const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
                         type="button"
                         className="typography-meta text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
                         onClick={() => {
-                            if (!effectiveDirectory) return;
-                            navigateNestedSession(sessionSurface, taskSessionID, effectiveDirectory, () => {
+                            const directory = sessionSurface.directory || effectiveDirectory;
+                            if (!directory) return;
+                            navigateNestedSession(sessionSurface, taskSessionID, directory, () => {
                                 // In contexts with no ContextPanel (embedded
                                 // session-chat iframe) or single-surface layouts
                                 // (mobile, VS Code), navigate in place. Otherwise
                                 // open a new side-panel tab.
-                                if (pushPhoneNestedSession({ sessionId: taskSessionID, directory: effectiveDirectory })) {
+                                if (pushPhoneNestedSession({ sessionId: taskSessionID, directory })) {
                                     return;
                                 }
                                 if (isEmbeddedSessionChat() || isMobile || isVSCodeRuntime()) {
-                                    setCurrentSession(taskSessionID, effectiveDirectory);
+                                    setCurrentSession(taskSessionID, directory);
                                     return;
                                 }
 
-                                openContextPanelTab(effectiveDirectory, {
+                                openContextPanelTab(directory, {
                                     mode: 'chat',
                                     dedupeKey: `session:${taskSessionID}`,
                                     label: description || agent || t('contextPanel.mode.chat'),

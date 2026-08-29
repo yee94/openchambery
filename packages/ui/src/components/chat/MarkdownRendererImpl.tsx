@@ -1193,6 +1193,8 @@ const useMermaidInlineInteractions = ({
 // Streaming reveal cadence varies by native platform. Step sizes are auto-scaled
 // so reveal throughput (chars/sec) stays constant across the selected cadence.
 const PACE_BASELINE_MS = 24;
+const MIN_REVEAL_CHARS_PER_FRAME = 1;
+const MAX_CATCHUP_CHARS_PER_FRAME = 12;
 const TEXT_SNAP = /[\s.,!?;:)\]]/;
 
 const paceStep = (remaining: number, textPaceMs: number): number => {
@@ -1200,8 +1202,13 @@ const paceStep = (remaining: number, textPaceMs: number): number => {
   return Math.max(1, Math.round(base * (textPaceMs / PACE_BASELINE_MS)));
 };
 
-const nextRevealIndex = (text: string, start: number, textPaceMs: number): number => {
-  const end = Math.min(text.length, start + paceStep(text.length - start, textPaceMs));
+// Convert the original stepped cadence into an equivalent per-second throughput.
+const charsPerSecond = (remaining: number, textPaceMs: number): number => (
+  paceStep(remaining, textPaceMs) * (1000 / textPaceMs)
+);
+
+const nextRevealIndex = (text: string, start: number, revealChars: number): number => {
+  const end = Math.min(text.length, start + revealChars);
   for (let i = end; i < Math.min(text.length, end + 8); i += 1) {
     if (TEXT_SNAP.test(text[i] ?? '')) return i + 1;
   }
@@ -1214,34 +1221,60 @@ const nextRevealIndex = (text: string, start: number, textPaceMs: number): numbe
 const usePacedText = (content: string, streaming: boolean, textPaceMs: number): string => {
   const [shown, setShown] = React.useState<number>(() => (streaming ? 0 : content.length));
   const shownRef = React.useRef(shown);
+  const carryRef = React.useRef(0);
+  const lastTsRef = React.useRef<number | null>(null);
   shownRef.current = shown;
 
   React.useEffect(() => {
     if (!streaming || typeof window === 'undefined') {
+      carryRef.current = 0;
+      lastTsRef.current = null;
       setShown(content.length);
       return;
     }
     if (shownRef.current > content.length) {
+      shownRef.current = content.length;
+      carryRef.current = 0;
       setShown(content.length);
     }
 
-    let timer: number | null = null;
-    const tick = () => {
+    let frame: number | null = null;
+    const tick = (ts: number) => {
       const current = Math.min(shownRef.current, content.length);
       if (current >= content.length) {
-        timer = null;
+        frame = null;
+        lastTsRef.current = null;
         return;
       }
-      setShown(nextRevealIndex(content, current, textPaceMs));
-      timer = window.setTimeout(tick, textPaceMs);
+
+      const lastTs = lastTsRef.current;
+      if (lastTs === null) {
+        lastTsRef.current = ts;
+        frame = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      const dt = Math.min(ts - lastTs, 100);
+      lastTsRef.current = ts;
+      carryRef.current += charsPerSecond(content.length - current, textPaceMs) * (dt / 1000);
+      const revealChars = Math.min(MAX_CATCHUP_CHARS_PER_FRAME, Math.floor(carryRef.current));
+
+      if (revealChars >= MIN_REVEAL_CHARS_PER_FRAME) {
+        carryRef.current -= revealChars;
+        const next = nextRevealIndex(content, current, revealChars);
+        shownRef.current = next;
+        setShown(next);
+      }
+
+      frame = window.requestAnimationFrame(tick);
     };
 
     if (shownRef.current < content.length) {
-      timer = window.setTimeout(tick, textPaceMs);
+      frame = window.requestAnimationFrame(tick);
     }
 
     return () => {
-      if (timer !== null) window.clearTimeout(timer);
+      if (frame !== null) window.cancelAnimationFrame(frame);
     };
   }, [content, streaming, textPaceMs]);
 

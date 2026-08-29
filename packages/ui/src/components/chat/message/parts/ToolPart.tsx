@@ -1225,12 +1225,13 @@ const TaskToolSummary: React.FC<{
     isActive?: boolean;
 }> = ({ entries, isExpanded, isMobile, output, sessionId, onShowPopup, input, animateTailText = true, isActive = false }) => {
     const { t } = useI18n();
-    const currentDirectory = useEffectiveDirectory();
+    const effectiveDirectory = useEffectiveDirectory();
     const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
     const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
     const runtime = React.useContext(RuntimeAPIContext);
     const sessionSurface = useSessionSurface();
+    const currentDirectory = sessionSurface.directory || effectiveDirectory;
 
     const trimmedOutput = typeof output === 'string'
         ? prepareTaskOutputForDisplay(output)

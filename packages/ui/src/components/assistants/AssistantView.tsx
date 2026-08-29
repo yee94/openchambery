@@ -35,6 +35,7 @@ import { useScopedAgentsQuery, useScopedProvidersQuery } from '@/queries/agentQu
 import { openAssistantSettings, useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useUIStore } from '@/stores/useUIStore';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
+import { ContextPanel } from '@/components/layout/ContextPanel';
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { toast } from 'sonner';
 import { revertToMessage as revertSessionToMessage, stageMessageEdit } from '@/sync/session-actions';
@@ -705,6 +706,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
           onPendingUserMessagesMaterialized={handlePendingMessagesMaterialized}
         />
       </div>
+      {isMobileSurface ? null : <ContextPanel directory={directory || null} />}
     </div>
   );
 };

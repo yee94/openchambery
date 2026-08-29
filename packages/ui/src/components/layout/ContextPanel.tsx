@@ -2082,9 +2082,10 @@ const DesktopBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dir
   );
 };
 
-export const ContextPanel: React.FC = () => {
+export const ContextPanel: React.FC<{ directory?: string | null }> = ({ directory: directoryOverride }) => {
   const { t } = useI18n();
-  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const fallbackDirectory = useEffectiveDirectory() ?? '';
+  const effectiveDirectory = directoryOverride?.trim() || fallbackDirectory;
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
 
   const panelState = useUIStore((state) => (directoryKey ? state.contextPanelByDirectory[directoryKey] : undefined));
