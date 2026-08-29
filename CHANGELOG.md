@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.18] - 2026-08-30
+
+### Added
+
+- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Changed
+
+- Leaving chat hides the native composer immediately so it does not linger over Projects.
+
 ## [1.19.0-beta.17] - 2026-08-30
 
 ### Changed

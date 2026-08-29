@@ -318,7 +318,7 @@ export const filesFromNativeComposerPayload = (
     if (!bytes || bytes.byteLength === 0 || bytes.byteLength > maxBytes) continue;
     const name = typeof item.name === 'string' && item.name.trim() ? item.name : 'file';
     const mime = typeof item.mime === 'string' && item.mime.trim() ? item.mime : 'application/octet-stream';
-    files.push(new File([bytes], name, { type: mime }));
+    files.push(new File([new Uint8Array(bytes)], name, { type: mime }));
   }
   return files;
 };
