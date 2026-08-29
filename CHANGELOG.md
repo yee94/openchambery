@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.16] - 2026-08-30
+
+### Fixed
+
+- The thinking/composing status hint now disappears as soon as the turn is done (when Changes appears), instead of lingering and causing a height jump.
+
 ## [1.19.0-beta.15] - 2026-08-29
 
 ### Changed

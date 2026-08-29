@@ -605,6 +605,7 @@ describe('Assistant UI product contract', () => {
     expect(chatContainer).toContain('activeStreamingPhase={activeStreamingPhase}');
     expect(chatContainer).toContain('<StatusRowContainer');
     expect(statusRow).toContain('useAssistantStatus(currentSessionId, currentSessionDirectory)');
+    expect(statusRow).toContain('isTurnSettled={working.isTurnSettled}');
     expect(statusRow).toContain('surface.sessionId ?? primarySessionId');
     expect(view).toContain('if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID)');
     // Active binding with a sessionID force-materializes via refreshBinding (TranscriptRepository).
