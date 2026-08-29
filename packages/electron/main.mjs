@@ -32,7 +32,8 @@ import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
 import { createIdleUpdateDownloadScheduler } from './updater-idle-download.mjs';
 import { getUpdateDownloadSnapshot } from './updater-download-status.mjs';
-import { resolveUpdaterFeed } from './updater-feed.mjs';
+import { PRODUCTION_CHANGELOG_URL, resolveUpdaterFeed } from './updater-feed.mjs';
+import { parseRelevantChangelogNotes as fetchRelevantChangelogNotes } from './updater-changelog.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 import { getMenuLabels, normalizeMenuLocale } from './menu-i18n.mjs';
@@ -338,7 +339,9 @@ const REMOTE_DESKTOP_CLIENT_KIND = 'desktop';
 const ENV_OVERRIDE_HOST_ID = '__env';
 const GITHUB_REPOSITORY = Object.freeze({ owner: 'yee94', repo: 'openchamber' });
 const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY.owner}/${GITHUB_REPOSITORY.repo}`;
-const CHANGELOG_URL = `https://raw.githubusercontent.com/${GITHUB_REPOSITORY.owner}/${GITHUB_REPOSITORY.repo}/main/CHANGELOG.md`;
+// Fallback release notes: same update-service origin as the desktop feed
+// (deploy-authoritative /CHANGELOG.md), not a GitHub branch-pinned raw URL.
+const CHANGELOG_URL = PRODUCTION_CHANGELOG_URL;
 const GITHUB_BUG_REPORT_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=bug_report.yml`;
 const GITHUB_FEATURE_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`;
 const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
@@ -3389,24 +3392,12 @@ const setupAutoUpdater = () => {
   });
 };
 
-const parseRelevantChangelogNotes = async (fromVersion, toVersion) => {
-  try {
-    const response = await fetch(CHANGELOG_URL, { signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return null;
-    const changelog = await response.text();
-    const sections = changelog.split(/^##\s+\[/m).slice(1);
-    const relevant = [];
-    for (const section of sections) {
-      const version = section.split(']')[0];
-      if (compareSemver(version, fromVersion) > 0 && compareSemver(version, toVersion) <= 0) {
-        relevant.push(`## [${section}`.trim());
-      }
-    }
-    return relevant.length > 0 ? relevant.join('\n\n') : null;
-  } catch {
-    return null;
-  }
-};
+const parseRelevantChangelogNotes = (fromVersion, toVersion) => fetchRelevantChangelogNotes({
+  changelogUrl: CHANGELOG_URL,
+  fromVersion,
+  toVersion,
+  compareVersions: compareSemver,
+});
 
 const buildInstalledAppsCachePath = () => path.join(path.dirname(settingsFilePath()), INSTALLED_APPS_CACHE_FILE);
 

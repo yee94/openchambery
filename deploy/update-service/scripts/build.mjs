@@ -69,14 +69,19 @@ async function resolveChangelogSource() {
   return { kind: 'text', text: await response.text() };
 }
 
-const changelogSource = await resolveChangelogSource();
-
 rmSync(outputDirectory, { recursive: true, force: true });
 mkdirSync(outputDirectory, { recursive: true });
-if (changelogSource.kind === 'file') {
-  cpSync(changelogSource.path, path.join(outputDirectory, 'CHANGELOG.md'));
-} else {
-  writeFileSync(path.join(outputDirectory, 'CHANGELOG.md'), changelogSource.text);
+// EdgeOne serves /CHANGELOG.md through edge-functions/CHANGELOG.md.js and
+// static assets shadow edge functions — so the EdgeOne build must not emit
+// CHANGELOG.md. Vercel still needs the static file for origin + edge functions.
+const skipChangelogCopy = process.env.OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY === '1';
+if (!skipChangelogCopy) {
+  const changelogSource = await resolveChangelogSource();
+  if (changelogSource.kind === 'file') {
+    cpSync(changelogSource.path, path.join(outputDirectory, 'CHANGELOG.md'));
+  } else {
+    writeFileSync(path.join(outputDirectory, 'CHANGELOG.md'), changelogSource.text);
+  }
 }
 writeFileSync(path.join(outputDirectory, 'update-manifest.json'), `${JSON.stringify(outputManifest, null, 2)}\n`);
 writeFileSync(path.join(outputDirectory, 'health.json'), `${JSON.stringify({

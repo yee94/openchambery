@@ -61,7 +61,15 @@ test('proxies content-addressed bundles with immutable cache', async () => {
 
 test('rejects non-allowlisted paths and methods without upstream fetch', async () => {
   const fetched = stubUpstream(() => new Response('should not be reached'));
-  for (const path of ['/ota/channels/../../secret', '/ota/channels/evil.js', '/ota/bundles/nothex.zip', '/v1/ota/check']) {
+  for (const path of [
+    '/ota/channels/../../secret',
+    '/ota/channels/evil.js',
+    '/ota/bundles/nothex.zip',
+    '/v1/ota/check',
+    '/secrets.md',
+    '/CHANGELOG.md.bak',
+    '/sub/CHANGELOG.md',
+  ]) {
     const response = await handleOtaProxyRequest(otaRequest(path), { upstreamOrigin: ORIGIN });
     assert.equal(response.status, 404, path);
   }
@@ -71,6 +79,57 @@ test('rejects non-allowlisted paths and methods without upstream fetch', async (
   );
   assert.equal(post.status, 404);
   assert.equal(fetched.length, 0);
+});
+
+test('proxies /CHANGELOG.md with short edge cache and preserves content-type', async () => {
+  const markdown = '## [1.19.0-beta.8]\n\n- notes';
+  const fetched = stubUpstream(() => new Response(markdown, {
+    status: 200,
+    headers: { 'content-type': 'text/markdown; charset=utf-8', 'content-length': String(markdown.length) },
+  }));
+  const response = await handleOtaProxyRequest(
+    otaRequest('/CHANGELOG.md'),
+    { upstreamOrigin: ORIGIN },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), markdown);
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=0, s-maxage=60, stale-while-revalidate=300');
+  assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
+  assert.equal(response.headers.get('x-ota-proxy'), 'edgeone');
+  assert.equal(fetched[0].url, `${ORIGIN}/CHANGELOG.md`);
+});
+
+test('CHANGELOG upstream failure surfaces as 502, never as empty 200', async () => {
+  stubUpstream(() => Promise.reject(new Error('changelog origin down')));
+  const response = await handleOtaProxyRequest(
+    otaRequest('/CHANGELOG.md'),
+    { upstreamOrigin: ORIGIN },
+  );
+  assert.equal(response.status, 502);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  const body = await response.json();
+  assert.equal(body.error, 'ota_upstream_unavailable');
+  assert.match(body.detail, /changelog origin down/);
+});
+
+test('CHANGELOG paths never forward Range even when the client sends one', async () => {
+  const fetched = stubUpstream((_url, init) => {
+    assert.equal(init?.headers?.Range, undefined);
+    return new Response('## [1.19.0]\n', {
+      status: 200,
+      headers: { 'content-type': 'text/markdown; charset=utf-8' },
+    });
+  });
+  const response = await handleOtaProxyRequest(
+    new Request('https://proxy.example.com/CHANGELOG.md', {
+      method: 'GET',
+      headers: { Range: 'bytes=0-10' },
+    }),
+    { upstreamOrigin: ORIGIN },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=0, s-maxage=60, stale-while-revalidate=300');
+  assert.equal(fetched[0].init.headers.Range, undefined);
 });
 
 test('upstream miss passes through 404 without caching', async () => {
