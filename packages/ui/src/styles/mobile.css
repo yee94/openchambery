@@ -46,7 +46,7 @@
      --interactive-hover reads too dense on Projects home glass. */
   --oc-mobile-press-fill: color-mix(
     in srgb,
-    var(--surface-foreground) 4%,
+    var(--surface-foreground) 7%,
     transparent
   );
   --oc-mobile-surface-radius: 1.5rem;
@@ -165,7 +165,7 @@
   --form-row-divider: var(--oc-mobile-divider);
   --oc-mobile-press-fill: color-mix(
     in srgb,
-    var(--surface-foreground) 6%,
+    var(--surface-foreground) 10%,
     transparent
   );
   --oc-mobile-shadow-far: rgb(0 0 0 / 0.24);

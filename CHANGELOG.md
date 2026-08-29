@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.15] - 2026-08-29
+
+### Changed
+
+- Projects home tap highlight is a bit stronger so press feedback stays visible without going back to a full hover slab.
+
 ## [1.19.0-beta.14] - 2026-08-29
 
 ### Added
