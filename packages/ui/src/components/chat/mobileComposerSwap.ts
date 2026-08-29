@@ -35,6 +35,14 @@ export const COMPOSER_SWAP_COMPACT_SETTLE_MS = 320;
  * top rubber-band spring-back is excluded by the hook, not by this distance.
  */
 export const COMPOSER_SWAP_REVEAL_TRAVEL_PX = 24;
+/**
+ * Scroll geometry only carries user intent within this long of a touch. Content
+ * growth and the list's own animated end maintenance move the end away from the
+ * viewport for many frames with no gesture behind them; without this window the
+ * transcript would collapse the composer on its own streaming output. Sized to
+ * outlast fling momentum after the finger lifts.
+ */
+export const COMPOSER_SWAP_USER_SCROLL_WINDOW_MS = 1200;
 export const COMPOSER_SWAP_CSS_VAR = '--oc-mobile-composer-swap';
 
 export type ComposerSwapRest = 'expanded' | 'compact';
@@ -151,6 +159,12 @@ export const applyComposerSwapScroll = (
         towardBottom?: boolean;
         /** A scroll reveal owns the expanded endpoint; ignore absolute distance. */
         holdExpanded?: boolean;
+        /**
+         * False when the geometry moved without a gesture behind it (streaming
+         * growth, the list gliding back to the end). Such frames may not start
+         * a collapse; arriving at the true bottom still expands.
+         */
+        userDriven?: boolean;
     } = {},
 ): ComposerSwapState => {
     if (state.pinned) return state;
@@ -173,10 +187,14 @@ export const applyComposerSwapScroll = (
             });
         }
         // Expanded used to imply "at the bottom", so any distance meant the user
-        // had scrolled up. A scroll reveal breaks that: the composer is expanded
-        // hundreds of px from the live edge, and absolute-distance follow would
-        // collapse it again on the very next event of the same downward gesture.
-        if (options.holdExpanded) {
+        // had scrolled up. Two things break that. A scroll reveal leaves the
+        // composer expanded hundreds of px from the live edge, and absolute-
+        // distance follow would collapse it again on the very next event of the
+        // same downward gesture. Streaming growth does the same without any
+        // gesture at all: the tail appends, the end jumps away from the viewport
+        // and the list glides back over several frames — every one of those
+        // frames reads as a large distance and used to flash the composer shut.
+        if (options.holdExpanded || options.userDriven === false) {
             return settle(base, {
                 phase: 'rest',
                 rest: 'expanded',

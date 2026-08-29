@@ -242,6 +242,24 @@ describe('mobileComposerSwap', () => {
         })).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
     });
 
+    test('geometry with no gesture behind it cannot start a collapse', () => {
+        const expanded = createComposerSwapState();
+
+        // Streaming growth pushes the end far away for several frames.
+        expect(applyComposerSwapScroll(expanded, 300, { userDriven: false })).toMatchObject({
+            phase: 'rest',
+            rest: 'expanded',
+            progress: 0,
+        });
+
+        // The same distance from a real gesture still collapses.
+        expect(applyComposerSwapScroll(expanded, 300, { userDriven: true })).toMatchObject({
+            phase: 'rest',
+            rest: 'compact',
+            progress: 1,
+        });
+    });
+
     test('inside the follow band the tuned proportional return is unchanged', () => {
         const compact = applyComposerSwapSnapDone(
             applyComposerSwapForce(createComposerSwapState(), 'compact'),

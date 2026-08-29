@@ -8,9 +8,12 @@ import { useMobileComposerSwap } from './useMobileComposerSwap';
 const SCROLL_HEIGHT = 1000;
 const CLIENT_HEIGHT = 600;
 
+/** Mutable so a test can append content the way a streaming tail does. */
+let scrollHeight = SCROLL_HEIGHT;
+
 const setDistance = (scrollEl: HTMLElement, distance: number) => {
     // distance = scrollHeight - scrollTop - clientHeight
-    scrollEl.scrollTop = SCROLL_HEIGHT - CLIENT_HEIGHT - distance;
+    scrollEl.scrollTop = scrollHeight - CLIENT_HEIGHT - distance;
 };
 
 const readSwap = (scopeEl: HTMLElement) => ({
@@ -35,9 +38,10 @@ describe('useMobileComposerSwap gesture commit', () => {
         document.body.appendChild(container);
         scrollEl = document.createElement('div');
         scopeEl = document.createElement('div');
+        scrollHeight = SCROLL_HEIGHT;
         Object.defineProperty(scrollEl, 'scrollHeight', {
             configurable: true,
-            get: () => SCROLL_HEIGHT,
+            get: () => scrollHeight,
         });
         Object.defineProperty(scrollEl, 'clientHeight', {
             configurable: true,
@@ -177,9 +181,44 @@ describe('useMobileComposerSwap gesture commit', () => {
         });
     });
 
+    /**
+     * The list follows its own streaming growth: the tail appends, the end
+     * jumps away from the viewport, and end maintenance glides back over
+     * several frames. Every one of those frames reports a large distance from
+     * the bottom, which used to flash the composer into its compact form even
+     * though the user never touched the screen.
+     */
+    test('streaming growth and the glide back never collapse the composer', async () => {
+        await mount();
+
+        // The tail appends 300px: scrollTop is untouched, so the end moves away.
+        scrollHeight += 300;
+        await act(async () => {
+            scrollEl.dispatchEvent(new Event('scroll'));
+        });
+        expect(readSwap(scopeEl).rest).not.toBe('compact');
+
+        // Animated end maintenance glides back over several frames, each one
+        // reporting a large distance from the bottom.
+        for (const distance of [240, 180, 120, 60, 12, 0]) {
+            await fireScroll(distance);
+            expect(readSwap(scopeEl).rest).not.toBe('compact');
+        }
+
+        await advance(500);
+        expect(readSwap(scopeEl).rest).not.toBe('compact');
+
+        // Not vacuous: the same scroller, with the same geometry, still
+        // collapses the moment a finger is behind the motion.
+        await fireTouch('touchstart');
+        await fireScroll(300);
+        expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
+    });
+
     test('travel toward the bottom reveals the composer far from the live edge', async () => {
         await mount();
 
+        await fireTouch('touchstart');
         await fireScroll(300);
         expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
 
@@ -206,6 +245,7 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('iOS top rubber-band spring-back is not downward travel', async () => {
         await mount();
 
+        await fireTouch('touchstart');
         await fireScroll(300);
         expect(readSwap(scopeEl).rest).toBe('compact');
 
