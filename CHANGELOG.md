@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.20] - 2026-08-30
+
+### Changed
+
+- Android type and spacing drop back from the iOS-matched 10/9 trial to a pinned scale of 1, which is still larger than the old ~0.9 density result.
+
 ## [1.19.0-beta.19] - 2026-08-30
 
 ### Changed

@@ -2,16 +2,18 @@
 export const DESIGN_PT_PER_INCH = 163;
 export const DESIGN_PT_SCALE_MIN = 0.85;
 export const DESIGN_PT_SCALE_MAX = 1.2;
+/** iOS --dpt. Confirmed readability lift from the previous 1.0. */
+export const IOS_DESIGN_PT_SCALE = 10 / 9;
 /**
- * Shared Capacitor --dpt. Trial so Android matches the iOS readability lift
- * (previous Android 1.05 / cap 1 read smaller). Same number on both shells.
+ * Android --dpt. Forced to 1 (not physical math, which often lands at ~0.9
+ * and looks unchanged). 10/9 matches iOS numerically but reads far too large
+ * because WebView CSS px is 1 dp.
  */
-export const MOBILE_DESIGN_PT_SCALE = 10 / 9;
-export const IOS_DESIGN_PT_SCALE = MOBILE_DESIGN_PT_SCALE;
-export const ANDROID_DESIGN_PT_SCALE_MAX = MOBILE_DESIGN_PT_SCALE;
-export const ANDROID_DESIGN_PT_SCALE_DEFAULT = MOBILE_DESIGN_PT_SCALE;
-/** v4 invalidates v3 (Android 1.05 / ~0.945) so the iOS-matched scale lands. */
-export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v4';
+export const ANDROID_DESIGN_PT_SCALE = 1;
+export const ANDROID_DESIGN_PT_SCALE_MAX = ANDROID_DESIGN_PT_SCALE;
+export const ANDROID_DESIGN_PT_SCALE_DEFAULT = ANDROID_DESIGN_PT_SCALE;
+/** v5 invalidates v4 (shared 10/9) so Android is not stuck at the iOS trial. */
+export const DESIGN_PT_STORAGE_KEY = 'openchamber.designPtScale.v5';
 
 export interface PhysicalScaleMetrics {
   xdpi: number;
@@ -24,22 +26,23 @@ export function clampDesignPtScale(value: number): number {
   return Math.min(DESIGN_PT_SCALE_MAX, Math.max(DESIGN_PT_SCALE_MIN, value));
 }
 
-/**
- * Android used to scale from DisplayMetrics so 1dpt ≈ 1/163in. This trial
- * returns the shared mobile scale so Android matches iOS.
- */
+/** Android scale is pinned to 1. Physical metrics are not applied. */
 export function computeDesignPtScale(_metrics: PhysicalScaleMetrics | null | undefined): number {
-  return MOBILE_DESIGN_PT_SCALE;
+  return ANDROID_DESIGN_PT_SCALE;
+}
+
+function nativeDesignPtScale(platform: string | undefined): number | null {
+  if (platform === 'android') return ANDROID_DESIGN_PT_SCALE;
+  if (platform === 'ios') return IOS_DESIGN_PT_SCALE;
+  return null;
 }
 
 export function readCachedDesignPtScale(): number {
   if (typeof window === 'undefined') return 1;
   try {
     const capacitor = (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor;
-    const platform = capacitor?.getPlatform?.();
-    if (platform === 'android' || platform === 'ios') {
-      return MOBILE_DESIGN_PT_SCALE;
-    }
+    const pinned = nativeDesignPtScale(capacitor?.getPlatform?.());
+    if (pinned != null) return pinned;
     const raw = Number.parseFloat(window.localStorage.getItem(DESIGN_PT_STORAGE_KEY) ?? '');
     return clampDesignPtScale(raw);
   } catch {
@@ -74,10 +77,11 @@ export async function applyDesignPtScaleFromNative(): Promise<number> {
     applyDesignPtScaleToRoot(1);
     return 1;
   }
-  if (Capacitor.getPlatform() === 'ios' || Capacitor.getPlatform() === 'android') {
-    applyDesignPtScaleToRoot(MOBILE_DESIGN_PT_SCALE);
-    writeCachedDesignPtScale(MOBILE_DESIGN_PT_SCALE);
-    return MOBILE_DESIGN_PT_SCALE;
+  const pinned = nativeDesignPtScale(Capacitor.getPlatform());
+  if (pinned != null) {
+    applyDesignPtScaleToRoot(pinned);
+    writeCachedDesignPtScale(pinned);
+    return pinned;
   }
   applyDesignPtScaleToRoot(1);
   return 1;
