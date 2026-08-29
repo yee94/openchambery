@@ -726,13 +726,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     }
 
     private func notifyText() {
-        let range = textView.selectedRange
-        delegate?.composerViewDidChangeText(
-            self,
-            text: textView.text ?? "",
-            selectionStart: range.location,
-            selectionEnd: range.location + range.length
-        )
+        emitTextChange()
     }
 
     private func refreshAgentButton() {
@@ -892,9 +886,18 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         emitTextChange()
     }
 
+    func textViewDidChangeSelection(_ textView: UITextView) {
+        guard !applyingExternalText else { return }
+        emitTextChange()
+    }
+
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         if text == "\n" {
             if textView.markedTextRange != nil { return true }
+            if !autocomplete.isHidden {
+                autocomplete.acceptHighlighted()
+                return false
+            }
             delegate?.composerViewDidRequestSend(self, text: textView.text ?? "")
             return false
         }
