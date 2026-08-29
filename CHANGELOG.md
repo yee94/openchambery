@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.22] - 2026-08-30
+
+### Changed
+
+- Android type and spacing return to the original physical-density scale (xdpi/ydpi toward 1/163 inch, capped at 0.9). Pinning Android to 1 or 10/9 skipped that shrink and made both type and gaps jump.
+
 ## [1.19.0-beta.20] - 2026-08-30
 
 ### Changed
