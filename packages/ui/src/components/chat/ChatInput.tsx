@@ -3,6 +3,7 @@ import { useEvent } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
+import { useNativeIosComposer } from './useNativeIosComposer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -74,7 +75,7 @@ import { isIMECompositionEvent } from '@/lib/ime';
 import { StopIcon } from '@/components/icons/StopIcon';
 import { resolveComposerActionAvailability } from './chatPromptAvailability';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getCycledPrimaryAgentName, resolveAgentModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
+import { getCycledPrimaryAgentName, getModelDisplayName, formatEffortLabel, resolveAgentModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -6215,6 +6216,42 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         || androidMediaPickSheetOpen
         || issuePickerOpen
         || prPickerOpen;
+    const nativeModelName = getModelDisplayName(
+        providers.find((provider) => provider.id === surface.selection.value.providerID),
+        surface.selection.value.modelID,
+        t('chat.modelControls.selectModel'),
+    );
+    const nativeModelVariant = surface.selection.value.variant?.trim();
+    const nativeIosComposerActive = useNativeIosComposer({
+        enabled: isMobile && surface.kind === 'primary',
+        isMobile,
+        text: message,
+        placeholder: compactComposerPlaceholder,
+        modelLabel: nativeModelVariant
+            ? `${nativeModelName} ${formatEffortLabel(nativeModelVariant)}`
+            : nativeModelName,
+        canSend,
+        canAbort,
+        attachmentCount: attachedFiles.length,
+        suppressed: mobileOverlayOpen,
+        attachAria: t('chat.chatInput.actions.attachFiles'),
+        sendAria: t('chat.chatInput.actions.sendMessageAria'),
+        stopAria: t('chat.chatInput.actions.stopGeneratingAria'),
+        modelAria: t('chat.modelControls.selectModel'),
+        onText: (text) => {
+            if (textareaRef.current) textareaRef.current.value = text;
+            applyProgrammaticEdit(text);
+        },
+        onSend: (text) => {
+            if (textareaRef.current) textareaRef.current.value = text;
+            applyProgrammaticEdit(text);
+            handlePrimaryAction();
+        },
+        onAbort: handleAbort,
+        onAttach: openMobileAttachSheet,
+        onOpenModel: () => handleOpenMobilePanel('model'),
+    });
+
     // Installed PWA (standalone): a focus() from a bare timeout is outside the
     // user gesture and iOS refuses to raise the keyboard for it (Safari
     // in-browser is lenient). MobileOverlayPanel dispatches
@@ -6789,6 +6826,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 isMobileExpanded && 'flex h-full min-h-0 flex-col pt-1',
                 isMobile && 'bottom-safe-area oc-mobile-composer'
             )}
+            data-native-ios-composer={nativeIosComposerActive ? 'true' : undefined}
             style={isMobile && isCapacitorApp() && inputBarOffset > 0 && !mobileTextareaFocused
                 ? { marginBottom: `${inputBarOffset}px` }
                 : undefined}

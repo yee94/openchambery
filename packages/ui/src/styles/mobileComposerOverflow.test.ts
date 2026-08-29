@@ -135,6 +135,17 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileCss).toMatch(/prefers-reduced-transparency:\s*reduce[\s\S]*\.oc-mobile-composer-compact-layer/);
     });
 
+    test('hides web composer chrome when the iOS native overlay is active', () => {
+        expect(mobileCss).toContain(':root.oc-native-ios-composer');
+        expect(mobileCss).toContain('--oc-native-composer-height');
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-chat-composer-swap-scope\s*\{[^}]*--oc-chat-foot-inset:\s*calc\(\s*var\(--oc-native-composer-height/,
+        );
+        expect(chatInputSource).toContain('useNativeIosComposer');
+        expect(chatInputSource).toContain('data-native-ios-composer');
+        expect(chatInputSource).not.toContain("setProperty('--oc-chat-foot-inset'");
+    });
+
     test('settings inputBarOffset applies only in the native app while the keyboard is down', () => {
         expect(chatInputSource).toContain('isMobile && isCapacitorApp() && inputBarOffset > 0 && !mobileTextareaFocused');
     });

@@ -1,3 +1,4 @@
+import { openChamberComposerContract } from './openchamber-composer.mjs'
 import { openChamberExternalBrowserContract } from './openchamber-external-browser.mjs'
 import { openChamberHapticsContract } from './openchamber-haptics.mjs'
 import { openChamberMediaContract } from './openchamber-media.mjs'
@@ -13,9 +14,11 @@ export const mobileBridgeContracts = [
   openChamberHapticsContract,
   openChamberNavigationContract,
   openChamberExternalBrowserContract,
+  openChamberComposerContract,
 ]
 
 export {
+  openChamberComposerContract,
   openChamberExternalBrowserContract,
   openChamberHapticsContract,
   openChamberMediaContract,

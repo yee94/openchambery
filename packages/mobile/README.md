@@ -39,6 +39,15 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **iOS:** ImageIO (`CGImageSourceCreateWithData` → `CGImageDestinationAddImage` with `kCGImageDestinationLossyCompressionQuality`) on `com.openchamber.media.transcode`.
 - **Android:** `BitmapFactory.decodeByteArray` → `Bitmap.compress(JPEG)` on the existing media executor. Devices without a HEIF decoder reject so the JS fallback can run.
 
+## Native iOS Composer
+
+- `OpenChamberComposer` is an iOS-only Capacitor overlay. It is not registered on Android; hosted H5 and the web Composer stay unchanged.
+- Collapsed state is a floating glass pill (`+`, placeholder, Send/Stop). Focus expands a glass card with attachment count, `UITextView`, `+`, model pill, and Send/Stop. The overlay pins to `keyboardLayoutGuide`.
+- iOS 26 uses `UIGlassEffect` when the class exists at runtime; older iOS uses `UIBlurEffect` material. Native code never logs composer text.
+- Shared UI (`packages/ui/src/lib/native-ios-composer.ts`, `useNativeIosComposer`) presents the overlay on Capacitor iOS primary chat only. Send, attach, and abort stay in `ChatInput`. Attach opens the existing mobile sheet; model opens the existing WebView picker after the overlay suppresses itself so the sheet is tappable.
+- Overlay height is published as `--oc-native-composer-height`. JS never writes `--oc-chat-foot-inset`. `:root.oc-native-ios-composer` hides the web textarea/pill while queue and status rows stay in the WebView.
+- Capacitor Keyboard choreography skips composer FLIP while that class is set; the native `UITextView` owns IME.
+
 ## Native Photo Picker
 
 - `OpenChamberMedia.pickMedia({ limit? })` is Android-only. It opens the system Photo Picker (`ACTION_PICK_IMAGES`, falling back to `ACTION_GET_CONTENT` `image/*` on older devices) and returns absolute cache file paths. UI calls this only on Android Capacitor; iOS uses the WKWebView file picker. No extra permission declaration is required.

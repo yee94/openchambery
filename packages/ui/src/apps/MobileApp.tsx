@@ -737,6 +737,7 @@ const useNativeMobileChrome = (): void => {
         return slide;
       };
       const handleIosKeyboardIntent = (event: Event) => {
+        if (root.classList.contains('oc-native-ios-composer')) return;
         const detail = (event as CustomEvent<{ open?: boolean }>).detail;
         if (detail?.open !== true || layoutApplied) return;
         // Intent is composer-scoped (ChatInput). Skip when a non-composer field
@@ -760,6 +761,7 @@ const useNativeMobileChrome = (): void => {
       window.addEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
 
       const showHandle = await Keyboard.addListener('keyboardWillShow', (info) => {
+        if (root.classList.contains('oc-native-ios-composer')) return;
         clearSettle();
         keyboardHeight = info.keyboardHeight;
         persistIosImeHeight(keyboardHeight);
@@ -803,6 +805,7 @@ const useNativeMobileChrome = (): void => {
       };
 
       const runHide = () => {
+        if (root.classList.contains('oc-native-ios-composer')) return;
         if (!keyboardOpen) return;
         keyboardOpen = false;
         clearSettle();

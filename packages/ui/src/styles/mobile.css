@@ -3513,3 +3513,20 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
   line-height: 1;
   cursor: pointer;
 }
+
+/* Capacitor iOS native composer overlay owns the input chrome. Queue, status,
+   and draft pickers stay in the WebView; the web textarea/pill are hidden.
+   Height is published as --oc-native-composer-height (not --oc-chat-foot-inset). */
+:root.oc-native-ios-composer .oc-chat-composer-swap-scope {
+  --oc-chat-foot-inset: calc(
+    var(--oc-native-composer-height, 4.75rem) + var(--oc-safe-area-bottom-visual, 0px)
+  );
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-motion-viewport,
+:root.oc-native-ios-composer .oc-mobile-composer-compact-layer,
+:root.oc-native-ios-composer .oc-mobile-composer-full-chrome,
+:root.oc-native-ios-composer .oc-mobile-composer-attachment-content {
+  display: none !important;
+}
+
