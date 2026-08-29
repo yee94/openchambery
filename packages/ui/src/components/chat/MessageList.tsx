@@ -663,6 +663,7 @@ interface MessageListProps {
     footerSlot?: React.ReactNode;
     timelineScrollClassName?: string;
     timelineScrollStyle?: React.CSSProperties;
+    timelineScrollDataset?: Record<string, string>;
     /** Forwarded to the list-owned scroll container (history pagination). */
     timelineOnScroll?: () => void;
     /**
@@ -2056,6 +2057,7 @@ type LegendTimelineHostProps = {
     footer?: React.ReactNode;
     scrollClassName?: string;
     scrollStyle?: React.CSSProperties;
+    scrollDataset?: Record<string, string>;
     onScroll?: () => void;
     followEnabled?: boolean;
     onIsAtEndChange?: (isAtEnd: boolean) => void;
@@ -2089,6 +2091,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
     footer,
     scrollClassName,
     scrollStyle,
+    scrollDataset,
     onScroll,
     followEnabled = true,
     onIsAtEndChange,
@@ -2229,6 +2232,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
                 footer={footer}
                 className={scrollClassName}
                 style={scrollStyle}
+                scrollElementDataset={scrollDataset}
                 onScroll={onScroll}
                 onIsAtEndChange={onIsAtEndChange}
             />
@@ -2255,6 +2259,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     footerSlot,
     timelineScrollClassName,
     timelineScrollStyle,
+    timelineScrollDataset,
     timelineOnScroll,
     timelineFollowEnabled,
     timelineOnIsAtEndChange,
@@ -2897,6 +2902,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 footer={footerSlot}
                 scrollClassName={timelineScrollClassName}
                 scrollStyle={timelineScrollStyle}
+                scrollDataset={timelineScrollDataset}
                 onScroll={timelineOnScroll}
                 followEnabled={timelineFollowEnabled}
                 onIsAtEndChange={timelineOnIsAtEndChange}

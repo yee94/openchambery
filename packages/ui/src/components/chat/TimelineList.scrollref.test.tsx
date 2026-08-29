@@ -19,6 +19,8 @@ const TUNING = {
     resolveVisibleReleaseLimit: () => 4,
 };
 
+const SCROLL_DATASET = { scrollbar: 'chat' };
+
 const renderTimeline = async (scrollRef: React.RefObject<HTMLDivElement | null>) => {
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -33,6 +35,7 @@ const renderTimeline = async (scrollRef: React.RefObject<HTMLDivElement | null>)
                 hydrationTuning={TUNING}
                 renderEntry={(entry) => <div>{entry.key}</div>}
                 scrollElementRef={scrollRef}
+                scrollElementDataset={SCROLL_DATASET}
                 className="chat-scroll"
             />,
         );
@@ -70,6 +73,24 @@ describe('TimelineList scroll element bridge', () => {
         const { cleanup } = await renderTimeline(scrollRef);
 
         expect(scrollRef.current?.classList.contains('chat-scroll')).toBe(true);
+
+        await cleanup();
+    });
+
+    /**
+     * `data-scrollbar="chat"` is not decoration: attachments, the activity
+     * disclosure scroll compensation and the transcript container fallback all
+     * find the scroller with `closest('[data-scrollbar="chat"]')`, the chat
+     * scrollbar skin is keyed on it, and the mobile head inset selector hangs
+     * off it. The old path declared it in JSX; here it can only be written when
+     * the list publishes its element.
+     */
+    test('writes the dataset consumers resolve the scroller by', async () => {
+        const scrollRef = React.createRef<HTMLDivElement>();
+        const { host, cleanup } = await renderTimeline(scrollRef);
+
+        expect(scrollRef.current?.dataset.scrollbar).toBe('chat');
+        expect(host.querySelector('[data-scrollbar="chat"]')).toBe(scrollRef.current);
 
         await cleanup();
     });

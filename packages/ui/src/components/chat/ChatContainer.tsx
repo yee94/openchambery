@@ -179,6 +179,19 @@ const CHAT_SCROLL_STYLE = {
     overscrollBehavior: 'contain',
     overscrollBehaviorY: 'contain',
 } as const;
+// The list owns its scroll element, so `data-scrollbar` cannot be declared in
+// JSX on that path. Several consumers reach the chat scroller through
+// `closest('[data-scrollbar="chat"]')`, and the chat scrollbar skin is keyed on
+// it too. Stable identity: it feeds a ref callback.
+const LEGEND_SCROLL_DATASET = { scrollbar: 'chat' } as const;
+// Mobile head/foot clearance for the floating navigation header and composer.
+// The old path takes this from CSS padding on the scroll container's content
+// div. The list derives its content size analytically — measured header/footer
+// plus padding read from *style objects*, never from classes — so CSS padding
+// there would be invisible to its scroll math (`isAtEnd`, end maintenance).
+// Measured spacers in the header/footer slots keep that math honest.
+const MOBILE_TIMELINE_HEAD_SPACER_HEIGHT = 'calc(max(0.625rem, var(--oc-safe-area-top, 0px)) + var(--oc-mobile-detail-navigation-height) + 1.25rem)';
+const MOBILE_TIMELINE_FOOT_SPACER_HEIGHT = 'calc(40px + var(--oc-chat-foot-inset))';
 const CHAT_NAVIGATION_IGNORED_TARGET_SELECTOR = [
     'a[href]',
     'button',
@@ -467,16 +480,21 @@ const ChatViewport = React.memo(({
                         scrollToBottom={scrollToBottom}
                         scrollRef={scrollRef}
                         directory={directory}
-                        timelineScrollClassName={cn(
-                            'absolute inset-0 z-0 chat-scroll overlay-scrollbar-target',
-                            isMobile && 'chat-scroll-foot-inset',
-                        )}
+                        timelineScrollClassName="absolute inset-0 z-0 chat-scroll overlay-scrollbar-target"
                         timelineScrollStyle={CHAT_SCROLL_STYLE}
+                        timelineScrollDataset={LEGEND_SCROLL_DATASET}
                         timelineOnScroll={handleHistoryScroll}
                         timelineFollowEnabled={!pendingRevealWork}
                         timelineOnIsAtEndChange={onTimelineIsAtEndChange}
                         headerSlot={(
                             <>
+                                {isMobile && (
+                                    <div
+                                        className="flex-shrink-0"
+                                        style={{ height: MOBILE_TIMELINE_HEAD_SPACER_HEIGHT }}
+                                        aria-hidden="true"
+                                    />
+                                )}
                                 {showLoadOlderButton && (
                                     <div className="flex justify-center pt-3 pb-1">
                                         <Button
@@ -532,7 +550,7 @@ const ChatViewport = React.memo(({
                                     <StatusRowContainer />
                                 </div>
 
-                                <div className="flex-shrink-0" style={{ height: isMobile ? '40px' : '10vh' }} aria-hidden="true" />
+                                <div className="flex-shrink-0" style={{ height: isMobile ? MOBILE_TIMELINE_FOOT_SPACER_HEIGHT : '10vh' }} aria-hidden="true" />
                             </>
                         )}
                     />
@@ -581,7 +599,7 @@ const ChatViewport = React.memo(({
                     data-scroll-shadow="true"
                     data-scrollbar="chat"
                 >
-                    <div className={cn('relative z-0 min-h-full', isMobile && 'chat-scroll-foot-inset')}>
+                    <div className={cn('oc-chat-scroll-content relative z-0 min-h-full', isMobile && 'chat-scroll-foot-inset')}>
                         {showLoadOlderButton && (
                             <div className="flex justify-center pt-3 pb-1">
                                 <Button

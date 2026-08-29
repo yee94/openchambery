@@ -113,6 +113,14 @@ export type TimelineListProps<TEntry extends TimelineRowEntry> = {
      * being published here.
      */
     scrollElementRef?: React.RefObject<HTMLDivElement | null>;
+    /**
+     * Applied to the list's scroll element on attach. The old path's scroll
+     * container carried `data-scrollbar="chat"`, which several DOM consumers
+     * find by `closest()` — the list owns that element here, so the attributes
+     * have to be written when it is published rather than declared in JSX.
+     * Must be referentially stable: it participates in the ref callback.
+     */
+    scrollElementDataset?: Record<string, string>;
     registerList?: (list: LegendListRef | null) => void;
     anchoredEndSpace?: TimelineAnchoredEndSpace;
     /** Height of the composer floating over the list. */
@@ -181,6 +189,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     renderEntry,
     rowInvalidationKey,
     scrollElementRef,
+    scrollElementDataset,
     registerList,
     anchoredEndSpace,
     composerOverlayHeight = 0,
@@ -213,9 +222,16 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     // getScrollableNode, …), not the element. Everything downstream expects an
     // element, so unwrap it here and publish that.
     const setScrollView = React.useCallback((scrollView: ScrollViewLike | null) => {
-        if (!scrollElementRef) return;
-        scrollElementRef.current = scrollView?.getScrollableNode?.() ?? null;
-    }, [scrollElementRef]);
+        const element = scrollView?.getScrollableNode?.() ?? null;
+        if (element && scrollElementDataset) {
+            for (const [key, value] of Object.entries(scrollElementDataset)) {
+                element.dataset[key] = value;
+            }
+        }
+        if (scrollElementRef) {
+            scrollElementRef.current = element;
+        }
+    }, [scrollElementRef, scrollElementDataset]);
 
     // --- Markdown hydration window -----------------------------------------
     // The window planner is engine-agnostic: it only needs the mounted span,
