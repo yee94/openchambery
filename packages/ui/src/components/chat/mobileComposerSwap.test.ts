@@ -5,6 +5,7 @@ import {
     COMPOSER_SWAP_FOLLOW_RANGE_PX,
     COMPOSER_SWAP_FULL_RANGE_PX,
     COMPOSER_SWAP_NOISE_PX,
+    NATIVE_COMPOSER_DOCK_CSS_VAR,
     applyComposerSwapCommit,
     applyComposerSwapForce,
     applyComposerSwapPin,
@@ -13,8 +14,11 @@ import {
     createComposerSwapState,
     distanceFromBottomOf,
     clearComposerSwap,
+    nativeComposerDockProgressFromDistance,
     publishComposerSwap,
+    publishNativeComposerDock,
     resolveComposerSwapCommit,
+    resolveNativeComposerDock,
 } from './mobileComposerSwap';
 
 describe('mobileComposerSwap', () => {
@@ -287,6 +291,52 @@ describe('mobileComposerSwap', () => {
         // Once the hold is released, upward distance collapses it as before.
         state = applyComposerSwapScroll(state, 560);
         expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+    });
+
+    test('native accessory dock follows distance, not swap rest', () => {
+        expect(nativeComposerDockProgressFromDistance(0)).toBe(0);
+        expect(nativeComposerDockProgressFromDistance(-4)).toBe(0);
+        expect(nativeComposerDockProgressFromDistance(COMPOSER_SWAP_FOLLOW_RANGE_PX)).toBe(0.5);
+        expect(nativeComposerDockProgressFromDistance(COMPOSER_SWAP_FULL_RANGE_PX)).toBe(1);
+        expect(nativeComposerDockProgressFromDistance(COMPOSER_SWAP_FULL_RANGE_PX * 4)).toBe(1);
+
+        expect(resolveNativeComposerDock(20, 'away')).toMatchObject({ progress: 1, rest: 'away' });
+        expect(resolveNativeComposerDock(COMPOSER_SWAP_NOISE_PX, 'away')).toMatchObject({
+            progress: 0,
+            rest: 'bottom',
+        });
+        expect(resolveNativeComposerDock(20, 'bottom')).toMatchObject({
+            progress: 0.25,
+            rest: 'bottom',
+        });
+        expect(resolveNativeComposerDock(COMPOSER_SWAP_FOLLOW_RANGE_PX, 'bottom')).toMatchObject({
+            progress: 1,
+            rest: 'away',
+        });
+
+        const scope = document.createElement('div');
+        const far = publishNativeComposerDock(scope, 260);
+        expect(far).toMatchObject({ progress: '1', rest: 'away' });
+        expect(scope.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR)).toBe('1');
+        expect(scope.dataset.ocNativeComposerDock).toBe('away');
+
+        // Approaching the edge stays hidden — a short downward scroll must not
+        // fade the strip in before the viewport is actually at the bottom.
+        const approaching = publishNativeComposerDock(scope, 20, far);
+        expect(approaching).toMatchObject({ progress: '1', rest: 'away' });
+
+        const arrived = publishNativeComposerDock(scope, 0, approaching);
+        expect(arrived).toMatchObject({ progress: '0', rest: 'bottom' });
+
+        const leaving = publishNativeComposerDock(scope, 20, arrived);
+        expect(leaving).toMatchObject({ progress: '0.25', rest: 'bottom' });
+
+        const gone = publishNativeComposerDock(scope, COMPOSER_SWAP_FOLLOW_RANGE_PX, leaving);
+        expect(gone).toMatchObject({ progress: '1', rest: 'away' });
+
+        clearComposerSwap(scope);
+        expect(scope.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR)).toBe('');
+        expect(scope.dataset.ocNativeComposerDock).toBeUndefined();
     });
 
     test('distanceFromBottomOf never goes negative', () => {

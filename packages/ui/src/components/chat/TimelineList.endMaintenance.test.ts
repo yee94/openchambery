@@ -83,7 +83,7 @@ describe('TimelineList end maintenance contracts', () => {
         expect(resolve).toBeGreaterThan(-1);
         const latch = source.indexOf('if (atEnd && !endSettledOnceRef.current) {');
         expect(latch).toBeGreaterThan(resolve);
-        expect(source.slice(resolve, latch)).toContain('onIsAtEndChange?.(atEnd);');
+        expect(source.slice(resolve, latch)).toContain('onIsAtEndChange?.(atEnd, showScrollButton)');
     });
 
     /**

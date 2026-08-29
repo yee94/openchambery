@@ -3543,18 +3543,85 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
 }
 
 /* Capacitor iOS native composer overlay owns the input chrome. Queue, status,
-   and draft pickers stay in the WebView; the web textarea/pill are hidden.
-   Height is published as --oc-native-composer-height (not --oc-chat-foot-inset). */
+   and draft pickers stay in the WebView, docked to the overlay (not a
+   collapsed layer) just above the pill. The native field does not morph.
+   --oc-native-composer-dock (distance from the live edge, not swap rest)
+   fades that strip. Approaching stays hidden until the true bottom; leaving
+   fades over the first follow-range px. Swap can rest expanded far from the
+   bottom; these rows have no background and must stay hidden until the
+   viewport is actually there. The native scroll-to-bottom control stays on
+   the overlay, appears after ~80px of upward travel, and does not change
+   published occupancy.
+   --oc-native-composer-height is collapsed pill occupancy only. */
 :root.oc-native-ios-composer .oc-chat-composer-swap-scope {
   --oc-chat-foot-inset: calc(
-    var(--oc-native-composer-height, 4.75rem) + var(--oc-safe-area-bottom-visual, 0px)
+    var(--oc-native-composer-height, 5.5rem)
+    + var(--oc-native-composer-accessory, 0px)
   );
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-expanded-layer {
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer {
+  padding-bottom: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  will-change: auto;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer::after {
+  content: none;
+}
+
+:root.oc-native-ios-composer .oc-composer-queue {
+  margin-bottom: 0;
+}
+
+/* Static ancestors so absolute docking uses the inset:0 overlay, not a
+   zero-height stack. Nudge 8px toward the pill. Occupancy never reserves
+   the native scroll button. */
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay {
+  overflow: visible;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer,
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-stack,
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-expanded-layer,
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-reveal {
+  position: static !important;
+  padding-bottom: 0;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer {
+  pointer-events: none;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay [data-native-composer-accessories] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--oc-native-composer-height, 5.5rem) - 8px);
+  z-index: 25;
+  pointer-events: auto;
+  /* Default 1 keeps the strip hidden until JS publishes a real distance. */
+  opacity: calc(1 - min(1, var(--oc-native-composer-dock, 1) * 2));
+}
+
+:root.oc-native-ios-composer
+  .oc-chat-composer-swap-scope[data-oc-native-composer-dock="away"]
+  [data-native-composer-accessories] {
+  pointer-events: none;
 }
 
 :root.oc-native-ios-composer .oc-mobile-composer-motion-viewport,
 :root.oc-native-ios-composer .oc-mobile-composer-compact-layer,
 :root.oc-native-ios-composer .oc-mobile-composer-full-chrome,
-:root.oc-native-ios-composer .oc-mobile-composer-attachment-content {
+:root.oc-native-ios-composer .oc-mobile-composer-attachment-content,
+:root.oc-native-ios-composer .oc-scroll-to-bottom--expanded,
+:root.oc-native-ios-composer .oc-scroll-to-bottom--compact {
   display: none !important;
 }
 

@@ -2146,6 +2146,7 @@ export const dict = {
   'chat.chatInput.actions.commands': 'Commands',
   'chat.chatInput.actions.attachFiles': 'Attach files',
   'chat.chatInput.actions.attachPhotos': 'Attach photos',
+  'chat.chatInput.actions.attachCancel': 'Cancel',
   'chat.chatInput.actions.addAttachment': 'Add attachment',
   'chat.chatInput.actions.linkGithubIssue': 'Link GitHub Issue',
   'chat.chatInput.actions.linkGithubPr': 'Link GitHub PR',

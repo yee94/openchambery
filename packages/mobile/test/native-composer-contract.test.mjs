@@ -1,0 +1,119 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { test } from 'vitest';
+
+const root = new URL('../', import.meta.url);
+
+async function source(path) {
+  return readFile(new URL(path, root), 'utf8');
+}
+
+test('native composer pins to the keyboard end-frame and rest safe area, not a sticky layout guide', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const contract = await source('contracts/native-composer-keyboard.mjs');
+  assert.match(contract, /nextNativeComposerKeyboardSession/);
+  assert.match(plugin, /keyboardSessionOpen/);
+  assert.match(plugin, /keyboardFrameEndUserInfoKey/);
+  assert.match(plugin, /bottomConstraint/);
+  assert.match(plugin, /handleKeyboardDidHide/);
+  assert.match(plugin, /handleHostTap/);
+  assert.match(plugin, /hideOverlay/);
+  assert.match(plugin, /@objc func hide\(_ call: CAPPluginCall\)/);
+  assert.match(plugin, /composerView\?\.isHidden = true/);
+  const hideOverlay = plugin.match(/private func hideOverlay\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(hideOverlay, /isHidden = true/);
+  assert.ok(
+    hideOverlay.indexOf('isHidden = true') < hideOverlay.indexOf('blurInput'),
+    'visual hide must precede blur / keyboard teardown',
+  );
+  assert.doesNotMatch(plugin, /func hideOverlay\(\)[\s\S]*removeFromSuperview/);
+  assert.doesNotMatch(plugin, /dismiss[\s\S]*tearDown/);
+  assert.match(plugin, /window\?\.safeAreaInsets\.bottom/);
+  assert.doesNotMatch(plugin, /keyboardLayoutGuide\.topAnchor/);
+  assert.match(view, /func handleKeyboardDidHide\(\)/);
+  assert.match(view, /setExpanded\(false, animated: false\)/);
+  assert.match(view, /UIView\.performWithoutAnimation/);
+});
+
+test('native composer glass chrome lives in the effect contentView with interactive hover lift', async () => {
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  assert.match(view, /var contentView: UIView \{ blurView\.contentView \}/);
+  assert.match(view, /UIGlassEffect\(style: \.regular\)/);
+  assert.match(view, /glass\.isInteractive = true/);
+  assert.match(view, /UIHoverStyle\(effect: \.lift/);
+  assert.match(view, /UIHoverStyle\(effect: \.highlight/);
+});
+
+test('native composer rest height stays collapsed and scroll lives above send', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const contract = await source('contracts/openchamber-composer.mjs');
+  assert.match(contract, /scrollToBottom/);
+  assert.match(plugin, /lastRestHeight/);
+  assert.match(plugin, /isExpandedState/);
+  assert.match(plugin, /restTop/);
+  assert.match(view, /scrollButton/);
+  assert.match(view, /arrow\.down/);
+  assert.match(view, /footer\.isHidden = !expanded/);
+  assert.match(view, /composerViewDidRequestScrollToBottom/);
+  assert.match(view, /scrollChrome/);
+  const restTop = view.match(/func restTop\(in host: UIView\) -> CGFloat \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(restTop, /func restTop/);
+  assert.doesNotMatch(restTop, /scrollChrome/);
+  assert.match(plugin, /not change this value/);
+  assert.match(view, /setCornerRadius\(18\)/);
+  assert.match(view, /agentButton\.widthAnchor\.constraint\(equalToConstant: 16\)/);
+  assert.match(view, /shouldApplyText/);
+  assert.match(view, /markedTextRange/);
+  assert.match(view, /returnKeyType = \.send/);
+  assert.match(view, /shouldChangeTextIn/);
+  assert.match(view, /queueSendButton/);
+  assert.match(view, /let showQueueSend = isExpanded && canAbort && canSend/);
+  assert.match(plugin, /setAttachChooser/);
+  assert.match(plugin, /keepExpandedThroughPicker/);
+  assert.match(plugin, /beginAttachPicker/);
+  assert.match(plugin, /PHPickerViewController/);
+  assert.doesNotMatch(plugin, /preferredStyle: \.actionSheet/);
+  assert.doesNotMatch(plugin, /presentAttachChooser/);
+  assert.match(plugin, /presentPhotoPicker/);
+  assert.doesNotMatch(plugin, /func presentPhotoPicker\(\)[\s\S]*blurInput/);
+  assert.doesNotMatch(plugin, /func presentFilePicker\(\)[\s\S]*blurInput/);
+  assert.match(view, /showsMenuAsPrimaryAction/);
+  assert.match(view, /UIMenu\(title:/);
+  assert.match(view, /composerViewDidRequestAttachPhotos/);
+  assert.match(view, /keepExpandedThroughPicker/);
+  assert.match(view, /func dismissAttachMenu\(\)/);
+  assert.match(view, /contextMenuInteraction\?\.dismissMenu\(\)/);
+  assert.match(plugin, /dismissAttachMenu\(\)/);
+  assert.match(view, /modelVariantLabel/);
+  assert.match(view, /systemFont\(ofSize: 11, weight: \.regular\)/);
+  assert.doesNotMatch(view, /UIButton\.Configuration/);
+  assert.match(plugin, /forceText/);
+  assert.match(contract, /removeAttachment/);
+  assert.match(plugin, /removeAttachment/);
+  assert.match(plugin, /attachmentPreviews/);
+  assert.match(plugin, /citationRanges/);
+  assert.match(plugin, /composing/);
+  assert.match(view, /applyAttachmentPreviews/);
+  assert.match(view, /applyCitationRanges/);
+  assert.match(view, /expandedCitationEdit/);
+  assert.match(view, /AttachmentPreviewCell/);
+  assert.match(view, /attachmentStrip/);
+  assert.doesNotMatch(view, /paperclip/);
+});
+
+test('native composer attach presents a document picker and expanded chrome matches web order', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const contract = await source('contracts/openchamber-composer.mjs');
+  assert.match(contract, /filesPicked/);
+  assert.match(plugin, /UIDocumentPickerViewController/);
+  assert.match(plugin, /filesPicked/);
+  assert.match(plugin, /UTType\.item/);
+  assert.match(view, /addArrangedSubview\(agentCluster\)/);
+  assert.doesNotMatch(view, /insertArrangedSubview\(agentCluster/);
+  assert.match(view, /revealAgentNameBriefly/);
+  assert.match(view, /templateModelIcon/);
+  assert.match(view, /footerSpacer/);
+});

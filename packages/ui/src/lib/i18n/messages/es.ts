@@ -2123,6 +2123,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.actions.commands": "Comandos",
   "chat.chatInput.actions.attachFiles": "Adjuntar archivos",
   "chat.chatInput.actions.attachPhotos": "Adjuntar fotos",
+  "chat.chatInput.actions.attachCancel": "Cancelar",
   "chat.chatInput.actions.addAttachment": "Añadir adjunto",
   "chat.chatInput.actions.linkGithubIssue": "Vincular issue de GitHub",
   "chat.chatInput.actions.linkGithubPr": "Vincular PR de GitHub",

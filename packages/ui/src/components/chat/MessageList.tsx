@@ -2093,7 +2093,7 @@ type LegendTimelineHostProps = {
     onScroll?: () => void;
     followEnabled?: boolean;
     historyAnchorToken?: number;
-    onIsAtEndChange?: (isAtEnd: boolean) => void;
+    onIsAtEndChange?: (isAtEnd: boolean, showScrollButton?: boolean) => void;
     anchoredUserMessageId?: string | null;
     onAnchoredTurnParkReleased?: (reserveId: string) => void;
 };

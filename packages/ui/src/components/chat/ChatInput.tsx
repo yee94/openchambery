@@ -1,9 +1,10 @@
 import React from 'react';
-import { useEvent } from '@reactuses/core';
+import { useEvent, useResizeObserver } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { useNativeIosComposer } from './useNativeIosComposer';
+import { applyNativeComposerAccessoryVar } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -75,7 +76,7 @@ import { isIMECompositionEvent } from '@/lib/ime';
 import { SendCircleIcon, StopIcon } from '@/components/icons/StopIcon';
 import { resolveComposerActionAvailability } from './chatPromptAvailability';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getCycledPrimaryAgentName, getModelDisplayName, formatEffortLabel, resolveAgentModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
+import { getCycledPrimaryAgentName, getAgentDisplayName, getModelDisplayName, formatEffortLabel, resolveAgentModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -138,6 +139,7 @@ import {
     collectDetachedAttachmentFilenames,
     findAttachmentCitationRanges,
     isInlineAttachmentCitation,
+    reconcileComposerAttachmentTextDeletion,
     resolveAttachmentCitationDeletion,
 } from './attachmentCitations';
 import {
@@ -6250,20 +6252,50 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         isMobile,
         text: message,
         placeholder: compactComposerPlaceholder,
-        modelLabel: nativeModelVariant
-            ? `${nativeModelName} ${formatEffortLabel(nativeModelVariant)}`
-            : nativeModelName,
+        modelLabel: nativeModelName,
+        modelVariantLabel: nativeModelVariant ? formatEffortLabel(nativeModelVariant) : '',
         canSend,
         canAbort,
         attachmentCount: attachedFiles.length,
         suppressed: mobileOverlayOpen,
-        attachAria: t('chat.chatInput.actions.attachFiles'),
+        attachAria: t('chat.chatInput.actions.addAttachment'),
+        attachTitle: t('chat.chatInput.actions.addAttachment'),
+        attachPhotosLabel: t('chat.chatInput.actions.attachPhotos'),
+        attachFilesLabel: t('chat.chatInput.actions.attachFiles'),
+        attachCancelLabel: t('chat.chatInput.actions.attachCancel'),
         sendAria: t('chat.chatInput.actions.sendMessageAria'),
+        queueAria: t('chat.chatInput.actions.queueMessageAria'),
         stopAria: t('chat.chatInput.actions.stopGeneratingAria'),
         modelAria: t('chat.modelControls.selectModel'),
-        onText: (text) => {
-            if (textareaRef.current) textareaRef.current.value = text;
-            applyProgrammaticEdit(text);
+        modelId: surface.selection.value.modelID,
+        providerId: surface.selection.value.providerID,
+        agentName: surface.selection.value.agent ?? '',
+        agentLabel: getAgentDisplayName(agents, surface.selection.value.agent ?? undefined),
+        agentAria: t('chat.modelControls.selectAgent'),
+        attachments: attachedFiles,
+        removeAttachmentNamedAria: (name) => t('chat.fileAttachment.actions.removeNamed', { name }),
+        onText: (text, composing) => {
+            if (composing) {
+                if (textareaRef.current) textareaRef.current.value = text;
+                applyProgrammaticEdit(text);
+                return;
+            }
+            const previous = messageRef.current;
+            const reconciled = reconcileComposerAttachmentTextDeletion(
+                previous,
+                text,
+                attachedFiles.filter(isInlineAttachmentCitation).map((file) => file.filename),
+            );
+            const nextText = reconciled?.text ?? text;
+            if (textareaRef.current) textareaRef.current.value = nextText;
+            applyProgrammaticEdit(nextText);
+            if (!reconciled) return;
+            const removed = new Set(reconciled.removedFilenames.map((filename) => filename.toLowerCase()));
+            for (const attachment of attachedFiles) {
+                if (removed.has(attachment.filename.toLowerCase())) {
+                    void surfaceResources.removeAttachment(attachment.id);
+                }
+            }
         },
         onSend: (text) => {
             if (textareaRef.current) textareaRef.current.value = text;
@@ -6271,8 +6303,28 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             handlePrimaryAction();
         },
         onAbort: handleAbort,
-        onAttach: openMobileAttachSheet,
+        onAttach: markComposerActionGesture,
+        onFiles: (files, skipped) => {
+            if (skipped.length > 0) {
+                toast.error(t('chat.chatInput.toast.someFilesSkipped', { summary: skipped.join('\n') }));
+            }
+            if (files.length === 0) return;
+            void attachFiles(files);
+        },
+        onRemoveAttachment: (id) => {
+            void surfaceResources.removeAttachment(id);
+        },
         onOpenModel: () => handleOpenMobilePanel('model'),
+        onCycleAgent: () => handleCycleAgent(),
+        onOpenAgent: handleOpenAgentPanel,
+        showScrollToBottom: Boolean(showScrollToBottom && onScrollToBottom),
+        scrollAria: t('chat.scrollToBottom.aria'),
+        onScrollToBottom: onScrollToBottom ?? (() => {}),
+    });
+    const nativeAccessoryRef = React.useRef<HTMLDivElement>(null);
+    useResizeObserver(nativeIosComposerActive ? nativeAccessoryRef : null, () => {
+        const height = nativeAccessoryRef.current?.getBoundingClientRect().height ?? 0;
+        applyNativeComposerAccessoryVar(document.documentElement, height);
     });
 
     // Installed PWA (standalone): a focus() from a bare timeout is outside the
@@ -6862,7 +6914,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 isMobile && 'bottom-safe-area oc-mobile-composer'
             )}
             data-native-ios-composer={nativeIosComposerActive ? 'true' : undefined}
-            style={isMobile && isCapacitorApp() && inputBarOffset > 0 && !mobileTextareaFocused
+            style={isMobile && isCapacitorApp() && !nativeIosComposerActive && inputBarOffset > 0 && !mobileTextareaFocused
                 ? { marginBottom: `${inputBarOffset}px` }
                 : undefined}
         >
@@ -6879,7 +6931,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 </div>
             ) : null}
             <div className={cn('chat-input-column relative overflow-visible', isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}>
-                <AttachedFilesList attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
+                {nativeIosComposerActive ? null : (
+                    <AttachedFilesList attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
+                )}
                 <AutoReviewBanner />
                 {hasDrafts && (
                     <div className="flex flex-wrap items-center gap-2 pb-2">
@@ -7063,6 +7117,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 <div className={isMobile ? 'relative oc-mobile-composer-stack' : 'contents'}>
                 <div className={isMobile ? 'oc-mobile-composer-expanded-layer' : 'contents'}>
                 <div className={isMobile ? 'oc-mobile-composer-reveal' : 'contents'}>
+                <div
+                    ref={nativeAccessoryRef}
+                    data-native-composer-accessories="true"
+                >
                 <MemoStatusRow
                     showAbortStatus={showAbortStatus}
                     showAssistantStatus={false}
@@ -7203,6 +7261,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     </div>
                 ) : null}
                 {queuedMessageSurface}
+                </div>
                 </div>
                 <div
                     // Desktop: layout-transparent. Mobile: positioning host for

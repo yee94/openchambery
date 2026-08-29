@@ -69,7 +69,9 @@ import {
     isReplyReserveOverflowing,
     resolveReplyReserveUpdate,
     resolveShrunkItemSizeUpdate,
+    resolveTimelineDistanceFromEnd,
     resolveTimelineIsAtEnd,
+    resolveTimelineScrollButtonVisible,
     resolveUsableViewportHeight,
     type ReplyReserveSnapshot,
     TIMELINE_ANCHORING_ATTRIBUTE,
@@ -224,7 +226,7 @@ export type TimelineListProps<TEntry extends TimelineRowEntry> = {
     historyAnchorToken?: number;
     /** Drives the animated variant of end maintenance. */
     sessionIsWorking?: boolean;
-    onIsAtEndChange?: (isAtEnd: boolean) => void;
+    onIsAtEndChange?: (isAtEnd: boolean, showScrollButton?: boolean) => void;
     /**
      * Notified on every scroll frame. The list owns the scroll container here,
      * so scroll-driven work that used to hang off the shared container (history
@@ -400,6 +402,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
 
     // A fresh list opens at the live edge (`initialScrollAtEnd`).
     const lastIsAtEndRef = React.useRef(true);
+    const lastShowScrollButtonRef = React.useRef(false);
     // Whether this transcript has ever actually reached its live edge.
     //
     // Gates the animated form of end maintenance, which must never be what
@@ -425,6 +428,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     // before a history load is exactly such a gate.
     React.useLayoutEffect(() => {
         lastIsAtEndRef.current = true;
+        lastShowScrollButtonRef.current = false;
         endSettledOnceRef.current = false;
         setEndSettledOnce(false);
     }, [timelineCacheKey]);
@@ -797,9 +801,17 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 setViewportHeight((previous) => (previous === nextViewport ? previous : nextViewport));
             }
             const atEnd = resolveTimelineIsAtEnd(state) ?? state.isAtEnd;
-            if (atEnd !== lastIsAtEndRef.current) {
+            const showScrollButton = resolveTimelineScrollButtonVisible(
+                resolveTimelineDistanceFromEnd(state),
+                lastShowScrollButtonRef.current,
+            );
+            if (
+                atEnd !== lastIsAtEndRef.current
+                || showScrollButton !== lastShowScrollButtonRef.current
+            ) {
                 lastIsAtEndRef.current = atEnd;
-                onIsAtEndChange?.(atEnd);
+                lastShowScrollButtonRef.current = showScrollButton;
+                onIsAtEndChange?.(atEnd, showScrollButton);
             }
             // One-way for this transcript: leaving the end again is ordinary
             // streaming growth, which is precisely what the glide is for.

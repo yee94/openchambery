@@ -3,7 +3,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { TIMELINE_ANCHORING_ATTRIBUTE } from './lib/scroll/timelineScrollAnchoring';
-import { COMPOSER_SWAP_CSS_VAR, COMPOSER_SWAP_SNAP_MS } from './mobileComposerSwap';
+import {
+    COMPOSER_SWAP_CSS_VAR,
+    COMPOSER_SWAP_SNAP_MS,
+    NATIVE_COMPOSER_DOCK_CSS_VAR,
+} from './mobileComposerSwap';
 import { useMobileComposerSwap } from './useMobileComposerSwap';
 
 const SCROLL_HEIGHT = 1000;
@@ -21,6 +25,11 @@ const readSwap = (scopeEl: HTMLElement) => ({
     phase: scopeEl.dataset.ocComposerSwapPhase,
     rest: scopeEl.dataset.ocComposerSwapRest,
     progress: scopeEl.style.getPropertyValue(COMPOSER_SWAP_CSS_VAR),
+});
+
+const readDock = (scopeEl: HTMLElement) => ({
+    rest: scopeEl.dataset.ocNativeComposerDock,
+    progress: scopeEl.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR),
 });
 
 describe('useMobileComposerSwap gesture commit', () => {
@@ -118,6 +127,10 @@ describe('useMobileComposerSwap gesture commit', () => {
             phase: 'tracking',
             progress: '0.375',
         });
+        expect(readDock(scopeEl)).toMatchObject({
+            rest: 'bottom',
+            progress: '0.375',
+        });
 
         await advance(500);
         expect(readSwap(scopeEl).phase).toBe('tracking');
@@ -205,6 +218,12 @@ describe('useMobileComposerSwap gesture commit', () => {
             await fireScroll(distance);
             expect(readSwap(scopeEl).rest).not.toBe('compact');
         }
+        // Streaming keeps the composer expanded, but accessories still hide
+        // until the glide actually reaches the live edge.
+        await fireScroll(240);
+        expect(readDock(scopeEl)).toMatchObject({ rest: 'away', progress: '1' });
+        await fireScroll(0);
+        expect(readDock(scopeEl)).toMatchObject({ rest: 'bottom', progress: '0' });
 
         await advance(500);
         expect(readSwap(scopeEl).rest).not.toBe('compact');
@@ -237,6 +256,13 @@ describe('useMobileComposerSwap gesture commit', () => {
         // reveal has to survive them instead of collapsing on absolute distance.
         await fireScroll(260);
         expect(readSwap(scopeEl).rest).toBe('expanded');
+        // Accessories have no background: stay hidden even while swap is expanded,
+        // and a short approach toward the edge must not fade them in.
+        expect(readDock(scopeEl)).toMatchObject({ rest: 'away', progress: '1' });
+        await fireScroll(20);
+        expect(readDock(scopeEl)).toMatchObject({ rest: 'away', progress: '1' });
+        await fireScroll(0);
+        expect(readDock(scopeEl)).toMatchObject({ rest: 'bottom', progress: '0' });
 
         // Scrolling back up hands the endpoint back to distance follow.
         await fireScroll(300);

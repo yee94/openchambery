@@ -288,6 +288,12 @@ export const getAnchoredTurnMetrics = ({
 // reserved anchored end space included — so a parked anchored turn counts as
 // the live edge.
 export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
+/**
+ * Scroll-to-bottom stays hidden until the viewport has travelled this far
+ * from the live edge. The follow re-arm band is tighter so a small nudge
+ * does not flash the pill the way `!isAtEnd` would.
+ */
+export const TIMELINE_SCROLL_BUTTON_SHOW_THRESHOLD_PX = 80;
 
 export const resolveTimelineIsAtEnd = (
     state: {
@@ -309,6 +315,40 @@ export const resolveTimelineIsAtEnd = (
         return contentLength - (scroll + scrollLength) <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
     }
     return state.isNearEnd ?? state.isAtEnd;
+};
+
+export const resolveTimelineDistanceFromEnd = (
+    state: {
+        readonly contentLength?: number;
+        readonly scroll?: number;
+        readonly scrollLength?: number;
+    } | undefined,
+): number | undefined => {
+    if (!state) return undefined;
+    const { contentLength, scroll, scrollLength } = state;
+    if (
+        typeof contentLength !== 'number'
+        || typeof scroll !== 'number'
+        || typeof scrollLength !== 'number'
+        || !Number.isFinite(contentLength)
+        || !Number.isFinite(scroll)
+        || !Number.isFinite(scrollLength)
+    ) {
+        return undefined;
+    }
+    return Math.max(0, contentLength - (scroll + scrollLength));
+};
+
+export const resolveTimelineScrollButtonVisible = (
+    distanceFromEnd: number | undefined,
+    previousVisible: boolean,
+): boolean => {
+    if (distanceFromEnd === undefined || !Number.isFinite(distanceFromEnd)) {
+        return previousVisible;
+    }
+    if (distanceFromEnd <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX) return false;
+    if (distanceFromEnd >= TIMELINE_SCROLL_BUTTON_SHOW_THRESHOLD_PX) return true;
+    return previousVisible;
 };
 
 /**

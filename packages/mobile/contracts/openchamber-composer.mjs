@@ -5,12 +5,13 @@ export const openChamberComposerContract = {
   sources: {
     ios: [
       'packages/mobile/ios/App/App/OpenChamberComposerPlugin.swift',
+      'packages/mobile/ios/App/App/OpenChamberComposerView.swift',
     ],
   },
   methods: {
-    ios: ['present', 'update', 'dismiss', 'setSuppressed', 'focus', 'blur'],
+    ios: ['present', 'update', 'hide', 'dismiss', 'setSuppressed', 'focus', 'blur'],
   },
   events: {
-    ios: ['textChanged', 'send', 'abort', 'attach', 'openModel', 'heightChanged', 'expandedChanged'],
+    ios: ['textChanged', 'send', 'abort', 'attach', 'filesPicked', 'removeAttachment', 'openModel', 'cycleAgent', 'openAgent', 'heightChanged', 'expandedChanged', 'scrollToBottom'],
   },
 }

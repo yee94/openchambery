@@ -10,6 +10,7 @@ const chatPromptComposerSource = readFileSync(join(here, '../components/chat/Cha
 const chatContainerSource = readFileSync(join(here, '../components/chat/ChatContainer.tsx'), 'utf-8');
 const autoFollowSource = readFileSync(join(here, '../hooks/useChatAutoFollow.ts'), 'utf-8');
 const swapHookSource = readFileSync(join(here, '../components/chat/useMobileComposerSwap.ts'), 'utf-8');
+const mobileAppSource = readFileSync(join(here, '../apps/MobileApp.tsx'), 'utf-8');
 const injected = new Set<HTMLElement>();
 
 afterEach(() => {
@@ -139,16 +140,57 @@ describe('mobile composer overflow and swap contract', () => {
     test('hides web composer chrome when the iOS native overlay is active', () => {
         expect(mobileCss).toContain(':root.oc-native-ios-composer');
         expect(mobileCss).toContain('--oc-native-composer-height');
+        expect(mobileCss).not.toMatch(
+            /:root\.oc-native-ios-composer \.oc-chat-composer-swap-scope\s*\{[^}]*--oc-mobile-composer-swap:\s*0\s*!important/,
+        );
         expect(mobileCss).toMatch(
             /:root\.oc-native-ios-composer \.oc-chat-composer-swap-scope\s*\{[^}]*--oc-chat-foot-inset:\s*calc\(\s*var\(--oc-native-composer-height/,
         );
+        expect(mobileCss).toContain('--oc-native-composer-accessory');
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none\s*!important;[^}]*opacity:\s*1\s*!important/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*calc\(\s*var\(--oc-native-composer-height/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*opacity:\s*calc\(1 - min\(1, var\(--oc-native-composer-dock/,
+        );
+        expect(mobileCss).toMatch(
+            /data-oc-native-composer-dock="away"[\s\S]*?\[data-native-composer-accessories\][\s\S]*?pointer-events:\s*none/,
+        );
+        expect(swapHookSource).toContain('publishNativeComposerDock');
+        expect(mobileCss).not.toContain('[data-native-composer-accessories]:has(*)::before');
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-composer-queue\s*\{[^}]*margin-bottom:\s*0/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-scroll-to-bottom--expanded,\s*:root\.oc-native-ios-composer \.oc-scroll-to-bottom--compact/,
+        );
+        expect(chatInputSource).toContain('data-native-composer-accessories');
+        expect(chatInputSource).toContain('applyNativeComposerAccessoryVar');
         expect(chatInputSource).toContain('useNativeIosComposer');
         expect(chatInputSource).toContain('data-native-ios-composer');
+        expect(chatInputSource).toContain('showScrollToBottom: Boolean(showScrollToBottom && onScrollToBottom)');
+        expect(chatInputSource).toContain('reconcileComposerAttachmentTextDeletion');
+        expect(chatInputSource).toContain('onRemoveAttachment');
+        expect(chatInputSource).toContain('nativeIosComposerActive ? null');
         expect(chatInputSource).not.toContain("setProperty('--oc-chat-foot-inset'");
+        expect(chatContainerSource).not.toContain('canUseNativeIosComposer');
+        expect(chatContainerSource).toMatch(
+            /useMobileComposerSwap\(\{\s*enabled:\s*isMobile,/,
+        );
+        expect(mobileAppSource).toContain("root.classList.contains('oc-native-ios-composer')");
+        expect(mobileAppSource).toContain('unwindKeyboardShell');
+        expect(mobileAppSource).toContain('getNativeIosComposerPlugin().blur()');
+        expect(mobileAppSource).toMatch(
+            /oc-native-ios-composer[\s\S]*unwindKeyboardShell\(\)/,
+        );
+        expect(mobileAppSource).toContain("setVar('--oc-kb-layout', 0)");
     });
 
     test('settings inputBarOffset applies only in the native app while the keyboard is down', () => {
-        expect(chatInputSource).toContain('isMobile && isCapacitorApp() && inputBarOffset > 0 && !mobileTextareaFocused');
+        expect(chatInputSource).toContain('isMobile && isCapacitorApp() && !nativeIosComposerActive && inputBarOffset > 0 && !mobileTextareaFocused');
     });
 
     test('in-flow draft feet pin expanded and hide leftover compact pills', () => {

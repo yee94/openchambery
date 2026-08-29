@@ -18,6 +18,7 @@ import {
     createComposerSwapState,
     distanceFromBottomOf,
     publishComposerSwap,
+    publishNativeComposerDock,
     type ComposerSwapState,
 } from './mobileComposerSwap';
 import { TIMELINE_ANCHORING_ATTRIBUTE } from './lib/scroll/timelineScrollAnchoring';
@@ -50,6 +51,7 @@ export const useMobileComposerSwap = (args: {
 }): void => {
     const stateRef = React.useRef<ComposerSwapState>(createComposerSwapState());
     const publishedRef = React.useRef<{ progress: string; phase: string; rest: string } | undefined>(undefined);
+    const publishedDockRef = React.useRef<{ progress: string; rest: string } | undefined>(undefined);
     const idleTimerRef = React.useRef<number | null>(null);
     const snapTimerRef = React.useRef<number | null>(null);
     /** Until this timestamp, compact→expand follow is suppressed (momentum only). */
@@ -172,6 +174,14 @@ export const useMobileComposerSwap = (args: {
             upwardTravelRef.current = 0;
             return;
         }
+
+        // Dock follows raw distance on every frame. Swap can rest expanded far
+        // from the live edge; accessories have no background and must not.
+        publishedDockRef.current = publishNativeComposerDock(
+            scope,
+            distance,
+            publishedDockRef.current,
+        );
 
         // The transcript scrolls for two very different reasons on this path:
         // the user dragging, and the list following its own streaming growth.
@@ -300,6 +310,7 @@ export const useMobileComposerSwap = (args: {
     const releaseScope = useEvent((scope: HTMLElement | null) => {
         if (scope) clearComposerSwap(scope);
         publishedRef.current = undefined;
+        publishedDockRef.current = undefined;
         compactSettleArmedRef.current = false;
         compactSettleUntilRef.current = 0;
         touchActiveRef.current = 0;

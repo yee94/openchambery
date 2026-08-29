@@ -2141,6 +2141,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.actions.commands': 'コマンド',
   'chat.chatInput.actions.attachFiles': 'ファイルを添付',
   'chat.chatInput.actions.attachPhotos': '写真を添付',
+  'chat.chatInput.actions.attachCancel': 'キャンセル',
   'chat.chatInput.actions.addAttachment': '添付ファイルを追加',
   'chat.chatInput.actions.linkGithubIssue': 'GitHub Issueをリンク',
   'chat.chatInput.actions.linkGithubPr': 'GitHub PRをリンク',

@@ -2111,6 +2111,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.actions.commands': '命令',
   'chat.chatInput.actions.attachFiles': '附加文件',
   'chat.chatInput.actions.attachPhotos': '附加照片',
+  'chat.chatInput.actions.attachCancel': '取消',
   'chat.chatInput.actions.addAttachment': '添加附件',
   'chat.chatInput.actions.linkGithubIssue': '关联 GitHub Issue',
   'chat.chatInput.actions.linkGithubPr': '关联 GitHub PR',

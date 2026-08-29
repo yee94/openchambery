@@ -296,7 +296,7 @@ type ChatViewportProps = {
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     handleHistoryScroll: () => void;
     handleHistoryUpwardIntent: () => void;
-    onTimelineIsAtEndChange: (isAtEnd: boolean) => void;
+    onTimelineIsAtEndChange: (isAtEnd: boolean, showScrollButton?: boolean) => void;
     timelineFollowSuspended: boolean;
     timelineHistoryAnchorToken: number;
     scrollToBottom: () => void;
@@ -1358,11 +1358,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const legendTimelineEnabled = useFeatureFlagsStore((state) => state.legendTimelineEnabled);
 
     // The legend list owns the scroll position, so its at-end state — not
-    // auto-follow's pin — is what load-older and the scroll-to-bottom button
-    // must read on that path. Auto-follow is disabled there, and a disabled
-    // auto-follow reports a permanent `following` pin, which would silently
-    // block every scroll-triggered load of earlier history.
+    // auto-follow's pin — is what load-older must read on that path. The
+    // scroll-to-bottom control uses a wider travel latch so a 1px leave of
+    // the at-end band does not flash it. Auto-follow is disabled there, and
+    // a disabled auto-follow reports a permanent `following` pin, which
+    // would silently block every scroll-triggered load of earlier history.
     const [legendIsAtEnd, setLegendIsAtEnd] = React.useState(true);
+    const [legendShowScrollButton, setLegendShowScrollButton] = React.useState(false);
     // Sticky "the user scrolled away" — what the previous engine called
     // `released`. The list's own guard is a bare proximity test: it stops
     // maintaining the end only while the viewport sits more than a tenth of a
@@ -1378,16 +1380,20 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const armTimelineHistoryAnchor = useEvent(() => {
         setTimelineHistoryAnchorToken((token) => token + 1);
     });
-    const handleTimelineIsAtEndChange = useEvent((atEnd: boolean) => {
+    const handleTimelineIsAtEndChange = useEvent((atEnd: boolean, showScrollButton?: boolean) => {
         setLegendIsAtEnd(atEnd);
         if (atEnd) {
             setLegendFollowReleased(false);
+        }
+        if (showScrollButton !== undefined) {
+            setLegendShowScrollButton(showScrollButton);
         }
     });
     // A fresh session opens at the live edge, so a release carried over from the
     // previous one would leave the new transcript unfollowed.
     React.useEffect(() => {
         setLegendIsAtEnd(true);
+        setLegendShowScrollButton(false);
         setLegendFollowReleased(false);
     }, [currentSessionId]);
 
@@ -1418,7 +1424,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         onUpwardUserIntent: handleHistoryUpwardIntentBridge,
     });
     const composerSwapScopeRef = React.useRef<HTMLDivElement>(null);
-    useMobileComposerSwap({ enabled: isMobile, scrollRef, scopeRef: composerSwapScopeRef });
+    useMobileComposerSwap({
+        enabled: isMobile,
+        scrollRef,
+        scopeRef: composerSwapScopeRef,
+    });
 
     const historyPrefixCacheRef = React.useRef<ChatMessageEntry[]>([]);
     const historyPrefix = React.useMemo(() => {
@@ -1555,7 +1565,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         beginHistoryViewportPreservation,
         endHistoryViewportPreservation,
         isPinned: legendTimelineEnabled ? legendIsAtEnd : isPinned,
-        showScrollButton: legendTimelineEnabled ? !legendIsAtEnd : showScrollButton,
+        showScrollButton: legendTimelineEnabled ? legendShowScrollButton : showScrollButton,
         // Only the active desktop transcript auto-fills short first paint;
         // expanded-input and mobile keep explicit load paths only.
         autoFillEnabled: active && !isDesktopExpandedInput,

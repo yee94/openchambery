@@ -12,8 +12,13 @@ import {
     resolveReplyReserveSpacerHeight,
     resolveReplyReserveUpdate,
     resolveShrunkItemSizeUpdate,
+    resolveTimelineDistanceFromEnd,
+    resolveTimelineIsAtEnd,
+    resolveTimelineScrollButtonVisible,
     resolveUsableViewportHeight,
     shouldReleaseAnchoredTurnPark,
+    TIMELINE_FOLLOW_REARM_THRESHOLD_PX,
+    TIMELINE_SCROLL_BUTTON_SHOW_THRESHOLD_PX,
     type TimelineListMeasurementState,
 } from './timelineScrollAnchoring';
 
@@ -478,5 +483,37 @@ describe('resolveShrunkItemSizeUpdate', () => {
         expect(resolveShrunkItemSizeUpdate(96, 96)).toBeNull();
         expect(resolveShrunkItemSizeUpdate(96, 95.5)).toBeNull();
         expect(resolveShrunkItemSizeUpdate(96, 0)).toBeNull();
+    });
+});
+
+describe('resolveTimelineScrollButtonVisible', () => {
+    test('stays hidden until the viewport has travelled past the show band', () => {
+        expect(resolveTimelineDistanceFromEnd({
+            contentLength: 1000,
+            scroll: 560,
+            scrollLength: 400,
+        })).toBe(40);
+        expect(resolveTimelineIsAtEnd({
+            contentLength: 1000,
+            scroll: 560,
+            scrollLength: 400,
+        })).toBe(true);
+
+        expect(resolveTimelineScrollButtonVisible(0, false)).toBe(false);
+        expect(resolveTimelineScrollButtonVisible(TIMELINE_FOLLOW_REARM_THRESHOLD_PX, false)).toBe(false);
+        expect(resolveTimelineScrollButtonVisible(
+            TIMELINE_FOLLOW_REARM_THRESHOLD_PX + 1,
+            false,
+        )).toBe(false);
+        expect(resolveTimelineScrollButtonVisible(
+            TIMELINE_SCROLL_BUTTON_SHOW_THRESHOLD_PX,
+            false,
+        )).toBe(true);
+    });
+
+    test('once shown, stays visible until the follow re-arm band', () => {
+        expect(resolveTimelineScrollButtonVisible(50, true)).toBe(true);
+        expect(resolveTimelineScrollButtonVisible(TIMELINE_FOLLOW_REARM_THRESHOLD_PX, true)).toBe(false);
+        expect(resolveTimelineScrollButtonVisible(undefined, true)).toBe(true);
     });
 });

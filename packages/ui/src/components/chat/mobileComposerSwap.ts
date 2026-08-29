@@ -44,6 +44,19 @@ export const COMPOSER_SWAP_REVEAL_TRAVEL_PX = 24;
  */
 export const COMPOSER_SWAP_USER_SCROLL_WINDOW_MS = 1200;
 export const COMPOSER_SWAP_CSS_VAR = '--oc-mobile-composer-swap';
+/**
+ * Native iOS accessory fade (Changes / TODO / queue). Independent of swap:
+ * swap can rest expanded hundreds of px from the live edge (downward reveal /
+ * holdExpanded). Those rows have no background, so they must stay hidden
+ * until the viewport is actually at the bottom.
+ *
+ * 0 = at the bottom (visible), 1 = ≥ FOLLOW_RANGE away (hidden). Approaching
+ * the edge stays hidden until the true bottom (NOISE); leaving fades out over
+ * the first FOLLOW_RANGE px so a 1px nudge does not flash them on or off.
+ */
+export const NATIVE_COMPOSER_DOCK_CSS_VAR = '--oc-native-composer-dock';
+
+export type NativeComposerDockRest = 'bottom' | 'away';
 
 export type ComposerSwapRest = 'expanded' | 'compact';
 export type ComposerSwapPhase = 'rest' | 'tracking' | 'snapping';
@@ -300,10 +313,58 @@ export const applyComposerSwapSnapDone = (state: ComposerSwapState): ComposerSwa
     });
 };
 
+export const nativeComposerDockProgressFromDistance = (distanceFromBottom: number): number => (
+    clamp(Math.max(0, distanceFromBottom) / COMPOSER_SWAP_FULL_RANGE_PX, 0, 1)
+);
+
+/**
+ * Latch the accessory strip so approaching the bottom does not fade it in
+ * until the viewport is actually there, and leaving does not hide it on the
+ * first pixel — only after FOLLOW_RANGE of upward travel.
+ */
+export const resolveNativeComposerDock = (
+    distanceFromBottom: number,
+    previous: NativeComposerDockRest = 'away',
+): { progress: number; rest: NativeComposerDockRest } => {
+    const distance = Math.max(0, distanceFromBottom);
+    if (distance <= COMPOSER_SWAP_NOISE_PX) {
+        return { progress: 0, rest: 'bottom' };
+    }
+    if (previous === 'away' || distance >= COMPOSER_SWAP_FOLLOW_RANGE_PX) {
+        return { progress: 1, rest: 'away' };
+    }
+    return {
+        progress: nativeComposerDockProgressFromDistance(distance),
+        rest: 'bottom',
+    };
+};
+
 export const clearComposerSwap = (scope: HTMLElement): void => {
     scope.style.removeProperty(COMPOSER_SWAP_CSS_VAR);
+    scope.style.removeProperty(NATIVE_COMPOSER_DOCK_CSS_VAR);
     delete scope.dataset.ocComposerSwapPhase;
     delete scope.dataset.ocComposerSwapRest;
+    delete scope.dataset.ocNativeComposerDock;
+};
+
+export const publishNativeComposerDock = (
+    scope: HTMLElement,
+    distanceFromBottom: number,
+    last?: { progress: string; rest: string },
+): { progress: string; rest: string } => {
+    const resolved = resolveNativeComposerDock(
+        distanceFromBottom,
+        last?.rest === 'bottom' ? 'bottom' : 'away',
+    );
+    const progress = String(resolved.progress);
+    const rest = resolved.rest;
+    if (last?.progress !== progress) {
+        scope.style.setProperty(NATIVE_COMPOSER_DOCK_CSS_VAR, progress);
+    }
+    if (last?.rest !== rest) {
+        scope.dataset.ocNativeComposerDock = rest;
+    }
+    return { progress, rest };
 };
 
 export const publishComposerSwap = (
