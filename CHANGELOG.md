@@ -4,11 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.23] - 2026-08-30
+
+### Changed
+
+- Android type and spacing lift from the old ~0.9 density result to about 0.95 (still below 1). Typical phones already compute 0.9, so the value is multiplied rather than only raising the cap.
+
+## [1.19.0-beta.22] - 2026-08-30
+
+### Changed
+
+- Android type and spacing return to the original physical-density scale (xdpi/ydpi toward 1/163 inch, capped at 0.9). Pinning Android to 1 or 10/9 skipped that shrink and made both type and gaps jump.
+
 ## [1.19.0-beta.21] - 2026-08-30
 
 ### Fixed
 
 - After sending a message, the reserved space under the parked bubble is now the bottom of the chat. You can no longer scroll into the empty inset under it (which hid Changes and showed the scroll-to-bottom button). Tapping that button keeps the reserved space and returns to the parked message.
+
+## [1.19.0-beta.20] - 2026-08-30
+
+### Changed
+
+- Android type and spacing drop back from the iOS-matched 10/9 trial to a pinned scale of 1, which is still larger than the old ~0.9 density result.
+
+## [1.19.0-beta.19] - 2026-08-30
+
+### Changed
+
+- Android now uses the same 10/9 design-pt scale as iOS, so type and spacing can be compared side by side.
 
 ## [1.19.0-beta.18] - 2026-08-30
 

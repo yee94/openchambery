@@ -167,10 +167,10 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 - **Android design pt (`--dpt`)**: WebView CSS px is 1 dp, not 1 iOS pt. Capacitor
   plugin `OpenChamberPhysicalScale` reads `DisplayMetrics.xdpi/ydpi` and the web
   layer sets `--dpt` so compiled font sizes (`calc(N * var(--dpt))`) track ~1/163
-  inch, then × `1.05` (Android-only; typical ~0.9 → ~0.945) and cap at `1`. Do
-  not copy the iOS `10/9` parameter — the same number reads larger on Android.
-  Do not pin Activity `densityDpi` to shrink the page — WebView ignores it and
-  IME geometry breaks. Keep `setTextZoom(100)` + `fontScale=1`.
+  inch, then × `0.95/0.9` and cap at `0.95` (typical ~0.9 actually moves).
+  Do not pin `--dpt` to `1` or copy iOS `10/9` — both read too large. Do not
+  pin Activity `densityDpi` to shrink the page — WebView
+  ignores it and IME geometry breaks. Keep `setTextZoom(100)` + `fontScale=1`.
 - **Android WebView version**: the UI uses `color-mix()` (Tailwind v4 + theme) which needs
   Chromium **111+**. An outdated Android System WebView renders translucency/selection wrong — tell
   testers to keep Android System WebView updated (or use a device with a current one). Floating
