@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.17] - 2026-08-30
+
+### Changed
+
+- Mobile type and spacing are a bit larger. iOS uses a 10/9 design-pt scale; Android keeps its own physical density with a smaller 1.05 lift (typical ~0.9 becomes ~0.945) and a cap of 1, so it does not copy the iOS parameter.
+
 ## [1.19.0-beta.16] - 2026-08-30
 
 ### Fixed
