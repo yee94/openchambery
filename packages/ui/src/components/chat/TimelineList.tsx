@@ -15,7 +15,9 @@
 //     quiet-window prepend deferral.
 //   • A just-sent turn keeps its natural height. Unused space below it is a
 //     real trailing list item (`usableViewport - content`) with a fixed size
-//     so the virtualizer can park the user row. Collapse, hydration, and
+//     so the virtualizer can park the user row. Usable height subtracts the
+//     measured list footer (composer inset) so that hole is the live edge —
+//     there is no further downward room under it. Collapse, hydration, and
 //     streaming keep writing the turn. The spacer only shrinks with content;
 //     a later collapse that would reopen it drops the reserve.
 //
@@ -67,15 +69,19 @@ import {
     didPrependTimelineEntries,
     getAnchoredTurnMetrics,
     isReplyReserveOverflowing,
+    resolveParkedLiveEdgeOffset,
     resolveReplyReserveUpdate,
     resolveShrunkItemSizeUpdate,
     resolveTimelineDistanceFromEnd,
+    resolveTimelineDistanceFromParkedEnd,
     resolveTimelineIsAtEnd,
     resolveTimelineScrollButtonVisible,
     resolveUsableViewportHeight,
     type ReplyReserveSnapshot,
     TIMELINE_ANCHORING_ATTRIBUTE,
     TIMELINE_PREPEND_SETTLE_MS,
+    TIMELINE_FOLLOW_REARM_THRESHOLD_PX,
+    writeTimelineParkEndOffset,
 } from './lib/scroll/timelineScrollAnchoring';
 
 // Any sliver of a row counts as visible: the Markdown hydration window needs
@@ -130,6 +136,28 @@ const isReplyReserveListEntry = (entry: { kind: string }): entry is ReplyReserve
 const getReplyReserveFixedSize = (item: { kind: string; spacerHeight?: number }): number | undefined => {
     if (!isReplyReserveListEntry(item)) return undefined;
     return item.spacerHeight > 0 ? item.spacerHeight : undefined;
+};
+
+const resolveParkOffsetForState = (
+    space: TimelineAnchoredEndSpace | undefined,
+    parkReleased: boolean,
+    state: Parameters<typeof getAnchoredTurnMetrics>[0]['state'],
+    occlusion: number,
+): number | null => {
+    if (!space || parkReleased) return null;
+    const anchorOffset = space.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET;
+    const metrics = getAnchoredTurnMetrics({
+        state,
+        anchorIndex: space.anchorIndex,
+        lastIndex: space.anchorIndex,
+        composerOverlayHeight: occlusion,
+        anchorOffset,
+    });
+    if (!metrics) return null;
+    return resolveParkedLiveEdgeOffset({
+        anchorTop: metrics.anchorTop,
+        anchorOffset,
+    });
 };
 
 const resolveMeasuredViewportHeight = (
@@ -340,6 +368,29 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const listScrollElementRef = React.useRef<HTMLDivElement | null>(null);
     const [scrollElement, setScrollElement] = React.useState<HTMLDivElement | null>(null);
     const [viewportHeight, setViewportHeight] = React.useState(0);
+    const [footerElement, setFooterElement] = React.useState<HTMLDivElement | null>(null);
+    const [footerHeight, setFooterHeight] = React.useState(0);
+    const footerElementRef = React.useRef<HTMLDivElement | null>(null);
+    const footerHeightRef = React.useRef(0);
+    const publishFooterHeight = useEvent((element: HTMLElement | null = footerElementRef.current) => {
+        const nextHeight = element?.offsetHeight ?? 0;
+        footerHeightRef.current = nextHeight;
+        setFooterHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+    });
+    const setFooterMeasureElement = useEvent((element: HTMLDivElement | null) => {
+        footerElementRef.current = element;
+        setFooterElement((previous) => (previous === element ? previous : element));
+        publishFooterHeight(element);
+    });
+    useResizeObserver(
+        typeof ResizeObserver !== 'undefined' ? footerElement : null,
+        () => publishFooterHeight(footerElementRef.current),
+    );
+    const measuredFooter = footer != null ? (
+        <div ref={setFooterMeasureElement} data-oc-timeline-footer="">
+            {footer}
+        </div>
+    ) : null;
     const hideTopScrollShadowRef = React.useRef(hideTopScrollShadow);
     hideTopScrollShadowRef.current = hideTopScrollShadow;
     const hideBottomScrollShadowRef = React.useRef(hideBottomScrollShadow);
@@ -800,11 +851,36 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             if (nextViewport > 0) {
                 setViewportHeight((previous) => (previous === nextViewport ? previous : nextViewport));
             }
-            const atEnd = resolveTimelineIsAtEnd(state) ?? state.isAtEnd;
+            const parkOffset = resolveParkOffsetForState(
+                anchoredEndSpaceRef.current,
+                parkReleasedRef.current,
+                state,
+                composerOverlayHeightRef.current + footerHeightRef.current,
+            );
+            writeTimelineParkEndOffset(listScrollElementRef.current, parkOffset);
+            const distanceFromEnd = parkOffset !== null
+                ? resolveTimelineDistanceFromParkedEnd({
+                    scroll: state.scroll,
+                    parkOffset,
+                })
+                : resolveTimelineDistanceFromEnd(state);
+            const atEnd = parkOffset !== null
+                ? distanceFromEnd <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX
+                : resolveTimelineIsAtEnd(state) ?? state.isAtEnd;
             const showScrollButton = resolveTimelineScrollButtonVisible(
-                resolveTimelineDistanceFromEnd(state),
+                distanceFromEnd,
                 lastShowScrollButtonRef.current,
             );
+            const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            if (
+                parkOffset !== null
+                && parkedReserveIdRef.current !== null
+                && now >= parkAnimatingUntilRef.current
+                && Number.isFinite(state.scroll)
+                && state.scroll > parkOffset + 1
+            ) {
+                void list.scrollToOffset({ offset: parkOffset, animated: false });
+            }
             if (
                 atEnd !== lastIsAtEndRef.current
                 || showScrollButton !== lastShowScrollButtonRef.current
@@ -945,6 +1021,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const usableViewportHeight = resolveUsableViewportHeight({
         viewportHeight: resolvedViewportHeight,
         composerOverlayHeight,
+        endInsetHeight: footerHeight,
         anchorOffset: anchoredEndSpace?.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET,
     });
 
@@ -1019,7 +1096,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             state,
             anchorIndex: space.anchorIndex,
             lastIndex: space.anchorIndex,
-            composerOverlayHeight: composerOverlayHeightRef.current,
+            composerOverlayHeight: composerOverlayHeightRef.current + footerHeightRef.current,
             anchorOffset,
         });
         if (!metrics) return false;
@@ -1078,6 +1155,25 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         parkedReserveIdRef.current = reserveId;
     }, [activeReplyReserve, historyAnchor, reserveId]);
 
+    React.useLayoutEffect(() => {
+        const element = listScrollElementRef.current;
+        const list = listRef.current;
+        if (!element) return;
+        if (!list) {
+            writeTimelineParkEndOffset(element, null);
+            return;
+        }
+        writeTimelineParkEndOffset(
+            element,
+            resolveParkOffsetForState(
+                anchoredEndSpace,
+                parkReleased,
+                list.getState(),
+                composerOverlayHeight + footerHeight,
+            ),
+        );
+    }, [anchoredEndSpace, composerOverlayHeight, footerHeight, parkReleased]);
+
     const listEntries = React.useMemo((): readonly TimelineListItem<TEntry>[] => {
         const spacerHeight = activeReplyReserve?.spacerHeight ?? 0;
         if (!activeReplyReserve || spacerHeight <= 0) return entries;
@@ -1133,7 +1229,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 onViewableItemsChanged={handleViewableItemsChanged}
                 viewabilityConfig={TIMELINE_VIEWABILITY_CONFIG}
                 ListHeaderComponent={header as React.ReactElement | null | undefined}
-                ListFooterComponent={footer as React.ReactElement | null | undefined}
+                ListFooterComponent={measuredFooter as React.ReactElement | null | undefined}
                 className={className}
                 style={style}
                 contentContainerClassName={contentContainerClassName}

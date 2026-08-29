@@ -8,14 +8,21 @@ import {
     resolveChatListAnchoredEndSpace,
     resolveNextAnchoredUserMessageId,
     CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO,
+    readTimelineParkEndOffset,
+    resolveParkedLiveEdgeOffset,
+    resolveParkedScrollSlack,
     resolveReplyReserveMaxHeight,
     resolveReplyReserveSpacerHeight,
     resolveReplyReserveUpdate,
+    resolveScrollDistanceFromLiveEdge,
     resolveShrunkItemSizeUpdate,
     resolveTimelineDistanceFromEnd,
+    resolveTimelineDistanceFromParkedEnd,
     resolveTimelineIsAtEnd,
     resolveTimelineScrollButtonVisible,
     resolveUsableViewportHeight,
+    TIMELINE_PARK_END_ATTRIBUTE,
+    writeTimelineParkEndOffset,
     shouldReleaseAnchoredTurnPark,
     TIMELINE_FOLLOW_REARM_THRESHOLD_PX,
     TIMELINE_SCROLL_BUTTON_SHOW_THRESHOLD_PX,
@@ -218,7 +225,7 @@ describe('resolveNextAnchoredUserMessageId', () => {
 });
 
 describe('resolveUsableViewportHeight', () => {
-    test('subtracts the composer overlay and park offset', () => {
+    test('subtracts the composer overlay, list footer inset, and park offset', () => {
         expect(resolveUsableViewportHeight({
             viewportHeight: 800,
             composerOverlayHeight: 0,
@@ -227,6 +234,11 @@ describe('resolveUsableViewportHeight', () => {
             viewportHeight: 800,
             composerOverlayHeight: 120,
         })).toBe(800 - 120 - CHAT_LIST_ANCHOR_OFFSET);
+        expect(resolveUsableViewportHeight({
+            viewportHeight: 800,
+            composerOverlayHeight: 0,
+            endInsetHeight: 180,
+        })).toBe(800 - 180 - CHAT_LIST_ANCHOR_OFFSET);
     });
 
     test('ignores an unmeasured viewport', () => {
@@ -483,6 +495,97 @@ describe('resolveShrunkItemSizeUpdate', () => {
         expect(resolveShrunkItemSizeUpdate(96, 96)).toBeNull();
         expect(resolveShrunkItemSizeUpdate(96, 95.5)).toBeNull();
         expect(resolveShrunkItemSizeUpdate(96, 0)).toBeNull();
+    });
+});
+
+describe('parked live edge', () => {
+    test('a footer-aware spacer leaves no downward room under the park', () => {
+        const viewport = 800;
+        const footer = 220;
+        const content = 200;
+        const usable = resolveUsableViewportHeight({
+            viewportHeight: viewport,
+            composerOverlayHeight: 0,
+            endInsetHeight: footer,
+        });
+        const spacer = resolveReplyReserveSpacerHeight({
+            usableViewportHeight: usable,
+            viewportHeight: viewport,
+            contentHeight: content,
+        });
+        expect(resolveParkedScrollSlack({
+            contentHeight: content,
+            spacerHeight: spacer,
+            endInsetHeight: footer,
+            viewportHeight: viewport,
+        })).toBe(0);
+    });
+
+    test('ignoring the footer inset leaves slack the user can still scroll', () => {
+        const viewport = 800;
+        const footer = 220;
+        const content = 200;
+        const usable = resolveUsableViewportHeight({
+            viewportHeight: viewport,
+            composerOverlayHeight: 0,
+        });
+        const spacer = resolveReplyReserveSpacerHeight({
+            usableViewportHeight: usable,
+            viewportHeight: viewport,
+            contentHeight: content,
+        });
+        expect(resolveParkedScrollSlack({
+            contentHeight: content,
+            spacerHeight: spacer,
+            endInsetHeight: footer,
+            viewportHeight: viewport,
+        })).toBeGreaterThan(TIMELINE_SCROLL_BUTTON_SHOW_THRESHOLD_PX);
+    });
+
+    test('distance from the parked edge ignores slack below that offset', () => {
+        const parkOffset = resolveParkedLiveEdgeOffset({ anchorTop: 1000 });
+        expect(parkOffset).toBe(1000 - CHAT_LIST_ANCHOR_OFFSET);
+        expect(resolveTimelineDistanceFromParkedEnd({
+            scroll: parkOffset,
+            parkOffset,
+        })).toBe(0);
+        expect(resolveTimelineDistanceFromParkedEnd({
+            scroll: parkOffset + 120,
+            parkOffset,
+        })).toBe(0);
+        expect(resolveTimelineDistanceFromParkedEnd({
+            scroll: parkOffset - 90,
+            parkOffset,
+        })).toBe(90);
+    });
+
+    test('DOM distance remaps onto the park while reserved', () => {
+        const parkOffset = 400;
+        expect(resolveScrollDistanceFromLiveEdge({
+            scrollHeight: 1200,
+            scrollTop: parkOffset,
+            clientHeight: 600,
+        }, parkOffset)).toBe(0);
+        expect(resolveScrollDistanceFromLiveEdge({
+            scrollHeight: 1200,
+            scrollTop: parkOffset,
+            clientHeight: 600,
+        }, null)).toBe(200);
+        expect(resolveScrollDistanceFromLiveEdge({
+            scrollHeight: 1200,
+            scrollTop: parkOffset - 90,
+            clientHeight: 600,
+        }, parkOffset)).toBe(90);
+    });
+
+    test('the park-end attribute name is the scroller contract', () => {
+        expect(TIMELINE_PARK_END_ATTRIBUTE).toBe('data-oc-timeline-park-end');
+        const element = document.createElement('div');
+        writeTimelineParkEndOffset(element, 416.4);
+        expect(element.getAttribute(TIMELINE_PARK_END_ATTRIBUTE)).toBe('416');
+        expect(readTimelineParkEndOffset(element)).toBe(416);
+        writeTimelineParkEndOffset(element, null);
+        expect(readTimelineParkEndOffset(element)).toBeNull();
     });
 });
 

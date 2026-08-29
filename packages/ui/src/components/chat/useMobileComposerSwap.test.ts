@@ -2,7 +2,10 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { TIMELINE_ANCHORING_ATTRIBUTE } from './lib/scroll/timelineScrollAnchoring';
+import {
+    TIMELINE_ANCHORING_ATTRIBUTE,
+    TIMELINE_PARK_END_ATTRIBUTE,
+} from './lib/scroll/timelineScrollAnchoring';
 import {
     COMPOSER_SWAP_CSS_VAR,
     COMPOSER_SWAP_SNAP_MS,
@@ -291,6 +294,23 @@ describe('useMobileComposerSwap gesture commit', () => {
      * back. That return leg is indistinguishable from a fast scroll toward the
      * live edge, and it flashed the composer open in the middle of a load.
      */
+    test('a reserved send treats the parked offset as the live edge', async () => {
+        await mount();
+
+        // Parked with 200px of composer inset still below the hole. Raw
+        // scrollHeight distance is 200, which would hide Changes; the park
+        // attribute is the real end.
+        const parkOffset = SCROLL_HEIGHT - CLIENT_HEIGHT - 200;
+        scrollEl.setAttribute(TIMELINE_PARK_END_ATTRIBUTE, String(parkOffset));
+        await fireTouch('touchstart');
+        await fireScrollTop(parkOffset);
+        expect(readDock(scopeEl)).toMatchObject({ rest: 'bottom', progress: '0' });
+        expect(readSwap(scopeEl).rest).not.toBe('compact');
+
+        await fireScrollTop(parkOffset - 90);
+        expect(readDock(scopeEl)).toMatchObject({ rest: 'away', progress: '1' });
+    });
+
     test('the transcript re-anchoring a prepend never moves the composer', async () => {
         await mount();
 

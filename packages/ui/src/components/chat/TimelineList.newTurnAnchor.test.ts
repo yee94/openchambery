@@ -78,7 +78,7 @@ describe('TimelineList new-turn anchor contracts', () => {
         expect(messageListSource).toContain('resolveChatListAnchoredEndSpace(');
         expect(messageListSource).toContain('anchoredUserMessageId={nextAnchorId}');
         expect(messageListSource).toContain('setAnchoredUserMessageId(nextAnchorId)');
-        expect(messageListSource).toContain('pendingScrollToEndAfterAnchorClearRef');
+        expect(messageListSource).toContain('readTimelineParkEndOffset');
         expect(messageListSource).toContain('onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}');
         expect(messageListSource).toContain('enableSendPark = true');
         expect(messageListSource).toContain('showLiveStatusRow={isNewest}');
@@ -97,6 +97,26 @@ describe('TimelineList new-turn anchor contracts', () => {
     test('the context-panel transcript does not own the send-park latch', () => {
         const contextPanel = readFileSync(join(here, '../layout/ContextPanelSessionTranscript.tsx'), 'utf8');
         expect(contextPanel).toContain('enableSendPark={false}');
+    });
+
+    test('jump-to-latest keeps the reserved hole and returns to the parked edge', () => {
+        const handle = messageListSource.indexOf('scrollToBottom: () => {');
+        expect(handle).toBeGreaterThan(-1);
+        const body = messageListSource.slice(handle, handle + 900);
+        expect(body).toContain('readTimelineParkEndOffset(resolveScrollContainer())');
+        expect(body).toContain('scrollToOffset({');
+        expect(body).toContain('offset: parkOffset');
+        expect(body).not.toContain('clearConsumedUserSendAnimation(sessionKey)');
+        expect(body).not.toContain('pendingScrollToEndAfterAnchorClearRef');
+        expect(body).not.toContain('setAnchoredUserMessageId(null)');
+    });
+
+    test('the parked edge subtracts the measured list footer so the hole is the bottom', () => {
+        expect(source).toContain('endInsetHeight: footerHeight');
+        expect(source).toContain('data-oc-timeline-footer');
+        expect(source).toContain('writeTimelineParkEndOffset');
+        expect(source).toContain('resolveTimelineDistanceFromParkedEnd');
+        expect(source).toContain('state.scroll > parkOffset + 1');
     });
 
     test('an unmeasured viewport does not wipe a seeded reserve', () => {

@@ -40,6 +40,7 @@ import { MarkdownHydrationProvider } from './markdown/MarkdownHydrationProvider'
 import { TimelineList, type TimelineHydrationTuning } from './TimelineList';
 import {
     CHAT_LIST_ANCHOR_OFFSET,
+    readTimelineParkEndOffset,
     resolveChatListAnchoredEndSpace,
     resolveNextAnchoredUserMessageId,
 } from './lib/scroll/timelineScrollAnchoring';
@@ -2346,7 +2347,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const [anchoredUserMessageId, setAnchoredUserMessageId] = React.useState<string | null>(null);
     const anchoredUserMessageIdRef = React.useRef<string | null>(null);
     anchoredUserMessageIdRef.current = anchoredUserMessageId;
-    const pendingScrollToEndAfterAnchorClearRef = React.useRef(false);
     const onAnchoredTurnParkReleased = useEvent((reserveId: string) => {
         clearConsumedUserSendAnimation(sessionKey);
         if (anchoredUserMessageIdRef.current === reserveId) {
@@ -2745,13 +2745,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return true;
     });
 
-    useIsomorphicLayoutEffect(() => {
-        if (!pendingScrollToEndAfterAnchorClearRef.current) return;
-        if (anchoredUserMessageId !== null) return;
-        pendingScrollToEndAfterAnchorClearRef.current = false;
-        legendListRef.current?.scrollToEnd({ animated: false });
-    }, [anchoredUserMessageId]);
-
     React.useEffect(() => {
         if (!ref) {
             return;
@@ -2938,12 +2931,15 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
             scrollToBottom: () => {
                 if (legendTimelineEnabled) {
-                    // Drop reserved tail space before scrolling to the live
-                    // edge; otherwise scrollToEnd lands on the padded park.
-                    if (anchoredUserMessageIdRef.current !== null) {
-                        pendingScrollToEndAfterAnchorClearRef.current = true;
-                        clearConsumedUserSendAnimation(sessionKey);
-                        setAnchoredUserMessageId(null);
+                    // The parked user row is the live edge. Do not drop the
+                    // reserved hole — scrollToEnd would travel through the
+                    // composer inset under it and hide Changes.
+                    const parkOffset = readTimelineParkEndOffset(resolveScrollContainer());
+                    if (parkOffset !== null) {
+                        legendListRef.current?.scrollToOffset({
+                            offset: parkOffset,
+                            animated: false,
+                        });
                         return;
                     }
                     legendListRef.current?.scrollToEnd({ animated: false });

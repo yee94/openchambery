@@ -49,7 +49,7 @@ export const peekConsumedUserSendAnimation = (sessionId: string): string | null 
     return lastConsumedSends.get(sessionId) ?? null;
 };
 
-/** Drop a session's remount latch (jump-to-latest, overflow, session leave). */
+/** Drop a session's remount latch (overflow, collapse that reopens the hole, session leave). */
 export const clearConsumedUserSendAnimation = (sessionId: string): void => {
     lastConsumedSends.delete(sessionId);
 };

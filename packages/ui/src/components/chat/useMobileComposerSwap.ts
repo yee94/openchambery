@@ -16,12 +16,15 @@ import {
     applyComposerSwapSnapDone,
     clearComposerSwap,
     createComposerSwapState,
-    distanceFromBottomOf,
     publishComposerSwap,
     publishNativeComposerDock,
     type ComposerSwapState,
 } from './mobileComposerSwap';
-import { TIMELINE_ANCHORING_ATTRIBUTE } from './lib/scroll/timelineScrollAnchoring';
+import {
+    readTimelineParkEndOffset,
+    resolveScrollDistanceFromLiveEdge,
+    TIMELINE_ANCHORING_ATTRIBUTE,
+} from './lib/scroll/timelineScrollAnchoring';
 
 const readScrollGeometry = (el: HTMLElement) => ({
     scrollHeight: el.scrollHeight,
@@ -157,7 +160,10 @@ export const useMobileComposerSwap = (args: {
         if (!scrollEl || !scope) return;
         const pinned = isComposerPinned(scope);
         const geometry = readScrollGeometry(scrollEl);
-        const distance = distanceFromBottomOf(geometry);
+        const distance = resolveScrollDistanceFromLiveEdge(
+            geometry,
+            readTimelineParkEndOffset(scrollEl),
+        );
         const previousDistance = lastDistanceRef.current;
         lastDistanceRef.current = distance;
 

@@ -79,8 +79,9 @@ describe('TimelineList end maintenance contracts', () => {
      * from, so it cannot disagree with what upstream believes about the edge.
      */
     test('the latch reads the same at-end resolution as the published signal', () => {
-        const resolve = source.indexOf('const atEnd = resolveTimelineIsAtEnd(state) ?? state.isAtEnd;');
+        const resolve = source.indexOf('const atEnd = parkOffset !== null');
         expect(resolve).toBeGreaterThan(-1);
+        expect(source.slice(resolve, resolve + 280)).toContain('resolveTimelineIsAtEnd(state) ?? state.isAtEnd');
         const latch = source.indexOf('if (atEnd && !endSettledOnceRef.current) {');
         expect(latch).toBeGreaterThan(resolve);
         expect(source.slice(resolve, latch)).toContain('onIsAtEndChange?.(atEnd, showScrollButton)');

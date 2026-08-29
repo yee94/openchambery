@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.21] - 2026-08-30
+
+### Fixed
+
+- After sending a message, the reserved space under the parked bubble is now the bottom of the chat. You can no longer scroll into the empty inset under it (which hid Changes and showed the scroll-to-bottom button). Tapping that button keeps the reserved space and returns to the parked message.
+
 ## [1.19.0-beta.18] - 2026-08-30
 
 ### Added

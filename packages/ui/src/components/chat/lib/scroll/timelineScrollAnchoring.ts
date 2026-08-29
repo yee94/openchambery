@@ -14,17 +14,20 @@
 // the anchored turn". Keeping it free of DOM and React makes the mode machine
 // testable without a renderer.
 //
-// "Usable viewport" is the visible height minus the composer overlay (the
-// composer floats over the list) minus the anchor offset, so a turn is only
-// considered overflowing when it genuinely cannot be read.
+// "Usable viewport" is the visible height minus the composer overlay, minus
+// the list footer inset (the measured composer clearance already in the
+// list), minus the anchor offset. The footer must be in that subtraction:
+// leaving it out sizes the hole as if the inset were not there, then the
+// inset becomes extra scroll range under the parked row.
 //
 // Send latches the just-sent user message and TimelineList drives
 // `anchoring-new-turn`. Occupancy is a sibling spacer AFTER the last turn,
 // not a minHeight on the turn itself — collapse, hydration, and streaming
 // keep writing that row's natural height. The spacer starts as
 // `usableViewport - content` and only shrinks; a later collapse that would
-// reopen it drops the reserve instead. Overflow or jump-to-latest also
-// drops it and returns to `following-end`.
+// reopen it drops the reserve instead. Overflow also drops it and returns
+// to `following-end`. Jump-to-latest returns to the parked edge and keeps
+// the hole.
 
 export type TimelineScrollMode = 'following-end' | 'anchoring-new-turn' | 'free-scrolling';
 
@@ -44,14 +47,122 @@ export const resolveReplyReserveMaxHeight = (viewportHeight: number): number => 
 export const resolveUsableViewportHeight = ({
     viewportHeight,
     composerOverlayHeight,
+    endInsetHeight = 0,
     anchorOffset = CHAT_LIST_ANCHOR_OFFSET,
 }: {
     readonly viewportHeight: number;
     readonly composerOverlayHeight: number;
+    readonly endInsetHeight?: number;
     readonly anchorOffset?: number;
 }): number => {
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
-    return Math.max(0, viewportHeight - composerOverlayHeight - anchorOffset);
+    const overlay = Number.isFinite(composerOverlayHeight) ? Math.max(0, composerOverlayHeight) : 0;
+    const inset = Number.isFinite(endInsetHeight) ? Math.max(0, endInsetHeight) : 0;
+    return Math.max(0, viewportHeight - overlay - inset - anchorOffset);
+};
+
+/**
+ * Extra scroll range below a parked user row.
+ *
+ * Zero when the spacer used the footer-aware leftover
+ * (`usable = viewport - overlay - footer - offset`). A positive value is
+ * the downward room that used to hide Changes and flash scroll-to-bottom
+ * after send.
+ */
+export const resolveParkedScrollSlack = ({
+    contentHeight,
+    spacerHeight,
+    endInsetHeight,
+    viewportHeight,
+    anchorOffset = CHAT_LIST_ANCHOR_OFFSET,
+}: {
+    readonly contentHeight: number;
+    readonly spacerHeight: number;
+    readonly endInsetHeight: number;
+    readonly viewportHeight: number;
+    readonly anchorOffset?: number;
+}): number => {
+    if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
+    return Math.max(
+        0,
+        contentHeight + spacerHeight + endInsetHeight - viewportHeight + anchorOffset,
+    );
+};
+
+/** Content offset where the parked user row sits `anchorOffset` from the top. */
+export const resolveParkedLiveEdgeOffset = ({
+    anchorTop,
+    anchorOffset = CHAT_LIST_ANCHOR_OFFSET,
+}: {
+    readonly anchorTop: number;
+    readonly anchorOffset?: number;
+}): number => Math.max(0, anchorTop - anchorOffset);
+
+/**
+ * Distance from the parked live edge. Slack below that offset (composer
+ * inset sitting under the hole) is still "at the bottom".
+ */
+export const resolveTimelineDistanceFromParkedEnd = ({
+    scroll,
+    parkOffset,
+}: {
+    readonly scroll: number;
+    readonly parkOffset: number;
+}): number => {
+    if (!Number.isFinite(scroll) || !Number.isFinite(parkOffset)) return 0;
+    return Math.max(0, parkOffset - scroll);
+};
+
+/**
+ * Written on the timeline scroller while a send is reserved. Composer swap
+ * and jump-to-latest read it so the parked row — not `scrollHeight` — is
+ * the live edge.
+ */
+export const TIMELINE_PARK_END_ATTRIBUTE = 'data-oc-timeline-park-end';
+
+export const readTimelineParkEndOffset = (
+    element: HTMLElement | null | undefined,
+): number | null => {
+    if (!element) return null;
+    const raw = element.getAttribute(TIMELINE_PARK_END_ATTRIBUTE);
+    if (raw === null || raw === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+};
+
+export const writeTimelineParkEndOffset = (
+    element: HTMLElement | null | undefined,
+    parkOffset: number | null,
+): void => {
+    if (!element) return;
+    if (parkOffset === null || !Number.isFinite(parkOffset)) {
+        if (element.hasAttribute(TIMELINE_PARK_END_ATTRIBUTE)) {
+            element.removeAttribute(TIMELINE_PARK_END_ATTRIBUTE);
+        }
+        return;
+    }
+    const next = String(Math.round(parkOffset));
+    if (element.getAttribute(TIMELINE_PARK_END_ATTRIBUTE) !== next) {
+        element.setAttribute(TIMELINE_PARK_END_ATTRIBUTE, next);
+    }
+};
+
+/** DOM distance from the live edge, remapped onto the park when reserved. */
+export const resolveScrollDistanceFromLiveEdge = (
+    geometry: {
+        readonly scrollHeight: number;
+        readonly scrollTop: number;
+        readonly clientHeight: number;
+    },
+    parkOffset: number | null,
+): number => {
+    if (parkOffset !== null && Number.isFinite(parkOffset)) {
+        return resolveTimelineDistanceFromParkedEnd({
+            scroll: geometry.scrollTop,
+            parkOffset,
+        });
+    }
+    return Math.max(0, geometry.scrollHeight - geometry.scrollTop - geometry.clientHeight);
 };
 
 /**
@@ -259,10 +370,11 @@ export const getAnchoredTurnMetrics = ({
         return null;
     }
 
-    const usableViewportHeight = Math.max(
-        0,
-        state.scrollLength - composerOverlayHeight - anchorOffset,
-    );
+    const usableViewportHeight = resolveUsableViewportHeight({
+        viewportHeight: state.scrollLength,
+        composerOverlayHeight,
+        anchorOffset,
+    });
     const turnHeight = Math.max(0, lastBottom - anchorTop);
     const visibleUsableBottom = state.scroll + usableViewportHeight;
     const targetScrollToRevealEnd = Math.max(0, lastBottom - usableViewportHeight);
@@ -284,9 +396,9 @@ export const getAnchoredTurnMetrics = ({
 // "At the end" for follow purposes is a tight band, not the list's isNearEnd
 // (half a viewport): that band hid the scroll-to-bottom pill and re-armed
 // follow while the user had genuinely scrolled away, yanking them back on the
-// next stream chunk. Distance is measured against the full content length —
-// reserved anchored end space included — so a parked anchored turn counts as
-// the live edge.
+// next stream chunk. Distance is measured against the parked offset while a
+// send is reserved (`data-oc-timeline-park-end`), otherwise against the full
+// content length. Slack below the parked row is still the live edge.
 export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 /**
  * Scroll-to-bottom stays hidden until the viewport has travelled this far
