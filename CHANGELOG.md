@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+
+## [1.19.0-beta.9] - 2026-08-29
+
+### Fixed
+
+- Loading older history no longer jumps the transcript to the newest message. The at-end signal could stay stale after switching sessions, which made the load-older button skip releasing end pinning, and the list then treated the prepended history as a reason to scroll to the live edge.
+- The read position is now captured when older history is requested rather than when it arrives, so end pinning is stood down before the new rows can move the viewport.
+
 ## [1.19.0-beta.8] - 2026-08-29
 
 ### 聊天
