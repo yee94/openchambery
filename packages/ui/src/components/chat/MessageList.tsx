@@ -673,6 +673,12 @@ interface MessageListProps {
      */
     timelineFollowEnabled?: boolean;
     /**
+     * Bumped when a load of earlier history is requested, before the fetch.
+     * Forwarded so the list can stand end maintenance down and capture the
+     * read position while the transcript is still untouched.
+     */
+    timelineHistoryAnchorToken?: number;
+    /**
      * The list owns the scroll position, so "is the viewport at the live edge"
      * is only knowable from inside it. It gates load-older and the
      * scroll-to-bottom button, both of which used to read auto-follow's pin.
@@ -2060,6 +2066,7 @@ type LegendTimelineHostProps = {
     scrollDataset?: Record<string, string>;
     onScroll?: () => void;
     followEnabled?: boolean;
+    historyAnchorToken?: number;
     onIsAtEndChange?: (isAtEnd: boolean) => void;
 };
 
@@ -2094,6 +2101,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
     scrollDataset,
     onScroll,
     followEnabled = true,
+    historyAnchorToken,
     onIsAtEndChange,
 }) => {
     const historyCount = historyEntries.length;
@@ -2227,6 +2235,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
                 scrollElementRef={scrollRef}
                 registerList={registerList}
                 followEnabled={followEnabled}
+                historyAnchorToken={historyAnchorToken}
                 sessionIsWorking={sessionIsWorking}
                 header={header}
                 footer={footer}
@@ -2262,6 +2271,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     timelineScrollDataset,
     timelineOnScroll,
     timelineFollowEnabled,
+    timelineHistoryAnchorToken,
     timelineOnIsAtEndChange,
 }, ref) => {
     streamPerfCount('ui.message_list.render');
@@ -2905,6 +2915,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 scrollDataset={timelineScrollDataset}
                 onScroll={timelineOnScroll}
                 followEnabled={timelineFollowEnabled}
+                historyAnchorToken={timelineHistoryAnchorToken}
                 onIsAtEndChange={timelineOnIsAtEndChange}
             />
         );

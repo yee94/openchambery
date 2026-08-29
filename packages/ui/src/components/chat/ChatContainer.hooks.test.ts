@@ -140,14 +140,42 @@ describe('ChatContainer source contracts', () => {
 
         expect(clickStart).toBeGreaterThan(-1);
         const clickBody = source.slice(clickStart, clickEnd);
-        expect(clickBody).toContain('if (!legendIsAtEnd) {');
         expect(clickBody).toContain('setLegendFollowReleased(true);');
+        // Unconditional. Gating this on being away from the live edge trusted
+        // the at-end signal, and a stale-true reading skipped the release
+        // silently — which is how the prepend could still reach the live edge.
+        expect(clickBody).not.toContain('if (!legendIsAtEnd)');
         // Release must precede the fetch that commits the prepend.
         expect(clickBody.indexOf('setLegendFollowReleased(true);'))
             .toBeLessThan(clickBody.indexOf('timelineLoadEarlier('));
         // Released state reaches the list as suspended follow.
         expect(source).toContain('timelineFollowSuspended={legendFollowReleased}');
         expect(source).toContain('timelineFollowEnabled={!pendingRevealWork && !timelineFollowSuspended}');
+    });
+
+    /**
+     * Releasing follow is not enough on its own: the list decides what to do
+     * with a prepend inside the commit that delivers it, so the read position
+     * has to be captured — and end maintenance stood down — while the
+     * transcript is still untouched. Every load path funnels through the
+     * controller's `loadEarlier`, so the arm hangs off that rather than off the
+     * button, which is the only path mobile uses but not the only one there is.
+     */
+    test('an older-history fetch arms the timeline anchor before it goes out', () => {
+        const controllerSource = readFileSync(join(here, 'hooks/useChatTimelineController.ts'), 'utf8');
+
+        expect(controllerSource).toContain('onWillLoadEarlier?: () => void;');
+        expect(controllerSource).toContain('onWillLoadEarlier?.();');
+        // Only for user-initiated loads: automatic backfill has no read
+        // position to protect and must leave end maintenance alone.
+        const armIndex = controllerSource.indexOf('onWillLoadEarlier?.();');
+        expect(controllerSource.slice(0, armIndex)).toContain('if (options?.userInitiated) {');
+        // Armed before the fetch, not after it resolves.
+        expect(armIndex).toBeLessThan(controllerSource.indexOf('loadEarlierMutation.mutateAsync('));
+
+        expect(source).toContain('onWillLoadEarlier: armTimelineHistoryAnchor,');
+        expect(source).toContain('setTimelineHistoryAnchorToken((token) => token + 1);');
+        expect(source).toContain('timelineHistoryAnchorToken={timelineHistoryAnchorToken}');
     });
 
     test('latches confirmed subagent footer identity through temporary session identity gaps', () => {

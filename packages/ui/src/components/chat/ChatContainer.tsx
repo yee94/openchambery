@@ -292,6 +292,7 @@ type ChatViewportProps = {
     handleHistoryUpwardIntent: () => void;
     onTimelineIsAtEndChange: (isAtEnd: boolean) => void;
     timelineFollowSuspended: boolean;
+    timelineHistoryAnchorToken: number;
     scrollToBottom: () => void;
     sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
@@ -329,6 +330,7 @@ const ChatViewport = React.memo(({
     handleHistoryUpwardIntent,
     onTimelineIsAtEndChange,
     timelineFollowSuspended,
+    timelineHistoryAnchorToken,
     scrollToBottom,
     sessionQuestions,
     sessionPermissions,
@@ -487,6 +489,7 @@ const ChatViewport = React.memo(({
                         timelineScrollDataset={LEGEND_SCROLL_DATASET}
                         timelineOnScroll={handleHistoryScroll}
                         timelineFollowEnabled={!pendingRevealWork && !timelineFollowSuspended}
+                        timelineHistoryAnchorToken={timelineHistoryAnchorToken}
                         timelineOnIsAtEndChange={onTimelineIsAtEndChange}
                         headerSlot={(
                             <>
@@ -710,6 +713,7 @@ const ChatViewport = React.memo(({
         && prev.handleHistoryUpwardIntent === next.handleHistoryUpwardIntent
         && prev.onTimelineIsAtEndChange === next.onTimelineIsAtEndChange
         && prev.timelineFollowSuspended === next.timelineFollowSuspended
+        && prev.timelineHistoryAnchorToken === next.timelineHistoryAnchorToken
         && prev.scrollToBottom === next.scrollToBottom
         && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
@@ -1369,6 +1373,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // Gestures set this; only arriving at the true end or an explicit jump
     // clears it.
     const [legendFollowReleased, setLegendFollowReleased] = React.useState(false);
+    // Bumped when a load of earlier history is requested. The timeline reads
+    // the bump to capture the read position and stand end maintenance down
+    // before the rows arrive; monotonic, so it survives session swaps.
+    const [timelineHistoryAnchorToken, setTimelineHistoryAnchorToken] = React.useState(0);
+    const armTimelineHistoryAnchor = useEvent(() => {
+        setTimelineHistoryAnchorToken((token) => token + 1);
+    });
     const handleTimelineIsAtEndChange = useEvent((atEnd: boolean) => {
         setLegendIsAtEnd(atEnd);
         if (atEnd) {
@@ -1550,6 +1561,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         // Only the active desktop transcript auto-fills short first paint;
         // expanded-input and mobile keep explicit load paths only.
         autoFillEnabled: active && !isDesktopExpandedInput,
+        onWillLoadEarlier: armTimelineHistoryAnchor,
     });
     const resumeToLatestInstant = useEvent(() => {
         setLegendFollowReleased(false);
@@ -1584,14 +1596,14 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const isLoadOlderBusy = timelineController.isLoadingOlder;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = useEvent(() => {
-        // Loading older history is an explicit move into the past: release
-        // follow before the fetch, or the prepend's content growth reads as
-        // an end correction and throws the viewport to the live edge. Held
-        // at the end, where that correction is a no-op and releasing would
-        // strand follow off until the next scroll re-arms the at-end signal.
-        if (!legendIsAtEnd) {
-            setLegendFollowReleased(true);
-        }
+        // Loading older history is an explicit move into the past, so follow
+        // is released unconditionally. This used to be conditional on being
+        // away from the live edge, on the grounds that an end correction is a
+        // no-op when already there — but that trusted the at-end signal, and
+        // a signal reading stale-true (as it did across a session swap) skips
+        // the release silently and lets the prepend throw the reader to the
+        // newest message. Arriving back at the true end re-arms follow.
+        setLegendFollowReleased(true);
         void timelineLoadEarlier({ userInitiated: true });
     });
 
@@ -2216,6 +2228,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 handleHistoryUpwardIntent={handleTimelineUpwardIntent}
                 onTimelineIsAtEndChange={handleTimelineIsAtEndChange}
                 timelineFollowSuspended={legendFollowReleased}
+                timelineHistoryAnchorToken={timelineHistoryAnchorToken}
                 scrollToBottom={resumeToLatestInstant}
                 sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}

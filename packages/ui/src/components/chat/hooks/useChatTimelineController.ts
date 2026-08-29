@@ -70,6 +70,15 @@ interface UseChatTimelineControllerOptions {
     showScrollButton: boolean;
     /** Active desktop transcript only (not expanded-input). Mobile stays false. */
     autoFillEnabled?: boolean;
+    /**
+     * Fired when a user-initiated load of earlier history is about to go out.
+     *
+     * The commit that delivers the prepend is too late to prepare for it: the
+     * list absorbs the data change inside that commit, so whatever has to be
+     * in place first — the read position to preserve, end maintenance stood
+     * down — has to be arranged here, while the transcript is untouched.
+     */
+    onWillLoadEarlier?: () => void;
 }
 
 export interface UseChatTimelineControllerResult {
@@ -632,6 +641,7 @@ export const useChatTimelineController = ({
     isPinned,
     showScrollButton,
     autoFillEnabled = false,
+    onWillLoadEarlier,
 }: UseChatTimelineControllerOptions): UseChatTimelineControllerResult => {
     const previousTurnWindowModelRef = React.useRef<TurnWindowModel | null>(null);
     const previousMessagesRef = React.useRef<ChatMessageEntry[] | null>(null);
@@ -1444,6 +1454,12 @@ export const useChatTimelineController = ({
             && loadEarlierMutation.variables?.sessionId === targetSessionId
         ) {
             return;
+        }
+        // Past the dedupe, so this call really is going to fetch. Automatic
+        // backfill is excluded: it has no read position to protect and must
+        // leave end maintenance alone.
+        if (options?.userInitiated) {
+            onWillLoadEarlier?.();
         }
         try {
             const grew = await loadEarlierMutation.mutateAsync({

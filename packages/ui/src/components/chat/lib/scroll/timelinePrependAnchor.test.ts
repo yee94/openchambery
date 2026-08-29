@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+    captureTimelineAnchorArm,
     captureTimelinePrependAnchor,
     measureTimelineAnchorDrift,
     resolveTimelineAnchorHoldStep,
@@ -30,6 +31,35 @@ const listState = (input: {
         positionByKey: (key) => positions[key],
     };
 };
+
+describe('captureTimelineAnchorArm', () => {
+    test('snapshots the read position together with the keys that predate the fetch', () => {
+        const arm = captureTimelineAnchorArm(
+            listState({ scroll: 250, start: 2, keys: ['a', 'b', 'c', 'd'] }),
+            ['a', 'b', 'c', 'd'],
+        );
+
+        expect(arm?.anchor).toEqual({ key: 'c', offsetFromViewportTop: -50 });
+        // The filter the list is given: rows outside this set arrived with the
+        // fetch, and those are the ones still carrying estimated heights.
+        expect([...arm?.knownKeys ?? []]).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    test('the snapshot does not alias the caller\'s key list', () => {
+        const keys = ['a', 'b'];
+        const arm = captureTimelineAnchorArm(listState({ scroll: 0, start: 0, keys }), keys);
+        keys.push('prepended');
+
+        expect(arm?.knownKeys.has('prepended')).toBe(false);
+    });
+
+    test('nothing measurable to hold means no arm', () => {
+        expect(captureTimelineAnchorArm(
+            listState({ scroll: 0, start: 0, keys: [] }),
+            [],
+        )).toBeNull();
+    });
+});
 
 describe('captureTimelinePrependAnchor', () => {
     test('names the topmost row in view and how far below the fold it starts', () => {

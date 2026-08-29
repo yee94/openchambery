@@ -14,6 +14,23 @@
 // So the anchor is named here instead: the row the reader was actually looking
 // at before the fetch, held until the inserted block has stopped resizing.
 //
+// Captured when the load is REQUESTED, not when its rows commit. Reacting to
+// the commit is a frame too late for every lever that matters: the list handles
+// the data change during that same commit, so an anchor published by an effect
+// afterwards misses the one frame it needed to influence. Worse, end
+// maintenance is still armed for that frame, and the list ignores distance from
+// the end once its maintain pass has latched (`pendingMaintainScrollAtEnd`) —
+// it simply scrolls to the live edge, which is how loading older history could
+// throw the reader to the newest message instead of merely a few pixels off.
+//
+// The row filter is expressed as "keys that existed before the fetch" rather
+// than the single anchor key. The list treats `shouldRestorePosition` as a hard
+// filter over the rows in view and compensates by ZERO when nothing matches, so
+// naming one key means any frame where that row is out of view silently loses
+// all compensation. Excluding just the newcomers keeps every older row eligible
+// as a fallback while still denying the list the estimated-height rows it would
+// otherwise have picked.
+//
 // The measurements come from the list's own bookkeeping (`positionAtIndex` /
 // `positionByKey` against `scroll`), not from `getBoundingClientRect`. Both
 // coordinate spaces would work, but reading the list's numbers costs no layout
@@ -105,6 +122,43 @@ export const captureTimelinePrependAnchor = (
 
     return { key, offsetFromViewportTop: position - state.scroll };
 };
+
+/** Everything the hold needs, snapshotted before the request goes out. */
+export interface TimelineAnchorArm {
+    readonly anchor: TimelinePrependAnchor;
+    /**
+     * The row keys the transcript already had.
+     *
+     * Anything outside this set arrived with the fetch, which is what makes it
+     * usable as the list's row filter without having to wait and diff the two
+     * key lists after the rows have already committed.
+     */
+    readonly knownKeys: ReadonlySet<string>;
+}
+
+/**
+ * Snapshots the read position at the moment a history load is requested.
+ *
+ * Null when the list has nothing measurable to anchor to — an empty or
+ * not-yet-laid-out transcript, where there is no read position to preserve.
+ */
+export const captureTimelineAnchorArm = (
+    state: TimelineAnchorReadState,
+    entryKeys: readonly string[],
+): TimelineAnchorArm | null => {
+    const anchor = captureTimelinePrependAnchor(state, entryKeys);
+    if (anchor === null) return null;
+    return { anchor, knownKeys: new Set(entryKeys) };
+};
+
+/**
+ * How long an arm waits for its rows before giving up.
+ *
+ * End maintenance stays off while armed, so an arm whose request fails, returns
+ * nothing, or never resolves must not leave the live edge unmaintained forever.
+ * Generous because the request crosses a relay on mobile.
+ */
+export const TIMELINE_ANCHOR_ARM_EXPIRY_MS = 15000;
 
 /**
  * Scroll offset that puts the anchor back where it was captured.
