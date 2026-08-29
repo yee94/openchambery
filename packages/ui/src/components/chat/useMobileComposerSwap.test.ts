@@ -89,6 +89,15 @@ describe('useMobileComposerSwap gesture commit', () => {
         });
     };
 
+    // Overscroll cannot be expressed as a distance: iOS drives scrollTop below
+    // zero, so these tests set it directly.
+    const fireScrollTop = async (scrollTop: number) => {
+        await act(async () => {
+            scrollEl.scrollTop = scrollTop;
+            scrollEl.dispatchEvent(new Event('scroll'));
+        });
+    };
+
     const advance = async (ms: number) => {
         await act(async () => {
             vi.advanceTimersByTime(ms);
@@ -166,6 +175,46 @@ describe('useMobileComposerSwap gesture commit', () => {
             phase: 'rest',
             rest: 'expanded',
         });
+    });
+
+    test('travel toward the bottom reveals the composer far from the live edge', async () => {
+        await mount();
+
+        await fireScroll(300);
+        expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
+
+        // One short downward step stays below the reveal threshold.
+        await fireScroll(280);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        // Travel accumulates across events, so a slow scroll qualifies too.
+        await fireScroll(270);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
+        await advance(COMPOSER_SWAP_SNAP_MS);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'expanded' });
+
+        // Later events of the same gesture are still far from the bottom; the
+        // reveal has to survive them instead of collapsing on absolute distance.
+        await fireScroll(260);
+        expect(readSwap(scopeEl).rest).toBe('expanded');
+
+        // Scrolling back up hands the endpoint back to distance follow.
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+    });
+
+    test('iOS top rubber-band spring-back is not downward travel', async () => {
+        await mount();
+
+        await fireScroll(300);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        // Overscroll past the top, then let the spring return to rest. The
+        // second event is 60px of downward motion with no intent behind it.
+        await fireScrollTop(-60);
+        expect(scrollEl.scrollTop).toBe(-60);
+        await fireScrollTop(0);
+        expect(readSwap(scopeEl).rest).toBe('compact');
     });
 
     test('multi-touch counts until the last finger lifts', async () => {

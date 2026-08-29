@@ -12,6 +12,10 @@
  *   from progress vs the commit threshold.
  * - After a compact snap, the hook may suppress return-follow briefly so iOS
  *   momentum cannot bounce straight back — that is NOT a permanent latch.
+ * - Distance alone cannot decide the compact→expanded direction once the
+ *   composer may be expanded far from the bottom, so the hook supplies travel
+ *   direction: `towardBottom` reveals from outside the follow band, and
+ *   `holdExpanded` keeps that reveal alive until the user scrolls up again.
  */
 
 /** Half-range px; commit threshold sits at this distance from the bottom. */
@@ -25,6 +29,12 @@ export const COMPOSER_SWAP_SNAP_MS = 240;
 export const COMPOSER_SWAP_IDLE_MS = 120;
 /** After landing compact, ignore return-follow this long (momentum settle). */
 export const COMPOSER_SWAP_COMPACT_SETTLE_MS = 320;
+/**
+ * Downward travel that reveals a compact composer from outside the follow band.
+ * Accumulated across events so a slow deliberate scroll qualifies too; iOS
+ * top rubber-band spring-back is excluded by the hook, not by this distance.
+ */
+export const COMPOSER_SWAP_REVEAL_TRAVEL_PX = 24;
 export const COMPOSER_SWAP_CSS_VAR = '--oc-mobile-composer-swap';
 
 export type ComposerSwapRest = 'expanded' | 'compact';
@@ -135,7 +145,13 @@ const followFromCompact = (distanceFromBottom: number): number => {
 export const applyComposerSwapScroll = (
     state: ComposerSwapState,
     distanceFromBottom: number,
-    options: { suppressReturn?: boolean } = {},
+    options: {
+        suppressReturn?: boolean;
+        /** The viewport is travelling toward the live edge (hook-measured). */
+        towardBottom?: boolean;
+        /** A scroll reveal owns the expanded endpoint; ignore absolute distance. */
+        holdExpanded?: boolean;
+    } = {},
 ): ComposerSwapState => {
     if (state.pinned) return state;
 
@@ -150,6 +166,17 @@ export const applyComposerSwapScroll = (
 
     if (base.rest === 'expanded') {
         if (distance <= COMPOSER_SWAP_NOISE_PX) {
+            return settle(base, {
+                phase: 'rest',
+                rest: 'expanded',
+                progress: 0,
+            });
+        }
+        // Expanded used to imply "at the bottom", so any distance meant the user
+        // had scrolled up. A scroll reveal breaks that: the composer is expanded
+        // hundreds of px from the live edge, and absolute-distance follow would
+        // collapse it again on the very next event of the same downward gesture.
+        if (options.holdExpanded) {
             return settle(base, {
                 phase: 'rest',
                 rest: 'expanded',
@@ -186,6 +213,18 @@ export const applyComposerSwapScroll = (
             phase: 'rest',
             rest: 'compact',
             progress: 1,
+        });
+    }
+
+    // Outside the follow band the composer used to stay compact no matter how
+    // far the user scrolled back down — it only returned once the bottom band
+    // was in reach. Travel toward the live edge reveals it there instead; inside
+    // the band the tuned proportional follow below still owns the motion.
+    if (options.towardBottom && distance >= COMPOSER_SWAP_FULL_RANGE_PX) {
+        return settle(base, {
+            phase: 'snapping',
+            rest: 'expanded',
+            progress: 0,
         });
     }
 
