@@ -180,9 +180,10 @@ test('native composer autocomplete sits above the card and accepts Return or tap
   assert.match(popup, /addSubview\(tableView\)/);
   assert.doesNotMatch(popup, /chrome\.contentView\.addSubview\(tableView\)/);
   assert.match(popup, /chrome\.isUserInteractionEnabled = false/);
-  assert.match(popup, /delaysContentTouches = false/);
-  assert.match(popup, /acceptTapped/);
-  assert.match(popup, /touchUpInside/);
+  assert.match(popup, /delaysContentTouches = true/);
+  assert.match(popup, /didSelectRowAt/);
+  assert.doesNotMatch(popup, /acceptTapped/);
+  assert.doesNotMatch(popup, /touchUpInside/);
   assert.match(popup, /UIGraphicsImageRenderer/);
   assert.match(plugin, /optionalInt\(call, "caret"\)/);
   assert.match(view, /caret: Int\?/);
