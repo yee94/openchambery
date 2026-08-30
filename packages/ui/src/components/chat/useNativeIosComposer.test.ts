@@ -40,6 +40,8 @@ describe('useNativeIosComposer', () => {
     expect(source).not.toContain(`onSend: (text) => {
       nativeTextRef.current = text;
       echoingNativeRef.current = true;`);
+    expect(source).toContain('useLayoutEffect');
+    expect(source).toContain('setNativeComposerDocumentClass(root, true)');
     expect(source).toContain('nativeIosComposerSession.retain');
     expect(source).toContain('nativeIosComposerSession.release');
     expect(source).toContain('nativeIosComposerSession.bind');

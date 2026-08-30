@@ -305,6 +305,7 @@ describe('MobileTabsRoot secondary enter', () => {
     expect(source).toContain('useNativeIosTabBar');
     expect(source).toContain("nativeTabBarMode === 'web'");
     expect(source).toContain('<MobileTabBar activeTab={selectedTab}');
+    expect(source).toContain('nativeIosComposerSession.warm');
   });
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useEvent } from '@reactuses/core';
 
 import { findAttachmentCitationRanges } from '@/components/chat/attachmentCitations';
@@ -23,6 +23,7 @@ import {
   rasterizeLogoPngBase64,
   resolveCssVarToHex,
   resolveNativeComposerTextWrite,
+  setNativeComposerDocumentClass,
   type NativeIosComposerAttachmentPreview,
   type NativeIosComposerAutocomplete,
   type NativeIosComposerState,
@@ -212,6 +213,15 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     scrollAria: args.scrollAria,
     autocomplete: autocompleteRef.current,
   });
+
+  useLayoutEffect(() => {
+    if (!available || typeof document === 'undefined') return;
+    const root = document.documentElement;
+    setNativeComposerDocumentClass(root, true);
+    return () => {
+      setNativeComposerDocumentClass(root, false);
+    };
+  }, [available]);
 
   useEffect(() => {
     if (!available || typeof document === 'undefined') return;

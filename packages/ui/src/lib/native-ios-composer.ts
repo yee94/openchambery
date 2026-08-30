@@ -78,6 +78,38 @@ export type NativeIosComposerState = {
   autocomplete: NativeIosComposerAutocomplete;
 };
 
+/** Hidden install payload so homepage can pre-create the glass view. */
+export const hiddenNativeIosComposerWarmState = (): NativeIosComposerState => ({
+  text: '',
+  placeholder: '',
+  modelLabel: '',
+  modelVariantLabel: '',
+  modelIcon: '',
+  canSend: false,
+  canAbort: false,
+  attachmentCount: 0,
+  attachmentPreviews: [],
+  citationRanges: [],
+  appearance: 'dark',
+  attachAria: '',
+  attachTitle: '',
+  attachPhotosLabel: '',
+  attachFilesLabel: '',
+  attachCancelLabel: '',
+  sendAria: '',
+  queueAria: '',
+  stopAria: '',
+  modelAria: '',
+  agentAria: '',
+  agentLabel: '',
+  agentColor: NATIVE_IOS_COMPOSER_COLOR_FALLBACK,
+  agentIdenticon: Array.from({ length: 25 }, () => 0),
+  suppressed: true,
+  showScrollToBottom: false,
+  scrollAria: '',
+  autocomplete: emptyNativeComposerAutocomplete(),
+});
+
 export type NativeIosComposerPlugin = {
   present: (state: NativeIosComposerState) => Promise<void>;
   update: (state: Partial<NativeIosComposerState> & { forceText?: boolean; caret?: number }) => Promise<void>;

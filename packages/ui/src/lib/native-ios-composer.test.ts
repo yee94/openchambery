@@ -7,6 +7,7 @@ import {
   emptyNativeComposerAutocomplete,
   evaluateNativeIosComposerAvailability,
   filesFromNativeComposerPayload,
+  hiddenNativeIosComposerWarmState,
   handoffNativeComposerSendToWeb,
   nativeComposerStatesEqual,
   nativeIosComposerAppearanceFromRoot,
@@ -102,6 +103,13 @@ describe('native iOS composer contract', () => {
     expect(parseNativeComposerHeight({ height: Number.NaN })).toBe(0);
     expect(parseNativeComposerHeight({})).toBe(0);
     expect(parseNativeComposerHeight(null)).toBe(0);
+  });
+
+  test('warm state installs hidden without claiming the document class', () => {
+    const warm = hiddenNativeIosComposerWarmState();
+    expect(warm.suppressed).toBe(true);
+    expect(warm.text).toBe('');
+    expect(warm.attachmentPreviews).toEqual([]);
   });
 
   test('toggles the document class and height var without writing the web foot inset', () => {

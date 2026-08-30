@@ -112,4 +112,30 @@ export const resolveNativeIosTabBarVisible = (
   overlayBusy: boolean,
 ): boolean => requested && !overlayBusy;
 
+export type NativeIosTabBarSyncDecision =
+  | { action: 'hide' }
+  | { action: 'skip' }
+  | { action: 'present' };
+
+/**
+ * Hide/show the process-owned dock without dropping lastState.
+ * Clearing lastState on hide forced a full present() on every return from
+ * chat, unlike the composer overlay which conceal/reveals the same view.
+ */
+export const resolveNativeIosTabBarSync = (input: {
+  visible: boolean;
+  overlayHidden: boolean;
+  lastState: NativeIosTabBarState | null;
+  nextState: NativeIosTabBarState;
+}): NativeIosTabBarSyncDecision => {
+  if (!input.visible) {
+    return input.overlayHidden ? { action: 'skip' } : { action: 'hide' };
+  }
+  if (input.overlayHidden) return { action: 'present' };
+  if (input.lastState && nativeTabBarStatesEqual(input.lastState, input.nextState)) {
+    return { action: 'skip' };
+  }
+  return { action: 'present' };
+};
+
 export const getNativeIosTabBarPlugin = (): NativeIosTabBarPlugin => OpenChamberTabBar;

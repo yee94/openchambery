@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 
@@ -11,8 +11,8 @@ import {
   getNativeIosTabBarPlugin,
   nativeIosTabBarAccentFromRoot,
   nativeIosTabBarAppearanceFromRoot,
-  nativeTabBarStatesEqual,
   parseNativeIosTabId,
+  resolveNativeIosTabBarSync,
   resolveNativeIosTabBarVisible,
   setNativeTabBarDocumentClass,
   type NativeIosTabBarItem,
@@ -43,6 +43,7 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
   const [rejected, setRejected] = useState(false);
   const [overlayBusy, setOverlayBusy] = useState(false);
   const lastStateRef = useRef<NativeIosTabBarState | null>(null);
+  const overlayHiddenRef = useRef(false);
   const rejectedRef = useRef(false);
   const onTabChange = useEvent(args.onTabChange);
   const tabsKey = args.tabs.map((tab) => `${tab.id}:${tab.label}`).join('|');
@@ -99,7 +100,7 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
     };
   }, [available]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!available || rejectedRef.current) return;
     let cancelled = false;
     const plugin = getNativeIosTabBarPlugin();
@@ -112,13 +113,18 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
     };
 
     const visible = resolveNativeIosTabBarVisible(args.visible, overlayBusy);
+    const decision = resolveNativeIosTabBarSync({
+      visible,
+      overlayHidden: overlayHiddenRef.current,
+      lastState: lastStateRef.current,
+      nextState: state,
+    });
+
     const sync = async () => {
-      if (!visible) {
-        lastStateRef.current = null;
-        await plugin.hide();
-        return;
-      }
-      if (lastStateRef.current && nativeTabBarStatesEqual(lastStateRef.current, state)) {
+      if (decision.action === 'skip') return;
+      if (decision.action === 'hide') {
+        overlayHiddenRef.current = true;
+        void plugin.hide();
         return;
       }
       const result = await plugin.present(state);
@@ -132,6 +138,7 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
         }
         return;
       }
+      overlayHiddenRef.current = false;
       lastStateRef.current = state;
       setAdopted(true);
       if (typeof document !== 'undefined') {

@@ -3,6 +3,7 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import {
   filesFromNativeComposerPayload,
   getNativeIosComposerPlugin,
+  hiddenNativeIosComposerWarmState,
   parseNativeComposerAcceptIndex,
   parseNativeComposerHeight,
   parseNativeComposerRemoveAttachmentId,
@@ -33,20 +34,22 @@ export type NativeIosComposerSessionHandlers = {
 /**
  * One native overlay for the process. ChatInput may remount on every phone
  * page (projects↔chat, nested push/pop); the UITextView / glass view must not.
- * Leaving chat calls `conceal` (`hide`) first so the pill is gone before the
- * Projects underlay is fully on screen. Listener teardown still waits one
- * macrotask so a same-flush remount can retain without a hide/show.
+ * Homepage `warm` pre-creates the glass while the tab bar is up so entering
+ * chat is show/apply, not UIGlassEffect init. Leaving chat calls `conceal`
+ * (`hide`) first so the pill is gone before the Projects underlay is fully on
+ * screen. `dismiss` waits one macrotask for a same-flush remount; listeners
+ * stay attached like the native tab bar so the next enter does not re-bridge.
  */
 export const createNativeIosComposerSession = (
   getPlugin: () => NativeIosComposerPlugin = getNativeIosComposerPlugin,
 ) => {
   let retainCount = 0;
-  let generation = 0;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let listeners: PluginListenerHandle[] = [];
   let handlers: NativeIosComposerSessionHandlers | null = null;
   let lastText = '';
   let concealed = false;
+  let warmed = false;
 
   const cancelHide = (): void => {
     if (hideTimer === null) return;
@@ -64,7 +67,7 @@ export const createNativeIosComposerSession = (
   };
 
   const attachListeners = async (): Promise<void> => {
-    const gen = generation;
+    if (listeners.length > 0) return;
     const plugin = getPlugin();
     const next = await Promise.all([
       plugin.addListener('textChanged', (payload: NativeIosComposerEventPayload) => {
@@ -103,7 +106,7 @@ export const createNativeIosComposerSession = (
       }),
       plugin.addListener('autocompleteDismiss', () => { dispatch('onAutocompleteDismiss'); }),
     ]);
-    if (generation !== gen || retainCount === 0) {
+    if (listeners.length > 0) {
       for (const handle of next) void handle.remove();
       return;
     }
@@ -112,11 +115,8 @@ export const createNativeIosComposerSession = (
 
   const commitHide = (root: HTMLElement): void => {
     if (retainCount > 0) return;
-    generation += 1;
     handlers = null;
     concealed = false;
-    for (const handle of listeners) void handle.remove();
-    listeners = [];
     setNativeComposerDocumentClass(root, false);
     void getPlugin().dismiss();
   };
@@ -146,10 +146,21 @@ export const createNativeIosComposerSession = (
       concealed = false;
       void getPlugin().show();
     },
+    /**
+     * Install the glass overlay while it is still hidden. Safe on the
+     * homepage: does not set the document class or increment retainCount.
+     * A later retain present() applies live state and unhides.
+     */
+    async warm(): Promise<void> {
+      if (warmed || retainCount > 0) return;
+      warmed = true;
+      await getPlugin().present(hiddenNativeIosComposerWarmState());
+    },
     async retain(root: HTMLElement, state: NativeIosComposerState): Promise<void> {
       cancelHide();
       retainCount += 1;
       concealed = false;
+      warmed = true;
       lastText = state.text;
       setNativeComposerDocumentClass(root, true);
       if (listeners.length === 0) await attachListeners();
@@ -165,12 +176,19 @@ export const createNativeIosComposerSession = (
       }, 0);
     },
     /** Test / reset only. */
-    snapshot(): { retainCount: number; listenerCount: number; hidePending: boolean; concealed: boolean } {
+    snapshot(): {
+      retainCount: number;
+      listenerCount: number;
+      hidePending: boolean;
+      concealed: boolean;
+      warmed: boolean;
+    } {
       return {
         retainCount,
         listenerCount: listeners.length,
         hidePending: hideTimer !== null,
         concealed,
+        warmed,
       };
     },
   };

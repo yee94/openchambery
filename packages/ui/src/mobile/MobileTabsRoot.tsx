@@ -4,6 +4,8 @@ import { useEvent } from '@reactuses/core';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { useI18n } from '@/lib/i18n';
+import { canUseNativeIosComposer } from '@/lib/native-ios-composer';
+import { nativeIosComposerSession } from '@/lib/native-ios-composer-session';
 import { cn } from '@/lib/utils';
 
 import { MobileTabBar } from './MobileTabBar';
@@ -151,6 +153,12 @@ export function MobileTabsRoot({
   });
   const nativeTabBarAdopted = nativeTabBarMode === 'native';
   const showWebTabBar = showTabBar && nativeTabBarMode === 'web';
+
+  React.useEffect(() => {
+    if (!nativeTabBarAdopted) return;
+    if (!canUseNativeIosComposer(true)) return;
+    void nativeIosComposerSession.warm();
+  }, [nativeTabBarAdopted]);
 
   return (
     <div

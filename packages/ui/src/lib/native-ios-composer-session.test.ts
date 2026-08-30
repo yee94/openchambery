@@ -91,7 +91,7 @@ describe('native iOS composer session', () => {
     expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(true);
   });
 
-  test('idle release hides once and drops listeners', async () => {
+  test('idle release dismisses without dropping listeners', async () => {
     const { plugin } = createPlugin();
     const session = createNativeIosComposerSession(() => plugin);
     const root = document.createElement('html');
@@ -105,10 +105,49 @@ describe('native iOS composer session', () => {
     expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(false);
     expect(session.snapshot()).toMatchObject({
       retainCount: 0,
-      listenerCount: 0,
+      listenerCount: 13,
       hidePending: false,
       concealed: false,
+      warmed: true,
     });
+  });
+
+  test('warm installs a hidden overlay without the document class', async () => {
+    const { plugin } = createPlugin();
+    const session = createNativeIosComposerSession(() => plugin);
+    const root = document.createElement('html');
+
+    await session.warm();
+    expect(plugin.present).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(plugin.present).mock.calls[0][0]).toMatchObject({ suppressed: true });
+    expect(plugin.addListener).not.toHaveBeenCalled();
+    expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(false);
+    expect(session.snapshot()).toMatchObject({
+      retainCount: 0,
+      warmed: true,
+      listenerCount: 0,
+    });
+
+    await session.warm();
+    expect(plugin.present).toHaveBeenCalledTimes(1);
+
+    await session.retain(root, state({ text: 'hi' }));
+    await Promise.resolve();
+    expect(plugin.present).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(plugin.present).mock.calls[1][0]).toMatchObject({ text: 'hi', suppressed: false });
+    expect(plugin.addListener).toHaveBeenCalledTimes(13);
+    expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(true);
+  });
+
+  test('warm is a no-op while the overlay is retained', async () => {
+    const { plugin } = createPlugin();
+    const session = createNativeIosComposerSession(() => plugin);
+    const root = document.createElement('html');
+
+    await session.retain(root, state({ text: 'live' }));
+    await session.warm();
+    expect(plugin.present).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(plugin.present).mock.calls[0][0]).toMatchObject({ text: 'live' });
   });
 
   test('conceal hides immediately and leaves the overlay installed', async () => {

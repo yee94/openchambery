@@ -7,6 +7,7 @@ import {
   nativeTabBarStatesEqual,
   NATIVE_IOS_TAB_BAR_CLASS,
   parseNativeIosTabId,
+  resolveNativeIosTabBarSync,
   resolveNativeIosTabBarVisible,
   setNativeTabBarDocumentClass,
   type NativeIosTabBarState,
@@ -94,5 +95,39 @@ describe('native iOS tab bar contract', () => {
     expect(resolveNativeIosTabBarVisible(true, true)).toBe(false);
     expect(resolveNativeIosTabBarVisible(false, false)).toBe(false);
     expect(resolveNativeIosTabBarVisible(false, true)).toBe(false);
+  });
+
+  test('hides and re-presents the same dock without dropping lastState', () => {
+    const current = state();
+    expect(resolveNativeIosTabBarSync({
+      visible: false,
+      overlayHidden: false,
+      lastState: current,
+      nextState: current,
+    })).toEqual({ action: 'hide' });
+    expect(resolveNativeIosTabBarSync({
+      visible: false,
+      overlayHidden: true,
+      lastState: current,
+      nextState: current,
+    })).toEqual({ action: 'skip' });
+    expect(resolveNativeIosTabBarSync({
+      visible: true,
+      overlayHidden: true,
+      lastState: current,
+      nextState: current,
+    })).toEqual({ action: 'present' });
+    expect(resolveNativeIosTabBarSync({
+      visible: true,
+      overlayHidden: false,
+      lastState: current,
+      nextState: current,
+    })).toEqual({ action: 'skip' });
+    expect(resolveNativeIosTabBarSync({
+      visible: true,
+      overlayHidden: false,
+      lastState: current,
+      nextState: state({ selectedTab: 'settings' }),
+    })).toEqual({ action: 'present' });
   });
 });
