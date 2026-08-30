@@ -341,10 +341,12 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         scrollButton.isHidden = true
         scrollChrome.isHidden = true
         modelButton.addTarget(self, action: #selector(modelTapped), for: .touchUpInside)
-        agentButton.addTarget(self, action: #selector(agentTapped), for: .touchUpInside)
+        agentButton.isUserInteractionEnabled = false
+        let agentTap = UITapGestureRecognizer(target: self, action: #selector(agentTapped))
         let agentLongPress = UILongPressGestureRecognizer(target: self, action: #selector(agentLongPressed(_:)))
         agentLongPress.minimumPressDuration = 0.5
-        agentButton.addGestureRecognizer(agentLongPress)
+        agentCluster.addGestureRecognizer(agentTap)
+        agentCluster.addGestureRecognizer(agentLongPress)
 
         modelButton.translatesAutoresizingMaskIntoConstraints = false
         modelButton.backgroundColor = .clear

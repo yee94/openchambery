@@ -134,6 +134,8 @@ test('native composer attach presents a document picker and expanded chrome matc
   assert.match(view, /addArrangedSubview\(agentCluster\)/);
   assert.doesNotMatch(view, /insertArrangedSubview\(agentCluster/);
   assert.match(view, /revealAgentNameBriefly/);
+  assert.match(view, /agentCluster.addGestureRecognizer\(agentTap\)/);
+  assert.match(view, /agentButton.isUserInteractionEnabled = false/);
   assert.match(view, /templateModelIcon/);
   assert.match(view, /footerSpacer/);
 });

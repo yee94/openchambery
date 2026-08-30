@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.29] - 2026-08-30
+
+### Fixed
+
+- On iPhone, tapping the agent name next to the identicon also cycles the role, not only the avatar. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
 ## [1.19.0-beta.28] - 2026-08-30
 
 ### Changed
