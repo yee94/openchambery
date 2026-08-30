@@ -97,8 +97,13 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
         tableView.dataSource = self
         tableView.keyboardDismissMode = .none
         tableView.allowsSelection = true
-        tableView.delaysContentTouches = false
+        // Default delaysContentTouches waits to see if the finger is a pan.
+        // A full-cell UIButton plus delaysContentTouches=false ate that pan,
+        // so the clamped list could not scroll. Selection is didSelectRowAt.
+        tableView.delaysContentTouches = true
         tableView.canCancelContentTouches = true
+        tableView.isScrollEnabled = true
+        tableView.alwaysBounceVertical = false
         tableView.showsVerticalScrollIndicator = true
         tableView.contentInset = UIEdgeInsets(
             top: ComposerAutocompleteMetrics.verticalInset,
@@ -195,12 +200,6 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
         if let row = rows[safe: indexPath.row] {
             cell.apply(row, highlighted: indexPath.row == highlightedIndex, isDark: appearanceIsDark)
         }
-        let row = indexPath.row
-        cell.onAccept = { [weak self] in
-            guard let self, self.rows.indices.contains(row) else { return }
-            self.highlightedIndex = row
-            self.onAccept?(row)
-        }
         return cell
     }
 
@@ -213,14 +212,11 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
 private final class ComposerAutocompleteCell: UITableViewCell {
     static let reuseId = "OpenChamberComposerAutocompleteCell"
 
-    var onAccept: (() -> Void)?
-
     private let iconView = UIImageView()
     private let titleView = UIImageView()
     private let subtitleView = UIImageView()
     private let badgeView = UIImageView()
     private let highlight = UIView()
-    private let hitButton = UIButton(type: .custom)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -260,17 +256,8 @@ private final class ComposerAutocompleteCell: UITableViewCell {
         contentView.addSubview(titleView)
         contentView.addSubview(subtitleView)
         contentView.addSubview(badgeView)
-        hitButton.translatesAutoresizingMaskIntoConstraints = false
-        hitButton.backgroundColor = .clear
-        hitButton.accessibilityElementsHidden = true
-        hitButton.addTarget(self, action: #selector(acceptTapped), for: .touchUpInside)
-        contentView.addSubview(hitButton)
 
         NSLayoutConstraint.activate([
-            hitButton.topAnchor.constraint(equalTo: contentView.topAnchor),
-            hitButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            hitButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            hitButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             highlight.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
             highlight.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2),
             highlight.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
@@ -297,10 +284,6 @@ private final class ComposerAutocompleteCell: UITableViewCell {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
-
-    @objc private func acceptTapped() {
-        onAccept?()
-    }
 
     func apply(_ row: ComposerAutocompleteRow, highlighted: Bool, isDark: Bool) {
         let color = ComposerAutocompleteMetrics.chromeColor(isDark: isDark)
