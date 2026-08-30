@@ -43,13 +43,12 @@ export type NativeIosComposerChipSpec = {
   iconName: string;
 };
 
-/** Paint-only chip: UTF-16 range, trigger well to hide, pre-tinted icon, label color. */
+/** Paint-only chip: UTF-16 range, trigger well length for whole-token delete, label color. */
 export type NativeIosComposerChipRange = {
   start: number;
   end: number;
   triggerLength: number;
   color: string;
-  iconBase64: string;
 };
 
 export type NativeIosComposerSuggestionRow = {
@@ -358,8 +357,7 @@ export const nativeComposerChipRangesEqual = (
       && item.start === other.start
       && item.end === other.end
       && item.triggerLength === other.triggerLength
-      && item.color === other.color
-      && item.iconBase64 === other.iconBase64,
+      && item.color === other.color,
     );
   })
 );
@@ -390,29 +388,15 @@ export const nativeComposerChipSpecsFromHighlights = (
   return specs;
 };
 
-export const nativeComposerChipIconNames = (
-  specs: readonly NativeIosComposerChipSpec[],
-): string[] => {
-  const names: string[] = [];
-  const seen = new Set<string>();
-  for (const spec of specs) {
-    if (seen.has(spec.iconName)) continue;
-    seen.add(spec.iconName);
-    names.push(spec.iconName);
-  }
-  return names;
-};
-
-export const paintNativeComposerChipRanges = (
+/** Range + color only — native paints label highlight and whole-token delete; no icons. */
+export const buildNativeComposerChipRanges = (
   specs: readonly NativeIosComposerChipSpec[],
   color: string,
-  icons: ReadonlyMap<string, string>,
 ): NativeIosComposerChipRange[] => specs.map((spec) => ({
   start: spec.start,
   end: spec.end,
   triggerLength: spec.triggerLength,
   color,
-  iconBase64: icons.get(`${spec.iconName}:${color}`) ?? '',
 }));
 
 export const attachmentPreviewSourceSignature = (

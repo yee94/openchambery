@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.30] - 2026-08-30
+
+### Fixed
+
+- Opening chat on iPhone no longer stalls the first frame while the native composer glass overlay is created; the shell warms it while hidden on the homepage. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Native composer chrome updates no longer repaint chip ranges on every send or scroll tick, which had made entering chat and controlling the input feel laggy.
+
+### Changed
+
+- `/` and `@` tokens in the iPhone native composer render as primary-colored labels with whole-token delete, without rasterized icon overlays, to keep typing smooth. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
 ## [1.19.0-beta.29] - 2026-08-30
 
 ### Fixed

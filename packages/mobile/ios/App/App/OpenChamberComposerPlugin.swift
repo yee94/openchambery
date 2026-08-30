@@ -263,10 +263,10 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         if let ranges = call.getArray("citationRanges") {
             composerView?.applyCitationRanges(Self.parseCitationRanges(ranges))
         }
+        // Chrome-only updates omit chipRanges. Re-painting here walks
+        // textStorage and UITextPosition on every canSend/scroll tick.
         if let ranges = call.getArray("chipRanges") {
-            composerView?.applyChipRanges(Self.parseChipRanges(ranges))
-        } else {
-            composerView?.refreshChipPaint()
+            composerView?.applyChipRanges(parseChipRanges(ranges))
         }
         if let autocomplete = call.getObject("autocomplete") {
             composerView?.applyAutocomplete(Self.parseAutocomplete(autocomplete))
@@ -674,7 +674,7 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         }
     }
 
-    private static func parseChipRanges(_ raw: JSArray) -> [ComposerChip] {
+    private func parseChipRanges(_ raw: JSArray) -> [ComposerChip] {
         raw.compactMap { entry -> ComposerChip? in
             guard let object = entry as? JSObject else { return nil }
             let startValue = object["start"]
@@ -687,12 +687,10 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
                 return nil
             }
             let color = OpenChamberComposerView.parseColor(Self.jsString(object, "color"))
-            let icon = (object["iconBase64"] as? String).flatMap { OpenChamberComposerView.decodePreviewImage($0) }
             return ComposerChip(
                 range: NSRange(location: start, length: end - start),
                 triggerLength: triggerLength,
-                color: color,
-                icon: icon
+                color: color
             )
         }
     }

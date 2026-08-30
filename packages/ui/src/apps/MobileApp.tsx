@@ -2861,6 +2861,7 @@ const MobileShell: React.FC<{
       }
     })();
   });
+
   // Record the swipe direction; the animation itself runs in the layout effect below, once the
   // new session's content has committed — running it inline in the swipe callback raced the
   // re-render and dropped the animation on roughly every other switch.

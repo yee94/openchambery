@@ -9,12 +9,11 @@ import {
   filesFromNativeComposerPayload,
   hiddenNativeIosComposerWarmState,
   handoffNativeComposerSendToWeb,
-  nativeComposerChipIconNames,
+  buildNativeComposerChipRanges,
   nativeComposerChipRangesEqual,
   nativeComposerChipSpecsFromHighlights,
   nativeComposerStatesEqual,
   nativeIosComposerAppearanceFromRoot,
-  paintNativeComposerChipRanges,
   NATIVE_IOS_COMPOSER_CLASS,
   NATIVE_IOS_COMPOSER_HEIGHT_VAR,
   packNativeIosComposerIdenticon,
@@ -156,14 +155,14 @@ describe('native iOS composer contract', () => {
     }))).toBe(false);
     expect(nativeComposerStatesEqual(state(), state({ citationRanges: [{ start: 0, end: 4 }] }))).toBe(false);
     expect(nativeComposerStatesEqual(state(), state({
-      chipRanges: [{ start: 0, end: 8, triggerLength: 2, color: '#22c55e', iconBase64: 'abc' }],
+      chipRanges: [{ start: 0, end: 8, triggerLength: 2, color: '#22c55e' }],
     }))).toBe(false);
     expect(nativeComposerStatesEqual(state(), state({
       autocomplete: { open: true, highlightedIndex: 0, rows: [{ id: 'a', title: '/undo', subtitle: '', badge: '', iconBase64: '' }] },
     }))).toBe(false);
   });
 
-  test('builds paint-only chip ranges from highlight parts without changing source glyphs', () => {
+  test('builds highlight-only chip ranges from highlight parts without changing source glyphs', () => {
     const slot = '\u2003';
     const text = `/${slot}review please`;
     const specs = nativeComposerChipSpecsFromHighlights(text, [
@@ -174,18 +173,15 @@ describe('native iOS composer contract', () => {
       { start: 0, end: 8, triggerLength: 2, iconName: 'book-open' },
     ]);
     expect(text.slice(specs[0].start, specs[0].end)).toBe(`/${slot}review`);
-    expect(nativeComposerChipIconNames(specs)).toEqual(['book-open']);
-    const icons = new Map([['book-open:#22c55e', 'png']]);
-    const painted = paintNativeComposerChipRanges(specs, '#22c55e', icons);
+    const painted = buildNativeComposerChipRanges(specs, '#22c55e');
     expect(painted).toEqual([{
       start: 0,
       end: 8,
       triggerLength: 2,
       color: '#22c55e',
-      iconBase64: 'png',
     }]);
     expect(nativeComposerChipRangesEqual(painted, painted)).toBe(true);
-    expect(nativeComposerChipRangesEqual(painted, [{ ...painted[0], iconBase64: '' }])).toBe(false);
+    expect(nativeComposerChipRangesEqual(painted, [{ ...painted[0], color: '#000000' }])).toBe(false);
     expect(nativeComposerChipSpecsFromHighlights(text, null)).toEqual([]);
     expect(nativeComposerChipSpecsFromHighlights('', [{ text: '/x', visual: { trigger: '/', icon: 'command' } }])).toEqual([]);
     expect(nativeComposerChipSpecsFromHighlights(text, [
@@ -299,8 +295,13 @@ describe('native iOS composer contract', () => {
     const canSendFlipped = state({
       ...echoed,
       canSend: false,
+      chipRanges: [{ start: 0, end: 8, triggerLength: 2, color: '#22c55e' }],
     });
-    expect(buildNativeComposerUpdatePayload(previous, canSendFlipped, {
+    const previousWithChips = state({
+      ...previous,
+      chipRanges: [{ start: 0, end: 8, triggerLength: 2, color: '#22c55e' }],
+    });
+    expect(buildNativeComposerUpdatePayload(previousWithChips, canSendFlipped, {
       omitText: true,
       forceText: false,
     })).toEqual({ canSend: false });

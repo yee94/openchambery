@@ -60,9 +60,11 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private var attachmentItems: [AttachmentPreviewItem] = []
     private var citationRanges: [NSRange] = []
     private var chips: [ComposerChip] = []
-    private var chipIconViews: [UIImageView] = []
     private var paintingChips = false
     private var didPaintChips = false
+    private var didCollapseIconSlots = false
+    /// Composer reserved icon well (U+2003). Paint-only collapse; delivery text keeps the glyph.
+    private static let composerIconSlotScalar: unichar = 0x2003
     private var isExpanded = false
     private var canSend = false
     private var canAbort = false
@@ -89,6 +91,9 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private var agentColor = UIColor.systemGreen
     private var showScrollToBottom = false
     private var scrollAria = ""
+    private var lastModelChromeStamp = ""
+    private var lastAgentStamp = ""
+    private var cachedSendCircle: (dark: Bool, send: UIImage, stop: UIImage)?
 
     var currentText: String { textView.text ?? "" }
     var isComposing: Bool { textView.markedTextRange != nil }
@@ -114,7 +119,6 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        layoutChipIcons()
         clampAutocompleteHeight()
         delegate?.composerViewDidChangeHeight(self)
     }
@@ -155,9 +159,20 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         modelButton.accessibilityLabel = self.modelAria
         agentButton.accessibilityLabel = self.agentAria
 
+        var modelChromeChanged = false
+        var agentChanged = false
+        var sendChanged = false
+        var scrollChanged = false
+        var needsLayout = false
         let attachmentCountChanged: Bool
-        if let nextCanSend { canSend = nextCanSend }
-        if let nextCanAbort { canAbort = nextCanAbort }
+        if let nextCanSend {
+            if nextCanSend != canSend { sendChanged = true }
+            canSend = nextCanSend
+        }
+        if let nextCanAbort {
+            if nextCanAbort != canAbort { sendChanged = true }
+            canAbort = nextCanAbort
+        }
         if let nextAttachmentCount {
             attachmentCountChanged = nextAttachmentCount != attachmentCount
             attachmentCount = nextAttachmentCount
@@ -165,22 +180,33 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             attachmentCountChanged = false
         }
         if let appearance {
-            appearanceIsDark = appearance != "light"
-            applyAppearance()
+            let nextDark = appearance != "light"
+            if nextDark != appearanceIsDark {
+                appearanceIsDark = nextDark
+                applyAppearance()
+                lastModelChromeStamp = ""
+                lastAgentStamp = ""
+                cachedSendCircle = nil
+            }
         }
         if let agentColor {
             self.agentColor = Self.parseColor(agentColor)
+            agentChanged = true
         }
         if let agentIdenticon {
+            if agentIdenticon != self.agentIdenticon { agentChanged = true }
             self.agentIdenticon = agentIdenticon
         }
         if let modelIcon {
             modelIconImage = Self.decodePng(modelIcon)
+            modelChromeChanged = true
         }
         if let agentLabel {
             applyAgentLabel(agentLabel)
         }
-        refreshAgentButton()
+        if agentChanged {
+            refreshAgentButton()
+        }
         if shouldApplyText(text, forceText: forceText) {
             applyingExternalText = true
             textView.text = text
@@ -192,26 +218,42 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             relayoutTextHeight()
             refreshChipPaint()
             emitTextChange()
+            sendChanged = true
+            needsLayout = true
         }
         if let modelLabel {
+            if modelLabel != modelLabelText { modelChromeChanged = true }
             modelLabelText = modelLabel
         }
         if let modelVariantLabel {
+            if modelVariantLabel != modelVariantText { modelChromeChanged = true }
             modelVariantText = modelVariantLabel
         }
-        refreshModelButton()
+        if modelChromeChanged {
+            refreshModelButton()
+        }
         if attachmentCountChanged {
             refreshAttachmentStrip()
+            needsLayout = true
         }
-        refreshSendButton()
+        if sendChanged {
+            refreshSendButton()
+            needsLayout = true
+        }
         if let nextShowScroll {
+            if nextShowScroll != showScrollToBottom { scrollChanged = true }
             showScrollToBottom = nextShowScroll
         }
         if let scrollAria {
+            if scrollAria != self.scrollAria { scrollChanged = true }
             self.scrollAria = scrollAria
         }
-        refreshScrollButton()
-        setNeedsLayout()
+        if scrollChanged {
+            refreshScrollButton()
+        }
+        if needsLayout {
+            setNeedsLayout()
+        }
     }
 
     func applyAttachmentPreviews(_ items: [AttachmentPreviewItem]) {
@@ -222,9 +264,11 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     func applyCitationRanges(_ ranges: [NSRange]) {
         citationRanges = ranges
+        refreshChipPaint()
     }
 
     func applyChipRanges(_ next: [ComposerChip]) {
+        if Self.chipsEqual(chips, next) { return }
         chips = next
         refreshChipPaint()
     }
@@ -649,6 +693,9 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private func refreshModelButton() {
         let trimmed = modelLabelText.trimmingCharacters(in: .whitespacesAndNewlines)
         let variant = modelVariantText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stamp = "\(trimmed)|\(variant)|\(appearanceIsDark)|\(modelIconImage != nil)|\(isExpanded)"
+        guard stamp != lastModelChromeStamp else { return }
+        lastModelChromeStamp = stamp
         let titleColor = chromeColor().withAlphaComponent(0.8)
         let mutedColor = chromeColor().withAlphaComponent(0.45)
         UIView.performWithoutAnimation {
@@ -694,6 +741,16 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     /// Matches web `SendCircleIcon` / `StopIcon`: 24pt inverted disc, arrow at
     /// 56% or a stop square at 38% with 20% corner radius.
     private func composerCircleImage(_ glyph: ComposerActionGlyph) -> UIImage {
+        if let cached = cachedSendCircle, cached.dark == appearanceIsDark {
+            return glyph == .send ? cached.send : cached.stop
+        }
+        let send = renderComposerCircle(.send)
+        let stop = renderComposerCircle(.stop)
+        cachedSendCircle = (appearanceIsDark, send, stop)
+        return glyph == .send ? send : stop
+    }
+
+    private func renderComposerCircle(_ glyph: ComposerActionGlyph) -> UIImage {
         let size: CGFloat = 24
         let fill = chromeColor()
         let ink = appearanceIsDark ? UIColor.black : UIColor.white
@@ -768,8 +825,9 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         scrollButton.accessibilityLabel = scrollAria
         scrollButton.backgroundColor = .clear
         scrollButton.tintColor = chromeColor()
-        scrollChrome.appearanceIsDark = appearanceIsDark
-        scrollChrome.refreshEffect()
+        if scrollChrome.appearanceIsDark != appearanceIsDark {
+            scrollChrome.appearanceIsDark = appearanceIsDark
+        }
     }
 
     private func refreshAutocomplete() {
@@ -840,8 +898,11 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     }
 
     private func refreshAgentButton() {
-        let image = Self.identiconImage(bits: agentIdenticon, color: agentColor, size: 16)
-        agentButton.setImage(image, for: .normal)
+        let stamp = "\(agentIdenticon.map(String.init).joined())|\(agentColor)|\(appearanceIsDark)"
+        if stamp != lastAgentStamp {
+            lastAgentStamp = stamp
+            agentButton.setImage(Self.identiconImage(bits: agentIdenticon, color: agentColor, size: 16), for: .normal)
+        }
         agentButton.isHidden = false
         agentCluster.accessibilityLabel = agentAria
         agentNameLabel.textColor = chromeColor().withAlphaComponent(0.8)
@@ -1067,10 +1128,15 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         return hit.map { NSUnionRange($0, range) }
     }
 
-    /// Paint-only: keep source glyphs, color the label, hide the trigger well, overlay the icon.
-    /// Skip while IME marked text is active so attributes cannot clobber composition.
+    /// Paint-only label highlight for trigger tokens. Source glyphs and delivery
+    /// text are unchanged — sent messages still use the web chip renderer.
     func refreshChipPaint() {
         guard !paintingChips else { return }
+        let hasChips = !chips.isEmpty
+        let hasCitations = !citationRanges.isEmpty
+        if !hasChips && !hasCitations && !didPaintChips && !didCollapseIconSlots {
+            return
+        }
         paintingChips = true
         let wasApplying = applyingExternalText
         applyingExternalText = true
@@ -1078,102 +1144,83 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             applyingExternalText = wasApplying
             paintingChips = false
         }
-        layoutChipIcons()
         guard textView.markedTextRange == nil else { return }
         let ns = (textView.text ?? "") as NSString
         let full = NSRange(location: 0, length: ns.length)
         let font = textView.font ?? UIFont.systemFont(ofSize: 16)
         let defaultColor = chromeColor()
-        if chips.isEmpty {
-            if didPaintChips && full.length > 0 {
-                textView.textStorage.beginEditing()
-                textView.textStorage.setAttributes([
-                    .font: font,
-                    .foregroundColor: defaultColor,
-                ], range: full)
-                textView.textStorage.endEditing()
-            }
-            didPaintChips = false
-            textView.typingAttributes = [
-                .font: font,
-                .foregroundColor: defaultColor,
-            ]
-            return
-        }
-        didPaintChips = true
         textView.textStorage.beginEditing()
-        if full.length > 0 {
+        if full.length > 0 && (hasChips || didPaintChips || didCollapseIconSlots) {
             textView.textStorage.setAttributes([
                 .font: font,
                 .foregroundColor: defaultColor,
             ], range: full)
         }
-        for chip in chips {
-            let range = NSIntersectionRange(chip.range, full)
-            guard range.length > 0 else { continue }
-            textView.textStorage.addAttributes([.foregroundColor: chip.color], range: range)
-            let triggerLength = min(max(chip.triggerLength, 0), range.length)
-            if triggerLength > 0 {
-                textView.textStorage.addAttributes(
-                    [.foregroundColor: UIColor.clear],
-                    range: NSRange(location: range.location, length: triggerLength)
-                )
+        if hasChips {
+            didPaintChips = true
+            for chip in chips {
+                let range = NSIntersectionRange(chip.range, full)
+                guard range.length > 0 else { continue }
+                textView.textStorage.addAttributes([.foregroundColor: chip.color], range: range)
             }
+        } else {
+            didPaintChips = false
         }
+        collapseComposerIconSlots(in: ns, full: full, font: font)
         textView.textStorage.endEditing()
         textView.typingAttributes = [
             .font: font,
             .foregroundColor: defaultColor,
         ]
-        layoutChipIcons()
     }
 
-    private func layoutChipIcons() {
-        if chipIconViews.count != chips.count {
-            chipIconViews.forEach { $0.removeFromSuperview() }
-            chipIconViews = chips.map { chip in
-                let view = UIImageView(image: chip.icon)
-                view.contentMode = .scaleAspectFit
-                view.isUserInteractionEnabled = false
-                view.isAccessibilityElement = false
-                textView.addSubview(view)
-                return view
-            }
-        } else {
-            for (view, chip) in zip(chipIconViews, chips) {
-                view.image = chip.icon
+    /// Hide the reserved em-space icon well visually without removing it from delivery text.
+    private func collapseComposerIconSlots(in ns: NSString, full: NSRange, font: UIFont) {
+        let slotRanges = composerIconSlotRanges(in: ns, full: full)
+        if slotRanges.isEmpty {
+            didCollapseIconSlots = false
+            return
+        }
+        didCollapseIconSlots = true
+        let hidden = Self.iconSlotCollapseAttributes(font: font)
+        for range in slotRanges {
+            textView.textStorage.addAttributes(hidden, range: range)
+        }
+    }
+
+    private func composerIconSlotRanges(in ns: NSString, full: NSRange) -> [NSRange] {
+        let tokens = citationRanges + chips.map(\.range)
+        guard !tokens.isEmpty else { return [] }
+        var ranges: [NSRange] = []
+        for token in tokens {
+            let clipped = NSIntersectionRange(token, full)
+            guard clipped.length > 0 else { continue }
+            for offset in 0..<clipped.length {
+                let index = clipped.location + offset
+                if ns.character(at: index) == Self.composerIconSlotScalar {
+                    ranges.append(NSRange(location: index, length: 1))
+                }
             }
         }
-        let ns = (textView.text ?? "") as NSString
-        let font = textView.font ?? UIFont.systemFont(ofSize: 16)
-        let gap = font.lineHeight * 0.2
-        for (index, chip) in chips.enumerated() {
-            let view = chipIconViews[index]
-            let triggerLength = min(max(chip.triggerLength, 0), chip.range.length)
-            let trigger = NSRange(location: chip.range.location, length: triggerLength)
-            guard trigger.length > 0,
-                  NSMaxRange(trigger) <= ns.length,
-                  chip.icon != nil,
-                  let start = textView.position(from: textView.beginningOfDocument, offset: trigger.location),
-                  let end = textView.position(from: start, offset: trigger.length),
-                  let textRange = textView.textRange(from: start, to: end)
-            else {
-                view.isHidden = true
-                continue
-            }
-            let rect = textView.firstRect(for: textRange)
-            if rect.isNull || rect.isEmpty {
-                view.isHidden = true
-                continue
-            }
-            view.isHidden = false
-            let well = CGRect(
-                x: rect.minX + gap,
-                y: rect.minY + max((rect.height - font.lineHeight) / 2, 0),
-                width: max(rect.width - gap * 2, 0),
-                height: font.lineHeight
-            )
-            view.frame = well.width >= font.lineHeight * 0.5 ? well : rect
+        return ranges
+    }
+
+    private static func iconSlotCollapseAttributes(font: UIFont) -> [NSAttributedString.Key: Any] {
+        // Em-space reserves a 1em well on web; collapse its advance on native without deleting the glyph.
+        let collapseKern = -(font.pointSize * 0.94)
+        return [
+            .foregroundColor: UIColor.clear,
+            .font: UIFont.systemFont(ofSize: 1, weight: .regular),
+            .kern: collapseKern,
+            .baselineOffset: 0,
+        ]
+    }
+
+    private static func chipsEqual(_ left: [ComposerChip], _ right: [ComposerChip]) -> Bool {
+        left.count == right.count && zip(left, right).allSatisfy { lhs, rhs in
+            NSEqualRanges(lhs.range, rhs.range)
+                && lhs.triggerLength == rhs.triggerLength
+                && lhs.color == rhs.color
         }
     }
 
@@ -1307,7 +1354,6 @@ struct ComposerChip {
     let range: NSRange
     let triggerLength: Int
     let color: UIColor
-    let icon: UIImage?
 }
 
 struct AttachmentPreviewItem {

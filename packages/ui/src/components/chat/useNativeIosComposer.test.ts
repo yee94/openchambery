@@ -19,9 +19,12 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('citationRanges');
     expect(source).toContain('chipRanges');
     expect(source).toContain('chipHighlights');
-    expect(source).toContain('nativeComposerChipSpecsFromHighlights');
-    expect(source).toContain('paintNativeComposerChipRanges');
+    expect(source).toContain('buildNativeComposerChipRanges');
     expect(source).toContain("resolveCssVarToHex('--primary')");
+    expect(source).not.toContain('NATIVE_IOS_COMPOSER_CHIPS_ENABLED');
+    expect(source).not.toContain('nativeChipIconCache');
+    expect(source).not.toContain('chipIconKey');
+    expect(source).not.toContain('[available, chipIconKey, args.text]');
     expect(source).toContain('rasterizeAttachmentThumbnailBase64');
     expect(source).toContain('findAttachmentCitationRanges');
     expect(source).toContain('resolveModelLogoSrc');

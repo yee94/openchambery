@@ -121,7 +121,17 @@ test('native composer rest height stays collapsed and scroll lives above send', 
   assert.match(view, /applyCitationRanges/);
   assert.match(view, /applyChipRanges/);
   assert.match(view, /refreshChipPaint/);
-  assert.match(view, /UIColor.clear/);
+  assert.match(view, /chipsEqual/);
+  assert.match(view, /composerIconSlotScalar/);
+  assert.match(view, /collapseComposerIconSlots/);
+  assert.match(view, /Paint-only collapse; delivery text keeps the glyph/);
+  assert.match(view, /lastModelChromeStamp/);
+  assert.match(view, /modelChromeChanged/);
+  assert.match(plugin, /Chrome-only updates omit chipRanges/);
+  assert.doesNotMatch(plugin, /else \{\s*composerView\?\.refreshChipPaint/);
+  assert.doesNotMatch(view, /layoutChipIcons/);
+  assert.doesNotMatch(view, /chipIconViews/);
+  assert.doesNotMatch(plugin, /chipIconCache/);
   assert.match(view, /markedTextRange == nil/);
   assert.match(view, /citationRanges \+ chips\.map/);
   assert.match(view, /expandedCitationEdit/);
