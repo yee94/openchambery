@@ -59,6 +59,10 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     private var attachmentItems: [AttachmentPreviewItem] = []
     private var citationRanges: [NSRange] = []
+    private var chips: [ComposerChip] = []
+    private var chipIconViews: [UIImageView] = []
+    private var paintingChips = false
+    private var didPaintChips = false
     private var isExpanded = false
     private var canSend = false
     private var canAbort = false
@@ -110,6 +114,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        layoutChipIcons()
         clampAutocompleteHeight()
         delegate?.composerViewDidChangeHeight(self)
     }
@@ -185,6 +190,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             applyingExternalText = false
             refreshPlaceholder()
             relayoutTextHeight()
+            refreshChipPaint()
             emitTextChange()
         }
         if let modelLabel {
@@ -216,6 +222,11 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     func applyCitationRanges(_ ranges: [NSRange]) {
         citationRanges = ranges
+    }
+
+    func applyChipRanges(_ next: [ComposerChip]) {
+        chips = next
+        refreshChipPaint()
     }
 
     func applyAutocomplete(_ state: ComposerAutocompleteState) {
@@ -844,7 +855,12 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         overrideUserInterfaceStyle = appearanceIsDark ? .dark : .light
         let label = chromeColor()
         textView.textColor = label
+        textView.typingAttributes = [
+            .font: textView.font ?? UIFont.systemFont(ofSize: 16),
+            .foregroundColor: label,
+        ]
         placeholderLabel.textColor = label.withAlphaComponent(0.45)
+        refreshChipPaint()
         refreshAttachmentStrip()
         card.appearanceIsDark = appearanceIsDark
         collapsedPlus.backgroundColor = .clear
@@ -981,6 +997,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         refreshPlaceholder()
         relayoutTextHeight()
         refreshSendButton()
+        refreshChipPaint()
         delegate?.composerViewDidChangeHeight(self)
         guard !applyingExternalText else { return }
         emitTextChange()
@@ -1024,6 +1041,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         refreshPlaceholder()
         relayoutTextHeight()
         refreshSendButton()
+        refreshChipPaint()
         delegate?.composerViewDidChangeHeight(self)
         emitTextChange()
         return false
@@ -1041,11 +1059,122 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     private func expandedCitationEdit(range: NSRange) -> NSRange? {
         var hit: NSRange?
-        for citation in citationRanges {
-            guard citationTouches(citation, edit: range) else { continue }
-            hit = hit.map { NSUnionRange($0, citation) } ?? citation
+        let tokens = citationRanges + chips.map(\.range)
+        for token in tokens {
+            guard citationTouches(token, edit: range) else { continue }
+            hit = hit.map { NSUnionRange($0, token) } ?? token
         }
         return hit.map { NSUnionRange($0, range) }
+    }
+
+    /// Paint-only: keep source glyphs, color the label, hide the trigger well, overlay the icon.
+    /// Skip while IME marked text is active so attributes cannot clobber composition.
+    func refreshChipPaint() {
+        guard !paintingChips else { return }
+        paintingChips = true
+        let wasApplying = applyingExternalText
+        applyingExternalText = true
+        defer {
+            applyingExternalText = wasApplying
+            paintingChips = false
+        }
+        layoutChipIcons()
+        guard textView.markedTextRange == nil else { return }
+        let ns = (textView.text ?? "") as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        let font = textView.font ?? UIFont.systemFont(ofSize: 16)
+        let defaultColor = chromeColor()
+        if chips.isEmpty {
+            if didPaintChips && full.length > 0 {
+                textView.textStorage.beginEditing()
+                textView.textStorage.setAttributes([
+                    .font: font,
+                    .foregroundColor: defaultColor,
+                ], range: full)
+                textView.textStorage.endEditing()
+            }
+            didPaintChips = false
+            textView.typingAttributes = [
+                .font: font,
+                .foregroundColor: defaultColor,
+            ]
+            return
+        }
+        didPaintChips = true
+        textView.textStorage.beginEditing()
+        if full.length > 0 {
+            textView.textStorage.setAttributes([
+                .font: font,
+                .foregroundColor: defaultColor,
+            ], range: full)
+        }
+        for chip in chips {
+            let range = NSIntersectionRange(chip.range, full)
+            guard range.length > 0 else { continue }
+            textView.textStorage.addAttributes([.foregroundColor: chip.color], range: range)
+            let triggerLength = min(max(chip.triggerLength, 0), range.length)
+            if triggerLength > 0 {
+                textView.textStorage.addAttributes(
+                    [.foregroundColor: UIColor.clear],
+                    range: NSRange(location: range.location, length: triggerLength)
+                )
+            }
+        }
+        textView.textStorage.endEditing()
+        textView.typingAttributes = [
+            .font: font,
+            .foregroundColor: defaultColor,
+        ]
+        layoutChipIcons()
+    }
+
+    private func layoutChipIcons() {
+        if chipIconViews.count != chips.count {
+            chipIconViews.forEach { $0.removeFromSuperview() }
+            chipIconViews = chips.map { chip in
+                let view = UIImageView(image: chip.icon)
+                view.contentMode = .scaleAspectFit
+                view.isUserInteractionEnabled = false
+                view.isAccessibilityElement = false
+                textView.addSubview(view)
+                return view
+            }
+        } else {
+            for (view, chip) in zip(chipIconViews, chips) {
+                view.image = chip.icon
+            }
+        }
+        let ns = (textView.text ?? "") as NSString
+        let font = textView.font ?? UIFont.systemFont(ofSize: 16)
+        let gap = font.lineHeight * 0.2
+        for (index, chip) in chips.enumerated() {
+            let view = chipIconViews[index]
+            let triggerLength = min(max(chip.triggerLength, 0), chip.range.length)
+            let trigger = NSRange(location: chip.range.location, length: triggerLength)
+            guard trigger.length > 0,
+                  NSMaxRange(trigger) <= ns.length,
+                  chip.icon != nil,
+                  let start = textView.position(from: textView.beginningOfDocument, offset: trigger.location),
+                  let end = textView.position(from: start, offset: trigger.length),
+                  let textRange = textView.textRange(from: start, to: end)
+            else {
+                view.isHidden = true
+                continue
+            }
+            let rect = textView.firstRect(for: textRange)
+            if rect.isNull || rect.isEmpty {
+                view.isHidden = true
+                continue
+            }
+            view.isHidden = false
+            let well = CGRect(
+                x: rect.minX + gap,
+                y: rect.minY + max((rect.height - font.lineHeight) / 2, 0),
+                width: max(rect.width - gap * 2, 0),
+                height: font.lineHeight
+            )
+            view.frame = well.width >= font.lineHeight * 0.5 ? well : rect
+        }
     }
 
     private func citationTouches(_ citation: NSRange, edit: NSRange) -> Bool {
@@ -1125,7 +1254,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         return button
     }
 
-    private static func parseColor(_ raw: String) -> UIColor {
+    static func parseColor(_ raw: String) -> UIColor {
         let hex = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard hex.hasPrefix("#"), hex.count == 7, let value = UInt32(hex.dropFirst(), radix: 16) else {
             return .systemGreen
@@ -1172,6 +1301,13 @@ extension OpenChamberComposerView: UIGestureRecognizerDelegate {
         }
         return true
     }
+}
+
+struct ComposerChip {
+    let range: NSRange
+    let triggerLength: Int
+    let color: UIColor
+    let icon: UIImage?
 }
 
 struct AttachmentPreviewItem {

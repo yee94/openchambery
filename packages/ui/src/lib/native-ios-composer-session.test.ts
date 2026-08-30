@@ -15,6 +15,7 @@ const state = (overrides: Partial<NativeIosComposerState> = {}): NativeIosCompos
   attachmentCount: 0,
   attachmentPreviews: [],
   citationRanges: [],
+  chipRanges: [],
   appearance: 'dark',
   attachAria: 'Add',
   attachTitle: 'Add',

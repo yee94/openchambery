@@ -9,8 +9,12 @@ import {
   filesFromNativeComposerPayload,
   hiddenNativeIosComposerWarmState,
   handoffNativeComposerSendToWeb,
+  nativeComposerChipIconNames,
+  nativeComposerChipRangesEqual,
+  nativeComposerChipSpecsFromHighlights,
   nativeComposerStatesEqual,
   nativeIosComposerAppearanceFromRoot,
+  paintNativeComposerChipRanges,
   NATIVE_IOS_COMPOSER_CLASS,
   NATIVE_IOS_COMPOSER_HEIGHT_VAR,
   packNativeIosComposerIdenticon,
@@ -41,6 +45,7 @@ const state = (overrides: Partial<NativeIosComposerState> = {}): NativeIosCompos
   attachmentCount: 0,
   attachmentPreviews: [],
   citationRanges: [],
+  chipRanges: [],
   appearance: 'dark',
   attachAria: 'Add attachment',
   attachTitle: 'Add attachment',
@@ -110,6 +115,7 @@ describe('native iOS composer contract', () => {
     expect(warm.suppressed).toBe(true);
     expect(warm.text).toBe('');
     expect(warm.attachmentPreviews).toEqual([]);
+    expect(warm.chipRanges).toEqual([]);
   });
 
   test('toggles the document class and height var without writing the web foot inset', () => {
@@ -150,8 +156,47 @@ describe('native iOS composer contract', () => {
     }))).toBe(false);
     expect(nativeComposerStatesEqual(state(), state({ citationRanges: [{ start: 0, end: 4 }] }))).toBe(false);
     expect(nativeComposerStatesEqual(state(), state({
+      chipRanges: [{ start: 0, end: 8, triggerLength: 2, color: '#22c55e', iconBase64: 'abc' }],
+    }))).toBe(false);
+    expect(nativeComposerStatesEqual(state(), state({
       autocomplete: { open: true, highlightedIndex: 0, rows: [{ id: 'a', title: '/undo', subtitle: '', badge: '', iconBase64: '' }] },
     }))).toBe(false);
+  });
+
+  test('builds paint-only chip ranges from highlight parts without changing source glyphs', () => {
+    const slot = '\u2003';
+    const text = `/${slot}review please`;
+    const specs = nativeComposerChipSpecsFromHighlights(text, [
+      { text: `/${slot}review`, visual: { trigger: `/${slot}`, icon: 'book-open' } },
+      { text: ' please' },
+    ]);
+    expect(specs).toEqual([
+      { start: 0, end: 8, triggerLength: 2, iconName: 'book-open' },
+    ]);
+    expect(text.slice(specs[0].start, specs[0].end)).toBe(`/${slot}review`);
+    expect(nativeComposerChipIconNames(specs)).toEqual(['book-open']);
+    const icons = new Map([['book-open:#22c55e', 'png']]);
+    const painted = paintNativeComposerChipRanges(specs, '#22c55e', icons);
+    expect(painted).toEqual([{
+      start: 0,
+      end: 8,
+      triggerLength: 2,
+      color: '#22c55e',
+      iconBase64: 'png',
+    }]);
+    expect(nativeComposerChipRangesEqual(painted, painted)).toBe(true);
+    expect(nativeComposerChipRangesEqual(painted, [{ ...painted[0], iconBase64: '' }])).toBe(false);
+    expect(nativeComposerChipSpecsFromHighlights(text, null)).toEqual([]);
+    expect(nativeComposerChipSpecsFromHighlights('', [{ text: '/x', visual: { trigger: '/', icon: 'command' } }])).toEqual([]);
+    expect(nativeComposerChipSpecsFromHighlights(text, [
+      { text: '/', visual: { trigger: `/${slot}`, icon: 'book-open' } },
+    ])).toEqual([]);
+    const payload = buildNativeComposerUpdatePayload(
+      state(),
+      state({ chipRanges: painted }),
+      { omitText: true, forceText: false },
+    );
+    expect(payload).toEqual({ chipRanges: painted });
   });
 
   test('parses native text selection and accept index', () => {

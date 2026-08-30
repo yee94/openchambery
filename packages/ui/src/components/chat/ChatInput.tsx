@@ -6402,6 +6402,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         caret: cursorPosRef.current,
         onAutocompleteAccept: handleNativeAutocompleteAccept,
         onAutocompleteDismiss: handleNativeAutocompleteDismiss,
+        chipHighlights: highlightedComposerContent,
     });
     const nativeAccessoryRef = React.useRef<HTMLDivElement>(null);
     useResizeObserver(nativeIosComposerActive ? nativeAccessoryRef : null, () => {

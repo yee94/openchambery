@@ -114,9 +114,16 @@ test('native composer rest height stays collapsed and scroll lives above send', 
   assert.match(plugin, /removeAttachment/);
   assert.match(plugin, /attachmentPreviews/);
   assert.match(plugin, /citationRanges/);
+  assert.match(plugin, /chipRanges/);
+  assert.match(plugin, /parseChipRanges/);
   assert.match(plugin, /composing/);
   assert.match(view, /applyAttachmentPreviews/);
   assert.match(view, /applyCitationRanges/);
+  assert.match(view, /applyChipRanges/);
+  assert.match(view, /refreshChipPaint/);
+  assert.match(view, /UIColor.clear/);
+  assert.match(view, /markedTextRange == nil/);
+  assert.match(view, /citationRanges \+ chips\.map/);
   assert.match(view, /expandedCitationEdit/);
   assert.match(view, /AttachmentPreviewCell/);
   assert.match(view, /attachmentStrip/);

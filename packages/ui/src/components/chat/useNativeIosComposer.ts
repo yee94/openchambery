@@ -15,10 +15,14 @@ import {
   emptyNativeComposerAutocomplete,
   getNativeIosComposerPlugin,
   nativeComposerAutocompleteEqual,
+  nativeComposerChipIconNames,
+  nativeComposerChipRangesEqual,
+  nativeComposerChipSpecsFromHighlights,
   nativeComposerStatesEqual,
   nativeIosComposerAgentColor,
   nativeIosComposerAppearanceFromRoot,
   packNativeIosComposerIdenticon,
+  paintNativeComposerChipRanges,
   rasterizeAttachmentThumbnailBase64,
   rasterizeLogoPngBase64,
   resolveCssVarToHex,
@@ -26,10 +30,12 @@ import {
   setNativeComposerDocumentClass,
   type NativeIosComposerAttachmentPreview,
   type NativeIosComposerAutocomplete,
+  type NativeIosComposerChipHighlight,
   type NativeIosComposerState,
 } from '@/lib/native-ios-composer';
 
 const nativeSuggestionIconCache = new Map<string, string>();
+const nativeChipIconCache = new Map<string, string>();
 
 const autocompleteRowSignature = (
   rows: readonly ComposerAutocompleteListRow[],
@@ -113,6 +119,8 @@ export type UseNativeIosComposerArgs = {
   autocompleteRows?: readonly ComposerAutocompleteListRow[];
   /** JS-authored caret to apply with forceText (accept/insert). */
   caret?: number;
+  /** Web highlight parts; native paints trigger-icon chips from these. */
+  chipHighlights?: readonly NativeIosComposerChipHighlight[] | null;
 };
 
 const EMPTY_AUTOCOMPLETE_ROWS: ComposerAutocompleteListRow[] = [];
@@ -191,6 +199,11 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     citationRanges: findAttachmentCitationRanges(
       args.text,
       args.attachments.map((file) => file.filename),
+    ),
+    chipRanges: paintNativeComposerChipRanges(
+      nativeComposerChipSpecsFromHighlights(args.text, args.chipHighlights),
+      resolveCssVarToHex('--primary'),
+      nativeChipIconCache,
     ),
     appearance: typeof document === 'undefined'
       ? 'dark'
@@ -351,6 +364,38 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     return () => { cancelled = true; };
   }, [available, suggestionSignature]);
 
+  const chipSpecs = nativeComposerChipSpecsFromHighlights(args.text, args.chipHighlights);
+  const chipColor = resolveCssVarToHex('--primary');
+  const chipIconKey = `${chipColor}:${nativeComposerChipIconNames(chipSpecs).join('|')}`;
+  const chipRangeSignature = chipSpecs.map((spec) => (
+    `${spec.start}:${spec.end}:${spec.triggerLength}:${spec.iconName}`
+  )).join('|');
+  useEffect(() => {
+    if (!available) return;
+    const color = resolveCssVarToHex('--primary');
+    const missing = nativeComposerChipIconNames(chipSpecs).filter((name) => (
+      !nativeChipIconCache.has(`${name}:${color}`)
+    ));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    void Promise.all(missing.map(async (name) => {
+      const png = (await rasterizeSpriteIconPngBase64(name, color)) ?? '';
+      nativeChipIconCache.set(`${name}:${color}`, png);
+    })).then(() => {
+      if (cancelled) return;
+      const next = paintNativeComposerChipRanges(chipSpecs, color, nativeChipIconCache);
+      if (lastStateRef.current && nativeComposerChipRangesEqual(lastStateRef.current.chipRanges, next)) {
+        return;
+      }
+      if (lastStateRef.current) {
+        lastStateRef.current = { ...lastStateRef.current, chipRanges: next };
+        nativeIosComposerSession.rememberState(lastStateRef.current);
+      }
+      void getNativeIosComposerPlugin().update({ chipRanges: next });
+    });
+    return () => { cancelled = true; };
+  }, [available, chipIconKey, args.text]);
+
   useEffect(() => {
     if (!available) return;
     const next = readState();
@@ -401,6 +446,8 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     args.agentAria,
     args.showScrollToBottom,
     args.scrollAria,
+    chipRangeSignature,
+    chipIconKey,
   ]);
 
   return available;

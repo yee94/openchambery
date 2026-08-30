@@ -17,6 +17,11 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('onRemoveAttachment');
     expect(source).toContain('attachmentPreviews');
     expect(source).toContain('citationRanges');
+    expect(source).toContain('chipRanges');
+    expect(source).toContain('chipHighlights');
+    expect(source).toContain('nativeComposerChipSpecsFromHighlights');
+    expect(source).toContain('paintNativeComposerChipRanges');
+    expect(source).toContain("resolveCssVarToHex('--primary')");
     expect(source).toContain('rasterizeAttachmentThumbnailBase64');
     expect(source).toContain('findAttachmentCitationRanges');
     expect(source).toContain('resolveModelLogoSrc');
@@ -72,5 +77,6 @@ describe('useNativeIosComposer', () => {
     expect(chatInput).toContain('resolveComposerAutocompleteReplaceRange');
     expect(chatInput).toContain('autocompleteTriggerRef');
     expect(chatInput).toContain('caret: cursorPosRef.current');
+    expect(chatInput).toContain('chipHighlights: highlightedComposerContent');
   });
 });

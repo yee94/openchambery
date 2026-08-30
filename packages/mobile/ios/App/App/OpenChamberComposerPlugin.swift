@@ -263,6 +263,11 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         if let ranges = call.getArray("citationRanges") {
             composerView?.applyCitationRanges(Self.parseCitationRanges(ranges))
         }
+        if let ranges = call.getArray("chipRanges") {
+            composerView?.applyChipRanges(Self.parseChipRanges(ranges))
+        } else {
+            composerView?.refreshChipPaint()
+        }
         if let autocomplete = call.getObject("autocomplete") {
             composerView?.applyAutocomplete(Self.parseAutocomplete(autocomplete))
         }
@@ -666,6 +671,29 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
             let end = (endValue as? NSNumber)?.intValue ?? (endValue as? Int)
             guard let start, let end, start >= 0, end >= start else { return nil }
             return NSRange(location: start, length: end - start)
+        }
+    }
+
+    private static func parseChipRanges(_ raw: JSArray) -> [ComposerChip] {
+        raw.compactMap { entry -> ComposerChip? in
+            guard let object = entry as? JSObject else { return nil }
+            let startValue = object["start"]
+            let endValue = object["end"]
+            let triggerValue = object["triggerLength"]
+            let start = (startValue as? NSNumber)?.intValue ?? (startValue as? Int)
+            let end = (endValue as? NSNumber)?.intValue ?? (endValue as? Int)
+            let triggerLength = (triggerValue as? NSNumber)?.intValue ?? (triggerValue as? Int)
+            guard let start, let end, let triggerLength, start >= 0, end > start, triggerLength >= 1, start + triggerLength <= end else {
+                return nil
+            }
+            let color = OpenChamberComposerView.parseColor(Self.jsString(object, "color"))
+            let icon = (object["iconBase64"] as? String).flatMap { OpenChamberComposerView.decodePreviewImage($0) }
+            return ComposerChip(
+                range: NSRange(location: start, length: end - start),
+                triggerLength: triggerLength,
+                color: color,
+                icon: icon
+            )
         }
     }
 

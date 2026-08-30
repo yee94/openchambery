@@ -27,6 +27,31 @@ export type NativeIosComposerCitationRange = {
   end: number;
 };
 
+/** Highlight overlay slice that may carry a trigger-icon chip visual. */
+export type NativeIosComposerChipHighlight = {
+  text: string;
+  visual?: {
+    trigger: string;
+    icon: string;
+  };
+};
+
+export type NativeIosComposerChipSpec = {
+  start: number;
+  end: number;
+  triggerLength: number;
+  iconName: string;
+};
+
+/** Paint-only chip: UTF-16 range, trigger well to hide, pre-tinted icon, label color. */
+export type NativeIosComposerChipRange = {
+  start: number;
+  end: number;
+  triggerLength: number;
+  color: string;
+  iconBase64: string;
+};
+
 export type NativeIosComposerSuggestionRow = {
   id: string;
   title: string;
@@ -58,6 +83,7 @@ export type NativeIosComposerState = {
   attachmentCount: number;
   attachmentPreviews: NativeIosComposerAttachmentPreview[];
   citationRanges: NativeIosComposerCitationRange[];
+  chipRanges: NativeIosComposerChipRange[];
   appearance: NativeIosComposerAppearance;
   attachAria: string;
   attachTitle: string;
@@ -90,6 +116,7 @@ export const hiddenNativeIosComposerWarmState = (): NativeIosComposerState => ({
   attachmentCount: 0,
   attachmentPreviews: [],
   citationRanges: [],
+  chipRanges: [],
   appearance: 'dark',
   attachAria: '',
   attachTitle: '',
@@ -252,6 +279,7 @@ export const nativeComposerStatesEqual = (
   && left.attachmentCount === right.attachmentCount
   && nativeComposerAttachmentPreviewsEqual(left.attachmentPreviews, right.attachmentPreviews)
   && nativeComposerCitationRangesEqual(left.citationRanges, right.citationRanges)
+  && nativeComposerChipRangesEqual(left.chipRanges, right.chipRanges)
   && left.appearance === right.appearance
   && left.attachAria === right.attachAria
   && left.attachTitle === right.attachTitle
@@ -317,6 +345,75 @@ export const nativeComposerCitationRangesEqual = (
   left.length === right.length
   && left.every((item, index) => item.start === right[index]?.start && item.end === right[index]?.end)
 );
+
+export const nativeComposerChipRangesEqual = (
+  left: readonly NativeIosComposerChipRange[],
+  right: readonly NativeIosComposerChipRange[],
+): boolean => (
+  left.length === right.length
+  && left.every((item, index) => {
+    const other = right[index];
+    return Boolean(
+      other
+      && item.start === other.start
+      && item.end === other.end
+      && item.triggerLength === other.triggerLength
+      && item.color === other.color
+      && item.iconBase64 === other.iconBase64,
+    );
+  })
+);
+
+/** Walk web highlight parts (full-document coverage) into native chip specs. */
+export const nativeComposerChipSpecsFromHighlights = (
+  text: string,
+  parts: readonly NativeIosComposerChipHighlight[] | null | undefined,
+): NativeIosComposerChipSpec[] => {
+  if (!text || !parts || parts.length === 0) return [];
+  const specs: NativeIosComposerChipSpec[] = [];
+  let offset = 0;
+  for (const part of parts) {
+    const start = offset;
+    offset += part.text.length;
+    const visual = part.visual;
+    if (!visual) continue;
+    const triggerLength = visual.trigger.length;
+    if (triggerLength < 1 || start + triggerLength > offset) continue;
+    if (!visual.icon) continue;
+    specs.push({
+      start,
+      end: offset,
+      triggerLength,
+      iconName: visual.icon,
+    });
+  }
+  return specs;
+};
+
+export const nativeComposerChipIconNames = (
+  specs: readonly NativeIosComposerChipSpec[],
+): string[] => {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const spec of specs) {
+    if (seen.has(spec.iconName)) continue;
+    seen.add(spec.iconName);
+    names.push(spec.iconName);
+  }
+  return names;
+};
+
+export const paintNativeComposerChipRanges = (
+  specs: readonly NativeIosComposerChipSpec[],
+  color: string,
+  icons: ReadonlyMap<string, string>,
+): NativeIosComposerChipRange[] => specs.map((spec) => ({
+  start: spec.start,
+  end: spec.end,
+  triggerLength: spec.triggerLength,
+  color,
+  iconBase64: icons.get(`${spec.iconName}:${color}`) ?? '',
+}));
 
 export const attachmentPreviewSourceSignature = (
   files: readonly { id: string; filename: string; mimeType: string; dataUrl?: string }[],
@@ -453,6 +550,7 @@ export const buildNativeComposerUpdatePayload = (
   assignIfChanged('attachmentCount', scalarEqual);
   assignIfChanged('attachmentPreviews', nativeComposerAttachmentPreviewsEqual);
   assignIfChanged('citationRanges', nativeComposerCitationRangesEqual);
+  assignIfChanged('chipRanges', nativeComposerChipRangesEqual);
   assignIfChanged('appearance', scalarEqual);
   assignIfChanged('attachAria', scalarEqual);
   assignIfChanged('attachTitle', scalarEqual);
