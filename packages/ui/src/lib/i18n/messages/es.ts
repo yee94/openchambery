@@ -106,6 +106,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.tabs.scheduled": "Tareas",
   "mobile.tabs.settings": "Ajustes",
   "mobile.surface.closeAria": "Cerrar",
+  "mobile.select.sheetAria": "Seleccionar una opción",
   "mobile.header.openMenuAria": "Abrir menú",
   "mobile.header.openMetadataAria": "Abrir metadatos de la sesión",
   "mobile.header.metadata.context": "Contexto",

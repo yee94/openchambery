@@ -107,6 +107,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.confirmDeleteAria': '{label} の削除を確定',
   'mobile.instances.cancelDeleteAria': '{label} を残す',
   'mobile.surface.closeAria': '閉じる',
+  'mobile.select.sheetAria': 'オプションを選択',
   'mobile.header.openMenuAria': 'メニューを開く',
   'mobile.header.openMetadataAria': 'セッションメタデータを開く',
   'mobile.header.metadata.context': 'コンテキスト',

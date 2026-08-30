@@ -105,6 +105,7 @@ export const dict = {
   'mobile.tabs.scheduled': 'Schedule',
   'mobile.tabs.settings': 'Settings',
   'mobile.surface.closeAria': 'Close',
+  'mobile.select.sheetAria': 'Select an option',
   'mobile.header.openMenuAria': 'Open menu',
   'mobile.header.openMetadataAria': 'Open session metadata',
   'mobile.header.metadata.context': 'Context',

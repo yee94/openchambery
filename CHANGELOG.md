@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.33] - 2026-08-30
+
+### Fixed
+
+- Phone Settings selects (theme, language, and other dropdowns) open as a bottom sheet instead of a clipped popup.
+- On iPhone, the `/` and `@` suggestion list can be scrolled with a pan; tapping a row still inserts. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Editing a message on iPhone restores the full text in the native composer even if the input pill was collapsed.
+
 ## [1.19.0-beta.32] - 2026-08-30
 
 ### Fixed

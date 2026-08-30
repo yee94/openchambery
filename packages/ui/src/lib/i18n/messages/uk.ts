@@ -106,6 +106,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.tabs.scheduled": "Задачі",
   "mobile.tabs.settings": "Опції",
   "mobile.surface.closeAria": "Закрити",
+  "mobile.select.sheetAria": "Вибрати варіант",
   "mobile.header.openMenuAria": "Відкрити меню",
   "mobile.header.openMetadataAria": "Відкрити метадані сесії",
   "mobile.header.metadata.context": "Контекст",

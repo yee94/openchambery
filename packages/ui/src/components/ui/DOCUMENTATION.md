@@ -82,6 +82,8 @@ Settings section labels use normal font weight on every surface. Desktop detail 
 
 This is the required contract for new or revised `Select`, `DropdownMenu`, and searchable popup pickers in shared UI. Follow it instead of inventing local search chrome.
 
+Shared `Select` presents every mobile picker in a headerless `MobileResizableSheet` with `fitContent`. Short lists follow their content height, long lists cap at `72dvh`, and `ScrollableOverlay` owns bounded list scrolling and edge-aware dismissal. Desktop layouts retain the anchored Base UI popup with the shared collision defaults.
+
 ### Positioning
 
 - Use shared `SelectContent` and `DropdownMenuContent` / `DropdownMenuSubContent`.

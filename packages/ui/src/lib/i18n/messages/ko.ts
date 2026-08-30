@@ -105,6 +105,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.tabs.scheduled': '작업',
   'mobile.tabs.settings': '설정',
   'mobile.surface.closeAria': '닫기',
+  'mobile.select.sheetAria': '옵션 선택',
   'mobile.header.openMenuAria': '메뉴 열기',
   'mobile.header.openMetadataAria': '세션 메타데이터 열기',
   'mobile.header.metadata.context': '컨텍스트',

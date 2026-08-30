@@ -105,6 +105,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.tabs.scheduled': '计划',
   'mobile.tabs.settings': '设置',
   'mobile.surface.closeAria': '关闭',
+  'mobile.select.sheetAria': '选择一个选项',
   'mobile.header.openMenuAria': '打开菜单',
   'mobile.header.openMetadataAria': '打开会话元数据',
   'mobile.header.metadata.context': '上下文',
