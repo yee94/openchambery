@@ -38,6 +38,9 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('onScrollToBottom');
     expect(source).toContain('showScrollToBottom: args.showScrollToBottom');
     expect(source).toContain('resolveNativeComposerTextWrite');
+    expect(source).toContain('shouldIgnoreNativeComposerTextEcho');
+    expect(source).toContain('textPresetEpoch');
+    expect(source).toContain('preset');
     expect(source).toContain('buildNativeComposerUpdatePayload');
     expect(source).toContain('echoingNativeRef');
     expect(source).toContain('echoingNativeRef.current = true');
@@ -82,6 +85,8 @@ describe('useNativeIosComposer', () => {
     expect(chatInput).toContain('caret: cursorPosRef.current');
     expect(chatInput).toContain('chipHighlights: highlightedComposerContent');
     expect(chatInput).toContain('nativeComposerOwnedInput');
+    expect(chatInput).toContain('textPresetEpoch: composer.textPresetEpoch');
+    expect(chatInput).toContain('getNativeIosComposerPlugin().focus()');
     expect(chatInput).toContain('nativeComposerOwnedInput ? [] : tokenizeMarkdown(message)');
     expect(chatInput).toContain('nativeComposerOwnedInput ? [] : highlightFencedCode(message)');
   });

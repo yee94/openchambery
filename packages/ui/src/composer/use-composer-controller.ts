@@ -112,6 +112,7 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
   const [document, setDocument] = useState<ComposerDocument>(() => resolveComposerKeyBinding(draftKey, sessionTitles, store.getState().getDraft).document)
   const [mentions, setMentions] = useState<DraftMention[]>(() => resolveComposerKeyBinding(draftKey, sessionTitles, store.getState().getDraft).mentions)
   const [inputMode, setInputMode] = useState<ComposerInputMode>("compose")
+  const [textPresetEpoch, setTextPresetEpoch] = useState(0)
   const documentRef = useRef(document)
   const mentionsRef = useRef(mentions)
   const titlesRef = useRef(sessionTitles)
@@ -158,6 +159,7 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
     setInputMode("compose")
     appliedRevisionRef.current = binding.revision
     publish(binding.document, binding.mentions)
+    setTextPresetEpoch((value) => value + 1)
     if (activeDraftKey?.owner.kind === "draft") {
       const expectedRevision = binding.revision
       void store.getState().claimLegacyNewDraft(activeDraftKey).then((claimed) => {
@@ -182,6 +184,7 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
       localCommitRef.current = undefined
       publish(materializeComposerDocument(documentFromRecord(record), titlesRef.current), record.mentions)
       setInputMode("compose")
+      setTextPresetEpoch((value) => value + 1)
     }
   }, [keyID, publish, record])
 
@@ -291,6 +294,7 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
     if ("preview" in transition) previewRef.current = transition.preview
     setInputMode("history-preview")
     publish(transition.document, transition.mentions)
+    setTextPresetEpoch((value) => value + 1)
   }, [publish])
   const exitHistoryPreview = useCallback((): void => {
     const preview = previewRef.current
@@ -299,6 +303,7 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
     setInputMode("compose")
     const restored = exitComposerHistoryPreview(preview)
     publish(restored.document, restored.mentions)
+    setTextPresetEpoch((value) => value + 1)
   }, [publish])
   const captureSubmission = useCallback((): ComposerSubmissionCapture | null => {
     const key = keyRef.current
@@ -319,5 +324,5 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
   }, [notifyResourcesChanged, store])
 
   const getDocument = useCallback(() => documentRef.current, [])
-  return useMemo(() => ({ document, mentions, confirmedFileMentions: mentions.filter((mention) => mention.kind === "file" || mention.kind === "directory"), inputMode, hydration, persistence, getDocument, replacePlainDocument, replaceMaterializedDocument, applyBrowserEdit, applyProgrammaticEdit, replaceProgrammaticText, insertReference, deleteReference, restoreReferenceHistory, commitMentions, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission }), [applyBrowserEdit, applyProgrammaticEdit, captureSubmission, commitMentions, deleteReference, document, enterHistoryPreview, exitHistoryPreview, getDocument, hydration, inputMode, insertReference, mentions, persistence, recoverSubmission, replaceMaterializedDocument, replacePlainDocument, replaceProgrammaticText, restoreReferenceHistory])
+  return useMemo(() => ({ document, mentions, confirmedFileMentions: mentions.filter((mention) => mention.kind === "file" || mention.kind === "directory"), inputMode, hydration, persistence, textPresetEpoch, getDocument, replacePlainDocument, replaceMaterializedDocument, applyBrowserEdit, applyProgrammaticEdit, replaceProgrammaticText, insertReference, deleteReference, restoreReferenceHistory, commitMentions, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission }), [applyBrowserEdit, applyProgrammaticEdit, captureSubmission, commitMentions, deleteReference, document, enterHistoryPreview, exitHistoryPreview, getDocument, hydration, inputMode, insertReference, mentions, persistence, recoverSubmission, replaceMaterializedDocument, replacePlainDocument, replaceProgrammaticText, restoreReferenceHistory, textPresetEpoch])
 }

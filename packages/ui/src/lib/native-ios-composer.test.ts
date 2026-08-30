@@ -28,6 +28,7 @@ import {
   resolveNativeComposerSendHandoff,
   resolveNativeComposerTextWrite,
   shouldApplyNativeComposerText,
+  shouldIgnoreNativeComposerTextEcho,
   setNativeComposerDocumentClass,
   skippedNamesFromNativeComposerPayload,
   type NativeIosComposerState,
@@ -235,6 +236,24 @@ describe('native iOS composer contract', () => {
       nativeOwnedText: 'hi',
       echoingNative: false,
     })).toEqual({ omitText: false, forceText: true });
+    expect(resolveNativeComposerTextWrite({
+      nextText: 'restored message',
+      nativeOwnedText: 'draft in flight',
+      echoingNative: true,
+      preset: true,
+    })).toEqual({ omitText: false, forceText: true });
+    expect(shouldIgnoreNativeComposerTextEcho({
+      incoming: 'draft in flight',
+      replacedText: 'draft in flight',
+    })).toBe(true);
+    expect(shouldIgnoreNativeComposerTextEcho({
+      incoming: 'restored message',
+      replacedText: 'draft in flight',
+    })).toBe(false);
+    expect(shouldIgnoreNativeComposerTextEcho({
+      incoming: 'draft in flight',
+      replacedText: null,
+    })).toBe(false);
     expect(shouldApplyNativeComposerText({
       incoming: 'ni',
       current: 'n',

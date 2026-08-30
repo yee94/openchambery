@@ -26,6 +26,7 @@ import {
   resolveCssVarToHex,
   resolveNativeComposerTextWrite,
   setNativeComposerDocumentClass,
+  shouldIgnoreNativeComposerTextEcho,
   type NativeIosComposerAttachmentPreview,
   type NativeIosComposerAutocomplete,
   type NativeIosComposerChipHighlight,
@@ -74,6 +75,8 @@ export type UseNativeIosComposerArgs = {
   enabled: boolean;
   isMobile: boolean;
   text: string;
+  /** Bumps on JS-authored document replace (edit restore, session switch). */
+  textPresetEpoch: number;
   placeholder: string;
   modelLabel: string;
   modelVariantLabel: string;
@@ -135,6 +138,8 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   const lastStateRef = useRef<NativeIosComposerState | null>(null);
   const nativeTextRef = useRef(args.text);
   const echoingNativeRef = useRef(false);
+  const lastTextPresetEpochRef = useRef(-1);
+  const replacedNativeTextRef = useRef<string | null>(null);
   const modelIconRef = useRef('');
   const previewRef = useRef<NativeIosComposerAttachmentPreview[]>([]);
   const autocompleteRef = useRef<NativeIosComposerAutocomplete>(emptyNativeComposerAutocomplete());
@@ -157,6 +162,13 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   });
   nativeIosComposerSession.bind({
     onText: (text, composing, selection) => {
+      if (shouldIgnoreNativeComposerTextEcho({
+        incoming: text,
+        replacedText: replacedNativeTextRef.current,
+      })) {
+        return;
+      }
+      replacedNativeTextRef.current = null;
       nativeTextRef.current = text;
       echoingNativeRef.current = true;
       onText(text, composing, selection);
@@ -372,17 +384,26 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     const previous = lastStateRef.current;
     if (previous && nativeComposerStatesEqual(previous, next)) {
       echoingNativeRef.current = false;
+      lastTextPresetEpochRef.current = args.textPresetEpoch;
       return;
     }
     lastStateRef.current = next;
     nativeIosComposerSession.rememberState(next);
+    const preset = args.textPresetEpoch !== lastTextPresetEpochRef.current;
+    lastTextPresetEpochRef.current = args.textPresetEpoch;
     const write = resolveNativeComposerTextWrite({
       nextText: next.text,
       nativeOwnedText: nativeTextRef.current,
       echoingNative: echoingNativeRef.current,
+      preset,
     });
     echoingNativeRef.current = false;
-    nativeTextRef.current = next.text;
+    if (!write.omitText && write.forceText) {
+      replacedNativeTextRef.current = nativeTextRef.current;
+    }
+    if (!write.omitText) {
+      nativeTextRef.current = next.text;
+    }
     const payload = buildNativeComposerUpdatePayload(previous, next, write, {
       caret: args.caret,
     });
@@ -392,6 +413,7 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   }, [
     available,
     args.text,
+    args.textPresetEpoch,
     args.placeholder,
     args.modelLabel,
     args.modelVariantLabel,

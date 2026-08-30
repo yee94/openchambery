@@ -4,7 +4,7 @@ import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { useNativeIosComposer } from './useNativeIosComposer';
-import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
+import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, getNativeIosComposerPlugin, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -2404,11 +2404,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }
         if (stagedEditFocusedRowRef.current === stagedEditMessageId) return;
         stagedEditFocusedRowRef.current = stagedEditMessageId;
+        if (nativeComposerOwnedInput) {
+            void getNativeIosComposerPlugin().focus();
+            return;
+        }
         if (!focusComposerTextarea(textareaRef)) {
             // Staging can land a frame before the textarea is mounted/enabled.
             requestAnimationFrame(() => focusComposerTextarea(textareaRef));
         }
-    }, [stagedEditMessageId, surface.kind]);
+    }, [nativeComposerOwnedInput, stagedEditMessageId, surface.kind]);
     const establishingPendingItems = useComposerSendStore(
         React.useMemo(() => selectEstablishingPendingItems(establishingDraftID), [establishingDraftID]),
     );
@@ -6312,6 +6316,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         enabled: isMobile && surface.kind === 'primary',
         isMobile,
         text: message,
+        textPresetEpoch: composer.textPresetEpoch,
         placeholder: compactComposerPlaceholder,
         modelLabel: nativeModelName,
         modelVariantLabel: nativeModelVariant ? formatEffortLabel(nativeModelVariant) : '',

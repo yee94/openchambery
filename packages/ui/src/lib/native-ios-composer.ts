@@ -473,6 +473,8 @@ export const resolveNativeComposerTextWrite = (input: {
   nextText: string;
   nativeOwnedText: string;
   echoingNative: boolean;
+  /** JS-authored replace (edit restore, session switch). Not a keystroke echo. */
+  preset?: boolean;
 }): NativeComposerTextWrite => {
   if (input.nextText === input.nativeOwnedText) {
     return { omitText: true, forceText: false };
@@ -482,11 +484,23 @@ export const resolveNativeComposerTextWrite = (input: {
   if (input.nextText.length === 0 && input.nativeOwnedText.length > 0) {
     return { omitText: false, forceText: true };
   }
+  if (input.preset) {
+    return { omitText: false, forceText: true };
+  }
   if (input.echoingNative) {
     return { omitText: true, forceText: false };
   }
   return { omitText: false, forceText: true };
 };
+
+/**
+ * After a preset forceText, native may still deliver the pre-preset document
+ * (blur / selection echo from tapping Edit). Do not apply that echo to JS.
+ */
+export const shouldIgnoreNativeComposerTextEcho = (input: {
+  incoming: string;
+  replacedText: string | null;
+}): boolean => input.replacedText !== null && input.incoming === input.replacedText;
 
 /** Native send only hands the draft to Web. It must not force-write the field. */
 export const resolveNativeComposerSendHandoff = (): NativeComposerTextWrite => ({
