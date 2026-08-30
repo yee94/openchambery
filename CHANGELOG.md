@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.34] - 2026-08-30
+
+### Changed
+
+- On the phone homepage, destructive actions like Remove sit in their own group below the other sheet actions, so they are harder to tap by accident.
+- Homepage action-sheet rows are taller and easier to tap.
+
 ## [1.19.0-beta.33] - 2026-08-30
 
 ### Fixed
