@@ -553,7 +553,7 @@ describe('Assistant UI product contract', () => {
     expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');
     expect(view).toContain('overlay');
     expect(mobileStyles).toContain('--oc-mobile-header-fade');
-    expect(mobileStyles).toContain('var(--surface-background) 70%');
+    expect(mobileStyles).toContain('var(--surface-background) 85%');
     expect(mobileStyles.match(/var\(--oc-mobile-header-fade\)/g)?.length).toBeGreaterThanOrEqual(4);
   });
 

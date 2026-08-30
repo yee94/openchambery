@@ -145,7 +145,7 @@ describe('mobile composer overflow and swap contract', () => {
             /:root\.oc-native-ios-composer \.oc-chat-composer-swap-scope\s*\{[^}]*--oc-mobile-composer-swap:\s*0\s*!important/,
         );
         expect(mobileCss).toMatch(
-            /:root\.oc-native-ios-composer \.oc-chat-composer-swap-scope\s*\{[^}]*--oc-chat-foot-inset:\s*calc\(\s*var\(--oc-native-composer-height/,
+            /:root\.oc-native-ios-composer\s*\{[^}]*--oc-chat-foot-inset:\s*calc\(\s*var\(--oc-native-composer-height/,
         );
         expect(mobileCss).toContain('--oc-native-composer-accessory');
         expect(mobileCss).toMatch(
@@ -202,6 +202,53 @@ describe('mobile composer overflow and swap contract', () => {
             /oc-native-ios-composer[\s\S]*unwindKeyboardShell\(\)/,
         );
         expect(mobileAppSource).toContain("setVar('--oc-kb-layout', 0)");
+    });
+
+    /**
+     * A source regex cannot tell which foot-inset declaration actually wins.
+     * The native reservation used to be scoped to `.oc-chat-composer-swap-scope`
+     * while the web default was scoped to `:root.mobile-pointer:not(...)` and
+     * the same scope class — one extra compound selector, so the web default
+     * out-specified it and the transcript reserved a fixed 8rem no matter how
+     * tall the native pill plus the queued-message strip really were. Resolve
+     * the value through the cascade so weight, not source order, is asserted.
+     */
+    test('native iOS foot inset wins the cascade over the fixed web reservation', () => {
+        const footInsetRules: string[] = [];
+        for (let cursor = 0; ;) {
+            const declaration = mobileCss.indexOf('--oc-chat-foot-inset:', cursor);
+            if (declaration === -1) break;
+            const blockEnd = mobileCss.indexOf('}', declaration);
+            const blockStart = mobileCss.lastIndexOf('{', declaration);
+            footInsetRules.push(mobileCss.slice(mobileCss.lastIndexOf('}', blockStart) + 1, blockEnd + 1));
+            cursor = blockEnd + 1;
+        }
+        // Every declaration is in the fixture, so a third one cannot be added
+        // without this assertion resolving it too.
+        expect(footInsetRules).toHaveLength(2);
+
+        const resolveFootInset = (nativeIos: boolean): string => {
+            document.documentElement.className = nativeIos
+                ? 'mobile-pointer oc-native-ios-composer'
+                : 'mobile-pointer';
+            const style = document.createElement('style');
+            style.textContent = `
+              :root {
+                --oc-native-composer-height: 90px;
+                --oc-native-composer-accessory: 100px;
+                --oc-safe-area-bottom-visual: 34px;
+              }
+              ${footInsetRules.join('\n')}
+            `;
+            document.head.appendChild(style);
+            injected.add(style);
+            return getComputedStyle(document.documentElement)
+                .getPropertyValue('--oc-chat-foot-inset')
+                .replace(/\s+/g, '');
+        };
+
+        expect(resolveFootInset(false)).toBe('calc(8rem+34px)');
+        expect(resolveFootInset(true)).toBe('calc(90px+100px)');
     });
 
     test('queue card tuck stays on web and Android; native iOS hides the overlap', () => {

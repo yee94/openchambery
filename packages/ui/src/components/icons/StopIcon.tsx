@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
  * Composer abort / send control: inverted filled circle.
  * Stop uses a CSS square (not sprite `stop`) because button SVG rects are
  * forced to `fill: none` in the global WebKit icon workaround.
+ * Native iOS `OpenChamberComposer` paints the same 24pt disc (arrow 56% /
+ * stop square 38% with 20% radius) in `composerCircleImage`.
  */
 function ComposerCircleGlyph({
     className,

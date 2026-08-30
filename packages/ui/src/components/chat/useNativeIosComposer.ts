@@ -234,11 +234,16 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     if (!available) return;
     let cancelled = false;
     const src = resolveModelLogoSrc(args.modelId, args.providerId);
-    // Drop the previous model's raster immediately. Keeping it until the new
-    // PNG arrives paints the old mark next to the new label.
+    // The overlay is a process singleton. Always republish name + thinking
+    // with the icon so a session switch cannot keep the previous chip text.
+    const chrome = {
+      modelIcon: '',
+      modelLabel: args.modelLabel,
+      modelVariantLabel: args.modelVariantLabel,
+    };
     modelIconRef.current = '';
-    if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, modelIcon: '' };
-    void getNativeIosComposerPlugin().update({ modelIcon: '' });
+    if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, ...chrome };
+    void getNativeIosComposerPlugin().update(chrome);
     if (!src) {
       return;
     }
@@ -246,11 +251,16 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
       if (cancelled) return;
       const next = base64 ?? '';
       modelIconRef.current = next;
-      if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, modelIcon: next };
-      void getNativeIosComposerPlugin().update({ modelIcon: next });
+      const painted = {
+        modelIcon: next,
+        modelLabel: args.modelLabel,
+        modelVariantLabel: args.modelVariantLabel,
+      };
+      if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, ...painted };
+      void getNativeIosComposerPlugin().update(painted);
     });
     return () => { cancelled = true; };
-  }, [available, args.modelId, args.providerId]);
+  }, [available, args.modelId, args.providerId, args.modelLabel, args.modelVariantLabel]);
 
   const attachmentSignature = attachmentPreviewSourceSignature(args.attachments);
   useEffect(() => {
@@ -360,6 +370,8 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     args.placeholder,
     args.modelLabel,
     args.modelVariantLabel,
+    args.modelId,
+    args.providerId,
     args.canSend,
     args.canAbort,
     args.attachmentCount,

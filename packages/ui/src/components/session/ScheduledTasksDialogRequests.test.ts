@@ -359,7 +359,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(rootHeaderContent).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
     expect(mobileStyles).toContain('.oc-mobile-collapsing-header::after');
     expect(mobileStyles).toContain('--oc-mobile-header-fade');
-    expect(mobileStyles).toContain('var(--surface-background) 70%');
+    expect(mobileStyles).toContain('var(--surface-background) 85%');
     expect(mobileStyles).toContain('opacity: var(--oc-mobile-title-collapse)');
     // Bounce-free: layout box is constant; collapse only drives transform/opacity.
     // Compact end is 1.25rem (scale 0.625), not detail-nav 0.9375rem — balances 40px actions.

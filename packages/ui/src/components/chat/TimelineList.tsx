@@ -17,10 +17,14 @@
 //     real trailing list item (`usableViewport - content`) with a fixed size
 //     so the virtualizer can park the user row. Usable height is the middle
 //     window: list viewport minus the measured header (safe area + nav) and
-//     footer (composer inset), capped at 40% of the list viewport. That hole
-//     is the live edge — no further downward room under it. Collapse,
-//     hydration, and streaming keep writing the turn. The spacer only shrinks
-//     with content; a later collapse that would reopen it drops the reserve.
+//     footer (composer inset + tail), capped at 40% of the list viewport. That
+//     hole is the live edge — no further downward room under it, which is why
+//     nothing writes scroll to hold that edge: the scroller's own bounds do,
+//     and a correction would fight iOS rubber-band. Because the cap can leave
+//     the scroller short of the ideal park offset, the published edge is
+//     bounded by real scroll room. Collapse, hydration, and streaming keep
+//     writing the turn. The spacer only shrinks with content; a later collapse
+//     that would reopen it drops the reserve.
 //
 // Rows are never recycled: chat rows own internal state (expanded tool calls,
 // reveal animations) that recycling would carry into a different turn.
@@ -70,6 +74,7 @@ import {
     didPrependTimelineEntries,
     getAnchoredTurnMetrics,
     isReplyReserveOverflowing,
+    resolveMaxScrollOffset,
     resolveParkAnchorOffset,
     resolveParkedLiveEdgeOffset,
     resolveReplyReserveUpdate,
@@ -144,7 +149,7 @@ const resolveParkOffsetForState = (
     space: TimelineAnchoredEndSpace | undefined,
     parkReleased: boolean,
     state: Parameters<typeof getAnchoredTurnMetrics>[0]['state'],
-    occlusion: number,
+    endInsetHeight: number,
     parkAnchorOffset: number,
 ): number | null => {
     if (!space || parkReleased) return null;
@@ -152,13 +157,14 @@ const resolveParkOffsetForState = (
         state,
         anchorIndex: space.anchorIndex,
         lastIndex: space.anchorIndex,
-        composerOverlayHeight: occlusion,
+        endInsetHeight,
         anchorOffset: parkAnchorOffset,
     });
     if (!metrics) return null;
     return resolveParkedLiveEdgeOffset({
         anchorTop: metrics.anchorTop,
         anchorOffset: parkAnchorOffset,
+        maxScrollOffset: resolveMaxScrollOffset(state),
     });
 };
 
@@ -171,6 +177,47 @@ const resolveMeasuredViewportHeight = (
     }
     const fromElement = element?.clientHeight ?? 0;
     return fromElement > 0 ? fromElement : 0;
+};
+
+const getTimelineItemKey = (entry: { key: string }): string => entry.key;
+
+// Rows are pooled by kind so a turn moving from the live tail into history
+// reuses the same container kind instead of tearing its subtree down.
+const getTimelineItemType = (entry: { kind: string }): string => entry.kind;
+
+/**
+ * A header or footer slot whose rendered height is reported back as state.
+ *
+ * The list derives its content size analytically, so a slot has to be measured
+ * to exist as far as its scroll math is concerned: CSS padding on the scroll
+ * content is invisible to `isAtEnd` and end maintenance. The header height is
+ * where a parked row rests; the footer height is the bottom chrome the
+ * send-park window must not reach into.
+ */
+const useMeasuredTimelineSlot = (): {
+    readonly height: number;
+    readonly heightRef: React.RefObject<number>;
+    readonly setElement: (element: HTMLDivElement | null) => void;
+} => {
+    const elementRef = React.useRef<HTMLDivElement | null>(null);
+    const heightRef = React.useRef(0);
+    const [observedElement, setObservedElement] = React.useState<HTMLDivElement | null>(null);
+    const [height, setHeight] = React.useState(0);
+    const publishHeight = useEvent(() => {
+        const nextHeight = elementRef.current?.offsetHeight ?? 0;
+        heightRef.current = nextHeight;
+        setHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+    });
+    const setElement = useEvent((element: HTMLDivElement | null) => {
+        elementRef.current = element;
+        setObservedElement((previous) => (previous === element ? previous : element));
+        publishHeight();
+    });
+    useResizeObserver(
+        typeof ResizeObserver !== 'undefined' ? observedElement : null,
+        publishHeight,
+    );
+    return { height, heightRef, setElement };
 };
 
 /** The subset of the list's ScrollView methods object this module relies on. */
@@ -235,8 +282,6 @@ export type TimelineListProps<TEntry extends TimelineRowEntry> = {
      * later remount cannot recreate the hole.
      */
     onAnchoredTurnParkReleased?: (reserveId: string) => void;
-    /** Height of the composer floating over the list. */
-    composerOverlayHeight?: number;
     /**
      * False while something else owns the scroll position: an explicit
      * navigation to an older turn, or the user having scrolled away. Replaces
@@ -337,7 +382,6 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     registerList,
     anchoredEndSpace,
     onAnchoredTurnParkReleased,
-    composerOverlayHeight = 0,
     followEnabled = true,
     historyAnchorToken = 0,
     sessionIsWorking = false,
@@ -359,10 +403,10 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const tuningRef = React.useRef(hydrationTuning);
     tuningRef.current = hydrationTuning;
 
-    const setListRef = React.useCallback((list: LegendListRef | null) => {
+    const setListRef = useEvent((list: LegendListRef | null) => {
         listRef.current = list;
         registerList?.(list);
-    }, [registerList]);
+    });
 
     // `refScrollView` hands back a ScrollView methods object (scrollTo,
     // getScrollableNode, …), not the element. Everything downstream expects an
@@ -370,42 +414,15 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const listScrollElementRef = React.useRef<HTMLDivElement | null>(null);
     const [scrollElement, setScrollElement] = React.useState<HTMLDivElement | null>(null);
     const [viewportHeight, setViewportHeight] = React.useState(0);
-    const [headerElement, setHeaderElement] = React.useState<HTMLDivElement | null>(null);
-    const [headerHeight, setHeaderHeight] = React.useState(0);
-    const headerElementRef = React.useRef<HTMLDivElement | null>(null);
-    const headerHeightRef = React.useRef(0);
-    const [footerElement, setFooterElement] = React.useState<HTMLDivElement | null>(null);
-    const [footerHeight, setFooterHeight] = React.useState(0);
-    const footerElementRef = React.useRef<HTMLDivElement | null>(null);
-    const footerHeightRef = React.useRef(0);
-    const publishHeaderHeight = useEvent((element: HTMLElement | null = headerElementRef.current) => {
-        const nextHeight = element?.offsetHeight ?? 0;
-        headerHeightRef.current = nextHeight;
-        setHeaderHeight((previous) => (previous === nextHeight ? previous : nextHeight));
-    });
-    const setHeaderMeasureElement = useEvent((element: HTMLDivElement | null) => {
-        headerElementRef.current = element;
-        setHeaderElement((previous) => (previous === element ? previous : element));
-        publishHeaderHeight(element);
-    });
-    const publishFooterHeight = useEvent((element: HTMLElement | null = footerElementRef.current) => {
-        const nextHeight = element?.offsetHeight ?? 0;
-        footerHeightRef.current = nextHeight;
-        setFooterHeight((previous) => (previous === nextHeight ? previous : nextHeight));
-    });
-    const setFooterMeasureElement = useEvent((element: HTMLDivElement | null) => {
-        footerElementRef.current = element;
-        setFooterElement((previous) => (previous === element ? previous : element));
-        publishFooterHeight(element);
-    });
-    useResizeObserver(
-        typeof ResizeObserver !== 'undefined' ? headerElement : null,
-        () => publishHeaderHeight(headerElementRef.current),
-    );
-    useResizeObserver(
-        typeof ResizeObserver !== 'undefined' ? footerElement : null,
-        () => publishFooterHeight(footerElementRef.current),
-    );
+    const {
+        height: headerHeight,
+        setElement: setHeaderMeasureElement,
+    } = useMeasuredTimelineSlot();
+    const {
+        height: footerHeight,
+        heightRef: footerHeightRef,
+        setElement: setFooterMeasureElement,
+    } = useMeasuredTimelineSlot();
     const measuredHeader = header != null ? (
         <div ref={setHeaderMeasureElement} data-oc-timeline-header="">
             {header}
@@ -428,7 +445,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             hideBottomShadow: hideBottomScrollShadowRef.current,
         });
     });
-    const setScrollView = React.useCallback((scrollView: ScrollViewLike | null) => {
+    const setScrollView = useEvent((scrollView: ScrollViewLike | null) => {
         const element = scrollView?.getScrollableNode?.() ?? null;
         if (element && scrollElementDataset) {
             for (const [key, value] of Object.entries(scrollElementDataset)) {
@@ -446,7 +463,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             listRef.current?.getState()?.scrollLength,
         );
         setViewportHeight((previous) => (previous === nextHeight ? previous : nextHeight));
-    }, [scrollElementDataset, scrollElementRef, syncScrollShadow]);
+    });
     const publishViewportHeight = useEvent(() => {
         const nextHeight = resolveMeasuredViewportHeight(
             listScrollElementRef.current,
@@ -457,7 +474,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     });
     React.useLayoutEffect(() => {
         syncScrollShadow(scrollElement);
-    }, [hideBottomScrollShadow, hideTopScrollShadow, scrollElement, syncScrollShadow]);
+    }, [hideBottomScrollShadow, hideTopScrollShadow, scrollElement]);
     useResizeObserver(
         typeof ResizeObserver !== 'undefined' ? scrollElement : null,
         publishViewportHeight,
@@ -880,33 +897,33 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 anchoredEndSpaceRef.current,
                 parkReleasedRef.current,
                 state,
-                composerOverlayHeightRef.current + footerHeightRef.current,
+                footerHeightRef.current,
                 parkAnchorOffsetRef.current,
             );
             writeTimelineParkEndOffset(listScrollElementRef.current, parkOffset);
-            const distanceFromEnd = parkOffset !== null
+            // While parked, the live edge is the reserved hole rather than
+            // `contentLength`, and that distance is always measurable — one
+            // binding for both readings so re-arming and the button agree.
+            const parkedDistance = parkOffset !== null
                 ? resolveTimelineDistanceFromParkedEnd({
                     scroll: state.scroll,
                     parkOffset,
                 })
-                : resolveTimelineDistanceFromEnd(state);
-            const atEnd = parkOffset !== null
-                ? distanceFromEnd <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX
+                : null;
+            const distanceFromEnd = parkedDistance ?? resolveTimelineDistanceFromEnd(state);
+            const atEnd = parkedDistance !== null
+                ? parkedDistance <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX
                 : resolveTimelineIsAtEnd(state) ?? state.isAtEnd;
             const showScrollButton = resolveTimelineScrollButtonVisible(
                 distanceFromEnd,
                 lastShowScrollButtonRef.current,
             );
-            const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-            if (
-                parkOffset !== null
-                && parkedReserveIdRef.current !== null
-                && now >= parkAnimatingUntilRef.current
-                && Number.isFinite(state.scroll)
-                && state.scroll > parkOffset + 1
-            ) {
-                void list.scrollToOffset({ offset: parkOffset, animated: false });
-            }
+            // Nothing corrects the position toward `parkOffset` here. The hole
+            // makes that offset the end of the content, so the scroller's own
+            // bounds already hold it, and iOS reports `scrollTop` past the
+            // maximum while it rubber-bands — a correction fires mid-bounce and
+            // fights the finger. Slack below the edge only opens as the reserve
+            // is being dropped, which returns to `following-end` anyway.
             if (
                 atEnd !== lastIsAtEndRef.current
                 || showScrollButton !== lastShowScrollButtonRef.current
@@ -930,12 +947,6 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         // viewport during a fast scroll are hydrated by the trailing pass.
         armIdleMarkdownHydration();
     });
-
-    const keyExtractor = React.useCallback((entry: TimelineListItem<TEntry>) => entry.key, []);
-
-    // Rows are pooled by kind so a turn moving from the live tail into history
-    // reuses the same container kind instead of tearing its subtree down.
-    const getItemType = React.useCallback((entry: TimelineListItem<TEntry>) => entry.kind, []);
 
     const renderEntryRef = React.useRef(renderEntry);
     renderEntryRef.current = renderEntry;
@@ -991,7 +1002,10 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const onMeasuredSizeRef = React.useRef(handleMeasuredSize);
     onMeasuredSizeRef.current = handleMeasuredSize;
 
-    const renderItem = React.useCallback(({
+    // A render-phase factory, not an event handler: the list calls this while
+    // building rows. Everything dynamic reaches a row through the refs it
+    // closes over, so the factory itself never has to be rebuilt.
+    const renderItem = React.useMemo(() => ({
         item,
         index,
     }: {
@@ -1023,8 +1037,6 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     historyAnchorRef.current = historyAnchor;
     const anchoredEndSpaceRef = React.useRef(anchoredEndSpace);
     anchoredEndSpaceRef.current = anchoredEndSpace;
-    const composerOverlayHeightRef = React.useRef(composerOverlayHeight);
-    composerOverlayHeightRef.current = composerOverlayHeight;
     const parkAnimatingUntilRef = React.useRef(0);
     const parkAnchorOffsetRef = React.useRef(CHAT_LIST_ANCHOR_OFFSET);
     const releasedParkKeyRef = React.useRef<string | null>(null);
@@ -1048,7 +1060,6 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const parkAnchorOffset = resolveParkAnchorOffset(headerHeight);
     const usableViewportHeight = resolveUsableViewportHeight({
         viewportHeight: resolvedViewportHeight,
-        composerOverlayHeight,
         endInsetHeight: footerHeight,
         anchorOffset: parkAnchorOffset,
     });
@@ -1125,11 +1136,17 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
             state,
             anchorIndex: space.anchorIndex,
             lastIndex: space.anchorIndex,
-            composerOverlayHeight: composerOverlayHeightRef.current + footerHeightRef.current,
+            endInsetHeight: footerHeightRef.current,
             anchorOffset,
         });
         if (!metrics) return false;
         if (mode === 'park') {
+            // Deliberately the ideal offset, not the bounded live edge: the
+            // scroller clamps a too-far target on its own, while a target
+            // bounded by a content length that has not counted the fresh hole
+            // yet would park short and stay there — this runs once per send.
+            // `resolveParkOffsetForState` bounds the *published* edge instead,
+            // and it re-reads measurement every scroll frame.
             const offset = Math.max(0, metrics.anchorTop - anchorOffset);
             const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
             const reducedMotion = typeof window !== 'undefined'
@@ -1198,11 +1215,11 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 anchoredEndSpace,
                 parkReleased,
                 list.getState(),
-                composerOverlayHeight + footerHeight,
+                footerHeight,
                 parkAnchorOffset,
             ),
         );
-    }, [anchoredEndSpace, composerOverlayHeight, footerHeight, parkAnchorOffset, parkReleased]);
+    }, [anchoredEndSpace, footerHeight, parkAnchorOffset, parkReleased]);
 
     const listEntries = React.useMemo((): readonly TimelineListItem<TEntry>[] => {
         const spacerHeight = activeReplyReserve?.spacerHeight ?? 0;
@@ -1242,14 +1259,13 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 refScrollView={setScrollView as unknown as React.Ref<HTMLElement>}
                 data={listEntries as TimelineListItem<TEntry>[]}
                 extraData={rowInvalidationKey}
-                keyExtractor={keyExtractor}
-                getItemType={getItemType}
+                keyExtractor={getTimelineItemKey}
+                getItemType={getTimelineItemType}
                 getFixedItemSize={getReplyReserveFixedSize}
                 renderItem={renderItem}
                 estimatedItemSize={estimatedItemSize}
                 initialScrollAtEnd
                 recycleItems={false}
-                contentInsetEndAdjustment={composerOverlayHeight}
                 maintainScrollAtEnd={maintainScrollAtEnd}
                 // Prepending older history must not move what the user is
                 // reading — see the settle window above for why size

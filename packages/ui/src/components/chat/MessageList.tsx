@@ -2187,14 +2187,6 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
         ),
         [allEntries, anchoredUserMessageId],
     );
-    const timelineScrollDatasetWithPark = React.useMemo(() => {
-        if (!anchoredEndSpace?.anchorId) return scrollDataset;
-        return {
-            ...scrollDataset,
-            ocAnchoredUserId: anchoredEndSpace.anchorId,
-        };
-    }, [anchoredEndSpace, scrollDataset]);
-
     const hydrationTuning = React.useMemo<TimelineHydrationTuning>(() => ({
         resolvePreloadEntries: (visibleCount: number) => resolveMarkdownPreloadEntries(activityRenderMode, visibleCount),
         resolvePreloadReleaseWhileScrolling: () => resolveMarkdownPreloadReleaseWhileScrolling(activityRenderMode),
@@ -2293,7 +2285,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
                 footer={footer}
                 className={scrollClassName}
                 style={scrollStyle}
-                scrollElementDataset={timelineScrollDatasetWithPark}
+                scrollElementDataset={scrollDataset}
                 hideTopScrollShadow={isMobile && stickyUserHeader}
                 hideBottomScrollShadow={isMobile}
                 onScroll={onScroll}

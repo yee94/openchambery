@@ -31,8 +31,8 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private let modelButton = UIButton(type: .custom)
     private let modelContent = UIStackView()
     private let modelIconView = UIImageView()
-    private let modelNameLabel = UILabel()
-    private let modelVariantLabel = UILabel()
+    private let modelNameView = UIImageView()
+    private let modelVariantView = UIImageView()
     private let agentButton = UIButton(type: .custom)
     private let agentNameLabel = UILabel()
     private let agentCluster = UIStackView()
@@ -352,23 +352,20 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         modelIconView.translatesAutoresizingMaskIntoConstraints = false
         modelIconView.contentMode = .scaleAspectFit
         modelIconView.setContentHuggingPriority(.required, for: .horizontal)
-        modelNameLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        modelNameLabel.numberOfLines = 1
-        modelNameLabel.lineBreakMode = .byTruncatingTail
-        modelNameLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        modelNameLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-        modelVariantLabel.font = .systemFont(ofSize: 11, weight: .regular)
-        modelVariantLabel.numberOfLines = 1
-        modelVariantLabel.setContentHuggingPriority(.required, for: .horizontal)
-        modelVariantLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        modelNameView.contentMode = .left
+        modelNameView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        modelNameView.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        modelVariantView.contentMode = .left
+        modelVariantView.setContentHuggingPriority(.required, for: .horizontal)
+        modelVariantView.setContentCompressionResistancePriority(.required, for: .horizontal)
         modelContent.axis = .horizontal
         modelContent.alignment = .center
         modelContent.spacing = 4
         modelContent.isUserInteractionEnabled = false
         modelContent.translatesAutoresizingMaskIntoConstraints = false
         modelContent.addArrangedSubview(modelIconView)
-        modelContent.addArrangedSubview(modelNameLabel)
-        modelContent.addArrangedSubview(modelVariantLabel)
+        modelContent.addArrangedSubview(modelNameView)
+        modelContent.addArrangedSubview(modelVariantView)
         modelButton.addSubview(modelContent)
 
         agentButton.translatesAutoresizingMaskIntoConstraints = false
@@ -524,7 +521,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             modelButton.heightAnchor.constraint(equalToConstant: 26),
             modelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
             modelButton.widthAnchor.constraint(lessThanOrEqualToConstant: 220),
-            modelNameLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            modelNameView.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
             collapsedMinHeight,
         ])
 
@@ -645,11 +642,23 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             modelIconView.image = Self.templateModelIcon(modelIconImage)
             modelIconView.tintColor = titleColor
             modelIconView.isHidden = modelIconView.image == nil
-            modelNameLabel.text = trimmed
-            modelNameLabel.textColor = titleColor
-            modelVariantLabel.text = variant
-            modelVariantLabel.textColor = mutedColor
-            modelVariantLabel.isHidden = variant.isEmpty
+            // Bitmaps, not UILabels. The overlay is a process singleton;
+            // UIGlassEffect vibrancy keeps stale UILabel glyphs after a
+            // session switch while UIImageView still swaps.
+            modelNameView.image = Self.rasterModelChrome(
+                trimmed,
+                font: .systemFont(ofSize: 11, weight: .medium),
+                color: titleColor,
+                maxWidth: 140
+            )
+            modelNameView.isHidden = trimmed.isEmpty
+            modelVariantView.image = Self.rasterModelChrome(
+                variant,
+                font: .systemFont(ofSize: 11, weight: .regular),
+                color: mutedColor,
+                maxWidth: 72
+            )
+            modelVariantView.isHidden = variant.isEmpty
             modelButton.backgroundColor = .clear
             modelButton.isHidden = !isExpanded || trimmed.isEmpty
             modelButton.accessibilityLabel = [trimmed, variant].filter { !$0.isEmpty }.joined(separator: " ")
@@ -664,21 +673,71 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         !(textView.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private enum ComposerActionGlyph {
+        case send
+        case stop
+    }
+
+    /// Matches web `SendCircleIcon` / `StopIcon`: 24pt inverted disc, arrow at
+    /// 56% or a stop square at 38% with 20% corner radius.
+    private func composerCircleImage(_ glyph: ComposerActionGlyph) -> UIImage {
+        let size: CGFloat = 24
+        let fill = chromeColor()
+        let ink = appearanceIsDark ? UIColor.black : UIColor.white
+        let image = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
+            fill.setFill()
+            UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: size, height: size)).fill()
+            switch glyph {
+            case .send:
+                let config = UIImage.SymbolConfiguration(pointSize: size * 0.56, weight: .medium)
+                guard let arrow = UIImage(systemName: "arrow.up", withConfiguration: config) else { return }
+                let tinted = arrow.withTintColor(ink, renderingMode: .alwaysOriginal)
+                tinted.draw(at: CGPoint(
+                    x: (size - tinted.size.width) / 2,
+                    y: (size - tinted.size.height) / 2
+                ))
+            case .stop:
+                let side = size * 0.38
+                let origin = (size - side) / 2
+                ink.setFill()
+                UIBezierPath(
+                    roundedRect: CGRect(x: origin, y: origin, width: side, height: side),
+                    cornerRadius: side * 0.20
+                ).fill()
+            }
+        }
+        return image.withRenderingMode(.alwaysOriginal)
+    }
+
     private func refreshSendButton() {
-        let symbol = canAbort ? "stop.fill" : "arrow.up"
         let enabled = canAbort || canSend || hasSendableText
-        sendButton.setImage(Self.symbol(symbol), for: .normal)
-        sendButton.accessibilityLabel = canAbort ? stopAria : sendAria
-        sendButton.isEnabled = enabled
         sendButton.backgroundColor = .clear
-        sendButton.tintColor = chromeColor()
-        sendButton.alpha = enabled ? 1 : 0.38
+        sendButton.adjustsImageWhenDisabled = false
+        if canAbort {
+            sendButton.setImage(composerCircleImage(.stop), for: .normal)
+            sendButton.accessibilityLabel = stopAria
+            sendButton.isEnabled = true
+            sendButton.alpha = 1
+        } else if enabled {
+            sendButton.setImage(composerCircleImage(.send), for: .normal)
+            sendButton.accessibilityLabel = sendAria
+            sendButton.isEnabled = true
+            sendButton.alpha = 1
+        } else {
+            sendButton.setImage(Self.symbol("arrow.up"), for: .normal)
+            sendButton.tintColor = chromeColor()
+            sendButton.accessibilityLabel = sendAria
+            sendButton.isEnabled = false
+            sendButton.alpha = 0.38
+        }
 
         let showQueueSend = isExpanded && canAbort && (canSend || hasSendableText)
         queueSendButton.isHidden = !showQueueSend
         queueSendButton.isEnabled = showQueueSend
         queueSendButton.backgroundColor = .clear
-        queueSendButton.tintColor = chromeColor()
+        queueSendButton.adjustsImageWhenDisabled = false
+        queueSendButton.setImage(composerCircleImage(.send), for: .normal)
+        queueSendButton.alpha = 1
         queueSendButton.accessibilityLabel = queueAria.isEmpty ? sendAria : queueAria
         scrollAboveCardConstraint?.isActive = false
         scrollAboveQueueConstraint?.isActive = false
@@ -1015,6 +1074,40 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             image.draw(in: CGRect(origin: .zero, size: size))
         }
         return rendered.withRenderingMode(.alwaysTemplate)
+    }
+
+    /// Same path as autocomplete titles: a bitmap, not a UILabel.
+    private static func rasterModelChrome(
+        _ text: String,
+        font: UIFont,
+        color: UIColor,
+        maxWidth: CGFloat
+    ) -> UIImage? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+        ]
+        let bound = (trimmed as NSString).boundingRect(
+            with: CGSize(width: maxWidth, height: font.lineHeight + 4),
+            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+            attributes: attrs,
+            context: nil
+        )
+        let size = CGSize(
+            width: max(1, min(maxWidth, ceil(bound.width))),
+            height: max(1, ceil(bound.height))
+        )
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in
+            (trimmed as NSString).draw(
+                with: CGRect(origin: .zero, size: size),
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: attrs,
+                context: nil
+            )
+        }
     }
 
     private static func symbol(_ name: String) -> UIImage? {

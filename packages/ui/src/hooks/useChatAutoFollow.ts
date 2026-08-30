@@ -3,6 +3,7 @@ import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
+import { resolveChatBottomZoneThresholdPx } from '@/components/chat/lib/scroll/chatTailSpacer';
 import {
     TOUCH_FINGER_DOWN_THRESHOLD,
     isReleaseKey,
@@ -105,8 +106,6 @@ export interface UseChatAutoFollowResult {
 // bottom ownership during that transaction.
 // ──────────────────────────────────────────────────────────────────────────
 
-const BOTTOM_SPACER_DESKTOP_VH = 0.10;
-const BOTTOM_SPACER_MOBILE_PX = 40;
 const SAVE_DEBOUNCE_MS = 150;
 // How long an "auto" (programmatic) scroll position stays trusted. Browsers can
 // dispatch the `scroll` event for our write asynchronously, after newer content
@@ -149,10 +148,11 @@ export const isWithinSessionOpenPinGrace = (nowMs: number, graceUntilMs: number)
 
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-// The bottom of the chat has an empty spacer (10vh on desktop, 40px on mobile)
-// — its height is exactly how far above scrollHeight the user can be while still
-// looking at "empty" space. We use that same value as the threshold for both
-// re-pinning auto-follow and showing the scroll-to-bottom button.
+// The empty spacer at the bottom of the chat is exactly how far above
+// scrollHeight the user can be while still looking at "empty" space, so its
+// height is also the threshold for re-pinning auto-follow and for showing the
+// scroll-to-bottom button — see chat/lib/scroll/chatTailSpacer, which owns both
+// readings.
 // One scroll event used to read scrollTop/scrollHeight/clientHeight five times
 // through the helpers below, with React writes interleaved between the reads —
 // every read after a write is a forced layout, and it showed up as the single
@@ -170,12 +170,6 @@ const readScrollGeometry = (el: HTMLElement): ScrollGeometry => ({
     clientHeight: el.clientHeight,
 });
 
-const computeBottomZoneThresholdFor = (isMobile: boolean, clientHeight: number): number => {
-    if (isMobile) return BOTTOM_SPACER_MOBILE_PX;
-    if (clientHeight <= 0) return 96;
-    return Math.max(48, clientHeight * BOTTOM_SPACER_DESKTOP_VH);
-};
-
 const distanceFromBottomOf = (geometry: ScrollGeometry): number => {
     return geometry.scrollHeight - geometry.scrollTop - geometry.clientHeight;
 };
@@ -189,7 +183,7 @@ const canScrollGeometry = (geometry: ScrollGeometry): boolean => {
 };
 
 const isNearBottomOf = (geometry: ScrollGeometry, isMobile: boolean): boolean => {
-    return distanceFromBottomOf(geometry) <= computeBottomZoneThresholdFor(isMobile, geometry.clientHeight);
+    return distanceFromBottomOf(geometry) <= resolveChatBottomZoneThresholdPx(isMobile, geometry.clientHeight);
 };
 
 export const useChatAutoFollow = ({

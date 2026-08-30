@@ -9,6 +9,7 @@ import {
     resolveNextAnchoredUserMessageId,
     CHAT_REPLY_RESERVE_MAX_VIEWPORT_RATIO,
     readTimelineParkEndOffset,
+    resolveMaxScrollOffset,
     resolveParkAnchorOffset,
     resolveParkedLiveEdgeOffset,
     resolveParkedScrollSlack,
@@ -79,7 +80,7 @@ describe('getAnchoredTurnMetrics', () => {
         const metrics = getAnchoredTurnMetrics({
             state,
             anchorIndex: 0,
-            composerOverlayHeight: 0,
+            endInsetHeight: 0,
             anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
         });
         expect(metrics).not.toBeNull();
@@ -98,7 +99,7 @@ describe('getAnchoredTurnMetrics', () => {
         const metrics = getAnchoredTurnMetrics({
             state,
             anchorIndex: 0,
-            composerOverlayHeight: 0,
+            endInsetHeight: 0,
             anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
         });
         expect(metrics).not.toBeNull();
@@ -120,14 +121,14 @@ describe('getAnchoredTurnMetrics', () => {
             state,
             anchorIndex: 0,
             lastIndex: 0,
-            composerOverlayHeight: 0,
+            endInsetHeight: 0,
             anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
         });
         expect(metrics?.turnHeight).toBe(80);
         expect(metrics?.overflowsUsableViewport).toBe(false);
     });
 
-    test('composer overlay shrinks the usable viewport', () => {
+    test('the measured end inset shrinks the usable viewport', () => {
         const state = createMeasurementState(
             [{ top: 0, height: 200 }],
             0,
@@ -136,7 +137,7 @@ describe('getAnchoredTurnMetrics', () => {
         const metrics = getAnchoredTurnMetrics({
             state,
             anchorIndex: 0,
-            composerOverlayHeight: 120,
+            endInsetHeight: 120,
             anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
         });
         expect(metrics?.usableViewportHeight).toBe(264);
@@ -226,23 +227,16 @@ describe('resolveNextAnchoredUserMessageId', () => {
 });
 
 describe('resolveUsableViewportHeight', () => {
-    test('subtracts the composer overlay, list footer inset, and park offset', () => {
+    test('subtracts the measured end inset and the park offset', () => {
         expect(resolveUsableViewportHeight({
             viewportHeight: 800,
-            composerOverlayHeight: 0,
         })).toBe(800 - CHAT_LIST_ANCHOR_OFFSET);
         expect(resolveUsableViewportHeight({
             viewportHeight: 800,
-            composerOverlayHeight: 120,
-        })).toBe(800 - 120 - CHAT_LIST_ANCHOR_OFFSET);
-        expect(resolveUsableViewportHeight({
-            viewportHeight: 800,
-            composerOverlayHeight: 0,
             endInsetHeight: 180,
         })).toBe(800 - 180 - CHAT_LIST_ANCHOR_OFFSET);
         expect(resolveUsableViewportHeight({
             viewportHeight: 800,
-            composerOverlayHeight: 0,
             endInsetHeight: 180,
             anchorOffset: 120,
         })).toBe(800 - 180 - 120);
@@ -251,11 +245,11 @@ describe('resolveUsableViewportHeight', () => {
     test('ignores an unmeasured viewport', () => {
         expect(resolveUsableViewportHeight({
             viewportHeight: 0,
-            composerOverlayHeight: 0,
+            endInsetHeight: 180,
         })).toBe(0);
         expect(resolveUsableViewportHeight({
             viewportHeight: Number.NaN,
-            composerOverlayHeight: 0,
+            endInsetHeight: 180,
         })).toBe(0);
     });
 });
@@ -516,7 +510,6 @@ describe('parked live edge', () => {
         expect(resolveParkAnchorOffset(0)).toBe(CHAT_LIST_ANCHOR_OFFSET);
         const usable = resolveUsableViewportHeight({
             viewportHeight: viewport,
-            composerOverlayHeight: 0,
             endInsetHeight: footer,
             anchorOffset: parkOffset,
         });
@@ -545,7 +538,6 @@ describe('parked live edge', () => {
         const parkOffset = resolveParkAnchorOffset(header);
         const usable = resolveUsableViewportHeight({
             viewportHeight: viewport,
-            composerOverlayHeight: 0,
             endInsetHeight: footer,
             anchorOffset: parkOffset,
         });
@@ -563,6 +555,89 @@ describe('parked live edge', () => {
             viewportHeight: viewport,
             anchorOffset: parkOffset,
         })).toBe(0);
+    });
+
+    /**
+     * The hole is capped at 40% of the viewport, so it is routinely smaller
+     * than the window the anchor offset asks for. On a phone-sized immersive
+     * transcript that leaves the scroller short of the ideal park offset for
+     * the first frames of a reply — long enough to raise the scroll-to-bottom
+     * control at rest and withhold the at-end re-arm until the reply grew.
+     */
+    test('the parked edge never claims more scroll room than exists', () => {
+        const viewport = 852;
+        const header = 135;
+        const footer = 290;
+        const anchorTop = 4000;
+        const anchorOffset = resolveParkAnchorOffset(header);
+        const usable = resolveUsableViewportHeight({
+            viewportHeight: viewport,
+            endInsetHeight: footer,
+            anchorOffset,
+        });
+        expect(usable).toBe(427);
+
+        const edgeAt = (replyHeight: number | null): number => {
+            const spacer = resolveReplyReserveSpacerHeight({
+                usableViewportHeight: usable,
+                viewportHeight: viewport,
+                contentHeight: replyHeight,
+            });
+            const contentLength = anchorTop + (replyHeight ?? 0) + spacer + footer;
+            return resolveParkedLiveEdgeOffset({
+                anchorTop,
+                anchorOffset,
+                maxScrollOffset: resolveMaxScrollOffset({ contentLength, scrollLength: viewport }),
+            });
+        };
+
+        const ideal = anchorTop - anchorOffset;
+        // Capped hole: the scroller stops 86px / 46px short of the ideal, so
+        // the ideal is not the live edge there.
+        expect(edgeAt(null)).toBeCloseTo(ideal - 86.2, 1);
+        expect(edgeAt(40)).toBeCloseTo(ideal - 46.2, 1);
+        // Once the leftover drives the hole, the two agree exactly.
+        expect(edgeAt(120)).toBe(ideal);
+        expect(edgeAt(400)).toBe(ideal);
+    });
+
+    test('resting at the bounded edge reads as at the end, not as scrolled away', () => {
+        const anchorTop = 4000;
+        const anchorOffset = 135;
+        // 86px short of the ideal is what the capped hole leaves right after a
+        // send. Against the ideal that distance clears both the re-arm band and
+        // the scroll-button threshold; against the bounded edge it is zero.
+        const restingScroll = anchorTop - anchorOffset - 86;
+        const bounded = resolveParkedLiveEdgeOffset({
+            anchorTop,
+            anchorOffset,
+            maxScrollOffset: restingScroll,
+        });
+        expect(resolveTimelineDistanceFromParkedEnd({
+            scroll: restingScroll,
+            parkOffset: bounded,
+        })).toBe(0);
+        expect(resolveTimelineScrollButtonVisible(0, true)).toBe(false);
+
+        const unbounded = resolveParkedLiveEdgeOffset({ anchorTop, anchorOffset });
+        const strandedDistance = resolveTimelineDistanceFromParkedEnd({
+            scroll: restingScroll,
+            parkOffset: unbounded,
+        });
+        expect(strandedDistance).toBe(86);
+        expect(strandedDistance).toBeGreaterThan(TIMELINE_FOLLOW_REARM_THRESHOLD_PX);
+        expect(resolveTimelineScrollButtonVisible(strandedDistance, false)).toBe(true);
+    });
+
+    test('an unmeasured content length leaves the ideal edge alone', () => {
+        const ideal = 4000 - CHAT_LIST_ANCHOR_OFFSET;
+        expect(resolveMaxScrollOffset({ scrollLength: 800 })).toBeNull();
+        expect(resolveMaxScrollOffset({ contentLength: Number.NaN, scrollLength: 800 })).toBeNull();
+        expect(resolveParkedLiveEdgeOffset({
+            anchorTop: 4000,
+            maxScrollOffset: resolveMaxScrollOffset({ scrollLength: 800 }),
+        })).toBe(ideal);
+        expect(resolveMaxScrollOffset({ contentLength: 500, scrollLength: 800 })).toBe(0);
     });
 
     test('distance from the parked edge ignores slack below that offset', () => {

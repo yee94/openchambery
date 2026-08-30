@@ -73,6 +73,13 @@ test('native composer rest height stays collapsed and scroll lives above send', 
   assert.match(view, /let showQueueSend = isExpanded && canAbort && \(canSend \|\| hasSendableText\)/);
   assert.match(view, /hasSendableText/);
   assert.match(view, /refreshSendButton\(\)/);
+  assert.match(view, /composerCircleImage/);
+  assert.match(view, /case \.send:/);
+  assert.match(view, /case \.stop:/);
+  assert.match(view, /size \* 0\.56/);
+  assert.match(view, /size \* 0\.38/);
+  assert.match(view, /cornerRadius: side \* 0\.20/);
+  assert.doesNotMatch(view, /let symbol = canAbort \? "stop\.fill"/);
   assert.match(plugin, /DispatchQueue\.main\.async \{ \[weak self\] in\s+self\?\.notifyListeners\("send"/);
   assert.doesNotMatch(view, /func sendTapped\(\)[\s\S]*guard canSend/);
   assert.doesNotMatch(view, /if canSend \{\s+delegate\?\.composerViewDidRequestSend/);
@@ -96,6 +103,10 @@ test('native composer rest height stays collapsed and scroll lives above send', 
   assert.match(view, /contextMenuInteraction\?\.dismissMenu\(\)/);
   assert.match(plugin, /dismissAttachMenu\(\)/);
   assert.match(view, /modelVariantLabel/);
+  assert.match(view, /rasterModelChrome/);
+  assert.match(view, /modelNameView/);
+  assert.match(view, /modelVariantView/);
+  assert.doesNotMatch(view, /private let modelNameLabel = UILabel/);
   assert.match(view, /systemFont\(ofSize: 11, weight: \.regular\)/);
   assert.doesNotMatch(view, /UIButton\.Configuration/);
   assert.match(plugin, /forceText/);

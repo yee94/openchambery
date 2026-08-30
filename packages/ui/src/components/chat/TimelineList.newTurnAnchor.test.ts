@@ -57,7 +57,10 @@ describe('TimelineList new-turn anchor contracts', () => {
     test('reveal does not fight a user who has taken over the viewport', () => {
         const revealFn = source.indexOf("const applyAnchoredTurnScroll = useEvent((mode: 'park' | 'reveal')");
         expect(revealFn).toBeGreaterThan(-1);
-        const body = source.slice(revealFn, revealFn + 1800);
+        // Bounded by the next declaration rather than a character count, so
+        // editing a comment inside the function cannot silently empty the slice.
+        const body = source.slice(revealFn, source.indexOf('React.useLayoutEffect', revealFn));
+        expect(body.length).toBeGreaterThan(0);
         expect(body).toContain('if (!followEnabledRef.current) return false;');
         expect(body).toContain("if (mode === 'park')");
     });
@@ -118,7 +121,36 @@ describe('TimelineList new-turn anchor contracts', () => {
         expect(source).toContain('data-oc-timeline-footer');
         expect(source).toContain('writeTimelineParkEndOffset');
         expect(source).toContain('resolveTimelineDistanceFromParkedEnd');
-        expect(source).toContain('state.scroll > parkOffset + 1');
+    });
+
+    /**
+     * The hole makes the parked offset the end of the content, so the
+     * scroller's own bounds hold the position. A per-frame correction toward
+     * that offset instead read iOS rubber-band `scrollTop` (which passes the
+     * maximum) as "scrolled past the edge" and wrote scroll under a live
+     * gesture, which is felt as the transcript fighting the finger.
+     */
+    test('nothing pulls the viewport back to the parked edge on scroll', () => {
+        expect(source).not.toContain('state.scroll > parkOffset + 1');
+        const handler = source.indexOf('const handleScroll = useEvent(() => {');
+        expect(handler).toBeGreaterThan(-1);
+        const body = source.slice(handler, source.indexOf('const renderEntryRef', handler));
+        expect(body).toContain('writeTimelineParkEndOffset');
+        expect(body).not.toContain('scrollToOffset');
+    });
+
+    /**
+     * The published edge is bounded by real scroll room; the one-shot park
+     * scroll is not, because the scroller clamps a too-far target on its own
+     * while a stale content length would park short permanently.
+     */
+    test('the published edge is bounded by real scroll room, the park scroll is not', () => {
+        expect(source).toContain('maxScrollOffset: resolveMaxScrollOffset(state)');
+        const park = source.indexOf("if (mode === 'park')");
+        expect(park).toBeGreaterThan(-1);
+        const parkBody = source.slice(park, source.indexOf('if (!followEnabledRef.current)', park));
+        expect(parkBody).toContain('const offset = Math.max(0, metrics.anchorTop - anchorOffset);');
+        expect(parkBody).not.toContain('resolveMaxScrollOffset');
     });
 
     test('an unmeasured viewport does not wipe a seeded reserve', () => {

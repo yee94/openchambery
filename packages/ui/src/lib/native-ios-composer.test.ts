@@ -209,6 +209,18 @@ describe('native iOS composer contract', () => {
     })).toBe(false);
   });
 
+  test('session model switch republishes name, thinking, and icon together', () => {
+    expect(buildNativeComposerUpdatePayload(
+      state({ modelLabel: 'Claude', modelVariantLabel: 'High', modelIcon: 'old' }),
+      state({ modelLabel: 'Grok', modelVariantLabel: 'Low', modelIcon: '' }),
+      { omitText: true, forceText: false },
+    )).toEqual({
+      modelLabel: 'Grok',
+      modelVariantLabel: 'Low',
+      modelIcon: '',
+    });
+  });
+
   test('echoed keystrokes skip the bridge and never resend preview or icon bytes', () => {
     const previous = state({
       text: 'hel',

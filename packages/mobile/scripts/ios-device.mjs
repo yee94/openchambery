@@ -4,7 +4,8 @@
 // Build the app first with `bun run build:ios:device`; `run` installs + launches it.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +14,7 @@ const BUNDLE_ID = process.env.IOS_DEV_BUNDLE_ID || 'com.yeewang.openchamber.dev'
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
+    cwd: mobileRoot,
     env: process.env,
     stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     encoding: 'utf8',
@@ -26,40 +28,63 @@ const run = (command, args, options = {}) => {
   return result.stdout?.trim() ?? '';
 };
 
+// `devicectl` writes its human table to stdout and only then appends the JSON
+// payload, so the report has to be read from a file: anything parsing stdout
+// meets the table first. Read it into a temp file rather than /dev/stdout.
+const listDevices = () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'openchamber-devicectl-'));
+  const reportPath = path.join(directory, 'devices.json');
+  try {
+    run('xcrun', ['devicectl', 'list', 'devices', '--json-output', reportPath], { capture: true });
+    return JSON.parse(readFileSync(reportPath, 'utf8'))?.result?.devices ?? [];
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+};
+
+// The payload carries no single "usable" flag, and current Xcode omits the
+// `connectionState` field entirely — so rank on what it does report. A paired
+// device is reachable unless its tunnel is `unavailable`; devicectl opens a
+// `disconnected` tunnel on demand when the install runs.
+const TUNNEL_RANK = { connected: 2, disconnected: 1 };
+
+const reachableDevices = () => listDevices()
+  .map((device) => {
+    const connection = device?.connectionProperties ?? {};
+    const tunnelRank = TUNNEL_RANK[String(connection.tunnelState ?? '').toLowerCase()] ?? 0;
+    return {
+      // install/launch address the CoreDevice identifier, not the hardware UDID
+      // that xcodebuild wants for `-destination`.
+      identifier: device?.identifier || device?.hardwareProperties?.udid || '',
+      name: device?.deviceProperties?.name?.trim() || 'unnamed device',
+      paired: String(connection.pairingState ?? '').toLowerCase() === 'paired',
+      tunnelRank,
+      // Wired outranks the same phone offered over the local network only.
+      rank: tunnelRank * 2 + (connection.transportType === 'wired' ? 1 : 0),
+    };
+  })
+  .filter((device) => device.identifier && device.paired && device.tunnelRank > 0)
+  .sort((left, right) => right.rank - left.rank);
+
 const connectedDevice = () => {
   if (process.env.IOS_DEVICE_UDID) {
     return process.env.IOS_DEVICE_UDID;
   }
 
-  // Prefer CoreDevice UUID for install/launch; fall back to matching the
-  // connected row's Identifier column (not Hostname).
-  const output = run('xcrun', ['devicectl', 'list', 'devices', '--json-output', '/dev/stdout'], { capture: true });
-  try {
-    const parsed = JSON.parse(output);
-    const devices = parsed?.result?.devices || parsed?.devices || [];
-    const connected = devices.find((device) => {
-      const state = device?.connectionProperties?.connectionState || device?.state || '';
-      return String(state).toLowerCase().includes('connected');
-    });
-    const identifier = connected?.identifier || connected?.hardwareProperties?.udid || connected?.coreDeviceIdentifier;
-    if (identifier) return identifier;
-  } catch {
-    // Fall through to table parsing.
+  const candidates = reachableDevices();
+  if (candidates.length === 0) {
+    throw new Error('No reachable iOS device found. Connect your iPhone, unlock it, and trust this Mac.');
   }
 
-  const line = output
-    .split('\n')
-    .find((entry) => entry.includes('connected') && !entry.startsWith('Name') && !entry.includes('{'));
-  if (!line) {
-    throw new Error('No connected iOS device found. Connect your iPhone and trust this Mac.');
+  // Refuse to guess only between equals. A wired phone beside a stale
+  // local-network entry, or beside hardware whose tunnel is unavailable, is not
+  // an ambiguous choice, and failing there would make the common case unusable.
+  const tied = candidates.filter((device) => device.rank === candidates[0].rank);
+  if (tied.length > 1) {
+    const names = tied.map((device) => `${device.name} (${device.identifier})`).join(', ');
+    throw new Error(`Multiple iOS devices are equally reachable: ${names}. Set IOS_DEVICE_UDID to choose one.`);
   }
-
-  // Columns: Name Hostname Identifier State Model — Identifier is a UUID.
-  const match = line.match(/[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}/i);
-  if (!match) {
-    throw new Error('Unable to parse connected device UDID from devicectl output.');
-  }
-  return match[0];
+  return candidates[0].identifier;
 };
 
 const getBuiltAppPath = () => {

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.28] - 2026-08-30
+
+### Changed
+
+- The phone chat header fade is a bit less see-through so the title stays readable over scrolling messages.
+- Phone chat keeps more empty space under the newest message so you can scroll it up off the composer.
+- Ready Send and Stop on the iPhone native composer now match the web inverted disc. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Fixed
+
+- On iPhone, the chat list now reserves the real native composer and queue height, so the last message is no longer clipped against the input when something is queued.
+- After sending, scrolling the transcript no longer bounces or gets pulled back while a reply is streaming.
+- Switching chats on iPhone updates the native input's model name and thinking strength, not only the icon. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
 ## [1.19.0-beta.27] - 2026-08-30
 
 ### Fixed

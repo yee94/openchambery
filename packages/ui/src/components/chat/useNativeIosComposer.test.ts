@@ -21,7 +21,9 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('findAttachmentCitationRanges');
     expect(source).toContain('resolveModelLogoSrc');
     expect(source).toContain('rasterizeLogoPngBase64');
-    expect(source).toContain("previous model's raster immediately");
+    expect(source).toContain('republish name + thinking');
+    expect(source).toContain('modelLabel: args.modelLabel');
+    expect(source).toContain('modelVariantLabel: args.modelVariantLabel');
     expect(source).toContain('onOpenModel');
     expect(source).toContain('onCycleAgent');
     expect(source).toContain('onOpenAgent');

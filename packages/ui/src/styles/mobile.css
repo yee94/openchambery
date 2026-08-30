@@ -11,11 +11,11 @@
      inside keeps its own fixed touch size. */
   --oc-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
   --oc-mobile-detail-action-edge-inset: 1rem;
-  /* Shared overlay/collapsing-header fade. Low enough that transcript
-     content remains visible through the chrome. */
+  /* Shared overlay/collapsing-header fade. Strong enough to read the
+     title over scrolling transcript, still open at the bottom edge. */
   --oc-mobile-header-fade: color-mix(
     in srgb,
-    var(--surface-background) 70%,
+    var(--surface-background) 85%,
     transparent
   );
 }
@@ -3113,9 +3113,18 @@ button.oc-mobile-worktree-label-trigger:active,
   initial-value: 0;
 }
 
-/* The transcript keeps one fixed reservation while the two Composer layers
-   exchange through paint-only motion. */
-:root.mobile-pointer:not(.desktop-runtime) .oc-chat-composer-swap-scope {
+/* Bottom chrome the transcript reserves below its last message: the web
+   Composer keeps one fixed reservation while its two layers exchange through
+   paint-only motion.
+
+   Declared on the root rather than on `.oc-chat-composer-swap-scope`, because
+   the native iOS override further down is a plain root-class selector: a
+   scope-qualified default carries more specificity and won a cascade the
+   source order suggested it lost, so the measured native reservation never
+   applied. Both declarations now sit on the root and differ only by that
+   class. A root declaration also means no consumer can resolve an undefined
+   inset when React `isMobile` disagrees with `mobile-pointer`. */
+:root {
   --oc-chat-foot-inset: calc(
     8rem + var(--oc-safe-area-bottom-visual, 0px)
   );
@@ -3558,7 +3567,7 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
    control stays on the overlay, appears after ~80px of upward travel, and
    does not change published occupancy.
    --oc-native-composer-height is collapsed pill occupancy only. */
-:root.oc-native-ios-composer .oc-chat-composer-swap-scope {
+:root.oc-native-ios-composer {
   --oc-chat-foot-inset: calc(
     var(--oc-native-composer-height, 5.5rem)
     + var(--oc-native-composer-accessory, 0px)

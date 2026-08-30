@@ -16,10 +16,10 @@
 //
 // "Usable viewport" is the middle visible window on an immersive page:
 // list height minus the measured header (safe area + floating nav), minus
-// the composer overlay / list footer inset, minus the park fade when no
-// header has been measured. That window is the leftover the hole may
-// fill. The hole itself is capped at 40% of the list viewport — a 60%
-// leftover of the full immersive scroller was half the phone.
+// the measured footer (Composer reservation + tail spacer), minus the park
+// fade when no header has been measured. That window is the leftover the
+// hole may fill. The hole itself is capped at 40% of the list viewport — a
+// 60% leftover of the full immersive scroller was half the phone.
 //
 // Send latches the just-sent user message and TimelineList drives
 // `anchoring-new-turn`. Occupancy is a sibling spacer AFTER the last turn,
@@ -29,6 +29,14 @@
 // reopen it drops the reserve instead. Overflow also drops it and returns
 // to `following-end`. Jump-to-latest returns to the parked edge and keeps
 // the hole.
+//
+// The parked edge is bounded by the scroll range that exists, never the
+// offset the anchor would like (`resolveParkedLiveEdgeOffset`). Nothing here
+// pulls the viewport back to that edge either: the hole makes the edge the end
+// of the content, so the scroller's own bounds hold the position and a touch
+// surface keeps its native rubber-band. A per-frame correction toward the edge
+// reads `scrollTop` past the maximum mid-bounce on iOS and writes scroll under
+// a live gesture, which is felt as the transcript fighting the finger.
 
 export type TimelineScrollMode = 'following-end' | 'anchoring-new-turn' | 'free-scrolling';
 
@@ -61,21 +69,28 @@ export const resolveParkAnchorOffset = (
     return fallback;
 };
 
+/**
+ * The middle window a parked turn may fill.
+ *
+ * `endInsetHeight` is the list's measured footer, which is where the bottom
+ * chrome reservation lives on this path: the Composer occupancy plus the tail
+ * spacer are inside it. There is deliberately no second overlay term — a
+ * floating composer the list cannot measure would have to become part of that
+ * footer, not a parallel number that only one of these callers remembers to
+ * pass.
+ */
 export const resolveUsableViewportHeight = ({
     viewportHeight,
-    composerOverlayHeight,
     endInsetHeight = 0,
     anchorOffset = CHAT_LIST_ANCHOR_OFFSET,
 }: {
     readonly viewportHeight: number;
-    readonly composerOverlayHeight: number;
     readonly endInsetHeight?: number;
     readonly anchorOffset?: number;
 }): number => {
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
-    const overlay = Number.isFinite(composerOverlayHeight) ? Math.max(0, composerOverlayHeight) : 0;
     const inset = Number.isFinite(endInsetHeight) ? Math.max(0, endInsetHeight) : 0;
-    return Math.max(0, viewportHeight - overlay - inset - anchorOffset);
+    return Math.max(0, viewportHeight - inset - anchorOffset);
 };
 
 /**
@@ -106,14 +121,49 @@ export const resolveParkedScrollSlack = ({
     );
 };
 
-/** Content offset where the parked user row sits `anchorOffset` from the top. */
+/**
+ * Furthest the scroller can actually travel: content beyond the viewport.
+ *
+ * `null` when the list has not reported both numbers, which is not the same as
+ * "no room" — a caller must not read an unmeasured list as pinned.
+ */
+export const resolveMaxScrollOffset = (state: {
+    readonly contentLength?: number;
+    readonly scrollLength?: number;
+}): number | null => {
+    const { contentLength, scrollLength } = state;
+    if (typeof contentLength !== 'number' || typeof scrollLength !== 'number') return null;
+    if (!Number.isFinite(contentLength) || !Number.isFinite(scrollLength)) return null;
+    return Math.max(0, contentLength - scrollLength);
+};
+
+/**
+ * Content offset where the parked user row sits `anchorOffset` from the top.
+ *
+ * Bounded by the room that actually exists. The hole under the parked row is
+ * capped at a fraction of the viewport, so it is routinely smaller than the
+ * window the anchor offset asks for: on a phone the first frames of a reply
+ * leave the scroller tens of pixels short of the ideal offset. Publishing the
+ * ideal there made the platform silently clamp the park scroll and then report
+ * the resting viewport as dozens of pixels from its own live edge — far enough
+ * to raise the scroll-to-bottom control at rest and to withhold the at-end
+ * re-arm, until the reply grew enough to close the gap and both flipped. The
+ * live edge is therefore whichever comes first, the ideal or the end of the
+ * scroll range.
+ */
 export const resolveParkedLiveEdgeOffset = ({
     anchorTop,
     anchorOffset = CHAT_LIST_ANCHOR_OFFSET,
+    maxScrollOffset,
 }: {
     readonly anchorTop: number;
     readonly anchorOffset?: number;
-}): number => Math.max(0, anchorTop - anchorOffset);
+    readonly maxScrollOffset?: number | null;
+}): number => {
+    const ideal = Math.max(0, anchorTop - anchorOffset);
+    if (typeof maxScrollOffset !== 'number' || !Number.isFinite(maxScrollOffset)) return ideal;
+    return Math.min(ideal, Math.max(0, maxScrollOffset));
+};
 
 /**
  * Distance from the parked live edge. Slack below that offset (composer
@@ -324,6 +374,8 @@ export interface TimelineListMeasurementState {
     readonly data: readonly unknown[];
     readonly scroll: number;
     readonly scrollLength: number;
+    /** Total content extent, used to bound the parked edge by real scroll room. */
+    readonly contentLength?: number;
     readonly positionAtIndex: (index: number) => number | undefined;
     readonly sizeAtIndex: (index: number) => number | undefined;
 }
@@ -361,13 +413,13 @@ export const getRowBottom = (
 export const getAnchoredTurnMetrics = ({
     state,
     anchorIndex,
-    composerOverlayHeight,
+    endInsetHeight,
     anchorOffset,
     lastIndex,
 }: {
     readonly state: TimelineListMeasurementState;
     readonly anchorIndex: number;
-    readonly composerOverlayHeight: number;
+    readonly endInsetHeight: number;
     readonly anchorOffset: number;
     readonly lastIndex?: number;
 }): AnchoredTurnMetrics | null => {
@@ -389,7 +441,7 @@ export const getAnchoredTurnMetrics = ({
 
     const usableViewportHeight = resolveUsableViewportHeight({
         viewportHeight: state.scrollLength,
-        composerOverlayHeight,
+        endInsetHeight,
         anchorOffset,
     });
     const turnHeight = Math.max(0, lastBottom - anchorTop);
