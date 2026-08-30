@@ -247,7 +247,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(phoneShellContent).toContain('tabBarCovered={scheduledEditorActive}');
     expect(tabRootContent).toContain('showTabBar?: boolean;');
     expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
-    expect(tabRootContent).toContain('inert={topSecondaryPage || tabBarCovered ? true : undefined}');
+    expect(tabRootContent).toContain('inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}');
     expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
     expect(tabRootContent).not.toContain(') : showTabBar ? (');
     expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');

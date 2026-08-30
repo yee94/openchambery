@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.26] - 2026-08-30
+
+### Added
+
+- iPhone homepage tabs use a native liquid-glass dock on iOS 26. Older iOS, Android, and the web app keep the existing bar. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
 ## [1.19.0-beta.25] - 2026-08-30
 
 ### Added

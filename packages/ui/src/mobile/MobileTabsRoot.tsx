@@ -10,6 +10,7 @@ import { MobileTabBar } from './MobileTabBar';
 import { useMobileBackRoute } from './mobileBackNavigation';
 import type { MobileNavigationState } from './mobileNavigation';
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
+import { useNativeIosTabBar } from './useNativeIosTabBar';
 
 export type MobileSecondaryPage = {
   key: string;
@@ -136,6 +137,21 @@ export function MobileTabsRoot({
     onTabChange(nextTab);
   });
 
+  const nativeTabs = React.useMemo(
+    () => MOBILE_TABS.map((tab) => ({ id: tab.id, label: t(tab.labelKey) })),
+    [t],
+  );
+  const nativeTabBarVisible = showTabBar && !tabBarCovered && !topSecondaryPage;
+  const nativeTabBarMode = useNativeIosTabBar({
+    visible: nativeTabBarVisible,
+    activeTab: selectedTab,
+    tabs: nativeTabs,
+    ariaLabel: t('mobile.nav.aria'),
+    onTabChange: handleTabChange,
+  });
+  const nativeTabBarAdopted = nativeTabBarMode === 'native';
+  const showWebTabBar = showTabBar && nativeTabBarMode === 'web';
+
   return (
     <div
       className={cn(
@@ -158,7 +174,8 @@ export function MobileTabsRoot({
               key={tab.id}
               id={`mobile-tabpanel-${tab.id}`}
               role="tabpanel"
-              aria-labelledby={`mobile-tab-${tab.id}`}
+              aria-labelledby={showWebTabBar ? `mobile-tab-${tab.id}` : undefined}
+              aria-label={showWebTabBar ? undefined : t(tab.labelKey)}
               hidden={selectedTab !== tab.id}
               tabIndex={0}
               className={cn(
@@ -177,10 +194,12 @@ export function MobileTabsRoot({
       {showTabBar ? (
         <div
           data-mobile-navigation-dock-underlay="true"
-          aria-hidden={topSecondaryPage || tabBarCovered ? true : undefined}
-          inert={topSecondaryPage || tabBarCovered ? true : undefined}
+          aria-hidden={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}
+          inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}
         >
-          <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />
+          {showWebTabBar ? (
+            <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />
+          ) : null}
         </div>
       ) : null}
 
