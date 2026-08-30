@@ -16,9 +16,44 @@ struct ComposerAutocompleteState {
     static let closed = ComposerAutocompleteState(open: false, highlightedIndex: 0, rows: [])
 }
 
+/// Geometry shared with `computeMobileAutocompleteMaxHeight` in
+/// `packages/ui/src/components/chat/useMobileAutocompleteMaxHeight.ts`.
+enum ComposerAutocompleteMetrics {
+    static let rowHeight: CGFloat = 48
+    static let verticalInset: CGFloat = 6
+    static let gap: CGFloat = 8
+    static let navigationContentHeight: CGFloat = 56
+    static let minPaintHeight: CGFloat = 36
+    static let viewportRatio: CGFloat = 0.4
+    static let softMinHeight: CGFloat = 120
+
+    static func contentHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else { return 0 }
+        return CGFloat(rowCount) * rowHeight + verticalInset * 2
+    }
+
+    static func headerFloor(safeAreaTop: CGFloat) -> CGFloat {
+        safeAreaTop + navigationContentHeight
+    }
+
+    static func maxHeight(popupBottom: CGFloat, boundaryTop: CGFloat, viewportHeight: CGFloat) -> CGFloat {
+        let available = max(0, popupBottom - boundaryTop - gap)
+        let viewportCap = viewportHeight * viewportRatio
+        let capped = floor(min(available, viewportCap))
+        if available >= softMinHeight {
+            return min(available, max(softMinHeight, capped))
+        }
+        return capped
+    }
+
+    static func chromeColor(isDark: Bool) -> UIColor {
+        isDark ? UIColor(white: 1, alpha: 1) : UIColor(white: 0, alpha: 1)
+    }
+}
+
 /// Liquid-glass suggestion list above the native composer card.
 /// Width matches the card. Height is clamped by the caller so it stays
-/// below the mobile header.
+/// below the mobile header and within 40% of the visible column.
 final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UITableViewDataSource {
     var onAccept: ((Int) -> Void)?
 
@@ -28,12 +63,16 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
     private var highlightedIndex = 0
     private var appearanceIsDark = true
 
-    static let rowHeight: CGFloat = 48
-    private static let verticalInset: CGFloat = 6
-
     var contentHeight: CGFloat {
-        guard !rows.isEmpty else { return 0 }
-        return CGFloat(rows.count) * Self.rowHeight + Self.verticalInset * 2
+        ComposerAutocompleteMetrics.contentHeight(rowCount: rows.count)
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let local = convert(point, to: tableView)
+        if tableView.point(inside: local, with: event) {
+            return tableView.hitTest(local, with: event) ?? tableView
+        }
+        return super.hitTest(point, with: event)
     }
 
     override init(frame: CGRect) {
@@ -44,35 +83,54 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
         backgroundColor = .clear
         chrome.setCornerRadius(18)
         chrome.translatesAutoresizingMaskIntoConstraints = false
+        // Interactive UIGlassEffect samples presses through its own view.
+        // The table is a sibling on top; chrome must not steal the tap.
+        chrome.isUserInteractionEnabled = false
         addSubview(chrome)
 
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.backgroundColor = .clear
         tableView.separatorStyle = .none
-        tableView.rowHeight = Self.rowHeight
-        tableView.estimatedRowHeight = Self.rowHeight
+        tableView.rowHeight = ComposerAutocompleteMetrics.rowHeight
+        tableView.estimatedRowHeight = ComposerAutocompleteMetrics.rowHeight
         tableView.delegate = self
         tableView.dataSource = self
         tableView.keyboardDismissMode = .none
         tableView.allowsSelection = true
+        tableView.delaysContentTouches = false
+        tableView.canCancelContentTouches = true
         tableView.showsVerticalScrollIndicator = true
-        tableView.contentInset = UIEdgeInsets(top: Self.verticalInset, left: 0, bottom: Self.verticalInset, right: 0)
+        tableView.contentInset = UIEdgeInsets(
+            top: ComposerAutocompleteMetrics.verticalInset,
+            left: 0,
+            bottom: ComposerAutocompleteMetrics.verticalInset,
+            right: 0
+        )
         tableView.scrollIndicatorInsets = tableView.contentInset
+        tableView.contentInsetAdjustmentBehavior = .never
+        tableView.insetsContentViewsToSafeArea = false
+        tableView.cellLayoutMarginsFollowReadableWidth = false
+        tableView.layer.cornerRadius = 18
+        tableView.layer.cornerCurve = .continuous
+        tableView.clipsToBounds = true
         tableView.register(ComposerAutocompleteCell.self, forCellReuseIdentifier: ComposerAutocompleteCell.reuseId)
         if #available(iOS 15.0, *) {
             tableView.sectionHeaderTopPadding = 0
         }
-        chrome.contentView.addSubview(tableView)
+        // Stay a sibling of the glass. UIGlassEffect applies vibrancy to
+        // UILabel inside contentView, which ate the titles while icons
+        // (UIImageView) still painted.
+        addSubview(tableView)
 
         NSLayoutConstraint.activate([
             chrome.topAnchor.constraint(equalTo: topAnchor),
             chrome.bottomAnchor.constraint(equalTo: bottomAnchor),
             chrome.leadingAnchor.constraint(equalTo: leadingAnchor),
             chrome.trailingAnchor.constraint(equalTo: trailingAnchor),
-            tableView.topAnchor.constraint(equalTo: chrome.contentView.topAnchor),
-            tableView.bottomAnchor.constraint(equalTo: chrome.contentView.bottomAnchor),
-            tableView.leadingAnchor.constraint(equalTo: chrome.contentView.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: chrome.contentView.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            tableView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
     }
 
@@ -81,6 +139,10 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
 
     func applyAppearance(isDark: Bool) {
         appearanceIsDark = isDark
+        let style: UIUserInterfaceStyle = isDark ? .dark : .light
+        overrideUserInterfaceStyle = style
+        tableView.overrideUserInterfaceStyle = style
+        tableView.indicatorStyle = isDark ? .white : .black
         chrome.appearanceIsDark = isDark
         chrome.refreshEffect()
         tableView.reloadData()
@@ -98,6 +160,18 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
                 at: IndexPath(row: highlightedIndex, section: 0),
                 animated: false,
                 scrollPosition: .none
+            )
+        }
+    }
+
+    func revealHighlightedRow() {
+        guard !isHidden, rows.indices.contains(highlightedIndex) else { return }
+        let path = IndexPath(row: highlightedIndex, section: 0)
+        tableView.scrollToRow(at: path, at: highlightedIndex == 0 ? .top : .none, animated: false)
+        if highlightedIndex == 0 {
+            tableView.setContentOffset(
+                CGPoint(x: 0, y: -tableView.adjustedContentInset.top),
+                animated: false
             )
         }
     }
@@ -121,6 +195,12 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
         if let row = rows[safe: indexPath.row] {
             cell.apply(row, highlighted: indexPath.row == highlightedIndex, isDark: appearanceIsDark)
         }
+        let row = indexPath.row
+        cell.onAccept = { [weak self] in
+            guard let self, self.rows.indices.contains(row) else { return }
+            self.highlightedIndex = row
+            self.onAccept?(row)
+        }
         return cell
     }
 
@@ -133,51 +213,64 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
 private final class ComposerAutocompleteCell: UITableViewCell {
     static let reuseId = "OpenChamberComposerAutocompleteCell"
 
+    var onAccept: (() -> Void)?
+
     private let iconView = UIImageView()
-    private let titleLabel = UILabel()
-    private let subtitleLabel = UILabel()
-    private let badgeLabel = UILabel()
+    private let titleView = UIImageView()
+    private let subtitleView = UIImageView()
+    private let badgeView = UIImageView()
     private let highlight = UIView()
+    private let hitButton = UIButton(type: .custom)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         backgroundColor = .clear
         selectionStyle = .none
         contentView.backgroundColor = .clear
+        preservesSuperviewLayoutMargins = false
+        contentView.preservesSuperviewLayoutMargins = false
+        contentView.insetsLayoutMarginsFromSafeArea = false
+        insetsLayoutMarginsFromSafeArea = false
+        layoutMargins = .zero
+        contentView.layoutMargins = .zero
+        isAccessibilityElement = true
 
         highlight.translatesAutoresizingMaskIntoConstraints = false
         highlight.layer.cornerRadius = 10
         highlight.layer.cornerCurve = .continuous
         highlight.isHidden = true
 
-        iconView.translatesAutoresizingMaskIntoConstraints = false
+        for imageView in [iconView, titleView, subtitleView, badgeView] {
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            imageView.clipsToBounds = true
+        }
         iconView.contentMode = .scaleAspectFit
-
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.numberOfLines = 1
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        subtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        subtitleLabel.numberOfLines = 1
-        subtitleLabel.lineBreakMode = .byTruncatingTail
-
-        badgeLabel.font = .systemFont(ofSize: 10, weight: .bold)
-        badgeLabel.numberOfLines = 1
-        badgeLabel.setContentHuggingPriority(.required, for: .horizontal)
-        badgeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-        textStack.axis = .vertical
-        textStack.spacing = 1
-        textStack.translatesAutoresizingMaskIntoConstraints = false
+        titleView.contentMode = .left
+        subtitleView.contentMode = .left
+        badgeView.contentMode = .right
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+        iconView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        badgeView.setContentHuggingPriority(.required, for: .horizontal)
+        badgeView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        titleView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        subtitleView.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         contentView.addSubview(highlight)
         contentView.addSubview(iconView)
-        contentView.addSubview(textStack)
-        contentView.addSubview(badgeLabel)
+        contentView.addSubview(titleView)
+        contentView.addSubview(subtitleView)
+        contentView.addSubview(badgeView)
+        hitButton.translatesAutoresizingMaskIntoConstraints = false
+        hitButton.backgroundColor = .clear
+        hitButton.accessibilityElementsHidden = true
+        hitButton.addTarget(self, action: #selector(acceptTapped), for: .touchUpInside)
+        contentView.addSubview(hitButton)
 
         NSLayoutConstraint.activate([
+            hitButton.topAnchor.constraint(equalTo: contentView.topAnchor),
+            hitButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            hitButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            hitButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             highlight.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
             highlight.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2),
             highlight.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
@@ -186,31 +279,91 @@ private final class ComposerAutocompleteCell: UITableViewCell {
             iconView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 16),
             iconView.heightAnchor.constraint(equalToConstant: 16),
-            textStack.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
-            textStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            textStack.trailingAnchor.constraint(lessThanOrEqualTo: badgeLabel.leadingAnchor, constant: -8),
-            badgeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            badgeLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            titleView.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
+            titleView.trailingAnchor.constraint(lessThanOrEqualTo: badgeView.leadingAnchor, constant: -8),
+            titleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -14),
+            titleView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
+            titleView.heightAnchor.constraint(equalToConstant: 18),
+            subtitleView.leadingAnchor.constraint(equalTo: titleView.leadingAnchor),
+            subtitleView.trailingAnchor.constraint(equalTo: titleView.trailingAnchor),
+            subtitleView.topAnchor.constraint(equalTo: titleView.bottomAnchor, constant: 1),
+            subtitleView.heightAnchor.constraint(equalToConstant: 14),
+            badgeView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            badgeView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            badgeView.heightAnchor.constraint(equalToConstant: 14),
+            badgeView.widthAnchor.constraint(lessThanOrEqualToConstant: 88),
         ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
 
+    @objc private func acceptTapped() {
+        onAccept?()
+    }
+
     func apply(_ row: ComposerAutocompleteRow, highlighted: Bool, isDark: Bool) {
-        let label = isDark ? UIColor.white : UIColor.black
+        let color = ComposerAutocompleteMetrics.chromeColor(isDark: isDark)
+        let muted = color.withAlphaComponent(0.58)
         iconView.image = row.icon?.withRenderingMode(.alwaysTemplate)
-        iconView.tintColor = label
-        titleLabel.text = row.title
-        titleLabel.textColor = label
-        subtitleLabel.text = row.subtitle
-        subtitleLabel.isHidden = row.subtitle.isEmpty
-        subtitleLabel.textColor = label.withAlphaComponent(0.55)
-        badgeLabel.text = row.badge.uppercased()
-        badgeLabel.isHidden = row.badge.isEmpty
-        badgeLabel.textColor = label.withAlphaComponent(0.55)
-        highlight.backgroundColor = label.withAlphaComponent(highlighted ? 0.12 : 0)
+        iconView.tintColor = color
+        iconView.isHidden = row.icon == nil
+        titleView.image = Self.raster(
+            row.title,
+            font: .systemFont(ofSize: 15, weight: .semibold),
+            color: color,
+            maxWidth: 280
+        )
+        titleView.isHidden = row.title.isEmpty
+        subtitleView.image = Self.raster(
+            row.subtitle,
+            font: .systemFont(ofSize: 12, weight: .regular),
+            color: muted,
+            maxWidth: 280
+        )
+        subtitleView.isHidden = row.subtitle.isEmpty
+        badgeView.image = Self.raster(
+            row.badge.uppercased(),
+            font: .systemFont(ofSize: 10, weight: .bold),
+            color: muted,
+            maxWidth: 88
+        )
+        badgeView.isHidden = row.badge.isEmpty
+        highlight.backgroundColor = color.withAlphaComponent(highlighted ? 0.12 : 0)
         highlight.isHidden = !highlighted
+        accessibilityLabel = [row.title, row.subtitle, row.badge]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+    }
+
+    /// Same path as the sprite icons: a bitmap, not a UILabel. Glass vibrancy
+    /// does not eat UIImageView the way it eats UILabel.
+    private static func raster(_ text: String, font: UIFont, color: UIColor, maxWidth: CGFloat) -> UIImage? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+        ]
+        let bound = (trimmed as NSString).boundingRect(
+            with: CGSize(width: maxWidth, height: font.lineHeight + 4),
+            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+            attributes: attrs,
+            context: nil
+        )
+        let size = CGSize(
+            width: max(1, min(maxWidth, ceil(bound.width))),
+            height: max(1, ceil(bound.height))
+        )
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in
+            (trimmed as NSString).draw(
+                with: CGRect(origin: .zero, size: size),
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: attrs,
+                context: nil
+            )
+        }
     }
 }
 

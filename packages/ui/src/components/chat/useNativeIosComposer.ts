@@ -110,6 +110,8 @@ export type UseNativeIosComposerArgs = {
   autocompleteOpen?: boolean;
   autocompleteHighlightedIndex?: number;
   autocompleteRows?: readonly ComposerAutocompleteListRow[];
+  /** JS-authored caret to apply with forceText (accept/insert). */
+  caret?: number;
 };
 
 const EMPTY_AUTOCOMPLETE_ROWS: ComposerAutocompleteListRow[] = [];
@@ -155,7 +157,6 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     },
     onSend: (text) => {
       nativeTextRef.current = text;
-      echoingNativeRef.current = true;
       onSend(text);
     },
     onAbort,
@@ -167,7 +168,12 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     onOpenAgent,
     onHeight,
     onScrollToBottom,
-    onAutocompleteAccept,
+    onAutocompleteAccept: (index) => {
+      // Accept is JS-authored. A leftover keystroke echo must not omit the
+      // inserted token from the next native update.
+      echoingNativeRef.current = false;
+      onAutocompleteAccept(index);
+    },
     onAutocompleteDismiss,
   });
 
@@ -228,10 +234,12 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     if (!available) return;
     let cancelled = false;
     const src = resolveModelLogoSrc(args.modelId, args.providerId);
+    // Drop the previous model's raster immediately. Keeping it until the new
+    // PNG arrives paints the old mark next to the new label.
+    modelIconRef.current = '';
+    if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, modelIcon: '' };
+    void getNativeIosComposerPlugin().update({ modelIcon: '' });
     if (!src) {
-      modelIconRef.current = '';
-      if (lastStateRef.current) lastStateRef.current = { ...lastStateRef.current, modelIcon: '' };
-      void getNativeIosComposerPlugin().update({ modelIcon: '' });
       return;
     }
     void rasterizeLogoPngBase64(src).then((base64) => {
@@ -340,7 +348,9 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
     });
     echoingNativeRef.current = false;
     nativeTextRef.current = next.text;
-    const payload = buildNativeComposerUpdatePayload(previous, next, write);
+    const payload = buildNativeComposerUpdatePayload(previous, next, write, {
+      caret: args.caret,
+    });
     if (!payload) return;
     void getNativeIosComposerPlugin().update(payload);
     // readState closes over the latest ChatInput props; listing them is the contract.

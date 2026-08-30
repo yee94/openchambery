@@ -1,7 +1,9 @@
 import React from 'react';
 import {
   buildSkillRows,
+  emitComposerAutocompleteRows,
   rankSkillsForQuery,
+  resetComposerAutocompleteRows,
   type ComposerAutocompleteVisibleRows,
 } from '@/lib/composer-autocomplete';
 import { cn } from '@/lib/utils';
@@ -47,6 +49,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   const keyboardNavigationRef = React.useRef(false);
   const [filteredSkills, setFilteredSkills] = React.useState<SkillInfo[]>([]);
   const itemRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const lastVisibleRowsRef = React.useRef<ComposerAutocompleteVisibleRows | null>(null);
   const skillsQuery = useInstalledSkillsQuery({ directory });
   const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
 
@@ -83,15 +86,17 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   }, [onClose]);
 
   React.useEffect(() => {
-    onRowsChange?.({
+    emitComposerAutocompleteRows(onRowsChange, lastVisibleRowsRef, {
       rows: buildSkillRows(filteredSkills),
       highlightedIndex: selectedIndex,
     });
   }, [filteredSkills, onRowsChange, selectedIndex]);
 
+  const onRowsChangeRef = React.useRef(onRowsChange);
+  onRowsChangeRef.current = onRowsChange;
   React.useEffect(() => () => {
-    onRowsChange?.({ rows: [], highlightedIndex: 0 });
-  }, [onRowsChange]);
+    resetComposerAutocompleteRows(onRowsChangeRef.current, lastVisibleRowsRef);
+  }, []);
 
   React.useImperativeHandle(ref, () => ({
     acceptIndex: (index: number) => {

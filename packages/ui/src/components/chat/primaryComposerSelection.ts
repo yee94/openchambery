@@ -219,6 +219,11 @@ const resolveHistoryModelVariant = (options: {
  * is the cross-client authoritative baseline; memory covers unread transcripts
  * and omitted variants; session-entity survives lazy transcript loads and local
  * storage loss/eviction.
+ *
+ * While the transcript is still loading (`transcriptReady === false`), history
+ * and memory are skipped. An empty or partial message list is not "no history"
+ * — treating it that way paints the previous session's model in the composer
+ * and lets send flush later pick the conversation model.
  */
 export const resolvePrimaryComposerSessionSelection = (options: {
   sessionId: string;
@@ -235,11 +240,26 @@ export const resolvePrimaryComposerSessionSelection = (options: {
   sessionEntity?: PrimaryComposerSessionEntity | null;
   /** Current config agent used only when history omits agent and memory has none. */
   fallbackAgentName?: string;
+  /**
+   * False while `useSessionMaterializationStatus.renderable` is false.
+   * Defaults to true so flush (after `ensureSessionRenderable`) keeps the
+   * full cascade.
+   */
+  transcriptReady?: boolean;
 }): ResolvedPrimaryComposerSessionSelection | null => {
-  const { sessionId, latestUserChoice, catalog, memory, sessionEntity, fallbackAgentName } = options;
+  const {
+    sessionId,
+    latestUserChoice,
+    catalog,
+    memory,
+    sessionEntity,
+    fallbackAgentName,
+    transcriptReady = true,
+  } = options;
 
   if (
-    latestUserChoice?.providerID
+    transcriptReady
+    && latestUserChoice?.providerID
     && latestUserChoice.modelID
     && catalogHasProviderModel(catalog, latestUserChoice.providerID, latestUserChoice.modelID)
   ) {
@@ -279,7 +299,7 @@ export const resolvePrimaryComposerSessionSelection = (options: {
     };
   }
 
-  if (memory) {
+  if (transcriptReady && memory) {
     const savedAgentName = memory.getSessionAgentSelection?.(sessionId) ?? null;
     const agentName =
       savedAgentName && catalogHasAgent(catalog, savedAgentName)
@@ -466,6 +486,27 @@ export const capturePrimaryComposerSendConfig = (
     agent: config.currentAgentName,
     variant: config.currentVariant,
   };
+};
+
+/**
+ * Keep an explicit composer pick instead of re-applying session restore.
+ *
+ * Loading the existing transcript (pinned id is null, then a message appears)
+ * is not "history advanced". A later user message with a different id is.
+ */
+export const shouldHoldPrimaryComposerUserPick = (options: {
+  editRevision: number;
+  pinnedHistoryMessageId: string | null;
+  latestHistoryMessageId: string | null;
+}): boolean => {
+  if (options.editRevision <= 0) {
+    return false;
+  }
+  const historyAdvanced =
+    options.pinnedHistoryMessageId != null
+    && options.latestHistoryMessageId != null
+    && options.latestHistoryMessageId !== options.pinnedHistoryMessageId;
+  return !historyAdvanced;
 };
 
 /**

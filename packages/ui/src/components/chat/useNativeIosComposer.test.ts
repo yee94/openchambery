@@ -21,6 +21,7 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('findAttachmentCitationRanges');
     expect(source).toContain('resolveModelLogoSrc');
     expect(source).toContain('rasterizeLogoPngBase64');
+    expect(source).toContain("previous model's raster immediately");
     expect(source).toContain('onOpenModel');
     expect(source).toContain('onCycleAgent');
     expect(source).toContain('onOpenAgent');
@@ -30,6 +31,13 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('buildNativeComposerUpdatePayload');
     expect(source).toContain('echoingNativeRef');
     expect(source).toContain('echoingNativeRef.current = true');
+    expect(source).toContain(`onSend: (text) => {
+      nativeTextRef.current = text;
+      onSend(text);
+    }`);
+    expect(source).not.toContain(`onSend: (text) => {
+      nativeTextRef.current = text;
+      echoingNativeRef.current = true;`);
     expect(source).toContain('nativeIosComposerSession.retain');
     expect(source).toContain('nativeIosComposerSession.release');
     expect(source).toContain('nativeIosComposerSession.bind');
@@ -42,6 +50,10 @@ describe('useNativeIosComposer', () => {
     const chatInput = readFileSync(join(here, 'ChatInput.tsx'), 'utf-8');
     expect(chatInput).toContain('handoffNativeComposerSendToWeb');
     expect(chatInput).toContain('submit: handlePrimaryAction');
+    expect(chatInput).toContain('useSessionMaterializationStatus');
+    expect(chatInput).toContain('transcriptReady: primaryTranscriptRenderable');
+    expect(chatInput).toContain('shouldHoldPrimaryComposerUserPick');
+    expect(chatInput).toContain('primarySelectionPinnedHistoryIdRef');
     expect(chatInput).not.toContain('applyProgrammaticEdit(text);\n            handlePrimaryAction();');
     expect(source).toContain('modelVariantLabel');
     expect(source).toContain('queueAria');
@@ -50,6 +62,11 @@ describe('useNativeIosComposer', () => {
     expect(source).toContain('attachCancelLabel');
     expect(source).toContain('autocompleteRows');
     expect(source).toContain('onAutocompleteAccept');
+    expect(source).toContain('echoingNativeRef.current = false');
+    expect(source).toContain('caret: args.caret');
     expect(source).toContain('rasterizeSpriteIconPngBase64');
+    expect(chatInput).toContain('resolveComposerAutocompleteReplaceRange');
+    expect(chatInput).toContain('autocompleteTriggerRef');
+    expect(chatInput).toContain('caret: cursorPosRef.current');
   });
 });

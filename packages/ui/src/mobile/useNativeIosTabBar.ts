@@ -33,9 +33,9 @@ export type UseNativeIosTabBarArgs = {
 export type NativeIosTabBarMode = 'web' | 'pending' | 'native';
 
 /**
- * Drives the Capacitor iOS liquid-glass homepage dock. Tab content stays
- * React-owned; native only paints the dock and emits `tabSelected`.
- * Older iOS / web / Android keep the Web `MobileTabBar`.
+ * Drives the Capacitor iOS homepage dock (`UITabBar` liquid glass + lens).
+ * Tab content stays React-owned; native only paints the dock and emits
+ * `tabSelected`. Older iOS / web / Android keep the Web `MobileTabBar`.
  */
 export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBarMode {
   const available = canUseNativeIosTabBar();

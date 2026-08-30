@@ -2,7 +2,9 @@ import { describe, expect, test } from 'vitest';
 
 import { COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
 
-import { resolveComposerAutocompleteTrigger } from './trigger';
+import { insertTokenWithReferenceBoundaries } from '@/components/chat/insertionBoundaries';
+
+import { resolveComposerAutocompleteReplaceRange, resolveComposerAutocompleteTrigger } from './trigger';
 
 describe('resolveComposerAutocompleteTrigger', () => {
   test('closes in shell mode', () => {
@@ -64,6 +66,34 @@ describe('resolveComposerAutocompleteTrigger', () => {
       query: 'src',
       tokenStart: 3,
       tokenEnd: 7,
+    });
+  });
+
+  test('accepting a mention replaces the open @ token even when the caret is stale', () => {
+    const text = 'see @src';
+    const trigger = resolveComposerAutocompleteTrigger({ text, cursor: 8 });
+    expect(resolveComposerAutocompleteReplaceRange(text, 0, trigger)).toEqual({
+      start: 4,
+      end: 8,
+    });
+    expect(insertTokenWithReferenceBoundaries(text, 4, 8, '@src/foo.ts')).toEqual({
+      text: 'see @src/foo.ts ',
+      caret: 16,
+      start: 4,
+      end: 15,
+    });
+    expect(resolveComposerAutocompleteTrigger({
+      text: 'see @src/foo.ts ',
+      cursor: 16,
+    })).toBeNull();
+  });
+
+  test('accepting a slash token uses the open trigger, not caret 0', () => {
+    const text = '/un';
+    const trigger = resolveComposerAutocompleteTrigger({ text, cursor: 3 });
+    expect(resolveComposerAutocompleteReplaceRange(text, 0, trigger)).toEqual({
+      start: 0,
+      end: 3,
     });
   });
 

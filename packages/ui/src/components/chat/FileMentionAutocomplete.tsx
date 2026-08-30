@@ -19,12 +19,16 @@ import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import type { Session } from '@opencode-ai/sdk/v2';
 import {
   buildMentionRows,
+  emitComposerAutocompleteRows,
+  resetComposerAutocompleteRows,
   resolveFileMentionIconName,
   type ComposerAutocompleteVisibleRows,
 } from '@/lib/composer-autocomplete';
 import {
   getVisibleSessionMentionCandidates,
   mergeAndRankFileMentionPathHits,
+  rankAgentMentionCandidates,
+  rankRecentFileMentionCandidates,
   resolveFileMentionSearchQuery,
   type FileMentionPathHit,
 } from './fileMentionAutocompleteState';
@@ -96,6 +100,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   const labelRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
   const measureRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const lastVisibleRowsRef = React.useRef<ComposerAutocompleteVisibleRows | null>(null);
   const touchSelectionControllerRef = React.useRef<MentionTouchSelectionController | null>(null);
   if (!touchSelectionControllerRef.current) {
     touchSelectionControllerRef.current = createMentionTouchSelectionController();
@@ -114,31 +119,24 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     ].filter((value): value is string => typeof value === 'string' && value.length > 0);
 
     const seen = new Set<string>();
-    const queryLower = normalizedSearchQuery.toLowerCase();
-    const mapped = ordered
-      .filter((filePath) => {
-        if (seen.has(filePath)) return false;
-        seen.add(filePath);
-        const relative = filePath.startsWith(`${projectRoot}/`) ? filePath.slice(projectRoot.length + 1) : filePath;
-        if (!queryLower) return true;
-        return relative.toLowerCase().includes(queryLower);
-      })
-      .slice(0, 6)
-      .map((filePath) => {
-        const normalizedPath = filePath.replace(/\\/g, '/');
-        const name = normalizedPath.split('/').filter(Boolean).pop() || normalizedPath;
-        const relativePath = normalizedPath.startsWith(`${projectRoot}/`)
-          ? normalizedPath.slice(projectRoot.length + 1)
-          : normalizedPath;
-        return {
-          name,
-          path: normalizedPath,
-          relativePath,
-          extension: name.includes('.') ? name.split('.').pop()?.toLowerCase() : undefined,
-        } satisfies FileInfo;
+    const mapped: FileInfo[] = [];
+    for (const filePath of ordered) {
+      if (seen.has(filePath)) continue;
+      seen.add(filePath);
+      const normalizedPath = filePath.replace(/\\/g, '/');
+      const name = normalizedPath.split('/').filter(Boolean).pop() || normalizedPath;
+      const relativePath = normalizedPath.startsWith(`${projectRoot}/`)
+        ? normalizedPath.slice(projectRoot.length + 1)
+        : normalizedPath;
+      mapped.push({
+        name,
+        path: normalizedPath,
+        relativePath,
+        extension: name.includes('.') ? name.split('.').pop()?.toLowerCase() : undefined,
       });
+    }
 
-    return mapped;
+    return rankRecentFileMentionCandidates(mapped, normalizedSearchQuery, { limit: 6 });
   }, [normalizedSearchQuery, projectRoot, projectTabs]);
   const visibleAgents = React.useMemo(
     () => normalizedSearchQuery.length > 0 ? agents : agents.slice(0, 2),
@@ -240,21 +238,14 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
 
   React.useEffect(() => {
     const visibleAgents = getVisibleAgents();
-    const normalizedQuery = (searchQuery ?? '').trim().toLowerCase();
     const filtered = visibleAgents
       .filter((agent) => agent.mode && agent.mode !== 'primary')
-      .filter((agent) => {
-        if (!normalizedQuery) return true;
-        const haystack = `${agent.name} ${agent.description ?? ''}`.toLowerCase();
-        return haystack.includes(normalizedQuery);
-      })
       .map((agent) => ({
         name: agent.name,
         description: agent.description,
         mode: agent.mode,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    setAgents(filtered);
+      }));
+    setAgents(rankAgentMentionCandidates(filtered, searchQuery ?? ''));
   }, [getVisibleAgents, searchQuery]);
 
   React.useEffect(() => {
@@ -402,7 +393,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   };
 
   React.useEffect(() => {
-    onRowsChange?.({
+    emitComposerAutocompleteRows(onRowsChange, lastVisibleRowsRef, {
       rows: buildMentionRows({
         agents: visibleAgents,
         sessions: visibleSessions,
@@ -423,9 +414,11 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     visibleSessions,
   ]);
 
+  const onRowsChangeRef = React.useRef(onRowsChange);
+  onRowsChangeRef.current = onRowsChange;
   React.useEffect(() => () => {
-    onRowsChange?.({ rows: [], highlightedIndex: 0 });
-  }, [onRowsChange]);
+    resetComposerAutocompleteRows(onRowsChangeRef.current, lastVisibleRowsRef);
+  }, []);
 
   React.useImperativeHandle(ref, () => ({
     acceptIndex: (index: number) => {

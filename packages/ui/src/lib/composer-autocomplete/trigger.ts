@@ -98,3 +98,33 @@ export const resolveComposerAutocompleteTrigger = (
     tokenEnd: cursor,
   };
 };
+
+const triggerPrefix = (kind: ComposerAutocompleteTrigger['kind']): string => {
+  if (kind === 'mention') return '@';
+  if (kind === 'snippet') return '#';
+  return '/';
+};
+
+/**
+ * Range the web composer replaces when a suggestion is accepted.
+ * Prefers the open trigger (the token that produced the list) so a stale
+ * native caret cannot insert at 0 and leave `@query` in the field.
+ */
+export const resolveComposerAutocompleteReplaceRange = (
+  text: string,
+  caret: number,
+  openTrigger: ComposerAutocompleteTrigger | null,
+): { start: number; end: number } | null => {
+  if (
+    openTrigger
+    && openTrigger.tokenStart >= 0
+    && openTrigger.tokenEnd >= openTrigger.tokenStart
+    && openTrigger.tokenEnd <= text.length
+    && text.startsWith(triggerPrefix(openTrigger.kind), openTrigger.tokenStart)
+  ) {
+    return { start: openTrigger.tokenStart, end: openTrigger.tokenEnd };
+  }
+  const live = resolveComposerAutocompleteTrigger({ text, cursor: caret });
+  if (!live) return null;
+  return { start: live.tokenStart, end: live.tokenEnd };
+};

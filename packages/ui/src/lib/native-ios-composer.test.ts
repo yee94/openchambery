@@ -17,6 +17,7 @@ import {
   parseNativeComposerHeight,
   parseNativeComposerRemoveAttachmentId,
   parseNativeComposerSelection,
+  resolveComposerInsertCaret,
   rasterizeAttachmentThumbnailBase64,
   rasterizeLogoPngBase64,
   resolveCssVarToHex,
@@ -152,6 +153,15 @@ describe('native iOS composer contract', () => {
     expect(parseNativeComposerAcceptIndex({ index: 2 })).toBe(2);
     expect(parseNativeComposerAcceptIndex({ index: -1 })).toBe(0);
     expect(parseNativeComposerAcceptIndex({})).toBe(0);
+    expect(parseNativeComposerAcceptIndex({ index: '3' as unknown as number })).toBe(3);
+    expect(parseNativeComposerSelection({
+      selectionStart: '4' as unknown as number,
+      selectionEnd: '4' as unknown as number,
+    })).toEqual({ start: 4, end: 4 });
+    expect(resolveComposerInsertCaret(8, 3)).toBe(3);
+    expect(resolveComposerInsertCaret(8, 99)).toBe(8);
+    expect(resolveComposerInsertCaret(8, undefined)).toBe(8);
+    expect(resolveComposerInsertCaret(8, -2)).toBe(0);
   });
 
   test('reads a remove-attachment id and ignores empty payloads', () => {
@@ -243,6 +253,17 @@ describe('native iOS composer contract', () => {
       forceText: true,
       canSend: false,
     });
+    expect(buildNativeComposerUpdatePayload(previous, state({
+      ...previous,
+      text: 'see @src/foo.ts ',
+    }), {
+      omitText: false,
+      forceText: true,
+    }, { caret: 16 })).toEqual({
+      text: 'see @src/foo.ts ',
+      forceText: true,
+      caret: 16,
+    });
   });
 
   test('native send is a web handoff: no forceText and submit waits for the next macrotask', () => {
@@ -252,6 +273,20 @@ describe('native iOS composer contract', () => {
       nativeOwnedText: 'burst then send',
       echoingNative: true,
     })).toEqual({ omitText: true, forceText: false });
+    expect(resolveNativeComposerTextWrite({
+      nextText: '',
+      nativeOwnedText: 'burst then send',
+      echoingNative: true,
+    })).toEqual({ omitText: false, forceText: true });
+    expect(buildNativeComposerUpdatePayload(
+      state({ text: 'burst then send', canSend: true }),
+      state({ text: '', canSend: false }),
+      { omitText: false, forceText: true },
+    )).toEqual({
+      text: '',
+      forceText: true,
+      canSend: false,
+    });
 
     const applyDocument = vi.fn();
     const submit = vi.fn();

@@ -80,7 +80,7 @@ export type NativeIosComposerState = {
 
 export type NativeIosComposerPlugin = {
   present: (state: NativeIosComposerState) => Promise<void>;
-  update: (state: Partial<NativeIosComposerState> & { forceText?: boolean }) => Promise<void>;
+  update: (state: Partial<NativeIosComposerState> & { forceText?: boolean; caret?: number }) => Promise<void>;
   /** Visual hide only. The overlay stays installed (singleton). */
   hide: () => Promise<void>;
   /** Undo `hide` without rewriting the live UITextView. */
@@ -299,22 +299,36 @@ export const parseNativeComposerRemoveAttachmentId = (
   return typeof id === 'string' && id.trim() ? id : '';
 };
 
+const toNonNegativeInt = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return Math.floor(value);
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
+  }
+  return null;
+};
+
 export const parseNativeComposerSelection = (
   payload: NativeIosComposerEventPayload | null | undefined,
 ): { start: number; end: number } | null => {
-  const start = payload?.selectionStart;
-  const end = payload?.selectionEnd;
-  if (typeof start !== 'number' || !Number.isFinite(start) || start < 0) return null;
-  const resolvedEnd = typeof end === 'number' && Number.isFinite(end) && end >= start ? end : start;
-  return { start, end: resolvedEnd };
+  const start = toNonNegativeInt(payload?.selectionStart);
+  if (start === null) return null;
+  const end = toNonNegativeInt(payload?.selectionEnd);
+  return { start, end: end !== null && end >= start ? end : start };
 };
 
 export const parseNativeComposerAcceptIndex = (
   payload: NativeIosComposerEventPayload | null | undefined,
+): number => toNonNegativeInt(payload?.index) ?? 0;
+
+/** Clamp a native or web caret so insert/replace uses the live token, not 0. */
+export const resolveComposerInsertCaret = (
+  documentLength: number,
+  caret: number | null | undefined,
 ): number => {
-  const index = payload?.index;
-  if (typeof index !== 'number' || !Number.isFinite(index) || index < 0) return 0;
-  return Math.floor(index);
+  const length = Math.max(0, documentLength);
+  if (typeof caret !== 'number' || !Number.isFinite(caret)) return length;
+  return Math.max(0, Math.min(Math.floor(caret), length));
 };
 
 export type NativeComposerTextWrite = {
@@ -328,7 +342,15 @@ export const resolveNativeComposerTextWrite = (input: {
   nativeOwnedText: string;
   echoingNative: boolean;
 }): NativeComposerTextWrite => {
-  if (input.echoingNative || input.nextText === input.nativeOwnedText) {
+  if (input.nextText === input.nativeOwnedText) {
+    return { omitText: true, forceText: false };
+  }
+  // Web cleared after native send. That empty write is JS-authored even if
+  // the send listener still has the echo flag set from staging the draft.
+  if (input.nextText.length === 0 && input.nativeOwnedText.length > 0) {
+    return { omitText: false, forceText: true };
+  }
+  if (input.echoingNative) {
     return { omitText: true, forceText: false };
   }
   return { omitText: false, forceText: true };
@@ -365,14 +387,18 @@ export const buildNativeComposerUpdatePayload = (
   previous: NativeIosComposerState | null,
   next: NativeIosComposerState,
   write: NativeComposerTextWrite,
-): (Partial<NativeIosComposerState> & { forceText?: boolean }) | null => {
+  options?: { caret?: number },
+): (Partial<NativeIosComposerState> & { forceText?: boolean; caret?: number }) | null => {
   if (write.omitText && previous && nativeComposerStatesEqual(previous, next)) {
     return null;
   }
-  const payload: Partial<NativeIosComposerState> & { forceText?: boolean } = {};
+  const payload: Partial<NativeIosComposerState> & { forceText?: boolean; caret?: number } = {};
   if (!write.omitText) {
     payload.text = next.text;
     if (write.forceText) payload.forceText = true;
+    if (write.forceText && typeof options?.caret === 'number' && Number.isFinite(options.caret)) {
+      payload.caret = Math.max(0, Math.floor(options.caret));
+    }
   }
   if (!previous) {
     const { text: _text, ...rest } = next;

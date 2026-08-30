@@ -5,6 +5,7 @@ import {
   capturePrimaryComposerSendConfig,
   resolvePrimaryComposerSendConfig,
   resolvePrimaryComposerSessionSelection,
+  shouldHoldPrimaryComposerUserPick,
 } from './primaryComposerSelection';
 
 const createConfig = (currentAgentName = 'build') => {
@@ -319,6 +320,58 @@ describe('resolvePrimaryComposerSessionSelection', () => {
     });
   });
 
+  test('skips history and memory while the transcript is still loading', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_partial',
+        agent: 'plan',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+      },
+      catalog,
+      memory: {
+        getSessionAgentSelection: () => 'build',
+        getAgentModelForSession: () => ({ providerId: 'openai', modelId: 'gpt-5.5' }),
+      },
+      sessionEntity: {
+        agent: 'plan',
+        model: {
+          id: 'claude-sonnet',
+          providerID: 'anthropic',
+        },
+      },
+      transcriptReady: false,
+    });
+
+    expect(resolved).toEqual({
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+      source: 'session-entity',
+    });
+  });
+
+  test('returns null while loading when session-entity is also unavailable', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_partial',
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+      },
+      catalog,
+      memory: {
+        getSessionAgentSelection: () => 'build',
+        getAgentModelForSession: () => ({ providerId: 'openai', modelId: 'gpt-5.5' }),
+      },
+      transcriptReady: false,
+    });
+
+    expect(resolved).toBeNull();
+  });
+
   test('prefers history over session-entity when history validates', () => {
     const resolved = resolvePrimaryComposerSessionSelection({
       sessionId: 'ses_1',
@@ -505,6 +558,40 @@ describe('capturePrimaryComposerSendConfig', () => {
       agent: undefined,
       variant: undefined,
     });
+  });
+});
+
+describe('shouldHoldPrimaryComposerUserPick', () => {
+  test('does not hold when the user has not edited this session', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 0,
+      pinnedHistoryMessageId: null,
+      latestHistoryMessageId: 'msg_1',
+    })).toBe(false);
+  });
+
+  test('holds a pick made while the transcript was still loading', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 1,
+      pinnedHistoryMessageId: null,
+      latestHistoryMessageId: 'msg_1',
+    })).toBe(true);
+  });
+
+  test('holds a pick against the same latest history message', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 1,
+      pinnedHistoryMessageId: 'msg_1',
+      latestHistoryMessageId: 'msg_1',
+    })).toBe(true);
+  });
+
+  test('releases when a newer history message arrives after the pick', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 1,
+      pinnedHistoryMessageId: 'msg_1',
+      latestHistoryMessageId: 'msg_2',
+    })).toBe(false);
   });
 });
 

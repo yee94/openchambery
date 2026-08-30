@@ -1,7 +1,9 @@
 import React from 'react';
 import {
   buildSlashCommandRows,
+  emitComposerAutocompleteRows,
   rankCommandsForQuery,
+  resetComposerAutocompleteRows,
   resolveSlashCommandIconName,
   type ComposerAutocompleteVisibleRows,
 } from '@/lib/composer-autocomplete';
@@ -68,6 +70,10 @@ export type CommandAutocompleteContext = {
   hasMessages: boolean;
   hasNewDraft: boolean;
 };
+
+const sameCommandList = (left: readonly CommandInfo[], right: readonly CommandInfo[]): boolean => (
+  left.length === right.length && left.every((command, index) => command.id === right[index]?.id)
+);
 
 /**
  * Pure selector over command-availability context. Exported so isolation
@@ -156,6 +162,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const ignoreClickRef = React.useRef(false);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const pointerMovedRef = React.useRef(false);
+  const lastVisibleRowsRef = React.useRef<ComposerAutocompleteVisibleRows | null>(null);
 
   React.useEffect(() => {
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -264,7 +271,8 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         const eligible = allCommands.filter(
           (cmd) => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true),
         );
-        setCommands(rankCommandsForQuery(eligible, searchQuery));
+        const ranked = rankCommandsForQuery(eligible, searchQuery);
+        setCommands((previous) => (sameCommandList(previous, ranked) ? previous : ranked));
       } catch {
 
         const allowInitCommand = !hasMessagesInCurrentSession;
@@ -330,7 +338,8 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         const eligible = builtInCommands.filter(
           (cmd) => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true),
         );
-        setCommands(rankCommandsForQuery(eligible, searchQuery));
+        const ranked = rankCommandsForQuery(eligible, searchQuery);
+        setCommands((previous) => (sameCommandList(previous, ranked) ? previous : ranked));
       } finally {
         setLoading(false);
       }
@@ -354,7 +363,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   }, [selectedIndex]);
 
   React.useEffect(() => {
-    onRowsChange?.({
+    emitComposerAutocompleteRows(onRowsChange, lastVisibleRowsRef, {
       rows: buildSlashCommandRows(commands, {
         skill: t('chat.commandAutocomplete.badge.skill'),
         command: t('chat.commandAutocomplete.badge.command'),
@@ -364,9 +373,11 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     });
   }, [commands, onRowsChange, selectedIndex, t]);
 
+  const onRowsChangeRef = React.useRef(onRowsChange);
+  onRowsChangeRef.current = onRowsChange;
   React.useEffect(() => () => {
-    onRowsChange?.({ rows: [], highlightedIndex: 0 });
-  }, [onRowsChange]);
+    resetComposerAutocompleteRows(onRowsChangeRef.current, lastVisibleRowsRef);
+  }, []);
 
   React.useImperativeHandle(ref, () => ({
     acceptIndex: (index: number, submitIntent = true) => {

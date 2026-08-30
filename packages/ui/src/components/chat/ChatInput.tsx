@@ -4,7 +4,7 @@ import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { useNativeIosComposer } from './useNativeIosComposer';
-import { applyNativeComposerAccessoryVar, handoffNativeComposerSendToWeb } from '@/lib/native-ios-composer';
+import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -30,6 +30,7 @@ import {
     useDirectoryStore as useChildDirectoryStore,
     useDirectorySync,
     useSession,
+    useSessionMaterializationStatus,
     useSessionMessages,
     useSessionStatus,
     useSyncDirectory,
@@ -143,8 +144,11 @@ import {
     resolveAttachmentCitationDeletion,
 } from './attachmentCitations';
 import {
+    commitComposerAutocompleteRows,
+    resolveComposerAutocompleteReplaceRange,
     resolveComposerAutocompleteTrigger,
     type ComposerAutocompleteListRow,
+    type ComposerAutocompleteTrigger,
     type ComposerAutocompleteVisibleRows,
 } from '@/lib/composer-autocomplete';
 import {
@@ -204,6 +208,7 @@ import {
     parseLatestUserChoiceFromMessages,
     resolvePrimaryComposerSendConfig,
     resolvePrimaryComposerSessionSelection,
+    shouldHoldPrimaryComposerUserPick,
 } from './primaryComposerSelection';
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
 import { decorateComposerReference, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
@@ -1167,6 +1172,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         () => parseLatestUserChoiceFromMessages(primarySessionMessages),
         [primarySessionMessages],
     );
+    const primaryTranscriptRenderable = useSessionMaterializationStatus(
+        primarySessionID ?? '',
+        currentSessionDirectoryForSync ?? undefined,
+    ).renderable;
     // Per-session entity for restore cascade tier 3 (session-entity). Narrow
     // subscription: one session entry, not the full sessions array.
     const primarySessionEntity = useSession(
@@ -1179,6 +1188,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const primarySessionEntityVariant = primarySessionEntity?.model?.variant;
     const primaryConfigScopeKey = useConfigStore((state) => state.activeDirectoryKey);
     const primarySelectionEditRevisionRef = React.useRef(0);
+    const primarySelectionPinnedHistoryIdRef = React.useRef<string | null>(null);
     const primarySessionRestoreKeyRef = React.useRef<string | null>(null);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
     const primaryNewSessionDraftOpen = Boolean(newSessionDraft?.open);
@@ -1340,12 +1350,31 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
                 const messages = getSyncMessages(sessionAtStart, sessionDirectoryAfter ?? undefined);
                 const latestChoice = parseLatestUserChoiceFromMessages(messages);
+                if (shouldHoldPrimaryComposerUserPick({
+                    editRevision: editRevisionAtStart,
+                    pinnedHistoryMessageId: primarySelectionPinnedHistoryIdRef.current,
+                    latestHistoryMessageId: latestChoice?.id ?? null,
+                })) {
+                    return;
+                }
                 const memory = useSelectionStore.getState();
+                const sessionRow = getAllSyncSessionMap().get(sessionAtStart);
+                const sessionEntity = sessionRow?.model
+                    ? {
+                        agent: sessionRow.agent,
+                        model: {
+                            id: sessionRow.model.id,
+                            providerID: sessionRow.model.providerID,
+                            variant: sessionRow.model.variant,
+                        },
+                    }
+                    : (sessionRow?.agent ? { agent: sessionRow.agent } : null);
                 const resolved = resolvePrimaryComposerSessionSelection({
                     sessionId: sessionAtStart,
                     latestUserChoice: latestChoice,
                     catalog,
                     memory,
+                    sessionEntity,
                     fallbackAgentName: config.currentAgentName,
                 });
                 if (!resolved) {
@@ -1381,7 +1410,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             change: async (selection) => {
                 // Explicit user pick: bump edit revision so an in-flight flush
                 // cannot overwrite the new choice after ensureSessionRenderable.
+                // Pin the latest known history message id (null while loading) so
+                // restore/flush keep this pick until a newer user message arrives.
                 primarySelectionEditRevisionRef.current += 1;
+                const sessionId = useSessionUIStore.getState().currentSessionId;
+                if (sessionId) {
+                    const directory = useSessionUIStore.getState().getDirectoryForSession(sessionId) ?? undefined;
+                    const latestChoice = parseLatestUserChoiceFromMessages(getSyncMessages(sessionId, directory));
+                    primarySelectionPinnedHistoryIdRef.current = latestChoice?.id ?? null;
+                } else {
+                    primarySelectionPinnedHistoryIdRef.current = null;
+                }
                 // setAgent re-applies agent-scoped model memory and would clobber an
                 // explicit model pick if called after setModel. applyPrimaryComposer-
                 // SelectionChange only switches agents when needed, then applies the
@@ -1395,40 +1434,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     setCurrentVariant: config.setCurrentVariant,
                     saveAgentModelSelection: config.saveAgentModelSelection,
                 }, {
-                    sessionId: useSessionUIStore.getState().currentSessionId,
+                    sessionId,
                     memory: useSelectionStore.getState(),
                 });
-                // Pin the current history/memory restore key so the effect does not
-                // re-apply the same latest user message over this explicit pick.
-                // A newer message id (or session switch) still re-resolves.
-                const sessionId = useSessionUIStore.getState().currentSessionId;
-                if (sessionId) {
-                    const directory = useSessionUIStore.getState().getDirectoryForSession(sessionId) ?? undefined;
-                    const latestChoice = parseLatestUserChoiceFromMessages(getSyncMessages(sessionId, directory));
-                    const memory = useSelectionStore.getState();
-                    const resolved = resolvePrimaryComposerSessionSelection({
-                        sessionId,
-                        latestUserChoice: latestChoice,
-                        catalog: {
-                            providers: config.providers,
-                            agents: config.getVisibleAgents(),
-                        },
-                        memory,
-                        fallbackAgentName: selection.agent ?? config.currentAgentName,
-                    });
-                    if (resolved) {
-                        primarySessionRestoreKeyRef.current = [
-                            sessionId,
-                            resolved.source,
-                            resolved.messageId ?? '',
-                            resolved.agent ?? '',
-                            resolved.providerID,
-                            resolved.modelID,
-                            resolved.variant ?? '',
-                            useConfigStore.getState().activeDirectoryKey,
-                        ].join('|');
-                    }
-                }
             },
         },
         resources: {
@@ -1617,13 +1625,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         catalog: selectionCatalog,
     }), [selectionCatalog, selectionChange, selectionValue.agent, selectionValue.modelID, selectionValue.providerID, selectionValue.variant, surface.active]);
 
+    // Session switch drops a previous conversation's user-pick hold and restore key.
+    React.useEffect(() => {
+        primarySelectionEditRevisionRef.current = 0;
+        primarySelectionPinnedHistoryIdRef.current = null;
+        primarySessionRestoreKeyRef.current = null;
+    }, [primarySessionID]);
+
     // Primary surface owns session selection restore while ModelControls uses the
     // adapter (which disables ModelControls' own history/memory restore path).
     React.useEffect(() => {
         if (surface.kind !== 'primary' || !primarySessionID) {
-            if (!primarySessionID) {
-                primarySessionRestoreKeyRef.current = null;
-            }
             return;
         }
         if (primaryProviderConfigLoading || primaryAgentConfigLoading) {
@@ -1645,6 +1657,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             providers: primarySelectionProviders,
             agents: primarySelectionAgents,
         };
+        if (shouldHoldPrimaryComposerUserPick({
+            editRevision: primarySelectionEditRevisionRef.current,
+            pinnedHistoryMessageId: primarySelectionPinnedHistoryIdRef.current,
+            latestHistoryMessageId: primaryLatestUserChoice?.id ?? null,
+        })) {
+            return;
+        }
         const sessionEntity =
             primarySessionEntityProviderId && primarySessionEntityModelId
                 ? {
@@ -1665,6 +1684,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             memory,
             sessionEntity,
             fallbackAgentName: primaryAgentName,
+            transcriptReady: primaryTranscriptRenderable,
         });
         if (!resolved) {
             return;
@@ -1716,6 +1736,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         surface.kind,
         primarySessionID,
         primaryLatestUserChoice,
+        primaryTranscriptRenderable,
         primarySelectionProviders,
         primarySelectionAgents,
         primaryProviderConfigLoading,
@@ -1776,6 +1797,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const nativeCompositionActiveRef = React.useRef(false);
     const cursorPosRef = React.useRef(0);
+    const autocompleteTriggerRef = React.useRef<ComposerAutocompleteTrigger | null>(null);
     const previousMessageLengthRef = React.useRef(message.length);
     const dropZoneRef = React.useRef<HTMLDivElement>(null);
     const dragEnterCountRef = React.useRef(0);
@@ -4727,6 +4749,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             mentionInputSource: inputSource,
             insertedText,
         });
+        autocompleteTriggerRef.current = trigger;
         if (!trigger) {
             setShowCommandAutocomplete(false);
             setShowFileMention(false);
@@ -5236,14 +5259,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         writeComposerSelectionToClipboard(event, 'cut');
     }, [writeComposerSelectionToClipboard]);
 
+    const readComposerInsertCaret = (documentLength: number): number => {
+        const textarea = textareaRef.current;
+        const raw = textarea && document.activeElement === textarea
+            ? textarea.selectionStart ?? cursorPosRef.current
+            : cursorPosRef.current;
+        return resolveComposerInsertCaret(documentLength, raw);
+    };
+    const restoreWebComposerFocus = () => {
+        if (canUseNativeIosComposer(isMobile)) return;
+        textareaRef.current?.focus();
+    };
+
     const handleFileSelect = (file: { name: string; path: string; relativePath?: string; isDirectory?: boolean }) => {
 
-        const textarea = textareaRef.current;
-        const cursorPosition = Math.min(
-            textarea && document.activeElement === textarea
-                ? textarea.selectionStart ?? cursorPosRef.current
-                : cursorPosRef.current,
-            message.length,
+        const cursorPosition = readComposerInsertCaret(message.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            message,
+            cursorPosition,
+            autocompleteTriggerRef.current,
         );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
@@ -5253,9 +5287,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             : (toProjectRelativeMentionPath(file.path) || file.name);
         const directoryPaths = file.isDirectory ? [mentionPath] : [];
 
-        const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
-        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, cursorPosition, `@${mentionPath}`);
+        const startIndex = range?.start ?? (lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition);
+        const endIndex = range?.end ?? cursorPosition;
+        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, endIndex, `@${mentionPath}`);
         replaceWithConfirmedFileMentions(inserted.text, [mentionPath], directoryPaths);
+        cursorPosRef.current = inserted.caret;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = inserted.caret;
@@ -5268,21 +5304,21 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setShowFileMention(false);
         setMentionQuery('');
 
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
     };
 
     const handleAgentSelect = (agentName: string) => {
-        const textarea = textareaRef.current;
-        const cursorPosition = Math.min(
-            textarea && document.activeElement === textarea
-                ? textarea.selectionStart ?? cursorPosRef.current
-                : cursorPosRef.current,
-            message.length,
+        const cursorPosition = readComposerInsertCaret(message.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            message,
+            cursorPosition,
+            autocompleteTriggerRef.current,
         );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
-        const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
-        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, cursorPosition, `@${agentName}`);
+        const startIndex = range?.start ?? (lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition);
+        const endIndex = range?.end ?? cursorPosition;
+        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, endIndex, `@${agentName}`);
         applyProgrammaticEdit(inserted.text, (mentions) => appendUniqueDraftMention(mentions, {
             kind: 'agent',
             value: agentName,
@@ -5291,6 +5327,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             range: { start: inserted.start, end: inserted.end },
         }));
 
+        cursorPosRef.current = inserted.caret;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = inserted.caret;
@@ -5303,7 +5340,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setShowFileMention(false);
         setMentionQuery('');
 
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
     };
 
     const handleSessionSelect = useEvent((session: { id: string; title?: string }) => {
@@ -5330,20 +5367,26 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 void ensureSessionMentionTranscripts([{ type: 'session', sessionId: session.id }], sessionDirectory).catch(() => undefined);
 
                 const document = getDocument();
-                const textarea = textareaRef.current;
-                const cursorPosition = textarea?.selectionStart ?? document.text.length;
+                const cursorPosition = readComposerInsertCaret(document.text.length);
+                const range = resolveComposerAutocompleteReplaceRange(
+                    document.text,
+                    cursorPosition,
+                    autocompleteTriggerRef.current,
+                );
                 const textBeforeCursor = document.text.substring(0, cursorPosition);
                 const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
                 const sessionTitle = getAllSyncSessionMap().get(session.id)?.title || session.title || session.id;
-                const mentionStart = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
+                const mentionStart = range?.start ?? (lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition);
+                const mentionEnd = range?.end ?? cursorPosition;
                 const sessionReference: Omit<SessionComposerReference, 'start' | 'end'> = {
                     id: `session:${session.id}:${createUuid()}`,
                     kind: 'session',
                     sessionId: session.id,
                     display: composerTriggerIconDisplay({ trigger: '@', icon: 'chat-thread', label: sessionTitle }),
                 };
-                const inserted = insertReference(mentionStart, cursorPosition, sessionReference, { inlineBoundaries: true, padDocumentEdges: true });
+                const inserted = insertReference(mentionStart, mentionEnd, sessionReference, { inlineBoundaries: true, padDocumentEdges: true });
                 const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
+                cursorPosRef.current = caret;
                 requestAnimationFrame(() => {
                     if (textareaRef.current) {
                         textareaRef.current.selectionStart = caret;
@@ -5354,7 +5397,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 });
                 setShowFileMention(false);
                 setMentionQuery('');
-                textareaRef.current?.focus();
+                restoreWebComposerFocus();
             } catch {
                 toast.error(t('chat.chatInput.toast.sessionReferenceLoadFailed'));
             } finally {
@@ -5365,9 +5408,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     const insertSlashReference = useEvent((reference: Parameters<typeof insertReference>[2]): boolean => {
         const document = getDocument();
-        const textarea = textareaRef.current;
-        const cursorPosition = textarea?.selectionStart ?? document.text.length;
-        const range = getSlashTokenRange(document.text, cursorPosition);
+        const cursorPosition = readComposerInsertCaret(document.text.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            document.text,
+            cursorPosition,
+            autocompleteTriggerRef.current,
+        ) ?? getSlashTokenRange(document.text, cursorPosition);
         if (!range) return false;
 
         // Trailing edge space keeps room for args; no leading edge space before `/`
@@ -5379,6 +5425,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
         const insertedReference = inserted.document.references.some((candidate) => candidate.id === reference.id);
         const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
+        cursorPosRef.current = caret;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = caret;
@@ -5391,7 +5438,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 setShowSkillAutocomplete(false);
             }
         });
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
         return insertedReference;
     });
 
@@ -5405,14 +5452,20 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     };
 
     const handleSnippetSelect = (_snippet: unknown, trigger: string) => {
-        const textarea = textareaRef.current;
-        const cursorPosition = textarea?.selectionStart ?? message.length;
+        const cursorPosition = readComposerInsertCaret(message.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            message,
+            cursorPosition,
+            autocompleteTriggerRef.current,
+        );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
-        const startIndex = lastHashSymbol !== -1 ? lastHashSymbol : cursorPosition;
-        const newMessage = `${message.substring(0, startIndex)}#${trigger} ${message.substring(cursorPosition)}`;
+        const startIndex = range?.start ?? (lastHashSymbol !== -1 ? lastHashSymbol : cursorPosition);
+        const endIndex = range?.end ?? cursorPosition;
+        const newMessage = `${message.substring(0, startIndex)}#${trigger} ${message.substring(endIndex)}`;
         applyProgrammaticEdit(newMessage);
         const nextCursor = startIndex + trigger.length + 2;
+        cursorPosRef.current = nextCursor;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = nextCursor;
@@ -5423,7 +5476,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
         setShowSnippetAutocomplete(false);
         setSnippetQuery('');
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
     };
 
     const handleCommandSelect = (command: CommandInfo, submit = false) => {
@@ -5482,6 +5535,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }
 
         const refocus = () => {
+            if (canUseNativeIosComposer(isMobile)) return;
             if (textareaRef.current) {
                 try {
                     textareaRef.current.focus({ preventScroll: true });
@@ -6223,9 +6277,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     );
     const nativeModelVariant = surface.selection.value.variant?.trim();
     const handleNativeSuggestionRows = useEvent((payload: ComposerAutocompleteVisibleRows) => {
-        setNativeSuggestionRows([...payload.rows]);
-        setNativeSuggestionHighlight(payload.highlightedIndex);
+        setNativeSuggestionRows((previous) => commitComposerAutocompleteRows(previous, payload.rows));
+        setNativeSuggestionHighlight((previous) => (
+            previous === payload.highlightedIndex ? previous : payload.highlightedIndex
+        ));
     });
+    const evaluateChatInputCommandPolicy = useEvent((command: CommandInfo) => (
+        isChatInputCommandAllowed(surface, command)
+    ));
     const handleNativeAutocompleteAccept = useEvent((index: number) => {
         if (showCommandAutocomplete) {
             commandRef.current?.acceptIndex(index, true);
@@ -6240,6 +6299,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }
     });
     const handleNativeAutocompleteDismiss = useEvent(() => {
+        autocompleteTriggerRef.current = null;
         setShowCommandAutocomplete(false);
         setShowSkillAutocomplete(false);
         setShowSnippetAutocomplete(false);
@@ -6275,6 +6335,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         attachments: attachedFiles,
         removeAttachmentNamedAria: (name) => t('chat.fileAttachment.actions.removeNamed', { name }),
         onText: (text, composing, selection) => {
+            const nativeCaret = resolveComposerInsertCaret(
+                text.length,
+                selection?.end ?? selection?.start ?? text.length,
+            );
+            cursorPosRef.current = nativeCaret;
             if (composing) {
                 if (textareaRef.current) textareaRef.current.value = text;
                 applyProgrammaticEdit(text);
@@ -6289,7 +6354,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             const nextText = reconciled?.text ?? text;
             if (textareaRef.current) textareaRef.current.value = nextText;
             applyProgrammaticEdit(nextText);
-            const cursor = Math.max(0, Math.min(selection?.start ?? nextText.length, nextText.length));
+            const cursor = resolveComposerInsertCaret(
+                nextText.length,
+                selection?.end ?? selection?.start ?? nextText.length,
+            );
+            cursorPosRef.current = cursor;
             updateAutocompleteState(nextText, cursor);
             if (!reconciled) return;
             const removed = new Set(reconciled.removedFilenames.map((filename) => filename.toLowerCase()));
@@ -6330,6 +6399,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         ),
         autocompleteHighlightedIndex: nativeSuggestionHighlight,
         autocompleteRows: nativeSuggestionRows,
+        caret: cursorPosRef.current,
         onAutocompleteAccept: handleNativeAutocompleteAccept,
         onAutocompleteDismiss: handleNativeAutocompleteDismiss,
     });
@@ -7509,7 +7579,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             directory={currentDirectory}
                             onCommandSelect={handleCommandSelect}
                             onClose={() => setShowCommandAutocomplete(false)}
-                            commandPolicy={(command) => isChatInputCommandAllowed(surface, command)}
+                            commandPolicy={evaluateChatInputCommandPolicy}
                             commandContext={commandContext}
                             onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
                             style={isDesktopExpanded && autocompleteOverlayPosition

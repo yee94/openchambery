@@ -19,7 +19,12 @@ export {
 } from './rows';
 export { rankSkillsForQuery, type RankableSkill } from './skill-rank';
 export { rankCommandsForQuery, type RankableSlashCommand } from './slash-rank';
-export { resolveComposerAutocompleteTrigger } from './trigger';
+export { resolveComposerAutocompleteReplaceRange, resolveComposerAutocompleteTrigger } from './trigger';
+export {
+  commitComposerAutocompleteRows,
+  emitComposerAutocompleteRows,
+  resetComposerAutocompleteRows,
+} from './visible-rows';
 export type {
   ComposerAutocompleteInputMode,
   ComposerAutocompleteKind,

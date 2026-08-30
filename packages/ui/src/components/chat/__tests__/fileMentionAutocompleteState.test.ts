@@ -9,6 +9,8 @@ import {
     getSessionMentionToken,
     getVisibleSessionMentionCandidates,
     mergeAndRankFileMentionPathHits,
+    rankAgentMentionCandidates,
+    rankRecentFileMentionCandidates,
     replaceSessionMentionTokens,
     resolveSessionMentionDeletion,
     shouldHighlightFileMention,
@@ -160,6 +162,33 @@ describe('session mentions', () => {
         const parsed = JSON.parse(payload) as SessionMentionContext[];
         expect(parsed.map((context) => context.id)).toEqual(['ses_123', 'ses_456']);
         expect(parsed[0].messages[0]?.text).toContain('[Message truncated]');
+    });
+});
+
+describe('rankRecentFileMentionCandidates', () => {
+    test('uses fileMentionSearch so a basename match beats a mid-path include', () => {
+        const ranked = rankRecentFileMentionCandidates([
+            { relativePath: 'packages/search-utils/readme.md', name: 'readme.md' },
+            { relativePath: 'src/search.ts', name: 'search.ts', extension: 'ts' },
+            { relativePath: 'docs/unrelated.md', name: 'unrelated.md' },
+        ], 'search.ts', { limit: 6 });
+
+        expect(ranked.map((item) => item.relativePath)).toEqual([
+            'src/search.ts',
+            'packages/search-utils/readme.md',
+        ]);
+    });
+});
+
+describe('rankAgentMentionCandidates', () => {
+    test('drops unmatched agents and ranks exact name ahead of a description hit', () => {
+        const ranked = rankAgentMentionCandidates([
+            { name: 'explore', description: 'look around' },
+            { name: 'build', description: 'compile search hits' },
+            { name: 'search', description: 'find files' },
+        ], 'search');
+
+        expect(ranked.map((agent) => agent.name)).toEqual(['search', 'build']);
     });
 });
 

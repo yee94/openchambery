@@ -91,7 +91,7 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
     private func installIfNeeded() -> Bool {
         if tabBarView != nil { return true }
         guard resolveGlassSupported() else { return false }
-        guard let host = bridge?.viewController?.view else { return false }
+        guard let hostVC = bridge?.viewController, let host = hostVC.view else { return false }
         let bar = OpenChamberTabBarView()
         bar.delegate = self
         if let webView {
@@ -99,27 +99,15 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
         } else {
             host.addSubview(bar)
         }
+        bar.attachChrome(to: hostVC)
 
-        let leading = bar.leadingAnchor.constraint(
-            greaterThanOrEqualTo: host.leadingAnchor,
-            constant: OpenChamberTabBarView.inlineInset
-        )
-        let trailing = host.trailingAnchor.constraint(
-            greaterThanOrEqualTo: bar.trailingAnchor,
-            constant: OpenChamberTabBarView.inlineInset
-        )
-        let width = bar.widthAnchor.constraint(
-            equalTo: host.widthAnchor,
-            constant: -(OpenChamberTabBarView.inlineInset * 2)
-        )
-        width.priority = .defaultHigh
-        let maxWidth = bar.widthAnchor.constraint(lessThanOrEqualToConstant: OpenChamberTabBarView.maxWidth)
-        let center = bar.centerXAnchor.constraint(equalTo: host.centerXAnchor)
-        let bottom = bar.bottomAnchor.constraint(
-            equalTo: host.bottomAnchor,
-            constant: -Self.restGap(in: host)
-        )
-        NSLayoutConstraint.activate([leading, trailing, width, maxWidth, center, bottom])
+        // Full-screen pass-through host. Only the system tab bar accepts hits.
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: host.topAnchor),
+            bar.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+        ])
         tabBarView = bar
         return true
     }
@@ -150,7 +138,7 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
     private func reportHeight() {
         let height: CGFloat
         if tabBarView?.isHidden == false {
-            height = tabBarView?.bounds.height ?? 0
+            height = tabBarView?.chromeController.tabBar.bounds.height ?? 0
         } else {
             height = 0
         }
@@ -164,11 +152,6 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
         let supported = OpenChamberTabBarView.supportsLiquidGlass
         glassSupported = supported
         return supported
-    }
-
-    private static func restGap(in host: UIView) -> CGFloat {
-        let safeBottom = host.window?.safeAreaInsets.bottom ?? host.safeAreaInsets.bottom
-        return max(OpenChamberTabBarView.restFloor, safeBottom)
     }
 
     private static func parseTabs(_ raw: JSArray) -> [OpenChamberTabBarItem] {

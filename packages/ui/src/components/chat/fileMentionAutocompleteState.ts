@@ -1,6 +1,7 @@
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
-import { rankFileMentionSearch } from '@/lib/search/fileMentionSearch';
+import { rankFileMentionSearch, type FileMentionSearchHit } from '@/lib/search/fileMentionSearch';
+import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
 
 export {
   isTestFileMentionPath,
@@ -60,6 +61,44 @@ export const mergeAndRankFileMentionPathHits = ({
   }
 
   return rankFileMentionSearch(Array.from(byPath.values()), query, { limit });
+};
+
+const RECENT_FILE_MENTION_LIMIT = 6;
+
+/** Recent `@` paths use the same ranker as server file hits (`fileMentionSearch`). */
+export const rankRecentFileMentionCandidates = <T extends FileMentionSearchHit>(
+  files: readonly T[],
+  searchQuery: string,
+  options?: { limit?: number },
+): T[] => rankFileMentionSearch(files, searchQuery, { limit: options?.limit ?? RECENT_FILE_MENTION_LIMIT });
+
+const bestMentionScore = (left: number | null, right: number | null): number | null => {
+  if (left === null && right === null) return null;
+  return Math.min(left ?? Number.POSITIVE_INFINITY, right ?? Number.POSITIVE_INFINITY);
+};
+
+/** Agent `@` rows use the same substring tiers as path ranking (no Fuse). */
+export const rankAgentMentionCandidates = <T extends { name: string; description?: string }>(
+  agents: readonly T[],
+  searchQuery: string,
+): T[] => {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return [...agents].sort((left, right) => left.name.localeCompare(right.name));
+  }
+  const scored = agents.flatMap((agent) => {
+    const score = bestMentionScore(
+      scoreTextAgainstQuery(agent.name, normalizedQuery),
+      scoreTextAgainstQuery(agent.description ?? '', normalizedQuery),
+    );
+    if (score === null) return [];
+    return [{ agent, score }];
+  });
+  scored.sort((left, right) => {
+    if (left.score !== right.score) return left.score - right.score;
+    return left.agent.name.localeCompare(right.agent.name);
+  });
+  return scored.map((entry) => entry.agent);
 };
 
 export const isFileMentionTokenTerminated = (text: string, mentionEnd: number): boolean => {

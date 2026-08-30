@@ -55,6 +55,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private var scrollAboveQueueConstraint: NSLayoutConstraint?
     private var autocompleteHeightConstraint: NSLayoutConstraint?
     private var autocompleteState = ComposerAutocompleteState.closed
+    private var lastAutocompleteClamp = AutocompleteClampStamp(height: -1, highlighted: -1, count: -1)
 
     private var attachmentItems: [AttachmentPreviewItem] = []
     private var citationRanges: [NSRange] = []
@@ -134,7 +135,8 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         agentIdenticon: [Int]?,
         showScrollToBottom nextShowScroll: Bool?,
         scrollAria: String?,
-        forceText: Bool
+        forceText: Bool,
+        caret: Int?
     ) {
         if let placeholder { placeholderText = placeholder }
         if let attachAria { self.attachAria = attachAria }
@@ -177,9 +179,13 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         if shouldApplyText(text, forceText: forceText) {
             applyingExternalText = true
             textView.text = text
+            let length = (textView.text as NSString).length
+            let location = caret.map { min(max(0, $0), length) } ?? length
+            textView.selectedRange = NSRange(location: location, length: 0)
             applyingExternalText = false
             refreshPlaceholder()
             relayoutTextHeight()
+            emitTextChange()
         }
         if let modelLabel {
             modelLabelText = modelLabel
@@ -703,28 +709,57 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         scrollButton.isHidden = !visible
     }
 
+    private struct AutocompleteClampStamp: Equatable {
+        let height: CGFloat
+        let highlighted: Int
+        let count: Int
+    }
+
     private func clampAutocompleteHeight() {
         guard !autocomplete.isHidden else {
             autocompleteHeightConstraint?.constant = 0
+            lastAutocompleteClamp = AutocompleteClampStamp(height: -1, highlighted: -1, count: -1)
             return
         }
-        let host = window ?? superview
-        let headerFloor = (host?.safeAreaInsets.top ?? 0) + 56
-        let cardTop: CGFloat
-        if let host {
-            cardTop = card.convert(card.bounds, to: host).minY
+        let space = window ?? superview
+        let cardInSpace: CGRect
+        let safeTop: CGFloat
+        if let space {
+            cardInSpace = card.convert(card.bounds, to: space)
+            safeTop = space.safeAreaInsets.top
         } else {
-            cardTop = card.frame.minY
+            cardInSpace = card.frame
+            safeTop = 0
         }
-        let available = max(0, cardTop - 8 - headerFloor)
-        let next = min(autocomplete.contentHeight, available)
-        autocompleteHeightConstraint?.constant = next
-        if next < 36 {
+        // card.maxY is the keyboard-aware visible column (the card sits on
+        // the keyboard). Full window height would keep the 40% cap too tall.
+        let maxHeight = ComposerAutocompleteMetrics.maxHeight(
+            popupBottom: cardInSpace.minY,
+            boundaryTop: ComposerAutocompleteMetrics.headerFloor(safeAreaTop: safeTop),
+            viewportHeight: max(cardInSpace.maxY, 0)
+        )
+        let next = min(autocomplete.contentHeight, maxHeight)
+        if autocompleteHeightConstraint?.constant != next {
+            autocompleteHeightConstraint?.constant = next
+        }
+        if next < ComposerAutocompleteMetrics.minPaintHeight {
             autocomplete.isHidden = true
             autocomplete.isUserInteractionEnabled = false
+            lastAutocompleteClamp = AutocompleteClampStamp(height: -1, highlighted: -1, count: -1)
             let visible = showScrollToBottom && !isHidden
             scrollChrome.isHidden = !visible
             scrollButton.isHidden = !visible
+            return
+        }
+        let stamp = AutocompleteClampStamp(
+            height: next,
+            highlighted: autocompleteState.highlightedIndex,
+            count: autocompleteState.rows.count
+        )
+        guard stamp != lastAutocompleteClamp else { return }
+        lastAutocompleteClamp = stamp
+        DispatchQueue.main.async { [weak self] in
+            self?.autocomplete.revealHighlightedRow()
         }
     }
 
@@ -745,6 +780,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     }
 
     private func applyAppearance() {
+        overrideUserInterfaceStyle = appearanceIsDark ? .dark : .light
         let label = chromeColor()
         textView.textColor = label
         placeholderLabel.textColor = label.withAlphaComponent(0.45)
@@ -1179,6 +1215,9 @@ final class GlassBackdropView: UIView {
     }
 
     func refreshEffect() {
+        let style: UIUserInterfaceStyle = appearanceIsDark ? .dark : .light
+        overrideUserInterfaceStyle = style
+        blurView.overrideUserInterfaceStyle = style
         if let glass = Self.makeGlassEffect() {
             blurView.effect = glass
             backgroundColor = .clear
@@ -1187,8 +1226,8 @@ final class GlassBackdropView: UIView {
             refreshHoverStyle()
             return
         }
-        let style: UIBlurEffect.Style = appearanceIsDark ? .systemUltraThinMaterialDark : .systemUltraThinMaterialLight
-        blurView.effect = UIBlurEffect(style: style)
+        let material: UIBlurEffect.Style = appearanceIsDark ? .systemUltraThinMaterialDark : .systemUltraThinMaterialLight
+        blurView.effect = UIBlurEffect(style: material)
         backgroundColor = .clear
         blurView.backgroundColor = appearanceIsDark
             ? UIColor.black.withAlphaComponent(0.18)

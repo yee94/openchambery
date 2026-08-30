@@ -12,11 +12,14 @@ struct OpenChamberTabBarItem {
     let selectedSymbol: String
 }
 
-/// Floating homepage dock. Shown only when liquid glass is available (iOS 26+);
-/// older systems keep the Web tab bar.
-/// iOS 26 uses interactive `UIGlassEffect`; chrome lives in the effect contentView.
-/// A second interactive glass pill scrubs left/right with the finger (not vertical).
-final class OpenChamberTabBarView: UIView, UIGestureRecognizerDelegate {
+/// Full-screen pass-through host for a chrome-only `UITabBarController`.
+///
+/// iOS 26 paints the floating liquid-glass capsule and selected liquid lens
+/// only when a tab bar is owned by a tab controller. This overlay never
+/// hosts real pages — placeholder controllers stay clear, taps emit
+/// `tabSelected`, and React still owns the homepage stack.
+/// Light and dark follow the Web theme via `overrideUserInterfaceStyle`.
+final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
     weak var delegate: OpenChamberTabBarViewDelegate?
 
     static var supportsLiquidGlass: Bool {
@@ -24,47 +27,55 @@ final class OpenChamberTabBarView: UIView, UIGestureRecognizerDelegate {
         return NSClassFromString("UIGlassEffect") != nil
     }
 
-    static let dockHeight: CGFloat = 68
-    static let inlineInset: CGFloat = 16
-    static let maxWidth: CGFloat = 416
-    static let restFloor: CGFloat = 20
+    /// Item row only. The controller extends the bar through the home indicator.
+    static let dockHeight: CGFloat = 49
 
-    private let glass = TabBarGlassBackdropView()
-    private let selectionGlass = TabBarGlassBackdropView()
-    private let stack = UIStackView()
-    private let selectionFeedback = UISelectionFeedbackGenerator()
-    private var buttons: [TabItemButton] = []
+    let chromeController = OpenChamberTabBarChromeController()
+
     private var items: [OpenChamberTabBarItem] = []
     private var selectedId = ""
-    private var previewId = ""
-    private var appearanceIsDark = true
-    private var accentColor: UIColor?
     private var applying = false
-    private var isPanning = false
-    private var panStartFrame: CGRect = .zero
+    private var lastReportedHeight: CGFloat = -1
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
         isOpaque = false
         backgroundColor = .clear
+        clipsToBounds = false
         build()
-        selectionFeedback.prepare()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        if !isPanning {
-            updatePill(animated: false)
-        }
-        delegate?.tabBarViewDidChangeHeight(self)
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        let tabPoint = convert(point, to: chromeController.tabBar)
+        return chromeController.tabBar.point(inside: tabPoint, with: event)
     }
 
-    override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: Self.dockHeight)
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        reportHeightIfNeeded()
+    }
+
+    func attachChrome(to parent: UIViewController) {
+        guard chromeController.parent !== parent else { return }
+        if chromeController.parent != nil {
+            chromeController.willMove(toParent: nil)
+            chromeController.view.removeFromSuperview()
+            chromeController.removeFromParent()
+        }
+        parent.addChild(chromeController)
+        addSubview(chromeController.view)
+        chromeController.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            chromeController.view.topAnchor.constraint(equalTo: topAnchor),
+            chromeController.view.bottomAnchor.constraint(equalTo: bottomAnchor),
+            chromeController.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            chromeController.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+        chromeController.didMove(toParent: parent)
     }
 
     func apply(
@@ -76,16 +87,14 @@ final class OpenChamberTabBarView: UIView, UIGestureRecognizerDelegate {
     ) {
         applying = true
         if let appearance {
-            appearanceIsDark = appearance == "dark"
-            glass.appearanceIsDark = appearanceIsDark
-            selectionGlass.appearanceIsDark = appearanceIsDark
-            overrideUserInterfaceStyle = appearanceIsDark ? .dark : .light
+            applyAppearance(appearance)
         }
         if let nextAccent {
-            accentColor = Self.parseHex(nextAccent)
+            applyAccent(nextAccent)
         }
         if let ariaLabel, !ariaLabel.isEmpty {
             accessibilityLabel = ariaLabel
+            chromeController.tabBar.accessibilityLabel = ariaLabel
         }
         if !nextItems.isEmpty,
            items.map(\.id) != nextItems.map(\.id) || items.map(\.label) != nextItems.map(\.label) {
@@ -96,183 +105,80 @@ final class OpenChamberTabBarView: UIView, UIGestureRecognizerDelegate {
         } else if selectedId.isEmpty {
             selectedId = nextItems.first?.id ?? ""
         }
-        previewId = selectedId
-        refreshSelection()
-        updatePill(animated: false)
+        applySelectedItem()
         applying = false
     }
 
-    private func build() {
-        isAccessibilityElement = false
-        accessibilityContainerType = .semanticGroup
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(glass)
-        selectionGlass.translatesAutoresizingMaskIntoConstraints = true
-        selectionGlass.isUserInteractionEnabled = false
-        stack.axis = .horizontal
-        stack.alignment = .fill
-        stack.distribution = .fillEqually
-        stack.spacing = 3
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        glass.contentView.addSubview(selectionGlass)
-        glass.contentView.addSubview(stack)
-        NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: Self.dockHeight),
-            glass.topAnchor.constraint(equalTo: topAnchor),
-            glass.bottomAnchor.constraint(equalTo: bottomAnchor),
-            glass.leadingAnchor.constraint(equalTo: leadingAnchor),
-            glass.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: glass.contentView.topAnchor, constant: 5),
-            stack.bottomAnchor.constraint(equalTo: glass.contentView.bottomAnchor, constant: -5),
-            stack.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor, constant: 5),
-            stack.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor, constant: -5),
-        ])
-        glass.setCornerRadius(Self.dockHeight / 2)
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        pan.delegate = self
-        pan.cancelsTouchesInView = true
-        glass.addGestureRecognizer(pan)
-        selectionFeedback.prepare()
-    }
-
-    private func rebuild(items nextItems: [OpenChamberTabBarItem]) {
-        items = nextItems
-        buttons.forEach { $0.removeFromSuperview() }
-        buttons = nextItems.map { item in
-            let button = TabItemButton(item: item)
-            button.addAction(UIAction { [weak self] _ in
-                self?.handleSelect(item.id)
-            }, for: .touchUpInside)
-            stack.addArrangedSubview(button)
-            return button
-        }
-    }
-
-    private func handleSelect(_ id: String) {
-        if selectedId != id {
-            selectedId = id
-            previewId = id
-            selectionFeedback.selectionChanged()
-            selectionFeedback.prepare()
-            refreshSelection()
-            updatePill(animated: true)
-        }
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        guard let id = viewController.tabBarItem.accessibilityIdentifier, !id.isEmpty else { return }
+        selectedId = id
         if !applying {
             delegate?.tabBarView(self, didSelectTab: id)
         }
     }
 
-    private func refreshSelection() {
-        let selectedColor = accentColor ?? (appearanceIsDark ? UIColor.white : UIColor.black)
-        let muted = appearanceIsDark
-            ? UIColor.white.withAlphaComponent(0.62)
-            : UIColor.black.withAlphaComponent(0.48)
-        let activeId = previewId.isEmpty ? selectedId : previewId
-        for button in buttons {
-            button.apply(
-                selected: button.item.id == activeId,
-                selectedColor: selectedColor,
-                mutedColor: muted
+    private func build() {
+        isAccessibilityElement = false
+        accessibilityContainerType = .semanticGroup
+        chromeController.delegate = self
+        let tabBar = chromeController.tabBar
+        // Leave system bar chrome untouched so iOS 26 can paint glass + lens.
+        tabBar.isTranslucent = true
+        tabBar.unselectedItemTintColor = .secondaryLabel
+        if #available(iOS 17.0, *) {
+            hoverStyle = nil
+            tabBar.hoverStyle = nil
+        }
+    }
+
+    private func rebuild(items nextItems: [OpenChamberTabBarItem]) {
+        items = nextItems
+        chromeController.viewControllers = nextItems.map { item in
+            let page = UIViewController()
+            page.view.backgroundColor = .clear
+            page.view.isOpaque = false
+            page.view.isUserInteractionEnabled = false
+            page.view.alpha = 0
+            page.tabBarItem = UITabBarItem(
+                title: item.label,
+                image: UIImage(systemName: item.symbol),
+                selectedImage: UIImage(systemName: item.selectedSymbol)
             )
+            page.tabBarItem.accessibilityIdentifier = item.id
+            page.tabBarItem.accessibilityLabel = item.label
+            return page
         }
+        applySelectedItem()
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-        let translation = pan.translation(in: glass)
-        let velocity = pan.velocity(in: glass)
-        let dx = abs(translation.x) + abs(velocity.x)
-        let dy = abs(translation.y) + abs(velocity.y)
-        // Horizontal scrub only. Up/down must not morph the glass pill.
-        return dx > dy
+    private func applySelectedItem() {
+        guard let match = chromeController.viewControllers?.first(where: {
+            $0.tabBarItem.accessibilityIdentifier == selectedId
+        }) ?? chromeController.viewControllers?.first else { return }
+        chromeController.selectedViewController = match
     }
 
-    @objc private func handlePan(_ pan: UIPanGestureRecognizer) {
-        let translation = pan.translation(in: glass.contentView)
-        switch pan.state {
-        case .began:
-            isPanning = true
-            panStartFrame = pillFrame(for: selectedId)
-            selectionGlass.frame = panStartFrame
-        case .changed:
-            let stretch = min(28, abs(translation.x) * 0.22)
-            var frame = panStartFrame.insetBy(dx: -stretch / 2, dy: 0)
-            frame.origin.x += translation.x
-            selectionGlass.frame = clampPill(frame)
-            let nextId = nearestId(at: selectionGlass.frame.midX)
-            if nextId != previewId {
-                previewId = nextId
-                selectionFeedback.selectionChanged()
-                selectionFeedback.prepare()
-                refreshSelection()
-            }
-        case .ended:
-            isPanning = false
-            let commitId = nearestId(at: selectionGlass.frame.midX)
-            if commitId != selectedId {
-                handleSelect(commitId)
-            } else {
-                previewId = selectedId
-                refreshSelection()
-                updatePill(animated: true)
-            }
-        case .cancelled, .failed:
-            isPanning = false
-            previewId = selectedId
-            refreshSelection()
-            updatePill(animated: true)
-        default:
-            break
+    /// Web theme is the source of truth so a light app on a dark system
+    /// (and the reverse) still gets the matching liquid-glass recipe.
+    private func applyAppearance(_ appearance: String) {
+        let style: UIUserInterfaceStyle = appearance == "light" ? .light : .dark
+        overrideUserInterfaceStyle = style
+        chromeController.overrideUserInterfaceStyle = style
+        chromeController.tabBar.overrideUserInterfaceStyle = style
+    }
+
+    private func applyAccent(_ raw: String) {
+        chromeController.tabBar.tintColor = Self.parseHex(raw) ?? .label
+    }
+
+    private func reportHeightIfNeeded() {
+        let height = chromeController.tabBar.bounds.height
+        guard height > 0, height != lastReportedHeight else {
+            delegate?.tabBarViewDidChangeHeight(self)
+            return
         }
-    }
-
-    private func updatePill(animated: Bool) {
-        let frame = pillFrame(for: selectedId)
-        guard frame.width > 1 else { return }
-        selectionGlass.setCornerRadius(frame.height / 2)
-        let updates = { self.selectionGlass.frame = frame }
-        if animated {
-            UIView.animate(
-                withDuration: 0.28,
-                delay: 0,
-                usingSpringWithDamping: 0.86,
-                initialSpringVelocity: 0.4,
-                options: [.allowUserInteraction, .beginFromCurrentState],
-                animations: updates
-            )
-        } else {
-            updates()
-        }
-    }
-
-    private func pillFrame(for id: String) -> CGRect {
-        guard let button = buttons.first(where: { $0.item.id == id }) ?? buttons.first else {
-            return .zero
-        }
-        return button.convert(button.bounds, to: glass.contentView)
-    }
-
-    private func clampPill(_ frame: CGRect) -> CGRect {
-        let bounds = stack.frame
-        guard bounds.width > 1 else { return frame }
-        var next = frame
-        if next.minX < bounds.minX { next.origin.x = bounds.minX }
-        if next.maxX > bounds.maxX { next.origin.x = bounds.maxX - next.width }
-        return next
-    }
-
-    private func nearestId(at x: CGFloat) -> String {
-        var best = selectedId
-        var bestDistance = CGFloat.greatestFiniteMagnitude
-        for button in buttons {
-            let mid = button.convert(button.bounds, to: glass.contentView).midX
-            let distance = abs(mid - x)
-            if distance < bestDistance {
-                bestDistance = distance
-                best = button.item.id
-            }
-        }
-        return best
+        lastReportedHeight = height
+        delegate?.tabBarViewDidChangeHeight(self)
     }
 
     private static func parseHex(_ raw: String) -> UIColor? {
@@ -286,143 +192,16 @@ final class OpenChamberTabBarView: UIView, UIGestureRecognizerDelegate {
     }
 }
 
-private final class TabItemButton: UIButton {
-    let item: OpenChamberTabBarItem
-    private let iconView = UIImageView()
-    private let nameLabel = UILabel()
-
-    init(item: OpenChamberTabBarItem) {
-        self.item = item
-        super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        isAccessibilityElement = true
-        accessibilityLabel = item.label
-        accessibilityTraits = .button
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconView.contentMode = .scaleAspectFit
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.text = item.label
-        nameLabel.textAlignment = .center
-        nameLabel.numberOfLines = 1
-        nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.adjustsFontSizeToFitWidth = true
-        nameLabel.minimumScaleFactor = 0.75
-        addSubview(iconView)
-        addSubview(nameLabel)
-        NSLayoutConstraint.activate([
-            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 23),
-            iconView.heightAnchor.constraint(equalToConstant: 23),
-            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 3),
-            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
-            nameLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
-            nameLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -4),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override var isHighlighted: Bool {
-        didSet {
-            let scale: CGFloat = isHighlighted ? 0.985 : 1
-            UIView.animate(withDuration: 0.1, delay: 0, options: [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState]) {
-                self.transform = CGAffineTransform(scaleX: scale, y: scale)
-            }
+/// Keeps the controller view clear so the WebView remains visible.
+/// Pages stay empty; only the system tab bar is meant to paint.
+final class OpenChamberTabBarChromeController: UITabBarController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        for subview in view.subviews where subview !== tabBar {
+            subview.backgroundColor = .clear
+            subview.isOpaque = false
         }
-    }
-
-    func apply(selected: Bool, selectedColor: UIColor, mutedColor: UIColor) {
-        accessibilityTraits = selected ? [.button, .selected] : .button
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: selected ? .semibold : .medium)
-        let preferred = selected ? item.selectedSymbol : item.symbol
-        let image = UIImage(systemName: preferred, withConfiguration: config)
-            ?? UIImage(systemName: item.symbol, withConfiguration: config)
-        iconView.image = image?.withRenderingMode(.alwaysTemplate)
-        nameLabel.font = .systemFont(ofSize: 12, weight: selected ? .semibold : .medium)
-        let color = selected ? selectedColor : mutedColor
-        iconView.tintColor = color
-        nameLabel.textColor = color
-    }
-}
-
-private final class TabBarGlassBackdropView: UIView {
-    var appearanceIsDark = true { didSet { refreshEffect() } }
-
-    private let blurView = UIVisualEffectView(effect: nil)
-    // Interactive UIGlassEffect samples touches through its own contentView.
-    var contentView: UIView { blurView.contentView }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        translatesAutoresizingMaskIntoConstraints = false
-        layer.cornerCurve = .continuous
-        clipsToBounds = false
-        blurView.translatesAutoresizingMaskIntoConstraints = false
-        blurView.layer.cornerCurve = .continuous
-        blurView.clipsToBounds = true
-        addSubview(blurView)
-        NSLayoutConstraint.activate([
-            blurView.topAnchor.constraint(equalTo: topAnchor),
-            blurView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            blurView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            blurView.trailingAnchor.constraint(equalTo: trailingAnchor),
-        ])
-        refreshEffect()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    func setCornerRadius(_ radius: CGFloat) {
-        layer.cornerRadius = radius
-        blurView.layer.cornerRadius = radius
-        refreshHoverStyle()
-    }
-
-    func refreshEffect() {
-        if let glass = Self.makeGlassEffect() {
-            blurView.effect = glass
-            backgroundColor = .clear
-            layer.borderWidth = 0
-            blurView.layer.borderWidth = 0
-            refreshHoverStyle()
-            return
-        }
-        let style: UIBlurEffect.Style = appearanceIsDark ? .systemUltraThinMaterialDark : .systemUltraThinMaterialLight
-        blurView.effect = UIBlurEffect(style: style)
-        backgroundColor = .clear
-        blurView.backgroundColor = appearanceIsDark
-            ? UIColor.black.withAlphaComponent(0.18)
-            : UIColor.white.withAlphaComponent(0.22)
-        blurView.layer.borderWidth = 0.5
-        blurView.layer.borderColor = (appearanceIsDark
-            ? UIColor.white.withAlphaComponent(0.16)
-            : UIColor.white.withAlphaComponent(0.55)).cgColor
-        refreshHoverStyle()
-    }
-
-    private func refreshHoverStyle() {
-        guard #available(iOS 17.0, *) else { return }
-        let shape = UIShape.rect(cornerRadius: layer.cornerRadius, cornerCurve: .continuous)
-        hoverStyle = UIHoverStyle(effect: .lift, shape: shape)
-        blurView.hoverStyle = UIHoverStyle(effect: .highlight, shape: shape)
-    }
-
-    private static func makeGlassEffect() -> UIVisualEffect? {
-        if #available(iOS 26.0, *) {
-            let glass = UIGlassEffect(style: .regular)
-            glass.isInteractive = true
-            return glass
-        }
-        guard let effectClass = NSClassFromString("UIGlassEffect") as? NSObject.Type else {
-            return nil
-        }
-        let effect = effectClass.init()
-        if effect.responds(to: NSSelectorFromString("setInteractive:")) {
-            effect.setValue(true, forKey: "interactive")
-        }
-        return effect as? UIVisualEffect
     }
 }

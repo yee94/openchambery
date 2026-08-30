@@ -250,7 +250,8 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
             agentIdenticon: Self.parseIdenticon(call.getArray("agentIdenticon")),
             showScrollToBottom: Self.optionalBool(call, "showScrollToBottom"),
             scrollAria: call.getString("scrollAria"),
-            forceText: call.getBool("forceText") ?? false
+            forceText: call.getBool("forceText") ?? false,
+            caret: Self.optionalInt(call, "caret")
         )
         if let previews = call.getArray("attachmentPreviews") {
             let signature = Self.previewSignature(previews)
@@ -604,6 +605,12 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         return call.getInt(key)
     }
 
+    private static func jsString(_ object: JSObject, _ key: String) -> String {
+        if let value = object[key] as? String { return value }
+        if let value = object[key] as? NSString { return value as String }
+        return ""
+    }
+
     private static func previewSignature(_ raw: JSArray) -> String {
         raw.compactMap { entry -> String? in
             guard let object = entry as? JSObject else { return nil }
@@ -641,9 +648,9 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         let rows = (raw["rows"] as? JSArray)?.compactMap { entry -> ComposerAutocompleteRow? in
             guard let object = entry as? JSObject else { return nil }
             guard let id = object["id"] as? String, !id.isEmpty else { return nil }
-            let title = object["title"] as? String ?? ""
-            let subtitle = object["subtitle"] as? String ?? ""
-            let badge = object["badge"] as? String ?? ""
+            let title = Self.jsString(object, "title")
+            let subtitle = Self.jsString(object, "subtitle")
+            let badge = Self.jsString(object, "badge")
             let icon = (object["iconBase64"] as? String).flatMap { OpenChamberComposerView.decodePreviewImage($0) }
             return ComposerAutocompleteRow(id: id, title: title, subtitle: subtitle, badge: badge, icon: icon)
         } ?? []

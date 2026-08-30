@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.27] - 2026-08-30
+
+### Fixed
+
+- Opening a chat no longer leaves the previous model's icon in the input while messages load, and Send uses the model you see.
+- On iPhone, tapping a `/` or `@` suggestion now inserts the same way as the web composer: it replaces the token you were typing and moves the caret after it. File and agent `@` matches also follow the same ranking as web. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- The iPhone homepage dock uses the system tab bar for the selected liquid-glass lens (and light mode) instead of a nested glass pill that read as a black shadow.
+
 ## [1.19.0-beta.26] - 2026-08-30
 
 ### Added
