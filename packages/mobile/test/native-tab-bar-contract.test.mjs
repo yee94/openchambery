@@ -37,6 +37,14 @@ test('native tab bar adopts interactive liquid glass and keeps web as the fallba
   assert.match(plugin, /max\(OpenChamberTabBarView\.restFloor, safeBottom\)/);
   assert.match(view, /static let dockHeight: CGFloat = 68/);
   assert.match(view, /static let restFloor: CGFloat = 20/);
+  assert.match(view, /selectionGlass/);
+  assert.match(view, /UIPanGestureRecognizer/);
+  assert.match(view, /Horizontal scrub only/);
+  assert.match(view, /accentColor/);
+  assert.match(view, /UIImage\(systemName: preferred/);
+  assert.match(plugin, /accentColor: call\.getString\("accentColor"\)/);
+  assert.match(plugin, /\("calendar", "calendar"\)/);
+  assert.doesNotMatch(plugin, /calendar\.fill/);
   assert.doesNotMatch(view, /UIButton\.Configuration/);
 });
 

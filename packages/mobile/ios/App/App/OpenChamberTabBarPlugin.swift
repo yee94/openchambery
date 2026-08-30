@@ -16,7 +16,7 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
     private static let symbols: [String: (String, String)] = [
         "projects": ("folder", "folder.fill"),
         "assistant": ("sparkles", "sparkles"),
-        "scheduled": ("calendar", "calendar.fill"),
+        "scheduled": ("calendar", "calendar"),
         "settings": ("gearshape", "gearshape.fill"),
     ]
 
@@ -135,7 +135,8 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
             items: items,
             selectedId: call.getString("selectedTab"),
             appearance: call.getString("appearance"),
-            ariaLabel: call.getString("ariaLabel")
+            ariaLabel: call.getString("ariaLabel"),
+            accentColor: call.getString("accentColor")
         )
     }
 

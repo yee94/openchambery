@@ -3,16 +3,24 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 
 import {
+  hasActiveMobileOverlay,
+  MOBILE_OVERLAY_ACTIVE_ATTRIBUTE,
+} from '@/components/ui/MobileOverlayPresence';
+import {
   canUseNativeIosTabBar,
   getNativeIosTabBarPlugin,
+  nativeIosTabBarAccentFromRoot,
   nativeIosTabBarAppearanceFromRoot,
   nativeTabBarStatesEqual,
   parseNativeIosTabId,
+  resolveNativeIosTabBarVisible,
   setNativeTabBarDocumentClass,
   type NativeIosTabBarItem,
   type NativeIosTabBarState,
 } from '@/lib/native-ios-tab-bar';
 import type { MobileTabId } from './mobileTabs';
+
+const MOBILE_OVERLAY_ROOT_ID = 'mobile-overlay-root';
 
 export type UseNativeIosTabBarArgs = {
   visible: boolean;
@@ -33,6 +41,7 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
   const available = canUseNativeIosTabBar();
   const [adopted, setAdopted] = useState(false);
   const [rejected, setRejected] = useState(false);
+  const [overlayBusy, setOverlayBusy] = useState(false);
   const lastStateRef = useRef<NativeIosTabBarState | null>(null);
   const rejectedRef = useRef(false);
   const onTabChange = useEvent(args.onTabChange);
@@ -40,6 +49,27 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
   const appearance = typeof document === 'undefined'
     ? 'dark'
     : nativeIosTabBarAppearanceFromRoot(document.documentElement);
+  const accentColor = typeof document === 'undefined' ? '' : nativeIosTabBarAccentFromRoot();
+
+  useEffect(() => {
+    if (!available || typeof document === 'undefined') return;
+    let host = document.getElementById(MOBILE_OVERLAY_ROOT_ID);
+    if (!host) {
+      host = document.createElement('div');
+      host.id = MOBILE_OVERLAY_ROOT_ID;
+      document.body.appendChild(host);
+    }
+    const update = () => setOverlayBusy(hasActiveMobileOverlay(host.children));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(host, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [MOBILE_OVERLAY_ACTIVE_ATTRIBUTE],
+    });
+    return () => observer.disconnect();
+  }, [available]);
 
   useEffect(() => {
     if (!available) return;
@@ -77,11 +107,13 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
       tabs: args.tabs.map((tab) => ({ id: tab.id, label: tab.label })),
       selectedTab: args.activeTab,
       appearance,
+      accentColor,
       ariaLabel: args.ariaLabel,
     };
 
+    const visible = resolveNativeIosTabBarVisible(args.visible, overlayBusy);
     const sync = async () => {
-      if (!args.visible) {
+      if (!visible) {
         lastStateRef.current = null;
         await plugin.hide();
         return;
@@ -120,7 +152,7 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
     return () => {
       cancelled = true;
     };
-  }, [available, args.visible, args.activeTab, args.ariaLabel, appearance, tabsKey]);
+  }, [available, args.visible, overlayBusy, args.activeTab, args.ariaLabel, appearance, accentColor, tabsKey]);
 
   if (!available || rejected) return 'web';
   if (adopted) return 'native';

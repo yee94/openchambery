@@ -54,8 +54,8 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 - `OpenChamberTabBar` is an iOS-only Capacitor overlay for the phone homepage dock (`projects` / `assistant` / `scheduled` / `settings`). It is not registered on Android; hosted H5 and older iOS keep the Web `MobileTabBar`.
 - The overlay is adopted only when liquid glass is available (iOS 26 `UIGlassEffect`, interactive, chrome in the effect `contentView`). `present` resolves `{ adopted: false }` without installing a view so Web remains the fallback. Native code never owns the React tab stack — taps emit `tabSelected` and `MobileTabsRoot` still calls `setActiveTab`.
-- Geometry matches the Web dock: 68pt capsule, 16pt inline inset, 416pt max width, rest gap `max(20pt, window home-indicator inset)`. Secondary pages and the scheduled-task editor hide the overlay (`hide`) so it cannot float above chat. The process-owned view stays installed; `hide` / `dismiss` only set `isHidden`.
-- Shared UI (`packages/ui/src/lib/native-ios-tab-bar.ts`, `useNativeIosTabBar`) presents the overlay from `MobileTabsRoot` on Capacitor iOS. Labels come from existing `mobile.tabs.*` keys. `:root.oc-native-ios-tab-bar` marks adoption; the Web dock unmounts once adopted.
+- Geometry matches the Web dock: 68pt capsule, 16pt inline inset, 416pt max width, rest gap `max(20pt, window home-indicator inset)`. Secondary pages, the scheduled-task editor, and active `#mobile-overlay-root` sheets (`data-mobile-overlay-active`, same suppress rule as the web composer) hide the overlay (`hide`) so it cannot cover those surfaces. The process-owned view stays installed; `hide` / `dismiss` only set `isHidden`.
+- Shared UI (`packages/ui/src/lib/native-ios-tab-bar.ts`, `useNativeIosTabBar`) presents the overlay from `MobileTabsRoot` on Capacitor iOS. Labels come from existing `mobile.tabs.*` keys. The selected glyph uses the theme `--primary` color. A second interactive glass pill sits under the active tab and scrubs horizontally with the finger (vertical pans are ignored). `:root.oc-native-ios-tab-bar` marks adoption; the Web dock unmounts once adopted.
 
 ## Native Photo Picker
 

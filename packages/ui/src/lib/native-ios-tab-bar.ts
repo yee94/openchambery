@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
+import { resolveCssVarToHex } from '@/lib/native-ios-composer';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
 export const NATIVE_IOS_TAB_BAR_CLASS = 'oc-native-ios-tab-bar';
@@ -26,6 +27,7 @@ export type NativeIosTabBarState = {
   selectedTab: NativeIosTabId;
   appearance: NativeIosTabBarAppearance;
   ariaLabel: string;
+  accentColor: string;
 };
 
 export type NativeIosTabBarPresentResult = {
@@ -76,6 +78,8 @@ export const nativeIosTabBarAppearanceFromRoot = (root: {
   classList: { contains: (name: string) => boolean };
 }): NativeIosTabBarAppearance => (root.classList.contains('dark') ? 'dark' : 'light');
 
+export const nativeIosTabBarAccentFromRoot = (): string => resolveCssVarToHex('--primary');
+
 export const isNativeIosTabId = (value: string | null | undefined): value is NativeIosTabId => (
   typeof value === 'string' && (NATIVE_IOS_TAB_IDS as readonly string[]).includes(value)
 );
@@ -91,6 +95,7 @@ export const nativeTabBarStatesEqual = (
   left.selectedTab === right.selectedTab
   && left.appearance === right.appearance
   && left.ariaLabel === right.ariaLabel
+  && left.accentColor === right.accentColor
   && left.tabs.length === right.tabs.length
   && left.tabs.every((tab, index) => (
     tab.id === right.tabs[index]?.id && tab.label === right.tabs[index]?.label
@@ -100,5 +105,11 @@ export const nativeTabBarStatesEqual = (
 export const setNativeTabBarDocumentClass = (root: HTMLElement, active: boolean): void => {
   root.classList.toggle(NATIVE_IOS_TAB_BAR_CLASS, active);
 };
+
+/** Same suppress rule as the web dock under `#mobile-overlay-root` sheets. */
+export const resolveNativeIosTabBarVisible = (
+  requested: boolean,
+  overlayBusy: boolean,
+): boolean => requested && !overlayBusy;
 
 export const getNativeIosTabBarPlugin = (): NativeIosTabBarPlugin => OpenChamberTabBar;

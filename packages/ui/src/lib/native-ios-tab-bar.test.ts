@@ -7,6 +7,7 @@ import {
   nativeTabBarStatesEqual,
   NATIVE_IOS_TAB_BAR_CLASS,
   parseNativeIosTabId,
+  resolveNativeIosTabBarVisible,
   setNativeTabBarDocumentClass,
   type NativeIosTabBarState,
 } from './native-ios-tab-bar';
@@ -20,6 +21,7 @@ const state = (overrides: Partial<NativeIosTabBarState> = {}): NativeIosTabBarSt
   ],
   selectedTab: 'projects',
   appearance: 'dark',
+  accentColor: '#edb449',
   ariaLabel: 'Mobile navigation',
   ...overrides,
 });
@@ -79,10 +81,18 @@ describe('native iOS tab bar contract', () => {
     expect(nativeTabBarStatesEqual(state(), state())).toBe(true);
     expect(nativeTabBarStatesEqual(state(), state({ selectedTab: 'settings' }))).toBe(false);
     expect(nativeTabBarStatesEqual(state(), state({ appearance: 'light' }))).toBe(false);
+    expect(nativeTabBarStatesEqual(state(), state({ accentColor: '#22c55e' }))).toBe(false);
     expect(nativeTabBarStatesEqual(state(), state({ ariaLabel: 'Nav' }))).toBe(false);
     expect(nativeTabBarStatesEqual(
       state(),
       state({ tabs: [{ id: 'projects', label: '项目' }] }),
     )).toBe(false);
+  });
+
+  test('hides the native dock while a mobile overlay is active, matching the web sheet cover', () => {
+    expect(resolveNativeIosTabBarVisible(true, false)).toBe(true);
+    expect(resolveNativeIosTabBarVisible(true, true)).toBe(false);
+    expect(resolveNativeIosTabBarVisible(false, false)).toBe(false);
+    expect(resolveNativeIosTabBarVisible(false, true)).toBe(false);
   });
 });
