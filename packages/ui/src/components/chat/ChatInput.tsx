@@ -2097,13 +2097,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     // Combined source-mode highlight: markdown syntax + @mentions. Returns null
     // when there's nothing to highlight so the overlay stays off for plain text.
+    const nativeComposerOwnedInput = canUseNativeIosComposer(isMobile) && surface.kind === 'primary';
     const highlightedComposerContent = React.useMemo(() => {
         if (!message || inputMode === 'shell') {
             return null;
         }
         const ranges = [
-            ...tokenizeMarkdown(message),
-            ...highlightFencedCode(message),
+            ...(nativeComposerOwnedInput ? [] : tokenizeMarkdown(message)),
+            ...(nativeComposerOwnedInput ? [] : highlightFencedCode(message)),
             ...mentionRangesToHighlightRanges(composerMentionRanges),
             ...composerCommandRanges,
             ...composerSnippetRanges,
@@ -2118,7 +2119,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             })),
         ];
         return buildHighlightParts(message, ranges);
-    }, [attachmentCitationRanges, composerCommandRanges, composerSnippetRanges, composerMentionRanges, composerDocument.references, inputMode, message]);
+    }, [attachmentCitationRanges, composerCommandRanges, composerSnippetRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput]);
 
     const sanitizeAttachmentsForSend = React.useCallback(
         (files: AttachedFile[] | undefined): AttachedFile[] => (files ?? [])

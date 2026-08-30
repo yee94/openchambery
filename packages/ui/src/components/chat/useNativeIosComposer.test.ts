@@ -81,5 +81,8 @@ describe('useNativeIosComposer', () => {
     expect(chatInput).toContain('autocompleteTriggerRef');
     expect(chatInput).toContain('caret: cursorPosRef.current');
     expect(chatInput).toContain('chipHighlights: highlightedComposerContent');
+    expect(chatInput).toContain('nativeComposerOwnedInput');
+    expect(chatInput).toContain('nativeComposerOwnedInput ? [] : tokenizeMarkdown(message)');
+    expect(chatInput).toContain('nativeComposerOwnedInput ? [] : highlightFencedCode(message)');
   });
 });

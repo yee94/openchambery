@@ -410,4 +410,38 @@ describe('native iOS composer contract', () => {
     document.documentElement.style.setProperty('--status-success', 'rgb(16, 185, 129)');
     expect(resolveCssVarToHex('--status-success')).toBe('#10b981');
   });
+
+  test('caches a CSS variable hex so a second lookup does not create a probe', async () => {
+    document.documentElement.style.setProperty('--oc-composer-cache-hit', 'rgb(16, 185, 129)');
+    await Promise.resolve();
+    const first = resolveCssVarToHex('--oc-composer-cache-hit');
+    expect(first).toBe('#10b981');
+    const createElement = vi.spyOn(document, 'createElement');
+    const getComputedStyleSpy = vi.spyOn(window, 'getComputedStyle');
+    try {
+      expect(resolveCssVarToHex('--oc-composer-cache-hit')).toBe(first);
+      expect(createElement).not.toHaveBeenCalled();
+      expect(getComputedStyleSpy).not.toHaveBeenCalled();
+    } finally {
+      createElement.mockRestore();
+      getComputedStyleSpy.mockRestore();
+    }
+  });
+
+  test('invalidates the CSS variable hex cache when the root class or style changes', async () => {
+    const previousClassName = document.documentElement.className;
+    document.documentElement.style.setProperty('--oc-composer-cache-invalidate', 'rgb(16, 185, 129)');
+    await Promise.resolve();
+    expect(resolveCssVarToHex('--oc-composer-cache-invalidate')).toBe('#10b981');
+    document.documentElement.style.setProperty('--oc-composer-cache-invalidate', 'rgb(59, 130, 246)');
+    document.documentElement.className = previousClassName ? `${previousClassName} dark` : 'dark';
+    try {
+      await vi.waitFor(() => {
+        expect(resolveCssVarToHex('--oc-composer-cache-invalidate')).toBe('#3b82f6');
+      });
+    } finally {
+      document.documentElement.className = previousClassName;
+      document.documentElement.style.removeProperty('--oc-composer-cache-invalidate');
+    }
+  });
 });

@@ -70,6 +70,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private var canAbort = false
     private var attachmentCount = 0
     private var applyingExternalText = false
+    private var lastEmittedTextChange: (text: String, start: Int, end: Int)?
     private var appearanceIsDark = true
     private var agentLongPressFired = false
     private var placeholderText = "Tap to type"
@@ -655,15 +656,19 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         }
     }
 
-    private func relayoutTextHeight() {
+    @discardableResult private func relayoutTextHeight() -> Bool {
         let maxHeight: CGFloat = isExpanded ? 120 : 40
         let minHeight: CGFloat = isExpanded ? 44 : 40
         let width = max(textView.bounds.width, 160)
         let size = textView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        textHeightConstraint?.constant = min(max(size.height, minHeight), maxHeight)
+        let previous = textHeightConstraint?.constant
+        let next = min(max(size.height, minHeight), maxHeight)
+        let changed = previous != next
+        textHeightConstraint?.constant = next
         textView.isScrollEnabled = isExpanded && size.height > maxHeight
         invalidateIntrinsicContentSize()
         setNeedsLayout()
+        return changed
     }
 
     private func refreshPlaceholder() {
@@ -1056,10 +1061,12 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     func textViewDidChange(_ textView: UITextView) {
         refreshPlaceholder()
-        relayoutTextHeight()
+        let heightChanged = relayoutTextHeight()
         refreshSendButton()
         refreshChipPaint()
-        delegate?.composerViewDidChangeHeight(self)
+        if heightChanged {
+            delegate?.composerViewDidChangeHeight(self)
+        }
         guard !applyingExternalText else { return }
         emitTextChange()
     }
@@ -1110,11 +1117,14 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
 
     private func emitTextChange() {
         let range = textView.selectedRange
+        let next = (text: textView.text ?? "", start: range.location, end: range.location + range.length)
+        if lastEmittedTextChange == next { return }
+        lastEmittedTextChange = next
         delegate?.composerViewDidChangeText(
             self,
-            text: textView.text ?? "",
-            selectionStart: range.location,
-            selectionEnd: range.location + range.length
+            text: next.text,
+            selectionStart: next.start,
+            selectionEnd: next.end
         )
     }
 

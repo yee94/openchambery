@@ -244,9 +244,23 @@ export const packNativeIosComposerIdenticon = (name: string | undefined): number
   getAgentIdenticonMatrix(name).flat().map((cell) => (cell ? 1 : 0))
 );
 
+const cssVarHexCache = new Map<string, string>();
+let cssVarHexCacheObserver: MutationObserver | null = null;
+
 export const resolveCssVarToHex = (cssVar: string): string => {
+  const cached = cssVarHexCache.get(cssVar);
+  if (cached !== undefined) return cached;
   if (typeof document === 'undefined' || typeof getComputedStyle === 'undefined') {
     return NATIVE_IOS_COMPOSER_COLOR_FALLBACK;
+  }
+  if (!cssVarHexCacheObserver && typeof MutationObserver !== 'undefined') {
+    cssVarHexCacheObserver = new MutationObserver(() => {
+      cssVarHexCache.clear();
+    });
+    cssVarHexCacheObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+    });
   }
   const raw = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
   const probe = document.createElement('span');
@@ -255,9 +269,14 @@ export const resolveCssVarToHex = (cssVar: string): string => {
   const computed = getComputedStyle(probe).color;
   probe.remove();
   const match = /rgba?\(\s*([\d.]+)(?:\s*,\s*|\s+)([\d.]+)(?:\s*,\s*|\s+)([\d.]+)/.exec(computed);
-  if (!match) return NATIVE_IOS_COMPOSER_COLOR_FALLBACK;
+  if (!match) {
+    cssVarHexCache.set(cssVar, NATIVE_IOS_COMPOSER_COLOR_FALLBACK);
+    return NATIVE_IOS_COMPOSER_COLOR_FALLBACK;
+  }
   const hex = (value: string) => Math.max(0, Math.min(255, Math.round(Number(value)))).toString(16).padStart(2, '0');
-  return `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
+  const resolved = `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
+  cssVarHexCache.set(cssVar, resolved);
+  return resolved;
 };
 
 export const nativeIosComposerAgentColor = (name: string | undefined): string => (
