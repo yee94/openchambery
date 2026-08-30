@@ -199,7 +199,7 @@ test('native composer typing path dedupes identical textChanged payloads and ski
   const view = await source('ios/App/App/OpenChamberComposerView.swift');
   assert.match(view, /private var lastEmittedTextChange: \(text: String, start: Int, end: Int\)\?/);
   const emitTextChange = view.match(/private func emitTextChange\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
-  assert.match(emitTextChange, /if lastEmittedTextChange == next \{ return \}/);
+  assert.match(emitTextChange, /if let last = lastEmittedTextChange, last == next \{ return \}/);
   assert.match(emitTextChange, /lastEmittedTextChange = next/);
   const didChange = view.match(/func textViewDidChange\(_ textView: UITextView\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
   assert.match(didChange, /let heightChanged = relayoutTextHeight\(\)/);

@@ -1118,7 +1118,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private func emitTextChange() {
         let range = textView.selectedRange
         let next = (text: textView.text ?? "", start: range.location, end: range.location + range.length)
-        if lastEmittedTextChange == next { return }
+        if let last = lastEmittedTextChange, last == next { return }
         lastEmittedTextChange = next
         delegate?.composerViewDidChangeText(
             self,

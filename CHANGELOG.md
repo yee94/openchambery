@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.32] - 2026-08-30
+
+### Fixed
+
+- Typing in the iPhone native composer no longer slows down the longer you type or the more you use it: duplicate typing events and unchanged height reports are skipped, theme colors are resolved once instead of on every keystroke, and markdown highlight recalculation for the hidden web input is skipped while the native composer owns input. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
 ## [1.19.0-beta.31] - 2026-08-30
 
 ### Fixed
