@@ -98,7 +98,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 ## Native iOS Live Activity
 
 - `OpenChamberLiveActivity` is an iOS-only Capacitor plugin. Runtime support is **iOS 17.0+** (the `OpenChamberWidget` deployment target) and `ActivityAuthorizationInfo.areActivitiesEnabled`. The App target stays at **15.5** and compiles behind `canImport(ActivityKit)` + `@available(iOS 17.0, *)`. `isSupported` / `start` / `update` / `end` all use that same floor; `update` and `end` below it reject as unsupported instead of succeeding silently.
-- **Local MVP:** one Live Activity, bound to the currently selected top-level session. JS starts it after that session stays busy for 12 seconds. There is no `pushType`, push token, or server/remote update in this phase — the App applies semantic updates only while it is alive. Remote update is a later stage.
+- **Local MVP:** one Live Activity, bound to the currently selected top-level session. JS starts it after that session stays busy for 5 seconds. There is no `pushType`, push token, or server/remote update in this phase — the App applies semantic updates only while it is alive. Remote update is a later stage.
 - Timing is ActivityKit's: `staleDate` is `updatedAt + 20 minutes`. `end` must pass final content; dismissal defaults to 15 minutes on success and 60 minutes on error (`dismissalSeconds` may override).
 - App restart recovers `Activity.activities` for the same session. A millisecond `eventVersion` immediately replaces a recovered small counter from an older client.
 - If the user dismisses the Live Activity, native code does not recreate it for that same task (process-scoped). JS `end` (task finished) clears suppression so a later busy period can start a new Activity.

@@ -166,17 +166,17 @@ describe('mapNativeLiveActivityPhase', () => {
 });
 
 describe('reduceNativeLiveActivity', () => {
-  test('waits 12s of continuous busy before start and keeps first busy time as startedAt', () => {
+  test('waits 5s of continuous busy before start and keeps first busy time as startedAt', () => {
     const first = reduceFrom(createInitialNativeLiveActivityState(), { now: 100 });
     expect(first.commands).toEqual([{ type: 'wait', delayMs: NATIVE_LIVE_ACTIVITY_BUSY_START_MS }]);
     expect(first.state.started).toBe(false);
     expect(first.state.busySince).toBe(100);
 
-    const mid = reduceNativeLiveActivity(first.state, observe({ now: 100 + 5_000 }));
-    expect(mid.commands).toEqual([{ type: 'wait', delayMs: 7_000 }]);
+    const mid = reduceNativeLiveActivity(first.state, observe({ now: 100 + 2_000 }));
+    expect(mid.commands).toEqual([{ type: 'wait', delayMs: 3_000 }]);
     expect(mid.state.busySince).toBe(100);
 
-    const early = reduceNativeLiveActivity(first.state, observe({ now: 100 + 11_999 }));
+    const early = reduceNativeLiveActivity(first.state, observe({ now: 100 + 4_999 }));
     expect(early.commands[0]).toMatchObject({ type: 'wait' });
     expect(early.state.started).toBe(false);
 
@@ -343,7 +343,7 @@ describe('reduceNativeLiveActivity', () => {
 
   test('clears a pending busy timer on disconnect without starting', () => {
     const waiting = reduceFrom(createInitialNativeLiveActivityState(), { now: 0 });
-    const disconnected = reduceNativeLiveActivity(waiting.state, observe({ connected: false, now: 5_000 }));
+    const disconnected = reduceNativeLiveActivity(waiting.state, observe({ connected: false, now: 2_000 }));
     expect(disconnected.commands).toEqual([]);
     expect(disconnected.state.busySince).toBeNull();
     expect(disconnected.state.started).toBe(false);
@@ -436,9 +436,9 @@ describe('reduceNativeLiveActivity', () => {
     });
   });
 
-  test('idle during the 12s window never starts', () => {
+  test('idle during the 5s window never starts', () => {
     const waiting = reduceFrom(createInitialNativeLiveActivityState(), { now: 0 });
-    const idle = reduceNativeLiveActivity(waiting.state, observe({ now: 5_000, statusType: 'idle' }));
+    const idle = reduceNativeLiveActivity(waiting.state, observe({ now: 2_000, statusType: 'idle' }));
     expect(idle.commands).toEqual([]);
     expect(idle.state.started).toBe(false);
     expect(idle.state.busySince).toBeNull();

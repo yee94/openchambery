@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
 const NATIVE_IOS_LIVE_ACTIVITY_PLUGIN = 'OpenChamberLiveActivity';
-export const NATIVE_LIVE_ACTIVITY_BUSY_START_MS = 12_000;
+export const NATIVE_LIVE_ACTIVITY_BUSY_START_MS = 5_000;
 export const NATIVE_LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS = 900;
 export const NATIVE_LIVE_ACTIVITY_ERROR_DISMISSAL_SECONDS = 3600;
 export const NATIVE_LIVE_ACTIVITY_COMMAND_RETRY_MS = 250;

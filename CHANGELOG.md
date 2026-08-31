@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.36] - 2026-08-31
+
+### Changed
+
+- On iPhone, Live Activity starts after 5 seconds of continuous work.
+
 ## [1.19.0-beta.35] - 2026-08-31
 
 ### Added

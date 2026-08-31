@@ -100,7 +100,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   that refreshes widgets from push. All share the App Group `group.com.yee94.openchamber`.
 - **iOS Live Activity (local MVP)** — `OpenChamberLiveActivity` Capacitor plugin. Runtime is
   iOS 17.0+ (`OpenChamberWidget` deployment) with `areActivitiesEnabled`; the App target stays
-  15.5. One Activity for the currently selected top-level session; JS starts after 12 seconds
+  15.5. One Activity for the currently selected top-level session; JS starts after 5 seconds
   busy. No `pushType` / token / server; semantic updates only while the App is alive; ActivityKit
   owns timing (`staleDate` = 20 min; success dismissal 15 min, error 60 min). App restart can
   recover a matching Activity and a millisecond `eventVersion` overwrites a recovered small

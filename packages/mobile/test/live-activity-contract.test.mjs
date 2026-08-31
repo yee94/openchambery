@@ -154,7 +154,7 @@ test('docs describe the local Live Activity MVP and user-dismiss semantics', asy
   for (const content of [readme, handoff]) {
     assert.match(content, /iOS 17\.0/);
     assert.match(content, /15\.5/);
-    assert.match(content, /12 seconds/);
+    assert.match(content, /5 seconds/);
     assert.match(content, /pushType/);
     assert.match(content, /staleDate/);
     assert.match(content, /20 min/);
