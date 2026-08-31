@@ -75,7 +75,7 @@ it('publishes the push relay executable alongside the layer-1 bin', () => {
   expect(packageManifest.bin['openchamber-push-relay']).toBe('./bin/openchamber-push-relay.js');
   expect(packageManifest.bin['openchamber-relay']).toBe('./bin/openchamber-relay.js');
   expect(packageManifest.exports['./push']).toMatchObject({ import: './src/push/index.js' });
-  expect(packageManifest.version).toBe('1.19.0-beta.38');
+  expect(packageManifest.version).toBe('1.19.0-beta.39');
   expect(packageManifest.engines.node).toBe('>=22.13.0');
 });
 

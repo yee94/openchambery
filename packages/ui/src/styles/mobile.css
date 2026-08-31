@@ -888,6 +888,14 @@ button.oc-mobile-worktree-label-trigger:active,
   border-radius: 0 !important;
 }
 
+.oc-mobile-project-shell .oc-mobile-session-action {
+  height: 100%;
+  min-height: 36px !important;
+  align-items: center;
+  justify-content: center;
+  padding-block: 0;
+}
+
 .oc-mobile-session-pagination-row {
   display: flex;
   width: 100%;

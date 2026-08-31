@@ -162,8 +162,9 @@ export const registerNotificationRoutes = (app, dependencies) => {
     }
 
     const platform = req.body?.platform === 'android' ? 'android' : 'ios';
+    const locale = typeof req.body?.locale === 'string' ? req.body.locale.trim() : undefined;
     if (typeof addOrUpdateApnsToken === 'function') {
-      await addOrUpdateApnsToken(uiToken, deviceToken, req.headers['user-agent'], platform);
+      await addOrUpdateApnsToken(uiToken, deviceToken, req.headers['user-agent'], platform, locale);
     }
     return res.json({ ok: true });
   });

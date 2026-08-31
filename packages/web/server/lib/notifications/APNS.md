@@ -13,17 +13,20 @@ registered them — so a leaked device token alone can't be used to push.
    `POST /v1/push/register-token`, signed with its auto-generated ECDSA P-256 key
    (`getOrCreateRelayKeypair`, persisted in settings like the VAPID keys). The relay records
    `token → serverId` where `serverId = SHA-256(publicKey)`.
-3. On a trigger (ready/error/question/permission), the server composes **generic, content-free**
-   text — a fixed scenario title ("Agent response is ready" / "Agent needs your input" / "Agent
-   needs permission" / "Agent hit an error") + the **session name** as the body, no model/project/
-   message content — plus a **`badge`** count (see below) — and POSTs `{ tokens, title, body,
-   badge, env, data:{sessionId}, publicKeyJwk, ts, sig }` to `POST /v1/push/send`
-   (`apns-runtime.js` → `sendViaRelay`). It does **not** gate on UI visibility (see below).
-4. The **relay** (`openchamber-website/apps/api`, Cloudflare Worker) verifies the signature +
-   `ts` freshness, derives `serverId`, and only delivers to tokens bound to that server. It holds
-   the single project APNs `.p8` key, signs an ES256 JWT with `crypto.subtle`, and sends each
-   token to APNs over HTTP/2, returning per-token results; the server drops tokens flagged `drop`
-   (410 / BadDeviceToken). The relay stores no secret — only `token → serverId` hashes.
+ 3. On a trigger (ready/error/question/permission/goal_*), the server composes **generic,
+    content-free** text — a **locale-specific** scenario title (from `apns-titles.js`, keyed off
+    the locale stored with each device token at `POST /api/push/apns-token`) + the **session name**
+    as the body, no model/project/message content — plus a **`badge`** count (see below). Tokens
+    are grouped by locale (relay signatures cover `title`, so mixed locales cannot share one
+    batch) and each group POSTs `{ tokens, title, body, badge, env, data:{sessionId},
+    publicKeyJwk, ts, sig }` to `POST /v1/push/send` (`apns-runtime.js` → `sendViaRelay`). It does
+    **not** gate on UI visibility (see below). Legacy tokens without a locale fall back to English.
+4. The **Push Relay** (`packages/relay-server/src/push/`, process `openchamber-push-relay`)
+   verifies the signature + `ts` freshness, derives `serverId`, and only delivers to tokens bound
+   to that server. It holds the project APNs `.p8` key, signs an ES256 JWT with Node crypto, and
+   sends each token to APNs over HTTP/2, returning per-token results; the server drops tokens
+   flagged `drop` (410 / BadDeviceToken). The Push database stores `token → serverId` bindings,
+   not application plaintext. Layer 1 (`openchamber-relay`) never sees these secrets.
 5. Tapping a push deep-links to its session via the forwarded `sessionId`.
 
 ## Foreground suppression
@@ -34,8 +37,8 @@ responses. Instead the server always sends, and **iOS** suppresses the foregroun
 (`PushNotifications.presentationOptions: []` in `capacitor.config`) — so there is no notification
 while the app is active, with no race. APNs is the native app's **only** channel; local
 notifications were removed (a WKWebView can't tell foreground from background — `document.hasFocus()`
-is unreliable — so they leaked while the app was open). Cloudflare is touched only when a native
-app with notifications on has a registered token and a trigger fires.
+is unreliable — so they leaked while the app was open). The Push Relay is contacted only when a
+native app with notifications on has a registered token and a trigger fires.
 
 ## App-icon badge
 
@@ -61,36 +64,45 @@ mirrors the device zeroing its icon badge on `sceneDidBecomeActive` (`AppDelegat
 server and device in sync.
 
 The value flows `runtime.js` (`toApnsGenericPayload`) → `apns-runtime.js` (`sendViaRelay` body /
-direct-mode `aps.badge`) → relay (`pushSendSchema.badge` → `aps.badge`). It is **not** signed (like
-`body`/`data`); the relay still only delivers to bound tokens. The set is server-global, so every
-device token of a server sees the same badge.
+direct-mode `aps.badge`) → Push Relay (`packages/relay-server/src/push/schema.js` → `aps.badge`).
+It is **not** signed (like `body`/`data`); the relay still only delivers to bound tokens. The set
+is server-global, so every device token of a server sees the same badge.
 
 ## Modes
 
-- **Relay (default):** server has no Apple key; `OPENCHAMBER_PUSH_RELAY_URL` defaults to
-  `https://api.openchamber.dev/v1/push/send` (register URL is derived as `…/register-token`).
+- **Relay (default):** Host has no Apple key. Unless `OPENCHAMBER_PUSH_RELAY_URL` is set, the
+  Host maps the effective Relay `wss://`/`ws://` URL to the same host as `https://`/`http://`
+  `/v1/push/send` (register URL is `/v1/push/register-token`). A Relay switch re-registers
+  persisted tokens and binds them again before the first send.
 - **Direct (fallback):** set `OPENCHAMBER_PUSH_RELAY_DISABLED=true` + `OPENCHAMBER_APNS_KEY_ID/
   TEAM_ID/P8` to sign+send from the server itself (HTTP/2 + ES256 JWT); no relay binding needed.
 
 ## Config
 
-Server (`apns-runtime.js`):
-- `OPENCHAMBER_PUSH_RELAY_URL` (default the public relay), `OPENCHAMBER_APNS_ENVIRONMENT`
-  (`sandbox` default / `production`). The signing keypair is auto-generated — nothing to set.
+Host (`apns-runtime.js`):
+- `OPENCHAMBER_PUSH_RELAY_URL` (explicit send-URL override), `OPENCHAMBER_APNS_ENVIRONMENT`
+  (`sandbox` default / `production` for TestFlight and App Store). The signing keypair is
+  auto-generated — nothing to set.
 - Direct fallback: `OPENCHAMBER_APNS_KEY_ID`, `OPENCHAMBER_APNS_TEAM_ID`, `OPENCHAMBER_APNS_P8`
   (or `_P8_PATH`), `OPENCHAMBER_APNS_BUNDLE_ID`, `OPENCHAMBER_PUSH_RELAY_DISABLED=true`.
 
-Relay (Cloudflare Worker secrets via `wrangler secret put` / GitHub Actions): `APNS_P8`,
-`APNS_KEY_ID`, `APNS_TEAM_ID`, optional `APNS_BUNDLE_ID` / `APNS_DEFAULT_ENV`. The `push_tokens`
-binding table is created by `migrations/0002_push_tokens.sql` (applied on deploy).
+Push process (`packages/relay-server/src/push/`, env prefix `OPENCHAMBER_PUSH_RELAY_`):
+`HOST` (default `127.0.0.1`), `PORT` (default `8788`), `TRUST_PROXY`, `DATABASE_PATH`,
+timestamp/replay/rate-limit/token/`MAX_IN_FLIGHT` limits, plus APNs `APNS_KEY_ID`,
+`APNS_TEAM_ID`, `APNS_BUNDLE_ID`, and `APNS_P8` or `APNS_P8_PATH`. See
+`packages/relay-server/README.md`. SQLite is single-instance. Do not log `.p8` material,
+device tokens, or signatures.
 
 ## Apple setup (one-time)
 
 1. Apple **Keys** (not Certificates) → create an **APNs Auth Key** (`.p8`) → Key ID + Team ID;
-   enable **Push Notifications** on App ID `com.openchamber.app`.
-2. In the **openchamber-website** repo → Actions secrets: `APNS_P8` (PEM), `APNS_KEY_ID`,
-   `APNS_TEAM_ID`. Push to `main` → relay deploys, secrets sync, D1 migrations apply.
+   enable **Push Notifications** on the App ID. TestFlight / App Store builds of this product
+   use bundle ID `com.yee94.openchamber`.
+2. Give those values only to the Push process (environment or Docker secret). Do not put the
+   `.p8` on Layer 1 or on each OpenChamber Host when using Relay mode.
 3. Xcode: confirm the Push Notifications capability; Clean Build Folder; run on device.
+   Development builds use APNs `sandbox`. TestFlight and App Store Hosts set
+   `OPENCHAMBER_APNS_ENVIRONMENT=production`.
 
 ## Security posture
 
@@ -98,10 +110,12 @@ binding table is created by `migrations/0002_push_tokens.sql` (applied on deploy
   is signed by the server's private key, and the relay only delivers to a token from its bound
   `serverId`. A leaked token alone is useless — an attacker has neither the private key nor a
   matching binding.
-- `serverId` self-certifies (`SHA-256(publicKey)`), so the relay holds no secret; a D1 leak
-  exposes only `token → serverId` hashes. The signed `ts` (±5 min window) blocks replay.
+- `serverId` self-certifies (`SHA-256(publicKey)`). A SQLite leak exposes `token → serverId`
+  bindings, not Host private keys or application plaintext. The signed `ts` (±5 min window)
+  blocks replay. Signature verification lives in `packages/relay-server/src/push/crypto.js`
+  and must stay aligned with `packages/web/server/lib/relay/signing-key.js`.
 - Residual: trust-on-first-bind (whoever registers a token first owns it) — acceptable, since
-  registering already requires possessing the token. Cloudflare rate limiting is defence-in-depth.
+  registering already requires possessing the token. Process rate limits are defence-in-depth.
 
 ## Data confidentiality (what the relay / Apple can see)
 
@@ -113,17 +127,18 @@ to APNs). The request **signature is authentication, not encryption** — the re
 Who can read the alert text:
 
 - **Network hops:** nothing (TLS).
-- **The relay (Cloudflare):** the generic title + body (session name), the device token, and
-  `sessionId`. It stores only `token → serverId` hashes (no text, no payload).
+- **The Push Relay process:** the generic title + body (session name), the device token, and
+  `sessionId`. It stores `token → serverId` bindings (no alert text, no payload).
 - **Apple APNs:** the alert text too — APNs always reads the alert payload of an `alert` push.
 - **The device:** displays it.
 
-This is acceptable **because the text is deliberately content-free**: a fixed scenario title +
-the session name only — no model, project, or message content (`runtime.js` →
-`toApnsGenericPayload`). The session name is the single semi-personal field that crosses the
-relay/Apple. To hide even that from Apple would require an end-to-end **encrypted payload**
-(`mutable-content` + a Notification Service Extension that decrypts on-device with a key never
-sent to the relay) — not implemented, and unnecessary for generic text.
+This is acceptable **because the text is deliberately content-free**: a fixed scenario title
+(localized per device) + the session name only — no model, project, or message content
+(`runtime.js` → `toApnsGenericPayload` → `localizeApnsPayload`). The session name is the single
+semi-personal field that crosses the relay/Apple. To hide even that from Apple would require an
+end-to-end **encrypted payload** (`mutable-content` + a Notification Service Extension that
+decrypts on-device with a key never sent to the relay) — not implemented, and unnecessary for
+generic text.
 
 ## Android (FCM) note
 

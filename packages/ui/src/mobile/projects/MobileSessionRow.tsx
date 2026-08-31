@@ -401,7 +401,6 @@ export function MobileSessionRow({
               <span className={cn('oc-mobile-session-title truncate', session.unread ? 'font-semibold' : 'font-medium')}>
                 {session.title}
               </span>
-              {session.pinned ? <Icon name="pushpin" className="size-3 shrink-0 text-muted-foreground" aria-hidden /> : null}
               {session.archived ? <Icon name="archive" className="size-3 shrink-0 text-muted-foreground" aria-hidden /> : null}
             </span>
             {session.subtitle ? (

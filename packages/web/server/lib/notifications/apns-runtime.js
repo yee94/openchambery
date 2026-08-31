@@ -2,8 +2,9 @@
 //
 // Device tokens are persisted per UI session (mirrors push-runtime.js). Delivery has two
 // modes, chosen at send time:
-//   - Relay (default): POST tokens + generic text to the central Cloudflare relay, which
-//     holds the single project APNs key and signs+sends — so users configure nothing.
+//   - Relay (default): POST tokens + generic text to the same-origin Push service
+//     (`/v1/push/*` on the effective Relay host). The isolated Push process holds the
+//     project APNs key and signs+sends — so users configure nothing.
 //   - Direct (fallback): sign an ES256 JWT with Node crypto and send over HTTP/2 ourselves,
 //     for self-hosters who set OPENCHAMBER_APNS_* and OPENCHAMBER_PUSH_RELAY_DISABLED=true.
 // Wired into the same trigger fanout as web push (see runtime.js); the relay carries only
@@ -14,16 +15,44 @@ import {
   signRelayMessage as signRelayMessageShared,
 } from '../relay/signing-key.js';
 import { DEFAULT_RELAY_URL, derivePushSendUrlFromRelayUrl } from '../relay/service.js';
+import {
+  APNS_DEFAULT_LOCALE,
+  localizeApnsPayload,
+  normalizeApnsLocale,
+} from './apns-titles.js';
 
 const APNS_TOKENS_VERSION = 1;
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
 // APNs rejects auth tokens older than 1h; refresh well inside that window.
 const JWT_TTL_MS = 50 * 60 * 1000;
-const DEFAULT_BUNDLE_ID = 'com.openchamber.app';
+const DEFAULT_BUNDLE_ID = 'com.yee94.openchamber';
 const MAX_TOKENS_PER_SESSION = 10;
+const MAX_RELAY_SEND_TOKENS = 100;
+const RELAY_REGISTER_CONCURRENCY = 16;
+const APNS_COLLAPSE_ID_MAX_BYTES = 64;
 // APNs reasons that mean the token is permanently invalid → drop it.
 const DEAD_TOKEN_REASONS = new Set(['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic']);
+
+const mapWithBoundedConcurrency = async (items, concurrency, mapper) => {
+  const results = new Array(items.length);
+  const limit = Math.max(1, concurrency);
+  for (let start = 0; start < items.length; start += limit) {
+    const end = Math.min(start + limit, items.length);
+    await Promise.all(
+      items.slice(start, end).map(async (item, offset) => {
+        results[start + offset] = await mapper(item, start + offset);
+      }),
+    );
+  }
+  return results;
+};
+
+const apnsCollapseId = (tag) => {
+  if (typeof tag !== 'string' || tag.length === 0) return undefined;
+  if (Buffer.byteLength(tag, 'utf8') > APNS_COLLAPSE_ID_MAX_BYTES) return undefined;
+  return tag;
+};
 
 const trimmedEnv = (name) => {
   const value = process.env[name];
@@ -180,6 +209,8 @@ export const createApnsRuntime = (deps) => {
           userAgent: typeof entry.userAgent === 'string' ? entry.userAgent : undefined,
           // 'ios' (APNs) or 'android' (FCM). Older entries without one are APNs by default.
           platform: entry.platform === 'android' ? 'android' : 'ios',
+          // App UI locale at last registration; missing → English titles (legacy tokens).
+          locale: normalizeApnsLocale(entry.locale),
         };
       })
       .filter(Boolean);
@@ -191,34 +222,45 @@ export const createApnsRuntime = (deps) => {
 
   const listUniqueTokenEntries = (store) => {
     const unique = [];
-    const seen = new Set();
+    const seen = new Map();
     for (const record of Object.values(store.tokensBySession || {})) {
       for (const entry of normalizeTokens(record)) {
         const key = `${entry.deviceToken}\0${entry.platform}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        unique.push(entry);
+        const priorIndex = seen.get(key);
+        if (priorIndex == null) {
+          seen.set(key, unique.length);
+          unique.push(entry);
+          continue;
+        }
+        // Same device may register under multiple UI sessions; keep the freshest locale.
+        const prior = unique[priorIndex];
+        const priorSeen = typeof prior.lastSeenAt === 'number' ? prior.lastSeenAt : 0;
+        const nextSeen = typeof entry.lastSeenAt === 'number' ? entry.lastSeenAt : 0;
+        if (nextSeen >= priorSeen) unique[priorIndex] = entry;
       }
     }
     return unique;
   };
 
-  const addOrUpdateApnsToken = async (uiSessionToken, deviceToken, userAgent, platform) => {
+  const addOrUpdateApnsToken = async (uiSessionToken, deviceToken, userAgent, platform, locale) => {
     if (!uiSessionToken || typeof deviceToken !== 'string' || deviceToken.trim().length === 0) return;
     const token = deviceToken.trim();
     const tokenPlatform = normalizePlatform(platform);
+    const tokenLocale = normalizeApnsLocale(locale);
     const now = Date.now();
 
     await persistTokenUpdate((current) => {
       const tokensBySession = { ...(current.tokensBySession || {}) };
       const existing = normalizeTokens(tokensBySession[uiSessionToken]);
+      const prior = existing.find((entry) => entry.deviceToken === token);
       const filtered = existing.filter((entry) => entry.deviceToken !== token);
       filtered.unshift({
         deviceToken: token,
-        createdAt: now,
+        createdAt: typeof prior?.createdAt === 'number' ? prior.createdAt : now,
         lastSeenAt: now,
         userAgent: typeof userAgent === 'string' && userAgent.length > 0 ? userAgent : undefined,
         platform: tokenPlatform,
+        locale: tokenLocale,
       });
       tokensBySession[uiSessionToken] = filtered.slice(0, MAX_TOKENS_PER_SESSION);
       return { version: APNS_TOKENS_VERSION, tokensBySession };
@@ -361,8 +403,9 @@ export const createApnsRuntime = (deps) => {
         'apns-push-type': 'alert',
         'apns-priority': '10',
       };
-      // collapse-id dedups like web-push tags; APNs caps it at 64 bytes.
-      const collapseId = typeof config.tag === 'string' ? config.tag.slice(0, 64) : undefined;
+      // collapse-id dedups like web-push tags; APNs caps it at 64 UTF-8 bytes.
+      // Keep legal values; omit anything over the limit (do not truncate mid-codepoint).
+      const collapseId = apnsCollapseId(config.tag);
       if (collapseId) headers['apns-collapse-id'] = collapseId;
 
       let req;
@@ -408,10 +451,11 @@ export const createApnsRuntime = (deps) => {
       req.end(body);
     });
 
-  // Relay mode (default): the single APNs key lives in the central Cloudflare relay, not on
-  // each user's server — so users configure nothing. The server just POSTs device tokens +
-  // generic text; the relay signs + sends and reports which tokens to drop. Direct mode (below)
-  // is the fallback for self-hosters who set OPENCHAMBER_APNS_* and disable the relay.
+  // Relay mode (default): the single APNs key lives in the isolated Push process on the same
+  // Relay origin (`/v1/push/*`), not on each user's server — so users configure nothing. The
+  // server just POSTs device tokens + generic text; Push signs + sends and reports which tokens
+  // to drop. Direct mode (below) is the fallback for self-hosters who set OPENCHAMBER_APNS_*
+  // and disable the relay.
   const buildRelayConfig = (url) => ({
     url,
     registerUrl: url.replace(/\/send$/, '/register-token'),
@@ -430,9 +474,12 @@ export const createApnsRuntime = (deps) => {
     if (typeof resolveEffectiveRelayUrl === 'function') {
       try {
         const resolved = await resolveEffectiveRelayUrl();
-        if (typeof resolved === 'string' && resolved.trim()) relayWsUrl = resolved;
+        if (typeof resolved === 'string' && resolved.trim()) {
+          if (derivePushSendUrlFromRelayUrl(resolved)) relayWsUrl = resolved.trim();
+          else console.warn('[Push relay] resolver returned a non-WebSocket URL; falling back to default');
+        }
       } catch {
-        relayWsUrl = DEFAULT_RELAY_URL;
+        console.warn('[Push relay] resolver failed; falling back to default');
       }
     }
     const url = derivePushSendUrlFromRelayUrl(relayWsUrl) || derivePushSendUrlFromRelayUrl(DEFAULT_RELAY_URL);
@@ -441,43 +488,46 @@ export const createApnsRuntime = (deps) => {
   };
 
   const sendViaRelay = async (deviceTokens, payload, relay) => {
-    const tokens = deviceTokens.slice(0, 100);
+    if (!Array.isArray(deviceTokens) || deviceTokens.length === 0) return;
     const title = typeof payload?.title === 'string' && payload.title.length > 0 ? payload.title : 'OpenChamber';
     const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
-    const ts = Date.now();
-    // Sign over the same canonical form the relay verifies: ts.sortedTokens.title.
-    const sig = signRelayMessage(privateKey, `${ts}.${[...tokens].sort().join(',')}.${title}`);
-    const requestBody = JSON.stringify({
-      tokens,
-      title,
-      body: typeof payload?.body === 'string' ? payload.body : '',
-      badge: Number.isFinite(payload?.badge) && payload.badge >= 0 ? Math.trunc(payload.badge) : undefined,
-      collapseId: typeof payload?.tag === 'string' ? payload.tag.slice(0, 64) : undefined,
-      env: relay.environment,
-      data: payload?.data && typeof payload.data === 'object' ? payload.data : undefined,
-      publicKeyJwk: relayPublicJwk(publicJwk),
-      ts,
-      sig,
-    });
-    try {
-      const res = await fetch(relay.url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: requestBody,
+    for (let start = 0; start < deviceTokens.length; start += MAX_RELAY_SEND_TOKENS) {
+      const tokens = deviceTokens.slice(start, start + MAX_RELAY_SEND_TOKENS);
+      const ts = Date.now();
+      // Sign over the same canonical form the relay verifies: ts.sortedTokens.title.
+      const sig = signRelayMessage(privateKey, `${ts}.${[...tokens].sort().join(',')}.${title}`);
+      const requestBody = JSON.stringify({
+        tokens,
+        title,
+        body: typeof payload?.body === 'string' ? payload.body : '',
+        badge: Number.isFinite(payload?.badge) && payload.badge >= 0 ? Math.trunc(payload.badge) : undefined,
+        collapseId: apnsCollapseId(payload?.tag),
+        env: relay.environment,
+        data: payload?.data && typeof payload.data === 'object' ? payload.data : undefined,
+        publicKeyJwk: relayPublicJwk(publicJwk),
+        ts,
+        sig,
       });
-      if (!res.ok) {
-        console.warn(`[APNs relay] send failed status=${res.status}`);
-        return;
-      }
-      const data = await res.json().catch(() => null);
-      const results = Array.isArray(data?.results) ? data.results : [];
-      for (const result of results) {
-        if (result && result.drop === true && typeof result.token === 'string') {
-          await removeApnsTokenFromAllSessions(result.token);
+      try {
+        const res = await fetch(relay.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: requestBody,
+        });
+        if (!res.ok) {
+          console.warn(`[APNs relay] send failed status=${res.status}`);
+          continue;
         }
+        const data = await res.json().catch(() => null);
+        const results = Array.isArray(data?.results) ? data.results : [];
+        for (const result of results) {
+          if (result && result.drop === true && typeof result.token === 'string') {
+            await removeApnsTokenFromAllSessions(result.token);
+          }
+        }
+      } catch (error) {
+        console.warn('[APNs relay] request failed:', error?.message ?? error);
       }
-    } catch (error) {
-      console.warn('[APNs relay] request failed:', error?.message ?? error);
     }
   };
 
@@ -541,8 +591,10 @@ export const createApnsRuntime = (deps) => {
     const store = await readTokensFromDisk();
     const entries = listUniqueTokenEntries(store);
     boundRegistrationCache(relay.registerUrl, entries);
-    const outcomes = await Promise.all(
-      entries.map((entry) => registerTokenWithRelay(entry.deviceToken, entry.platform, relay)),
+    const outcomes = await mapWithBoundedConcurrency(
+      entries,
+      RELAY_REGISTER_CONCURRENCY,
+      (entry) => registerTokenWithRelay(entry.deviceToken, entry.platform, relay),
     );
     let succeeded = 0;
     let failed = 0;
@@ -553,6 +605,24 @@ export const createApnsRuntime = (deps) => {
     return { attempted: entries.length, succeeded, failed };
   };
 
+  // Group ready device tokens by app locale so each batch can carry a localized title.
+  // Relay signatures cover title, so mixed-locale tokens must not share one send body.
+  const groupTokensByLocale = (entries) => {
+    const groups = new Map();
+    for (const entry of entries) {
+      const locale = entry?.locale ? normalizeApnsLocale(entry.locale) : APNS_DEFAULT_LOCALE;
+      const token = entry?.deviceToken;
+      if (typeof token !== 'string' || token.length === 0) continue;
+      let list = groups.get(locale);
+      if (!list) {
+        list = [];
+        groups.set(locale, list);
+      }
+      list.push(token);
+    }
+    return groups;
+  };
+
   const sendApnsToAllUiSessions = async (payload, _options = {}) => {
     const store = await readTokensFromDisk();
     const uniqueEntries = listUniqueTokenEntries(store);
@@ -561,31 +631,31 @@ export const createApnsRuntime = (deps) => {
     const relay = await resolveRelayConfig();
     if (relay) {
       boundRegistrationCache(relay.registerUrl, uniqueEntries);
-      const outcomes = await Promise.all(
-        uniqueEntries.map(async (entry) => {
+      const outcomes = await mapWithBoundedConcurrency(
+        uniqueEntries,
+        RELAY_REGISTER_CONCURRENCY,
+        async (entry) => {
           const registered = await registerTokenWithRelay(entry.deviceToken, entry.platform, relay);
-          return registered ? entry.deviceToken : null;
-        }),
+          return registered ? entry : null;
+        },
       );
-      const readyTokens = [];
+      const readyEntries = [];
       const readySeen = new Set();
-      for (const token of outcomes) {
-        if (!token || readySeen.has(token)) continue;
-        readySeen.add(token);
-        readyTokens.push(token);
+      for (const entry of outcomes) {
+        if (!entry?.deviceToken || readySeen.has(entry.deviceToken)) continue;
+        readySeen.add(entry.deviceToken);
+        readyEntries.push(entry);
       }
-      if (readyTokens.length === 0) return;
-      await sendViaRelay(readyTokens, payload, relay);
+      if (readyEntries.length === 0) return;
+      for (const [locale, tokens] of groupTokensByLocale(readyEntries)) {
+        await sendViaRelay(tokens, localizeApnsPayload(payload, locale), relay);
+      }
       return;
     }
-    const deviceTokens = [];
-    const seen = new Set();
-    for (const entry of uniqueEntries) {
-      if (seen.has(entry.deviceToken)) continue;
-      seen.add(entry.deviceToken);
-      deviceTokens.push(entry.deviceToken);
+    const byLocale = groupTokensByLocale(uniqueEntries);
+    for (const [locale, deviceTokens] of byLocale) {
+      await sendViaDirectApns(deviceTokens, localizeApnsPayload(payload, locale));
     }
-    await sendViaDirectApns(deviceTokens, payload);
   };
 
   return {

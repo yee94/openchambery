@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.39] - 2026-09-01
+
+### Fixed
+
+- Phone session row actions keep a correct swipe-rail layout; leftover pinned icons are removed.
+
+### Changed
+
+- APNs titles follow the device language and re-register when the language changes.
+- Push Relay batches deliveries, caps concurrency, reduces payload privacy exposure, and hardens collapse-id handling.
+- Default iOS Bundle ID matches the shipping app identity.
+
 ## [1.19.0-beta.37] - 2026-09-01
 
 ### Fixed
