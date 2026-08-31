@@ -22,7 +22,7 @@
 | 新版本含原生壳变更（`mode: "native"`，即 break change） | 上行全部 + iOS 内测 TestFlight；端内检测抬 `minShellReleaseVersion` 引导重装 | `vX.Y.Z-beta.N` | `release.yml`（`build_ios` 由 plan mode 决定） |
 | 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA（无 iOS） | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
 | 稳定版 | 桌面 + Android APK/AAB + npm + 同版本 OTA + iOS TestFlight（关联外测组 + Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
-| 仅 Relay 服务（npm + Docker） | 只发 `@openchambery/relay-server` 与 Relay Docker。**不**触发桌面、Android、iOS/TestFlight、OTA。 | `relay/vX.Y.Z` 或 `relay/vX.Y.Z-beta.N` | `relay-release.yml`（复用 `relay-docker.yml`） |
+| 仅 Relay 服务（npm + Docker） | 只发 `@openchambery/relay-server`（含 Layer 1 与 Push CLI）与同一 immutable Relay Docker 镜像。**不**触发桌面、Android、iOS/TestFlight、OTA。 | `relay/vX.Y.Z` 或 `relay/vX.Y.Z-beta.N` | `relay-release.yml`（先跑包测试门禁，再复用 `relay-docker.yml`） |
 | 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
 
 **TestFlight 跟随「是否需要原生壳」，不跟随 tag**：`mode: native` 的 beta 与所有稳定版上传 iOS（beta 仅内测，稳定版关联外测组）；`mode: ota` 的 beta 不碰 iOS。**端内一键更新 vs 跳转重装由 `activeBundle.minShellReleaseVersion`（版本语义）决定，与 OTA 发布是两条独立链路**：只有 `mode: native` 把下限写成**本轮发布版本号**；`github.run_number` / `nativeBuild` 只用于 TestFlight/商店记账，**不再参与端内更新判定**。稳定版也不因发了安装包而抬门。
@@ -149,13 +149,13 @@ Agent 入口命令：`.opencode/commands/release.md`。
 版本从 tag 解析（去掉 `relay/v` 前缀），必须**严格等于** `packages/relay-server/package.json` 的 `version`。根目录 `package.json` 不必一致。普通 `v*` 路径仍要求根版本与 Relay 包版本一致。
 
 ```bash
-VERSION=1.19.0-beta.37
+VERSION=1.19.0-beta.38
 # 先让 packages/relay-server/package.json 的 version 等于 $VERSION 并提交
 git tag "relay/v$VERSION"
 git push origin "relay/v$VERSION"
 ```
 
-`relay-release.yml` 会校验 tag / 包版本、要求 `NPM_TOKEN`，再并行发布 npm 与 Docker。Docker 复用 `.github/workflows/relay-docker.yml`（`linux/amd64` + `linux/arm64`），并关闭根版本匹配。Secrets / variables 与完整 release 相同：`NPM_TOKEN`、`DOCKERHUB_TOKEN`、`DOCKERHUB_USERNAME`。
+`relay-release.yml` 会校验 tag / 包版本、要求 `NPM_TOKEN`，并用 pinned Bun 1.3.14 / Node 24 做 frozen install 后跑 Relay 全量 Vitest、type-check、lint、Node smoke 与 `npm pack --dry-run` 包契约检查。npm 与 Docker 发布都依赖该测试 job 成功；`release-gate` 纳入测试结果。Docker 复用 `.github/workflows/relay-docker.yml`（`linux/amd64` + `linux/arm64`），并关闭根版本匹配。镜像默认入口仍是 Layer 1，同时携带 Node 24 与 `openchamber-push-relay`。Secrets / variables 与完整 release 相同：`NPM_TOKEN`、`DOCKERHUB_TOKEN`、`DOCKERHUB_USERNAME`。普通 `v*` 行为不变。
 
 手动验证（不发 npm、Docker 只构建不推送）：
 

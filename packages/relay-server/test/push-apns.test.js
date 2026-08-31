@@ -17,6 +17,7 @@ const mockHttp2 = (handler) => {
         on(event, cb) { this.handlers[event] = cb; return this; },
         close() { this.closed = true; this.handlers.close?.(); },
         request(headers) {
+          if (this.throwOnRequest) throw new Error('goaway');
           const listeners = {};
           const req = {
             headers,
@@ -61,14 +62,20 @@ it('reuses one http2 session per environment, caches JWT for 50 minutes, and ret
   expect(calls[0].authorization).not.toBe(calls[1].authorization);
   expect(calls[0]['apns-topic']).toBe('com.openchamber.app');
   const firstJwt = calls[1].authorization;
-  now += 49 * 60 * 1000;
+  now += 29 * 60 * 1000;
   expect(await provider.send({ token: 'b'.repeat(64), env: 'sandbox', payload })).toMatchObject({ ok: true });
   expect(http2.sessions).toHaveLength(1);
+  expect(http2.sessions[0].closed).toBe(false);
   expect(calls[2].authorization).toBe(firstJwt);
   now += 2 * 60 * 1000;
-  expect(await provider.send({ token: 'c'.repeat(64), env: 'production', payload })).toMatchObject({ ok: true });
+  expect(await provider.send({ token: 'c'.repeat(64), env: 'sandbox', payload })).toMatchObject({ ok: true });
   expect(http2.sessions).toHaveLength(2);
-  expect(calls[3].authorization).not.toBe(firstJwt);
+  expect(http2.sessions[0].closed).toBe(true);
+  expect(calls[3].authorization).toBe(firstJwt);
+  now += 20 * 60 * 1000;
+  expect(await provider.send({ token: 'd'.repeat(64), env: 'production', payload })).toMatchObject({ ok: true });
+  expect(http2.sessions).toHaveLength(3);
+  expect(calls[4].authorization).not.toBe(firstJwt);
   provider.close();
 });
 
@@ -78,6 +85,7 @@ it('returns drop for dead tokens and 410, but not for 429 or transport failure',
     { status: 400, body: JSON.stringify({ reason: 'BadDeviceToken' }) },
     { status: 429, body: JSON.stringify({ reason: 'TooManyRequests' }) },
     { error: true },
+    { status: 200 },
   ];
   const http2 = mockHttp2(({ listeners }) => {
     const next = sequence.shift();
@@ -94,5 +102,35 @@ it('returns drop for dead tokens and 410, but not for 429 or transport failure',
   expect(await provider.send({ token: 'c'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: false, drop: undefined });
   expect(await provider.send({ token: 'd'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: false, drop: undefined });
   expect(DEAD_TOKEN_REASONS.has('DeviceTokenNotForTopic')).toBe(true);
+  expect(http2.sessions[0].closed).toBe(true);
+  expect(await provider.send({ token: 'e'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: true, drop: undefined });
+  expect(http2.sessions).toHaveLength(2);
+  provider.close();
+});
+
+it('rebuilds the session after request open errors and does not retry uncertain transport failures', async () => {
+  let openFails = 1;
+  let calls = 0;
+  const http2 = mockHttp2(({ listeners }) => {
+    calls += 1;
+    respond(listeners, 200);
+  });
+  const originalConnect = http2.connect;
+  http2.connect = (url) => {
+    const client = originalConnect(url);
+    if (openFails > 0) {
+      openFails -= 1;
+      client.throwOnRequest = true;
+    }
+    return client;
+  };
+  const provider = createApnsProvider({ keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.openchamber.app', http2 });
+  const payload = { aps: { alert: { title: 't' } } };
+  expect(await provider.send({ token: 'a'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: false, drop: undefined });
+  expect(calls).toBe(0);
+  expect(http2.sessions[0].closed).toBe(true);
+  expect(await provider.send({ token: 'b'.repeat(64), env: 'sandbox', payload })).toEqual({ ok: true, drop: undefined });
+  expect(calls).toBe(1);
+  expect(http2.sessions).toHaveLength(2);
   provider.close();
 });

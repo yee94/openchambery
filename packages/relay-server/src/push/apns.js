@@ -6,6 +6,7 @@ const APNS_HOST = {
   sandbox: 'https://api.sandbox.push.apple.com',
 };
 const JWT_TTL_MS = 50 * 60 * 1000;
+const SESSION_TTL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4_096;
 export const DEAD_TOKEN_REASONS = new Set(['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic']);
@@ -15,6 +16,7 @@ const normalizePem = (value) => (typeof value === 'string' ? value.replace(/\\n/
 export const createApnsProvider = (options = {}) => {
   const clock = { now: Date.now, setTimeout, clearTimeout, ...options.clock };
   const connect = options.http2?.connect ?? http2.connect;
+  const sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
   let privateKey;
   try {
     privateKey = crypto.createPrivateKey(normalizePem(options.p8));
@@ -41,17 +43,21 @@ export const createApnsProvider = (options = {}) => {
   };
 
   const dropSession = (env, client) => {
-    if (sessions.get(env) === client) sessions.delete(env);
+    const current = sessions.get(env);
+    if (current?.client === client) sessions.delete(env);
     try { client.close(); } catch { /* session already gone */ }
   };
 
   const getSession = (env) => {
     const existing = sessions.get(env);
-    if (existing && !existing.closed && existing.destroyed !== true) return existing;
+    if (existing?.client && !existing.client.closed && existing.client.destroyed !== true) {
+      if (clock.now() - existing.createdAt < sessionTtlMs) return existing.client;
+      dropSession(env, existing.client);
+    }
     const client = connect(APNS_HOST[env]);
     client.on('error', () => dropSession(env, client));
-    client.on('close', () => { if (sessions.get(env) === client) sessions.delete(env); });
-    sessions.set(env, client);
+    client.on('close', () => { if (sessions.get(env)?.client === client) sessions.delete(env); });
+    sessions.set(env, { client, createdAt: clock.now() });
     return client;
   };
 
@@ -69,9 +75,14 @@ export const createApnsProvider = (options = {}) => {
     };
     if (input.collapseId) headers['apns-collapse-id'] = input.collapseId;
     let req;
-    try { req = client.request(headers); } catch { resolve({ ok: false }); return; }
+    try { req = client.request(headers); } catch {
+      dropSession(input.env, client);
+      resolve({ ok: false });
+      return;
+    }
     let status = 0;
-    let responseBody = '';
+    const chunks = [];
+    let responseBytes = 0;
     let settled = false;
     const finish = (result) => {
       if (settled) return;
@@ -84,19 +95,25 @@ export const createApnsProvider = (options = {}) => {
       finish({ ok: false });
     }, options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
     req.on('response', (responseHeaders) => { status = Number(responseHeaders[':status']) || 0; });
-    req.setEncoding('utf8');
     req.on('data', (chunk) => {
-      if (responseBody.length < MAX_RESPONSE_BYTES) responseBody += chunk.slice(0, MAX_RESPONSE_BYTES - responseBody.length);
+      if (responseBytes >= MAX_RESPONSE_BYTES) return;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const take = buf.length > MAX_RESPONSE_BYTES - responseBytes ? buf.subarray(0, MAX_RESPONSE_BYTES - responseBytes) : buf;
+      chunks.push(take);
+      responseBytes += take.length;
     });
     req.on('end', () => {
       if (status === 200) { finish({ ok: true }); return; }
       let reason = '';
-      try { reason = JSON.parse(responseBody)?.reason || ''; } catch { /* non-JSON */ }
+      try { reason = JSON.parse(Buffer.concat(chunks, responseBytes).toString('utf8'))?.reason || ''; } catch { /* non-JSON */ }
       if (reason === 'ExpiredProviderToken') { finish({ ok: false, expired: true }); return; }
       if (status === 410 || DEAD_TOKEN_REASONS.has(reason)) { finish({ ok: false, drop: true }); return; }
       finish({ ok: false });
     });
-    req.on('error', () => finish({ ok: false }));
+    req.on('error', () => {
+      if (!settled) dropSession(input.env, client);
+      finish({ ok: false });
+    });
     req.end(JSON.stringify(input.payload));
   });
 
@@ -110,9 +127,9 @@ export const createApnsProvider = (options = {}) => {
       return { ok: first.ok === true, drop: first.drop === true ? true : undefined };
     },
     close() {
-      for (const [env, client] of sessions) {
+      for (const [env, entry] of sessions) {
         sessions.delete(env);
-        try { client.close(); } catch { /* ignore */ }
+        try { entry.client.close(); } catch { /* ignore */ }
       }
       cachedJwt = null;
     },

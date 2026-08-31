@@ -40,6 +40,11 @@ it('validates listen, replay, and APNs inputs without leaking secrets', () => {
   expect(config.databasePath).toBe('./data/push-relay.sqlite');
 });
 
+it('defaults APNs bundle ID to the current product id and prefers env override', () => {
+  expect(buildPushRelayConfig({}, apnsEnv()).apns.bundleId).toBe('com.yee94.openchamber');
+  expect(buildPushRelayConfig({}, apnsEnv({ OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID: 'com.example.app' })).apns.bundleId).toBe('com.example.app');
+});
+
 it('reads P8 from path once and treats blank env values as unset', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'push-relay-p8-'));
   const p8Path = path.join(directory, 'key.p8');
@@ -70,7 +75,7 @@ it('publishes the push relay executable alongside the layer-1 bin', () => {
   expect(packageManifest.bin['openchamber-push-relay']).toBe('./bin/openchamber-push-relay.js');
   expect(packageManifest.bin['openchamber-relay']).toBe('./bin/openchamber-relay.js');
   expect(packageManifest.exports['./push']).toMatchObject({ import: './src/push/index.js' });
-  expect(packageManifest.version).toBe('1.19.0-beta.37');
+  expect(packageManifest.version).toBe('1.19.0-beta.38');
   expect(packageManifest.engines.node).toBe('>=22.13.0');
 });
 

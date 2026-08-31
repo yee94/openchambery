@@ -1,0 +1,153 @@
+name: openchamber-relay
+
+services:
+  relay:
+    image: "${OPENCHAMBER_RELAY_IMAGE:?Set OPENCHAMBER_RELAY_IMAGE to the published openchamber-relay image reference}"
+    pull_policy: always
+    environment:
+      OPENCHAMBER_RELAY_SERVER_PUBLIC_URL: wss://${RELAY_DOMAIN:?Set RELAY_DOMAIN to the public Relay hostname}/ws
+      OPENCHAMBER_RELAY_SERVER_TRUST_PROXY: "true"
+      # Every Relay TCP peer is Caddy in this topology, so size this limit for
+      # aggregate traffic rather than for one public client IP.
+      OPENCHAMBER_RELAY_SERVER_MAX_RAW_SOCKETS_PER_IP: ${OPENCHAMBER_RELAY_SERVER_MAX_RAW_SOCKETS_PER_IP:-4096}
+      OPENCHAMBER_RELAY_SERVER_MAX_HOSTS: ${OPENCHAMBER_RELAY_SERVER_MAX_HOSTS:-256}
+      OPENCHAMBER_RELAY_SERVER_MAX_SOCKETS: ${OPENCHAMBER_RELAY_SERVER_MAX_SOCKETS:-2048}
+      OPENCHAMBER_RELAY_SERVER_MAX_CONNECTIONS: ${OPENCHAMBER_RELAY_SERVER_MAX_CONNECTIONS:-1000}
+      OPENCHAMBER_RELAY_SERVER_MAX_CLIENTS_PER_HOST: ${OPENCHAMBER_RELAY_SERVER_MAX_CLIENTS_PER_HOST:-100}
+      OPENCHAMBER_RELAY_SERVER_MAX_CLIENTS_PER_IP: ${OPENCHAMBER_RELAY_SERVER_MAX_CLIENTS_PER_IP:-30}
+      OPENCHAMBER_RELAY_SERVER_MAX_PENDING_CLIENTS: ${OPENCHAMBER_RELAY_SERVER_MAX_PENDING_CLIENTS:-30}
+      OPENCHAMBER_RELAY_SERVER_MAX_FRAME_BYTES: ${OPENCHAMBER_RELAY_SERVER_MAX_FRAME_BYTES:-131072}
+      OPENCHAMBER_RELAY_SERVER_MAX_QUEUED_BYTES_PER_CONNECTION: ${OPENCHAMBER_RELAY_SERVER_MAX_QUEUED_BYTES_PER_CONNECTION:-2097152}
+      OPENCHAMBER_RELAY_SERVER_MAX_GLOBAL_QUEUED_BYTES: ${OPENCHAMBER_RELAY_SERVER_MAX_GLOBAL_QUEUED_BYTES:-33554432}
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    networks:
+      - relay_internal
+
+  push:
+    image: "${OPENCHAMBER_RELAY_IMAGE:?Set OPENCHAMBER_RELAY_IMAGE to the published openchamber-relay image reference}"
+    pull_policy: always
+    entrypoint: ["node", "/app/packages/relay-server/bin/openchamber-push-relay.js"]
+    environment:
+      OPENCHAMBER_PUSH_RELAY_HOST: "0.0.0.0"
+      OPENCHAMBER_PUSH_RELAY_PORT: "8788"
+      OPENCHAMBER_PUSH_RELAY_TRUST_PROXY: "true"
+      OPENCHAMBER_PUSH_RELAY_DATABASE_PATH: /data/push-relay.sqlite
+      OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID: ${OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID:?Set OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID}
+      OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID: ${OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID:?Set OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID}
+      OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID: ${OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID:?Set OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID}
+      OPENCHAMBER_PUSH_RELAY_APNS_P8_PATH: /run/secrets/apns_p8
+      OPENCHAMBER_PUSH_RELAY_TIMESTAMP_SKEW_MS: ${OPENCHAMBER_PUSH_RELAY_TIMESTAMP_SKEW_MS:-300000}
+      OPENCHAMBER_PUSH_RELAY_REPLAY_MS: ${OPENCHAMBER_PUSH_RELAY_REPLAY_MS:-600000}
+      OPENCHAMBER_PUSH_RELAY_MAX_REPLAY_ENTRIES: ${OPENCHAMBER_PUSH_RELAY_MAX_REPLAY_ENTRIES:-10000}
+      OPENCHAMBER_PUSH_RELAY_REGISTER_LIMIT_PER_MINUTE: ${OPENCHAMBER_PUSH_RELAY_REGISTER_LIMIT_PER_MINUTE:-60}
+      OPENCHAMBER_PUSH_RELAY_SEND_LIMIT_PER_MINUTE: ${OPENCHAMBER_PUSH_RELAY_SEND_LIMIT_PER_MINUTE:-60}
+      OPENCHAMBER_PUSH_RELAY_SERVER_SEND_LIMIT_PER_MINUTE: ${OPENCHAMBER_PUSH_RELAY_SERVER_SEND_LIMIT_PER_MINUTE:-120}
+      OPENCHAMBER_PUSH_RELAY_MAX_TOKENS: ${OPENCHAMBER_PUSH_RELAY_MAX_TOKENS:-100000}
+      OPENCHAMBER_PUSH_RELAY_MAX_IN_FLIGHT: ${OPENCHAMBER_PUSH_RELAY_MAX_IN_FLIGHT:-64}
+    secrets:
+      - apns_p8
+    volumes:
+      - push_sqlite:/data
+    expose:
+      - "8788"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    networks:
+      - relay_internal
+
+  caddy:
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    pull_policy: always
+    depends_on:
+      relay:
+        condition: service_healthy
+      push:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    configs:
+      - source: relay_caddyfile
+        target: /etc/caddy/Caddyfile
+        mode: 0444
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    networks:
+      - relay_internal
+
+configs:
+  relay_caddyfile:
+    content: |
+      {
+          admin off
+          email ${ACME_EMAIL:?Set ACME_EMAIL for automatic TLS certificate notices}
+      }
+
+      ${RELAY_DOMAIN} {
+          handle /v1/push/* {
+              reverse_proxy push:8788 {
+                  header_up X-Forwarded-For {remote_host}
+              }
+          }
+
+          handle {
+              reverse_proxy relay:8787 {
+                  header_up X-Forwarded-For {remote_host}
+              }
+          }
+      }
+
+secrets:
+  apns_p8:
+    file: ${OPENCHAMBER_PUSH_RELAY_APNS_P8_FILE:?Set OPENCHAMBER_PUSH_RELAY_APNS_P8_FILE to the APNs .p8 key file}
+
+volumes:
+  caddy_data:
+  caddy_config:
+  push_sqlite:
+
+networks:
+  relay_internal:
+    driver: bridge

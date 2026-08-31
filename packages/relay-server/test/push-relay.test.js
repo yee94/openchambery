@@ -136,6 +136,31 @@ it('rejects tampered, expired, future, and replayed send signatures while regist
   expect(await request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, [token], { ts: Date.now() + 1_000_000 }) })).toMatchObject({ status: 401, json: { error: 'timestamp' } });
 });
 
+it('does not rebind a token when the original register request is replayed after another owner binds it', async () => {
+  const { port, apnsProvider } = await startPush();
+  const first = identity();
+  const second = identity();
+  const token = hexToken('replay-rebind');
+  const original = registerBody(first, token);
+  expect(await request(port, '/v1/push/register-token', { method: 'POST', body: original })).toMatchObject({ status: 200 });
+  expect(await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(second, token) })).toMatchObject({ status: 200 });
+  expect(await request(port, '/v1/push/register-token', { method: 'POST', body: original })).toMatchObject({ status: 200, json: { ok: true } });
+  apnsProvider.sent.length = 0;
+  expect((await request(port, '/v1/push/send', { method: 'POST', body: sendBody(first, [token]) })).json.results).toEqual([{ token, ok: false }]);
+  expect((await request(port, '/v1/push/send', { method: 'POST', body: sendBody(second, [token]) })).json.results).toEqual([{ token, ok: true }]);
+  expect(apnsProvider.sent).toHaveLength(1);
+});
+
+it('enforces the shared replay TTL and hard cap for prefixed register and send keys', async () => {
+  const { port, server } = await startPush({ limits: { maxReplayEntries: 1 } });
+  const id = identity();
+  const token = hexToken('replay-cap');
+  expect(await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, token) })).toMatchObject({ status: 200 });
+  expect(server.getSnapshot().replayEntries).toBe(1);
+  expect(await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, hexToken('replay-cap-2')) })).toMatchObject({ status: 429, json: { error: 'rate_limited' } });
+  expect(await request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, [token]) })).toMatchObject({ status: 429, json: { error: 'rate_limited' } });
+});
+
 it('rejects android, oversized bodies, invalid schema, and oversize APNs payloads', async () => {
   const { port } = await startPush();
   const id = identity();
@@ -150,6 +175,26 @@ it('rejects android, oversized bodies, invalid schema, and oversize APNs payload
   const huge = await request(port, '/v1/push/register-token', { method: 'POST', body: 'x'.repeat(16 * 1024 + 1), headers: { 'content-type': 'application/json', 'content-length': String(16 * 1024 + 1) } });
   expect(huge.status).toBe(413);
   expect(huge.json.error).toBe('payload_too_large');
+  const chunked = await new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1', port, path: '/v1/push/register-token', method: 'POST',
+      headers: { 'content-type': 'application/json', 'transfer-encoding': 'chunked' },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString();
+        let json = null;
+        try { json = JSON.parse(text); } catch { /* non-JSON */ }
+        resolve({ status: res.statusCode, json });
+      });
+    });
+    req.on('error', reject);
+    req.write('x'.repeat(16 * 1024 + 64));
+    req.end();
+  });
+  expect(chunked.status).toBe(413);
+  expect(chunked.json.error).toBe('payload_too_large');
 });
 
 it('rate-limits per IP and honors a single canonical forwarded IP only when trustProxy is enabled', async () => {
@@ -267,4 +312,108 @@ it('shares concurrent startup, rejects port conflicts, and restarts after stop',
   await Promise.all([stopping, restarting]);
   expect(server.getSnapshot().state).toBe('running');
   expect(server.address().port).toBeGreaterThan(0);
+});
+
+it('waits for in-flight APNs before closing providers and keeps restart in-flight counts correct', async () => {
+  let releaseSend;
+  const held = new Promise((resolve) => { releaseSend = resolve; });
+  let apnsClosed = 0;
+  const { server, port } = await startPush({
+    apnsProvider: {
+      async send() { await held; return { ok: true }; },
+      close() { apnsClosed += 1; },
+    },
+  });
+  const id = identity();
+  const token = hexToken('drain');
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, token) })).status).toBe(200);
+  const pending = request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, [token]) });
+  const until = Date.now() + 1_000;
+  while (Date.now() < until && server.getSnapshot().inFlight < 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(server.getSnapshot()).toMatchObject({ inFlight: 1, tokenCount: 1 });
+  const stopping = server.stop();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(apnsClosed).toBe(0);
+  expect(server.getSnapshot()).toMatchObject({ state: 'stopping', inFlight: 1, tokenCount: 1 });
+  releaseSend();
+  const [sent] = await Promise.all([pending, stopping]);
+  expect(sent.status).toBe(200);
+  expect(sent.json.results).toEqual([{ token, ok: true }]);
+  expect(apnsClosed).toBe(1);
+  expect(server.getSnapshot()).toMatchObject({ state: 'stopped', inFlight: 0, tokenCount: 0 });
+  await server.start();
+  expect(server.getSnapshot()).toMatchObject({ state: 'running', inFlight: 0 });
+});
+
+it('rejects bounded APNs waiters on stop without zeroing the active slot', async () => {
+  let releaseSend;
+  const held = new Promise((resolve) => { releaseSend = resolve; });
+  const { server, port } = await startPush({
+    limits: { maxInFlight: 1 },
+    apnsProvider: {
+      async send() { await held; return { ok: true }; },
+      close() {},
+    },
+  });
+  const id = identity();
+  const tokens = ['1'.repeat(64), '2'.repeat(64), '3'.repeat(64)];
+  for (const token of tokens) expect((await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, token) })).status).toBe(200);
+  const pending = request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, tokens) });
+  const until = Date.now() + 1_000;
+  while (Date.now() < until && server.getSnapshot().inFlight < 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(server.getSnapshot().inFlight).toBe(1);
+  const stopping = server.stop();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(server.getSnapshot()).toMatchObject({ state: 'stopping', inFlight: 1 });
+  releaseSend();
+  const [sent] = await Promise.all([pending, stopping]);
+  expect(sent.status).toBe(200);
+  expect(sent.json.results.filter((row) => row.ok)).toHaveLength(1);
+  expect(sent.json.results.filter((row) => !row.ok)).toHaveLength(2);
+  expect(server.getSnapshot().state).toBe('stopped');
+});
+
+it('force-closes remaining connections after the stop deadline', async () => {
+  const deferred = [];
+  const clock = {
+    now: Date.now,
+    setTimeout: (fn, ms) => {
+      if (ms >= 5_000) { deferred.push(fn); return deferred.length; }
+      return setTimeout(fn, ms);
+    },
+    clearTimeout: (id) => {
+      if (typeof id === 'number' && id <= deferred.length) { deferred[id - 1] = null; return; }
+      clearTimeout(id);
+    },
+    setInterval,
+    clearInterval,
+    setImmediate,
+  };
+  let releaseSend;
+  const held = new Promise((resolve) => { releaseSend = resolve; });
+  let apnsClosed = 0;
+  const { server, port } = await startPush({
+    clock,
+    apnsProvider: {
+      async send() { await held; return { ok: true }; },
+      close() { apnsClosed += 1; },
+    },
+  });
+  const id = identity();
+  const token = hexToken('deadline');
+  expect((await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, token) })).status).toBe(200);
+  const pending = request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, [token]) });
+  const until = Date.now() + 1_000;
+  while (Date.now() < until && server.getSnapshot().inFlight < 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(server.getSnapshot().inFlight).toBe(1);
+  const stopping = server.stop();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(apnsClosed).toBe(0);
+  expect(deferred.some(Boolean)).toBe(true);
+  for (const fn of deferred) fn?.();
+  await stopping;
+  expect(apnsClosed).toBe(1);
+  expect(server.getSnapshot().state).toBe('stopped');
+  releaseSend();
+  await pending.catch(() => {});
 });

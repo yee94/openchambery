@@ -57,24 +57,89 @@ export const createSlidingWindowLimiter = ({ windowMs, maxCount, maxEntries, now
 
 export const createInFlightGate = (maxInFlight) => {
   const maxWaiters = maxInFlight;
+  let generation = 1;
   let active = 0;
+  let accepting = true;
   const waiters = [];
+  const idleWaiters = [];
+  const notifyIdle = () => {
+    if (active !== 0) return;
+    while (idleWaiters.length) idleWaiters.shift()();
+  };
   return {
     acquire() {
-      if (active < maxInFlight) { active += 1; return Promise.resolve(true); }
+      if (!accepting) return Promise.resolve(false);
+      if (active < maxInFlight) {
+        active += 1;
+        return Promise.resolve(generation);
+      }
       if (waiters.length >= maxWaiters) return Promise.resolve(false);
-      return new Promise((resolve) => { waiters.push(resolve); });
+      const gen = generation;
+      return new Promise((resolve) => {
+        waiters.push(() => {
+          if (!accepting || generation !== gen) { resolve(false); return; }
+          resolve(generation);
+        });
+      });
     },
-    release() {
-      const next = waiters.shift();
-      if (next) next(true);
-      else active = Math.max(0, active - 1);
+    release(ticket) {
+      if (ticket !== generation) return;
+      if (accepting) {
+        const next = waiters.shift();
+        if (next) { next(); return; }
+      } else {
+        while (waiters.length) waiters.shift()();
+      }
+      active = Math.max(0, active - 1);
+      notifyIdle();
     },
-    clear() {
-      while (waiters.length) waiters.shift()(false);
+    rejectWaiters() {
+      accepting = false;
+      while (waiters.length) waiters.shift()();
+    },
+    reset() {
+      generation += 1;
+      accepting = true;
       active = 0;
+      waiters.length = 0;
+      while (idleWaiters.length) idleWaiters.shift()();
+    },
+    whenIdle() {
+      if (active === 0) return Promise.resolve();
+      return new Promise((resolve) => { idleWaiters.push(resolve); });
     },
     get active() { return active; },
     get waiting() { return waiters.length; },
+  };
+};
+
+export const createWorkTracker = () => {
+  let generation = 1;
+  let active = 0;
+  const idleWaiters = [];
+  const notifyIdle = () => {
+    if (active !== 0) return;
+    while (idleWaiters.length) idleWaiters.shift()();
+  };
+  return {
+    begin() {
+      active += 1;
+      const gen = generation;
+      return () => {
+        if (gen !== generation) return;
+        active = Math.max(0, active - 1);
+        notifyIdle();
+      };
+    },
+    whenIdle() {
+      if (active === 0) return Promise.resolve();
+      return new Promise((resolve) => { idleWaiters.push(resolve); });
+    },
+    reset() {
+      generation += 1;
+      active = 0;
+      while (idleWaiters.length) idleWaiters.shift()();
+    },
+    get active() { return active; },
   };
 };

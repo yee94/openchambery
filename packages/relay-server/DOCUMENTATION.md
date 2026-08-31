@@ -1,6 +1,6 @@
 # Relay Server Package Documentation
 
-`packages/relay-server/` owns the self-hosted Layer 1 Relay server, the `openchamber-relay` CLI, and the package release and deployment contract.
+`packages/relay-server/` owns the self-hosted Layer 1 Relay server, the isolated Push Relay process, the `openchamber-relay` and `openchamber-push-relay` CLIs, and the package release and deployment contract.
 
 ## Purpose and security boundary
 
@@ -11,6 +11,8 @@ Host and Client terminate the E2EE channel. Each Host authenticates Relay connec
 Relay v1 admission accepts anonymous Client route requests. Per-IP, global, pending-connection, raw-socket, frame, and queue limits bound that public entry point. Configure limits for the expected traffic volume and keep the Relay behind TLS. Pair queues pause the fast sender at half the per-connection byte limit so a slow peer applies TCP backpressure instead of filling memory until `4029`. Ready pairs send one frame per tick so one tunnel cannot monopolize the event loop.
 
 The Relay keeps process-local routing state only. Hosts reconnect after Relay restarts, and a control disconnect retains its Host route for the 30-second grace period.
+
+Layer 1 and Push are separate processes in this package. Layer 1 never holds APNs credentials or the device-token database. Push never sees Relay tunnel frames, pairing secrets, or client bearer credentials. Give Apple secrets only to the Push process. SQLite token storage is single-instance: one Push process per database file.
 
 ## Quick deployment
 
@@ -27,6 +29,18 @@ The default listener is `127.0.0.1:8787` and the WebSocket path is `/ws`. Deploy
 openchamber-relay --public-url wss://relay.example.com/ws
 ```
 
+Push is a second executable from the same package. Default listen address is `127.0.0.1:8788`:
+
+```sh
+export OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>'
+export OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>'
+export OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID=com.yee94.openchamber
+export OPENCHAMBER_PUSH_RELAY_APNS_P8_PATH=/etc/openchamber/AuthKey.p8
+openchamber-push-relay --host 127.0.0.1 --port 8788
+```
+
+The Host maps the effective Relay `wss://`/`ws://` URL to the same host as `https://`/`http://` `/v1/push/send`. Set `OPENCHAMBER_PUSH_RELAY_URL` on the Host to override. After a Relay switch, the Host re-registers persisted tokens and binds them before the first send.
+
 ### Caddy
 
 ```caddyfile
@@ -38,6 +52,24 @@ relay.example.com {
 ```
 
 Run the Relay with `--public-url wss://relay.example.com/ws`. Caddy proxies WebSocket upgrades for `/ws` and serves `/healthz` and `/readyz` through the same upstream. `header_up X-Forwarded-For {remote_host}` replaces the inbound value with the single client source IP.
+
+Shared hostname with Push:
+
+```caddyfile
+relay.example.com {
+    handle /v1/push/* {
+        reverse_proxy 127.0.0.1:8788 {
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8787 {
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+}
+```
 
 ### Nginx
 
@@ -60,11 +92,11 @@ server {
 }
 ```
 
-Run the Relay with `--public-url wss://relay.example.com/ws`. The `/ws` path in the public URL and Relay configuration must match. `proxy_set_header X-Forwarded-For $remote_addr;` replaces the inbound value with the single client source IP.
+Run the Relay with `--public-url wss://relay.example.com/ws`. The `/ws` path in the public URL and Relay configuration must match. `proxy_set_header X-Forwarded-For $remote_addr;` replaces the inbound value with the single client source IP. For Push on the same hostname, proxy `/v1/push/` to `127.0.0.1:8788` and keep `/` including `/ws` on `127.0.0.1:8787`, replacing `X-Forwarded-For` on both locations.
 
 ## Docker
 
-Each non-dry-run OpenChamber release publishes a multi-platform Relay image for `linux/amd64` and `linux/arm64` to Docker Hub. CI builds each architecture natively in parallel (`ubuntu-latest` and `ubuntu-24.04-arm`), then merges digests into a single multi-arch manifest tagged as:
+Each non-dry-run OpenChamber `v*` release and each `relay/v*` Relay-only release publishes a multi-platform Relay image for `linux/amd64` and `linux/arm64` to Docker Hub. The image default entrypoint is Layer 1. The same image includes Node 24 plus `openchamber-push-relay` source/bin/package files. Layer 1 is compiled with Bun 1.3.14; Push is not Bun-compiled and runs under Node 24 (`node:sqlite`). The container user is non-root, ports `8787` and `8788` are exposed, and the image health check uses Node against Layer 1 `/healthz`. CI builds each architecture natively in parallel (`ubuntu-latest` and `ubuntu-24.04-arm`), then merges digests into a single multi-arch manifest tagged as:
 
 ```text
 <DOCKERHUB_USERNAME>/openchamber-relay:<version>
@@ -109,6 +141,27 @@ curl -fsS https://relay.example.com/healthz
 curl -fsS https://relay.example.com/readyz
 ```
 
+Layer 1 plus Push from the same immutable image uses [`docker-compose.relay-push.remote.yml`](../../docker-compose.relay-push.remote.yml). Layer 1 receives no APNs secrets. Push receives only APNs Key ID / Team ID / Bundle ID and the `.p8` Docker secret path, plus a persistent SQLite volume, with a read-only root filesystem. Caddy serves one hostname: `/v1/push/*` to `push:8788`, everything else including `/ws` to `relay:8787`, each replacing `X-Forwarded-For` once. Both services have health checks; Caddy waits until both are healthy.
+
+```sh
+OPENCHAMBER_RELAY_IMAGE='<dockerhub-username>/openchamber-relay:<version>@sha256:<manifest-digest>' \
+RELAY_DOMAIN=relay.example.com \
+ACME_EMAIL=admin@example.com \
+OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>' \
+OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>' \
+OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID=com.yee94.openchamber \
+OPENCHAMBER_PUSH_RELAY_APNS_P8_FILE=/etc/openchamber/AuthKey.p8 \
+docker compose -f docker-compose.relay-push.remote.yml up -d
+```
+
+```sh
+docker compose -f docker-compose.relay-push.remote.yml ps
+curl -fsS https://relay.example.com/healthz
+curl -fsS https://relay.example.com/readyz
+```
+
+Public `/healthz` and `/readyz` are Layer 1. Push health remains on the internal `8788` listener and the Compose health check. Existing Layer-1-only Compose files keep their previous behavior.
+
 From the repository root, build and start the supplied service. The compatibility assets are [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml):
 
 ```sh
@@ -117,7 +170,7 @@ OPENCHAMBER_RELAY_PUBLISHED_PORT=8787 \
 docker compose -f docker-compose.relay.yml up -d --build
 ```
 
-Compose publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` by default; use `OPENCHAMBER_RELAY_PUBLISHED_PORT` to select the host port. The Compose service uses an ephemeral filesystem and keeps Host identity keys on each OpenChamber Host. Its image health check calls `GET /healthz`. Terminate public TLS at an external reverse proxy and publish `wss://relay.example.com/ws`. A public Relay port binding requires firewall rules and TLS; loopback publishing with a TLS reverse proxy is the deployment path.
+Compose publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` by default; use `OPENCHAMBER_RELAY_PUBLISHED_PORT` to select the host port. The Compose service uses an ephemeral filesystem and keeps Host identity keys on each OpenChamber Host. Its image health check uses Node to call Layer 1 `GET /healthz`. Terminate public TLS at an external reverse proxy and publish `wss://relay.example.com/ws`. A public Relay port binding requires firewall rules and TLS; loopback publishing with a TLS reverse proxy is the deployment path.
 
 ## Connect Hosts
 
@@ -134,7 +187,7 @@ Existing clients switch to a new Relay after a new pairing flow; generate a fres
 
 ## Configuration
 
-Configuration precedence is command flags, then `OPENCHAMBER_RELAY_SERVER_*` variables, then defaults. `--host`, `--port`, `--path`, `--public-url`, `--trust-proxy`, `--no-trust-proxy`, `--json`, and `--quiet` are available.
+Configuration precedence is command flags, then `OPENCHAMBER_RELAY_SERVER_*` variables, then defaults. `--host`, `--port`, `--path`, `--public-url`, `--trust-proxy`, `--no-trust-proxy`, `--json`, and `--quiet` are available. Push flags are `--host`, `--port`, `--trust-proxy`, `--no-trust-proxy`, `--json`, and `--quiet`, with `OPENCHAMBER_PUSH_RELAY_*` variables.
 
 `OPENCHAMBER_RELAY_SERVER_PUBLIC_URL` affects startup output. `OPENCHAMBER_RELAY_SERVER_PATH` selects the actual WebSocket upgrade endpoint. Relay listens on loopback by default. Enable `OPENCHAMBER_RELAY_SERVER_TRUST_PROXY=true` when a trusted reverse proxy fully isolates Relay ingress and replaces any client-supplied `X-Forwarded-For` value with one canonical client IP. Relay accepts one forwarded IP in this mode.
 
@@ -179,12 +232,44 @@ For an IPv6 literal in a public URL, enclose the host in brackets: `wss://[2001:
 | `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSION_ENTRIES` | `10000` | tracked role/IP admission records |
 | `OPENCHAMBER_RELAY_SERVER_ID_ATTEMPTS` | `4` | random connection-ID attempts |
 
+Host Push URL (OpenChamber Host, not the Push process):
+
+| Variable | Default | Unit / purpose |
+| --- | --- | --- |
+| `OPENCHAMBER_PUSH_RELAY_URL` | derived from the effective Relay URL | explicit `…/v1/push/send` override |
+| `OPENCHAMBER_PUSH_RELAY_DISABLED` | unset | `true` disables Push Relay on the Host |
+
+Push process:
+
+| Variable | Default | Unit / purpose |
+| --- | --- | --- |
+| `OPENCHAMBER_PUSH_RELAY_HOST` | `127.0.0.1` | Listener address |
+| `OPENCHAMBER_PUSH_RELAY_PORT` | `8788` | TCP port |
+| `OPENCHAMBER_PUSH_RELAY_TRUST_PROXY` | `false` | Read one canonical client IP from proxy-replaced `X-Forwarded-For` |
+| `OPENCHAMBER_PUSH_RELAY_DATABASE_PATH` | `./data/push-relay.sqlite` | SQLite file |
+| `OPENCHAMBER_PUSH_RELAY_TIMESTAMP_SKEW_MS` | `300000` | ms signed `ts` window |
+| `OPENCHAMBER_PUSH_RELAY_REPLAY_MS` | `600000` | ms replay-record lifetime; at least twice timestamp skew |
+| `OPENCHAMBER_PUSH_RELAY_MAX_REPLAY_ENTRIES` | `10000` | replay records |
+| `OPENCHAMBER_PUSH_RELAY_REGISTER_LIMIT_PER_MINUTE` | `60` | register requests per client IP per minute |
+| `OPENCHAMBER_PUSH_RELAY_SEND_LIMIT_PER_MINUTE` | `60` | send requests per client IP per minute |
+| `OPENCHAMBER_PUSH_RELAY_SERVER_SEND_LIMIT_PER_MINUTE` | `120` | send requests per `serverId` per minute |
+| `OPENCHAMBER_PUSH_RELAY_MAX_TOKENS` | `100000` | persisted device-token bindings |
+| `OPENCHAMBER_PUSH_RELAY_MAX_IN_FLIGHT` | `64` | concurrent APNs deliveries |
+| `OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID` | required | Apple APNs key ID |
+| `OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID` | required | Apple Team ID |
+| `OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID` | `com.yee94.openchamber` | App bundle ID |
+| `OPENCHAMBER_PUSH_RELAY_APNS_P8` | required unless path set | APNs `.p8` PEM |
+| `OPENCHAMBER_PUSH_RELAY_APNS_P8_PATH` | unset | Path to the `.p8` file |
+
+TestFlight and App Store Hosts use `OPENCHAMBER_APNS_ENVIRONMENT=production`. Each send request carries `env`; the Push process does not pick sandbox vs production itself.
+
 ## Operations
 
 - `GET` and `HEAD` requests to `/healthz` return process health. `/readyz` returns ready status after the listener reaches running state.
 - `SIGTERM` and `SIGINT` begin graceful Relay shutdown. Docker grants a 30-second stop period.
 - Hosts automatically reconnect after a Relay process restart. Relay state remains ephemeral.
-- Keep logs and metrics snapshots free of URL query strings, `sig`, `pk`, `grant`, and encrypted payloads.
+- Keep logs and metrics snapshots free of URL query strings, `sig`, `pk`, `grant`, encrypted payloads, APNs `.p8` material, and device tokens.
+- Run one Push process per SQLite database file.
 
 ### systemd
 

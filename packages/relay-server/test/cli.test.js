@@ -56,7 +56,11 @@ it('runs compiled relay help and version from the published bin name', () => {
 });
 
 it('publishes the relay executable as an independent package contract', () => {
-  expect(packageManifest.bin).toEqual({ 'openchamber-relay': './bin/openchamber-relay.js' });
+  expect(packageManifest.bin['openchamber-relay']).toBe('./bin/openchamber-relay.js');
+  expect(packageManifest.bin).toEqual({
+    'openchamber-relay': './bin/openchamber-relay.js',
+    'openchamber-push-relay': './bin/openchamber-push-relay.js',
+  });
 });
 
 it('keeps JSON output JSON-only and cleans signal listeners', async () => {
