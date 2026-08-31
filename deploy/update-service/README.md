@@ -139,7 +139,7 @@ Maps the same resolver decision:
 - `install_native_required` → `{ major: true, breaking: true, message: "native update required" }`
 - otherwise → `{ message: "No new version available", version: "", url: "" }`
 
-OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 门身份已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。例外：请求 `stable` 且设备 `currentBundleId` 为更高的 prerelease 时，允许 `apply_ota` 回退到 stable active，并标记 `isChannelRollback` / Capgo `is_channel_rollback`。同版本不同 `bundleId` 仍可作内容更正。原生壳下限用版本号 `activeBundle.minShellReleaseVersion`（`mode: native` 发布时写入本轮版本）；`platforms.*.minNativeBuild` 仅存量兼容，build 号不再参与任何判定。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报；仅当 active 为 **stable**（非 prerelease）且门身份（`currentBundleId` 或回退 `nativeVersion`）不低于 `activeBundle.releaseVersion` 时视为已内嵌。beta active 时 iOS 剥离营销版号（如 `1.18.4`）不能证明内嵌了 `1.18.4-beta.N`，不得走 embedded → 仍 `apply_ota`。
+OTA 只升不降：`currentBundleId` / 带 `-beta.N` 的 `nativeVersion` / 门身份已达到的 `nativeTargets.version` 任一高于 `activeBundle.releaseVersion` 时，不返回 `apply_ota`。例外：请求 `stable` 且设备 `currentBundleId` 为更高的 prerelease 时，允许 `apply_ota` 回退到 stable active，并标记 `isChannelRollback` / Capgo `is_channel_rollback`。同版本不同 `bundleId` 仍可作内容更正。原生壳下限用版本号 `activeBundle.minShellReleaseVersion`（`mode: native` 发布时写入本轮版本）；比较沿用 semver，同 core 的 stripped stable（如 `1.18.3` / `1.19.0`）高于任何同 core prerelease 门（`1.18.3-beta.1` / `1.19.0-beta.37`），因此该身份过门并 `apply_ota`。detectability verifier 的 live old iOS 画像使用语义上真实低于 gate 的 stripped 身份（`versionBelow(stripPrerelease(gate))` 再 strip）；`stripPrerelease(versionBelow(gate))` 对 beta 门会塌成同 core stable。`platforms.*.minNativeBuild` 仅存量兼容，build 号不再参与任何判定。壳内嵌 web（Capgo `builtin`）必须把已烘焙的 `__APP_VERSION__` 当作 `currentBundleId` 上报；仅当 active 为 **stable**（非 prerelease）且门身份（`currentBundleId` 或回退 `nativeVersion`）不低于 `activeBundle.releaseVersion` 时视为已内嵌。beta active 时 iOS 剥离营销版号（如 `1.18.4`）不能证明内嵌了 `1.18.4-beta.N`，不得走 embedded → 仍 `apply_ota`。
 
 Manifest load failure returns `503 { "error": "ota_manifest_unavailable" }` on both endpoints (never a forged no-update).
 
@@ -153,7 +153,7 @@ Schema summary (`schemaVersion: 1`):
 
 - `channel`, `generation`
 - `activeBundle`: full bundle metadata, or `null` when OTA is enabled but nothing is published yet
-  - `minShellReleaseVersion` (optional): semver `X.Y.Z` / `X.Y.Z-beta.N`；原生壳能力下限，低于此版本 → `install_native_required`
+  - `minShellReleaseVersion` (optional): semver `X.Y.Z` / `X.Y.Z-beta.N`；原生壳能力下限，低于此版本 → `install_native_required`。同 core stripped stable 高于 prerelease 门；verifier old-shell 使用真实低于 gate 的版本身份
   - `platforms.ios|android.minNativeBuild` (**deprecated**): 存量 manifest 兼容读取；判定已不使用
 - `nativeTargets.ios|android`: optional `{ version, build, status?, installUrl? }`
 - `rollbackBundleIds`: 0–2 hex bundle ids
