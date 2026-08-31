@@ -13,6 +13,7 @@ import {
   getOrCreateRelaySigningKeypair,
   signRelayMessage as signRelayMessageShared,
 } from '../relay/signing-key.js';
+import { DEFAULT_RELAY_URL, derivePushSendUrlFromRelayUrl } from '../relay/service.js';
 
 const APNS_TOKENS_VERSION = 1;
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
@@ -20,7 +21,6 @@ const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
 // APNs rejects auth tokens older than 1h; refresh well inside that window.
 const JWT_TTL_MS = 50 * 60 * 1000;
 const DEFAULT_BUNDLE_ID = 'com.openchamber.app';
-const DEFAULT_RELAY_URL = 'https://api.openchamber.dev/v1/push/send';
 const MAX_TOKENS_PER_SESSION = 10;
 // APNs reasons that mean the token is permanently invalid → drop it.
 const DEAD_TOKEN_REASONS = new Set(['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic']);
@@ -44,12 +44,15 @@ export const createApnsRuntime = (deps) => {
     writeSettingsToDisk,
     // Strict settings reader gating identity regeneration (see signing-key.js).
     readSettingsStrict,
+    resolveEffectiveRelayUrl,
   } = deps;
 
   let persistLock = Promise.resolve();
   let cachedJwt = null; // { token, issuedAtMs, keyId }
   let cachedRelayKey = null; // { privateKey, publicJwk }
   let warnedUnconfigured = false;
+  let registrationSuccessCache = new Map();
+  let registrationCacheRegisterUrl = null;
 
   // ---------------------------------------------------------------------------
   // Per-server relay signing identity (ECDSA P-256). Auto-generated + persisted in settings
@@ -76,9 +79,31 @@ export const createApnsRuntime = (deps) => {
     y: publicJwk.y,
   });
 
-  const registerTokenWithRelay = async (token, platform = 'ios') => {
-    const relay = resolveRelayConfig();
-    if (!relay) return; // direct mode — no relay binding needed
+  const registrationCacheKey = (registerUrl, token, platform) =>
+    `${registerUrl}\0${token}\0${platform}`;
+
+  const rememberRelayRegisterUrl = (registerUrl) => {
+    if (registrationCacheRegisterUrl === registerUrl) return;
+    registrationSuccessCache = new Map();
+    registrationCacheRegisterUrl = registerUrl;
+  };
+
+  const boundRegistrationCache = (registerUrl, entries) => {
+    rememberRelayRegisterUrl(registerUrl);
+    const allowed = new Set(
+      entries.map((entry) => registrationCacheKey(registerUrl, entry.deviceToken, entry.platform)),
+    );
+    for (const key of registrationSuccessCache.keys()) {
+      if (!allowed.has(key)) registrationSuccessCache.delete(key);
+    }
+  };
+
+  const registerTokenWithRelay = async (token, platform = 'ios', relayOverride) => {
+    const relay = relayOverride ?? (await resolveRelayConfig());
+    if (!relay) return true; // direct mode — no relay binding needed
+    rememberRelayRegisterUrl(relay.registerUrl);
+    const cacheKey = registrationCacheKey(relay.registerUrl, token, platform);
+    if (registrationSuccessCache.has(cacheKey)) return true;
     try {
       const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
       const ts = Date.now();
@@ -89,9 +114,15 @@ export const createApnsRuntime = (deps) => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ token, platform, publicKeyJwk: relayPublicJwk(publicJwk), ts, sig }),
       });
-      if (!res.ok) console.warn(`[Push relay] register-token failed status=${res.status}`);
+      if (!res.ok) {
+        console.warn(`[Push relay] register-token failed status=${res.status}`);
+        return false;
+      }
+      registrationSuccessCache.set(cacheKey, true);
+      return true;
     } catch (error) {
       console.warn('[Push relay] register-token request failed:', error?.message ?? error);
+      return false;
     }
   };
 
@@ -157,6 +188,20 @@ export const createApnsRuntime = (deps) => {
   // Normalize an incoming platform hint to the two we support; default to APNs/iOS since that
   // was the only registrant before Android/FCM existed.
   const normalizePlatform = (platform) => (platform === 'android' ? 'android' : 'ios');
+
+  const listUniqueTokenEntries = (store) => {
+    const unique = [];
+    const seen = new Set();
+    for (const record of Object.values(store.tokensBySession || {})) {
+      for (const entry of normalizeTokens(record)) {
+        const key = `${entry.deviceToken}\0${entry.platform}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unique.push(entry);
+      }
+    }
+    return unique;
+  };
 
   const addOrUpdateApnsToken = async (uiSessionToken, deviceToken, userAgent, platform) => {
     if (!uiSessionToken || typeof deviceToken !== 'string' || deviceToken.trim().length === 0) return;
@@ -367,17 +412,32 @@ export const createApnsRuntime = (deps) => {
   // each user's server — so users configure nothing. The server just POSTs device tokens +
   // generic text; the relay signs + sends and reports which tokens to drop. Direct mode (below)
   // is the fallback for self-hosters who set OPENCHAMBER_APNS_* and disable the relay.
-  const resolveRelayConfig = () => {
+  const buildRelayConfig = (url) => ({
+    url,
+    registerUrl: url.replace(/\/send$/, '/register-token'),
+    environment:
+      (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || 'sandbox').toLowerCase() === 'production'
+        ? 'production'
+        : 'sandbox',
+  });
+
+  const resolveRelayConfig = async () => {
     if (trimmedEnv('OPENCHAMBER_PUSH_RELAY_DISABLED') === 'true') return null;
-    const url = trimmedEnv('OPENCHAMBER_PUSH_RELAY_URL') || DEFAULT_RELAY_URL;
-    return {
-      url,
-      registerUrl: url.replace(/\/send$/, '/register-token'),
-      environment:
-        (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || 'sandbox').toLowerCase() === 'production'
-          ? 'production'
-          : 'sandbox',
-    };
+    const explicit = trimmedEnv('OPENCHAMBER_PUSH_RELAY_URL');
+    if (explicit) return buildRelayConfig(explicit);
+
+    let relayWsUrl = DEFAULT_RELAY_URL;
+    if (typeof resolveEffectiveRelayUrl === 'function') {
+      try {
+        const resolved = await resolveEffectiveRelayUrl();
+        if (typeof resolved === 'string' && resolved.trim()) relayWsUrl = resolved;
+      } catch {
+        relayWsUrl = DEFAULT_RELAY_URL;
+      }
+    }
+    const url = derivePushSendUrlFromRelayUrl(relayWsUrl) || derivePushSendUrlFromRelayUrl(DEFAULT_RELAY_URL);
+    if (!url) return null;
+    return buildRelayConfig(url);
   };
 
   const sendViaRelay = async (deviceTokens, payload, relay) => {
@@ -473,24 +533,57 @@ export const createApnsRuntime = (deps) => {
   // background push for short responses. Instead we always send, and rely on iOS to NOT
   // display the alert while the app is foreground (presentationOptions: [] in
   // capacitor.config) — so there is no notification when the app is active, with no race.
+  const reRegisterAllTokens = async () => {
+    const relay = await resolveRelayConfig();
+    if (!relay) {
+      return { attempted: 0, succeeded: 0, failed: 0 };
+    }
+    const store = await readTokensFromDisk();
+    const entries = listUniqueTokenEntries(store);
+    boundRegistrationCache(relay.registerUrl, entries);
+    const outcomes = await Promise.all(
+      entries.map((entry) => registerTokenWithRelay(entry.deviceToken, entry.platform, relay)),
+    );
+    let succeeded = 0;
+    let failed = 0;
+    for (const ok of outcomes) {
+      if (ok) succeeded += 1;
+      else failed += 1;
+    }
+    return { attempted: entries.length, succeeded, failed };
+  };
+
   const sendApnsToAllUiSessions = async (payload, _options = {}) => {
     const store = await readTokensFromDisk();
+    const uniqueEntries = listUniqueTokenEntries(store);
+    if (uniqueEntries.length === 0) return;
+
+    const relay = await resolveRelayConfig();
+    if (relay) {
+      boundRegistrationCache(relay.registerUrl, uniqueEntries);
+      const outcomes = await Promise.all(
+        uniqueEntries.map(async (entry) => {
+          const registered = await registerTokenWithRelay(entry.deviceToken, entry.platform, relay);
+          return registered ? entry.deviceToken : null;
+        }),
+      );
+      const readyTokens = [];
+      const readySeen = new Set();
+      for (const token of outcomes) {
+        if (!token || readySeen.has(token)) continue;
+        readySeen.add(token);
+        readyTokens.push(token);
+      }
+      if (readyTokens.length === 0) return;
+      await sendViaRelay(readyTokens, payload, relay);
+      return;
+    }
     const deviceTokens = [];
     const seen = new Set();
-    for (const record of Object.values(store.tokensBySession || {})) {
-      for (const entry of normalizeTokens(record)) {
-        if (!seen.has(entry.deviceToken)) {
-          seen.add(entry.deviceToken);
-          deviceTokens.push(entry.deviceToken);
-        }
-      }
-    }
-    if (deviceTokens.length === 0) return;
-
-    const relay = resolveRelayConfig();
-    if (relay) {
-      await sendViaRelay(deviceTokens, payload, relay);
-      return;
+    for (const entry of uniqueEntries) {
+      if (seen.has(entry.deviceToken)) continue;
+      seen.add(entry.deviceToken);
+      deviceTokens.push(entry.deviceToken);
     }
     await sendViaDirectApns(deviceTokens, payload);
   };
@@ -500,6 +593,7 @@ export const createApnsRuntime = (deps) => {
     removeApnsToken,
     removeApnsTokenFromAllSessions,
     sendApnsToAllUiSessions,
+    reRegisterAllTokens,
     resolveApnsConfig,
     // exposed for tests
     signApnsJwt,

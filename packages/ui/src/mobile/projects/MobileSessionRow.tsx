@@ -279,7 +279,7 @@ export function MobileSessionRow({
   }
 
   return (
-    <div className={cn('oc-mobile-session-row relative isolate overflow-hidden', className)}>
+    <div className={cn('oc-mobile-session-row relative isolate', className)}>
       {/* iOS-style trailing rail: it stays fixed underneath while the complete
           session foreground follows the finger to the left. */}
       <div

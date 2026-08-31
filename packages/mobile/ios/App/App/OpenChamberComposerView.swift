@@ -71,6 +71,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     private var attachmentCount = 0
     private var applyingExternalText = false
     private var lastEmittedTextChange: (text: String, start: Int, end: Int)?
+    private var lastEmittedRestTop: CGFloat?
     private var appearanceIsDark = true
     private var agentLongPressFired = false
     private var placeholderText = "Tap to type"
@@ -121,6 +122,23 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         clampAutocompleteHeight()
+        emitHeightChange(force: false)
+    }
+
+    private func emitHeightChange(force: Bool) {
+        if isHidden {
+            if force {
+                lastEmittedRestTop = nil
+                delegate?.composerViewDidChangeHeight(self)
+            }
+            return
+        }
+        guard let host = superview else { return }
+        let nextRestTop = restTop(in: host)
+        if !force, let last = lastEmittedRestTop, abs(nextRestTop - last) <= 0.5 {
+            return
+        }
+        lastEmittedRestTop = nextRestTop
         delegate?.composerViewDidChangeHeight(self)
     }
 
@@ -303,7 +321,10 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             textView.resignFirstResponder()
         }
         refreshScrollButton()
-        delegate?.composerViewDidChangeHeight(self)
+        if !suppressed {
+            superview?.layoutIfNeeded()
+        }
+        emitHeightChange(force: true)
     }
 
     func containsTouch(at point: CGPoint, in host: UIView) -> Bool {
@@ -396,6 +417,9 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         scrollButton.addTarget(self, action: #selector(scrollTapped), for: .touchUpInside)
         scrollButton.isHidden = true
         scrollChrome.isHidden = true
+        // Menu-as-primary does not deliver touchUpInside; touchDown matches web attach tap haptic.
+        collapsedPlus.addTarget(self, action: #selector(attachPlusPressed), for: .touchDown)
+        expandedPlus.addTarget(self, action: #selector(attachPlusPressed), for: .touchDown)
         modelButton.addTarget(self, action: #selector(modelTapped), for: .touchUpInside)
         agentButton.isUserInteractionEnabled = false
         let agentTap = UITapGestureRecognizer(target: self, action: #selector(agentTapped))
@@ -650,7 +674,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             self.relayoutTextHeight()
             self.layoutIfNeeded()
         }
-        delegate?.composerViewDidChangeHeight(self)
+        emitHeightChange(force: true)
         if changed {
             delegate?.composerViewDidChangeExpanded(self, expanded: expanded)
         }
@@ -991,6 +1015,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             image: UIImage(systemName: "photo.on.rectangle")
         ) { [weak self] _ in
             guard let self else { return }
+            OpenChamberHapticFeedback.impactLight()
             self.delegate?.composerViewDidRequestAttachPhotos(self)
         }
         let files = UIAction(
@@ -998,6 +1023,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             image: UIImage(systemName: "folder")
         ) { [weak self] _ in
             guard let self else { return }
+            OpenChamberHapticFeedback.impactLight()
             self.delegate?.composerViewDidRequestAttachFiles(self)
         }
         let menu = UIMenu(title: "", children: [photos, files])
@@ -1007,7 +1033,12 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         }
     }
 
+    @objc private func attachPlusPressed() {
+        OpenChamberHapticFeedback.impactLight()
+    }
+
     @objc private func modelTapped() {
+        OpenChamberHapticFeedback.impactLight()
         textView.resignFirstResponder()
         delegate?.composerViewDidRequestModel(self)
     }
@@ -1017,12 +1048,14 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
             agentLongPressFired = false
             return
         }
+        OpenChamberHapticFeedback.impactLight()
         delegate?.composerViewDidRequestCycleAgent(self)
     }
 
     @objc private func agentLongPressed(_ recognizer: UILongPressGestureRecognizer) {
         guard recognizer.state == .began else { return }
         agentLongPressFired = true
+        OpenChamberHapticFeedback.impactLight()
         textView.resignFirstResponder()
         delegate?.composerViewDidRequestOpenAgent(self)
     }
@@ -1032,6 +1065,8 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     }
 
     @objc private func sendTapped() {
+        // Parity with web composer send/stop: light impact on the tap path.
+        OpenChamberHapticFeedback.impactLight()
         if canAbort {
             delegate?.composerViewDidRequestAbort(self)
             return
@@ -1040,6 +1075,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
     }
 
     @objc private func queueSendTapped() {
+        OpenChamberHapticFeedback.impactLight()
         delegate?.composerViewDidRequestSend(self, text: currentText)
     }
 
@@ -1065,7 +1101,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         refreshSendButton()
         refreshChipPaint()
         if heightChanged {
-            delegate?.composerViewDidChangeHeight(self)
+            emitHeightChange(force: true)
         }
         guard !applyingExternalText else { return }
         emitTextChange()
@@ -1083,6 +1119,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
                 autocomplete.acceptHighlighted()
                 return false
             }
+            OpenChamberHapticFeedback.impactLight()
             delegate?.composerViewDidRequestSend(self, text: textView.text ?? "")
             return false
         }
@@ -1110,7 +1147,7 @@ final class OpenChamberComposerView: UIView, UITextViewDelegate {
         relayoutTextHeight()
         refreshSendButton()
         refreshChipPaint()
-        delegate?.composerViewDidChangeHeight(self)
+        emitHeightChange(force: true)
         emitTextChange()
         return false
     }

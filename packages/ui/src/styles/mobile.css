@@ -532,6 +532,16 @@
 }
 
 .oc-mobile-project-shell {
+  --oc-mobile-project-group-gap: 0.625rem;
+  --oc-mobile-project-header-height: calc(4.625rem * var(--padding-scale, 1));
+  --oc-mobile-project-icon-size: calc(2.375rem * var(--padding-scale, 1));
+  --oc-mobile-entity-title-size: 0.875rem;
+  --oc-mobile-entity-title-line-height: 1.125rem;
+  --oc-mobile-entity-meta-size: 0.75rem;
+  --oc-mobile-entity-meta-line-height: 0.9375rem;
+  --oc-mobile-session-row-height: calc(2.5rem * var(--padding-scale, 1));
+  --oc-mobile-session-actions-width: 6.25rem;
+  --oc-mobile-worktree-action-width: 3.125rem;
   display: flex;
   flex-direction: column;
   /* Allow worktree/session swipe rails to paint without clipping. */
@@ -550,6 +560,11 @@
   padding: 0.75rem;
 }
 
+.oc-mobile-project-shell .oc-mobile-project-trigger {
+  gap: 0.4375rem;
+  padding: 0.625rem;
+}
+
 .oc-mobile-project-icon {
   width: var(--oc-mobile-project-icon-size);
   height: var(--oc-mobile-project-icon-size);
@@ -558,6 +573,11 @@
 .oc-mobile-project-icon-glyph {
   width: 1.25rem;
   height: 1.25rem;
+}
+
+.oc-mobile-project-shell .oc-mobile-project-icon-glyph {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 .oc-mobile-entity-title {
@@ -573,8 +593,8 @@
 }
 
 .oc-mobile-project-chevron {
-  width: 1rem;
-  height: 1rem;
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .oc-mobile-project-action {
@@ -589,7 +609,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--oc-mobile-project-group-gap);
-  padding: 0.125rem 0.875rem 1rem;
+  padding: 0.125rem 0.75rem 0.875rem;
 }
 
 .oc-mobile-labeled-surface-group {
@@ -613,6 +633,17 @@
   box-shadow: none;
 }
 
+.oc-mobile-labeled-surface-group-label:first-child {
+  overflow: hidden;
+  border-start-start-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+  border-start-end-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+}
+
+.oc-mobile-labeled-surface-group-label:last-child {
+  border-end-end-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+  border-end-start-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+}
+
 .oc-mobile-page-section-label {
   display: block;
   padding: 0.25rem 0.5rem;
@@ -627,7 +658,7 @@
 
 .oc-mobile-group-label {
   display: flex;
-  min-height: 3rem;
+  min-height: 2.625rem;
   min-width: 0;
   align-items: center;
   gap: 0.25rem;
@@ -635,13 +666,13 @@
 
 .oc-mobile-group-label-trigger {
   display: flex;
-  min-height: 3rem;
+  min-height: 2.625rem;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4375rem;
   border-radius: var(--oc-mobile-inset-radius);
-  padding: 0.5rem 0.75rem;
+  padding: 0.375rem 0.625rem;
   text-align: left;
 }
 
@@ -660,8 +691,8 @@ button.oc-mobile-group-label-trigger:focus-visible {
 
 .oc-mobile-group-label-icon {
   display: flex;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.125rem;
+  height: 1.125rem;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -669,13 +700,13 @@ button.oc-mobile-group-label-trigger:focus-visible {
 }
 
 .oc-mobile-group-label-trigger .typography-ui-label {
-  font-size: 0.8125rem !important;
+  font-size: 0.75rem !important;
   line-height: 1rem !important;
 }
 
 .oc-mobile-group-label-trigger .typography-small {
-  font-size: 0.75rem !important;
-  line-height: 1rem !important;
+  font-size: 0.6875rem !important;
+  line-height: 0.875rem !important;
 }
 
 .oc-mobile-group-action {
@@ -719,11 +750,11 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-worktree-more {
-  width: 2rem;
-  min-width: 2rem !important;
-  min-height: 2rem !important;
-  height: 2rem;
-  margin-right: 0.25rem;
+  width: 2.25rem;
+  min-width: 2.25rem !important;
+  min-height: 2.25rem !important;
+  height: 2.25rem;
+  margin-right: 0.125rem;
   padding: 0 !important;
 }
 
@@ -735,8 +766,36 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-row {
+  --oc-mobile-session-radius-start-start: 0;
+  --oc-mobile-session-radius-start-end: 0;
+  --oc-mobile-session-radius-end-end: 0;
+  --oc-mobile-session-radius-end-start: 0;
   min-width: 0;
+  overflow: hidden;
+  border-start-start-radius: var(--oc-mobile-session-radius-start-start);
+  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
+  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
+  border-end-start-radius: var(--oc-mobile-session-radius-end-start);
   background: transparent;
+}
+
+.oc-mobile-labeled-surface-group > .oc-mobile-session-row:first-child {
+  --oc-mobile-session-radius-start-start: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
+  --oc-mobile-session-radius-start-end: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
+}
+
+.oc-mobile-labeled-surface-group > .oc-mobile-session-row:last-child,
+.oc-mobile-labeled-surface-group-content > .oc-mobile-session-row:last-child {
+  --oc-mobile-session-radius-end-end: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
+  --oc-mobile-session-radius-end-start: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
 }
 
 .oc-mobile-session-row:not(:last-child) {
@@ -759,6 +818,10 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-session-row-content,
 .oc-mobile-session-pagination-row {
   /* Transparent so swipe rails and group chrome do not double-paint a slab. */
+  border-start-start-radius: var(--oc-mobile-session-radius-start-start);
+  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
+  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
+  border-end-start-radius: var(--oc-mobile-session-radius-end-start);
   background: transparent;
 }
 
@@ -775,15 +838,15 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-row-main {
-  gap: 0.5625rem;
-  padding-block: 0.4375rem;
+  gap: 0.5rem;
+  padding-block: 0.3125rem;
   padding-right: 0.125rem;
 }
 
 .oc-mobile-session-status {
   display: inline-flex;
-  width: 0.875rem;
-  height: 0.875rem;
+  width: 0.75rem;
+  height: 0.75rem;
   align-items: center;
   justify-content: center;
 }
@@ -795,8 +858,8 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-title {
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   letter-spacing: -0.012em;
 }
 
@@ -807,12 +870,15 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-time {
-  font-size: 0.6875rem;
-  line-height: 0.875rem;
+  font-size: 0.625rem;
+  line-height: 0.75rem;
 }
 
 .oc-mobile-session-actions {
   width: var(--oc-mobile-session-actions-width);
+  overflow: hidden;
+  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
+  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
 }
 
 .oc-mobile-session-action {
@@ -826,10 +892,10 @@ button.oc-mobile-worktree-label-trigger:active,
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.5rem 2.5rem;
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
+  gap: 0.4375rem;
+  padding: 0.375rem 0.625rem 0.375rem 2.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   outline: none;
 }
 
@@ -3659,4 +3725,3 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
 :root.oc-native-ios-composer .oc-scroll-to-bottom--compact {
   display: none !important;
 }
-

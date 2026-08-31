@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.37] - 2026-09-01
+
+### Fixed
+
+- Opening the phone recent-sessions sheet keeps the last All / pinned / project tab instead of forcing the current project; only a removed-project filter is corrected.
+- Chat composer model selection prefers the latest assistant execution in the transcript over older history or leftover session memory when switching chats.
+- Phone homepage session rows no longer clip the swipe action rail under rounded group chrome.
+
+### Changed
+
+- iPhone native composer attach / send / stop taps use the shared light haptic path. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Phone row action sheets fire a light haptic on tap even when press-scale feedback is off.
+- Push delivery can register device tokens through the self-hosted relay and re-bind when the relay URL changes.
+
+### Added
+
+- `@openchambery/relay-server` exposes a push-relay package entry and `openchamber-push-relay` CLI; Relay-only releases use the `relay/v*` tag path without desktop or mobile installers.
+
 ## [1.19.0-beta.36] - 2026-08-31
 
 ### Changed

@@ -54,6 +54,25 @@ export const canonicalizeRelayUrl = (value) => {
   }
 };
 
+// Canonical ws(s) relay URL → Push send endpoint on the same host/port.
+// Always `/v1/push/send`; never derived from window/location.
+export const derivePushSendUrlFromRelayUrl = (value) => {
+  const canonical = canonicalizeRelayUrl(value);
+  if (!canonical) return null;
+  try {
+    const url = new URL(canonical);
+    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    url.pathname = '/v1/push/send';
+    url.username = '';
+    url.password = '';
+    url.hash = '';
+    url.search = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
 const normalizeRelayUrl = (value) => {
   if (typeof value !== 'string') return DEFAULT_RELAY_URL;
   return canonicalizeRelayUrl(value) ?? DEFAULT_RELAY_URL;
@@ -63,11 +82,15 @@ const normalizeRelayUrl = (value) => {
 // your own Cloudflare account/domain). When set and valid it overrides the
 // stored setting entirely, so the host connection, the pairing offer, and the
 // status all point at it — clients then inherit it from the offer automatically.
-const envRelayUrlOverride = () => {
-  const raw = process.env.OPENCHAMBER_RELAY_URL;
+const envRelayUrlOverride = (env = process.env) => {
+  const raw = env?.OPENCHAMBER_RELAY_URL;
   if (typeof raw !== 'string' || !raw.trim()) return null;
   return canonicalizeRelayUrl(raw);
 };
+
+// Env (`OPENCHAMBER_RELAY_URL`) → settings.privateRelay.relayUrl → DEFAULT_RELAY_URL.
+export const resolveEffectiveRelayUrl = ({ settings = null, env = process.env } = {}) =>
+  envRelayUrlOverride(env) ?? normalizeRelayUrl(settings?.privateRelay?.relayUrl);
 
 /**
  * @param {{
@@ -77,6 +100,7 @@ const envRelayUrlOverride = () => {
  *   getLocalPort: () => number,
  *   logger?: Pick<Console, 'warn'>,
  *   canHostRelay?: () => boolean,
+ *   onRelayUrlChanged?: () => Promise<void> | void,
  * }} deps
  */
 export const createRelayService = ({
@@ -98,6 +122,7 @@ export const createRelayService = ({
   // Host gate: false for non-host runtimes (dev server, ordinary CLI, VS Code, …).
   canHostRelay = () => isRelayHostRuntime(),
   logger = console,
+  onRelayUrlChanged = null,
 }) => {
   const identityRuntime = createRelayIdentityRuntime({ crypto, readSettingsFromDiskMigrated, writeSettingsToDisk, readSettingsStrict });
 
@@ -131,11 +156,20 @@ export const createRelayService = ({
     const override = envRelayUrlOverride();
     return {
       enabled: stored?.enabled === true,
-      relayUrl: override ?? normalizeRelayUrl(stored?.relayUrl),
+      relayUrl: resolveEffectiveRelayUrl({ settings }),
       // True when the endpoint is pinned by OPENCHAMBER_RELAY_URL (a self-hosted
       // relay); the stored setting is ignored while it is set.
       relayUrlLocked: override !== null,
     };
+  };
+
+  const notifyRelayUrlChanged = async () => {
+    if (typeof onRelayUrlChanged !== 'function') return;
+    try {
+      await onRelayUrlChanged();
+    } catch (error) {
+      logger.warn(`[Relay] push token re-register failed: ${error?.message ?? error}`);
+    }
   };
 
   const writeConfig = async (config) => {
@@ -365,6 +399,10 @@ export const createRelayService = ({
     if (!config.enabled || endpointChanged) {
       await writeConfig({ enabled: true, relayUrl });
     }
+    const next = await readConfig();
+    if (next.relayUrl !== config.relayUrl) {
+      await notifyRelayUrlChanged();
+    }
     if (endpointChanged) {
       // One Host identity can have only one live Relay control connection. A
       // custom endpoint therefore becomes the authoritative transport before
@@ -409,6 +447,10 @@ export const createRelayService = ({
           relayUrl = canonical;
         }
         await writeConfig({ enabled: true, relayUrl });
+        const next = await readConfig();
+        if (next.relayUrl !== current.relayUrl) {
+          await notifyRelayUrlChanged();
+        }
         if (hostClient) stop();
         // Explicit user action: take the machine's host claim like pairing does.
         await start(relayUrl, { claim: 'force' });

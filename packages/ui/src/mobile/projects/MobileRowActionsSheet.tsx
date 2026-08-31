@@ -5,6 +5,7 @@ import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { Button } from '@/components/ui/button';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { triggerMobileHaptic } from '@/hooks/streamingHaptics';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import {
   buildProjectMenuItems,
@@ -62,7 +63,12 @@ function ActionRow({
   disabled = false,
   spinning = false,
 }: ActionRowProps) {
-  const handleClick = useEvent(onClick);
+  // Keep press-scale off (sheet rows use fill feedback), but still fire the
+  // shared light haptic that useMobilePressHaptics would skip for "none".
+  const handleClick = useEvent(() => {
+    triggerMobileHaptic('light');
+    onClick();
+  });
 
   return (
     <Button

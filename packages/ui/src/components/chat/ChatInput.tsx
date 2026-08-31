@@ -205,6 +205,7 @@ import {
     applyPrimaryComposerSelectionChange,
     applyPrimaryComposerSessionRestore,
     capturePrimaryComposerSendConfig,
+    parseLatestAssistantExecutionFromMessages,
     parseLatestUserChoiceFromMessages,
     resolvePrimaryComposerSendConfig,
     resolvePrimaryComposerSessionSelection,
@@ -1172,6 +1173,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         () => parseLatestUserChoiceFromMessages(primarySessionMessages),
         [primarySessionMessages],
     );
+    const primaryLatestExecution = React.useMemo(
+        () => parseLatestAssistantExecutionFromMessages(primarySessionMessages),
+        [primarySessionMessages],
+    );
     const primaryTranscriptRenderable = useSessionMaterializationStatus(
         primarySessionID ?? '',
         currentSessionDirectoryForSync ?? undefined,
@@ -1350,6 +1355,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
                 const messages = getSyncMessages(sessionAtStart, sessionDirectoryAfter ?? undefined);
                 const latestChoice = parseLatestUserChoiceFromMessages(messages);
+                const latestExecution = parseLatestAssistantExecutionFromMessages(messages);
                 if (shouldHoldPrimaryComposerUserPick({
                     editRevision: editRevisionAtStart,
                     pinnedHistoryMessageId: primarySelectionPinnedHistoryIdRef.current,
@@ -1372,6 +1378,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 const resolved = resolvePrimaryComposerSessionSelection({
                     sessionId: sessionAtStart,
                     latestUserChoice: latestChoice,
+                    latestExecution,
                     catalog,
                     memory,
                     sessionEntity,
@@ -1680,6 +1687,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const resolved = resolvePrimaryComposerSessionSelection({
             sessionId: primarySessionID,
             latestUserChoice: primaryLatestUserChoice,
+            latestExecution: primaryLatestExecution,
             catalog,
             memory,
             sessionEntity,
@@ -1736,6 +1744,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         surface.kind,
         primarySessionID,
         primaryLatestUserChoice,
+        primaryLatestExecution,
         primaryTranscriptRenderable,
         primarySelectionProviders,
         primarySelectionAgents,

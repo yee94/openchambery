@@ -89,7 +89,7 @@ import { applyRuntimeCorsHeaders } from './lib/request-cors.js';
 import { createClientPairingRuntime } from './lib/client-auth/pairing.js';
 import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
 import { attachRealtimeProxy } from './lib/realtime-proxy.js';
-import { createRelayService, isRelayHostRuntime } from './lib/relay/service.js';
+import { createRelayService, isRelayHostRuntime, resolveEffectiveRelayUrl } from './lib/relay/service.js';
 import { createRelayHostLock } from './lib/relay/host-lock.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import webPush from 'web-push';
@@ -361,6 +361,10 @@ const apnsRuntime = createApnsRuntime({
   readSettingsFromDiskMigrated,
   writeSettingsToDisk,
   readSettingsStrict: readSettingsFromDiskStrict,
+  resolveEffectiveRelayUrl: async () => {
+    const settings = await readSettingsFromDiskMigrated();
+    return resolveEffectiveRelayUrl({ settings });
+  },
 });
 
 const addOrUpdateApnsToken = (...args) => apnsRuntime.addOrUpdateApnsToken(...args);
@@ -1503,6 +1507,9 @@ async function main(options = {}) {
         remoteClientAuthRuntime.hasActiveRelayClients().catch(() => false),
       ]);
       return pendingRelay || deviceRelay;
+    },
+    onRelayUrlChanged: async () => {
+      await apnsRuntime.reRegisterAllTokens();
     },
   });
   relayServiceInstance = relayService;

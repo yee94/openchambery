@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +62,48 @@ describe('Mobile project group chrome', () => {
     );
     expect(source).toContain('data-pressed={pressed ? \'true\' : undefined}');
     expect(source).not.toContain('bg-interactive-hover');
+  });
+
+  test('clips first, last, and single session rows to the group corners', () => {
+    const rowBlock = mobileStyles.match(/\.oc-mobile-session-row\s*\{[^}]*\}/s)?.[0] ?? '';
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionRow.tsx'),
+      'utf8',
+    );
+
+    expect(rowBlock).toContain('--oc-mobile-session-radius-start-start: 0');
+    expect(rowBlock).toContain('--oc-mobile-session-radius-start-end: 0');
+    expect(rowBlock).toContain('--oc-mobile-session-radius-end-end: 0');
+    expect(rowBlock).toContain('--oc-mobile-session-radius-end-start: 0');
+    expect(mobileStyles).toMatch(
+      /\.oc-mobile-session-row\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-start-radius:\s*var\(--oc-mobile-session-radius-start-start\);[^}]*border-end-start-radius:\s*var\(--oc-mobile-session-radius-end-start\);/s,
+    );
+    expect(mobileStyles).toMatch(
+      /\.oc-mobile-labeled-surface-group\s*>\s*\.oc-mobile-session-row:first-child\s*\{[^}]*--oc-mobile-session-radius-start-start:\s*calc\([^)]*var\(--oc-mobile-inset-radius\)\s*-\s*1px[^)]*\);[^}]*--oc-mobile-session-radius-start-end:/s,
+    );
+    expect(mobileStyles).toMatch(
+      /\.oc-mobile-labeled-surface-group\s*>\s*\.oc-mobile-session-row:last-child,\s*\.oc-mobile-labeled-surface-group-content\s*>\s*\.oc-mobile-session-row:last-child\s*\{[^}]*--oc-mobile-session-radius-end-end:[^}]*--oc-mobile-session-radius-end-start:/s,
+    );
+    expect(source).toContain("cn('oc-mobile-session-row relative isolate', className)");
+    expect(source).not.toContain("cn('oc-mobile-session-row relative isolate overflow-hidden', className)");
+  });
+
+  test('clips labeled group headers when they are the first or only item', () => {
+    expect(mobileStyles).toMatch(
+      /\.oc-mobile-labeled-surface-group-label:first-child\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-start-radius:\s*calc\(var\(--oc-mobile-inset-radius\)\s*-\s*1px\);[^}]*border-start-end-radius:/s,
+    );
+    expect(mobileStyles).toMatch(
+      /\.oc-mobile-labeled-surface-group-label:last-child\s*\{[^}]*border-end-end-radius:\s*calc\(var\(--oc-mobile-inset-radius\)\s*-\s*1px\);[^}]*border-end-start-radius:/s,
+    );
+  });
+
+  test('uses the same edge radii for press fills and the revealed action rail', () => {
+    expect(mobileStyles).toMatch(
+      /\.oc-mobile-session-row-content,\s*\.oc-mobile-session-pagination-row\s*\{[^}]*border-start-start-radius:\s*var\(--oc-mobile-session-radius-start-start\);[^}]*border-end-start-radius:\s*var\(--oc-mobile-session-radius-end-start\);/s,
+    );
+    expect(mobileStyles).toMatch(
+      /\.oc-mobile-session-actions\s*\{[^}]*overflow:\s*hidden;[^}]*border-start-end-radius:\s*var\(--oc-mobile-session-radius-start-end\);[^}]*border-end-end-radius:\s*var\(--oc-mobile-session-radius-end-end\);/s,
+    );
   });
 });
 

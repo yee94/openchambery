@@ -50,7 +50,7 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
             if call.getBool("suppressed") != true {
                 self.composerView?.isHidden = false
             }
-            self.reportHeight()
+            self.reportHeightWithFreshGeometry()
             call.resolve()
         }
     }
@@ -85,7 +85,7 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
                 return
             }
             self.composerView?.isHidden = false
-            self.reportHeight()
+            self.reportHeightWithFreshGeometry()
             call.resolve()
         }
     }
@@ -101,7 +101,11 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         let suppressed = call.getBool("suppressed") ?? false
         DispatchQueue.main.async { [weak self] in
             self?.composerView?.setSuppressed(suppressed)
-            self?.reportHeight()
+            if suppressed {
+                self?.reportHeight()
+            } else {
+                self?.reportHeightWithFreshGeometry()
+            }
             call.resolve()
         }
     }
@@ -343,45 +347,60 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
     }
 
     private func applyKeyboard(_ notification: Notification) {
-        guard let composer = composerView, let host = composer.superview, !composer.isHidden else {
-            reportHeight()
-            return
-        }
         let event = Self.keyboardEventName(notification.name)
         if event == "willHide" || event == "didHide" {
-            composer.dismissAttachMenu()
+            composerView?.dismissAttachMenu()
         }
         keyboardSessionOpen = Self.nextSession(open: keyboardSessionOpen, event: event)
+        guard let composer = composerView, let host = composer.superview, !composer.isHidden else {
+            if Self.shouldReportKeyboardHeight(event) {
+                reportHeight()
+            }
+            return
+        }
         let overlap = Self.keyboardOverlap(endFrame: notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect, host: host)
         let gap = Self.bottomGap(
             sessionOpen: keyboardSessionOpen,
             overlap: overlap,
             windowSafeBottom: host.window?.safeAreaInsets.bottom ?? host.safeAreaInsets.bottom
         )
+        let target = -gap
+        let current = bottomConstraint?.constant ?? 0
+        if abs(target - current) <= 0.5 {
+            completeKeyboardEvent(event)
+            return
+        }
         let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0
         let curveRaw = (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.intValue
             ?? UIView.AnimationCurve.easeInOut.rawValue
         let options = UIView.AnimationOptions(rawValue: UInt(curveRaw << 16)).union(.beginFromCurrentState)
 
         let apply = {
-            self.bottomConstraint?.constant = -gap
+            self.bottomConstraint?.constant = target
             host.layoutIfNeeded()
-        }
-        let finish = {
-            self.reportHeight()
-            if (event == "willHide" || event == "didHide"),
-               self.composerView?.keepExpandedThroughPicker != true {
-                self.composerView?.handleKeyboardDidHide()
-            }
         }
         if duration > 0 {
             UIView.animate(withDuration: duration, delay: 0, options: options, animations: apply) { _ in
-                finish()
+                self.completeKeyboardEvent(event)
             }
         } else {
             apply()
-            finish()
+            completeKeyboardEvent(event)
         }
+    }
+
+    private func completeKeyboardEvent(_ event: String) {
+        if Self.shouldReportKeyboardHeight(event) {
+            reportHeight()
+        }
+        if event == "willHide" || event == "didHide",
+           composerView?.keepExpandedThroughPicker != true {
+            composerView?.handleKeyboardDidHide()
+        }
+    }
+
+    private static func shouldReportKeyboardHeight(_ event: String) -> Bool {
+        event == "willShow" || event == "didShow" || event == "willHide" || event == "didHide"
     }
 
     private static func keyboardEventName(_ name: Notification.Name) -> String {
@@ -430,6 +449,11 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
         keyboardObservers = []
     }
 
+    private func reportHeightWithFreshGeometry() {
+        composerView?.superview?.layoutIfNeeded()
+        reportHeight()
+    }
+
     private func reportHeight() {
         guard let composer = composerView, let host = composer.superview, !composer.isHidden else {
             if lastReportedHeight != 0 {
@@ -438,7 +462,6 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
             }
             return
         }
-        host.layoutIfNeeded()
         // Collapsed occupancy only (pill + rest gap). The scroll button does
         // not change this value, so accessories do not jump when it appears.
         // Keep the last rest value while expanded so queue/changes/todos stay put.

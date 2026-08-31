@@ -202,7 +202,27 @@ test('native composer typing path dedupes identical textChanged payloads and ski
   const emitTextChange = view.match(/private func emitTextChange\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
   assert.match(emitTextChange, /if let last = lastEmittedTextChange, last == next \{ return \}/);
   assert.match(emitTextChange, /lastEmittedTextChange = next/);
+  const emitHeightChange = view.match(/private func emitHeightChange\(force: Bool\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(emitHeightChange, /if !force, let last = lastEmittedRestTop, abs\(nextRestTop - last\) <= 0\.5/);
   const didChange = view.match(/func textViewDidChange\(_ textView: UITextView\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
   assert.match(didChange, /let heightChanged = relayoutTextHeight\(\)/);
-  assert.match(didChange, /if heightChanged \{\s*delegate\?\.composerViewDidChangeHeight\(self\)/);
+  assert.match(didChange, /if heightChanged \{\s*emitHeightChange\(force: true\)/);
+});
+
+test('native composer coalesces layout height reports and only refreshes geometry at visibility boundaries', async () => {
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const layoutSubviews = view.match(/override func layoutSubviews\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(layoutSubviews, /emitHeightChange\(force: false\)/);
+
+  const reportHeight = plugin.match(/private func reportHeight\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.doesNotMatch(reportHeight, /layoutIfNeeded\(\)/);
+
+  const freshGeometry = plugin.match(/private func reportHeightWithFreshGeometry\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(freshGeometry, /superview\?\.layoutIfNeeded\(\)/);
+  assert.match(freshGeometry, /reportHeight\(\)/);
+
+  const applyKeyboard = plugin.match(/private func applyKeyboard\(_ notification: Notification\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(applyKeyboard, /if abs\(target - current\) <= 0\.5/);
+  assert.match(plugin, /private static func shouldReportKeyboardHeight/);
 });

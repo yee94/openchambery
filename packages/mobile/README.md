@@ -65,7 +65,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 - The `OpenChamberHaptics` Capacitor 8 plugin provides fire-and-forget impact feedback at three strengths: `impactLight`, `impactMedium`, and `impactHeavy`.
 - Shared UI maps `triggerMobileHaptic('light' | 'medium' | 'heavy')` to the matching native method. Button taps use light; swipe threshold commits use medium.
-- iOS registers the plugin from `OpenChamberBridgeViewController` and reuses one main-thread `UIImpactFeedbackGenerator` per style (`.light` / `.medium` / `.heavy`), preparing on creation and after every impact.
+- iOS registers the plugin from `OpenChamberBridgeViewController` and reuses one main-thread `UIImpactFeedbackGenerator` per style (`.light` / `.medium` / `.heavy`) via `OpenChamberHapticFeedback`, preparing on creation and after every impact. The native composer fires the same light impact on send / queue-send / stop, model picker, agent cycle / long-press open, attach `+` press, and photo/file menu actions so it matches web button taps.
 - Android registers the plugin before `BridgeActivity.onCreate`, then runs `WebView.performHapticFeedback` on the UI thread: `CLOCK_TICK` (light), `KEYBOARD_TAP` (medium), and `CONFIRM` / `LONG_PRESS` fallback (heavy).
 - All native methods declare a `none` return type and leave the callback unresolved to keep this input-feedback path free of promise completion work.
 

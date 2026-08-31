@@ -1,6 +1,6 @@
 {
   "name": "@openchambery/relay-server",
-  "version": "1.19.0-beta.36",
+  "version": "1.19.0-beta.37",
   "description": "Self-hosted private relay server for OpenChamber",
   "private": false,
   "type": "module",
@@ -11,16 +11,22 @@
       "types": "./src/index.d.ts",
       "import": "./src/index.js",
       "default": "./src/index.js"
+    },
+    "./push": {
+      "types": "./src/push/index.d.ts",
+      "import": "./src/push/index.js",
+      "default": "./src/push/index.js"
     }
   },
   "bin": {
-    "openchamber-relay": "./bin/openchamber-relay.js"
+    "openchamber-relay": "./bin/openchamber-relay.js",
+    "openchamber-push-relay": "./bin/openchamber-push-relay.js"
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
   },
   "license": "MIT",
   "repository": {
@@ -40,8 +46,8 @@
   "scripts": {
     "test": "vitest run",
     "test:node": "node test/node-smoke.js",
-    "type-check": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js",
-    "lint": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js",
+    "type-check": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js && node --check src/push/index.js && node --check src/push/server.js && node --check src/push/cli.js && node --check src/push/config.js && node --check src/push/schema.js && node --check src/push/crypto.js && node --check src/push/store.js && node --check src/push/guard.js && node --check src/push/apns.js && node --check bin/openchamber-push-relay.js",
+    "lint": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js && node --check src/push/index.js && node --check src/push/server.js && node --check src/push/cli.js && node --check src/push/config.js && node --check src/push/schema.js && node --check src/push/crypto.js && node --check src/push/store.js && node --check src/push/guard.js && node --check src/push/apns.js && node --check bin/openchamber-push-relay.js",
     "build:standalone": "bun build --compile --outfile dist/openchamber-relay bin/openchamber-relay.js"
   },
   "dependencies": {

@@ -125,9 +125,10 @@ export function shouldPreserveActiveProjectOnSessionOpen(
 
 /**
  * Resolve the project filter the recent-sessions sheet should land on when it
- * opens. "All" (null) and filters pointing at a removed project default to the
- * active project; the pinned scope and filters still matching a known project
- * are preserved as the user's explicit choice.
+ * opens. Preserve the user's last explicit choice: "All" (null), the pinned
+ * scope, and any filter still matching a known project. Only correct to the
+ * active project when the stored filter points at a removed/unknown project
+ * (not a valid "this project" or cross-project scope the user chose).
  */
 // eslint-disable-next-line react-refresh/only-export-components -- Pure resolver is tested directly.
 export function resolveMobileSessionSheetDefaultFilter(options: {
@@ -136,12 +137,14 @@ export function resolveMobileSessionSheetDefaultFilter(options: {
   projects: readonly { id: string }[];
 }): string | null {
   const { activeProjectId, currentFilterProjectId, projects } = options;
-  if (!activeProjectId) return currentFilterProjectId;
+  // "All" is an explicit last choice — keep it across open transitions.
+  if (currentFilterProjectId === null) return null;
   if (currentFilterProjectId === PINNED_SESSION_FILTER_ID) return currentFilterProjectId;
-  if (currentFilterProjectId && projects.some((project) => project.id === currentFilterProjectId)) {
+  if (projects.some((project) => project.id === currentFilterProjectId)) {
     return currentFilterProjectId;
   }
-  return activeProjectId;
+  // Stale filter (removed project): fall back to active project when available.
+  return activeProjectId ?? currentFilterProjectId;
 }
 
 const DEFAULT_GROUP_SESSION_COUNT = 3;
@@ -751,12 +754,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     }
   }, [filterProjectId, hasPinnedSessions, setFilterProjectId]);
 
-  // When the recent-sessions sheet opens, default the project filter to the
-  // active project so we land on the current project instead of "All" or a
-  // stale/removed selection. Preserve an explicit user filter when it still
-  // points at a valid project or the pinned scope. This only runs on the
-  // closed-to-open transition; taps made while the sheet stays open are the
-  // user's explicit choice and must not be overridden.
+  // When the recent-sessions sheet opens, keep the last filter tab ("All",
+  // pinned, or a still-valid project). Only correct a stale/removed project
+  // filter to the active project. This only runs on the closed-to-open
+  // transition; taps made while the sheet stays open are the user's explicit
+  // choice and must not be overridden.
   const prevSheetOpenRef = React.useRef(false);
   React.useEffect(() => {
     const wasOpen = prevSheetOpenRef.current;

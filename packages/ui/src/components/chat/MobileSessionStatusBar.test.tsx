@@ -115,14 +115,16 @@ describe('MobileSessionStatusBar SessionItem', () => {
 describe('MobileSessionStatusBar sheet default filter', () => {
   const projects = [{ id: 'project-a' }, { id: 'project-b' }];
 
-  test('defaults to the active project when the filter is "All" or points at a removed project', () => {
+  test('preserves "All" and only corrects a removed-project filter to the active project', () => {
+    // Last open on "All" must stick — do not force the current project tab.
     expect(
       resolveMobileSessionSheetDefaultFilter({
         activeProjectId: 'project-a',
         currentFilterProjectId: null,
         projects,
       }),
-    ).toBe('project-a');
+    ).toBeNull();
+    // Stale/unknown project is the only case that corrects to active project.
     expect(
       resolveMobileSessionSheetDefaultFilter({
         activeProjectId: 'project-a',
@@ -147,6 +149,14 @@ describe('MobileSessionStatusBar sheet default filter', () => {
         projects,
       }),
     ).toBe('project-b');
+    // Current project tab is already the right choice — keep it.
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: 'project-a',
+        currentFilterProjectId: 'project-a',
+        projects,
+      }),
+    ).toBe('project-a');
   });
 
   test('keeps the current filter when there is no active project', () => {
@@ -157,6 +167,13 @@ describe('MobileSessionStatusBar sheet default filter', () => {
         projects,
       }),
     ).toBeNull();
+    expect(
+      resolveMobileSessionSheetDefaultFilter({
+        activeProjectId: null,
+        currentFilterProjectId: 'project-removed',
+        projects,
+      }),
+    ).toBe('project-removed');
   });
 
   test('applies the open-time default only on the closed-to-open transition so taps made while open stick', () => {

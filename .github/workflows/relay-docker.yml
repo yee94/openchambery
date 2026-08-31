@@ -12,6 +12,11 @@ on:
         required: false
         default: true
         type: boolean
+      require_root_version_match:
+        description: 'Require the repository root package.json version to match the image version. Defaults to true to preserve the existing dual-manifest check. Set false for relay/v* releases that version the Relay package independently.'
+        required: false
+        default: true
+        type: boolean
     secrets:
       DOCKERHUB_TOKEN:
         description: 'Docker Hub personal access token with Read and Write permissions'
@@ -48,6 +53,7 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           VERSION: ${{ inputs.version }}
           SHOULD_PUSH: ${{ inputs.push }}
+          REQUIRE_ROOT_VERSION_MATCH: ${{ inputs.require_root_version_match }}
         shell: bash
         run: |
           set -euo pipefail
@@ -62,7 +68,11 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const expected = process.env.VERSION;
-          const manifests = ['package.json', 'packages/relay-server/package.json'];
+          const requireRoot = process.env.REQUIRE_ROOT_VERSION_MATCH !== 'false';
+          const manifests = ['packages/relay-server/package.json'];
+          if (requireRoot) {
+            manifests.unshift('package.json');
+          }
           const mismatches = manifests.flatMap((file) => {
             const actual = JSON.parse(fs.readFileSync(file, 'utf8')).version;
             return actual === expected ? [] : [`${file}: ${actual}`];

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createApnsRuntime } from './apns-runtime.js';
+import { resolveEffectiveRelayUrl } from '../relay/service.js';
 
 // A real P-256 key so the ES256 signing path (direct mode) runs for real.
 const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -38,6 +39,7 @@ const makeDeps = (overrides = {}) => {
     APNS_TOKENS_FILE_PATH: '/tmp/apns-tokens.json',
     readSettingsFromDiskMigrated: vi.fn(async () => settings),
     writeSettingsToDisk: vi.fn(async (next) => { settings = next; }),
+    resolveEffectiveRelayUrl: async () => resolveEffectiveRelayUrl({ settings }),
     ...overrides,
   };
 };
@@ -69,6 +71,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.OPENCHAMBER_PUSH_RELAY_URL;
   delete process.env.OPENCHAMBER_PUSH_RELAY_DISABLED;
+  delete process.env.OPENCHAMBER_RELAY_URL;
 });
 
 describe('apns runtime relay mode (default)', () => {
@@ -192,5 +195,161 @@ describe('apns runtime direct fallback (relay disabled)', () => {
     expect(parts).toHaveLength(3);
     expect(JSON.parse(Buffer.from(parts[0], 'base64url').toString())).toEqual({ alg: 'ES256', kid: 'KEY123' });
     expect(JSON.parse(Buffer.from(parts[1], 'base64url').toString()).iss).toBe('TEAM123');
+  });
+
+  it('does not register tokens with the push relay in direct mode', async () => {
+    process.env.OPENCHAMBER_PUSH_RELAY_DISABLED = 'true';
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    const http2 = {
+      connect: () => ({
+        on: () => {},
+        close: () => {},
+        request: (headers) => {
+          const listeners = {};
+          const req = {
+            on: (event, cb) => { listeners[event] = cb; return req; },
+            setEncoding: () => req,
+            end: () => {
+              queueMicrotask(() => {
+                listeners.response?.({ ':status': '200' });
+                listeners.end?.();
+              });
+            },
+          };
+          return req;
+        },
+      }),
+    };
+    const runtime = createApnsRuntime(
+      makeDeps({ http2, readSettingsFromDiskMigrated: vi.fn(async () => ({ apnsConfig: APNS_CONFIG })) }),
+    );
+    await runtime.addOrUpdateApnsToken('s', 'tokenDirect');
+    await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
+    await expect(runtime.reRegisterAllTokens()).resolves.toEqual({ attempted: 0, succeeded: 0, failed: 0 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('apns runtime push relay derivation and re-register', () => {
+  const registerUrls = (fetchMock) =>
+    fetchMock.mock.calls.filter(isRegister).map(([url]) => url);
+  const sendUrls = (fetchMock) =>
+    fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/v1/push/send')).map(([url]) => url);
+
+  it('prefers OPENCHAMBER_PUSH_RELAY_URL over derived relay URLs', async () => {
+    process.env.OPENCHAMBER_RELAY_URL = 'wss://env.example/ws';
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://explicit.test/v1/push/send';
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    let settings = { privateRelay: { enabled: true, relayUrl: 'wss://settings.example/ws' } };
+    const runtime = createApnsRuntime(makeDeps({
+      readSettingsFromDiskMigrated: async () => settings,
+      writeSettingsToDisk: async (next) => { settings = next; },
+      resolveEffectiveRelayUrl: async () => resolveEffectiveRelayUrl({ settings }),
+    }));
+    await runtime.addOrUpdateApnsToken('s1', 'tokenA');
+    expect(registerUrls(fetchMock)).toEqual(['https://explicit.test/v1/push/register-token']);
+  });
+
+  it('derives the push send URL from settings then env relay URLs', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    let settings = { privateRelay: { enabled: true, relayUrl: 'wss://settings.example/custom' } };
+    const runtime = createApnsRuntime(makeDeps({
+      readSettingsFromDiskMigrated: async () => settings,
+      writeSettingsToDisk: async (next) => { settings = next; },
+      resolveEffectiveRelayUrl: async () => resolveEffectiveRelayUrl({ settings }),
+    }));
+
+    await runtime.addOrUpdateApnsToken('s1', 'tokenA');
+    expect(registerUrls(fetchMock)).toEqual(['https://settings.example/v1/push/register-token']);
+
+    fetchMock.mockClear();
+    process.env.OPENCHAMBER_RELAY_URL = 'wss://env.example/ws';
+    await runtime.addOrUpdateApnsToken('s1', 'tokenA');
+    expect(registerUrls(fetchMock)).toEqual(['https://env.example/v1/push/register-token']);
+  });
+
+  it('defaults to the hosted relay push endpoint', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateApnsToken('s1', 'tokenA');
+    expect(registerUrls(fetchMock)).toEqual(['https://relay.openchamber.dev/v1/push/register-token']);
+  });
+
+  it('re-registers persisted tokens against the current relay', async () => {
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateApnsToken('s1', 'tokenA');
+    await runtime.addOrUpdateApnsToken('s2', 'tokenB');
+    await runtime.addOrUpdateApnsToken('s3', 'tokenA');
+
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
+    fetchMock.mockClear();
+    await expect(runtime.reRegisterAllTokens()).resolves.toEqual({
+      attempted: 2,
+      succeeded: 2,
+      failed: 0,
+    });
+    expect(registerUrls(fetchMock).every((url) => url === 'https://relay-b.test/v1/push/register-token')).toBe(true);
+    expect(registerUrls(fetchMock)).toHaveLength(2);
+    expect(sendUrls(fetchMock)).toEqual([]);
+  });
+
+  it('registers with the new relay before the first send after a switch', async () => {
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateApnsToken('s1', 'tokenA');
+
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
+    fetchMock.mockClear();
+    await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://relay-b.test/v1/push/register-token',
+      'https://relay-b.test/v1/push/send',
+    ]);
+  });
+
+  it('sends only tokens that registered successfully after a partial failure', async () => {
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-a.test/v1/push/send';
+    const fetchMock = vi.fn(async (url, init) => {
+      if (String(url).endsWith('/register-token')) {
+        const body = JSON.parse(init.body);
+        if (body.token === 'tokenB') return jsonResponse({ error: true }, 500);
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ results: [] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateApnsToken('s1', 'tokenA');
+    await runtime.addOrUpdateApnsToken('s2', 'tokenB');
+
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay-b.test/v1/push/send';
+    fetchMock.mockClear();
+    await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
+
+    const registerBodies = fetchMock.mock.calls
+      .filter(isRegister)
+      .map(([, init]) => JSON.parse(init.body).token)
+      .sort();
+    expect(registerBodies).toEqual(['tokenA', 'tokenB']);
+    expect(sendUrls(fetchMock)).toEqual(['https://relay-b.test/v1/push/send']);
+    expect(JSON.parse(fetchMock.mock.calls.find(([url]) => String(url).endsWith('/v1/push/send'))[1].body).tokens).toEqual(['tokenA']);
+
+    fetchMock.mockClear();
+    await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
+    const retryRegister = fetchMock.mock.calls.filter(isRegister).map(([, init]) => JSON.parse(init.body).token);
+    expect(retryRegister).toEqual(['tokenB']);
+    expect(JSON.parse(fetchMock.mock.calls.find(([url]) => String(url).endsWith('/v1/push/send'))[1].body).tokens).toEqual(['tokenA']);
   });
 });
