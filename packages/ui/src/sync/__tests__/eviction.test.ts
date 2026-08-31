@@ -213,6 +213,7 @@ describe("session cache eviction", () => {
     const store = buildState({
       todo: { ses_old: [{ id: "todo_1", content: "x", status: "pending", priority: "medium" }] as never },
       session_status: { ses_old: { type: "idle" } as never },
+      session_error_at: { ses_old: 42 },
       session_diff: { ses_old: [] },
       permission: { ses_old: [buildPermission({ sessionID: "ses_old" })] },
       question: { ses_old: [buildQuestion({ sessionID: "ses_old" })] },
@@ -222,6 +223,7 @@ describe("session cache eviction", () => {
 
     expect(store.todo.ses_old).toBe(undefined)
     expect(store.session_status.ses_old).toBe(undefined)
+    expect(store.session_error_at?.ses_old).toBe(undefined)
     expect(store.session_diff.ses_old).toBe(undefined)
     expect(store.permission.ses_old).toBe(undefined)
     expect(store.question.ses_old).toBe(undefined)

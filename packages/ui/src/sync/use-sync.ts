@@ -248,6 +248,7 @@ export function useSync() {
       const draft = {
         session_status: { ...current.session_status },
         session_status_observed_at: { ...current.session_status_observed_at },
+        session_error_at: { ...current.session_error_at },
         session_diff: { ...current.session_diff },
         todo: { ...current.todo },
         permission: { ...current.permission },

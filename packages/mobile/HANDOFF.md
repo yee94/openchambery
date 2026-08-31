@@ -98,6 +98,14 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 - **iOS widgets + Control Center + Notification Service Extension** — WidgetKit extension
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
   that refreshes widgets from push. All share the App Group `group.com.yee94.openchamber`.
+- **iOS Live Activity (local MVP)** — `OpenChamberLiveActivity` Capacitor plugin. Runtime is
+  iOS 17.0+ (`OpenChamberWidget` deployment) with `areActivitiesEnabled`; the App target stays
+  15.5. One Activity for the currently selected top-level session; JS starts after 12 seconds
+  busy. No `pushType` / token / server; semantic updates only while the App is alive; ActivityKit
+  owns timing (`staleDate` = 20 min; success dismissal 15 min, error 60 min). App restart can
+  recover a matching Activity and a millisecond `eventVersion` overwrites a recovered small
+  counter. User-dismissed Activities are not rebuilt for the same task. Remote update is later.
+  See `packages/mobile/README.md`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
   keyboard handling (iOS immediate shell shrink via --oc-kb-layout; Android pre-focus cached-height FLIP), edge-swipe session switch,
   back-button handling, app-icon badge.
@@ -128,7 +136,9 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 - Extensions: `OpenChamberWidget` (WidgetKit, deployment 17.0) and `OpenChamberNotificationService`
   (NSE, 15.5), both hand-wired into `App.xcodeproj/project.pbxproj` and embedded via a copy phase.
 - App Group `group.com.yee94.openchamber` in all three targets' entitlements (app + widget + NSE).
-- `Info.plist`: `CFBundleURLTypes` scheme `openchamber`, `NSCameraUsageDescription`.
+- `Info.plist`: `CFBundleURLTypes` scheme `openchamber`, `NSCameraUsageDescription`,
+  `NSSupportsLiveActivities`. Live Activity plugin methods are gated at iOS 17.0 to match the
+  widget; App remains 15.5.
 - Push entitlement (aps-environment) required.
 - APNs `mutable-content: 1` (set server/relay side) wakes the NSE to refresh widgets.
 

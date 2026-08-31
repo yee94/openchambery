@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.35] - 2026-08-31
+
+### Added
+
+- On iPhone, active agent work appears as a Live Activity in the Dynamic Island and on the Lock Screen after 12 seconds, with task state, elapsed time, attention requests, completion or error state, and a shortcut back to the session. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Fixed
+
+- Full and OTA-only release workflows now package Capgo bundles correctly from the Bun mobile workspace.
+
 ## [1.19.0-beta.34] - 2026-08-30
 
 ### Changed

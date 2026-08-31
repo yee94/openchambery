@@ -14,6 +14,20 @@ import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots, summarizeFileDiffs } from "./sanitize"
 import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
 
+function assignSessionErrorAt(draft: State, sessionID: string, at: number): boolean {
+  if (draft.session_error_at?.[sessionID] === at) return false
+  draft.session_error_at = { ...draft.session_error_at, [sessionID]: at }
+  return true
+}
+
+function clearSessionErrorAt(draft: State, sessionID: string): boolean {
+  if (draft.session_error_at?.[sessionID] === undefined) return false
+  const next = { ...draft.session_error_at }
+  delete next[sessionID]
+  draft.session_error_at = next
+  return true
+}
+
 function areSessionStatusesEqual(left: SessionStatus | undefined, right: SessionStatus): boolean {
   if (left === right) return true
   if (!left || left.type !== right.type) return false
@@ -223,9 +237,13 @@ export function applyDirectoryEvent(
       if (props.status.type === "idle") {
         callbacks?.onServerSessionIdle?.(props.sessionID)
       }
+      let errorChanged = false
+      if (props.status.type === "busy" || props.status.type === "retry") {
+        errorChanged = clearSessionErrorAt(draft, props.sessionID)
+      }
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], props.status)) {
-        return callbacks?.now ? true : false
+        return Boolean(callbacks?.now) || errorChanged
       }
       draft.session_status[props.sessionID] = props.status
       return true
@@ -247,9 +265,11 @@ export function applyDirectoryEvent(
       const props = event.properties as { sessionID: string }
       callbacks?.onServerSessionIdle?.(props.sessionID)
       const status = { type: "idle" } as const
-      if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
+      const now = callbacks?.now?.()
+      if (now !== undefined) draft.session_status_observed_at[props.sessionID] = now
+      const errorChanged = now !== undefined ? assignSessionErrorAt(draft, props.sessionID, now) : false
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return callbacks?.now ? true : false
+        return now !== undefined || errorChanged
       }
       draft.session_status[props.sessionID] = status
       return true

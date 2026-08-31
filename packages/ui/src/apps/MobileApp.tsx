@@ -114,6 +114,7 @@ import { useHeaderSwipeToSessions } from './useHeaderSwipeToSessions';
 import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHaptics';
 import { startPerfDiagnosticsController } from '@/sync/perf-diagnostics';
 import { useNativePushRegistration } from './useNativePushRegistration';
+import { useNativeLiveActivity } from './useNativeLiveActivity';
 import { MobileShareBridge } from './MobileShareBridge';
 import { handlePendingNativeAssistantOpen } from './nativeAssistantShortcut';
 
@@ -2843,6 +2844,10 @@ const MobileShell: React.FC<{
   const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
   const parentSessionTarget = useParentSessionTarget(currentSessionId, currentSessionDirectory || currentDirectory || undefined);
   const currentSessionStatus = useLiveSessionStatus(currentSessionId ?? '');
+  useNativeLiveActivity({
+    sessionId: currentSessionId,
+    directory: currentSessionDirectory || currentDirectory,
+  });
   const isSessionBusy = currentSessionStatus?.type === 'busy' || currentSessionStatus?.type === 'retry';
   const refreshCurrentTranscript = useEvent(() => {
     const sessionID = currentSessionId;

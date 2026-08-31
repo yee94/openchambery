@@ -58,7 +58,7 @@ So:
 
 | Layer / Store | Owns | Scope |
 |---|---|---|
-| child directory stores in `sync-context.tsx` | `session`, `permission`, `question`, `session_status`, etc. — non-transcript domains only | One directory |
+| child directory stores in `sync-context.tsx` | `session`, `permission`, `question`, `session_status`, `session_error_at`, etc. — non-transcript domains only | One directory |
 | `scoped-blocking-requests.ts` | Blocking-request scope (`useScopedBlockingQuestions` / `useScopedBlockingPermissions`): catalog `parentID` subtree plus live task dispatch edges read from running `task` tool parts (`state.metadata.parentSessionId`/`sessionId`). Fork + task_id reuse can leave a reused subagent session's catalog `parentID` on the pre-fork lineage, so the dispatch edge is what keeps a running subagent's pending question reachable from the dispatching session; terminal tasks contribute no edge | One directory |
 | QueryCache / TranscriptRepository | Production sole authority for transcript message/part/pagination boundary, request lifecycle, optimistic rows, SSE transcript merge, reconnect compensation | Transport + generation + directory + session |
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort prompts, worktree metadata, SDK-facing action entrypoints | App UI state |
@@ -167,6 +167,8 @@ an ordinarily evicted session all leave pagination clean — a later visit reads
 Renderable messages and session identity are independent completeness signals. Missing session identity keeps `session.get` eligible even when the repository transcript is already resolved, blocks prompt submission while preserving the mounted primary Composer and its editable draft, and receives a bounded current-view retry. The subagent read-only prompt banner requires a confirmed child `parentID` before first paint; loading, missing, cached cross-directory, root, and generic read-only states never display it. Once that child identity is confirmed for the current chat view, `resolveSubagentReadOnlyBannerLatch` keeps the parent target and last-known agent/provider/model through temporary live-list gaps (`session.updated` hides subagents from the directory list; recovery may reinsert the row) and resets when the view identity changes. Parent navigation derives its target identity from the authoritative child `parentID`; a cached parent entity enriches its title and directory. Cover the latch in `components/chat/chatPromptAvailability.test.ts`.
 
 `scoped-session-status.ts` owns exact `(directory, sessionID)` status reads and subscriptions. A missing child-store snapshot reads as `unknown`; a successful directory status snapshot with no matching entry reads as `idle`. Its registry subscription rebinds when a requested directory store appears, and status listeners ignore parts plus other session IDs.
+
+`session_error_at` is a live per-session timestamp written only from `session.error` with `callbacks.now`. It is not persisted history and is not invented from ordinary `session.idle` / `session.status` idle. The next authoritative `busy` or `retry` (`session.status`, or a directory status snapshot applying busy/retry) clears that session's entry. `useSessionErrorAt(sessionID, directory)` is read-only (`bootstrap: false`) and notifies only when that session's `session_error_at` value changes.
 
 Imperative cross-directory session lookups use the cached ID index from `getAllSyncSessionMap()`. The index is rebuilt only when a child store's `state.session` reference changes; permission lineage checks must reuse it instead of rebuilding a full session map per call.
 
@@ -1694,7 +1696,7 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 |---|---|
 | `session.created/updated/deleted` | `session`, `permission`, `todo`, `part` |
 | `session.diff` | `session_diff` (preview summary only: file/status/additions/deletions; no patch bodies — full patches load on demand via `GET /session/{id}/diff`) |
-| `session.status/session.idle/session.error` | `session_status` |
+| `session.status/session.idle/session.error` | `session_status`, `session_status_observed_at`; `session.error` also writes `session_error_at`; `session.status` busy/retry may clear `session_error_at` |
 | `todo.updated` | `todo` |
 | `message.updated` | `message`, `part` when a loaded session observes a new assistant before its first part |
 | `message.removed` | `message`, `part` |

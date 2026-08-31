@@ -622,7 +622,8 @@ jobs:
           DIST="dist"
           ZIP_NAME="openchamber-${VERSION}.zip"
           ZIP_PATH="$RUNNER_TEMP/$ZIP_NAME"
-          ZIP_JSON="$(npx --yes @capgo/cli@latest bundle zip "$MOBILE_APP_ID" \
+          ZIP_JSON="$(npx --yes @capgo/cli@8.45.1 bundle zip "$MOBILE_APP_ID" \
+            --package-json "$PWD/package.json" \
             --path "$DIST" \
             --name "$ZIP_PATH" \
             --no-code-check \
@@ -658,7 +659,7 @@ jobs:
           if [[ -n "${CAPGO_PRIVATE_KEY_V2:-}" ]]; then
             KEY_FILE="$RUNNER_TEMP/capgo_private_key_v2.pem"
             printf '%s' "$CAPGO_PRIVATE_KEY_V2" > "$KEY_FILE"
-            ENC_JSON="$(npx --yes @capgo/cli@latest bundle encrypt "$ZIP_PATH" "${CHECKSUM#sha256:}" \
+            ENC_JSON="$(npx --yes @capgo/cli@8.45.1 bundle encrypt "$ZIP_PATH" "${CHECKSUM#sha256:}" \
               --key "$KEY_FILE" \
               --json)"
             ENC_CHECKSUM="$(node -e "

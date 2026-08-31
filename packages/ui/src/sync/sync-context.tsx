@@ -2343,6 +2343,7 @@ export function handleEvent(
     case "session.error":
       draft.session_status = { ...(current.session_status ?? {}) }
       draft.session_status_observed_at = { ...current.session_status_observed_at }
+      draft.session_error_at = { ...current.session_error_at }
       break
     case "todo.updated":
       draft.todo = { ...current.todo }
@@ -3203,6 +3204,28 @@ export function useSessionStatusObservedAt(sessionID: string, directory?: string
   const subscribe = useCallback((notify: () => void) => {
     if (!sessionID) return () => undefined
     return store.subscribe(notify)
+  }, [sessionID, store])
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+/**
+ * Live `session.error` timestamp for one session. Subscribes only to that
+ * session's `session_error_at` entry. Read-only: `{ bootstrap: false }`.
+ * Ordinary idle does not invent an error; busy/retry clears the entry.
+ */
+export function useSessionErrorAt(sessionID: string, directory?: string): number | undefined {
+  const store = useDirectoryStore(directory, { bootstrap: false })
+  const getSnapshot = useCallback(() => {
+    if (!sessionID) return undefined
+    return store.getState().session_error_at?.[sessionID]
+  }, [sessionID, store])
+  const subscribe = useCallback((notify: () => void) => {
+    if (!sessionID) return () => undefined
+    return store.subscribe((state, previous) => {
+      if (state.session_error_at?.[sessionID] !== previous.session_error_at?.[sessionID]) {
+        notify()
+      }
+    })
   }, [sessionID, store])
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

@@ -489,6 +489,57 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     expect(released).toEqual(["ses_1", "ses_1", "ses_1"])
   })
 
+  test("session.error records session_error_at; idle does not invent error; busy/retry clears it", () => {
+    const draft = directoryState({
+      session_status: { ses_1: { type: "busy" } },
+    })
+    expect(applyDirectoryEvent(draft, {
+      type: "session.error",
+      properties: { sessionID: "ses_1" },
+    } as Event)).toBe(true)
+    expect(draft.session_status.ses_1).toEqual({ type: "idle" })
+    expect(draft.session_error_at.ses_1).toBeUndefined()
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.error",
+      properties: { sessionID: "ses_1" },
+    } as Event, { now: () => 100 })).toBe(true)
+    expect(draft.session_error_at.ses_1).toBe(100)
+    expect(draft.session_status.ses_1).toEqual({ type: "idle" })
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.idle",
+      properties: { sessionID: "ses_1" },
+    } as Event, { now: () => 110 })).toBe(true)
+    expect(draft.session_error_at.ses_1).toBe(100)
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.status",
+      properties: { sessionID: "ses_1", status: { type: "idle" } as SessionStatus },
+    } as Event, { now: () => 120 })).toBe(true)
+    expect(draft.session_error_at.ses_1).toBe(100)
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.status",
+      properties: { sessionID: "ses_1", status: { type: "busy" } as SessionStatus },
+    } as Event, { now: () => 130 })).toBe(true)
+    expect(draft.session_error_at.ses_1).toBeUndefined()
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.error",
+      properties: { sessionID: "ses_1" },
+    } as Event, { now: () => 140 })).toBe(true)
+    expect(draft.session_error_at.ses_1).toBe(140)
+    expect(applyDirectoryEvent(draft, {
+      type: "session.status",
+      properties: {
+        sessionID: "ses_1",
+        status: { type: "retry", attempt: 1, message: "x", next: 200 } as SessionStatus,
+      },
+    } as Event, { now: () => 150 })).toBe(true)
+    expect(draft.session_error_at.ses_1).toBeUndefined()
+  })
+
   test("permission.asked mutates permission map", () => {
     const draft = directoryState()
     const permission = {

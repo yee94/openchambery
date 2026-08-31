@@ -132,16 +132,21 @@ export function promoteRetryToBusyOnLiveActivity(
 ): boolean {
   const status = store.getState().session_status?.[sessionID]
   if (status?.type !== "retry") return false
-  store.setState((state) => ({
-    session_status: {
-      ...state.session_status,
-      [sessionID]: { type: "busy" },
-    },
-    session_status_observed_at: {
-      ...state.session_status_observed_at,
-      [sessionID]: now,
-    },
-  }))
+  store.setState((state) => {
+    const nextErrorAt = { ...state.session_error_at }
+    delete nextErrorAt[sessionID]
+    return {
+      session_status: {
+        ...state.session_status,
+        [sessionID]: { type: "busy" },
+      },
+      session_status_observed_at: {
+        ...state.session_status_observed_at,
+        [sessionID]: now,
+      },
+      session_error_at: nextErrorAt,
+    }
+  })
   return true
 }
 
@@ -233,8 +238,10 @@ export function applySessionStatusSnapshot(
     const current = state.session_status ?? {}
     let next: Record<string, SessionStatus> | undefined
     let nextObservedAt: Record<string, number> | undefined
+    let nextErrorAt: Record<string, number> | undefined
     const draft = () => (next ??= { ...current })
     const observedDraft = () => (nextObservedAt ??= { ...state.session_status_observed_at })
+    const errorDraft = () => (nextErrorAt ??= { ...state.session_error_at })
     const confirmObservedAt = (sessionId: string) => {
       if (observedAt === undefined || state.session_status_observed_at[sessionId] === observedAt) return
       observedDraft()[sessionId] = observedAt
@@ -254,6 +261,10 @@ export function applySessionStatusSnapshot(
           draft()[sessionId] = incoming
           changed = true
         }
+        if ((incoming.type === "busy" || incoming.type === "retry") && state.session_error_at?.[sessionId] !== undefined) {
+          delete errorDraft()[sessionId]
+          changed = true
+        }
         confirmObservedAt(sessionId)
         continue
       }
@@ -266,10 +277,11 @@ export function applySessionStatusSnapshot(
       confirmObservedAt(sessionId)
     }
 
-    if (!next && !nextObservedAt) return state
+    if (!next && !nextObservedAt && !nextErrorAt) return state
     return {
       ...(next ? { session_status: next } : {}),
       ...(nextObservedAt ? { session_status_observed_at: nextObservedAt } : {}),
+      ...(nextErrorAt ? { session_error_at: nextErrorAt } : {}),
     }
   })
 
