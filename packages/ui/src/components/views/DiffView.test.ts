@@ -135,6 +135,12 @@ describe('DiffView staged turn changes queries', () => {
     expect(diffViewSource).toContain('const visibleDiffLoadError = diffData');
   });
 
+  test('single-file tool patches still match when the parsed path keeps a workspace prefix', () => {
+    expect(diffViewSource).toContain('const isSameDiffFilePath = (left?: string | null, right?: string | null): boolean => {');
+    expect(diffViewSource).toContain('return changedFiles.filter((file) => isSameDiffFilePath(file.path, selectedPath));');
+    expect(diffViewSource).toContain('|| (singleFileView && visibleDiffFiles.length === 1)');
+  });
+
   test('short-circuits tool patches and protects turn scope from expand-all fanout', () => {
     expect(diffViewSource).toContain('if (usesToolPatches) return selectedToolTurnDiffs;');
     expect(diffViewSource).toContain("stackedDefaultCollapsedAll || (activeDiffScope === 'turn' && !usesToolPatches)");

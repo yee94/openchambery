@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.41] - 2026-09-01
+
+### Fixed
+
+- Clicking a Write tool for a newly created file opens that file's diff instead of an empty last-turn changes view.
+- Session lists treat archive membership as `time.archived`, so a session does not stay in the wrong Active / Archived bucket.
+
 ## [1.19.0-beta.40] - 2026-09-01
 
 ### Changed

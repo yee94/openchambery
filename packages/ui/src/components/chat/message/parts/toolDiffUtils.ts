@@ -303,7 +303,9 @@ const getFilePatch = (file: unknown): { patch: string; title: string } | null =>
             ? file.relativePath
             : typeof file.filePath === 'string'
                 ? file.filePath
-                : '';
+                : typeof file.file === 'string'
+                    ? file.file
+                    : '';
 
     return {
         patch,

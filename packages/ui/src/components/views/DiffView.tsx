@@ -171,6 +171,13 @@ const toAbsolutePath = (directory: string, filePath: string): string => {
 const normalizePath = (value?: string | null): string =>
     (value || '').replace(/\\/g, '/').replace(/\/+$/, '');
 
+const isSameDiffFilePath = (left?: string | null, right?: string | null): boolean => {
+    const a = normalizePath(left);
+    const b = normalizePath(right);
+    if (!a || !b) return false;
+    return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+};
+
 const getFirstChangedModifiedLine = (original: string, modified: string): number => {
     const originalLines = original.split('\n');
     const modifiedLines = modified.split('\n');
@@ -1295,7 +1302,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return [];
         }
 
-        return changedFiles.filter((file) => file.path === selectedPath);
+        return changedFiles.filter((file) => isSameDiffFilePath(file.path, selectedPath));
     }, [changedFiles, displayFile, singleFileView, targetFilePath]);
 
     React.useEffect(() => {
@@ -1492,7 +1499,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             targetFilePath: normalizedTarget,
             targetLine,
         });
-        const targetExists = changedFiles.some((file) => file.path === normalizedTarget);
+        const targetExists = changedFiles.some((file) => isSameDiffFilePath(file.path, normalizedTarget));
         if (!shouldAlignDiffNavigation(lastAlignedNavigationKeyRef.current, navigationAlignKey, targetExists)) {
             return;
         }
@@ -1508,7 +1515,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             return;
         }
 
-        const stillExists = changedFiles.some((file) => file.path === displayFile);
+        const stillExists = changedFiles.some((file) => isSameDiffFilePath(file.path, displayFile));
         if (!stillExists) {
             setDisplayFile(null);
             setDisplayFileStaged(false);
@@ -1833,7 +1840,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                                     wrapLines={diffWrapLines}
                                     isSelected={false}
                                     isExpanded={expandedFiles.has(file.path)}
-                                    isMounted={mountedStackedFiles.has(file.path) || file.path === pinnedStackedTarget}
+                                    isMounted={mountedStackedFiles.has(file.path) || file.path === pinnedStackedTarget || (singleFileView && visibleDiffFiles.length === 1)}
                                     onSelect={handleSelectFile}
                                     onExpandedChange={handleStackedEntryExpandedChange}
                                     registerSectionRef={registerSectionRef}

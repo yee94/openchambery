@@ -172,6 +172,59 @@ describe('useGlobalSessionsStore', () => {
     expect(second[0]?.title).toBe('after');
   });
 
+  test('reclassifies archived-list sessions without time.archived as active', () => {
+    const mislabeled = buildSession('https://share.example/mislabeled', {
+      id: 'ses_mislabeled',
+      directory: '/repo/app',
+      time: { created: 1, updated: 2 },
+    });
+    const trulyArchived = buildSession('https://share.example/archived', {
+      id: 'ses_archived',
+      directory: '/repo/app',
+      time: { created: 1, updated: 2, archived: 3 },
+    });
+
+    useGlobalSessionsStore.getState().applySnapshot([], [mislabeled, trulyArchived]);
+
+    expect(useGlobalSessionsStore.getState().activeSessions.map((session) => session.id)).toEqual(['ses_mislabeled']);
+    expect(useGlobalSessionsStore.getState().archivedSessions.map((session) => session.id)).toEqual(['ses_archived']);
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.map((session) => session.id)).toEqual(['ses_mislabeled']);
+  });
+
+  test('reclassifies active-list sessions with time.archived as archived', () => {
+    const drifted = buildSession('https://share.example/drifted', {
+      id: 'ses_drifted',
+      directory: '/repo/app',
+      time: { created: 1, updated: 2, archived: 9 },
+    });
+
+    useGlobalSessionsStore.getState().applySnapshot([drifted], []);
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+    expect(useGlobalSessionsStore.getState().archivedSessions.map((session) => session.id)).toEqual(['ses_drifted']);
+  });
+
+  test('treats time.archived 0 as active when collapsing duplicate list ids', () => {
+    const fromActive = buildSession('https://share.example/dup-active', {
+      id: 'ses_dup',
+      title: 'from active list',
+      directory: '/repo/app',
+      time: { created: 1, updated: 5 },
+    });
+    const fromArchived = buildSession('https://share.example/dup-archived', {
+      id: 'ses_dup',
+      title: 'from archived list',
+      directory: '/repo/app',
+      time: { created: 1, updated: 4, archived: 0 },
+    });
+
+    useGlobalSessionsStore.getState().applySnapshot([fromActive], [fromArchived]);
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toHaveLength(1);
+    expect(useGlobalSessionsStore.getState().archivedSessions).toHaveLength(0);
+    expect(useGlobalSessionsStore.getState().activeSessions[0]?.id).toBe('ses_dup');
+  });
+
   test('keeps pending deletes hidden through snapshots and live upserts until cleared', () => {
     const session = buildSession('https://share.example/pending', { id: 'ses_pending' });
     const store = useGlobalSessionsStore.getState();
@@ -1762,6 +1815,40 @@ describe('useGlobalSessionsStore', () => {
     expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/cached-failure')).toEqual([cached]);
   });
 
+  test('loadSessions classifies OpenCode archived=true pages by time.archived', async () => {
+    const live = buildSession('https://share.example/live', {
+      id: 'ses_live',
+      directory: '/repo/app',
+      time: { created: 1, updated: 8 },
+    });
+    const mislabeled = buildSession('https://share.example/mislabeled', {
+      id: 'ses_mislabeled',
+      directory: '/repo/app',
+      time: { created: 1, updated: 7 },
+    });
+    const trulyArchived = buildSession('https://share.example/archived', {
+      id: 'ses_archived',
+      directory: '/repo/app',
+      time: { created: 1, updated: 6, archived: 5 },
+    });
+    const list = async (input: Record<string, unknown>) => ({
+      data: input.archived ? [mislabeled, trulyArchived] : [live],
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    const sdk = { experimental: { session: { list } } } as unknown as OpencodeClient;
+    const originalGetSdkClient = opencodeClient.getSdkClient;
+    opencodeClient.getSdkClient = () => sdk;
+    restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
+
+    const result = await useGlobalSessionsStore.getState().loadSessions();
+
+    expect(result.activeSessions.map((session) => session.id)).toEqual(['ses_live', 'ses_mislabeled']);
+    expect(result.archivedSessions.map((session) => session.id)).toEqual(['ses_archived']);
+    expect(useGlobalSessionsStore.getState().activeSessions.map((session) => session.id)).toEqual(['ses_live', 'ses_mislabeled']);
+    expect(useGlobalSessionsStore.getState().archivedSessions.map((session) => session.id)).toEqual(['ses_archived']);
+  });
+
   test('loads archived sessions through the independent lazy path', async () => {
     const archived = buildSession('https://share.example/a', {
       directory: '/repo/app',
@@ -1788,6 +1875,34 @@ describe('useGlobalSessionsStore', () => {
     expect(useGlobalSessionsStore.getState().archivedSessions[0]?.id).toBe('ses_1');
     expect(useGlobalSessionsStore.getState().archivedLoadedDirectories.has('/repo/app')).toBe(true);
     expect(useGlobalSessionsStore.getState().archivedLoadingDirectories.has('/repo/app')).toBe(false);
+  });
+
+  test('refreshArchivedSessionsForDirectories moves unlabeled sessions into active', async () => {
+    const mislabeled = buildSession('https://share.example/mislabeled', {
+      id: 'ses_mislabeled',
+      directory: '/repo/app',
+      time: { created: 1, updated: 4 },
+    });
+    const trulyArchived = buildSession('https://share.example/archived', {
+      id: 'ses_archived',
+      directory: '/repo/app',
+      time: { created: 1, updated: 3, archived: 2 },
+    });
+    const list = async () => ({
+      data: [mislabeled, trulyArchived],
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    const sdk = { experimental: { session: { list } } } as unknown as OpencodeClient;
+    const originalGetSdkClient = opencodeClient.getSdkClient;
+    opencodeClient.getSdkClient = () => sdk;
+    restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
+
+    await useGlobalSessionsStore.getState().refreshArchivedSessionsForDirectories(['/repo/app']);
+
+    expect(useGlobalSessionsStore.getState().activeSessions.map((session) => session.id)).toEqual(['ses_mislabeled']);
+    expect(useGlobalSessionsStore.getState().archivedSessions.map((session) => session.id)).toEqual(['ses_archived']);
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.map((session) => session.id)).toEqual(['ses_mislabeled']);
   });
 
   test('preserves cached active sessions and clears refresh state after a fetch failure', async () => {

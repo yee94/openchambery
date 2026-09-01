@@ -223,7 +223,7 @@ describe('apply_patch navigation', () => {
         expect(mobileAppSource).toContain('openToolDiff: ({ diffPath, patches, targetLine }) => {');
         expect(mobileAppSource).toContain('openChangesSurface({ path: diffPath, staged: false, targetLine, toolPatches: patches });');
         expect(fileNavigation).toContain('mobileActions.openChanges({ diffPath: relativePath, staged: false, targetLine });');
-        expect(fileNavigation.indexOf('mobileActions.openChanges')).toBeLessThan(fileNavigation.indexOf("navigateToDiff(relativePath, false, 'turn', targetLine)"));
+        expect(fileNavigation.indexOf('mobileActions.openChanges')).toBeLessThan(fileNavigation.indexOf('navigateToDiff(relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? \'working\' : \'turn\', targetLine)'));
     });
 
     test('uses normalized file metadata to target turn diffs and retains a turn fallback', () => {
@@ -233,7 +233,7 @@ describe('apply_patch navigation', () => {
         expect(toolPartSource).toContain('const fileDiff = metadata.filediff;');
         expect(toolPartSource).toContain('getPatchText((fileDiff as { patch?: unknown }).patch)');
         expect(toolPartSource).toContain('if (isFileNavTool && !currentDirectory)');
-        expect(toolPartSource).toContain("openContextDiff(currentDirectory, relativePath, false, 'turn', targetLine, messageId, sessionSurface.sessionId);");
+        expect(toolPartSource).toContain("openContextDiff(currentDirectory, relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine, messageId, sessionSurface.sessionId);");
         expect(toolPartSource).toContain('openContextToolDiff(');
         expect(toolPartSource).toContain('sessionSurface.sessionId,');
         expect(toolPartSource).toContain('diffSessionId: sessionSurface.sessionId');
@@ -261,10 +261,13 @@ describe('apply_patch navigation', () => {
         const fileNavigationEnd = toolPartSource.indexOf('if (!isFileNavTool)', fileNavigationStart);
         const fileNavigation = toolPartSource.slice(fileNavigationStart, fileNavigationEnd);
 
-        expect(fileNavigation).toContain("['write', 'create', 'file_write'].includes(normalizedPartTool)");
-        expect(fileNavigation).toContain('buildWritePreviewPatch(filePath, input.content)');
+        expect(fileNavigation).toContain('isWriteLikeNavTool(normalizedPartTool)');
+        expect(fileNavigation).toContain('buildWritePreviewPatch(relativePath, writeContent)');
         expect(fileNavigation).toContain('getToolNavigationDiffEntries(');
         expect(fileNavigation).toContain('openContextToolDiff(');
+        expect(fileNavigation).toContain('toolPatches = [{ path: relativePath, patch: toolDiff }]');
+        expect(fileNavigation).toContain("isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn'");
+        expect(fileNavigation).toContain("openContextDiff(currentDirectory, relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine, messageId, sessionSurface.sessionId);");
         expect(fileNavigation).not.toContain('supportsExactToolDiff');
         expect(fileNavigation).toMatch(/const selectedToolDiffs = toolDiff\s*\n\s+\? getToolNavigationDiffEntries/);
     });

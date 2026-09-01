@@ -156,6 +156,40 @@ describe('toolDiffUtils', () => {
         expect(entries[0]?.patch).toContain('+line one');
     });
 
+    test('reads OpenCode write metadata that stores the path on file.file', () => {
+        const patch = [
+            'Index: app/service/__typeprobe.ts',
+            '===================================================================',
+            '--- app/service/__typeprobe.ts',
+            '+++ app/service/__typeprobe.ts',
+            '@@ -0,0 +1,3 @@',
+            '+line one',
+            '+line two',
+            '+line three',
+        ].join('\n');
+
+        const entries = getToolNavigationDiffEntries(
+            'write',
+            {
+                files: [{
+                    file: 'app/service/__typeprobe.ts',
+                    patch,
+                    status: 'added',
+                    additions: 3,
+                    deletions: 0,
+                }],
+            },
+            undefined,
+            'app/service/__typeprobe.ts',
+            identity,
+        );
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0]?.renderMode).toBe('diff');
+        expect(entries[0]?.title).toBe('app/service/__typeprobe.ts');
+        expect(entries[0]?.patch).toContain('+line one');
+    });
+
     test('keeps edit navigation scoped to its selected file', () => {
         const metadata = {
             files: [
