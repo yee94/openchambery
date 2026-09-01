@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.40] - 2026-09-01
+
+### Changed
+
+- Phone buttons, cards, tags, and menus share a slight press scale, elastic settle, and pressed fill.
+- The four items in the project-page plus menu now use pressed fill and a single light haptic.
+
+### Fixed
+
+- Beta OTA iOS detectability checks use the correct marketing-version profile.
+
 ## [1.19.0-beta.39] - 2026-09-01
 
 ### Fixed

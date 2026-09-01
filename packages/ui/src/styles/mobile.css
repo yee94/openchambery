@@ -1317,13 +1317,17 @@ button.oc-mobile-worktree-label-trigger:active,
   overflow: visible;
   transition:
     color 150ms ease-out,
-    background-color 150ms ease-out,
-    transform 150ms ease-out;
+    background-color 150ms ease-out;
 }
 
 /* Selected pill inherits the same item radius (no separate inset token). */
 .oc-mobile-segmented-item > .oc-segmented-selected-pill {
   border-radius: var(--oc-mobile-segmented-item-radius);
+  transition: background-color 80ms ease-out;
+}
+
+.oc-mobile-segmented-item:active > .oc-segmented-selected-pill {
+  background: var(--interactive-active);
 }
 
 /* Trailing control on a segmented track (e.g. create +) — same height as items.
@@ -1350,17 +1354,13 @@ button.oc-mobile-worktree-label-trigger:active,
   color: var(--foreground);
 }
 
-.oc-mobile-segmented-item:active {
-  transform: scale(0.97);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .oc-mobile-segmented-item {
     transition: none;
   }
 
-  .oc-mobile-segmented-item:active {
-    transform: none;
+  .oc-mobile-segmented-item > .oc-segmented-selected-pill {
+    transition: none;
   }
 }
 
@@ -2221,30 +2221,32 @@ button.oc-mobile-worktree-label-trigger:active,
     pointer-events: auto;
   }
 
-  /* Touch press feedback (shrink-in), pure CSS — no JS size measurement.
+  /* Touch press feedback (grow-out), pure CSS — no JS size measurement.
      Default is a gentle soft scale for ordinary controls and full-width rows
      (tool / subagent / reasoning rows, list rows, standard buttons).
-     Punchy compact scale is opt-in and reserved for particularly small
+     Brighter compact scale is opt-in and reserved for particularly small
      controls (icon buttons, dense chips) via data-mobile-press-feedback="compact".
-     Soft scale ≈ 1 - (2 * edge-inset) / width using container query units
+     Soft scale ≈ 1 + (2 * edge-outset) / width using container query units
      against a full-bleed ancestor (see shells below). When no query container
      exists, cqi falls back to the small viewport size, which is close enough
      for near-full-width mobile chrome.
-     - default / soft: gentle edge-inset scale (rows, standard buttons)
-     - compact:        fixed punchy scale for small icon-sized controls only
+     - default / soft: gentle edge-outset scale (rows, standard buttons)
+     - compact:        fixed brighter scale for small icon-sized controls only
      - surface:        whole floating card (data-mobile-press-surface + trigger)
-     - none:           opt out (drag handles, surface triggers, custom feedback)
-     Press-in is duration 0. Release is pure ease-out (no y>1 overshoot). */
+     - none:           opt out (drag handles and custom fill-only feedback)
+     Press-in engages quickly; release uses one restrained spring-like settle. */
   :root.mobile-pointer:not(.desktop-runtime) {
-    --oc-press-edge-inset: 3px;
-    --oc-press-compact-scale: 0.92;
-    --oc-press-release-duration: 160ms;
-    --oc-press-release-ease: cubic-bezier(0.22, 1, 0.36, 1);
-    /* ~per-side inset via scale; clamp so tiny/huge widths never look broken */
+    --oc-press-edge-outset: 3px;
+    --oc-press-compact-scale: 1.05;
+    --oc-press-engage-duration: 80ms;
+    --oc-press-engage-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --oc-press-release-duration: 260ms;
+    --oc-press-release-ease: cubic-bezier(0.2, 1.28, 0.3, 1);
+    /* ~per-side outset via scale; clamp so tiny/huge widths stay restrained */
     --oc-press-soft-scale: clamp(
-      0.97,
-      calc(1 - (2 * var(--oc-press-edge-inset)) / 100cqi),
-      0.994
+      1.006,
+      calc(1 + (2 * var(--oc-press-edge-outset)) / 100cqi),
+      1.03
     );
   }
 
@@ -2268,46 +2270,63 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel {
-    --oc-press-edge-inset: 2px;
+    --oc-press-edge-outset: 2px;
     --oc-press-soft-scale: clamp(
-      0.985,
-      calc(1 - (2 * var(--oc-press-edge-inset)) / 100cqi),
-      0.994
+      1.004,
+      calc(1 + (2 * var(--oc-press-edge-outset)) / 100cqi),
+      1.02
     );
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
     :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
-    ):not([data-mobile-press-feedback="none"]) {
+    ):not([data-slot="select-trigger"]):not(
+      [data-mobile-press-feedback="none"]
+    ):not(
+      [data-mobile-press-surface-trigger]
+    ) {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     transform-origin: center;
     transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
   }
 
-  /* Default + soft: gentle absolute-ish edge inset. Wide tool/subagent rows,
-     settings nav, and ordinary buttons all stay here — never the punchy
-     compact scale that reads as a full-card shrink. */
+  /* Default + soft: gentle absolute-ish edge outset. Wide tool/subagent rows,
+     settings nav, and ordinary buttons use this restrained scale. */
   :root.mobile-pointer:not(.desktop-runtime)
     :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
-    ):not([data-mobile-press-feedback="none"]):not(
+    ):not([data-slot="select-trigger"]):not(
+      [data-mobile-press-feedback="none"]
+    ):not(
       [data-mobile-press-feedback="compact"]
+    ):not(
+      [data-mobile-press-surface-trigger]
     ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active)) {
     scale: var(--oc-press-soft-scale);
-    transition-duration: 0ms;
+    transition-duration: var(--oc-press-engage-duration);
+    transition-timing-function: var(--oc-press-engage-ease);
   }
 
   /* Compact: opt-in only for particularly small controls (icon buttons). */
   :root.mobile-pointer:not(.desktop-runtime)
     :where(button, [role="button"], [role="menuitem"])[data-mobile-press-feedback="compact"]:not(
       :disabled
-    ):not([aria-disabled="true"]):active:not(
+    ):not([aria-disabled="true"]):not([data-slot="select-trigger"]):not(
+      [data-mobile-press-surface-trigger]
+    ):active:not(
       :has(:where(button, [role="button"], [role="menuitem"]):active)
     ) {
     scale: var(--oc-press-compact-scale);
-    transition-duration: 0ms;
+    transition-duration: var(--oc-press-engage-duration);
+    transition-timing-function: var(--oc-press-engage-ease);
+  }
+
+  /* Menu rows use semantic pressed fill while their soft grow remains subtle. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    [role="menuitem"]:not([aria-disabled="true"]):active {
+    background-color: var(--interactive-active) !important;
   }
 
   /* Floating card chrome: whole shell moves together (border/shadow/content). */
@@ -2323,7 +2342,14 @@ button.oc-mobile-worktree-label-trigger:active,
       [data-mobile-press-surface-trigger]:active
     ) {
     scale: var(--oc-press-soft-scale);
-    transition-duration: 0ms;
+    transition-duration: var(--oc-press-engage-duration);
+    transition-timing-function: var(--oc-press-engage-ease);
+  }
+
+  /* typography.css keeps a desktop favorite-button press transform. Mobile
+     gives the shared compositor scale sole ownership of the gesture. */
+  :root.mobile-pointer:not(.desktop-runtime) .model-favorite-button:active {
+    transform: none;
   }
 
   /* Composer surface must not press-scale. Scaling the card (or leaving a
@@ -2335,7 +2361,11 @@ button.oc-mobile-worktree-label-trigger:active,
     :root.mobile-pointer:not(.desktop-runtime)
       :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
         [aria-disabled="true"]
-      ):not([data-mobile-press-feedback="none"]),
+      ):not([data-slot="select-trigger"]):not(
+        [data-mobile-press-feedback="none"]
+      ):not(
+        [data-mobile-press-surface-trigger]
+      ),
     :root.mobile-pointer:not(.desktop-runtime)
       [data-mobile-press-surface="soft"] {
       transition: none;

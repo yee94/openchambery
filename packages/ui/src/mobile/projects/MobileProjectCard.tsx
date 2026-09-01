@@ -134,7 +134,6 @@ export function MobileProjectCard({
         <button
           type="button"
           data-mobile-press-surface-trigger
-          data-mobile-press-feedback="none"
           className="oc-mobile-project-trigger flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           aria-expanded={expanded}
           onClick={handleToggle}

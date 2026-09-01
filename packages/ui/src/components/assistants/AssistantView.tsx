@@ -144,7 +144,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
               setMenuOpen(true);
             }}
             className={cn(
-              'flex w-full min-h-11 items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,transform,opacity] duration-150 ease-out active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
+              'flex w-full min-h-11 items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,opacity] duration-150 ease-out active:bg-interactive-active focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
               selected
                 ? 'border-border/50 bg-[var(--surface-elevated)]'
                 : 'border-transparent hover:bg-interactive-hover',

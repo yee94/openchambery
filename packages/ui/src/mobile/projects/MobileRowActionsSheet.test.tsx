@@ -48,6 +48,8 @@ describe('MobileRowActionsSheet project actions', () => {
     expect(html).toContain('rounded-none');
     expect(html).toContain('supports-[corner-shape:squircle]:rounded-none');
     expect(html).toContain('data-mobile-press-feedback="none"');
+    expect(html).toContain('active:bg-interactive-active');
+    expect(html).toContain('dark:active:bg-interactive-active');
     expect(html).toContain('data-page-scroll-lock="true"');
     expect(html).toContain('min-h-14');
     expect(html).toContain('leading-6');

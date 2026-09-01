@@ -75,7 +75,7 @@ function ActionRow({
       type="button"
       variant={destructive ? 'destructive' : 'ghost'}
       size="lg"
-      className="h-auto min-h-14 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 leading-6 border-b border-[var(--surface-subtle)] last:border-b-0"
+      className="h-auto min-h-14 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 leading-6 border-b border-[var(--surface-subtle)] last:border-b-0 active:bg-interactive-active dark:active:bg-interactive-active"
       data-mobile-press-feedback="none"
       disabled={disabled}
       onClick={handleClick}

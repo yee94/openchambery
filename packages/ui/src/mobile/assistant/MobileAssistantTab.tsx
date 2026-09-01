@@ -214,7 +214,6 @@ function MobileAssistantCard({
               role="option"
               aria-selected="false"
               data-mobile-press-surface-trigger
-              data-mobile-press-feedback="none"
               className={cn('oc-mobile-assistant-card', !enabled && 'opacity-65')}
               onClick={handleOpen}
               onPointerDown={handlePointerDown}
