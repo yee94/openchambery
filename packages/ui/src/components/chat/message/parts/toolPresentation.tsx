@@ -60,12 +60,6 @@ export const getToolIcon = (toolName: string) => {
     if (tool === 'lsp') {
         return <Icon name="scan-2" className={iconClass} />;
     }
-    if (tool === 'plan_enter') {
-        return <Icon name="file-list-2" className={iconClass} />;
-    }
-    if (tool === 'plan_exit') {
-        return <Icon name="task" className={iconClass} />;
-    }
     if (tool.startsWith('git')) {
         return <Icon name="git-branch" className={iconClass} />;
     }

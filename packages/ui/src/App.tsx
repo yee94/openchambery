@@ -52,7 +52,6 @@ import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
-import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { McpOAuthCallbackPage } from '@/components/sections/mcp/McpOAuthCallbackPage';
@@ -260,7 +259,6 @@ function App({ apis }: AppProps) {
   const isDesktopRuntime = React.useMemo(() => isDesktopShell(), []);
   const hasCachedSessionIndex = useGlobalSessionsStore((state) => state.hasCachedSessionIndex);
   const hasHydratedSessionIndex = useGlobalSessionsStore((state) => state.hasHydratedSessionIndex);
-  const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const [bootInjectionStatus, setBootInjectionStatus] = React.useState<BootInjectionStatus>(() => {
     return getBootInjectionStatus();
   });
@@ -456,34 +454,6 @@ function App({ apis }: AppProps) {
       if (removalTimer) clearTimeout(removalTimer);
     };
   }, [embeddedBackgroundWorkEnabled, isDesktopRuntime, isInitialized]);
-
-  React.useEffect(() => {
-    if (!embeddedBackgroundWorkEnabled) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const run = async () => {
-      await waitForSessionStartupBarrier();
-      if (cancelled) return;
-      const res = await runtimeFetch('/health', { method: 'GET' }).catch(() => null);
-      if (!res || !res.ok || cancelled) return;
-      const data = (await res.json().catch(() => null)) as null | {
-        planModeExperimentalEnabled?: unknown;
-      };
-      if (!data || cancelled) return;
-      const raw = data.planModeExperimentalEnabled;
-      const enabled = raw === true || raw === 1 || raw === '1' || raw === 'true';
-      setPlanModeEnabled(enabled);
-    };
-
-    void run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [embeddedBackgroundWorkEnabled, setPlanModeEnabled]);
 
   React.useEffect(() => {
     if (!embeddedBackgroundWorkEnabled) {

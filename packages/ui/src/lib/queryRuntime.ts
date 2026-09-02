@@ -241,27 +241,6 @@ export const queryKeys = {
       transport = getRuntimeTransportIdentity(),
     ): FileQueryReadKey => fileQueryReadKey('stat', scopeDirectory, path, options, transport),
   },
-  plans: {
-    resolved: (
-      mode: 'target' | 'session',
-      sessionId: string | null | undefined,
-      scopeDirectory: string | null | undefined,
-      targetPath: string | null | undefined,
-      repoPath: string | null | undefined,
-      homePath: string | null | undefined,
-      transport = getRuntimeTransportIdentity(),
-    ): readonly [string, 'plans', 'resolved', 'target' | 'session', string | null, string | null, string | null, string | null, string | null] => [
-      transport,
-      'plans',
-      'resolved',
-      mode,
-      sessionId?.trim() || null,
-      normalizeQueryPath(scopeDirectory),
-      normalizeQueryPath(targetPath),
-      normalizeQueryPath(repoPath),
-      normalizeQueryPath(homePath),
-    ],
-  },
 };
 
 export const normalizePluginRegistrySpecs = (specs: readonly string[]): string[] =>

@@ -76,9 +76,8 @@ export function serializeAppPath(state: AppRouteState): string {
 
     return buildAppLocation({
       sessionId: state.sessionId.trim(),
-      tab: state.tab === 'context' ? 'chat' : state.tab,
+      tab: state.tab,
       file,
-      mode: state.tab === 'plan' ? 'plan' : null,
       scope: state.tab === 'diff' ? (state.diffScope ?? null) : null,
     });
   }

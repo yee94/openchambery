@@ -22,20 +22,17 @@ if (!Array.isArray(scenarios.legacyQueryParamsForbidden) || scenarios.legacyQuer
   process.exit(1);
 }
 
-const SESSION_TOOLS = new Set(['git', 'diff', 'terminal', 'files', 'diagram', 'plan']);
+const SESSION_TOOLS = new Set(['git', 'diff', 'terminal', 'files', 'diagram']);
 
-function buildSessionPath({ sessionId, tab, file, mode }) {
+function buildSessionPath({ sessionId, tab, file }) {
   if (tab === 'schedule' || tab === 'scheduled') return '/schedule';
   if (tab === 'assistant') return '/assistant';
   const base =
     !tab || tab === 'chat' || !SESSION_TOOLS.has(tab)
       ? `/session/${encodeURIComponent(sessionId)}`
-      : tab === 'plan'
-        ? `/session/${encodeURIComponent(sessionId)}/plan`
-        : `/session/${encodeURIComponent(sessionId)}/${tab}`;
+      : `/session/${encodeURIComponent(sessionId)}/${tab}`;
   const params = new URLSearchParams();
   if (file) params.set('file', file);
-  if (mode === 'plan' && (!tab || tab === 'chat')) params.set('mode', 'plan');
   const search = params.toString();
   return search ? `${base}?${search}` : base;
 }
@@ -50,7 +47,6 @@ const samples = [
   [buildSessionPath({ sessionId: 'abc' }), '/session/abc'],
   [buildSessionPath({ sessionId: 'abc', tab: 'git' }), '/session/abc/git'],
   [buildSessionPath({ sessionId: 'abc', tab: 'diff', file: 'a/b.ts' }), '/session/abc/diff?file=a%2Fb.ts'],
-  [buildSessionPath({ sessionId: 'abc', tab: 'plan' }), '/session/abc/plan'],
   [buildSessionPath({ sessionId: 'abc', tab: 'schedule' }), '/schedule'],
   [buildSchedulePath({ scheduleView: 'history' }), '/schedule/history'],
   [buildSchedulePath({ focusSessionId: 'child' }), '/schedule/agent/child'],

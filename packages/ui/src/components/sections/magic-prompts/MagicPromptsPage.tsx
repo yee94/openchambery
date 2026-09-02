@@ -101,30 +101,6 @@ const PROMPT_PAGE_MAP: Record<string, PromptPageConfig> = {
       { id: 'git.integrate.cherrypick.resolve.instructions', titleKey: 'settings.magicPrompts.page.block.instructions' },
     ],
   },
-  'plan.improve': {
-    titleKey: 'settings.magicPrompts.page.group.planImprove.title',
-    descriptionKey: 'settings.magicPrompts.page.group.planImprove.description',
-    blocks: [
-      { id: 'plan.improve.visible', titleKey: 'settings.magicPrompts.page.block.visiblePrompt' },
-      { id: 'plan.improve.instructions', titleKey: 'settings.magicPrompts.page.block.instructions' },
-    ],
-  },
-  'plan.todo': {
-    titleKey: 'settings.magicPrompts.page.group.planTodo.title',
-    descriptionKey: 'settings.magicPrompts.page.group.planTodo.description',
-    blocks: [
-      { id: 'plan.todo.visible', titleKey: 'settings.magicPrompts.page.block.visiblePrompt' },
-      { id: 'plan.todo.instructions', titleKey: 'settings.magicPrompts.page.block.instructions' },
-    ],
-  },
-  'plan.implement': {
-    titleKey: 'settings.magicPrompts.page.group.planImplement.title',
-    descriptionKey: 'settings.magicPrompts.page.group.planImplement.description',
-    blocks: [
-      { id: 'plan.implement.visible', titleKey: 'settings.magicPrompts.page.block.visiblePrompt' },
-      { id: 'plan.implement.instructions', titleKey: 'settings.magicPrompts.page.block.instructions' },
-    ],
-  },
   'session.summary': {
     titleKey: 'settings.magicPrompts.page.group.sessionSummary.title',
     descriptionKey: 'settings.magicPrompts.page.group.sessionSummary.description',
@@ -139,14 +115,6 @@ const PROMPT_PAGE_MAP: Record<string, PromptPageConfig> = {
     blocks: [
       { id: 'session.review.visible', titleKey: 'settings.magicPrompts.page.block.visiblePrompt' },
       { id: 'session.review.instructions', titleKey: 'settings.magicPrompts.page.block.instructions' },
-    ],
-  },
-  'session.plan': {
-    titleKey: 'settings.magicPrompts.page.group.sessionFeaturePlan.title',
-    descriptionKey: 'settings.magicPrompts.page.group.sessionFeaturePlan.description',
-    blocks: [
-      { id: 'session.plan.visible', titleKey: 'settings.magicPrompts.page.block.visiblePrompt' },
-      { id: 'session.plan.instructions', titleKey: 'settings.magicPrompts.page.block.instructions' },
     ],
   },
   'session.craftGoal': {

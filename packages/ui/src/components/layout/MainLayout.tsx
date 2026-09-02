@@ -6,7 +6,7 @@ import { Sidebar } from './Sidebar';
 import { SidebarTopBar } from './SidebarTopBar';
 import { TitlebarLeftControls } from './TitlebarLeftControls';
 import { RightSidebar } from './RightSidebar';
-import { ProjectContextPanel, RightSidebarTabs } from './RightSidebarTabs';
+import { RightSidebarTabs } from './RightSidebarTabs';
 import { ContextPanel } from './ContextPanel';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { CommandPalette } from '../ui/CommandPalette';
@@ -29,7 +29,6 @@ import { ChatView } from '@/components/views/ChatView';
 import { DiffView } from '@/components/views/DiffView';
 import { FilesView } from '@/components/views/FilesView';
 import { GitView } from '@/components/views/GitView';
-import { PlanView } from '@/components/views/PlanView';
 import { MobileSessionStatusBar } from '@/components/chat/MobileSessionStatusBar';
 
 // Heavy views loaded on-demand to reduce initial bundle parse time.
@@ -368,8 +367,6 @@ export const MainLayout: React.FC = () => {
                     : <React.Suspense fallback={null}><TerminalView /></React.Suspense>;
             case 'files':
                 return <React.Suspense fallback={null}><FilesView /></React.Suspense>;
-            case 'context':
-                return <React.Suspense fallback={null}><ProjectContextPanel /></React.Suspense>;
             case 'diagram':
                 return <React.Suspense fallback={null}><DiagramView /></React.Suspense>;
             default:
@@ -380,8 +377,7 @@ export const MainLayout: React.FC = () => {
     // Product mutual exclusion: exactly one exclusive full-main primary OR session shell.
     const isScheduleActive = activeMainTab === 'schedule';
     const isAssistantActive = activeMainTab === 'assistant';
-    const isPlanActive = activeMainTab === 'plan';
-    const isExclusivePrimary = isScheduleActive || isAssistantActive || isPlanActive;
+    const isExclusivePrimary = isScheduleActive || isAssistantActive;
     const isChatActive = activeMainTab === 'chat';
     // Keep-alive chat only under session primary (chat or session tools) — never under exclusive primaries.
     const mountChatKeepAlive = !isExclusivePrimary && !isSettingsDialogOpen;
@@ -460,15 +456,6 @@ export const MainLayout: React.FC = () => {
                                     <ErrorBoundary>
                                         <React.Suspense fallback={null}>
                                             <AssistantView />
-                                        </React.Suspense>
-                                    </ErrorBoundary>
-                                </div>
-                            )}
-                            {isPlanActive && (
-                                <div className="absolute inset-0">
-                                    <ErrorBoundary>
-                                        <React.Suspense fallback={null}>
-                                            <PlanView />
                                         </React.Suspense>
                                     </ErrorBoundary>
                                 </div>
@@ -572,8 +559,6 @@ export const MainLayout: React.FC = () => {
                                         <React.Suspense fallback={null}>
                                             {isAssistantActive ? (
                                                 <AssistantView />
-                                            ) : isPlanActive ? (
-                                                <PlanView />
                                             ) : (
                                                 <ScheduledTasksWorkspace />
                                             )}

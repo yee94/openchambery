@@ -22,7 +22,6 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useCurrentSessionEntity, useSessionMessagesResolved } from '@/sync/sync-context';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
-import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useGitHubAuthQuery } from '@/queries/githubAuthQueries';
@@ -684,7 +683,6 @@ export const Header: React.FC<HeaderProps> = ({
   const toggleBottomTerminal = useUIStore((state) => state.toggleBottomTerminal);
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
   const openContextOverview = useUIStore((state) => state.openContextOverview);
-  const openContextPlan = useUIStore((state) => state.openContextPlan);
   const openContextBrowser = useUIStore((state) => state.openContextBrowser);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
@@ -1164,41 +1162,6 @@ export const Header: React.FC<HeaderProps> = ({
     return lastProjectActionsContextRef.current;
   }, [actionDirectory, activeProjectRef]);
 
-  const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
-  const isSessionPlanAvailable = useSessionUIStore((state) => state.isSessionPlanAvailable);
-  const planTabAvailable = planModeEnabled && currentSessionId ? isSessionPlanAvailable(currentSessionId) : false;
-  const showPlanTab = planTabAvailable;
-  const lastPlanSessionKeyRef = React.useRef<string>('');
-
-  // Reset plan tab availability when session changes
-  React.useEffect(() => {
-    if (!planModeEnabled) {
-      if (useUIStore.getState().activeMainTab === 'plan') {
-        useUIStore.getState().setActiveMainTab('chat');
-      }
-      return;
-    }
-
-    if (!currentSessionId) return;
-
-    const sessionKey = `${currentSessionId || 'none'}:${sessionDirectory || 'none'}:${currentSession?.time?.created || 0}:${currentSession?.slug || 'none'}`;
-    if (lastPlanSessionKeyRef.current !== sessionKey) {
-      lastPlanSessionKeyRef.current = sessionKey;
-    }
-
-    // If plan is not available but user is on plan tab, switch them back to chat
-    if (!planTabAvailable && useUIStore.getState().activeMainTab === 'plan') {
-      useUIStore.getState().setActiveMainTab('chat');
-    }
-  }, [
-    planModeEnabled,
-    planTabAvailable,
-    currentSession?.slug,
-    currentSession?.time?.created,
-    currentSessionId,
-    sessionDirectory,
-  ]);
-
   const handleGitHubAccountSwitch = React.useCallback(async (accountId: string) => {
     if (!accountId || isSwitchingGitHubAccount) return;
     setIsSwitchingGitHubAccount(true);
@@ -1312,21 +1275,6 @@ export const Header: React.FC<HeaderProps> = ({
     return getActiveContextMode(panelState) === 'context';
   }, [contextActionDirectory, contextPanelByDirectory]);
 
-  const handleOpenContextPlan = React.useCallback(() => {
-    const directory = contextActionDirectory;
-    if (!directory) {
-      return;
-    }
-
-    const panelState = contextPanelByDirectory[directory];
-    if (getActiveContextMode(panelState) === 'plan') {
-      closeContextPanel(directory);
-      return;
-    }
-
-    openContextPlan(directory);
-  }, [closeContextPanel, contextActionDirectory, contextPanelByDirectory, openContextPlan]);
-
   const handleOpenContextChanges = React.useCallback(() => {
     const directory = contextActionDirectory;
     if (!directory) {
@@ -1356,15 +1304,6 @@ export const Header: React.FC<HeaderProps> = ({
 
     openContextBrowser(directory);
   }, [closeContextPanel, contextActionDirectory, contextPanelByDirectory, openContextBrowser]);
-
-  const isContextPlanActive = React.useMemo(() => {
-    const directory = contextActionDirectory;
-    if (!directory) {
-      return false;
-    }
-    const panelState = contextPanelByDirectory[directory];
-    return getActiveContextMode(panelState) === 'plan';
-  }, [contextActionDirectory, contextPanelByDirectory]);
 
   const isContextBrowserActive = React.useMemo(() => {
     const directory = contextActionDirectory;
@@ -1587,15 +1526,10 @@ export const Header: React.FC<HeaderProps> = ({
         { id: 'chat', label: t('layout.mainTab.chat'), icon: "chat-thread" },
       ];
 
-      if (showPlanTab) {
-        base.push({ id: 'plan', label: t('layout.mainTab.plan'), icon: "file-text" });
-      }
-
       base.push(
         { id: 'diff', label: t('layout.mainTab.diff'), icon: 'diff' },
         { id: 'files', label: t('layout.mainTab.files'), icon: "folder-6" },
         { id: 'terminal', label: t('layout.mainTab.terminal'), icon: "terminal-box" },
-        { id: 'context', label: t('layout.mainTab.context'), icon: "file-list-2" },
         { id: 'diagram', label: t('layout.mainTab.diagram'), icon: 'file' },
       );
 
@@ -1604,7 +1538,7 @@ export const Header: React.FC<HeaderProps> = ({
 
     // Desktop: no tabs in header
     return [];
-  }, [isMobile, showPlanTab, t]);
+  }, [isMobile, t]);
 
   const shortcutLabel = React.useCallback((actionId: string) => {
     return formatShortcutForDisplay(getEffectiveShortcutCombo(actionId, shortcutOverrides));
@@ -1613,7 +1547,7 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => {
     // Session tools are desktop-only in this shell; exclusive primaries (schedule/assistant/plan)
     // must never be silently forced back to chat — that caused path/UI desync and overlap.
-    if (!isMobile && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff' || activeMainTab === 'files' || activeMainTab === 'context')) {
+    if (!isMobile && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff' || activeMainTab === 'files')) {
       setActiveMainTab('chat');
     }
   }, [activeMainTab, isMobile, setActiveMainTab]);
@@ -1798,11 +1732,6 @@ export const Header: React.FC<HeaderProps> = ({
         return;
       }
 
-      const toggleContextPlanCombo = getEffectiveShortcutCombo('toggle_context_plan', shortcutOverrides);
-      if (eventMatchesShortcut(e, toggleContextPlanCombo)) {
-        e.preventDefault();
-        handleOpenContextPlan();
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -1817,7 +1746,6 @@ export const Header: React.FC<HeaderProps> = ({
     fetchAllQuotas,
     refreshCurrentInstanceLabel,
     applyServicesPanelOpen,
-    handleOpenContextPlan,
   ]);
 
   const renderTab = (tab: TabConfig) => {
@@ -2004,23 +1932,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   const desktopSidebarActions = (
     <>
-      {showPlanTab && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={t('header.actions.openPlanAria')}
-                onClick={handleOpenContextPlan}
-                className={cn(desktopHeaderIconButtonClass, isContextPlanActive && 'bg-[var(--interactive-hover)]')}
-              >
-              <Icon name="file-text" className="h-[18px] w-[18px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('header.actions.planWithShortcut', { shortcut: shortcutLabel('toggle_context_plan') })}</p>
-          </TooltipContent>
-          </Tooltip>
-      )}
       <OpenInAppButton directory={actionDirectory} className="mr-1" />
       <HeaderIconActionButton
         title={t('header.actions.rightSidebarWithShortcut', { shortcut: shortcutLabel('toggle_right_sidebar') })}

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.2-beta.3] - 2026-09-02
+
+### 其它
+
+- 移除计划模式：`/plan-feature` 命令、计划视图、相关快捷键与路由入口。
+- 移除项目笔记 / Todo 面板，以及选中文本“加入笔记”入口，精简右栏与设置项。
+
 ## [1.19.2-beta.2] - 2026-09-02
 
 ### 移动端

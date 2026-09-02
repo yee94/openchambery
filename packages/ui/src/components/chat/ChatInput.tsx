@@ -1979,7 +1979,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     );
     const knownSlashNames = React.useMemo(() => {
         const names = new Set<string>([
-            'init', 'review', 'undo', 'redo', 'fork', 'timeline', 'model', 'compact', 'summary', 'workspace-review', 'plan-feature', 'craft-goal', 'goal', 'catch-up', 'debug', 'weigh', 'explore',
+            'init', 'review', 'undo', 'redo', 'fork', 'timeline', 'model', 'compact', 'summary', 'workspace-review', 'craft-goal', 'goal', 'catch-up', 'debug', 'weigh', 'explore',
         ]);
         if (!isMobile && !isVSCodeRuntime()) names.add('handoff-review');
         for (const command of availableCommands) names.add(command.name.toLowerCase());
@@ -3716,30 +3716,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             else if (commandName === 'handoff-review' && currentSessionId && !isMobile && !isVSCodeRuntime()) {
                 setReviewDialogOpen(true);
-                return;
-            }
-            else if (commandName === 'plan-feature' && (currentSessionId || newSessionDraftOpen)) {
-                try {
-                    await sessionActions.waitForConnectionOrThrow();
-                    const visibleText = await renderMagicPrompt('session.plan.visible');
-                    const instructionsText = await renderMagicPrompt('session.plan.instructions');
-                    await sendMessage(
-                        visibleText,
-                        providerIdToSend,
-                        modelIdToSend,
-                        agentNameToSend,
-                        [],
-                        agentMentionName,
-                        [{ text: instructionsText, synthetic: true }],
-                        variantToSend,
-                        inputMode,
-                        sendMessageOptions,
-                    );
-                    scrollToBottom?.();
-                } catch (error) {
-                    await restoreFailedSubmission();
-                    toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.planFeatureFailed'));
-                }
                 return;
             }
             else if (commandName === 'goal' && (currentSessionId || newSessionDraftOpen)) {

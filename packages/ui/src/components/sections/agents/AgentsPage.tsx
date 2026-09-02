@@ -52,8 +52,6 @@ const STANDARD_PERMISSION_KEYS = [
   'external_directory',
   'doom_loop',
   'question',
-  'plan_enter',
-  'plan_exit',
 ] as const;
 
 const isPermissionAction = (value: unknown): value is PermissionAction =>

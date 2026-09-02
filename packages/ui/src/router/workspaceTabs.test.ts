@@ -16,10 +16,6 @@ const base = (over: Partial<AppRouteState> = {}): AppRouteState => ({
 describe('session tools under /session only', () => {
   test('session tools serialize under session id', () => {
     for (const tab of SESSION_TOOL_TABS) {
-      if (tab === 'plan') {
-        expect(serializeAppPath(base({ tab }))).toBe('/session/ses_1/plan');
-        continue;
-      }
       expect(serializeAppPath(base({ tab }))).toBe(`/session/ses_1/${tab}`);
     }
   });
@@ -32,9 +28,10 @@ describe('session tools under /session only', () => {
     );
   });
 
-  test('chat and plan', () => {
+  test('chat is default; legacy /plan segment silently falls back to chat', () => {
     expect(serializeAppPath(base({ tab: 'chat' }))).toBe('/session/ses_1');
-    expect(routeStateFromPath('/session/ses_1/plan').tab).toBe('plan');
+    // plan feature is removed — /plan path segment normalizes to chat (tab null in route state).
+    expect(routeStateFromPath('/session/ses_1/plan').tab).toBeNull();
   });
 
   test('parse top-level schedule does not attach sessionId', () => {

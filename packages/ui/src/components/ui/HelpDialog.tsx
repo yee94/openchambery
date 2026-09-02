@@ -245,12 +245,6 @@ export const HelpDialog: React.FC = () => {
           icon: "window",
           keys: '',
         },
-        {
-          id: 'toggle_context_plan',
-          descriptionKey: 'helpDialog.item.togglePlanContextPanel',
-          icon: "time",
-          keys: '',
-        },
       ],
     },
     {
