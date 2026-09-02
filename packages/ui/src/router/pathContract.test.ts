@@ -18,10 +18,6 @@ describe('pathContract — session paths', () => {
 
   test('session tool tabs under session', () => {
     for (const tab of SESSION_TOOL_TABS) {
-      if (tab === 'plan') {
-        expect(buildSessionPath({ sessionId: 's1', tab })).toBe('/session/s1/plan');
-        continue;
-      }
       expect(buildSessionPath({ sessionId: 's1', tab })).toBe(`/session/s1/${tab}`);
     }
   });
@@ -61,7 +57,6 @@ describe('pathContract — parseAppPath', () => {
       sessionId: 'abc',
       tab: 'chat',
       file: null,
-      mode: null,
       scope: null,
     });
     expect(parseAppPath('/schedule').kind).toBe('schedule');

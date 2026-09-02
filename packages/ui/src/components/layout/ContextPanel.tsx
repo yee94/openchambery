@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { DiffView } from '@/components/views/DiffView';
 import { FilesView } from '@/components/views/FilesView';
-import { PlanView } from '@/components/views/PlanView';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { openExternalUrl } from '@/lib/url';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -175,7 +174,6 @@ const getModeLabel = (
   if (mode === 'file') return t('contextPanel.mode.files');
   if (mode === 'diff') return t('contextPanel.mode.diff');
   if (mode === 'file-diff') return t('contextPanel.mode.diff');
-  if (mode === 'plan') return t('contextPanel.mode.plan');
   if (mode === 'preview') return t('contextPanel.mode.preview');
   if (mode === 'browser') return t('contextPanel.mode.browser');
   return t('contextPanel.mode.context');
@@ -262,10 +260,6 @@ const getTabIcon = (tab: { mode: ContextPanelMode; targetPath: string | null }):
 
   if (tab.mode === 'diff' || tab.mode === 'file-diff') {
     return <Icon name="arrow-left-right" className="h-3.5 w-3.5" />;
-  }
-
-  if (tab.mode === 'plan') {
-    return <Icon name="file-text" className="h-3.5 w-3.5" />;
   }
 
   if (tab.mode === 'context') {
@@ -2572,9 +2566,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
 
   const activeNonChatContent = activeTab?.mode === 'context'
         ? <ContextPanelContent />
-        : activeTab?.mode === 'plan'
-            ? <PlanView targetPath={activeTab.targetPath} />
-            : activeTab?.mode === 'preview'
+        : activeTab?.mode === 'preview'
                 ? <PreviewPane rawUrl={activeTab.targetPath ?? ''} onNavigate={(url) => openContextPreview(effectiveDirectory, url)} />
                 : (
                   <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">

@@ -21,6 +21,8 @@ const SESSION_SETTLEMENT_POLL_MS = 1_000;
  * treat them as settled (OpenCode sometimes leaves time.completed unset).
  */
 const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
+/** Goal terminal statuses — active/paused mean the run is still open. */
+const GOAL_TERMINAL_STATUSES = new Set(['complete', 'blocked', 'budgetLimited']);
 
 const buildTaskKey = (projectID, taskID) => `${projectID}:${taskID}`;
 
@@ -269,6 +271,124 @@ const formatAssistantError = (error) => {
   return 'assistant error';
 };
 
+const extractGoalFromSession = (session) => {
+  const metadata = session?.metadata;
+  if (!metadata || typeof metadata !== 'object') return null;
+  const namespace = metadata.openchamber;
+  if (!namespace || typeof namespace !== 'object') return null;
+  const goal = namespace.goal;
+  if (!goal || typeof goal !== 'object') return null;
+  const status = typeof goal.status === 'string' ? goal.status.trim() : '';
+  if (!status) return null;
+  return {
+    status,
+    note: typeof goal.note === 'string' ? goal.note.trim() : '',
+  };
+};
+
+/**
+ * Single-shot session outcome for post-run continuation (no polling).
+ * Goal-enabled: terminal complete → success; blocked/budgetLimited → error;
+ * otherwise not-yet-success. Non-goal: busy/retry, assistant error, or
+ * completed assistant; incomplete/empty tails are not treated as success.
+ */
+const snapshotSessionOutcome = async ({
+  client,
+  sessionID,
+  projectPath,
+  goalEnabled,
+  signal,
+}) => {
+  const requestOptions = signal ? { signal } : undefined;
+
+  if (goalEnabled && typeof client?.session?.get === 'function') {
+    try {
+      const sessionResult = await client.session.get({
+        sessionID,
+        directory: projectPath,
+      }, requestOptions);
+      if (!sessionResult?.error) {
+        const goal = extractGoalFromSession(sessionResult?.data);
+        if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
+          if (goal.status === 'complete') {
+            return { outcome: 'success' };
+          }
+          return {
+            outcome: 'error',
+            error: goal.note || `goal ${goal.status}`,
+          };
+        }
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+    return { outcome: 'busy' };
+  }
+
+  if (typeof client?.session?.status === 'function') {
+    try {
+      const statusResult = await client.session.status({
+        directory: projectPath,
+      }, requestOptions);
+      if (!statusResult?.error && statusResult?.data && typeof statusResult.data === 'object') {
+        const statusValue = statusResult.data[sessionID];
+        const type = statusValue?.type ?? statusValue?.status;
+        if (type === 'busy' || type === 'retry') {
+          return { outcome: 'busy' };
+        }
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+  }
+
+  if (typeof client?.message?.list === 'function') {
+    try {
+      const messagesResult = await client.message.list({
+        sessionID,
+        limit: 50,
+        order: 'asc',
+      }, requestOptions);
+      const messages = Array.isArray(messagesResult?.data) ? messagesResult.data : null;
+      if (messages) {
+        const lastInfo = readMessageInfo(messages.at(-1));
+        if (lastInfo?.type === 'assistant' || lastInfo?.role === 'assistant') {
+          if (lastInfo.error) {
+            return {
+              outcome: 'error',
+              error: formatAssistantError(lastInfo.error),
+            };
+          }
+          if (lastInfo.time?.completed) {
+            return { outcome: 'success' };
+          }
+        }
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+  }
+
+  return { outcome: 'busy' };
+};
+
+const parseSessionEventIdle = (event) => {
+  const payload = event?.payload?.payload ?? event?.payload;
+  const properties = payload?.properties;
+  const sessionID = typeof properties?.sessionID === 'string' ? properties.sessionID : '';
+  if (!sessionID) {
+    return { idle: false, sessionID: '' };
+  }
+  if (payload?.type === 'session.idle') {
+    return { idle: true, sessionID };
+  }
+  if (payload?.type === 'session.status') {
+    const type = properties?.status?.type ?? properties?.info?.type;
+    return { idle: type === 'idle', sessionID };
+  }
+  return { idle: false, sessionID };
+};
+
 export const createScheduledTasksRuntime = (deps) => {
   const {
     projectConfigRuntime,
@@ -295,6 +415,34 @@ export const createScheduledTasksRuntime = (deps) => {
   const runningCountByProject = new Map();
   let runningGlobalCount = 0;
   const queue = [];
+  /** sessionID → { projectID, taskID } for post-run continuation correction. */
+  const lastSessionOwners = new Map();
+
+  const rememberLastSession = (projectID, task) => {
+    const sessionID = task?.state?.lastSessionId;
+    if (typeof sessionID !== 'string' || !sessionID || !task?.id) {
+      return;
+    }
+    lastSessionOwners.set(sessionID, { projectID, taskID: task.id });
+  };
+
+  const forgetLastSessionsForProject = (projectID) => {
+    for (const [sessionID, owner] of [...lastSessionOwners.entries()]) {
+      if (owner.projectID === projectID) {
+        lastSessionOwners.delete(sessionID);
+      }
+    }
+  };
+
+  const forgetLastSessionIfOwned = (projectID, taskID, sessionID) => {
+    if (typeof sessionID !== 'string' || !sessionID) {
+      return;
+    }
+    const owner = lastSessionOwners.get(sessionID);
+    if (owner?.projectID === projectID && owner?.taskID === taskID) {
+      lastSessionOwners.delete(sessionID);
+    }
+  };
 
   const clearTimerForKey = (taskKey) => {
     const timer = timersByTaskKey.get(taskKey);
@@ -325,9 +473,11 @@ export const createScheduledTasksRuntime = (deps) => {
 
   const setProjectTasks = (projectID, tasks) => {
     clearProjectTimers(projectID);
+    forgetLastSessionsForProject(projectID);
     const taskMap = new Map();
     for (const task of tasks) {
       taskMap.set(task.id, task);
+      rememberLastSession(projectID, task);
     }
     tasksByProject.set(projectID, taskMap);
   };
@@ -376,7 +526,14 @@ export const createScheduledTasksRuntime = (deps) => {
     if (!taskMap) {
       return;
     }
+    const previous = taskMap.get(nextTask.id);
+    const previousSessionID = previous?.state?.lastSessionId;
+    const nextSessionID = nextTask.state?.lastSessionId;
+    if (previousSessionID && previousSessionID !== nextSessionID) {
+      forgetLastSessionIfOwned(projectID, nextTask.id, previousSessionID);
+    }
     taskMap.set(nextTask.id, nextTask);
+    rememberLastSession(projectID, nextTask);
   };
 
   const syncTaskSchedule = async (projectID, task) => {
@@ -1115,14 +1272,17 @@ export const createScheduledTasksRuntime = (deps) => {
 
       const nextRunAt = computeNextRunAt(latestTask, finishedAt);
       try {
-        stateResult = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
+        const statePatch = {
           lastStatus: status,
           lastDurationMs: durationMs,
           lastError: status === 'error' ? errorMessage : undefined,
-          lastSessionId: status === 'success' ? sessionID : undefined,
           nextRunAt: Number.isFinite(nextRunAt) ? nextRunAt : undefined,
           updatedAt: finishedAt,
-        });
+        };
+        if (sessionID) {
+          statePatch.lastSessionId = sessionID;
+        }
+        stateResult = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, statePatch);
         if (stateResult.task) {
           updateInMemoryTask(projectID, stateResult.task);
           if (stateResult.task.enabled && Number.isFinite(stateResult.task.state?.nextRunAt)) {
@@ -1137,6 +1297,9 @@ export const createScheduledTasksRuntime = (deps) => {
           taskID,
           error: errorMessage,
         });
+      }
+      if (sessionID) {
+        lastSessionOwners.set(sessionID, { projectID, taskID });
       }
 
       // History final status reflects the ultimate run outcome, including
@@ -1278,6 +1441,91 @@ export const createScheduledTasksRuntime = (deps) => {
     };
   };
 
+  const handleSessionIdleCorrection = async (event) => {
+    const { idle, sessionID } = parseSessionEventIdle(event);
+    if (!idle || !sessionID) {
+      return;
+    }
+
+    const owner = lastSessionOwners.get(sessionID);
+    if (!owner) {
+      return;
+    }
+
+    const { projectID, taskID } = owner;
+    const taskKey = buildTaskKey(projectID, taskID);
+    if (runningTaskKeys.has(taskKey)) {
+      return;
+    }
+
+    const task = tasksByProject.get(projectID)?.get(taskID);
+    const lastStatus = task?.state?.lastStatus;
+    if (lastStatus === 'success' || lastStatus === 'running') {
+      return;
+    }
+    if (lastStatus !== 'error') {
+      return;
+    }
+
+    const projectPath = projectPathByID.get(projectID) || await ensureProjectPath(projectID);
+    if (!projectPath) {
+      return;
+    }
+
+    const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
+    const authHeaders = getOpenCodeAuthHeaders();
+    const client = makeOpenCodeV2Client({
+      baseUrl,
+      authHeaders,
+    });
+    const snapshot = await snapshotSessionOutcome({
+      client,
+      sessionID,
+      projectPath,
+      goalEnabled: Boolean(task.execution?.goalEnabled),
+    });
+    if (snapshot.outcome !== 'success') {
+      return;
+    }
+
+    if (runningTaskKeys.has(taskKey)) {
+      return;
+    }
+    const latest = tasksByProject.get(projectID)?.get(taskID);
+    if (latest?.state?.lastStatus !== 'error') {
+      return;
+    }
+
+    const stateResult = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
+      lastStatus: 'success',
+      lastError: undefined,
+      lastSessionId: sessionID,
+      updatedAt: Date.now(),
+    });
+    if (stateResult.task) {
+      updateInMemoryTask(projectID, stateResult.task);
+    }
+
+    try {
+      emitTaskRunEvent?.({
+        projectID,
+        taskID,
+        ranAt: Date.now(),
+        status: 'success',
+        sessionID,
+      });
+    } catch {
+    }
+  };
+
+  const observeSessionEvent = (event) => {
+    return handleSessionIdleCorrection(event).catch((error) => {
+      logger.warn?.('[ScheduledTasks] observeSessionEvent failed', {
+        error: safeErrorMessage(error),
+      });
+    });
+  };
+
   return {
     start,
     stop,
@@ -1285,5 +1533,6 @@ export const createScheduledTasksRuntime = (deps) => {
     syncProject,
     runNow,
     getStatus,
+    observeSessionEvent,
   };
 };

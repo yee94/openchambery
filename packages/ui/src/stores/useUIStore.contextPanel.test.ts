@@ -140,7 +140,7 @@ describe('useUIStore context panel tabs', () => {
     const store = useUIStore.getState();
 
     store.openContextPanelTab(firstDirectory, { mode: 'context' });
-    store.openContextPanelTab(secondDirectory, { mode: 'plan' });
+    store.openContextPanelTab(secondDirectory, { mode: 'diff' });
     store.toggleRightSidebar();
 
     expect(useUIStore.getState().isRightSidebarOpen).toBe(true);

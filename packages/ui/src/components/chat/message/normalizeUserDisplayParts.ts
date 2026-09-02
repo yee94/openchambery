@@ -83,10 +83,8 @@ const buildGitHubAttachmentPart = (text: string): Part | null => {
     return null;
 };
 
-const shouldKeepSyntheticUserText = (text: string, planModeEnabled: boolean): boolean => {
+const shouldKeepSyntheticUserText = (text: string): boolean => {
     const trimmed = text.trim();
-    if (planModeEnabled && trimmed.startsWith('User has requested to enter plan mode')) return true;
-    if (planModeEnabled && trimmed.startsWith('The plan at ')) return true;
     if (trimmed.startsWith('The following tool was executed by the user')) return true;
     return false;
 };
@@ -102,8 +100,7 @@ const isCompactionCommandText = (text: string): boolean => {
     return text.trim() === '/compact';
 };
 
-export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEnabled?: boolean }): Part[] => {
-    const planModeEnabled = options?.planModeEnabled === true;
+export const normalizeUserDisplayParts = (parts: Part[]): Part[] => {
     return parts
         .filter((part) => {
             if (part.type === 'compaction') {
@@ -127,7 +124,7 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
             }
 
             const normalizedText = text.trimStart();
-            return shouldKeepSyntheticUserText(text, planModeEnabled)
+            return shouldKeepSyntheticUserText(text)
                 || normalizedText.startsWith(GITHUB_ISSUE_CONTEXT_PREFIX)
                 || normalizedText.startsWith(GITHUB_PR_CONTEXT_PREFIX);
         })

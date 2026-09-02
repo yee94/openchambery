@@ -9,7 +9,6 @@ import {
   normalizeSettingsSlug,
   type DiffScope,
   type ScheduleView,
-  type SessionMode,
   type WorkspaceTab,
 } from './pathContract';
 import type { NavigationIntent } from './navigationIntent';
@@ -18,7 +17,6 @@ import { SCHEDULE_TAB_ID } from './primarySurface';
 export type GoSessionOptions = {
   tab?: WorkspaceTab | string | null;
   file?: string | null;
-  mode?: SessionMode | null;
   scope?: DiffScope | null;
   replace?: boolean;
 };
@@ -108,7 +106,6 @@ export function createAppNavigation(router: AppRouter): AppNavigation {
       sessionId,
       tab: opts.tab,
       file: opts.file,
-      mode: opts.mode,
       scope: opts.scope,
     });
     await navigateHref(router, { to: path, replace: opts.replace });
@@ -148,7 +145,6 @@ export function createAppNavigation(router: AppRouter): AppNavigation {
         await goSession(intent.sessionId, {
           tab: intent.tab,
           file: intent.file,
-          mode: intent.mode,
           scope: intent.scope,
           replace: intent.replace,
         });

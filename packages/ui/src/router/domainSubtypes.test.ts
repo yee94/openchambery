@@ -71,11 +71,7 @@ describe('top-level assistant primary', () => {
   });
 });
 
-describe('session plan + tools', () => {
-  test('plan remains under session', () => {
-    expect(buildSessionPath({ sessionId: 's1', tab: 'plan' })).toBe('/session/s1/plan');
-  });
-
+describe('session tools', () => {
   test('diff scope', () => {
     expect(
       buildSessionPath({ sessionId: 's1', tab: 'diff', file: 'a.ts', scope: 'staged' }),

@@ -15,15 +15,11 @@ const readLegendTimelineEnabled = (): boolean => {
 };
 
 type FeatureFlagsStore = {
-  planModeEnabled: boolean;
-  setPlanModeEnabled: (enabled: boolean) => void;
   legendTimelineEnabled: boolean;
   setLegendTimelineEnabled: (enabled: boolean) => void;
 };
 
 export const useFeatureFlagsStore = create<FeatureFlagsStore>((set) => ({
-  planModeEnabled: false,
-  setPlanModeEnabled: (enabled) => set({ planModeEnabled: enabled }),
   legendTimelineEnabled: readLegendTimelineEnabled(),
   setLegendTimelineEnabled: (enabled) => {
     try {

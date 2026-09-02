@@ -17,7 +17,6 @@ export const SESSION_TOOL_TABS = [
   'terminal',
   'files',
   'diagram',
-  'plan',
 ] as const;
 
 export type SessionToolTab = (typeof SESSION_TOOL_TABS)[number];
@@ -28,8 +27,6 @@ export const WORKSPACE_PATH_TABS = SESSION_TOOL_TABS;
 export type WorkspacePathTab = SessionToolTab | typeof SCHEDULE_TAB_ID | 'assistant';
 
 export type WorkspaceTab = WorkspacePathTab | 'chat';
-
-export type SessionMode = 'plan';
 
 export const SCHEDULE_VIEWS = ['tasks', 'history'] as const;
 export type ScheduleView = (typeof SCHEDULE_VIEWS)[number];
@@ -45,7 +42,6 @@ export type BuildSessionPathInput = {
   sessionId: string;
   tab?: string | null;
   file?: string | null;
-  mode?: SessionMode | null;
   scope?: DiffScope | null;
 };
 
@@ -78,7 +74,6 @@ export type BuildAppLocationInput = {
   sessionId?: string | null;
   tab?: string | null;
   file?: string | null;
-  mode?: SessionMode | null;
   scope?: DiffScope | null;
   scheduleView?: ScheduleView | null;
   scheduleProjectId?: string | null;
@@ -95,7 +90,6 @@ export type ParsedSessionPath = {
   sessionId: string;
   tab: WorkspaceTab;
   file: string | null;
-  mode: SessionMode | null;
   scope: DiffScope | null;
 };
 
@@ -237,15 +231,12 @@ export function buildSessionPath(input: BuildSessionPathInput): string {
   let base: string;
   if (tab === 'chat') {
     base = `/session/${sessionId}`;
-  } else if (tab === 'plan') {
-    base = `/session/${sessionId}/plan`;
   } else {
     base = `/session/${sessionId}/${tab}`;
   }
 
   const params = new URLSearchParams();
   if (input.file) params.set('file', input.file);
-  if (input.mode === 'plan' && tab === 'chat') params.set('mode', 'plan');
   const scope = normalizeDiffScope(input.scope);
   if (scope) params.set('scope', scope);
 
@@ -280,7 +271,6 @@ export function buildAppLocation(input: BuildAppLocationInput): string {
       sessionId: input.sessionId.trim(),
       tab,
       file: input.file,
-      mode: input.mode ?? (tab === 'plan' ? 'plan' : null),
       scope: input.scope,
     });
   }
@@ -290,15 +280,12 @@ export function buildAppLocation(input: BuildAppLocationInput): string {
 
 function parseSearch(search: string): {
   file: string | null;
-  mode: SessionMode | null;
   scope: DiffScope | null;
 } {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   const file = params.get('file');
-  const modeRaw = params.get('mode');
-  const mode: SessionMode | null = modeRaw === 'plan' ? 'plan' : null;
   const scope = normalizeDiffScope(params.get('scope'));
-  return { file, mode, scope };
+  return { file, scope };
 }
 
 function splitAgentFocus(parts: string[]): { rest: string[]; focusSessionId: string | null } {
@@ -418,7 +405,7 @@ export function parseAppPath(pathWithSearch: string): ParsedAppPath {
       return { kind: 'new' };
     }
 
-    const { file, mode, scope } = parseSearch(search);
+    const { file, scope } = parseSearch(search);
     const segment = parts[2];
 
     // Legacy nested schedule/assistant under session → promote to top-level kinds
@@ -434,33 +421,11 @@ export function parseAppPath(pathWithSearch: string): ParsedAppPath {
     }
 
     if (!segment) {
-      if (mode === 'plan') {
-        return {
-          kind: 'session',
-          sessionId,
-          tab: 'plan',
-          file,
-          mode: 'plan',
-          scope,
-        };
-      }
       return {
         kind: 'session',
         sessionId,
         tab: 'chat',
         file,
-        mode,
-        scope,
-      };
-    }
-
-    if (segment === 'plan') {
-      return {
-        kind: 'session',
-        sessionId,
-        tab: 'plan',
-        file,
-        mode: 'plan',
         scope,
       };
     }
@@ -472,7 +437,6 @@ export function parseAppPath(pathWithSearch: string): ParsedAppPath {
         sessionId,
         tab: 'chat',
         file,
-        mode,
         scope,
       };
     }
@@ -482,7 +446,6 @@ export function parseAppPath(pathWithSearch: string): ParsedAppPath {
       sessionId,
       tab,
       file,
-      mode,
       scope,
     };
   }

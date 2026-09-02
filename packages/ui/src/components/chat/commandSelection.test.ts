@@ -17,7 +17,7 @@ describe('shouldSubmitCommandOnSelection', () => {
   test('inserts draft-style and confirm-first commands instead of auto-sending', () => {
     for (const name of [
       // Custom / prompt templates
-      'loop', 'craft-goal', 'plan-feature', 'catch-up', 'debug', 'weigh', 'explore', 'summary', 'init', 'review',
+      'loop', 'craft-goal', 'catch-up', 'debug', 'weigh', 'explore', 'summary', 'init', 'review',
       // Local UI that still wants a deliberate second Enter
       'timeline',
     ]) {

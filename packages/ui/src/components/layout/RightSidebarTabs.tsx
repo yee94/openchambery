@@ -1,22 +1,20 @@
 import React from 'react';
 
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
-import { ProjectNotesTodoPanel } from '@/components/session/ProjectNotesTodoPanel';
 import { GitView } from '@/components/views/GitView';
 import { Icon } from "@/components/icon/Icon";
 import { useGitStore } from '@/stores/useGitStore';
-import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { formatDirectoryName, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { SidebarFilesTree } from './SidebarFilesTree';
 
-type RightTab = 'git' | 'files' | 'context';
+type RightTab = 'git' | 'files';
 
 const isRightTab = (value: string): value is RightTab =>
-  value === 'git' || value === 'files' || value === 'context';
+  value === 'git' || value === 'files';
 
 const RIGHT_TAB_FALLBACK: RightTab = 'files';
 
@@ -67,53 +65,6 @@ function useRightSidebarGitSync(
   }, [shouldPoll, directory, git, ensureStatus]);
 }
 
-export const ProjectContextPanel: React.FC = () => {
-  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
-  const projects = useProjectsStore((state) => state.projects);
-  const gitDirectories = useGitStore((state) => state.directories);
-
-  const activeProject = React.useMemo(() => {
-    if (activeProjectId) {
-      return projects.find((project) => project.id === activeProjectId) ?? projects[0] ?? null;
-    }
-    return projects[0] ?? null;
-  }, [activeProjectId, projects]);
-
-  const projectRef = React.useMemo(() => {
-    if (!activeProject) {
-      return null;
-    }
-    return {
-      id: activeProject.id,
-      path: activeProject.path,
-    };
-  }, [activeProject]);
-
-  const projectLabel = React.useMemo(() => {
-    if (!activeProject) {
-      return null;
-    }
-    return formatDirectoryName(activeProject.path) || activeProject.path;
-  }, [activeProject]);
-
-  const canCreateWorktree = React.useMemo(() => {
-    if (!activeProject) {
-      return false;
-    }
-    return gitDirectories.get(activeProject.path)?.isGitRepo === true;
-  }, [activeProject, gitDirectories]);
-
-  return (
-    <div className="h-full min-h-0 overflow-auto bg-background">
-      <ProjectNotesTodoPanel
-        projectRef={projectRef}
-        projectLabel={projectLabel}
-        canCreateWorktree={canCreateWorktree}
-      />
-    </div>
-  );
-};
-
 export const RightSidebarTabs: React.FC = () => {
   const { t } = useI18n();
   const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
@@ -132,9 +83,7 @@ export const RightSidebarTabs: React.FC = () => {
   const hiddenRightTab: RightTab | null =
     activeMainTab === 'git'
       ? 'git'
-      : activeMainTab === 'context'
-        ? 'context'
-        : null;
+      : null;
 
   // Persisted right sidebar tab can be stale across main-tab switches (e.g.
   // user opened main 'git' while right tab was 'git'). Snap to the fallback
@@ -155,11 +104,6 @@ export const RightSidebarTabs: React.FC = () => {
       id: 'files',
       label: t('layout.rightSidebar.files'),
       icon: <Icon name="folder-3" className="h-3.5 w-3.5" />,
-    },
-    {
-      id: 'context',
-      label: t('layout.rightSidebar.context'),
-      icon: <Icon name="file-list-2" className="h-3.5 w-3.5" />,
     },
   ], [t]);
 
@@ -198,9 +142,6 @@ export const RightSidebarTabs: React.FC = () => {
         </div>
         <div className={cn('h-full', rightSidebarTab !== 'files' && 'hidden')}>
           <SidebarFilesTree />
-        </div>
-        <div className={cn('h-full', rightSidebarTab !== 'context' && 'hidden')}>
-          <ProjectContextPanel />
         </div>
       </div>
     </div>

@@ -123,7 +123,6 @@ import {
     reportTranscriptStall,
 } from './transcriptStallWatchdog';
 
-import { usePlanDetection } from '@/hooks/usePlanDetection';
 import { useRecoverPendingQuestions } from '@/hooks/useRecoverPendingQuestions';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { BusyDots } from './message/parts/BusyDots';
@@ -1098,9 +1097,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             await assistantHistory.fetchPrevious();
         }
     });
-
-    // Plan detection - watches messages for plan creation and signals store
-    usePlanDetection(currentSessionId ?? '', sessionMessages);
 
     // Session status from sync system
     const resolvedSessionStatus = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT, getQuestionCustomTextareaHeight } from '../questionTextareaSizing';
+import { QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT, clampQuestionCustomTextareaHeight, getQuestionCustomTextareaHeight } from '../questionTextareaSizing';
 
 describe('getQuestionCustomTextareaHeight', () => {
   test('exports the initial textarea height', () => {
@@ -14,5 +14,11 @@ describe('getQuestionCustomTextareaHeight', () => {
     expect(getQuestionCustomTextareaHeight({ scrollHeight: 10, currentHeight: 0 })).toBe(40);
     expect(getQuestionCustomTextareaHeight({ scrollHeight: 120, currentHeight: 0 })).toBe(120);
     expect(getQuestionCustomTextareaHeight({ scrollHeight: 260, currentHeight: 0 })).toBe(200);
+  });
+
+  test('clamps measured scrollHeight in one pass so shrinking does not walk pixel-by-pixel', () => {
+    expect(clampQuestionCustomTextareaHeight(10)).toBe(40);
+    expect(clampQuestionCustomTextareaHeight(48)).toBe(48);
+    expect(clampQuestionCustomTextareaHeight(260)).toBe(200);
   });
 });
