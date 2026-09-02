@@ -46,6 +46,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
+import { renderHighlightedText } from '@/components/session/sidebar/utils';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { abortCurrentOperation } from '@/sync/session-actions';
 import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
@@ -313,6 +314,7 @@ const SessionRow: React.FC<{
   /** Aria label for the stop button. */
   stopAriaLabel?: string;
   longPressHandlers: LongPressHandlers;
+  highlightQuery?: string;
 }> = ({
   session,
   active,
@@ -328,6 +330,7 @@ const SessionRow: React.FC<{
   onStop,
   stopAriaLabel,
   longPressHandlers,
+  highlightQuery,
 }) => {
   const { t } = useI18n();
   const time = formatRelativeShort(getSessionTimestamp(session));
@@ -387,14 +390,16 @@ const SessionRow: React.FC<{
                 active ? 'text-primary' : 'text-foreground',
               )}
             >
-              {title}
+              {highlightQuery ? renderHighlightedText(title, highlightQuery) : title}
             </span>
             {time ? (
               <span className="shrink-0 typography-micro text-muted-foreground tabular-nums">{time}</span>
             ) : null}
           </span>
           {contextLabel ? (
-            <span className="block truncate typography-micro text-muted-foreground pl-4">{contextLabel}</span>
+            <span className="block truncate typography-micro text-muted-foreground pl-4">
+              {highlightQuery ? renderHighlightedText(contextLabel, highlightQuery) : contextLabel}
+            </span>
           ) : null}
         </span>
       </button>
@@ -1488,7 +1493,8 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                            session={session}
                            active={currentSessionId === session.id}
                            indent={12}
-                           contextLabel={buildSessionContextLabel(session)}
+                            contextLabel={buildSessionContextLabel(session)}
+                           highlightQuery={normalizedQuery}
                            onSelect={() => runRowClick(`session:${session.id}`, () => handleSelectSession(session))}
                            longPressHandlers={getLongPressHandlers({ key: `session:${session.id}`, kind: 'session', session })}
                            onStop={isRunning ? () => handleStopSession(session.id) : undefined}
@@ -1535,7 +1541,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                           >
                           <MobileProjectIcon project={project} />
                           <span className="block min-w-0 flex-1 truncate typography-ui-label text-foreground">
-                            {project.label}
+                            {renderHighlightedText(project.label, normalizedQuery)}
                           </span>
                           <span className="shrink-0 typography-micro text-muted-foreground tabular-nums">
                             {project.sessionCount}

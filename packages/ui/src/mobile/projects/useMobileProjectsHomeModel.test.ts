@@ -98,6 +98,8 @@ describe('useMobileProjectsHomeModel shared pin contract', () => {
     expect(modelSource).toContain('listInProgressHomeSessions');
     expect(modelSource).toContain('omitPinnedSessions: true');
     expect(modelSource).toContain('listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds)');
+    expect(modelSource).toContain('catalogSessions: catalogRoots.map(toNode)');
+    expect(modelSource).toContain('omitPinnedSessions: false');
   });
 
   test('keeps project subtitles on pinned rows and leaves attention rows one-line', () => {

@@ -70,4 +70,33 @@ describe('filterMobileProjectsForSearch', () => {
   test('returns no projects when nothing matches', () => {
     expect(filterMobileProjectsForSearch(projects, 'does-not-exist')).toEqual([]);
   });
+
+  test('searches the unpaginated catalog, not the visible Show-more slice', () => {
+    const truncated: MobileProjectHomeItem[] = [{
+      ...projects[0]!,
+      worktrees: [{
+        ...projects[0]!.worktrees[0]!,
+        sessions: [{
+          id: 'parent',
+          title: 'Parent session',
+        }, {
+          id: '__show_more__',
+          kind: 'pagination',
+          title: 'Show more',
+        }],
+        catalogSessions: [
+          { id: 'parent', title: 'Parent session' },
+          { id: 'other', title: 'Unrelated session' },
+          { id: 'search-hit', title: 'Fix mobile search', subtitle: 'Follow-up' },
+        ],
+      }],
+    }];
+
+    const result = filterMobileProjectsForSearch(truncated, 'mobile search');
+    expect(result[0]?.worktrees[0]?.sessions).toEqual([{
+      id: 'search-hit',
+      title: 'Fix mobile search',
+      subtitle: 'Follow-up',
+    }]);
+  });
 });

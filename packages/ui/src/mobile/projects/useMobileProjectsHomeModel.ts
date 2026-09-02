@@ -420,6 +420,12 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         // still walks allSessions. Pinned roots leave the project area the same
         // way the sidebar forest does: omit after parent/child attachment.
         const rootSessions = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds);
+        // Search must cover pinned roots too — they leave the project-area
+        // display list, and the pinned group is hidden while searching.
+        const catalogRoots = buildSessionTree(bucket.sessions, {
+          pinnedSessionIds,
+          omitPinnedSessions: false,
+        }).map((node) => node.session);
 
         const toNode = (session: Session): MobileSessionTreeNode => {
           const parentId = getParentId(session);
@@ -497,6 +503,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           expanded: isMainWorkspace ? true : worktreeExpanded,
           sessionCount: rootSessions.length,
           sessions: sessionsTree,
+          catalogSessions: catalogRoots.map(toNode),
         };
       });
 

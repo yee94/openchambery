@@ -193,6 +193,25 @@ describe('MobileSessionRow status placement', () => {
     expect(html).not.toContain('#oc-arrow-down-s');
   });
 
+  test('wraps keyword matches in mark when highlightQuery is set', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileSessionRow
+          session={{ id: 'session-1', title: 'Fix mobile search', subtitle: 'Follow-up search' }}
+          highlightQuery="search"
+          onSelect={noop}
+          onPin={noop}
+          onArchive={noop}
+          onOpenActions={noop}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('<mark');
+    expect(html).toContain('bg-primary');
+    expect(html.match(/<mark/g)?.length).toBe(2);
+  });
+
   test('renders distinct question, permission, unread, and idle markers', () => {
     const rendered = new Map<string, string>();
     for (const indicator of ['question', 'permission', 'completed-unread', 'idle'] as const) {

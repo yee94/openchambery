@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.1] - 2026-09-03
+
+### 移动端
+
+- 会话搜索改为匹配已加载目录里的标题，不再只搜当前可见的几条。
+- 搜索结果关键字高亮，和电脑端一致。
+
 ## [1.19.2] - 2026-09-02
 
 汇总 1.19.2-beta.1 ~ 1.19.2-beta.3。
