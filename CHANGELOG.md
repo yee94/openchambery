@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.2-beta.2] - 2026-09-02
+
+### 移动端
+
+- 首页置顶/进行中卡片里的未读会话改为与普通会话一致的样式，保留未读小蓝点。
+
 ## [1.19.2-beta.1] - 2026-09-02
 
 ### 定时任务
