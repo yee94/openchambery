@@ -50,7 +50,6 @@ export type {
   ParsedSettingsPath,
   ScheduleView,
   ScheduledView,
-  SessionMode,
   WorkspacePathTab,
   WorkspaceTab,
 } from './pathContract';

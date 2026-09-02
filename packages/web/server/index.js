@@ -202,10 +202,6 @@ const shouldSkipApiCompression = () => {
 
 const OPENCHAMBER_VERBOSE_REQUEST_LOGS = isEnvFlagEnabled(process.env.OPENCHAMBER_VERBOSE_REQUEST_LOGS);
 
-const PLAN_MODE_EXPERIMENT_ENABLED =
-  isEnvFlagEnabled(process.env.OPENCODE_EXPERIMENTAL_PLAN_MODE)
-  || isEnvFlagEnabled(process.env.OPENCODE_EXPERIMENTAL);
-
 const fsPromises = fs.promises;
 
 const settingsNormalizationRuntime = createSettingsNormalizationRuntime({
@@ -1308,6 +1304,9 @@ async function main(options = {}) {
     messageQueueRuntime.observeSessionEvent?.(event);
     if (payload.type === 'session.status' || payload.type === 'session.idle' || payload.type === 'session.error') void messageQueueRuntime.wake();
   });
+  const unsubscribeScheduledTaskEvents = globalMessageStreamHub.subscribeEvent((event) => {
+    scheduledTasksRuntime.observeSessionEvent?.(event);
+  });
 
   console.log(`Starting OpenChamber on port ${port === 0 ? 'auto' : port}`);
 
@@ -1400,7 +1399,6 @@ async function main(options = {}) {
         nodeBinaryResolved: resolvedNodeBinary || null,
         bunBinaryResolved: resolvedBunBinary || null,
         desktopNotifyEnabled: ENV_DESKTOP_NOTIFY,
-        planModeExperimentalEnabled: PLAN_MODE_EXPERIMENT_ENABLED,
         apiOnly,
       };
     },
@@ -1678,6 +1676,7 @@ async function main(options = {}) {
       try {
         unsubscribeSessionIndexEvents();
         unsubscribeMessageQueueEvents();
+        unsubscribeScheduledTaskEvents();
         sessionIndexSyncRuntime?.stop();
         sessionIndexService?.close();
       } catch {

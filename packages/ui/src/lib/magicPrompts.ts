@@ -19,12 +19,6 @@ export type MagicPromptId =
   | 'github.pr.comments.review.instructions'
   | 'github.pr.comment.single.visible'
   | 'github.pr.comment.single.instructions'
-  | 'plan.todo.visible'
-  | 'plan.todo.instructions'
-  | 'plan.improve.visible'
-  | 'plan.improve.instructions'
-  | 'plan.implement.visible'
-  | 'plan.implement.instructions'
   | 'session.summary.visible'
   | 'session.summary.instructions'
   | 'session.review.visible'
@@ -35,8 +29,6 @@ export type MagicPromptId =
   | 'session.reviewSessionWithoutHandoff.visible'
   | 'session.reviewFeedbackToImplementer.visible'
   | 'session.implementationResponseToReviewer.visible'
-  | 'session.plan.visible'
-  | 'session.plan.instructions'
   | 'session.craftGoal.visible'
   | 'session.craftGoal.instructions'
   | 'session.catchup.visible'
@@ -398,113 +390,6 @@ Important:
 - After completing all steps, confirm the cherry-pick was successful`,
   },
   {
-    id: 'plan.todo.visible',
-    title: 'Todo Planning Visible Prompt',
-    group: 'Planning',
-    description: 'Visible user message when sending a todo into a new planning session.',
-    placeholders: [
-      { key: 'todo_text', description: 'Todo text selected by the user.' },
-    ],
-    template: '{{todo_text}}',
-  },
-  {
-    id: 'plan.todo.instructions',
-    title: 'Todo Planning Instructions',
-    group: 'Planning',
-    description: 'Hidden instructions for sending a project todo into a new planning session.',
-    placeholders: [
-      { key: 'todo_text', description: 'Todo text selected by the user.' },
-    ],
-    template: `You are starting from a project todo item.
-Todo: {{todo_text}}
-Your job right now is to produce a thorough implementation plan for this todo, not to implement it yet. Optimize for a well-considered plan, not a fast one.
-
-Work back and forth with me. Do not dump a wall of questions. Do not jump to the full plan.
-
-Discovery — questions in batches of 3:
-1. First, inspect the repo — relevant files, module docs, existing patterns, nearby code, constraints, dependencies — enough to form informed questions, not enough to guess the plan.
-2. Ask me at most 3 questions per turn. Each batch should be focused on one topic at a time (e.g., scope, architecture, data model, UX, edge cases). Pick the topic that most blocks the plan right now.
-3. Wait for my answers. Use them to refine your understanding, re-read code if needed, and prepare the next batch.
-4. Questions that became irrelevant after my earlier answers — drop them, don't ask.
-5. Repeat until you have no more substantive questions.
-
-Alignment:
-6. Share a short outline: affected areas, proposed approach, main risks. Wait for my confirmation or corrections. Iterate on the outline until I confirm.
-
-Final plan:
-7. Once aligned, deliver the concrete implementation plan grounded in the repo context. Make remaining assumptions and missing context explicit.`,
-  },
-  {
-    id: 'plan.improve.visible',
-    title: 'Improve Plan Visible Prompt',
-    group: 'Planning',
-    description: 'Visible user message when sending a saved plan into an improve flow.',
-    placeholders: [
-      { key: 'plan_title', description: 'Current plan title.' },
-    ],
-    template: 'Improve this plan: {{plan_title}}',
-  },
-  {
-    id: 'plan.improve.instructions',
-    title: 'Improve Plan Instructions',
-    group: 'Planning',
-    description: 'Hidden instructions for improving a saved plan from project context.',
-    placeholders: [
-      { key: 'plan_title', description: 'Current plan title.' },
-      { key: 'plan_path', description: 'Absolute path to the saved plan file.' },
-    ],
-    template: `You are starting from an existing implementation plan.
-Plan title: {{plan_title}}
-This plan is stored in the file: {{plan_path}}
-Read that file first and treat its current contents as the source of truth for the plan.
-Your job right now is to improve this plan so it is better grounded in the actual repo state. Do not implement yet. Optimize for a well-considered improved plan, not a fast one.
-
-Work back and forth with me. Do not dump a wall of questions. Do not jump to the full improved plan.
-
-Discovery — questions in batches of 3:
-1. First, inspect the repo and map it against the plan — relevant files, module docs, existing patterns, nearby code, constraints, dependencies. Identify gaps, plan assumptions that don't match the repo, missing context, and risks.
-2. Ask me at most 3 questions per turn. Each batch should be focused on one topic at a time (e.g., scope deltas, architecture assumptions, data model, UX, edge cases, tradeoffs between approaches). Pick the topic that most blocks a confident improvement right now.
-3. Wait for my answers. Use them to refine your understanding, re-read code if needed, and prepare the next batch.
-4. Questions that became irrelevant after my earlier answers — drop them, don't ask.
-5. Repeat until you have no more substantive questions.
-
-Alignment:
-6. Share a short summary of proposed changes — what sections of the plan change and why, open questions, recommendations. Do not rewrite the whole plan inline and do not return the full plan as a code block. Quote only small targeted snippets or describe the exact sections to change. Wait for my confirmation or corrections. Iterate until I confirm.
-
-Final step:
-7. Once aligned, explicitly offer to edit this same file ({{plan_path}}) with the agreed changes. Make remaining assumptions and missing context explicit.`,
-  },
-  {
-    id: 'plan.implement.visible',
-    title: 'Implement Plan Visible Prompt',
-    group: 'Planning',
-    description: 'Visible user message when sending a saved plan into an implement flow.',
-    placeholders: [
-      { key: 'plan_title', description: 'Current plan title.' },
-    ],
-    template: 'Implement this plan: {{plan_title}}',
-  },
-  {
-    id: 'plan.implement.instructions',
-    title: 'Implement Plan Instructions',
-    group: 'Planning',
-    description: 'Hidden instructions for implementing a saved plan from project context.',
-    placeholders: [
-      { key: 'plan_title', description: 'Current plan title.' },
-      { key: 'plan_path', description: 'Absolute path to the saved plan file.' },
-    ],
-    template: `You are starting from an existing implementation plan.
-Plan title: {{plan_title}}
-This plan is stored in the file: {{plan_path}}
-Read that file first and treat its current contents as the source of truth for the plan. The plan is already agreed; implement it end-to-end without deviating from it.
-
-Before and during implementation, build a deep understanding of the project — relevant files, module docs, existing patterns, nearby code, conventions — so your choices fit the repo's style.
-
-Do the implementation work continuously. When a plan step is ambiguous, do not stop to ask — make the best judgment call consistent with the plan's intent and the repo's conventions, and briefly note the decision inline so it is visible on review. Prefer forward progress over interrupting me.
-
-Do not expand scope beyond the plan. If during implementation you find the plan itself is wrong or genuinely blocks completion (not merely ambiguous), stop, state exactly what is broken and why, and propose a plan adjustment to save back into this same file ({{plan_path}}) before continuing.`,
-  },
-  {
     id: 'session.summary.visible',
     title: 'Session Summary Visible Prompt',
     group: 'Session',
@@ -692,36 +577,6 @@ Please review the feedback, resolve the relevant issues, and explain what you ch
 Please review the latest state again and report any remaining issues.
 
 {{implementation_response}}`,
-  },
-  {
-    id: 'session.plan.visible',
-    title: 'Feature Planning Visible Prompt',
-    group: 'Session',
-    description: 'Visible user message sent by the /plan-feature command.',
-    template: 'I want to start planning a feature.',
-  },
-  {
-    id: 'session.plan.instructions',
-    title: 'Feature Planning Instructions',
-    group: 'Session',
-    description: 'Hidden instructions attached to the /plan-feature command. Runs a guided, batched-question dialogue that researches the code before producing an implementation plan.',
-    template: `The user wants to plan a feature through a guided, back-and-forth conversation. They will describe an idea — often briefly and informally. Your job is to turn that idea into a concrete, validated implementation plan, without guessing.
-
-Run this as a dialogue, not a one-shot answer.
-
-1. Understand before asking. Once the user describes the idea, first investigate the codebase yourself — read the relevant files, existing patterns, data flow, and constraints. Ground every question in what the code actually shows, not in assumptions.
-
-2. Ask in small batches. Ask at most 3 clarifying questions at a time — a number a person can comfortably answer in one reply. Prefer concrete, decision-oriented questions (option A/B/C, edge cases, scope boundaries) over vague open-ended ones. Number them.
-
-3. Keep going until it is resolved. After each batch of answers, integrate them, do any further code investigation the answers require, then ask the next batch. Continue until there are no unresolved decisions or implementation details left. Do not stop early or start summarizing prematurely.
-
-4. Surface what the user has not considered. Proactively raise edge cases, pitfalls, affected modules, migration/backward-compatibility concerns, and trade-offs the user likely did not think about. Fold these into your questions so the user decides — never silently decide for them.
-
-5. Do not write code or begin implementing during this phase. Planning is for understanding and deciding only.
-
-6. When everything is settled, produce the final implementation plan: a clear, ordered breakdown of the work, the files and areas affected, the decisions that were made (and why), known risks, and any remaining assumptions flagged explicitly. The plan must reflect the user's actual answers — never fill gaps with guesses.
-
-Respond in the same language the user uses.`,
   },
   {
     id: 'session.craftGoal.visible',

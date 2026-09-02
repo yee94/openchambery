@@ -2,7 +2,6 @@ import type { SettingsPageSlug } from '@/lib/settings/metadata';
 import type {
   DiffScope,
   ScheduleView,
-  SessionMode,
   WorkspaceTab,
 } from './pathContract';
 
@@ -16,7 +15,6 @@ export type NavigationIntent =
       sessionId: string;
       tab?: WorkspaceTab | string | null;
       file?: string | null;
-      mode?: SessionMode | null;
       scope?: DiffScope | null;
       replace?: boolean;
     }

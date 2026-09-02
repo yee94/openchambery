@@ -21,7 +21,6 @@ describe('tool rendering classification', () => {
         expect(isExpandableTool('grep')).toBe(true);
         expect(isExpandableTool('webfetch')).toBe(true);
         expect(isExpandableTool('todowrite')).toBe(true);
-        expect(isExpandableTool('plan_exit')).toBe(true);
     });
 
     test('expands custom and MCP tools', () => {

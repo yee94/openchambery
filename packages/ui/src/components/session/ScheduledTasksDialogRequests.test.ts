@@ -80,17 +80,22 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).not.toContain("t('sessions.scheduledTasks.history.meta.duration')");
     expect(content).toContain("name=\"time\"");
     expect(content).toContain("run.trigger === 'manual' ? 'play' : 'calendar-schedule'");
-    // Shared PC/mobile rows: full-width body; mobile omits open-session button.
+    // Shared PC/mobile rows: full-width body; desktop keeps a visible label inside the row control.
     expect(content).toContain('const runBody = (');
     expect(content).toContain("isMobilePanel ? 'gap-2.5' : 'gap-3'");
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
-    expect(content).toContain("!isMobilePanel && canOpenSession ? (");
+    expect(content).toContain('<span className="shrink-0 self-center typography-ui-label font-medium text-foreground">');
+    const runBody = content.slice(content.indexOf('const runBody = ('), content.indexOf('if (isMobilePanel)', content.indexOf('const runBody = (')));
+    expect(runBody).not.toContain('<Button');
     expect(content).not.toContain("isMobilePanel && 'flex-nowrap gap-2'");
     expect(content).toContain('whitespace-nowrap tabular-nums');
     expect(content).toContain("month: 'numeric'");
-    // Text-only ghost button on desktop (keeps hover); no external-link glyph.
+    // The desktop button owns the full list-row hover and keyboard target.
     expect(content).not.toContain('<Icon name="external-link" className="size-4" />');
     expect(content).toContain("divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60");
+    expect(content).toContain('<article key={run.id} className="w-full min-w-0">');
+    expect(content).toContain('className="w-full min-w-0 px-4 py-3 text-left outline-none transition-colors hover:bg-interactive-hover');
+    expect(content).toContain('onClick={() => handleOpenRunSession(run)}');
     // Run error detail: inline icon + text (wraps at the trailing edge, not stacked).
     expect(content).toContain('{run.error ? (');
     expect(content).toContain('mt-1.5 min-w-0 break-words typography-micro text-[var(--surface-muted-foreground)] [overflow-wrap:anywhere]');
@@ -103,17 +108,18 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('opens linked run sessions through openSessionWithFeedback (visible errors when incomplete)', async () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
-    const handler = content.slice(content.indexOf('const handleOpenRunSession'), content.indexOf('const handleRetryRuns'));
+    const handler = content.slice(content.indexOf('const handleOpenSession'), content.indexOf('const handleRetryRuns'));
     // Unified open path: requires sessionId+directory; phone shell via option.
-    expect(handler).toContain('openSessionWithFeedback(run.sessionId, run.directory');
+    expect(handler).toContain('openSessionWithFeedback(sessionId, directory');
     expect(handler).toContain('phoneShell: Boolean(isMobilePanel && !isIPadApp())');
     expect(handler).not.toContain('isCapacitorApp()');
     // Incomplete identities still go through feedback (toast), not silent return-only.
-    expect(handler).not.toContain('if (!run.sessionId || !run.directory) return;');
+    expect(handler).not.toContain('if (!sessionId || !directory) return;');
     expect(content).toContain('const canOpenSession = Boolean(run.sessionId && run.directory)');
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
-    // Desktop: trailing ghost button. Mobile: whole-card press surface + trigger.
-    expect(content).toContain("!isMobilePanel && canOpenSession ? (");
+    // Desktop and mobile both use full-row native buttons for linked runs.
+    expect(content).toContain('if (canOpenSession) {');
+    expect(content).toContain('hover:bg-interactive-hover');
     expect(content).toContain('data-mobile-press-surface="soft"');
     expect(content).toContain('data-mobile-press-surface-trigger');
     expect(content).toContain('oc-mobile-scheduled-task-row');
@@ -129,6 +135,43 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain("t('sessions.scheduledTasks.dialog.actions.resume')");
     expect(content).toContain('{renderMenuItems(DropdownMenuItem)}');
     expect(content).toContain('{renderMenuItems(ContextMenuItem)}');
+  });
+
+  test('opens the latest task history session from task rows, menus, and the editor', async () => {
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const [workspaceContent, editorContent] = await Promise.all([
+      readFile(join(directory, 'ScheduledTasksDialog.tsx'), 'utf8'),
+      readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
+    ]);
+    const latestHandler = workspaceContent.slice(
+      workspaceContent.indexOf('const handleOpenLatestTaskSession'),
+      workspaceContent.indexOf('const handleRetryRuns'),
+    );
+    const taskMenuItems = workspaceContent.slice(
+      workspaceContent.indexOf('const renderMenuItems = (Item: React.ElementType)'),
+      workspaceContent.indexOf('return (', workspaceContent.indexOf('const renderMenuItems = (Item: React.ElementType)')),
+    );
+
+    expect(workspaceContent).toContain('const hasScheduledTaskRun = (task: ScheduledTask)');
+    expect(latestHandler).toContain('projectId: entry.projectId');
+    expect(latestHandler).toContain('taskId: entry.task.id');
+    expect(latestHandler).toContain('limit: 1');
+    expect(latestHandler).toContain('const latestRun = response.runs[0]');
+    expect(latestHandler).toContain('latestRun?.sessionId || entry.task.state?.lastSessionId');
+    expect(latestHandler).toContain('latestRun?.directory || projectById.get(entry.projectId)?.path');
+    expect(latestHandler).toContain("toast.error(error instanceof Error ? error.message : t('sessions.scheduledTasks.dialog.toast.loadFailed'))");
+    expect(taskMenuItems).toContain('void handleOpenLatestTaskSession(entry)');
+    expect(taskMenuItems).toContain("t('sessions.scheduledTasks.history.openSession')");
+    expect(workspaceContent).toContain("name={isOpeningLatestSession ? 'loader-4' : 'history'}");
+    expect(workspaceContent).toContain('onOpenLatestSession={handleEditorOpenLatestSession}');
+    expect(workspaceContent).toContain('{renderMenuItems(DropdownMenuItem)}');
+    expect(workspaceContent).toContain('{renderMenuItems(ContextMenuItem)}');
+
+    expect(editorContent).toContain('onOpenLatestSession?: (task: ScheduledTask) => Promise<void>');
+    expect(editorContent).toContain('const canOpenLatestSession = Boolean(');
+    expect(editorContent).toContain('onSelect={() => void onOpenLatestSession?.(task)}');
+    expect(editorContent).toContain("t('sessions.scheduledTasks.history.openSession')");
+    expect(editorContent).toContain('trailing={editorOverflowMenu}');
   });
 
   test('keeps the selected task editor open when deleting a different composite task identity', async () => {

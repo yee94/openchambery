@@ -342,13 +342,6 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     customizable: true,
   },
   {
-    id: 'toggle_context_plan',
-    defaultCombo: 'mod+shift+p',
-    label: 'Toggle plan context panel',
-    description: 'Open or close plan in the context panel',
-    customizable: true,
-  },
-  {
     id: 'toggle_services_menu',
     defaultCombo: 'mod+shift+s',
     label: 'Toggle services menu',

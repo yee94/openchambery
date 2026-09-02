@@ -354,7 +354,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         id: session.id,
         directory: getSessionDirectory(session),
         title: session.title?.trim() || untitled,
-        subtitle: project.label,
+        subtitle: pinned ? project.label : undefined,
         activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
         unread: (unseenBySession[session.id] ?? 0) > 0,
         pinned,

@@ -99,7 +99,7 @@ describe('createAppNavigation (memory router)', () => {
     expect(locationOf(router)).toBe('/session/sess-1/diff?file=a%2Fb.ts');
 
     await nav.goSession('sess-1', { tab: 'plan' });
-    expect(locationOf(router)).toBe('/session/sess-1/plan');
+    expect(locationOf(router)).toBe('/session/sess-1');
 
     await nav.goSchedule({ scheduleView: 'history' });
     expect(locationOf(router)).toBe('/schedule/history');

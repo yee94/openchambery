@@ -27,14 +27,11 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
         tab: 'chat',
       };
     case 'session': {
-      const tab: MainTab =
-        parsed.tab === 'chat' && parsed.mode === 'plan'
-          ? 'plan'
-          : (parsed.tab as MainTab);
+      const tab = parsed.tab as MainTab;
       return {
         sessionId: parsed.sessionId,
         isNewSession: false,
-        tab: tab === 'chat' && parsed.mode !== 'plan' ? null : tab,
+        tab: tab === 'chat' ? null : tab,
         settingsPath: null,
         settingsEntityId: null,
         diffFile: parsed.file,

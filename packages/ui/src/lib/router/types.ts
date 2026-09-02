@@ -32,7 +32,6 @@ export const VALID_TABS: readonly MainTab[] = [
   'terminal',
   'files',
   'diagram',
-  'plan',
   'schedule',
   'assistant',
 ] as const;

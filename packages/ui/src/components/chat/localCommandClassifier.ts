@@ -1,5 +1,5 @@
 export const LOCAL_CHAT_COMMANDS = new Set([
-  'new', 'fork', 'compact', 'undo', 'redo', 'timeline', 'model', 'summary', 'workspace-review', 'handoff-review', 'plan-feature', 'goal', 'craft-goal', 'catch-up', 'debug', 'weigh', 'explore',
+  'new', 'fork', 'compact', 'undo', 'redo', 'timeline', 'model', 'summary', 'workspace-review', 'handoff-review', 'goal', 'craft-goal', 'catch-up', 'debug', 'weigh', 'explore',
 ]);
 
 export const IMMEDIATE_LOCAL_CHAT_COMMANDS = new Set([

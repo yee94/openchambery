@@ -12,11 +12,10 @@ describe('primarySurface mutual exclusion', () => {
     });
     expect(resolvePrimarySurface('schedule', true).primary).toBe('settings');
     expect(resolvePrimarySurface('assistant', true).primary).toBe('settings');
-    expect(resolvePrimarySurface('plan', true).primary).toBe('settings');
     expect(resolvePrimarySurface('git', true).primary).toBe('settings');
   });
 
-  test('schedule / assistant / plan are exclusive primaries (no session tools)', () => {
+  test('schedule / assistant are exclusive primaries (no session tools)', () => {
     expect(resolvePrimarySurface('schedule', false)).toEqual({
       primary: 'schedule',
       sessionTool: null,
@@ -26,13 +25,8 @@ describe('primarySurface mutual exclusion', () => {
       primary: 'assistant',
       sessionTool: null,
     });
-    expect(resolvePrimarySurface('plan', false)).toEqual({
-      primary: 'plan',
-      sessionTool: null,
-    });
     expect(isExclusiveFullMainPrimary('schedule')).toBe(true);
     expect(isExclusiveFullMainPrimary('assistant')).toBe(true);
-    expect(isExclusiveFullMainPrimary('plan')).toBe(true);
     expect(isExclusiveFullMainPrimary('session')).toBe(false);
   });
 
@@ -50,7 +44,7 @@ describe('primarySurface mutual exclusion', () => {
   });
 
   test('primaries are mutually exclusive pairs', () => {
-    const primaries = ['session', 'plan', 'schedule', 'assistant', 'settings'] as const;
+    const primaries = ['session', 'schedule', 'assistant', 'settings'] as const;
     for (const a of primaries) {
       for (const b of primaries) {
         if (a === b) continue;

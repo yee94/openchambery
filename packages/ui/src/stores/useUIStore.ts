@@ -16,11 +16,11 @@ import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOpt
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 
-/** Main column tab. Product exclusive primaries: chat(session) | plan | schedule | assistant. */
-export type MainTab = 'chat' | 'plan' | 'git' | 'diff' | 'terminal' | 'files' | 'context' | 'diagram' | 'schedule' | 'assistant';
+/** Main column tab. Product exclusive primaries: chat(session) | schedule | assistant. */
+export type MainTab = 'chat' | 'git' | 'diff' | 'terminal' | 'files' | 'diagram' | 'schedule' | 'assistant';
 export type PendingDiffScope = 'working' | 'staged' | 'turn';
-export type RightSidebarTab = 'git' | 'files' | 'context';
-export type ContextPanelMode = 'diff' | 'file-diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser';
+export type RightSidebarTab = 'git' | 'files';
+export type ContextPanelMode = 'diff' | 'file-diff' | 'file' | 'context' | 'chat' | 'preview' | 'browser';
 export type MermaidRenderingMode = 'svg' | 'ascii';
 export type UserMessageRenderingMode = 'markdown' | 'plain';
 type SelectorOpenOptions = { instant?: boolean };
@@ -363,7 +363,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       touchedAt?: unknown;
     };
 
-    if (candidate.mode !== 'diff' && candidate.mode !== 'file-diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'plan' && candidate.mode !== 'chat' && candidate.mode !== 'preview' && candidate.mode !== 'browser') {
+    if (candidate.mode !== 'diff' && candidate.mode !== 'file-diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'chat' && candidate.mode !== 'preview' && candidate.mode !== 'browser') {
       continue;
     }
 
@@ -568,7 +568,7 @@ const sanitizeContextPanelByDirectory = (
     let tabs = sanitizeContextPanelTabs(candidate.tabs);
     let activeTabId = typeof candidate.activeTabId === 'string' ? candidate.activeTabId : null;
 
-    if (tabs.length === 0 && (candidate.mode === 'diff' || candidate.mode === 'file-diff' || candidate.mode === 'file' || candidate.mode === 'context' || candidate.mode === 'plan' || candidate.mode === 'chat')) {
+    if (tabs.length === 0 && (candidate.mode === 'diff' || candidate.mode === 'file-diff' || candidate.mode === 'file' || candidate.mode === 'context' || candidate.mode === 'chat')) {
       tabs = [createContextPanelTab({
         mode: candidate.mode,
         targetPath: typeof candidate.targetPath === 'string' ? candidate.targetPath : null,
@@ -719,8 +719,6 @@ interface UIStore {
   isBottomTerminalExpanded: boolean;
   bottomTerminalHeight: number;
   hasManuallyResizedBottomTerminal: boolean;
-  notesPanelHeight: number;
-  todoPanelHeight: number;
   isSessionSwitcherOpen: boolean;
   isSessionDropdownOpen: boolean;
   activeMainTab: MainTab;
@@ -878,7 +876,6 @@ interface UIStore {
   openContextFile: (directory: string, filePath: string, options?: { fileNotice?: ContextPanelFileNotice | null }) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
   openContextOverview: (directory: string) => void;
-  openContextPlan: (directory: string) => void;
   openContextPreview: (directory: string, url: string) => void;
   openContextBrowser: (directory: string, url?: string) => void;
   setContextPanelTabTargetPath: (directory: string, tabID: string, targetPath: string) => void;
@@ -895,8 +892,6 @@ interface UIStore {
   setBottomTerminalOpen: (open: boolean) => void;
   setBottomTerminalExpanded: (expanded: boolean) => void;
   setBottomTerminalHeight: (height: number) => void;
-  setNotesPanelHeight: (height: number) => void;
-  setTodoPanelHeight: (height: number) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
   setSessionDropdownOpen: (open: boolean) => void;
   setActiveMainTab: (tab: MainTab) => boolean;
@@ -1061,8 +1056,6 @@ export const useUIStore = create<UIStore>()(
         isBottomTerminalExpanded: false,
         bottomTerminalHeight: 300,
         hasManuallyResizedBottomTerminal: false,
-        notesPanelHeight: 112,
-        todoPanelHeight: 259,
         isSessionSwitcherOpen: false,
         isSessionDropdownOpen: false,
         activeMainTab: 'chat',
@@ -1528,15 +1521,6 @@ export const useUIStore = create<UIStore>()(
           get().openContextPanelTab(normalizedDirectory, { mode: 'context' });
         },
 
-        openContextPlan: (directory) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
-          if (!normalizedDirectory) {
-            return;
-          }
-
-          get().openContextPanelTab(normalizedDirectory, { mode: 'plan' });
-        },
-
         openContextPreview: (directory, url) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedUrl = (url || '').trim();
@@ -1829,14 +1813,6 @@ export const useUIStore = create<UIStore>()(
 
         setBottomTerminalHeight: (height) => {
           set({ bottomTerminalHeight: height, hasManuallyResizedBottomTerminal: true });
-        },
-
-        setNotesPanelHeight: (height) => {
-          set({ notesPanelHeight: height });
-        },
-
-        setTodoPanelHeight: (height) => {
-          set({ todoPanelHeight: height });
         },
 
         setSessionSwitcherOpen: (open) => {
@@ -2720,7 +2696,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        version: 12,
+        version: 13,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -2740,13 +2716,16 @@ export const useUIStore = create<UIStore>()(
             delete state.diffViewMode;
           }
 
-          // v8 -> v9: initialize notes/todo panel height fields
-          if (version < 9) {
-            if (typeof state.notesPanelHeight !== 'number' || !Number.isFinite(state.notesPanelHeight)) {
-              state.notesPanelHeight = 112;
+          // v12 -> v13: context/plan feature removed — drop notes/todo panel
+          // heights and normalize any lingering context/plan UI state to chat.
+          if (version < 13) {
+            delete state.notesPanelHeight;
+            delete state.todoPanelHeight;
+            if (state.activeMainTab === 'plan' || state.activeMainTab === 'context') {
+              state.activeMainTab = 'chat';
             }
-            if (typeof state.todoPanelHeight !== 'number' || !Number.isFinite(state.todoPanelHeight)) {
-              state.todoPanelHeight = 259;
+            if (state.rightSidebarTab === 'context') {
+              state.rightSidebarTab = 'files';
             }
           }
 
@@ -2785,9 +2764,9 @@ export const useUIStore = create<UIStore>()(
 
           if (
             typeof state.rightSidebarTab !== 'string'
-            || (state.rightSidebarTab !== 'git' && state.rightSidebarTab !== 'files' && state.rightSidebarTab !== 'context')
+            || (state.rightSidebarTab !== 'git' && state.rightSidebarTab !== 'files')
           ) {
-            state.rightSidebarTab = 'git';
+            state.rightSidebarTab = 'files';
           }
 
           state.contextPanelByDirectory = sanitizeContextPanelByDirectory(state.contextPanelByDirectory);
@@ -2836,8 +2815,6 @@ export const useUIStore = create<UIStore>()(
           isBottomTerminalOpen: state.isBottomTerminalOpen,
           isBottomTerminalExpanded: state.isBottomTerminalExpanded,
           bottomTerminalHeight: state.bottomTerminalHeight,
-          notesPanelHeight: state.notesPanelHeight,
-          todoPanelHeight: state.todoPanelHeight,
           isSessionSwitcherOpen: state.isSessionSwitcherOpen,
           activeMainTab: state.activeMainTab,
           sidebarSection: state.sidebarSection,

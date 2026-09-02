@@ -40,7 +40,6 @@ state. Its keys include transport, normalized path scope, resource, and behavior
 options. `MobileFilesSurface` uses this baseline while retaining navigation,
 route, drafts, raw asset auth, and mutations locally.
 `DiagramView` keeps initial diagram reads in the content Query while retaining XML editing and its serial save queue locally.
-`planQueries.ts` owns resolved plan reads. Its aggregate Query resolves target paths or the ordered session repo/home candidates using the authoritative optional-read `exists` contract. `PlanView` owns the editable draft and serial save queue; successful saves update the matching file-content and plan aggregate snapshots.
 
 `agentQueries.ts` and `commandQueries.ts` own their official SDK catalogs, then
 resolve OpenChamber-owned scope metadata with one bounded batched runtime request.

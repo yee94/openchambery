@@ -102,8 +102,6 @@ const TOOL_STATUS_KEYS: Record<string, I18nKey> = {
     todoread: 'chat.assistantStatus.readingTodos',
     skill: 'chat.assistantStatus.learningSkill',
     question: 'chat.assistantStatus.askingQuestion',
-    plan_enter: 'chat.assistantStatus.switchingToPlanning',
-    plan_exit: 'chat.assistantStatus.switchingToBuilding',
 };
 const WORKING_PHRASE_KEYS: I18nKey[] = [
     'chat.assistantStatus.working',

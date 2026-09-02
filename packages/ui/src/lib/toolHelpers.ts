@@ -189,20 +189,6 @@ const TOOL_METADATA: Record<string, ToolMetadata> = {
       ]
     },
 
-    plan_enter: {
-      displayName: 'Plan Mode',
-      category: 'ai',
-      outputLanguage: 'text',
-      inputFields: []
-    },
-
-    plan_exit: {
-      displayName: 'Build Mode',
-      category: 'ai',
-      outputLanguage: 'text',
-      inputFields: []
-    },
-
     StructuredOutput: {
       displayName: 'Structured Output',
       category: 'ai',
@@ -252,8 +238,6 @@ const BUILT_IN_TOOL_DISPLAY_KEYS = {
   skill: 'chat.tools.display.skill',
   question: 'chat.tools.display.question',
   lsp: 'chat.tools.display.lsp',
-  plan_enter: 'chat.tools.display.plan_enter',
-  plan_exit: 'chat.tools.display.plan_exit',
   structuredoutput: 'chat.tools.display.structuredoutput',
 } as const satisfies Record<string, I18nKey>;
 

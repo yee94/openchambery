@@ -225,6 +225,12 @@ const toneStyle = (tone: StatusTone): React.CSSProperties => {
 type TaskIdentity = { projectId: string; taskId: string };
 
 const taskIdentityKey = ({ projectId, taskId }: TaskIdentity) => `${projectId}:${taskId}`;
+const hasScheduledTaskRun = (task: ScheduledTask): boolean => Boolean(
+  task.state?.lastSessionId
+  || task.state?.lastStatus === 'success'
+  || task.state?.lastStatus === 'error'
+  || task.state?.lastStatus === 'running'
+);
 const globalScheduledTasksQueryKey = queryKeys.scoped('scheduled-tasks');
 const globalScheduledTaskRunsQueryKey = queryKeys.scoped('scheduled-task-runs');
 
@@ -313,6 +319,7 @@ export function ScheduledTasksWorkspace({
   const [mutatingTaskIdentity, setMutatingTaskIdentity] = React.useState<string | null>(null);
   const [contextMenuTaskIdentity, setContextMenuTaskIdentity] = React.useState<string | null>(null);
   const [dropdownMenuTaskIdentity, setDropdownMenuTaskIdentity] = React.useState<string | null>(null);
+  const [openingTaskIdentity, setOpeningTaskIdentity] = React.useState<string | null>(null);
   const mobileNavigationSurfaceRef = React.useRef<HTMLDivElement | null>(null);
   const mobileNavigationUnderlayRef = React.useRef<HTMLDivElement | null>(null);
   // `mobile-tab` shares the mobile layout but is hosted as a root tab page:
@@ -545,16 +552,48 @@ export function ScheduledTasksWorkspace({
     syncScheduledPath(nextView, null);
   });
 
-  const handleOpenRunSession = useEvent((run: ScheduledTaskRun) => {
+  const handleOpenSession = useEvent((sessionId: string | null | undefined, directory: string | null | undefined) => {
     // Missing session id or workspace path: toast "unable to load conversation …"
     // — never open under the wrong current project cwd.
-    if (presentation === 'mobile-panel' && run.sessionId && run.directory) {
+    if (presentation === 'mobile-panel' && sessionId && directory) {
       onOpenChange?.(false);
     }
-    openSessionWithFeedback(run.sessionId, run.directory, {
+    openSessionWithFeedback(sessionId, directory, {
       phoneShell: Boolean(isMobilePanel && !isIPadApp()),
       switchToChat: true,
     });
+  });
+
+  const handleOpenRunSession = useEvent((run: ScheduledTaskRun) => {
+    handleOpenSession(run.sessionId, run.directory);
+  });
+
+  const handleOpenLatestTaskSession = useEvent(async (entry: GlobalScheduledTask) => {
+    if (openingTaskIdentity) return;
+    const identityKey = taskIdentityKey({ projectId: entry.projectId, taskId: entry.task.id });
+    setOpeningTaskIdentity(identityKey);
+    try {
+      const response = await fetchScheduledTaskRuns({
+        projectId: entry.projectId,
+        taskId: entry.task.id,
+        limit: 1,
+      });
+      const latestRun = response.runs[0];
+      handleOpenSession(
+        latestRun?.sessionId || entry.task.state?.lastSessionId,
+        latestRun?.directory || projectById.get(entry.projectId)?.path,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('sessions.scheduledTasks.dialog.toast.loadFailed'));
+    } finally {
+      setOpeningTaskIdentity((current) => current === identityKey ? null : current);
+    }
+  });
+
+  const handleEditorOpenLatestSession = useEvent(async () => {
+    if (selectedTaskEntry) {
+      await handleOpenLatestTaskSession(selectedTaskEntry);
+    }
   });
 
   const handleRetryRuns = useEvent(async () => {
@@ -787,6 +826,16 @@ export function ScheduledTasksWorkspace({
                   <Icon name="play" className="size-4" />
                   {t('sessions.scheduledTasks.dialog.actions.runNow')}
                 </DropdownMenuItem>
+                {hasScheduledTaskRun(selectedTaskEntry.task) ? (
+                  <DropdownMenuItem
+                    className="min-h-11"
+                    disabled={Boolean(openingTaskIdentity)}
+                    onSelect={() => void handleOpenLatestTaskSession(selectedTaskEntry)}
+                  >
+                    <Icon name="history" className="size-4" />
+                    {t('sessions.scheduledTasks.history.openSession')}
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem className="min-h-11" onSelect={() => void handleToggleTask(selectedTaskEntry, !selectedTaskEntry.task.enabled)}>
                   <Icon name={selectedTaskEntry.task.enabled ? 'pause' : 'play'} className="size-4" />
                   {selectedTaskEntry.task.enabled
@@ -1166,14 +1215,9 @@ export function ScheduledTasksWorkspace({
                               </span>
                             </div>
                             {!isMobilePanel && canOpenSession ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 shrink-0 self-center text-foreground"
-                                onClick={() => handleOpenRunSession(run)}
-                              >
+                              <span className="shrink-0 self-center typography-ui-label font-medium text-foreground">
                                 {t('sessions.scheduledTasks.history.openSession')}
-                              </Button>
+                              </span>
                             ) : null}
                           </div>
                           {run.error ? (
@@ -1240,11 +1284,23 @@ export function ScheduledTasksWorkspace({
                       );
                     }
 
+                    if (canOpenSession) {
+                      return (
+                        <article key={run.id} className="w-full min-w-0">
+                          <button
+                            type="button"
+                            className="w-full min-w-0 px-4 py-3 text-left outline-none transition-colors hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none"
+                            aria-label={t('sessions.scheduledTasks.history.openSession')}
+                            onClick={() => handleOpenRunSession(run)}
+                          >
+                            {runBody}
+                          </button>
+                        </article>
+                      );
+                    }
+
                     return (
-                      <article
-                        key={run.id}
-                        className="w-full min-w-0 px-4 py-3"
-                      >
+                      <article key={run.id} className="w-full min-w-0 px-4 py-3">
                         {runBody}
                       </article>
                     );
@@ -1323,6 +1379,8 @@ export function ScheduledTasksWorkspace({
                 const status = (task.state?.lastStatus || 'idle') as ScheduledTaskStatus;
                 const meta = STATUS_META[status];
                 const isBusy = mutatingTaskIdentity === identityKey;
+                const canOpenLatestSession = hasScheduledTaskRun(task);
+                const isOpeningLatestSession = openingTaskIdentity === identityKey;
                 const renderMenuItems = (Item: React.ElementType) => (
                   <>
                     <Item
@@ -1336,6 +1394,19 @@ export function ScheduledTasksWorkspace({
                       <Icon name="play" className="size-4" />
                       {t('sessions.scheduledTasks.dialog.actions.runNow')}
                     </Item>
+                    {canOpenLatestSession ? (
+                      <Item
+                        className={cn(isMobilePanel && 'min-h-11')}
+                        onClick={(event: React.MouseEvent) => {
+                          event.stopPropagation();
+                          void handleOpenLatestTaskSession(entry);
+                        }}
+                        disabled={Boolean(openingTaskIdentity)}
+                      >
+                        <Icon name="history" className="size-4" />
+                        {t('sessions.scheduledTasks.history.openSession')}
+                      </Item>
+                    ) : null}
                     <Item
                       className={cn(isMobilePanel && 'min-h-11')}
                       onClick={(event: React.MouseEvent) => {
@@ -1457,6 +1528,28 @@ export function ScheduledTasksWorkspace({
                       </span>
                     </span>
                     </ContextMenuTrigger>
+                    {canOpenLatestSession ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          'shrink-0 self-center rounded-lg text-muted-foreground',
+                          isMobilePanel ? 'size-11 rounded-full' : 'size-9',
+                        )}
+                        disabled={Boolean(openingTaskIdentity)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleOpenLatestTaskSession(entry);
+                        }}
+                        aria-label={t('sessions.scheduledTasks.history.openSession')}
+                      >
+                        <Icon
+                          name={isOpeningLatestSession ? 'loader-4' : 'history'}
+                          className={cn('size-4', isOpeningLatestSession && 'animate-spin motion-reduce:animate-none')}
+                        />
+                      </Button>
+                    ) : null}
                     <DropdownMenu
                       open={dropdownMenuTaskIdentity === identityKey}
                       onOpenChange={(open) => {
@@ -1533,9 +1626,10 @@ export function ScheduledTasksWorkspace({
                 onSave={handleSaveTask}
                 onDirtyChange={setDraftDirty}
                 onRun={async () => { if (selectedTaskEntry) await handleRunTask(selectedTaskEntry); }}
+                onOpenLatestSession={handleEditorOpenLatestSession}
                 onDelete={async () => { if (selectedTaskEntry) await handleDeleteTask(selectedTaskEntry); }}
                 onToggleEnabled={async (_task, enabled) => { if (selectedTaskEntry) await handleToggleTask(selectedTaskEntry, enabled); }}
-                actionBusy={Boolean(mutatingTaskIdentity)}
+                actionBusy={Boolean(mutatingTaskIdentity || openingTaskIdentity)}
                 projectID={selectedTaskIdentity?.projectId || createProjectID}
                 projectOptions={editorProjectOptions}
                 onProjectChange={editorMode === 'create' ? setCreateProjectID : undefined}
@@ -1561,9 +1655,10 @@ export function ScheduledTasksWorkspace({
             onSave={handleSaveTask}
             onDirtyChange={setDraftDirty}
             onRun={async () => { if (selectedTaskEntry) await handleRunTask(selectedTaskEntry); }}
+            onOpenLatestSession={handleEditorOpenLatestSession}
             onDelete={async () => { if (selectedTaskEntry) await handleDeleteTask(selectedTaskEntry); }}
             onToggleEnabled={async (_task, enabled) => { if (selectedTaskEntry) await handleToggleTask(selectedTaskEntry, enabled); }}
-            actionBusy={Boolean(mutatingTaskIdentity)}
+            actionBusy={Boolean(mutatingTaskIdentity || openingTaskIdentity)}
             projectID={selectedTaskIdentity?.projectId || createProjectID}
             projectOptions={editorProjectOptions}
             onProjectChange={editorMode === 'create' ? setCreateProjectID : undefined}
