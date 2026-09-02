@@ -83,7 +83,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `GET /api/config/opencode-resolution`
   - `GET /api/behavior/agents-md`: returns an authoritative empty document only when the file is absent (`ENOENT`); permission and I/O failures return HTTP 500.
   - `PUT /api/behavior/agents-md`
-  - `POST /api/opencode/upgrade` (proxies OpenCode upgrade, then restarts managed OpenCode so the new binary is active)
+  - `POST /api/opencode/upgrade` (proxies OpenCode `POST /global/upgrade` with a required semantic version `target`, then restarts managed OpenCode so the new binary is active)
   - `GET /api/opencode/upgrade-status`
   - `POST /api/opencode/directory`
   - `GET /api/provider/:providerId/source`

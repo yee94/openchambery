@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 
 import {
+    buildOpenCodeUpgradeRequestBody,
     resolveOpenCodeUpdateVersion,
     resolveOpenCodeUpgradeStatusVersion,
     shouldShowOpenCodeUpdateToast,
@@ -236,5 +237,17 @@ describe('resolveOpenCodeUpgradeStatusVersion', () => {
                 latestVersion: null,
             }),
         ).toBe('');
+    });
+});
+
+describe('buildOpenCodeUpgradeRequestBody', () => {
+    test('sends a stripped semver target', () => {
+        expect(buildOpenCodeUpgradeRequestBody('v1.18.26')).toEqual({ target: '1.18.26' });
+        expect(buildOpenCodeUpgradeRequestBody('1.18.26')).toEqual({ target: '1.18.26' });
+    });
+
+    test('returns null when the toast has no version', () => {
+        expect(buildOpenCodeUpgradeRequestBody('')).toBeNull();
+        expect(buildOpenCodeUpgradeRequestBody('   ')).toBeNull();
     });
 });

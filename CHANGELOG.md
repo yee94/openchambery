@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.1] - 2026-09-02
+
+### 其它
+
+- 修复应用内更新 OpenCode 时因缺少版本号而报 Bad Request。
+
 ## [1.19.0] - 2026-09-02
 
 汇总 1.18.6-beta.1 ~ 1.19.0-beta.42。

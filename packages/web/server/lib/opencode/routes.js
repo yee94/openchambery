@@ -133,6 +133,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   };
 
+  const normalizeOpenCodeUpgradeTarget = (value) => {
+    if (typeof value !== 'string') return '';
+    return value.trim().replace(/^v/i, '');
+  };
+
+  const readOpenCodeUpgradeError = (payload, fallback) => {
+    if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error.trim();
+    if (typeof payload?.data?.message === 'string' && payload.data.message.trim()) {
+      return payload.data.message.trim();
+    }
+    if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message.trim();
+    return fallback;
+  };
+
   app.get('/api/config/settings', async (req, res) => {
     try {
       const settings = await readSettingsFromDiskMigrated();
@@ -175,9 +189,14 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
 
-      const target = typeof req.body?.target === 'string' && req.body.target.trim().length > 0
-        ? req.body.target.trim()
-        : undefined;
+      const target = normalizeOpenCodeUpgradeTarget(req.body?.target);
+      if (!target) {
+        return res.status(400).json({
+          success: false,
+          error: 'OpenCode upgrade requires a semantic version target',
+        });
+      }
+
       const response = await fetch(buildOpenCodeUrl('/global/upgrade', ''), {
         method: 'POST',
         headers: {
@@ -185,13 +204,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           Accept: 'application/json',
           ...getOpenCodeAuthHeaders(),
         },
-        body: JSON.stringify(target ? { target } : {}),
+        body: JSON.stringify({ target }),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         return res.status(response.status).json({
           success: false,
-          error: payload?.error || response.statusText || 'Failed to upgrade OpenCode',
+          error: readOpenCodeUpgradeError(payload, response.statusText || 'Failed to upgrade OpenCode'),
         });
       }
 

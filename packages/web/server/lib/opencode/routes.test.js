@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import fs from 'fs';
@@ -123,5 +123,82 @@ describe('behavior AGENTS.md route', () => {
 
     expect(response.body).toEqual({ error: 'Failed to read AGENTS.md' });
     readFile.mockRestore();
+  });
+});
+
+describe('opencode upgrade route', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const jsonResponse = (body, status = 200, statusText = '') =>
+    new Response(JSON.stringify(body), {
+      status,
+      statusText,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  const createUpgradeApp = () => {
+    const app = express();
+    app.use(express.json());
+    const deps = createDependencies({ formatSettingsResponse: vi.fn(() => ({})) });
+    deps.getOpenCodeResolutionSnapshot.mockResolvedValue({ source: 'path' });
+    deps.buildOpenCodeUrl.mockImplementation((pathname) => `http://opencode.test${pathname}`);
+    deps.refreshOpenCodeAfterConfigChange.mockResolvedValue(undefined);
+    registerOpenCodeRoutes(app, deps);
+    return { app, deps };
+  };
+
+  it('forwards an explicit target to OpenCode /global/upgrade', async () => {
+    const fetchMock = vi.fn(async (url, init) => {
+      expect(String(url)).toBe('http://opencode.test/global/upgrade');
+      expect(JSON.parse(init.body)).toEqual({ target: '1.18.26' });
+      return jsonResponse({ success: true, version: '1.18.26' });
+    });
+    globalThis.fetch = fetchMock;
+    const { app } = createUpgradeApp();
+
+    const response = await request(app)
+      .post('/api/opencode/upgrade')
+      .send({ target: 'v1.18.26' })
+      .expect(200);
+
+    expect(response.body).toEqual({ success: true, version: '1.18.26', restarted: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an omitted target without calling OpenCode', async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const { app } = createUpgradeApp();
+
+    const response = await request(app).post('/api/opencode/upgrade').send({}).expect(400);
+
+    expect(response.body).toEqual({
+      success: false,
+      error: 'OpenCode upgrade requires a semantic version target',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces OpenCode schema BadRequest messages instead of statusText', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        { name: 'BadRequest', data: { message: 'Expected a semantic version', kind: 'Missing' } },
+        400,
+        'Bad Request',
+      ),
+    );
+    globalThis.fetch = fetchMock;
+    const { app } = createUpgradeApp();
+
+    const response = await request(app)
+      .post('/api/opencode/upgrade')
+      .send({ target: 'latest' })
+      .expect(400);
+
+    expect(response.body).toEqual({ success: false, error: 'Expected a semantic version' });
   });
 });
