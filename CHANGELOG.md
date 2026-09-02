@@ -4,9 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Changed
+## [1.19.0] - 2026-09-02
 
-- iOS native experience is off by default. Turning it on may stutter.
+汇总 1.18.6-beta.1 ~ 1.19.0-beta.42。
+
+### 聊天
+
+- 新时间线引擎，打开会话直接落在最新消息。
+- 发送后把这条消息停在上方，下方留给回复。
+- 会话里的 subagent 可以直接打开。
+
+### iPhone
+
+- 原生液态玻璃输入框，支持附件、`/` 和 `@`。
+- iOS 26 首页原生液态玻璃底栏。
+- 任务进行中会在灵动岛和锁屏显示 Live Activity。
+- 外观设置可开关原生体验，默认关闭。
+
+### 移动端
+
+- 首页置顶分组会列出进行中和未读会话。
+- 按钮、卡片和菜单有按压缩放和轻触感。
+
+### 其它
+
+- 自托管 Relay 支持推送，并提供 `openchamber-push-relay`。
+- 命令行也可安装为 `openchambery`。
+- 凭证同步改成配置同步里的可选项。
 
 ## [1.19.0-beta.42] - 2026-09-02
 
