@@ -1039,6 +1039,79 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(Object.hasOwn(finalPatch, 'lastSessionId')).toBe(false);
   });
 
+  it('marks lastStatus running when a history session continues, then success on idle', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({ settlement: 'assistant-error' });
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('prompt_async')) {
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const emitTaskRunEvent = vi.fn();
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      emitTaskRunEvent,
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+    expect(result.status).toBe('error');
+    expect(history.finishRun).toHaveBeenCalledTimes(1);
+
+    await runtime.observeSessionEvent({
+      payload: {
+        type: 'session.status',
+        properties: { sessionID: 'ses_1', status: { type: 'busy' } },
+      },
+    });
+
+    expect(history.finishRun).toHaveBeenCalledTimes(1);
+    const runningPatch = updateScheduledTaskState.mock.calls.at(-1)[2];
+    expect(runningPatch).toEqual(expect.objectContaining({
+      lastStatus: 'running',
+      lastError: undefined,
+      lastSessionId: 'ses_1',
+    }));
+    expect(Object.hasOwn(runningPatch, 'lastRunAt')).toBe(false);
+    expect(emitTaskRunEvent).toHaveBeenCalledWith(expect.objectContaining({
+      projectID: 'project-1',
+      taskID: 'task-1',
+      status: 'running',
+      sessionID: 'ses_1',
+    }));
+
+    client.messages.mockImplementation(async () => ({
+      data: [{
+        info: {
+          id: 'msg_ok',
+          role: 'assistant',
+          time: { completed: Date.now() },
+        },
+      }],
+    }));
+
+    await runtime.observeSessionEvent({
+      payload: {
+        type: 'session.idle',
+        properties: { sessionID: 'ses_1' },
+      },
+    });
+
+    expect(updateScheduledTaskState.mock.calls.at(-1)[2]).toEqual(expect.objectContaining({
+      lastStatus: 'success',
+      lastSessionId: 'ses_1',
+    }));
+    expect(history.finishRun).toHaveBeenCalledTimes(1);
+
+    vi.unstubAllGlobals();
+  });
+
   it('corrects lastStatus error → success on idle after a continuation, without rewriting history', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ settlement: 'assistant-error' });
@@ -1143,6 +1216,15 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(history.finishRun).not.toHaveBeenCalled();
 
     const successEmitsBefore = emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success').length;
+    const continuationRunningBefore = updateScheduledTaskState.mock.calls.filter((call) => (
+      call[2].lastStatus === 'running' && !Object.hasOwn(call[2], 'lastRunAt')
+    )).length;
+    await runtime.observeSessionEvent({
+      payload: {
+        type: 'session.status',
+        properties: { sessionID: 'ses_1', status: { type: 'busy' } },
+      },
+    });
     await runtime.observeSessionEvent({
       payload: {
         type: 'session.idle',
@@ -1152,6 +1234,9 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(history.finishRun).not.toHaveBeenCalled();
     expect(updateScheduledTaskState.mock.calls.map((call) => call[2].lastStatus)).not.toContain('success');
     expect(emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success')).toHaveLength(successEmitsBefore);
+    expect(updateScheduledTaskState.mock.calls.filter((call) => (
+      call[2].lastStatus === 'running' && !Object.hasOwn(call[2], 'lastRunAt')
+    ))).toHaveLength(continuationRunningBefore);
 
     await vi.advanceTimersByTimeAsync(1_000);
     const result = await runPromise;
@@ -1183,7 +1268,9 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     });
     await runtime.syncProject('project-1');
     const result = await runtime.runNow('project-1', 'task-1');
+
     expect(result.ok).toBe(true);
+    expect(emitTaskRunEvent.mock.calls.map((call) => call[0].status)[0]).toBe('running');
     expect(history.finishRun).toHaveBeenCalledTimes(1);
     const stateWritesAfterRun = updateScheduledTaskState.mock.calls.length;
     const successEmitsAfterRun = emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success').length;

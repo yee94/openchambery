@@ -223,22 +223,24 @@ SSE events keep the existing `openchamber:scheduled-task-ran` shape.
 
 ## Post-run continuation
 
-After a run has finalized (including as `error`) with a session, the user may
-continue chatting in that same history session. When that session later becomes
-idle and a single outcome snapshot is success, the runtime corrects **only
-task state**:
+After a run has finalized with a session, the user may continue chatting in
+that same history session. `observeSessionEvent` corrects **only task state**
+(history rows are not rewritten, `finishRun` is not called again):
 
-- `lastStatus` → `success`
-- clear `lastError`
-- keep/set `lastSessionId`
+- `session.status` busy/retry while `lastStatus` is `error` or `success` →
+  `lastStatus` `running`, clear `lastError`, keep/set `lastSessionId`
+- later `session.idle` (or idle `session.status`) with a success snapshot →
+  `lastStatus` `success`
 - do not change `lastRunAt` / `lastDurationMs` / `nextRunAt`
-- do not call `finishRun` again (the history row stays the original run snapshot)
 
-Correction is event-driven via `observeSessionEvent` (`session.idle` or idle
-`session.status`). A live run (`runningTaskKeys`) owns settlement; the observer
-is a no-op while the task is running, if `lastStatus` is already `success` or
-`running`, or if the snapshot is still error/busy/unknown. Observer failures
-are logged and must not throw out of the event bus.
+A live run (`runningTaskKeys`) owns settlement; the observer is a no-op while
+the task is in `runningTaskKeys`. Idle correction is a no-op if `lastStatus`
+is already `success`, or if the snapshot is still error/busy/unknown. Observer
+failures are logged and must not throw out of the event bus.
+
+Run start also emits `scheduled-task-ran` with `status: running` as soon as
+task state is persisted, so the outer task list can show in-progress before
+the session is attached.
 
 ## Watchdog cancel / upstream abort
 

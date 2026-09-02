@@ -213,13 +213,13 @@ function toCapgoResponse(decision) {
   };
 }
 
-async function withReleaseNotes(decision, request, parsedRequest) {
+async function withReleaseNotes(decision, parsedRequest, changelogBaseUrl) {
   if (decision.primaryAction !== 'apply_ota' || !decision.ota?.bundle?.releaseVersion) {
     return decision;
   }
 
   const releaseNotes = await loadReleaseNotes(
-    request.url,
+    changelogBaseUrl,
     resolveChangelogCurrentVersion(parsedRequest),
     decision.ota.bundle.releaseVersion,
   );
@@ -228,12 +228,14 @@ async function withReleaseNotes(decision, request, parsedRequest) {
 }
 
 async function runUpdateCheck(request, parsedRequest, manifestBaseUrl) {
-  // By default manifests load relative to the request origin (fast on Vercel,
-  // where they are static files). EdgeOne deployments must override this with
-  // the Vercel origin: /ota/* on EdgeOne is served by the reverse-proxy
-  // function, and fetching it from an edge endpoint would loop back into the
-  // edge runtime and fail.
-  const manifest = await loadOtaChannelManifest(manifestBaseUrl ?? request.url, parsedRequest.channel);
+  // By default manifests and CHANGELOG load relative to the request origin
+  // (fast on Vercel, where they are static files). EdgeOne deployments must
+  // override this with the Vercel origin: /ota/* and /CHANGELOG.md on EdgeOne
+  // are reverse-proxied (or, if CHANGELOG is still a git-time static file,
+  // stale). Fetching either from an edge endpoint would loop or filter notes
+  // against an outdated changelog and omit releaseNotes.
+  const assetBaseUrl = manifestBaseUrl ?? request.url;
+  const manifest = await loadOtaChannelManifest(assetBaseUrl, parsedRequest.channel);
   if (manifest === null) {
     // Distinguish missing channel file (null from fetch miss) vs load failure:
     // loadOtaChannelManifest returns null for both fetch failure and invalid JSON.
@@ -248,8 +250,8 @@ async function runUpdateCheck(request, parsedRequest, manifestBaseUrl) {
       resolveMobileUpdate(manifest, parsedRequest),
       request.url,
     ),
-    request,
     parsedRequest,
+    assetBaseUrl,
   );
   return jsonResponse(decision);
 }

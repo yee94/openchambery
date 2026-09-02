@@ -390,21 +390,26 @@ const snapshotSessionOutcome = async ({
   return { outcome: 'busy' };
 };
 
-const parseSessionEventIdle = (event) => {
+const parseSessionEventPhase = (event) => {
   const payload = event?.payload?.payload ?? event?.payload;
   const properties = payload?.properties;
   const sessionID = typeof properties?.sessionID === 'string' ? properties.sessionID : '';
   if (!sessionID) {
-    return { idle: false, sessionID: '' };
+    return { phase: '', sessionID: '' };
   }
   if (payload?.type === 'session.idle') {
-    return { idle: true, sessionID };
+    return { phase: 'idle', sessionID };
   }
   if (payload?.type === 'session.status') {
     const type = properties?.status?.type ?? properties?.info?.type;
-    return { idle: type === 'idle', sessionID };
+    if (type === 'idle') {
+      return { phase: 'idle', sessionID };
+    }
+    if (type === 'busy' || type === 'retry') {
+      return { phase: 'busy', sessionID };
+    }
   }
-  return { idle: false, sessionID };
+  return { phase: '', sessionID };
 };
 
 export const createScheduledTasksRuntime = (deps) => {
@@ -1291,6 +1296,15 @@ export const createScheduledTasksRuntime = (deps) => {
           if (runningState.task) {
             updateInMemoryTask(projectID, runningState.task);
           }
+          try {
+            emitTaskRunEvent?.({
+              projectID,
+              taskID,
+              ranAt: runStartedAt,
+              status: 'running',
+            });
+          } catch {
+          }
         } catch (error) {
           errorMessage = safeErrorMessage(error);
           logger.warn?.('[ScheduledTasks] failed to persist running state', {
@@ -1586,9 +1600,22 @@ export const createScheduledTasksRuntime = (deps) => {
     };
   };
 
-  const handleSessionIdleCorrection = async (event) => {
-    const { idle, sessionID } = parseSessionEventIdle(event);
-    if (!idle || !sessionID) {
+  const emitContinuationStatus = (projectID, taskID, sessionID, status) => {
+    try {
+      emitTaskRunEvent?.({
+        projectID,
+        taskID,
+        ranAt: Date.now(),
+        status,
+        sessionID,
+      });
+    } catch {
+    }
+  };
+
+  const handleSessionContinuation = async (event) => {
+    const { phase, sessionID } = parseSessionEventPhase(event);
+    if (!phase || !sessionID) {
       return;
     }
 
@@ -1605,10 +1632,28 @@ export const createScheduledTasksRuntime = (deps) => {
 
     const task = tasksByProject.get(projectID)?.get(taskID);
     const lastStatus = task?.state?.lastStatus;
-    if (lastStatus === 'success' || lastStatus === 'running') {
+
+    if (phase === 'busy') {
+      if (lastStatus !== 'error' && lastStatus !== 'success') {
+        return;
+      }
+      const stateResult = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
+        lastStatus: 'running',
+        lastError: undefined,
+        lastSessionId: sessionID,
+        updatedAt: Date.now(),
+      });
+      if (stateResult.task) {
+        updateInMemoryTask(projectID, stateResult.task);
+      }
+      emitContinuationStatus(projectID, taskID, sessionID, 'running');
       return;
     }
-    if (lastStatus !== 'error') {
+
+    if (lastStatus === 'success') {
+      return;
+    }
+    if (lastStatus !== 'error' && lastStatus !== 'running') {
       return;
     }
 
@@ -1637,7 +1682,8 @@ export const createScheduledTasksRuntime = (deps) => {
       return;
     }
     const latest = tasksByProject.get(projectID)?.get(taskID);
-    if (latest?.state?.lastStatus !== 'error') {
+    const latestStatus = latest?.state?.lastStatus;
+    if (latestStatus !== 'error' && latestStatus !== 'running') {
       return;
     }
 
@@ -1651,20 +1697,11 @@ export const createScheduledTasksRuntime = (deps) => {
       updateInMemoryTask(projectID, stateResult.task);
     }
 
-    try {
-      emitTaskRunEvent?.({
-        projectID,
-        taskID,
-        ranAt: Date.now(),
-        status: 'success',
-        sessionID,
-      });
-    } catch {
-    }
+    emitContinuationStatus(projectID, taskID, sessionID, 'success');
   };
 
   const observeSessionEvent = (event) => {
-    return handleSessionIdleCorrection(event).catch((error) => {
+    return handleSessionContinuation(event).catch((error) => {
       logger.warn?.('[ScheduledTasks] observeSessionEvent failed', {
         error: safeErrorMessage(error),
       });

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.3] - 2026-09-03
+
+### 移动端
+
+- 更新卡片重新显示更新内容，不再是空白。
+
+### 定时任务
+
+- 任务一开始就会显示进行中，不用等会话挂上。
+- 在历史会话里接着做时，任务会先显示进行中，做完后再改成成功。
+
 ## [1.19.3-beta.2] - 2026-09-03
 
 ### 定时任务
