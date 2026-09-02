@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 import type { Session } from '@opencode-ai/sdk/v2';
 
 import {
+  formatHomeSessionSubtitle,
   listInProgressHomeSessions,
   listProjectAreaRootSessions,
 } from './useMobileProjectsHomeModel';
@@ -102,7 +103,16 @@ describe('useMobileProjectsHomeModel shared pin contract', () => {
     expect(modelSource).toContain('omitPinnedSessions: false');
   });
 
-  test('keeps project subtitles on pinned rows and leaves attention rows one-line', () => {
-    expect(modelSource).toContain('subtitle: pinned ? project.label : undefined');
+  test('uses a shared project · branch subtitle for pinned and in-progress rows', () => {
+    expect(modelSource).toContain('formatHomeSessionSubtitle(project.label, worktree?.branch)');
+    expect(modelSource).not.toContain('subtitle: pinned ? project.label : undefined');
+  });
+});
+
+describe('formatHomeSessionSubtitle', () => {
+  test('joins project and branch, and falls back to the project label', () => {
+    expect(formatHomeSessionSubtitle('openchamber', 'feat/home')).toBe('openchamber · feat/home');
+    expect(formatHomeSessionSubtitle('openchamber', '  ')).toBe('openchamber');
+    expect(formatHomeSessionSubtitle('openchamber', null)).toBe('openchamber');
   });
 });

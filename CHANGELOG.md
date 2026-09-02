@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.4] - 2026-09-03
+
+### 移动端
+
+- 首页置顶和进行中会话统一显示「项目 · 分支」副标题。
+
 ## [1.19.3-beta.3] - 2026-09-03
 
 ### 移动端

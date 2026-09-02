@@ -144,6 +144,15 @@ const findExactWorktreeMatch = (
   project.worktrees.find((worktree) => normalizePath(worktree.path) === normalizedDirectory) ?? null
 );
 
+/** Shared "Project · branch" line for mixed pinned / in-progress home rows. */
+export const formatHomeSessionSubtitle = (
+  projectLabel: string,
+  branch?: string | null,
+): string => {
+  const trimmedBranch = branch?.trim();
+  return trimmedBranch ? `${projectLabel} · ${trimmedBranch}` : projectLabel;
+};
+
 export const listProjectAreaRootSessions = (
   sessions: Session[],
   pinnedSessionIds: ReadonlySet<string>,
@@ -350,11 +359,14 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
       const owner = ownership.bySessionId.get(session.id);
       const project = owner ? projectById.get(owner.projectId) : undefined;
       if (!project) return [];
+      const worktree = owner?.kind === 'worktree'
+        ? findExactWorktreeMatch(project, owner.scopeDirectory)
+        : null;
       return [{
         id: session.id,
         directory: getSessionDirectory(session),
         title: session.title?.trim() || untitled,
-        subtitle: pinned ? project.label : undefined,
+        subtitle: formatHomeSessionSubtitle(project.label, worktree?.branch),
         activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
         unread: (unseenBySession[session.id] ?? 0) > 0,
         pinned,
