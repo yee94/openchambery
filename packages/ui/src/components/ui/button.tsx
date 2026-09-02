@@ -54,7 +54,7 @@ const buttonVariants = cva(
         outline:
           "bg-[var(--surface-elevated)] text-foreground border border-border/60 hover:bg-interactive-hover hover:text-foreground",
         mobileGlass:
-          "oc-mobile-floating-action text-foreground hover:brightness-105 active:scale-[0.96] focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
+          "oc-mobile-floating-action text-foreground hover:brightness-105 active:bg-interactive-active focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
         // Flat chip for "one-of-N" toggles. Unselected: hairline border + hover
         // fill. Selected (aria-pressed): same tinted palette as the default
         // button (pale primary fill + primary text + soft primary border).
@@ -91,7 +91,7 @@ const buttonVariants = cva(
   }
 )
 
-/** Icon-sized buttons may use the punchy compact press scale on mobile. */
+/** Icon-sized buttons may use the brighter compact press scale on mobile. */
 const COMPACT_PRESS_SIZES = new Set(["icon", "mobileIcon", "xs"])
 
 function Button({
@@ -109,7 +109,7 @@ function Button({
   const typeProps = asChild
     ? (type === undefined ? {} : { type })
     : { type: type ?? "button" }
-  // Only particularly small controls opt into the punchy compact press scale.
+  // Only particularly small controls opt into the brighter compact press scale.
   // Callers may still override via an explicit data-mobile-press-feedback prop.
   const compactPress =
     size != null && COMPACT_PRESS_SIZES.has(size)

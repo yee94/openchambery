@@ -42,6 +42,7 @@ import { useOrientation } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { getCapgoUpdater } from '@/lib/mobile-updates/capgoAdapter';
 import { MOBILE_SETTINGS_PAGE_SLUGS } from '@/lib/settings/metadata';
+import { getNativeIosComposerPlugin } from '@/lib/native-ios-composer';
 import { isIPadApp } from '@/lib/platform';
 import { resolveProjectForDirectory, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, QUOTA_PROVIDERS } from '@/lib/quota';
@@ -113,6 +114,7 @@ import { useHeaderSwipeToSessions } from './useHeaderSwipeToSessions';
 import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHaptics';
 import { startPerfDiagnosticsController } from '@/sync/perf-diagnostics';
 import { useNativePushRegistration } from './useNativePushRegistration';
+import { useNativeLiveActivity } from './useNativeLiveActivity';
 import { MobileShareBridge } from './MobileShareBridge';
 import { handlePendingNativeAssistantOpen } from './nativeAssistantShortcut';
 
@@ -737,6 +739,7 @@ const useNativeMobileChrome = (): void => {
         return slide;
       };
       const handleIosKeyboardIntent = (event: Event) => {
+        if (root.classList.contains('oc-native-ios-composer')) return;
         const detail = (event as CustomEvent<{ open?: boolean }>).detail;
         if (detail?.open !== true || layoutApplied) return;
         // Intent is composer-scoped (ChatInput). Skip when a non-composer field
@@ -760,6 +763,7 @@ const useNativeMobileChrome = (): void => {
       window.addEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
 
       const showHandle = await Keyboard.addListener('keyboardWillShow', (info) => {
+        if (root.classList.contains('oc-native-ios-composer')) return;
         clearSettle();
         keyboardHeight = info.keyboardHeight;
         persistIosImeHeight(keyboardHeight);
@@ -802,7 +806,38 @@ const useNativeMobileChrome = (): void => {
         active.blur();
       };
 
+      const snapWindowScroll = () => {
+        if (keyboardOpen) return;
+        window.scrollTo(0, 0);
+        if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+      };
+
+      // Native overlay owns IME lift. Still unwind leftover --oc-kb-layout,
+      // oc-keyboard-open, and WKWebView pan so hide cannot leave the shell raised.
+      const unwindKeyboardShell = () => {
+        keyboardOpen = false;
+        clearSettle();
+        if (caretTimer !== null) {
+          window.clearTimeout(caretTimer);
+          caretTimer = null;
+        }
+        root.classList.remove('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold', 'oc-kb-hide');
+        setInset(0);
+        setVar('--oc-kb-scroll-inset', 0);
+        setVar('--oc-kb-layout', 0);
+        layoutApplied = false;
+        clearKbMovers();
+        snapWindowScroll();
+        window.setTimeout(snapWindowScroll, 350);
+      };
+
       const runHide = () => {
+        if (root.classList.contains('oc-native-ios-composer')) {
+          unwindKeyboardShell();
+          void getNativeIosComposerPlugin().blur();
+          dispatchKb('oc:keyboard-settled', { open: false });
+          return;
+        }
         if (!keyboardOpen) return;
         keyboardOpen = false;
         clearSettle();
@@ -836,11 +871,6 @@ const useNativeMobileChrome = (): void => {
         // "lifted" until WebKit finishes scrolling. Zero the window scroll now
         // and once more as the keyboard finishes (mirrors the standalone-PWA
         // snap below) so the shell lands with the keyboard, not after it.
-        const snapWindowScroll = () => {
-          if (keyboardOpen) return;
-          window.scrollTo(0, 0);
-          if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
-        };
         snapWindowScroll();
         window.setTimeout(snapWindowScroll, 350);
         dispatchKb('oc:keyboard-anim', { phase: 'hide', slide, durationMs: 0, easing: KB_ANIM_EASING });
@@ -2814,6 +2844,10 @@ const MobileShell: React.FC<{
   const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
   const parentSessionTarget = useParentSessionTarget(currentSessionId, currentSessionDirectory || currentDirectory || undefined);
   const currentSessionStatus = useLiveSessionStatus(currentSessionId ?? '');
+  useNativeLiveActivity({
+    sessionId: currentSessionId,
+    directory: currentSessionDirectory || currentDirectory,
+  });
   const isSessionBusy = currentSessionStatus?.type === 'busy' || currentSessionStatus?.type === 'retry';
   const refreshCurrentTranscript = useEvent(() => {
     const sessionID = currentSessionId;
@@ -2832,6 +2866,7 @@ const MobileShell: React.FC<{
       }
     })();
   });
+
   // Record the swipe direction; the animation itself runs in the layout effect below, once the
   // new session's content has committed — running it inline in the swipe callback raced the
   // re-render and dropped the animation on roughly every other switch.

@@ -16,6 +16,18 @@ describe('computeMobileAutocompleteMaxHeight', () => {
     expect(next).toBe(Math.floor(900 * MOBILE_AUTOCOMPLETE_VIEWPORT_HEIGHT_RATIO));
   });
 
+  test('caps a keyboard-raised composer with the visible column (native card.maxY)', () => {
+    // Header floor 115, card top 386, card bottom 526 (keyboard up).
+    const next = computeMobileAutocompleteMaxHeight({
+      popupBottom: 386,
+      boundaryTop: 115,
+      viewportHeight: 526,
+    });
+    // available = 263; viewport cap = 210.4 → 210 — first row stays on screen
+    expect(next).toBe(Math.floor(526 * MOBILE_AUTOCOMPLETE_VIEWPORT_HEIGHT_RATIO));
+    expect(next).toBeLessThan(263);
+  });
+
   test('uses the smaller chat-boundary budget when space is tighter than 40%', () => {
     // Keyboard open: only ~142px between composer and chat top.
     const next = computeMobileAutocompleteMaxHeight({

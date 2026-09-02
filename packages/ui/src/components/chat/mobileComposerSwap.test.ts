@@ -5,6 +5,7 @@ import {
     COMPOSER_SWAP_FOLLOW_RANGE_PX,
     COMPOSER_SWAP_FULL_RANGE_PX,
     COMPOSER_SWAP_NOISE_PX,
+    NATIVE_COMPOSER_DOCK_CSS_VAR,
     applyComposerSwapCommit,
     applyComposerSwapForce,
     applyComposerSwapPin,
@@ -13,8 +14,11 @@ import {
     createComposerSwapState,
     distanceFromBottomOf,
     clearComposerSwap,
+    nativeComposerDockProgressFromDistance,
     publishComposerSwap,
+    publishNativeComposerDock,
     resolveComposerSwapCommit,
+    resolveNativeComposerDock,
 } from './mobileComposerSwap';
 
 describe('mobileComposerSwap', () => {
@@ -217,6 +221,122 @@ describe('mobileComposerSwap', () => {
 
         state = applyComposerSwapScroll(state, COMPOSER_SWAP_NOISE_PX);
         expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
+    });
+
+    test('travel toward the bottom reveals a compact composer outside the follow band', () => {
+        const compact = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+
+        // Far from the bottom, distance alone keeps it compact forever.
+        expect(applyComposerSwapScroll(compact, 600)).toMatchObject({
+            phase: 'rest',
+            rest: 'compact',
+            progress: 1,
+        });
+
+        // Same distance, but the viewport is travelling back toward the edge.
+        const revealed = applyComposerSwapScroll(compact, 600, { towardBottom: true });
+        expect(revealed).toMatchObject({ phase: 'snapping', rest: 'expanded', progress: 0 });
+
+        // The post-compact settle window still wins so momentum cannot bounce.
+        expect(applyComposerSwapScroll(compact, 600, {
+            towardBottom: true,
+            suppressReturn: true,
+        })).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+    });
+
+    test('geometry with no gesture behind it cannot start a collapse', () => {
+        const expanded = createComposerSwapState();
+
+        // Streaming growth pushes the end far away for several frames.
+        expect(applyComposerSwapScroll(expanded, 300, { userDriven: false })).toMatchObject({
+            phase: 'rest',
+            rest: 'expanded',
+            progress: 0,
+        });
+
+        // The same distance from a real gesture still collapses.
+        expect(applyComposerSwapScroll(expanded, 300, { userDriven: true })).toMatchObject({
+            phase: 'rest',
+            rest: 'compact',
+            progress: 1,
+        });
+    });
+
+    test('inside the follow band the tuned proportional return is unchanged', () => {
+        const compact = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+        const inBand = applyComposerSwapScroll(compact, 10, { towardBottom: true });
+        expect(inBand.phase).toBe('tracking');
+        expect(inBand.progress).toBeCloseTo(0.125);
+    });
+
+    test('holdExpanded keeps a revealed composer up until the user scrolls away', () => {
+        let state = applyComposerSwapSnapDone(
+            applyComposerSwapScroll(
+                applyComposerSwapSnapDone(applyComposerSwapForce(createComposerSwapState(), 'compact')),
+                600,
+                { towardBottom: true },
+            ),
+        );
+        expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
+
+        // Still hundreds of px from the bottom: absolute-distance follow would
+        // collapse it on the next event of the same downward gesture.
+        state = applyComposerSwapScroll(state, 560, { towardBottom: true, holdExpanded: true });
+        expect(state).toMatchObject({ phase: 'rest', rest: 'expanded', progress: 0 });
+
+        // Once the hold is released, upward distance collapses it as before.
+        state = applyComposerSwapScroll(state, 560);
+        expect(state).toMatchObject({ phase: 'rest', rest: 'compact', progress: 1 });
+    });
+
+    test('native accessory dock follows distance, not swap rest', () => {
+        expect(nativeComposerDockProgressFromDistance(0)).toBe(0);
+        expect(nativeComposerDockProgressFromDistance(-4)).toBe(0);
+        expect(nativeComposerDockProgressFromDistance(COMPOSER_SWAP_FOLLOW_RANGE_PX)).toBe(0.5);
+        expect(nativeComposerDockProgressFromDistance(COMPOSER_SWAP_FULL_RANGE_PX)).toBe(1);
+        expect(nativeComposerDockProgressFromDistance(COMPOSER_SWAP_FULL_RANGE_PX * 4)).toBe(1);
+
+        expect(resolveNativeComposerDock(20, 'away')).toMatchObject({ progress: 1, rest: 'away' });
+        expect(resolveNativeComposerDock(COMPOSER_SWAP_NOISE_PX, 'away')).toMatchObject({
+            progress: 0,
+            rest: 'bottom',
+        });
+        expect(resolveNativeComposerDock(20, 'bottom')).toMatchObject({
+            progress: 0.25,
+            rest: 'bottom',
+        });
+        expect(resolveNativeComposerDock(COMPOSER_SWAP_FOLLOW_RANGE_PX, 'bottom')).toMatchObject({
+            progress: 1,
+            rest: 'away',
+        });
+
+        const scope = document.createElement('div');
+        const far = publishNativeComposerDock(scope, 260);
+        expect(far).toMatchObject({ progress: '1', rest: 'away' });
+        expect(scope.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR)).toBe('1');
+        expect(scope.dataset.ocNativeComposerDock).toBe('away');
+
+        // Approaching the edge stays hidden — a short downward scroll must not
+        // fade the strip in before the viewport is actually at the bottom.
+        const approaching = publishNativeComposerDock(scope, 20, far);
+        expect(approaching).toMatchObject({ progress: '1', rest: 'away' });
+
+        const arrived = publishNativeComposerDock(scope, 0, approaching);
+        expect(arrived).toMatchObject({ progress: '0', rest: 'bottom' });
+
+        const leaving = publishNativeComposerDock(scope, 20, arrived);
+        expect(leaving).toMatchObject({ progress: '0.25', rest: 'bottom' });
+
+        const gone = publishNativeComposerDock(scope, COMPOSER_SWAP_FOLLOW_RANGE_PX, leaving);
+        expect(gone).toMatchObject({ progress: '1', rest: 'away' });
+
+        clearComposerSwap(scope);
+        expect(scope.style.getPropertyValue(NATIVE_COMPOSER_DOCK_CSS_VAR)).toBe('');
+        expect(scope.dataset.ocNativeComposerDock).toBeUndefined();
     });
 
     test('distanceFromBottomOf never goes negative', () => {

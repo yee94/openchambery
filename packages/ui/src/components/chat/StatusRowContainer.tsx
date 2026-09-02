@@ -50,6 +50,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             abortActive={wasAborted || working.abortActive}
             retryInfo={working.retryInfo}
             turnStartedAt={working.turnStartedAt}
+            isTurnSettled={working.isTurnSettled}
             showAbortPrompt={showAbortPrompt}
             showAssistantStatus
             showTodos={false}

@@ -204,7 +204,7 @@ describe('file mention search — OpenChamber catalog', () => {
 
   test('fileMention ranks mention source files ahead of tests and junk', () => {
     const ranked = rank('fileMention');
-    expect(ranked[0]).toBe('packages/ui/src/components/chat/FileMentionAutocomplete.tsx');
+    expect(ranked[0]).toBe('packages/ui/src/lib/search/fileMentionSearch.ts');
     expect(ranked).toContain('packages/ui/src/components/chat/fileMentionAutocompleteState.ts');
     expect(ranked.indexOf('packages/ui/src/components/chat/FileMentionAutocomplete.tsx'))
       .toBeLessThan(ranked.indexOf('packages/ui/src/components/chat/FileMentionAutocomplete.test.ts'));

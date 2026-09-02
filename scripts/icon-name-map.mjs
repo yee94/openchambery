@@ -34,6 +34,10 @@ export const ROUNDED_PANEL_LEFT_SVG =
 export const SOFT_TIME_SVG =
   `<circle cx="12" cy="12" r="9" /><path d="M12 7v5.25l3.25 1.75" />`
 
+/** Aborted-turn mark: same 9px ring as soft time, small rounded stop. */
+export const SOFT_STOP_CIRCLE_SVG =
+  `<circle cx="12" cy="12" r="9" /><rect x="9.25" y="9.25" width="5.5" height="5.5" rx="1.25" />`
+
 export const SOFT_UNDO_SVG =
   `<path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H12" />`
 
@@ -290,6 +294,7 @@ export const ICON_NAME_MAP = {
   "star-fill": { lucide: "star", fill: true },
   "sticky-note": { lucide: "sticky-note", fill: false },
   "stop": { lucide: "square", fill: false },
+  "stop-circle": { custom: SOFT_STOP_CIRCLE_SVG },
   "subtract": { lucide: "minus", fill: false },
   "survey": { lucide: "clipboard-list", fill: false },
   // Goal chip / row — Lucide stroke rings; Remix fill+system stroke looked too heavy.

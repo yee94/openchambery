@@ -2,7 +2,7 @@ import React from 'react';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/icon/Icon';
-import { StopIcon } from '@/components/icons/StopIcon';
+import { SendCircleIcon, StopIcon } from '@/components/icons/StopIcon';
 import { Textarea } from '@/components/ui/textarea';
 import { ChatComposerSurface } from './ChatComposerSurface';
 
@@ -158,25 +158,36 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
       </button>
     </>
   ) : null;
+  const sendReady = !disabled && !pending && hasContent;
   const defaultRightControls = pending && onStop ? (
     <button
       type="button"
       data-composer-stop="true"
-      className="flex size-8 shrink-0 items-center justify-center !text-black outline-none hover:!text-black dark:!text-white dark:hover:!text-white"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full outline-none hover:opacity-80"
       onClick={onStop}
       aria-label={stopLabel}
     >
-      <StopIcon className="size-5" />
+      <StopIcon className={isMobile ? 'size-6' : 'size-full'} />
     </button>
   ) : (
     <button
       type="submit"
       data-composer-send="true"
-      className="flex size-8 shrink-0 items-center justify-center rounded-md text-primary outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-30"
+      data-composer-circle={sendReady ? 'true' : undefined}
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center outline-none',
+        sendReady
+          ? 'rounded-full hover:opacity-80'
+          : 'rounded-md text-primary hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-30',
+      )}
       disabled={disabled || pending || !hasContent}
       aria-label={sendLabel}
     >
-      <Icon name={pending ? 'loader-4' : 'send-plane-2'} className={cn('size-4', pending && 'animate-spin')} />
+      {sendReady ? (
+        <SendCircleIcon className={isMobile ? 'size-6' : 'size-full'} />
+      ) : (
+        <Icon name={pending ? 'loader-4' : 'send-plane-2'} className={cn('size-4', pending && 'animate-spin')} />
+      )}
     </button>
   );
 

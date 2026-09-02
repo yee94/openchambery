@@ -5,7 +5,10 @@ import {
     COMPOSER_SWAP_COMPACT_SETTLE_MS,
     COMPOSER_SWAP_FULL_RANGE_PX,
     COMPOSER_SWAP_IDLE_MS,
+    COMPOSER_SWAP_NOISE_PX,
+    COMPOSER_SWAP_REVEAL_TRAVEL_PX,
     COMPOSER_SWAP_SNAP_MS,
+    COMPOSER_SWAP_USER_SCROLL_WINDOW_MS,
     applyComposerSwapCommit,
     applyComposerSwapForce,
     applyComposerSwapPin,
@@ -13,10 +16,15 @@ import {
     applyComposerSwapSnapDone,
     clearComposerSwap,
     createComposerSwapState,
-    distanceFromBottomOf,
     publishComposerSwap,
+    publishNativeComposerDock,
     type ComposerSwapState,
 } from './mobileComposerSwap';
+import {
+    readTimelineParkEndOffset,
+    resolveScrollDistanceFromLiveEdge,
+    TIMELINE_ANCHORING_ATTRIBUTE,
+} from './lib/scroll/timelineScrollAnchoring';
 
 const readScrollGeometry = (el: HTMLElement) => ({
     scrollHeight: el.scrollHeight,
@@ -46,6 +54,7 @@ export const useMobileComposerSwap = (args: {
 }): void => {
     const stateRef = React.useRef<ComposerSwapState>(createComposerSwapState());
     const publishedRef = React.useRef<{ progress: string; phase: string; rest: string } | undefined>(undefined);
+    const publishedDockRef = React.useRef<{ progress: string; rest: string } | undefined>(undefined);
     const idleTimerRef = React.useRef<number | null>(null);
     const snapTimerRef = React.useRef<number | null>(null);
     /** Until this timestamp, compact→expand follow is suppressed (momentum only). */
@@ -54,6 +63,15 @@ export const useMobileComposerSwap = (args: {
     const compactSettleArmedRef = React.useRef(false);
     /** Active touches on the scroller; commits wait for the finger to lift. */
     const touchActiveRef = React.useRef(0);
+    /** Last moment a finger was on the scroller — see the user-scroll window. */
+    const lastTouchAtRef = React.useRef(0);
+    /** Previous distance from the bottom, so scrolls carry a direction. */
+    const lastDistanceRef = React.useRef<number | null>(null);
+    /** Travel since the last direction change, accumulated in each direction. */
+    const downwardTravelRef = React.useRef(0);
+    const upwardTravelRef = React.useRef(0);
+    /** A scroll reveal owns the expanded endpoint until the user scrolls up. */
+    const holdExpandedRef = React.useRef(false);
     const enabledRef = React.useRef(args.enabled);
     enabledRef.current = args.enabled;
 
@@ -121,8 +139,14 @@ export const useMobileComposerSwap = (args: {
         armSnapDone();
     });
 
+    const handleTouchMove = useEvent(() => {
+        if (!enabledRef.current) return;
+        lastTouchAtRef.current = Date.now();
+    });
+
     const handleTouchStart = useEvent(() => {
         if (!enabledRef.current) return;
+        lastTouchAtRef.current = Date.now();
         touchActiveRef.current += 1;
         // A held finger owns the gesture; pending idle commits from prior
         // touch-less scrolls (wheel/trackpad/programmatic) must not fire now.
@@ -135,15 +159,92 @@ export const useMobileComposerSwap = (args: {
         const scope = args.scopeRef.current;
         if (!scrollEl || !scope) return;
         const pinned = isComposerPinned(scope);
-        const distance = distanceFromBottomOf(readScrollGeometry(scrollEl));
+        const geometry = readScrollGeometry(scrollEl);
+        const distance = resolveScrollDistanceFromLiveEdge(
+            geometry,
+            readTimelineParkEndOffset(scrollEl),
+        );
+        const previousDistance = lastDistanceRef.current;
+        lastDistanceRef.current = distance;
+
+        // A history prepend is absorbed by the list, not the user: it grows the
+        // content and moves the scroll position to match, and the correction
+        // lands over several frames. Each of those frames is a distance change
+        // with no gesture behind it — and the transients read as travel in both
+        // directions, so the composer would flash open (or collapse) in the
+        // middle of loading older history. The baseline above still advances,
+        // so the first frame after the anchor settles measures from where the
+        // transcript actually is.
+        if (scrollEl.hasAttribute(TIMELINE_ANCHORING_ATTRIBUTE)) {
+            downwardTravelRef.current = 0;
+            upwardTravelRef.current = 0;
+            return;
+        }
+
+        // Dock follows raw distance on every frame. Swap can rest expanded far
+        // from the live edge; accessories have no background and must not.
+        publishedDockRef.current = publishNativeComposerDock(
+            scope,
+            distance,
+            publishedDockRef.current,
+        );
+
+        // The transcript scrolls for two very different reasons on this path:
+        // the user dragging, and the list following its own streaming growth.
+        // Only the former may move the composer.
+        const userDriven = touchActiveRef.current > 0
+            || Date.now() - lastTouchAtRef.current <= COMPOSER_SWAP_USER_SCROLL_WINDOW_MS;
+
+        // Direction comes from the change in distance rather than scrollTop:
+        // history prepends move scrollTop and scrollHeight together, and tail
+        // growth moves scrollHeight alone, so neither reads as user travel.
+        // iOS top rubber-band springs a negative scrollTop back to 0, which is
+        // real downward travel with no intent behind it — excluded here.
+        const delta = previousDistance === null ? 0 : previousDistance - distance;
+        if (!userDriven) {
+            // Growth and glide frames are not travel in either direction. Zero
+            // the accumulators so the next real gesture starts from its own
+            // first pixel instead of inheriting the stream's motion.
+            downwardTravelRef.current = 0;
+            upwardTravelRef.current = 0;
+        } else if (delta > 0) {
+            upwardTravelRef.current = 0;
+            if (geometry.scrollTop > 0) {
+                downwardTravelRef.current += delta;
+            }
+        } else if (delta < 0) {
+            downwardTravelRef.current = 0;
+            upwardTravelRef.current += -delta;
+            if (upwardTravelRef.current >= COMPOSER_SWAP_REVEAL_TRAVEL_PX) {
+                holdExpandedRef.current = false;
+            }
+        }
+        if (distance <= COMPOSER_SWAP_NOISE_PX) {
+            holdExpandedRef.current = false;
+        }
+
         let next = applyComposerSwapPin(stateRef.current, pinned);
         if (!pinned) {
+            const wasCompact = next.rest === 'compact';
             next = applyComposerSwapScroll(next, distance, {
                 suppressReturn: resolveSuppressReturn(distance),
+                towardBottom: downwardTravelRef.current >= COMPOSER_SWAP_REVEAL_TRAVEL_PX,
+                holdExpanded: holdExpandedRef.current,
+                userDriven,
             });
+            if (wasCompact && next.rest === 'expanded' && distance > COMPOSER_SWAP_NOISE_PX) {
+                holdExpandedRef.current = true;
+                downwardTravelRef.current = 0;
+            }
         }
         replaceState(next);
         clearTimer(idleTimerRef);
+        // A scroll-driven reveal snaps from inside the scroll handler, so the
+        // settle timer has to be armed here too or the phase would never rest.
+        if (next.phase === 'snapping') {
+            armSnapDone();
+            return;
+        }
         if (next.phase === 'tracking' && touchActiveRef.current === 0) {
             idleTimerRef.current = window.setTimeout(() => {
                 idleTimerRef.current = null;
@@ -158,6 +259,7 @@ export const useMobileComposerSwap = (args: {
 
     const handleTouchEnd = useEvent(() => {
         if (!enabledRef.current) return;
+        lastTouchAtRef.current = Date.now();
         touchActiveRef.current = Math.max(0, touchActiveRef.current - 1);
         if (touchActiveRef.current > 0) return;
         // iOS often omits scrollend; arm the same idle commit after the finger
@@ -196,6 +298,11 @@ export const useMobileComposerSwap = (args: {
         if (target.closest('[data-composer-action="true"]')) return;
         if ('preventDefault' in event) event.preventDefault();
         if ('stopPropagation' in event) event.stopPropagation();
+        // Focus/keyboard normally pins expanded, but a tap that never lands
+        // focus would otherwise be collapsed again by the next scroll event.
+        holdExpandedRef.current = true;
+        downwardTravelRef.current = 0;
+        upwardTravelRef.current = 0;
         replaceState(applyComposerSwapForce(stateRef.current, 'expanded'));
         armSnapDone();
         armExpandFocusShield();
@@ -209,9 +316,15 @@ export const useMobileComposerSwap = (args: {
     const releaseScope = useEvent((scope: HTMLElement | null) => {
         if (scope) clearComposerSwap(scope);
         publishedRef.current = undefined;
+        publishedDockRef.current = undefined;
         compactSettleArmedRef.current = false;
         compactSettleUntilRef.current = 0;
         touchActiveRef.current = 0;
+        lastTouchAtRef.current = 0;
+        lastDistanceRef.current = null;
+        downwardTravelRef.current = 0;
+        upwardTravelRef.current = 0;
+        holdExpandedRef.current = false;
         replaceState(createComposerSwapState());
     });
     React.useLayoutEffect(() => {
@@ -234,6 +347,7 @@ export const useMobileComposerSwap = (args: {
     useEventListener('scroll', handleScroll, scrollTarget, passive);
     useEventListener('scrollend', handleScrollEnd, scrollTarget, passive);
     useEventListener('touchstart', handleTouchStart, scrollTarget, passive);
+    useEventListener('touchmove', handleTouchMove, scrollTarget, passive);
     useEventListener('touchend', handleTouchEnd, scrollTarget, passive);
     useEventListener('touchcancel', handleTouchEnd, scrollTarget, passive);
     useEventListener('pointerdown', handleCompactActivate, scopeTarget);

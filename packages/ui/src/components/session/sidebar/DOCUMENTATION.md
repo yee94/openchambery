@@ -7,15 +7,19 @@
   then projects, then worktrees/archived groups, then sessions. Pinned sessions
   render only in the top section and are excluded from project groups.
   Mobile projects home uses the same contract: `derivePinnedSessions` for the
-  global pinned card, `createSessionOwnershipIndex` for session→project
-  assignment, and `buildSessionTree(..., { omitPinnedSessions: true })` so
-  pinned roots leave project/worktree lists.
+  global pinned group, `listInProgressHomeSessions` for the unlabeled
+  in-progress/unread group below it, `createSessionOwnershipIndex` for
+  session→project assignment, and `buildSessionTree(..., { omitPinnedSessions: true })` so
+  pinned roots leave project/worktree lists. Running and unread sessions still
+  remain in their project groups.
   Parent/child attachment always runs on the full session list first; pinned
   roots are omitted from project groups only after children attach. Pinned rows
   stay flat (no expand chevron, no nested subagents). Children of pinned parents
   stay hidden only while the parent is pinned; unpinning restores the normal
   parent/child tree under Projects.
 - The Pinned section renders every pinned session and supports header collapse.
+   Mobile home retitles that card to pinned/in-progress and adds unlabeled
+   running and unread rows below the pinned group.
    Expanded project/worktree
    groups reveal 3 sessions by default from the already-fetched 20-session page;
    Show more reveals cached rows before loading the next 20-session page on demand.

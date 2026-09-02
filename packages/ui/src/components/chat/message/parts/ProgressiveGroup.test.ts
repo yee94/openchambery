@@ -162,13 +162,11 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("import { formatActivityDuration } from './formatActivityDuration'");
     });
 
-    test('idle Processed chrome restores pb-8 so SessionRecapNote -mt-6 does not overlap', () => {
+    test('idle Processed chrome restores pb-8 after header demotion', () => {
         const chatMessageSource = readFileSync(join(__dirname, '../../ChatMessage.tsx'), 'utf-8');
-        const recapSource = readFileSync(join(__dirname, '../../SessionRecapSpacer.tsx'), 'utf-8');
         expect(chatMessageSource).toContain('shouldTightenWorkingBottomGap({');
         expect(chatMessageSource).toContain('headerCompletionDisposition: turnGroupingContext?.completionDisposition');
         expect(chatMessageSource).not.toContain('const tightenWorkingBottomGap = turnGroupingContext?.isWorking === true || isInActiveTurn;');
-        expect(recapSource).toContain('className="-mt-6"');
     });
 
     test('uses one full-width disclosure with identical title geometry in both states', () => {

@@ -956,7 +956,7 @@ describe('planOpenCodeConfigSync', () => {
       plan.files.reduce((sum, entry) => sum + entry.bytes, 0) + plan.authFile.bytes,
     );
 
-    // Unauthorized sync path must skip credentials.
+    // Opt-out via includeAuthFile: false skips auth.json.
     const skipped = planOpenCodeConfigSync(home, { includeAuthFile: false });
     expect(skipped.authFile).toBeNull();
   });
@@ -1117,7 +1117,6 @@ describe('runExclusiveForTarget sync response shape', () => {
       remoteExisting: ['opencode.jsonc'],
       remoteAgentsRootExists: false,
       remoteAuthFileExists: false,
-      credentialAuthorized: false,
     }));
 
     // The renderer's parseConfigSyncPreview requires value.plan to be a valid

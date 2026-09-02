@@ -3,10 +3,15 @@
 import * as React from "react"
 import { Select as BaseSelect } from "@base-ui/react/select"
 import type { SelectRootChangeEventDetails } from "@base-ui/react/select";
+import { useEvent } from "@reactuses/core";
 
 import { cn } from "@/lib/utils"
 import { ScrollableOverlay } from "@/components/ui/ScrollableOverlay";
 import { Icon } from "@/components/icon/Icon";
+import { MobileResizableSheet } from "@/components/ui/MobileResizableSheet";
+import { useDeviceInfo } from "@/lib/device";
+import { useI18n } from "@/lib/i18n";
+import { useUIStore } from "@/stores/useUIStore";
 
 type AsChildProps = { asChild?: boolean };
 type AsChildRenderProps = {
@@ -17,6 +22,10 @@ type AsChildRenderProps = {
 type SelectPortalContextValue = {
   portalContainer: HTMLElement | null;
   setPortalContainer: (container: HTMLElement | null) => void;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  triggerAriaLabel: string | null;
+  setTriggerAriaLabel: (ariaLabel: string | null) => void;
 };
 
 const SelectPortalContext = React.createContext<SelectPortalContextValue | null>(null);
@@ -26,6 +35,24 @@ const resolveDialogContainer = (element: HTMLElement | null): HTMLElement | null
     return null;
   }
   return element.closest('[data-slot="dialog-content"], [role="dialog"]') as HTMLElement | null;
+};
+
+const createSelectOpenChangeEventDetails = (): SelectRootChangeEventDetails => {
+  const details: SelectRootChangeEventDetails = {
+    reason: "none",
+    event: new Event("change"),
+    cancel: () => {
+      details.isCanceled = true;
+    },
+    allowPropagation: () => {
+      details.isPropagationAllowed = true;
+    },
+    isCanceled: false,
+    isPropagationAllowed: false,
+    trigger: undefined,
+  };
+
+  return details;
 };
 
 type SelectRootProps<Value extends string = string> = Omit<
@@ -39,14 +66,36 @@ type SelectRootProps<Value extends string = string> = Omit<
 
 function Select<Value extends string = string>({
   onValueChange,
+  open: controlledOpen,
+  defaultOpen = false,
+  onOpenChange,
   modal = false,
   ...props
 }: SelectRootProps<Value>) {
   const [portalContainer, setPortalContainer] = React.useState<HTMLElement | null>(null);
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const [triggerAriaLabel, setTriggerAriaLabel] = React.useState<string | null>(null);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const openRef = React.useRef(open);
+  openRef.current = open;
+  const handleOpenChange = useEvent((nextOpen: boolean, eventDetails: SelectRootChangeEventDetails) => {
+    onOpenChange?.(nextOpen, eventDetails);
+    if (eventDetails.isCanceled) return;
+    openRef.current = nextOpen;
+    if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+  });
+  const setOpen = useEvent((nextOpen: boolean) => {
+    if (nextOpen === openRef.current) return;
+    handleOpenChange(nextOpen, createSelectOpenChangeEventDetails());
+  });
   const portalContextValue = React.useMemo<SelectPortalContextValue>(() => ({
     portalContainer,
     setPortalContainer,
-  }), [portalContainer]);
+    open,
+    setOpen,
+    triggerAriaLabel,
+    setTriggerAriaLabel,
+  }), [open, portalContainer, setOpen, triggerAriaLabel]);
 
   const handleValueChange = React.useCallback(
     (value: unknown, eventDetails: SelectRootChangeEventDetails) => {
@@ -59,7 +108,13 @@ function Select<Value extends string = string>({
 
   return (
     <SelectPortalContext.Provider value={portalContextValue}>
-      <BaseSelect.Root {...props} modal={modal} onValueChange={handleValueChange} />
+      <BaseSelect.Root
+        {...props}
+        open={open}
+        modal={modal}
+        onOpenChange={handleOpenChange}
+        onValueChange={handleValueChange}
+      />
     </SelectPortalContext.Provider>
   )
 }
@@ -111,6 +166,11 @@ function SelectTrigger({
   size?: "sm" | "default" | "lg" | "chip"
 }) {
   const portalContext = React.useContext(SelectPortalContext);
+  const triggerAriaLabel = typeof props["aria-label"] === "string" ? props["aria-label"] : null;
+
+  React.useEffect(() => {
+    portalContext?.setTriggerAriaLabel(triggerAriaLabel);
+  }, [portalContext?.setTriggerAriaLabel, triggerAriaLabel]);
 
   const syncPortalContainer = React.useCallback((target: EventTarget | null) => {
     if (!portalContext) {
@@ -179,8 +239,55 @@ function SelectContent({
   ...props
 }: React.ComponentProps<typeof BaseSelect.Popup> & SelectContentExtra) {
   const portalContext = React.useContext(SelectPortalContext);
+  const { t } = useI18n();
+  const isMobile = useUIStore((state) => state.isMobile);
+  const { isMobile: deviceIsMobile } = useDeviceInfo();
+  const mobileSheetId = React.useId();
   const alignItemWithTrigger = position === "item-aligned";
   const portalContainer = portalContext?.portalContainer ?? null;
+  const selectOpen = portalContext?.open ?? false;
+  const handleMobileOpenChange = useEvent((nextOpen: boolean) => {
+    portalContext?.setOpen(nextOpen);
+  });
+
+  if (isMobile || deviceIsMobile) {
+    return (
+      <MobileResizableSheet
+        id={`mobile-select-sheet-${mobileSheetId}`}
+        open={selectOpen}
+        onOpenChange={handleMobileOpenChange}
+        fitContent
+        ariaLabel={portalContext?.triggerAriaLabel ?? t('mobile.select.sheetAria')}
+        closeAriaLabel={t('mobile.surface.closeAria')}
+        resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+        bodyClassName="px-2"
+      >
+        <BaseSelect.Positioner
+          alignItemWithTrigger={false}
+          className="!static !inset-auto !w-full !transform-none pointer-events-auto"
+        >
+          <BaseSelect.Popup
+            {...props}
+            data-slot="select-content"
+            className={cn(
+              className,
+              "relative !max-h-none !w-full !min-w-0 !max-w-none bg-transparent text-foreground shadow-none outline-none"
+            )}
+          >
+            <ScrollableOverlay
+              fillContainer={false}
+              outerClassName="max-h-[calc(72dvh-5rem)]"
+              className="flex max-h-[calc(72dvh-5rem)] w-full flex-col gap-1 py-1"
+              disableHorizontal
+              preventOverscroll
+            >
+              {children}
+            </ScrollableOverlay>
+          </BaseSelect.Popup>
+        </BaseSelect.Positioner>
+      </MobileResizableSheet>
+    );
+  }
 
   return (
     <BaseSelect.Portal container={portalToBody ? undefined : portalContainer || undefined}>

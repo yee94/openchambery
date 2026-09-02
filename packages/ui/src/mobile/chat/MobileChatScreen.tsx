@@ -96,7 +96,7 @@ export function MobileChatScreen({
           // Prompt host stays page-background solid; only a short top fade
           // softens into the message list. The input CARD is elevated solid.
           'mobile-chat-screen__content relative h-full min-h-0 flex-1',
-          '[&_[data-scrollbar=chat]>div]:pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]',
+          '[&_[data-scrollbar=chat]>.oc-chat-scroll-content]:pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]',
         )}
       >
         {children}

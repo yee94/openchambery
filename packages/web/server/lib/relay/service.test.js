@@ -34,8 +34,10 @@ vi.mock('./host-client.js', () => ({
 import {
   createRelayService,
   DEFAULT_RELAY_URL,
+  derivePushSendUrlFromRelayUrl,
   isRelayHostRuntime,
   RELAY_HOST_DESKTOP_ONLY_MESSAGE,
+  resolveEffectiveRelayUrl,
 } from './service.js';
 
 const createSettingsHarness = () => {
@@ -59,6 +61,59 @@ const createTestRelayService = ({ canHostRelay = true, ...overrides } = {}) => {
   });
   return { service, settings };
 };
+
+describe('derivePushSendUrlFromRelayUrl', () => {
+  it('converts wss and ws canonical relay URLs to the fixed push send path', () => {
+    expect(derivePushSendUrlFromRelayUrl('wss://relay.openchamber.dev/ws')).toBe(
+      'https://relay.openchamber.dev/v1/push/send',
+    );
+    expect(derivePushSendUrlFromRelayUrl('ws://127.0.0.1:8787/custom')).toBe(
+      'http://127.0.0.1:8787/v1/push/send',
+    );
+    expect(derivePushSendUrlFromRelayUrl('wss://relay.example:8443/any/path?token=secret#frag')).toBe(
+      'https://relay.example:8443/v1/push/send',
+    );
+  });
+
+  it('rejects userinfo and non-ws(s) URLs', () => {
+    expect(derivePushSendUrlFromRelayUrl('wss://user:pass@relay.example/ws')).toBeNull();
+    expect(derivePushSendUrlFromRelayUrl('https://relay.openchamber.dev/ws')).toBeNull();
+    expect(derivePushSendUrlFromRelayUrl('http://relay.example/v1/push/send')).toBeNull();
+    expect(derivePushSendUrlFromRelayUrl('')).toBeNull();
+    expect(derivePushSendUrlFromRelayUrl(null)).toBeNull();
+  });
+});
+
+describe('resolveEffectiveRelayUrl', () => {
+  afterEach(() => {
+    delete process.env.OPENCHAMBER_RELAY_URL;
+  });
+
+  it('prefers a valid env URL, then settings, then the default', () => {
+    expect(resolveEffectiveRelayUrl()).toBe(DEFAULT_RELAY_URL);
+    expect(
+      resolveEffectiveRelayUrl({
+        settings: { privateRelay: { relayUrl: 'wss://settings.example/ws' } },
+      }),
+    ).toBe('wss://settings.example/ws');
+
+    process.env.OPENCHAMBER_RELAY_URL = 'wss://env.example/ws?x=1#frag';
+    expect(
+      resolveEffectiveRelayUrl({
+        settings: { privateRelay: { relayUrl: 'wss://settings.example/ws' } },
+      }),
+    ).toBe('wss://env.example/ws');
+  });
+
+  it('ignores an invalid env URL and falls through to settings', () => {
+    process.env.OPENCHAMBER_RELAY_URL = 'https://not-a-relay.example/ws';
+    expect(
+      resolveEffectiveRelayUrl({
+        settings: { privateRelay: { relayUrl: 'wss://settings.example/ws' } },
+      }),
+    ).toBe('wss://settings.example/ws');
+  });
+});
 
 describe('relay service pairing endpoint', () => {
   afterEach(() => {
@@ -140,6 +195,68 @@ describe('relay service pairing endpoint', () => {
     expect(settings.current()).toMatchObject({
       privateRelay: { enabled: true, relayUrl: 'wss://relay.example/custom' },
     });
+    expect(relayMocks.starts).toEqual(['wss://relay.example/custom']);
+  });
+
+  it('invokes onRelayUrlChanged only when the canonical URL actually changes', async () => {
+    const onRelayUrlChanged = vi.fn(async () => {});
+    const { service } = createTestRelayService({ onRelayUrlChanged });
+
+    await service.ensureEnabledForPairing();
+    expect(onRelayUrlChanged).not.toHaveBeenCalled();
+
+    await service.ensureEnabledForPairing('wss://relay.example/custom');
+    expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
+
+    await service.ensureEnabledForPairing('wss://relay.example/custom?x=1#frag');
+    expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
+
+    const app = express();
+    service.registerRoutes(app);
+    await request(app)
+      .post('/api/openchamber/relay/enable')
+      .send({ relayUrl: 'wss://relay.example/other' })
+      .expect(200);
+    expect(onRelayUrlChanged).toHaveBeenCalledTimes(2);
+
+    await request(app)
+      .post('/api/openchamber/relay/enable')
+      .send({ relayUrl: 'wss://relay.example/other' })
+      .expect(200);
+    expect(onRelayUrlChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not invoke onRelayUrlChanged for an env-pinned relay and still uses the pin', async () => {
+    process.env.OPENCHAMBER_RELAY_URL = 'wss://pinned.example/ws';
+    const onRelayUrlChanged = vi.fn(async () => {});
+    const { service } = createTestRelayService({ onRelayUrlChanged });
+    const app = express();
+    service.registerRoutes(app);
+
+    const candidate = await service.ensureEnabledForPairing('wss://ignored.example/ws');
+    expect(candidate.relayUrl).toBe('wss://pinned.example/ws');
+    expect(onRelayUrlChanged).not.toHaveBeenCalled();
+
+    await request(app)
+      .post('/api/openchamber/relay/enable')
+      .send({ relayUrl: 'wss://ignored.example/ws' })
+      .expect(200);
+    expect(onRelayUrlChanged).not.toHaveBeenCalled();
+    expect((await service.getStatus()).relayUrl).toBe('wss://pinned.example/ws');
+  });
+
+  it('continues the relay switch when onRelayUrlChanged fails', async () => {
+    const onRelayUrlChanged = vi.fn(async () => {
+      throw new Error('push relay unavailable');
+    });
+    const logger = { warn: vi.fn() };
+    const { service } = createTestRelayService({ onRelayUrlChanged, logger });
+
+    await expect(service.ensureEnabledForPairing('wss://relay.example/custom')).resolves.toMatchObject({
+      relayUrl: 'wss://relay.example/custom',
+    });
+    expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('push token re-register failed'));
     expect(relayMocks.starts).toEqual(['wss://relay.example/custom']);
   });
 });

@@ -17,6 +17,7 @@ def capacitor_pods
   pod 'CapacitorKeyboard', :path => '../../../../node_modules/.bun/@capacitor+keyboard@8.0.5+767ac80cbab8ae50/node_modules/@capacitor/keyboard'
   pod 'CapacitorPushNotifications', :path => '../../../../node_modules/.bun/@capacitor+push-notifications@8.1.1+767ac80cbab8ae50/node_modules/@capacitor/push-notifications'
   pod 'CapacitorStatusBar', :path => '../../../../node_modules/.bun/@capacitor+status-bar@8.0.2+767ac80cbab8ae50/node_modules/@capacitor/status-bar'
+  pod 'CapgoCapacitorUpdater', :path => '../../../../node_modules/.bun/@capgo+capacitor-updater@8.51.14+767ac80cbab8ae50/node_modules/@capgo/capacitor-updater'
 end
 
 target 'App' do

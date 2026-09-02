@@ -1,13 +1,11 @@
 import path from 'node:path';
 
 import { assertPlanDirection } from './contract.js';
-import { assertCredentialSyncAuthorized } from './credential-auth.js';
 import { collectLocalTarBuffer } from './tar.js';
 
 /**
  * Run a source-side plan against a TargetExecutor (probe → prepare → putTar* → finalize).
  * Direction-agnostic orchestration; ticket 02 only drives push from a local home snapshot.
- * Credential-bearing plans require an explicit per-target grant (ticket 03).
  *
  * @param {{
  *   plan: object,
@@ -15,7 +13,6 @@ import { collectLocalTarBuffer } from './tar.js';
  *   syncRunId: string,
  *   sourceHomedir: string,
  *   collectTar?: typeof collectLocalTarBuffer,
- *   credentialSyncAuthorized?: boolean,
  * }} args
  */
 export const applyConfigSyncPlan = async ({
@@ -24,13 +21,8 @@ export const applyConfigSyncPlan = async ({
   syncRunId,
   sourceHomedir,
   collectTar = collectLocalTarBuffer,
-  credentialSyncAuthorized = false,
 }) => {
   assertPlanDirection(plan);
-  assertCredentialSyncAuthorized(plan, {
-    targetId: plan?.targetId || 'unknown',
-    authorized: credentialSyncAuthorized === true,
-  });
   const home = String(sourceHomedir || '');
   const configDir = path.join(home, '.config', 'opencode');
   const tarEntries = [

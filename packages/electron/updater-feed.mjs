@@ -3,6 +3,11 @@ export const PRODUCTION_UPDATER_FEED = Object.freeze({
   url: 'https://openchamber-update.vercel.app/desktop/',
 });
 
+/** Origin that also serves /CHANGELOG.md for update-dialog fallback notes. */
+export const PRODUCTION_UPDATE_SERVICE_ORIGIN = 'https://openchamber-update.vercel.app';
+
+export const PRODUCTION_CHANGELOG_URL = `${PRODUCTION_UPDATE_SERVICE_ORIGIN}/CHANGELOG.md`;
+
 const isLoopbackHostname = (hostname) => {
   if (hostname === '::1' || hostname === '[::1]') return true;
   const octets = hostname.split('.');

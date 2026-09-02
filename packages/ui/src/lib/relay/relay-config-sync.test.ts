@@ -34,10 +34,6 @@ const localScan = vi.hoisted(() => vi.fn(async () => ({
   totalBytes: 6,
   selectionShape: { fileGroups: 3, singleFiles: 2, directories: 7 },
 })));
-const credentialGet = vi.hoisted(() => vi.fn(async () => ({
-  targetId: 'relay:srv',
-  authorized: false,
-})));
 
 vi.mock('@/lib/relay/tunnel-client', () => ({
   createRelayTunnelClient: () => ({
@@ -56,7 +52,6 @@ vi.mock('@/lib/desktopSsh', async () => {
   const actual = await vi.importActual<typeof import('@/lib/desktopSsh')>('@/lib/desktopSsh');
   return {
     ...actual,
-    desktopSshCredentialSyncGet: credentialGet,
     desktopSshSyncOpencodeConfigLocalScan: localScan,
   };
 });
@@ -74,7 +69,6 @@ describe('relay config sync', () => {
     tunnelFetch.mockReset();
     invokeDesktop.mockClear();
     localScan.mockClear();
-    credentialGet.mockClear();
   });
 
   it('rejects when refreshed serverId differs', async () => {
@@ -96,7 +90,7 @@ describe('relay config sync', () => {
     expect(RelayIdentityChangedError).toBeTruthy();
   });
 
-  it('probes over the tunnel with bearer auth and skips authFile without grant', async () => {
+  it('probes over the tunnel with bearer auth and skips authFile by default', async () => {
     tunnelFetch.mockImplementation(async (path: string) => {
       expect(path).toBe('/api/openchamber/config-sync/probe');
       return {
@@ -111,10 +105,50 @@ describe('relay config sync', () => {
             agentsRoot: null,
             authFile: { bytes: 4 },
           },
-          inboundCredentialAuthorized: false,
         }),
       };
     });
+
+    const preview = await previewRelayConfigSync(
+      {
+        id: 'h1',
+        label: 'Relay',
+        url: 'relay://srv_a',
+        clientToken: 'tok',
+        relay: {
+          relayUrl: 'wss://relay.example/ws',
+          serverId: 'srv_a',
+          hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'a', y: 'b' },
+        },
+      },
+      { direction: 'push' },
+      { refreshCandidates: async () => ({ serverId: 'srv_a' }) },
+    );
+
+    expect(preview.plan.authFile).toBeNull();
+    expect(preview.remoteExisting).toEqual(['opencode.jsonc']);
+    expect(preview.selectionShape).toEqual({ fileGroups: 3, singleFiles: 2, directories: 7 });
+    expect(close).toHaveBeenCalled();
+    expect(tunnelFetch.mock.calls[0][1].headers.Authorization).toBe('Bearer tok');
+    // Shape-first then filtered scan for push.
+    expect(localScan).toHaveBeenCalledTimes(2);
+  });
+
+  it('includes authFile when selections.authFile is true without requiring a grant', async () => {
+    tunnelFetch.mockImplementation(async () => ({
+      ok: true,
+      json: async () => ({
+        remoteExisting: ['opencode.jsonc'],
+        remoteAgentsRootExists: false,
+        remoteAuthFileExists: false,
+        inventory: {
+          files: [{ path: 'opencode.jsonc', bytes: 2 }],
+          directories: [],
+          agentsRoot: null,
+          authFile: { bytes: 4 },
+        },
+      }),
+    }));
 
     const defaults = buildDefaultSyncSelections({ fileGroups: 3, singleFiles: 2, directories: 7 });
     const preview = await previewRelayConfigSync(
@@ -139,14 +173,8 @@ describe('relay config sync', () => {
       { refreshCandidates: async () => ({ serverId: 'srv_a' }) },
     );
 
-    expect(preview.plan.authFile).toBeNull();
-    expect(preview.credentialAuthorized).toBe(false);
-    expect(preview.remoteExisting).toEqual(['opencode.jsonc']);
-    expect(preview.selectionShape).toEqual({ fileGroups: 3, singleFiles: 2, directories: 7 });
+    expect(preview.plan.authFile).toEqual({ bytes: 4 });
     expect(close).toHaveBeenCalled();
-    expect(tunnelFetch.mock.calls[0][1].headers.Authorization).toBe('Bearer tok');
-    // Shape-first then filtered scan for push.
-    expect(localScan).toHaveBeenCalledTimes(2);
   });
 
   it('buildDefaultSyncSelections mirrors selectionShape cardinality', () => {

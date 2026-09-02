@@ -1,7 +1,9 @@
 PODS:
+  - Alamofire (5.10.2)
   - AparajitaCapacitorSecureStorage (8.0.0):
     - Capacitor
     - KeychainSwift (~> 21.0)
+  - BigInt (5.2.0)
   - Capacitor (8.4.1):
     - CapacitorCordova
   - CapacitorApp (8.1.0):
@@ -16,6 +18,12 @@ PODS:
     - Capacitor
   - CapacitorStatusBar (8.0.2):
     - Capacitor
+  - CapgoCapacitorUpdater (8.51.14):
+    - Alamofire (= 5.10.2)
+    - BigInt (= 5.2.0)
+    - Capacitor
+    - Version (= 0.8.0)
+    - ZIPFoundation (~> 0.9)
   - GoogleDataTransport (10.1.0):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
@@ -63,6 +71,8 @@ PODS:
   - nanopb/decode (3.30910.0)
   - nanopb/encode (3.30910.0)
   - PromisesObjC (2.4.1)
+  - Version (0.8.0)
+  - ZIPFoundation (0.9.20)
 
 DEPENDENCIES:
   - "AparajitaCapacitorSecureStorage (from `../../../../node_modules/.bun/@aparajita+capacitor-secure-storage@8.0.0/node_modules/@aparajita/capacitor-secure-storage`)"
@@ -73,9 +83,12 @@ DEPENDENCIES:
   - "CapacitorMlkitBarcodeScanning (from `../../../../node_modules/.bun/@capacitor-mlkit+barcode-scanning@8.1.0+767ac80cbab8ae50/node_modules/@capacitor-mlkit/barcode-scanning`)"
   - "CapacitorPushNotifications (from `../../../../node_modules/.bun/@capacitor+push-notifications@8.1.1+767ac80cbab8ae50/node_modules/@capacitor/push-notifications`)"
   - "CapacitorStatusBar (from `../../../../node_modules/.bun/@capacitor+status-bar@8.0.2+767ac80cbab8ae50/node_modules/@capacitor/status-bar`)"
+  - "CapgoCapacitorUpdater (from `../../../../node_modules/.bun/@capgo+capacitor-updater@8.51.14+767ac80cbab8ae50/node_modules/@capgo/capacitor-updater`)"
 
 SPEC REPOS:
   trunk:
+    - Alamofire
+    - BigInt
     - GoogleDataTransport
     - GoogleMLKit
     - GoogleToolboxForMac
@@ -88,6 +101,8 @@ SPEC REPOS:
     - MLKitVision
     - nanopb
     - PromisesObjC
+    - Version
+    - ZIPFoundation
 
 EXTERNAL SOURCES:
   AparajitaCapacitorSecureStorage:
@@ -106,9 +121,13 @@ EXTERNAL SOURCES:
     :path: "../../../../node_modules/.bun/@capacitor+push-notifications@8.1.1+767ac80cbab8ae50/node_modules/@capacitor/push-notifications"
   CapacitorStatusBar:
     :path: "../../../../node_modules/.bun/@capacitor+status-bar@8.0.2+767ac80cbab8ae50/node_modules/@capacitor/status-bar"
+  CapgoCapacitorUpdater:
+    :path: "../../../../node_modules/.bun/@capgo+capacitor-updater@8.51.14+767ac80cbab8ae50/node_modules/@capgo/capacitor-updater"
 
 SPEC CHECKSUMS:
+  Alamofire: 7193b3b92c74a07f85569e1a6c4f4237291e7496
   AparajitaCapacitorSecureStorage: 8128d05cafcb13b00448e20fb388a0edccd44b12
+  BigInt: f668a80089607f521586bbe29513d708491ef2f7
   Capacitor: 35242afe195b1e53c58ca1b827d1b444c5e6602b
   CapacitorApp: 449ffe26375e96f8aaaee625ac6e01e5c57c8650
   CapacitorCordova: eebe6bcf807b1b06f3f48237650f96bbcd0eef09
@@ -116,6 +135,7 @@ SPEC CHECKSUMS:
   CapacitorMlkitBarcodeScanning: 31c6af9f39873ff69e16ed5b39ebe2e1915f16fe
   CapacitorPushNotifications: ec08d589c226a2c0db7c032ec1bf5b044ec85f8e
   CapacitorStatusBar: 01d5763b4ed720de5ce2edbc938de6a98f4c8f32
+  CapgoCapacitorUpdater: 46ee5ced3cadce0db3d3c720bdd9c8442a25d526
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleMLKit: ddd51d7dff36ff28defa69afedd9cdce684fd857
   GoogleToolboxForMac: d1a2cbf009c453f4d6ded37c105e2f67a32206d8
@@ -128,7 +148,9 @@ SPEC CHECKSUMS:
   MLKitVision: fa8dea9012ac59497c79ddbe9ebf32051047ac4c
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
+  Version: de5907f2c5d0f3cf21708db7801d1d5401139486
+  ZIPFoundation: dfd3d681c4053ff7e2f7350bc4e53b5dba3f5351
 
-PODFILE CHECKSUM: 99c62a30e73aa8ec805869506d2b1969ee4fb92d
+PODFILE CHECKSUM: 5db86f88bc8e2e076afd1a8d92548cc8bcd02743
 
 COCOAPODS: 1.17.0

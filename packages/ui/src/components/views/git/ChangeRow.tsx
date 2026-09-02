@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Icon } from "@/components/icon/Icon";
+import { TruncatedPath } from '@/components/ui/truncated-path';
 import type { GitStatus } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 
@@ -136,33 +137,7 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
             {descriptor.code}
           </span>
           <FileTypeIcon filePath={file.path} className="size-3 shrink-0" />
-          {(() => {
-            const lastSlash = file.path.lastIndexOf('/');
-            if (lastSlash === -1) {
-              return (
-                <span
-                  className="min-w-0 flex-1 truncate typography-code text-foreground"
-                  style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
-                  title={file.path}
-                >
-                  {file.path}
-                </span>
-              );
-            }
-            const dir = file.path.slice(0, lastSlash);
-            const name = file.path.slice(lastSlash);
-            return (
-              <span className="flex min-w-0 flex-1 items-baseline overflow-hidden" title={file.path}>
-                <span
-                  className="min-w-0 truncate typography-code text-muted-foreground"
-                  style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
-                >
-                  {dir}
-                </span>
-                <span className="flex-shrink-0 typography-code"><span className="text-muted-foreground">/</span><span className="text-foreground">{name.slice(1)}</span></span>
-              </span>
-            );
-          })()}
+          <TruncatedPath path={file.path} className="min-w-0 flex-1 typography-code" />
           <span className="shrink-0 typography-code tabular-nums">
             <span style={{ color: 'var(--status-success)' }}>+{insertions}</span>
             <span className="text-muted-foreground mx-0.5">/</span>

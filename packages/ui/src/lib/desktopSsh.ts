@@ -459,7 +459,7 @@ export type DesktopSshConfigSyncSelectionShape = {
 
 /**
  * Build an all-selected whitelist snapshot from a scan-reported shape.
- * `authFile` stays opt-in via includeAuthFile (credential grant gate).
+ * `authFile` stays opt-in (default unchecked); users can enable it in the sync wizard.
  */
 export const buildDefaultSyncSelections = (
   shape: DesktopSshConfigSyncSelectionShape,
@@ -496,7 +496,6 @@ export type DesktopSshConfigSyncPreview = {
   remoteExisting: string[];
   remoteAgentsRootExists: boolean;
   remoteAuthFileExists: boolean;
-  credentialAuthorized?: boolean;
   selectionShape?: DesktopSshConfigSyncSelectionShape;
 };
 
@@ -656,9 +655,6 @@ const parseConfigSyncPreview = (value: unknown): DesktopSshConfigSyncPreview | n
       readBoolean(value, 'remoteAuthFileExists')
       ?? readBoolean(value, 'remote_auth_file_exists')
       ?? false,
-    ...(typeof value.credentialAuthorized === 'boolean'
-      ? { credentialAuthorized: value.credentialAuthorized }
-      : {}),
     ...(selectionShape ? { selectionShape } : {}),
   };
 };
@@ -777,74 +773,6 @@ export const desktopSshSyncRunsList = async (
   return raw.filter((entry): entry is DesktopSshSyncRunRecord => (
     isRecord(entry) && typeof entry.syncRunId === 'string' && typeof entry.targetId === 'string'
   ));
-};
-
-export type DesktopSshCredentialSyncGrant = {
-  targetId: string;
-  authorized: boolean;
-  grantedAt?: string;
-  channel?: string;
-};
-
-const parseCredentialSyncGrant = (raw: unknown): DesktopSshCredentialSyncGrant | null => {
-  if (!isRecord(raw)) return null;
-  const targetId = typeof raw.targetId === 'string' ? raw.targetId.trim() : '';
-  if (!targetId) return null;
-  const authorized = raw.authorized === true;
-  const grantedAt = typeof raw.grantedAt === 'string' && raw.grantedAt.trim()
-    ? raw.grantedAt.trim()
-    : undefined;
-  const channel = typeof raw.channel === 'string' && raw.channel.trim()
-    ? raw.channel.trim()
-    : undefined;
-  return {
-    targetId,
-    authorized,
-    ...(grantedAt ? { grantedAt } : {}),
-    ...(channel ? { channel } : {}),
-  };
-};
-
-/** Query whether provider-credential sync is authorized for this SSH/direct target. */
-export const desktopSshCredentialSyncGet = async (
-  id: string,
-  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
-): Promise<DesktopSshCredentialSyncGrant | null> => {
-  const invoke = getInvoke();
-  if (!invoke) return null;
-  const raw = await invoke('desktop_ssh_credential_sync_get', {
-    id,
-    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
-  });
-  return parseCredentialSyncGrant(raw);
-};
-
-/** Grant credential sync via the instance/host-settings trust channel. */
-export const desktopSshCredentialSyncGrant = async (
-  id: string,
-  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
-): Promise<DesktopSshCredentialSyncGrant | null> => {
-  const invoke = getInvoke();
-  if (!invoke) return null;
-  const raw = await invoke('desktop_ssh_credential_sync_grant', {
-    id,
-    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
-  });
-  return parseCredentialSyncGrant(raw);
-};
-
-/** Revoke credential sync for this SSH/direct target. */
-export const desktopSshCredentialSyncRevoke = async (
-  id: string,
-  options: { targetKind?: DesktopSshConfigSyncTargetKind } = {},
-): Promise<DesktopSshCredentialSyncGrant | null> => {
-  const invoke = getInvoke();
-  if (!invoke) return null;
-  const raw = await invoke('desktop_ssh_credential_sync_revoke', {
-    id,
-    ...(options.targetKind ? { targetKind: options.targetKind } : {}),
-  });
-  return parseCredentialSyncGrant(raw);
 };
 
 export const listenDesktopSshStatus = async (

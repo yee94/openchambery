@@ -38,12 +38,14 @@ describe('MobileProjectsHomeContainer session actions', () => {
 
   test('header menu callbacks pass through to the presentational home', () => {
     expect(containerSource).toContain('pinnedSessions={model.pinnedSessions}');
+    expect(containerSource).toContain('inProgressSessions={model.inProgressSessions}');
     expect(containerSource).toContain('onScanQr={onScanQr}');
     expect(containerSource).toContain('onSwitchInstance={onSwitchInstance}');
   });
 
   test('home model owns pinned derivation instead of the container', () => {
     expect(containerSource).toContain('pinnedSessions={model.pinnedSessions}');
+    expect(containerSource).toContain('inProgressSessions={model.inProgressSessions}');
     expect(containerSource).not.toContain('derivePinnedSessions');
   });
 });

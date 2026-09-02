@@ -37,6 +37,7 @@ export {
   getParentId,
   getSessionDirectory,
   listProjectAreaRootSessions,
+  listInProgressHomeSessions,
   normalizePath,
   formatRelativeShort,
   getSessionTimestamp,

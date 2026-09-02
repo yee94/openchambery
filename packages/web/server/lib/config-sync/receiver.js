@@ -11,7 +11,6 @@ import {
   OPENCODE_CONFIG_SYNC_MAX_BYTES,
   OPENCODE_CONFIG_SYNC_MAX_FILES,
 } from './constants.js';
-import { CREDENTIAL_SYNC_UNAUTHORIZED_CODE } from './credential-auth.js';
 import {
   extractTarGzBuffer,
   finalizeLocalSyncDestination,
@@ -20,8 +19,6 @@ import {
 import { walkAllowlistDirectory } from './plan.js';
 import { sanitizeSyncRunIdForPath } from './scripts.js';
 
-const INBOUND_CREDENTIAL_SETTINGS_KEY = 'configSyncInboundCredentialAuthorized';
-
 /**
  * In-process receiver for HTTP config-sync (direct/relay hosts).
  * One inflight sync at a time; backups use the same local generational helpers as pull.
@@ -29,8 +26,6 @@ const INBOUND_CREDENTIAL_SETTINGS_KEY = 'configSyncInboundCredentialAuthorized';
 export const createConfigSyncReceiver = (deps = {}) => {
   const {
     homedir = () => os.homedir(),
-    readSettings = async () => ({}),
-    writeSettingsPatch = async () => {},
   } = deps;
 
   let inflight = null;
@@ -148,18 +143,6 @@ export const createConfigSyncReceiver = (deps = {}) => {
     };
   };
 
-  const isInboundCredentialAuthorized = async () => {
-    const settings = await readSettings();
-    return settings?.[INBOUND_CREDENTIAL_SETTINGS_KEY] === true;
-  };
-
-  const setInboundCredentialAuthorized = async (authorized) => {
-    await writeSettingsPatch({
-      [INBOUND_CREDENTIAL_SETTINGS_KEY]: authorized === true,
-    });
-    return { authorized: authorized === true };
-  };
-
   const probe = async (plan) => {
     const snapshot = buildInventory();
     const existing = new Set(snapshot.remoteExisting);
@@ -171,7 +154,6 @@ export const createConfigSyncReceiver = (deps = {}) => {
     return {
       ...snapshot,
       remoteExisting: [...new Set(planPaths.filter((rel) => existing.has(rel)))],
-      inboundCredentialAuthorized: await isInboundCredentialAuthorized(),
     };
   };
 
@@ -210,14 +192,6 @@ export const createConfigSyncReceiver = (deps = {}) => {
       const error = new Error('Config sync prepare must complete before put');
       error.code = 'sync_not_prepared';
       throw error;
-    }
-    if (kind === 'auth') {
-      const authorized = await isInboundCredentialAuthorized();
-      if (!authorized) {
-        const error = new Error('Credential sync is not authorized on this host');
-        error.code = CREDENTIAL_SYNC_UNAUTHORIZED_CODE;
-        throw error;
-      }
     }
     const buffer = await readStreamToBuffer(stream, { maxBytes: OPENCODE_CONFIG_SYNC_MAX_BYTES });
     const home = homedir();
@@ -279,12 +253,6 @@ export const createConfigSyncReceiver = (deps = {}) => {
       return collectTarGz(home, ['.agents']);
     }
     if (kind === 'auth') {
-      const authorized = await isInboundCredentialAuthorized();
-      if (!authorized) {
-        const error = new Error('Credential sync is not authorized on this host');
-        error.code = CREDENTIAL_SYNC_UNAUTHORIZED_CODE;
-        throw error;
-      }
       return collectTarGz(path.join(home, '.local', 'share', 'opencode'), ['auth.json']);
     }
     const error = new Error(`Unsupported download kind: ${String(kind)}`);
@@ -315,7 +283,6 @@ export const createConfigSyncReceiver = (deps = {}) => {
   };
 
   return {
-    INBOUND_CREDENTIAL_SETTINGS_KEY,
     probe,
     prepare,
     put,
@@ -323,8 +290,6 @@ export const createConfigSyncReceiver = (deps = {}) => {
     finalize,
     abort,
     getInflight: () => inflight,
-    isInboundCredentialAuthorized,
-    setInboundCredentialAuthorized,
     buildInventory,
   };
 };

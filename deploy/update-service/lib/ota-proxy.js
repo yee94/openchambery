@@ -1,11 +1,12 @@
 /**
- * EdgeOne edge proxy for `/ota/*` assets.
+ * EdgeOne edge proxy for allowlisted Vercel-origin assets.
  *
  * EdgeOne Pages deploys this project from git, while OTA snapshots (channel
- * manifests + content-addressed bundles) are published by CI to the Vercel
- * origin only. To keep the EdgeOne host (preferred by mainland-China clients)
- * from serving stale seeds, `/ota/channels/*.json` and `/ota/bundles/*.zip`
- * are reverse-proxied to the Vercel origin with edge-friendly cache headers.
+ * manifests + content-addressed bundles) and the authoritative CHANGELOG are
+ * published by CI to the Vercel origin only. To keep the EdgeOne host
+ * (preferred by mainland-China clients) from serving stale seeds,
+ * `/ota/channels/*.json`, `/ota/bundles/*.zip`, and `/CHANGELOG.md` are
+ * reverse-proxied to the Vercel origin with edge-friendly cache headers.
  *
  * The proxy is strictly allowlisted — it never becomes an open proxy — and it
  * never fabricates success: upstream failures surface as 502, misses as 404.
@@ -13,7 +14,7 @@
  * Bundle paths forward client `Range` so Capgo native resume works. Partial
  * responses (request Range or upstream 206/416) use `cache-control: no-store`
  * so edge caches never store a byte-range body that would poison later GETs.
- * Channel manifests never forward Range.
+ * Channel manifests and CHANGELOG never forward Range.
  */
 
 const DEFAULT_UPSTREAM_ORIGIN = 'https://openchamber-update.vercel.app';
@@ -24,6 +25,8 @@ const BUNDLE_PATH_PATTERN = /^\/ota\/bundles\/[0-9a-f]{16}\.zip$/;
 // Channel manifests mutate per release — short edge TTL keeps rollout/pause
 // actions visible within a minute while shielding the origin from hot checks.
 const CHANNEL_PATH_PATTERN = /^\/ota\/channels\/[a-z0-9_-]+\.json$/;
+// Exact CHANGELOG path only — mutates per release; same short edge TTL as channels.
+const CHANGELOG_PATH_PATTERN = /^\/CHANGELOG\.md$/;
 
 const CHANNEL_CACHE_CONTROL = 'public, max-age=0, s-maxage=60, stale-while-revalidate=300';
 const BUNDLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
@@ -44,8 +47,8 @@ function upstreamUnavailable() {
 }
 
 /**
- * Handle an `/ota/*` request by proxying the allowlisted path upstream.
- * Returns a `Response`; never throws.
+ * Handle an allowlisted proxy request (`/ota/*` or `/CHANGELOG.md`) by
+ * forwarding to the Vercel origin. Returns a `Response`; never throws.
  */
 export async function handleOtaProxyRequest(request, options = {}) {
   const origin = options.upstreamOrigin ?? DEFAULT_UPSTREAM_ORIGIN;
@@ -56,7 +59,8 @@ export async function handleOtaProxyRequest(request, options = {}) {
 
   const path = new URL(request.url).pathname;
   const isBundle = BUNDLE_PATH_PATTERN.test(path);
-  if (!isBundle && !CHANNEL_PATH_PATTERN.test(path)) return notFound();
+  const isChannelOrChangelog = CHANNEL_PATH_PATTERN.test(path) || CHANGELOG_PATH_PATTERN.test(path);
+  if (!isBundle && !isChannelOrChangelog) return notFound();
 
   const clientRange = isBundle ? request.headers.get('range') : null;
   const upstreamHeaders = { Accept: '*/*' };

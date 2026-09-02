@@ -110,6 +110,12 @@ const buildLogoSrcChain = (
   return { brand, chain: [...new Set(chain)] };
 };
 
+/** First local logo URL for a model, or null when no bundled mark exists. */
+export const resolveModelLogoSrc = (
+  modelId: string | null | undefined,
+  providerId?: string | null,
+): string | null => buildLogoSrcChain(modelId, providerId).chain[0] ?? null;
+
 const preloadModelLogo = (modelId: string | null | undefined, providerId?: string | null): void => {
   if (typeof Image === 'undefined') return;
   const { chain } = buildLogoSrcChain(modelId, providerId);

@@ -144,6 +144,7 @@ describe('Assistant UI product contract', () => {
     expect(navigation.indexOf('selectAssistant(assistantID)')).toBeLessThan(navigation.indexOf("set({ secondary: { kind: 'assistant' } })"));
     expect(view).toContain('onMobileBack?: () => void');
     expect(view).toContain('<MobileDetailNavigation');
+    expect(view).toContain('overlay');
     expect(view).not.toContain('<MobileOverlayPanel');
     expect(view).not.toContain('mobileSelectorOpen');
   });
@@ -312,7 +313,7 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).not.toContain('<ChatPromptTextarea');
     expect(chatInput).not.toContain('<ChatPromptFooter');
     expect(chatInput).toContain('inputHeader={composerInputHeader}');
-    expect(chatInput).toContain('attachmentContent={isMobile && mobileComposerChrome !== \'full\' ? undefined : composerAttachmentContent}');
+    expect(chatInput).toContain('attachmentContent={composerAttachmentContent}');
     expect(chatInput).toContain('footerContent={composerFooterContent}');
     expect(chatInput).not.toContain('<Textarea');
     expect(promptComposer).toContain('<Textarea');
@@ -550,6 +551,10 @@ describe('Assistant UI product contract', () => {
     expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
     expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) +');
     expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');
+    expect(view).toContain('overlay');
+    expect(mobileStyles).toContain('--oc-mobile-header-fade');
+    expect(mobileStyles).toContain('var(--surface-background) 85%');
+    expect(mobileStyles.match(/var\(--oc-mobile-header-fade\)/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
   test('shows the native share welcome once when a supported Assistant is opened', async () => {
@@ -600,6 +605,7 @@ describe('Assistant UI product contract', () => {
     expect(chatContainer).toContain('activeStreamingPhase={activeStreamingPhase}');
     expect(chatContainer).toContain('<StatusRowContainer');
     expect(statusRow).toContain('useAssistantStatus(currentSessionId, currentSessionDirectory)');
+    expect(statusRow).toContain('isTurnSettled={working.isTurnSettled}');
     expect(statusRow).toContain('surface.sessionId ?? primarySessionId');
     expect(view).toContain('if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID)');
     // Active binding with a sessionID force-materializes via refreshBinding (TranscriptRepository).

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useEvent } from '@reactuses/core';
 import { Icon } from '@/components/icon/Icon';
 import { toast } from '@/components/ui/toast';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
@@ -8,6 +9,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
 import {
+  buildOpenCodeUpgradeRequestBody,
   resolveOpenCodeUpdateVersion,
   resolveOpenCodeUpgradeStatusVersion,
   shouldShowOpenCodeUpdateToast,
@@ -31,16 +33,16 @@ export const OpenCodeUpdateToast: React.FC = () => {
     }
   }, [showOpenCodeUpdateNotifications]);
 
-  const reloadOpenCode = React.useCallback(() => {
+  const reloadOpenCode = useEvent(() => {
     toast.dismiss(UPGRADE_TOAST_ID);
     void reloadOpenCodeConfiguration({
       message: t('opencodeUpdate.toast.reload.message'),
       mode: 'projects',
       scopes: ['all'],
     }).catch(() => undefined);
-  }, [t]);
+  });
 
-  const runUpgrade = React.useCallback(async () => {
+  const runUpgrade = useEvent(async (version: string) => {
     if (upgradingRef.current) return;
     upgradingRef.current = true;
     toast.dismiss(UPDATE_TOAST_ID);
@@ -52,13 +54,17 @@ export const OpenCodeUpdateToast: React.FC = () => {
     });
 
     try {
+      const body = buildOpenCodeUpgradeRequestBody(version);
+      if (!body) {
+        throw new Error(t('opencodeUpdate.toast.failed.description'));
+      }
       const response = await runtimeFetch('/api/opencode/upgrade', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
       const payload = await response.json().catch(() => null) as null | { success?: boolean; version?: string; error?: string };
       if (!response.ok || payload?.success === false) {
@@ -86,7 +92,7 @@ export const OpenCodeUpdateToast: React.FC = () => {
     } finally {
       upgradingRef.current = false;
     }
-  }, [reloadOpenCode, t]);
+  });
 
   React.useEffect(() => {
     const showUpdateAvailableToast = (version: string) => {
@@ -113,7 +119,9 @@ export const OpenCodeUpdateToast: React.FC = () => {
         duration: Infinity,
         action: {
           label: t('opencodeUpdate.toast.actions.update'),
-          onClick: runUpgrade,
+          onClick: () => {
+            void runUpgrade(version);
+          },
         },
         cancel: {
           label: t('opencodeUpdate.toast.actions.dismiss'),
@@ -158,7 +166,7 @@ export const OpenCodeUpdateToast: React.FC = () => {
       cancelInitialCheck();
       window.removeEventListener('openchamber:opencode-update-available', onUpdateAvailable);
     };
-  }, [runUpgrade, showOpenCodeUpdateNotifications, t]);
+  }, [showOpenCodeUpdateNotifications, t]);
 
   return null;
 };

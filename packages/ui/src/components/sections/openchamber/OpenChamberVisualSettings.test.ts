@@ -9,6 +9,22 @@ const searchSource = readFileSync(join(directory, '../../../lib/settings/search.
 const messagesDirectory = join(directory, '../../../lib/i18n/messages');
 const localeFiles = ['en.settings.ts', 'es.settings.ts', 'fr.settings.ts', 'ja.settings.ts', 'ko.settings.ts', 'pl.settings.ts', 'pt-BR.settings.ts', 'uk.settings.ts', 'zh-CN.settings.ts', 'zh-TW.settings.ts'];
 
+describe('iOS native UI appearance setting', () => {
+  test('registers the matching settings search anchor and localizes all copy', () => {
+    expect(settingsSource).toContain('itemId="appearance.ios-native-ui"');
+    expect(settingsSource).toContain('canShowIosNativeUiSetting');
+    expect(searchSource).toContain("id: 'appearance.ios-native-ui'");
+    expect(searchSource).toContain("titleKey: 'settings.openchamber.visual.field.iosNativeUi'");
+    expect(searchSource).toContain("descriptionKey: 'settings.openchamber.visual.field.iosNativeUiHint'");
+
+    for (const fileName of localeFiles) {
+      const dictionary = readFileSync(join(messagesDirectory, fileName), 'utf8');
+      expect(dictionary).toContain('settings.openchamber.visual.field.iosNativeUi');
+      expect(dictionary).toContain('settings.openchamber.visual.field.iosNativeUiHint');
+    }
+  });
+});
+
 describe('local transcript cache settings', () => {
   test('uses a destructive confirmation flow with a disabled loading state', () => {
     expect(settingsSource).toContain('itemId="appearance.transcript-cache"');

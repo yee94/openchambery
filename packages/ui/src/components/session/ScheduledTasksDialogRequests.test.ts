@@ -247,7 +247,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(phoneShellContent).toContain('tabBarCovered={scheduledEditorActive}');
     expect(tabRootContent).toContain('showTabBar?: boolean;');
     expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
-    expect(tabRootContent).toContain('inert={topSecondaryPage || tabBarCovered ? true : undefined}');
+    expect(tabRootContent).toContain('inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}');
     expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
     expect(tabRootContent).not.toContain(') : showTabBar ? (');
     expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');
@@ -358,6 +358,8 @@ describe('ScheduledTasksDialog queries', () => {
     expect(rootHeaderContent).toContain("addEventListener('scroll', scheduleCollapseProgress, { passive: true })");
     expect(rootHeaderContent).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
     expect(mobileStyles).toContain('.oc-mobile-collapsing-header::after');
+    expect(mobileStyles).toContain('--oc-mobile-header-fade');
+    expect(mobileStyles).toContain('var(--surface-background) 85%');
     expect(mobileStyles).toContain('opacity: var(--oc-mobile-title-collapse)');
     // Bounce-free: layout box is constant; collapse only drives transform/opacity.
     // Compact end is 1.25rem (scale 0.625), not detail-nav 0.9375rem — balances 40px actions.

@@ -12,6 +12,10 @@
  *   from progress vs the commit threshold.
  * - After a compact snap, the hook may suppress return-follow briefly so iOS
  *   momentum cannot bounce straight back — that is NOT a permanent latch.
+ * - Distance alone cannot decide the compact→expanded direction once the
+ *   composer may be expanded far from the bottom, so the hook supplies travel
+ *   direction: `towardBottom` reveals from outside the follow band, and
+ *   `holdExpanded` keeps that reveal alive until the user scrolls up again.
  */
 
 /** Half-range px; commit threshold sits at this distance from the bottom. */
@@ -25,7 +29,34 @@ export const COMPOSER_SWAP_SNAP_MS = 240;
 export const COMPOSER_SWAP_IDLE_MS = 120;
 /** After landing compact, ignore return-follow this long (momentum settle). */
 export const COMPOSER_SWAP_COMPACT_SETTLE_MS = 320;
+/**
+ * Downward travel that reveals a compact composer from outside the follow band.
+ * Accumulated across events so a slow deliberate scroll qualifies too; iOS
+ * top rubber-band spring-back is excluded by the hook, not by this distance.
+ */
+export const COMPOSER_SWAP_REVEAL_TRAVEL_PX = 24;
+/**
+ * Scroll geometry only carries user intent within this long of a touch. Content
+ * growth and the list's own animated end maintenance move the end away from the
+ * viewport for many frames with no gesture behind them; without this window the
+ * transcript would collapse the composer on its own streaming output. Sized to
+ * outlast fling momentum after the finger lifts.
+ */
+export const COMPOSER_SWAP_USER_SCROLL_WINDOW_MS = 1200;
 export const COMPOSER_SWAP_CSS_VAR = '--oc-mobile-composer-swap';
+/**
+ * Native iOS accessory fade (Changes / TODO / queue). Independent of swap:
+ * swap can rest expanded hundreds of px from the live edge (downward reveal /
+ * holdExpanded). Those rows have no background, so they must stay hidden
+ * until the viewport is actually at the bottom.
+ *
+ * 0 = at the bottom (visible), 1 = ≥ FOLLOW_RANGE away (hidden). Approaching
+ * the edge stays hidden until the true bottom (NOISE); leaving fades out over
+ * the first FOLLOW_RANGE px so a 1px nudge does not flash them on or off.
+ */
+export const NATIVE_COMPOSER_DOCK_CSS_VAR = '--oc-native-composer-dock';
+
+export type NativeComposerDockRest = 'bottom' | 'away';
 
 export type ComposerSwapRest = 'expanded' | 'compact';
 export type ComposerSwapPhase = 'rest' | 'tracking' | 'snapping';
@@ -135,7 +166,19 @@ const followFromCompact = (distanceFromBottom: number): number => {
 export const applyComposerSwapScroll = (
     state: ComposerSwapState,
     distanceFromBottom: number,
-    options: { suppressReturn?: boolean } = {},
+    options: {
+        suppressReturn?: boolean;
+        /** The viewport is travelling toward the live edge (hook-measured). */
+        towardBottom?: boolean;
+        /** A scroll reveal owns the expanded endpoint; ignore absolute distance. */
+        holdExpanded?: boolean;
+        /**
+         * False when the geometry moved without a gesture behind it (streaming
+         * growth, the list gliding back to the end). Such frames may not start
+         * a collapse; arriving at the true bottom still expands.
+         */
+        userDriven?: boolean;
+    } = {},
 ): ComposerSwapState => {
     if (state.pinned) return state;
 
@@ -150,6 +193,21 @@ export const applyComposerSwapScroll = (
 
     if (base.rest === 'expanded') {
         if (distance <= COMPOSER_SWAP_NOISE_PX) {
+            return settle(base, {
+                phase: 'rest',
+                rest: 'expanded',
+                progress: 0,
+            });
+        }
+        // Expanded used to imply "at the bottom", so any distance meant the user
+        // had scrolled up. Two things break that. A scroll reveal leaves the
+        // composer expanded hundreds of px from the live edge, and absolute-
+        // distance follow would collapse it again on the very next event of the
+        // same downward gesture. Streaming growth does the same without any
+        // gesture at all: the tail appends, the end jumps away from the viewport
+        // and the list glides back over several frames — every one of those
+        // frames reads as a large distance and used to flash the composer shut.
+        if (options.holdExpanded || options.userDriven === false) {
             return settle(base, {
                 phase: 'rest',
                 rest: 'expanded',
@@ -186,6 +244,18 @@ export const applyComposerSwapScroll = (
             phase: 'rest',
             rest: 'compact',
             progress: 1,
+        });
+    }
+
+    // Outside the follow band the composer used to stay compact no matter how
+    // far the user scrolled back down — it only returned once the bottom band
+    // was in reach. Travel toward the live edge reveals it there instead; inside
+    // the band the tuned proportional follow below still owns the motion.
+    if (options.towardBottom && distance >= COMPOSER_SWAP_FULL_RANGE_PX) {
+        return settle(base, {
+            phase: 'snapping',
+            rest: 'expanded',
+            progress: 0,
         });
     }
 
@@ -243,10 +313,58 @@ export const applyComposerSwapSnapDone = (state: ComposerSwapState): ComposerSwa
     });
 };
 
+export const nativeComposerDockProgressFromDistance = (distanceFromBottom: number): number => (
+    clamp(Math.max(0, distanceFromBottom) / COMPOSER_SWAP_FULL_RANGE_PX, 0, 1)
+);
+
+/**
+ * Latch the accessory strip so approaching the bottom does not fade it in
+ * until the viewport is actually there, and leaving does not hide it on the
+ * first pixel — only after FOLLOW_RANGE of upward travel.
+ */
+export const resolveNativeComposerDock = (
+    distanceFromBottom: number,
+    previous: NativeComposerDockRest = 'away',
+): { progress: number; rest: NativeComposerDockRest } => {
+    const distance = Math.max(0, distanceFromBottom);
+    if (distance <= COMPOSER_SWAP_NOISE_PX) {
+        return { progress: 0, rest: 'bottom' };
+    }
+    if (previous === 'away' || distance >= COMPOSER_SWAP_FOLLOW_RANGE_PX) {
+        return { progress: 1, rest: 'away' };
+    }
+    return {
+        progress: nativeComposerDockProgressFromDistance(distance),
+        rest: 'bottom',
+    };
+};
+
 export const clearComposerSwap = (scope: HTMLElement): void => {
     scope.style.removeProperty(COMPOSER_SWAP_CSS_VAR);
+    scope.style.removeProperty(NATIVE_COMPOSER_DOCK_CSS_VAR);
     delete scope.dataset.ocComposerSwapPhase;
     delete scope.dataset.ocComposerSwapRest;
+    delete scope.dataset.ocNativeComposerDock;
+};
+
+export const publishNativeComposerDock = (
+    scope: HTMLElement,
+    distanceFromBottom: number,
+    last?: { progress: string; rest: string },
+): { progress: string; rest: string } => {
+    const resolved = resolveNativeComposerDock(
+        distanceFromBottom,
+        last?.rest === 'bottom' ? 'bottom' : 'away',
+    );
+    const progress = String(resolved.progress);
+    const rest = resolved.rest;
+    if (last?.progress !== progress) {
+        scope.style.setProperty(NATIVE_COMPOSER_DOCK_CSS_VAR, progress);
+    }
+    if (last?.rest !== rest) {
+        scope.dataset.ocNativeComposerDock = rest;
+    }
+    return { progress, rest };
 };
 
 export const publishComposerSwap = (

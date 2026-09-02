@@ -14,8 +14,7 @@ throttle (`TITLE_THROTTLE_MS`) when a refresh is armed.
 ## Flow
 
 1. `createSessionTitleRuntime` is a consumer of the server's global SSE
-   fan-out (`index.js` → `globalMessageStreamHub.subscribeEvent`), same
-   pattern as session-assist. Purely event-driven — dormant sessions never
+   fan-out (`index.js` → `globalMessageStreamHub.subscribeEvent`). Purely event-driven — dormant sessions never
    generate anything.
   2. Auto title refresh is intentionally sparse (title stability first). A newly
      observed root `session.created` generates its first title immediately on the

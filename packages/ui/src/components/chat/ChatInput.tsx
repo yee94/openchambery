@@ -1,8 +1,11 @@
 import React from 'react';
-import { useEvent } from '@reactuses/core';
+import { useEvent, useResizeObserver } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
+import { useNativeIosComposer } from './useNativeIosComposer';
+import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
+import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, getNativeIosComposerPlugin, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
@@ -28,6 +31,7 @@ import {
     useDirectoryStore as useChildDirectoryStore,
     useDirectorySync,
     useSession,
+    useSessionMaterializationStatus,
     useSessionMessages,
     useSessionStatus,
     useSyncDirectory,
@@ -71,10 +75,10 @@ import { Button } from '@/components/ui/button';
 // useMessageStore removed — messages now come from sync system
 import { getElectronPathForFile, isVSCodeRuntime } from '@/lib/desktop';
 import { isIMECompositionEvent } from '@/lib/ime';
-import { StopIcon } from '@/components/icons/StopIcon';
+import { SendCircleIcon, StopIcon } from '@/components/icons/StopIcon';
 import { resolveComposerActionAvailability } from './chatPromptAvailability';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getCycledPrimaryAgentName, resolveAgentModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
+import { getCycledPrimaryAgentName, getAgentDisplayName, getModelDisplayName, formatEffortLabel, resolveAgentModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -138,12 +142,20 @@ import {
     collectDetachedAttachmentFilenames,
     findAttachmentCitationRanges,
     isInlineAttachmentCitation,
+    reconcileComposerAttachmentTextDeletion,
     resolveAttachmentCitationDeletion,
 } from './attachmentCitations';
 import {
+    commitComposerAutocompleteRows,
+    resolveComposerAutocompleteReplaceRange,
+    resolveComposerAutocompleteTrigger,
+    type ComposerAutocompleteListRow,
+    type ComposerAutocompleteTrigger,
+    type ComposerAutocompleteVisibleRows,
+} from '@/lib/composer-autocomplete';
+import {
     collectComposerMentionHighlights,
     collectConfirmableFileMentions,
-    getFileMentionAutocompleteQuery,
     shouldHighlightFileMention,
     type FileMentionAutocompleteInputSource,
 } from './fileMentionAutocompleteState';
@@ -198,9 +210,11 @@ import {
     applyPrimaryComposerSelectionChange,
     applyPrimaryComposerSessionRestore,
     capturePrimaryComposerSendConfig,
+    parseLatestAssistantExecutionFromMessages,
     parseLatestUserChoiceFromMessages,
     resolvePrimaryComposerSendConfig,
     resolvePrimaryComposerSessionSelection,
+    shouldHoldPrimaryComposerUserPick,
 } from './primaryComposerSelection';
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
 import { decorateComposerReference, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
@@ -793,8 +807,10 @@ const PermissionAutoAcceptButton = React.memo(function PermissionAutoAcceptButto
 
 type ComposerActionButtonsProps = {
     isMobile: boolean;
+    compact?: boolean;
     footerIconButtonClass: string;
     stopFooterIconButtonClass?: string;
+    compactCircleButtonClass?: string;
     sendIconSizeClass: string;
     stopIconSizeClass: string;
     canSend: boolean;
@@ -815,8 +831,10 @@ type ComposerActionButtonsProps = {
 const ComposerActionButtons = React.memo(function ComposerActionButtons(props: ComposerActionButtonsProps) {
     const {
         isMobile,
+        compact = false,
         footerIconButtonClass,
         stopFooterIconButtonClass,
+        compactCircleButtonClass,
         sendIconSizeClass,
         stopIconSizeClass,
         canSend,
@@ -871,12 +889,17 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                 : canAbort
                     ? 'chat.chatInput.actions.queueMessageAria'
                     : 'chat.chatInput.actions.sendMessageAria');
-    const primaryIcon = inFlight ? 'loader-4' : 'send-plane-2';
+    const circleButtonClass = compact
+        ? (compactCircleButtonClass ?? stopFooterIconButtonClass ?? footerIconButtonClass)
+        : (stopFooterIconButtonClass ?? footerIconButtonClass);
+    const circleGlyphClass = stopIconSizeClass;
+    const showSendCircle = !canAbort && (!actionAvailability.sendDisabled || inFlight);
 
     const sendButton = (
         <button
             type={isMobile ? 'button' : 'submit'}
             data-composer-send="true"
+            data-composer-circle={showSendCircle ? 'true' : undefined}
             disabled={actionAvailability.sendDisabled}
             aria-busy={inFlight || undefined}
             {...keepKeyboardFocusProps}
@@ -888,16 +911,22 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                 onPrimaryAction();
             }}
             className={cn(
-                footerIconButtonClass,
-                !actionAvailability.sendDisabled
-                    ? 'text-primary hover:text-primary'
-                    : actionAvailability.disabledClass
+                showSendCircle ? circleButtonClass : footerIconButtonClass,
+                showSendCircle
+                    ? undefined
+                    : actionAvailability.sendDisabled
+                        ? actionAvailability.disabledClass
+                        : 'text-primary hover:text-primary',
             )}
             aria-label={sendInFlight || (!canAbort && inFlight)
                 ? t(queueInFlight ? 'chat.chatInput.actions.queuingMessageAria' : 'chat.chatInput.actions.sendingMessageAria')
                 : t('chat.chatInput.actions.sendMessageAria')}
         >
-            <Icon name={inFlight ? 'loader-4' : 'send-plane-2'} className={cn(sendIconSizeClass, inFlight && 'animate-spin')} />
+            {showSendCircle ? (
+                <SendCircleIcon className={circleGlyphClass} spinning={Boolean(inFlight && !canAbort)} />
+            ) : (
+                <Icon name="send-plane-2" className={sendIconSizeClass} />
+            )}
         </button>
     );
 
@@ -910,12 +939,15 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     // steer while canAbort is true. Stack above the textarea (z-10).
     // Keep the floating control visible while queue admission is in flight even
     // after the composer cleared, so the user sees an immediate "queuing" state.
+    const showFloatingSend = !compact && (hasContent || queueInFlight);
+    const floatingSendReady = !actionAvailability.sendDisabled && !queueInFlight;
     return (
-        <div className="relative z-30 overflow-visible">
-            {(hasContent || queueInFlight) ? (
+        <div className={cn('relative z-30 overflow-visible', compact && 'h-full')}>
+            {showFloatingSend ? (
                 <button
                     type="button"
                     data-composer-send="true"
+                    data-composer-circle={floatingSendReady || queueInFlight ? 'true' : undefined}
                     disabled={actionAvailability.sendDisabled || queueInFlight}
                     aria-busy={queueInFlight || undefined}
                     {...keepKeyboardFocusProps}
@@ -925,15 +957,19 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                         onPrimaryAction();
                     }}
                     className={cn(
-                        footerIconButtonClass,
+                        floatingSendReady || queueInFlight ? circleButtonClass : footerIconButtonClass,
                         'absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-1',
-                        !actionAvailability.sendDisabled && !queueInFlight
-                            ? 'text-primary hover:text-primary'
-                            : actionAvailability.disabledClass
+                        floatingSendReady || queueInFlight
+                            ? undefined
+                            : actionAvailability.disabledClass,
                     )}
                     aria-label={primaryAria}
                 >
-                    <Icon name={primaryIcon} className={cn(sendIconSizeClass, queueInFlight ? 'animate-spin' : '-rotate-90')} />
+                    {floatingSendReady || queueInFlight ? (
+                        <SendCircleIcon className={circleGlyphClass} spinning={queueInFlight} />
+                    ) : (
+                        <Icon name="send-plane-2" className={sendIconSizeClass} />
+                    )}
                 </button>
             ) : null}
             <button
@@ -941,20 +977,21 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                 data-composer-stop="true"
                 onClick={onAbort}
                 className={cn(
-                    stopFooterIconButtonClass ?? footerIconButtonClass,
-                    // Plain stop square only: black in light mode, white in dark.
-                    'relative z-30 !text-black hover:!text-black dark:!text-white dark:hover:!text-white'
+                    circleButtonClass,
+                    'relative z-30'
                 )}
                 aria-label={t('chat.chatInput.actions.stopGeneratingAria')}
             >
-                <StopIcon className={cn(stopIconSizeClass)} />
+                <StopIcon className={cn(circleGlyphClass)} />
             </button>
         </div>
     );
 }, (prev, next) => (
     prev.isMobile === next.isMobile
+    && prev.compact === next.compact
     && prev.footerIconButtonClass === next.footerIconButtonClass
     && prev.stopFooterIconButtonClass === next.stopFooterIconButtonClass
+    && prev.compactCircleButtonClass === next.compactCircleButtonClass
     && prev.sendIconSizeClass === next.sendIconSizeClass
     && prev.stopIconSizeClass === next.stopIconSizeClass
     && prev.canSend === next.canSend
@@ -1037,6 +1074,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     surface: surfaceProp,
 }) => {
     const { t } = useI18n();
+    const iosNativeUiEnabled = useIosNativeUiEnabled();
     const [attachmentPopup, setAttachmentPopup] = React.useState<ToolPopupContent>({
         open: false,
         title: '',
@@ -1053,6 +1091,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const [skillQuery, setSkillQuery] = React.useState('');
     const [showSnippetAutocomplete, setShowSnippetAutocomplete] = React.useState(false);
     const [snippetQuery, setSnippetQuery] = React.useState('');
+    const [nativeSuggestionRows, setNativeSuggestionRows] = React.useState<ComposerAutocompleteListRow[]>([]);
+    const [nativeSuggestionHighlight, setNativeSuggestionHighlight] = React.useState(0);
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
     const [mobileControlsPanel, setMobileControlsPanel] = React.useState<MobileControlsPanel>(null);
     // PWA overlay keyboard-reveal retries (300/650ms). Cleared on unmount so
@@ -1150,6 +1190,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         () => parseLatestUserChoiceFromMessages(primarySessionMessages),
         [primarySessionMessages],
     );
+    const primaryLatestExecution = React.useMemo(
+        () => parseLatestAssistantExecutionFromMessages(primarySessionMessages),
+        [primarySessionMessages],
+    );
+    const primaryTranscriptRenderable = useSessionMaterializationStatus(
+        primarySessionID ?? '',
+        currentSessionDirectoryForSync ?? undefined,
+    ).renderable;
     // Per-session entity for restore cascade tier 3 (session-entity). Narrow
     // subscription: one session entry, not the full sessions array.
     const primarySessionEntity = useSession(
@@ -1162,6 +1210,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const primarySessionEntityVariant = primarySessionEntity?.model?.variant;
     const primaryConfigScopeKey = useConfigStore((state) => state.activeDirectoryKey);
     const primarySelectionEditRevisionRef = React.useRef(0);
+    const primarySelectionPinnedHistoryIdRef = React.useRef<string | null>(null);
     const primarySessionRestoreKeyRef = React.useRef<string | null>(null);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
     const primaryNewSessionDraftOpen = Boolean(newSessionDraft?.open);
@@ -1323,12 +1372,33 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
                 const messages = getSyncMessages(sessionAtStart, sessionDirectoryAfter ?? undefined);
                 const latestChoice = parseLatestUserChoiceFromMessages(messages);
+                const latestExecution = parseLatestAssistantExecutionFromMessages(messages);
+                if (shouldHoldPrimaryComposerUserPick({
+                    editRevision: editRevisionAtStart,
+                    pinnedHistoryMessageId: primarySelectionPinnedHistoryIdRef.current,
+                    latestHistoryMessageId: latestChoice?.id ?? null,
+                })) {
+                    return;
+                }
                 const memory = useSelectionStore.getState();
+                const sessionRow = getAllSyncSessionMap().get(sessionAtStart);
+                const sessionEntity = sessionRow?.model
+                    ? {
+                        agent: sessionRow.agent,
+                        model: {
+                            id: sessionRow.model.id,
+                            providerID: sessionRow.model.providerID,
+                            variant: sessionRow.model.variant,
+                        },
+                    }
+                    : (sessionRow?.agent ? { agent: sessionRow.agent } : null);
                 const resolved = resolvePrimaryComposerSessionSelection({
                     sessionId: sessionAtStart,
                     latestUserChoice: latestChoice,
+                    latestExecution,
                     catalog,
                     memory,
+                    sessionEntity,
                     fallbackAgentName: config.currentAgentName,
                 });
                 if (!resolved) {
@@ -1364,7 +1434,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             change: async (selection) => {
                 // Explicit user pick: bump edit revision so an in-flight flush
                 // cannot overwrite the new choice after ensureSessionRenderable.
+                // Pin the latest known history message id (null while loading) so
+                // restore/flush keep this pick until a newer user message arrives.
                 primarySelectionEditRevisionRef.current += 1;
+                const sessionId = useSessionUIStore.getState().currentSessionId;
+                if (sessionId) {
+                    const directory = useSessionUIStore.getState().getDirectoryForSession(sessionId) ?? undefined;
+                    const latestChoice = parseLatestUserChoiceFromMessages(getSyncMessages(sessionId, directory));
+                    primarySelectionPinnedHistoryIdRef.current = latestChoice?.id ?? null;
+                } else {
+                    primarySelectionPinnedHistoryIdRef.current = null;
+                }
                 // setAgent re-applies agent-scoped model memory and would clobber an
                 // explicit model pick if called after setModel. applyPrimaryComposer-
                 // SelectionChange only switches agents when needed, then applies the
@@ -1378,40 +1458,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     setCurrentVariant: config.setCurrentVariant,
                     saveAgentModelSelection: config.saveAgentModelSelection,
                 }, {
-                    sessionId: useSessionUIStore.getState().currentSessionId,
+                    sessionId,
                     memory: useSelectionStore.getState(),
                 });
-                // Pin the current history/memory restore key so the effect does not
-                // re-apply the same latest user message over this explicit pick.
-                // A newer message id (or session switch) still re-resolves.
-                const sessionId = useSessionUIStore.getState().currentSessionId;
-                if (sessionId) {
-                    const directory = useSessionUIStore.getState().getDirectoryForSession(sessionId) ?? undefined;
-                    const latestChoice = parseLatestUserChoiceFromMessages(getSyncMessages(sessionId, directory));
-                    const memory = useSelectionStore.getState();
-                    const resolved = resolvePrimaryComposerSessionSelection({
-                        sessionId,
-                        latestUserChoice: latestChoice,
-                        catalog: {
-                            providers: config.providers,
-                            agents: config.getVisibleAgents(),
-                        },
-                        memory,
-                        fallbackAgentName: selection.agent ?? config.currentAgentName,
-                    });
-                    if (resolved) {
-                        primarySessionRestoreKeyRef.current = [
-                            sessionId,
-                            resolved.source,
-                            resolved.messageId ?? '',
-                            resolved.agent ?? '',
-                            resolved.providerID,
-                            resolved.modelID,
-                            resolved.variant ?? '',
-                            useConfigStore.getState().activeDirectoryKey,
-                        ].join('|');
-                    }
-                }
             },
         },
         resources: {
@@ -1600,13 +1649,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         catalog: selectionCatalog,
     }), [selectionCatalog, selectionChange, selectionValue.agent, selectionValue.modelID, selectionValue.providerID, selectionValue.variant, surface.active]);
 
+    // Session switch drops a previous conversation's user-pick hold and restore key.
+    React.useEffect(() => {
+        primarySelectionEditRevisionRef.current = 0;
+        primarySelectionPinnedHistoryIdRef.current = null;
+        primarySessionRestoreKeyRef.current = null;
+    }, [primarySessionID]);
+
     // Primary surface owns session selection restore while ModelControls uses the
     // adapter (which disables ModelControls' own history/memory restore path).
     React.useEffect(() => {
         if (surface.kind !== 'primary' || !primarySessionID) {
-            if (!primarySessionID) {
-                primarySessionRestoreKeyRef.current = null;
-            }
             return;
         }
         if (primaryProviderConfigLoading || primaryAgentConfigLoading) {
@@ -1628,6 +1681,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             providers: primarySelectionProviders,
             agents: primarySelectionAgents,
         };
+        if (shouldHoldPrimaryComposerUserPick({
+            editRevision: primarySelectionEditRevisionRef.current,
+            pinnedHistoryMessageId: primarySelectionPinnedHistoryIdRef.current,
+            latestHistoryMessageId: primaryLatestUserChoice?.id ?? null,
+        })) {
+            return;
+        }
         const sessionEntity =
             primarySessionEntityProviderId && primarySessionEntityModelId
                 ? {
@@ -1644,10 +1704,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const resolved = resolvePrimaryComposerSessionSelection({
             sessionId: primarySessionID,
             latestUserChoice: primaryLatestUserChoice,
+            latestExecution: primaryLatestExecution,
             catalog,
             memory,
             sessionEntity,
             fallbackAgentName: primaryAgentName,
+            transcriptReady: primaryTranscriptRenderable,
         });
         if (!resolved) {
             return;
@@ -1699,6 +1761,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         surface.kind,
         primarySessionID,
         primaryLatestUserChoice,
+        primaryLatestExecution,
+        primaryTranscriptRenderable,
         primarySelectionProviders,
         primarySelectionAgents,
         primaryProviderConfigLoading,
@@ -1759,6 +1823,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const nativeCompositionActiveRef = React.useRef(false);
     const cursorPosRef = React.useRef(0);
+    const autocompleteTriggerRef = React.useRef<ComposerAutocompleteTrigger | null>(null);
     const previousMessageLengthRef = React.useRef(message.length);
     const dropZoneRef = React.useRef<HTMLDivElement>(null);
     const dragEnterCountRef = React.useRef(0);
@@ -2058,13 +2123,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     // Combined source-mode highlight: markdown syntax + @mentions. Returns null
     // when there's nothing to highlight so the overlay stays off for plain text.
+    const nativeComposerOwnedInput = iosNativeUiEnabled && canUseNativeIosComposer(isMobile) && surface.kind === 'primary';
     const highlightedComposerContent = React.useMemo(() => {
         if (!message || inputMode === 'shell') {
             return null;
         }
         const ranges = [
-            ...tokenizeMarkdown(message),
-            ...highlightFencedCode(message),
+            ...(nativeComposerOwnedInput ? [] : tokenizeMarkdown(message)),
+            ...(nativeComposerOwnedInput ? [] : highlightFencedCode(message)),
             ...mentionRangesToHighlightRanges(composerMentionRanges),
             ...composerCommandRanges,
             ...composerSnippetRanges,
@@ -2079,7 +2145,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             })),
         ];
         return buildHighlightParts(message, ranges);
-    }, [attachmentCitationRanges, composerCommandRanges, composerSnippetRanges, composerMentionRanges, composerDocument.references, inputMode, message]);
+    }, [attachmentCitationRanges, composerCommandRanges, composerSnippetRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput]);
 
     const sanitizeAttachmentsForSend = React.useCallback(
         (files: AttachedFile[] | undefined): AttachedFile[] => (files ?? [])
@@ -2364,11 +2430,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }
         if (stagedEditFocusedRowRef.current === stagedEditMessageId) return;
         stagedEditFocusedRowRef.current = stagedEditMessageId;
+        if (nativeComposerOwnedInput) {
+            void getNativeIosComposerPlugin().focus();
+            return;
+        }
         if (!focusComposerTextarea(textareaRef)) {
             // Staging can land a frame before the textarea is mounted/enabled.
             requestAnimationFrame(() => focusComposerTextarea(textareaRef));
         }
-    }, [stagedEditMessageId, surface.kind]);
+    }, [nativeComposerOwnedInput, stagedEditMessageId, surface.kind]);
     const establishingPendingItems = useComposerSendStore(
         React.useMemo(() => selectEstablishingPendingItems(establishingDraftID), [establishingDraftID]),
     );
@@ -4730,79 +4800,49 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         inputSource: FileMentionAutocompleteInputSource = 'manual',
         insertedText?: string,
     ) => {
-        if (inputMode === 'shell') {
+        const trigger = resolveComposerAutocompleteTrigger({
+            text: value,
+            cursor: cursorPosition,
+            inputMode,
+            mentionInputSource: inputSource,
+            insertedText,
+        });
+        autocompleteTriggerRef.current = trigger;
+        if (!trigger) {
             setShowCommandAutocomplete(false);
+            setShowFileMention(false);
+            setShowSkillAutocomplete(false);
+            setShowSnippetAutocomplete(false);
+            setSkillQuery('');
+            return;
+        }
+        if (trigger.kind === 'slash-command') {
+            setCommandQuery(trigger.query);
+            setShowCommandAutocomplete(true);
             setShowFileMention(false);
             setShowSkillAutocomplete(false);
             setShowSnippetAutocomplete(false);
             return;
         }
-
-        if (value.startsWith('/')) {
-            const firstSpace = value.indexOf(' ');
-            const firstNewline = value.indexOf('\n');
-            const commandEnd = Math.min(
-                firstSpace === -1 ? value.length : firstSpace,
-                firstNewline === -1 ? value.length : firstNewline
-            );
-
-            if (cursorPosition <= commandEnd && firstSpace === -1) {
-                // Strip the reserved icon slot so autocomplete ranking still
-                // matches hand-typed `/␠undo` chips against `undo`.
-                const commandText = stripLeadingSlashCommandSlot(value.substring(1, commandEnd));
-                setCommandQuery(commandText);
-                setShowCommandAutocomplete(true);
-                setShowFileMention(false);
-                setShowSkillAutocomplete(false);
-                setShowSnippetAutocomplete(false);
-                return;
-            }
-        }
-
         setShowCommandAutocomplete(false);
-
-        const textBeforeCursor = value.substring(0, cursorPosition);
-
-        const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
-        if (lastSlashSymbol !== -1) {
-            const charBefore = lastSlashSymbol > 0 ? textBeforeCursor[lastSlashSymbol - 1] : null;
-            const textAfterSlash = stripLeadingSlashCommandSlot(textBeforeCursor.substring(lastSlashSymbol + 1));
-            const hasSeparator = textAfterSlash.includes(' ') || textAfterSlash.includes('\n');
-            const isWordBoundary = !charBefore || /\s/.test(charBefore);
-
-            if (isWordBoundary && !hasSeparator) {
-                setSkillQuery(textAfterSlash);
-                setShowSkillAutocomplete(true);
-                setShowFileMention(false);
-                return;
-            }
+        if (trigger.kind === 'slash-skill') {
+            setSkillQuery(trigger.query);
+            setShowSkillAutocomplete(true);
+            setShowFileMention(false);
+            setShowSnippetAutocomplete(false);
+            return;
         }
-
         setShowSkillAutocomplete(false);
         setSkillQuery('');
-
-        const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
-        if (lastHashSymbol !== -1) {
-            const charBefore = lastHashSymbol > 0 ? textBeforeCursor[lastHashSymbol - 1] : null;
-            const textAfterHash = textBeforeCursor.substring(lastHashSymbol + 1);
-            const isWordBoundary = !charBefore || /\s/.test(charBefore);
-            if (isWordBoundary && !textAfterHash.includes(' ') && !textAfterHash.includes('\n')) {
-                setSnippetQuery(textAfterHash);
-                setShowSnippetAutocomplete(true);
-                setShowFileMention(false);
-                return;
-            }
-        }
-
-        setShowSnippetAutocomplete(false);
-
-        const nextMentionQuery = getFileMentionAutocompleteQuery({ value, cursorPosition, inputSource, insertedText });
-        if (nextMentionQuery === null) {
+        if (trigger.kind === 'snippet') {
+            setSnippetQuery(trigger.query);
+            setShowSnippetAutocomplete(true);
             setShowFileMention(false);
-        } else {
-            setMentionQuery(nextMentionQuery);
-            setShowFileMention(true);
+            return;
         }
+        setShowSnippetAutocomplete(false);
+        setMentionQuery(trigger.query);
+        setShowFileMention(true);
     }, [
         inputMode,
         setCommandQuery,
@@ -5277,14 +5317,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         writeComposerSelectionToClipboard(event, 'cut');
     }, [writeComposerSelectionToClipboard]);
 
+    const readComposerInsertCaret = (documentLength: number): number => {
+        const textarea = textareaRef.current;
+        const raw = textarea && document.activeElement === textarea
+            ? textarea.selectionStart ?? cursorPosRef.current
+            : cursorPosRef.current;
+        return resolveComposerInsertCaret(documentLength, raw);
+    };
+    const restoreWebComposerFocus = () => {
+        if (canUseNativeIosComposer(isMobile)) return;
+        textareaRef.current?.focus();
+    };
+
     const handleFileSelect = (file: { name: string; path: string; relativePath?: string; isDirectory?: boolean }) => {
 
-        const textarea = textareaRef.current;
-        const cursorPosition = Math.min(
-            textarea && document.activeElement === textarea
-                ? textarea.selectionStart ?? cursorPosRef.current
-                : cursorPosRef.current,
-            message.length,
+        const cursorPosition = readComposerInsertCaret(message.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            message,
+            cursorPosition,
+            autocompleteTriggerRef.current,
         );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
@@ -5294,9 +5345,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             : (toProjectRelativeMentionPath(file.path) || file.name);
         const directoryPaths = file.isDirectory ? [mentionPath] : [];
 
-        const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
-        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, cursorPosition, `@${mentionPath}`);
+        const startIndex = range?.start ?? (lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition);
+        const endIndex = range?.end ?? cursorPosition;
+        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, endIndex, `@${mentionPath}`);
         replaceWithConfirmedFileMentions(inserted.text, [mentionPath], directoryPaths);
+        cursorPosRef.current = inserted.caret;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = inserted.caret;
@@ -5309,21 +5362,21 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setShowFileMention(false);
         setMentionQuery('');
 
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
     };
 
     const handleAgentSelect = (agentName: string) => {
-        const textarea = textareaRef.current;
-        const cursorPosition = Math.min(
-            textarea && document.activeElement === textarea
-                ? textarea.selectionStart ?? cursorPosRef.current
-                : cursorPosRef.current,
-            message.length,
+        const cursorPosition = readComposerInsertCaret(message.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            message,
+            cursorPosition,
+            autocompleteTriggerRef.current,
         );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
-        const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
-        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, cursorPosition, `@${agentName}`);
+        const startIndex = range?.start ?? (lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition);
+        const endIndex = range?.end ?? cursorPosition;
+        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, endIndex, `@${agentName}`);
         applyProgrammaticEdit(inserted.text, (mentions) => appendUniqueDraftMention(mentions, {
             kind: 'agent',
             value: agentName,
@@ -5332,6 +5385,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             range: { start: inserted.start, end: inserted.end },
         }));
 
+        cursorPosRef.current = inserted.caret;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = inserted.caret;
@@ -5344,7 +5398,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setShowFileMention(false);
         setMentionQuery('');
 
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
     };
 
     const handleSessionSelect = useEvent((session: { id: string; title?: string }) => {
@@ -5371,20 +5425,26 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 void ensureSessionMentionTranscripts([{ type: 'session', sessionId: session.id }], sessionDirectory).catch(() => undefined);
 
                 const document = getDocument();
-                const textarea = textareaRef.current;
-                const cursorPosition = textarea?.selectionStart ?? document.text.length;
+                const cursorPosition = readComposerInsertCaret(document.text.length);
+                const range = resolveComposerAutocompleteReplaceRange(
+                    document.text,
+                    cursorPosition,
+                    autocompleteTriggerRef.current,
+                );
                 const textBeforeCursor = document.text.substring(0, cursorPosition);
                 const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
                 const sessionTitle = getAllSyncSessionMap().get(session.id)?.title || session.title || session.id;
-                const mentionStart = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
+                const mentionStart = range?.start ?? (lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition);
+                const mentionEnd = range?.end ?? cursorPosition;
                 const sessionReference: Omit<SessionComposerReference, 'start' | 'end'> = {
                     id: `session:${session.id}:${createUuid()}`,
                     kind: 'session',
                     sessionId: session.id,
                     display: composerTriggerIconDisplay({ trigger: '@', icon: 'chat-thread', label: sessionTitle }),
                 };
-                const inserted = insertReference(mentionStart, cursorPosition, sessionReference, { inlineBoundaries: true, padDocumentEdges: true });
+                const inserted = insertReference(mentionStart, mentionEnd, sessionReference, { inlineBoundaries: true, padDocumentEdges: true });
                 const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
+                cursorPosRef.current = caret;
                 requestAnimationFrame(() => {
                     if (textareaRef.current) {
                         textareaRef.current.selectionStart = caret;
@@ -5395,7 +5455,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 });
                 setShowFileMention(false);
                 setMentionQuery('');
-                textareaRef.current?.focus();
+                restoreWebComposerFocus();
             } catch {
                 toast.error(t('chat.chatInput.toast.sessionReferenceLoadFailed'));
             } finally {
@@ -5406,9 +5466,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     const insertSlashReference = useEvent((reference: Parameters<typeof insertReference>[2]): boolean => {
         const document = getDocument();
-        const textarea = textareaRef.current;
-        const cursorPosition = textarea?.selectionStart ?? document.text.length;
-        const range = getSlashTokenRange(document.text, cursorPosition);
+        const cursorPosition = readComposerInsertCaret(document.text.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            document.text,
+            cursorPosition,
+            autocompleteTriggerRef.current,
+        ) ?? getSlashTokenRange(document.text, cursorPosition);
         if (!range) return false;
 
         // Trailing edge space keeps room for args; no leading edge space before `/`
@@ -5420,6 +5483,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
         const insertedReference = inserted.document.references.some((candidate) => candidate.id === reference.id);
         const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
+        cursorPosRef.current = caret;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = caret;
@@ -5432,7 +5496,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 setShowSkillAutocomplete(false);
             }
         });
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
         return insertedReference;
     });
 
@@ -5446,14 +5510,20 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     };
 
     const handleSnippetSelect = (_snippet: unknown, trigger: string) => {
-        const textarea = textareaRef.current;
-        const cursorPosition = textarea?.selectionStart ?? message.length;
+        const cursorPosition = readComposerInsertCaret(message.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            message,
+            cursorPosition,
+            autocompleteTriggerRef.current,
+        );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
-        const startIndex = lastHashSymbol !== -1 ? lastHashSymbol : cursorPosition;
-        const newMessage = `${message.substring(0, startIndex)}#${trigger} ${message.substring(cursorPosition)}`;
+        const startIndex = range?.start ?? (lastHashSymbol !== -1 ? lastHashSymbol : cursorPosition);
+        const endIndex = range?.end ?? cursorPosition;
+        const newMessage = `${message.substring(0, startIndex)}#${trigger} ${message.substring(endIndex)}`;
         applyProgrammaticEdit(newMessage);
         const nextCursor = startIndex + trigger.length + 2;
+        cursorPosRef.current = nextCursor;
         requestAnimationFrame(() => {
             if (textareaRef.current) {
                 textareaRef.current.selectionStart = nextCursor;
@@ -5464,7 +5534,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
         setShowSnippetAutocomplete(false);
         setSnippetQuery('');
-        textareaRef.current?.focus();
+        restoreWebComposerFocus();
     };
 
     const handleCommandSelect = (command: CommandInfo, submit = false) => {
@@ -5523,6 +5593,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }
 
         const refocus = () => {
+            if (canUseNativeIosComposer(isMobile)) return;
             if (textareaRef.current) {
                 try {
                     textareaRef.current.focus({ preventScroll: true });
@@ -6257,6 +6328,147 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         || androidMediaPickSheetOpen
         || issuePickerOpen
         || prPickerOpen;
+    const nativeModelName = getModelDisplayName(
+        providers.find((provider) => provider.id === surface.selection.value.providerID),
+        surface.selection.value.modelID,
+        t('chat.modelControls.selectModel'),
+    );
+    const nativeModelVariant = surface.selection.value.variant?.trim();
+    const handleNativeSuggestionRows = useEvent((payload: ComposerAutocompleteVisibleRows) => {
+        setNativeSuggestionRows((previous) => commitComposerAutocompleteRows(previous, payload.rows));
+        setNativeSuggestionHighlight((previous) => (
+            previous === payload.highlightedIndex ? previous : payload.highlightedIndex
+        ));
+    });
+    const evaluateChatInputCommandPolicy = useEvent((command: CommandInfo) => (
+        isChatInputCommandAllowed(surface, command)
+    ));
+    const handleNativeAutocompleteAccept = useEvent((index: number) => {
+        if (showCommandAutocomplete) {
+            commandRef.current?.acceptIndex(index, true);
+            return;
+        }
+        if (showSkillAutocomplete) {
+            skillRef.current?.acceptIndex(index);
+            return;
+        }
+        if (showFileMention) {
+            mentionRef.current?.acceptIndex(index);
+        }
+    });
+    const handleNativeAutocompleteDismiss = useEvent(() => {
+        autocompleteTriggerRef.current = null;
+        setShowCommandAutocomplete(false);
+        setShowSkillAutocomplete(false);
+        setShowSnippetAutocomplete(false);
+        setShowFileMention(false);
+        setNativeSuggestionRows([]);
+        setNativeSuggestionHighlight(0);
+    });
+    const nativeIosComposerActive = useNativeIosComposer({
+        enabled: isMobile && surface.kind === 'primary',
+        isMobile,
+        text: message,
+        textPresetEpoch: composer.textPresetEpoch,
+        placeholder: compactComposerPlaceholder,
+        modelLabel: nativeModelName,
+        modelVariantLabel: nativeModelVariant ? formatEffortLabel(nativeModelVariant) : '',
+        canSend,
+        canAbort,
+        attachmentCount: attachedFiles.length,
+        suppressed: mobileOverlayOpen,
+        attachAria: t('chat.chatInput.actions.addAttachment'),
+        attachTitle: t('chat.chatInput.actions.addAttachment'),
+        attachPhotosLabel: t('chat.chatInput.actions.attachPhotos'),
+        attachFilesLabel: t('chat.chatInput.actions.attachFiles'),
+        attachCancelLabel: t('chat.chatInput.actions.attachCancel'),
+        sendAria: t('chat.chatInput.actions.sendMessageAria'),
+        queueAria: t('chat.chatInput.actions.queueMessageAria'),
+        stopAria: t('chat.chatInput.actions.stopGeneratingAria'),
+        modelAria: t('chat.modelControls.selectModel'),
+        modelId: surface.selection.value.modelID,
+        providerId: surface.selection.value.providerID,
+        agentName: surface.selection.value.agent ?? '',
+        agentLabel: getAgentDisplayName(agents, surface.selection.value.agent ?? undefined),
+        agentAria: t('chat.modelControls.selectAgent'),
+        attachments: attachedFiles,
+        removeAttachmentNamedAria: (name) => t('chat.fileAttachment.actions.removeNamed', { name }),
+        onText: (text, composing, selection) => {
+            const nativeCaret = resolveComposerInsertCaret(
+                text.length,
+                selection?.end ?? selection?.start ?? text.length,
+            );
+            cursorPosRef.current = nativeCaret;
+            if (composing) {
+                if (textareaRef.current) textareaRef.current.value = text;
+                applyProgrammaticEdit(text);
+                return;
+            }
+            const previous = messageRef.current;
+            const reconciled = reconcileComposerAttachmentTextDeletion(
+                previous,
+                text,
+                attachedFiles.filter(isInlineAttachmentCitation).map((file) => file.filename),
+            );
+            const nextText = reconciled?.text ?? text;
+            if (textareaRef.current) textareaRef.current.value = nextText;
+            applyProgrammaticEdit(nextText);
+            const cursor = resolveComposerInsertCaret(
+                nextText.length,
+                selection?.end ?? selection?.start ?? nextText.length,
+            );
+            cursorPosRef.current = cursor;
+            updateAutocompleteState(nextText, cursor);
+            if (!reconciled) return;
+            const removed = new Set(reconciled.removedFilenames.map((filename) => filename.toLowerCase()));
+            for (const attachment of attachedFiles) {
+                if (removed.has(attachment.filename.toLowerCase())) {
+                    void surfaceResources.removeAttachment(attachment.id);
+                }
+            }
+        },
+        onSend: (text) => {
+            if (textareaRef.current) textareaRef.current.value = text;
+            handoffNativeComposerSendToWeb({
+                text,
+                applyDocument: applyProgrammaticEdit,
+                submit: handlePrimaryAction,
+            });
+        },
+        onAbort: handleAbort,
+        onAttach: markComposerActionGesture,
+        onFiles: (files, skipped) => {
+            if (skipped.length > 0) {
+                toast.error(t('chat.chatInput.toast.someFilesSkipped', { summary: skipped.join('\n') }));
+            }
+            if (files.length === 0) return;
+            void attachFiles(files);
+        },
+        onRemoveAttachment: (id) => {
+            void surfaceResources.removeAttachment(id);
+        },
+        onOpenModel: () => handleOpenMobilePanel('model'),
+        onCycleAgent: () => handleCycleAgent(),
+        onOpenAgent: handleOpenAgentPanel,
+        showScrollToBottom: Boolean(showScrollToBottom && onScrollToBottom),
+        scrollAria: t('chat.scrollToBottom.aria'),
+        onScrollToBottom: onScrollToBottom ?? (() => {}),
+        autocompleteOpen: nativeSuggestionRows.length > 0 && (
+            showCommandAutocomplete || showSkillAutocomplete || showFileMention
+        ),
+        autocompleteHighlightedIndex: nativeSuggestionHighlight,
+        autocompleteRows: nativeSuggestionRows,
+        caret: cursorPosRef.current,
+        onAutocompleteAccept: handleNativeAutocompleteAccept,
+        onAutocompleteDismiss: handleNativeAutocompleteDismiss,
+        chipHighlights: highlightedComposerContent,
+    });
+    const nativeAccessoryRef = React.useRef<HTMLDivElement>(null);
+    useResizeObserver(nativeIosComposerActive ? nativeAccessoryRef : null, () => {
+        const height = nativeAccessoryRef.current?.getBoundingClientRect().height ?? 0;
+        applyNativeComposerAccessoryVar(document.documentElement, height);
+    });
+
     // Installed PWA (standalone): a focus() from a bare timeout is outside the
     // user gesture and iOS refuses to raise the keyboard for it (Safari
     // in-browser is lenient). MobileOverlayPanel dispatches
@@ -6444,8 +6656,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const footerPaddingClass = isMobile ? 'px-1.5 py-1.5' : (isVSCode ? 'px-1.5 py-1' : 'px-2.5 py-1.5');
     const buttonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
     const sendIconSizeClass = isMobile ? 'h-4 w-4' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
-    // Solid stop square: keep near the original mobile/desktop sizes.
-    const stopIconSizeClass = isMobile ? 'h-5 w-5' : (isVSCode ? 'h-4 w-4' : 'h-5 w-5');
+    // Mobile: 24px circle inside the 32px send hit target so it matches the model chip.
+    // Desktop/VS Code: the circle fills the already-compact control.
+    const stopIconSizeClass = isMobile ? 'h-6 w-6' : 'size-full';
     const iconSizeClass = isMobile ? 'h-[1.125rem] w-[1.125rem]' : (isVSCode ? 'h-4 w-4' : 'h-[1.125rem] w-[1.125rem]');
 
     const iconButtonBaseClass = cn(
@@ -6453,7 +6666,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         COMPOSER_ICON_HOVER_CLASS,
     );
     const footerIconButtonClass = cn(iconButtonBaseClass, buttonSizeClass);
-    const stopFooterIconButtonClass = footerIconButtonClass;
+    const stopFooterIconButtonClass = cn(
+        'flex cursor-pointer items-center justify-center transition-none outline-none focus:outline-none flex-shrink-0 disabled:cursor-not-allowed rounded-full hover:opacity-80',
+        buttonSizeClass,
+    );
+    // Compact pill: same 24px visual as expanded mobile, not stretched to the cap.
+    const compactCircleButtonClass = cn(
+        'flex cursor-pointer items-center justify-center transition-none outline-none focus:outline-none flex-shrink-0 disabled:cursor-not-allowed rounded-full hover:opacity-80',
+        'h-6 w-6',
+    );
     React.useEffect(() => {
         return () => {
             if (abortTimeoutRef.current) {
@@ -6522,6 +6743,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 className={cn(
                     'oc-mobile-composer-compact-chrome',
                     canAbort && 'oc-mobile-composer-compact-chrome--aborting',
+                    canSend && !canAbort && 'oc-mobile-composer-compact-chrome--sending',
                     showScrollToBottom && onScrollToBottom && 'oc-mobile-composer-compact-chrome--with-scroll',
                 )}
             >
@@ -6555,7 +6777,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             />
                         </div>
                     ) : null}
-                    {canAbort ? (
+                    {canAbort || canSend ? (
                         <div
                             data-mobile-composer-compact-slot="action"
                             data-composer-action="true"
@@ -6563,12 +6785,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         >
                             <ComposerActionButtons
                                 isMobile
+                                compact
                                 footerIconButtonClass={footerIconButtonClass}
                                 stopFooterIconButtonClass={stopFooterIconButtonClass}
+                                compactCircleButtonClass={compactCircleButtonClass}
                                 sendIconSizeClass={sendIconSizeClass}
                                 stopIconSizeClass={stopIconSizeClass}
                                 canSend={canSend}
-                                canAbort
+                                canAbort={canAbort}
                                 hasContent={false}
                                 currentSessionId={currentSessionId}
                                 newSessionDraftOpen={newSessionDraftOpen}
@@ -6867,7 +7091,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 isMobileExpanded && 'flex h-full min-h-0 flex-col pt-1',
                 isMobile && 'bottom-safe-area oc-mobile-composer'
             )}
-            style={isMobile && isCapacitorApp() && inputBarOffset > 0 && !mobileTextareaFocused
+            data-native-ios-composer={nativeIosComposerActive ? 'true' : undefined}
+            style={isMobile && isCapacitorApp() && !nativeIosComposerActive && inputBarOffset > 0 && !mobileTextareaFocused
                 ? { marginBottom: `${inputBarOffset}px` }
                 : undefined}
         >
@@ -6884,7 +7109,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 </div>
             ) : null}
             <div className={cn('chat-input-column relative overflow-visible', isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}>
-                <AttachedFilesList attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
+                {nativeIosComposerActive ? null : (
+                    <AttachedFilesList attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
+                )}
                 <AutoReviewBanner />
                 {hasDrafts && (
                     <div className="flex flex-wrap items-center gap-2 pb-2">
@@ -7068,6 +7295,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 <div className={isMobile ? 'relative oc-mobile-composer-stack' : 'contents'}>
                 <div className={isMobile ? 'oc-mobile-composer-expanded-layer' : 'contents'}>
                 <div className={isMobile ? 'oc-mobile-composer-reveal' : 'contents'}>
+                <div
+                    ref={nativeAccessoryRef}
+                    data-native-composer-accessories="true"
+                >
                 <MemoStatusRow
                     showAbortStatus={showAbortStatus}
                     showAssistantStatus={false}
@@ -7208,6 +7439,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     </div>
                 ) : null}
                 {queuedMessageSurface}
+                </div>
                 </div>
                 <div
                     // Desktop: layout-transparent. Mobile: positioning host for
@@ -7443,8 +7675,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             directory={currentDirectory}
                             onCommandSelect={handleCommandSelect}
                             onClose={() => setShowCommandAutocomplete(false)}
-                            commandPolicy={(command) => isChatInputCommandAllowed(surface, command)}
+                            commandPolicy={evaluateChatInputCommandPolicy}
                             commandContext={commandContext}
+                            onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
                             style={isDesktopExpanded && autocompleteOverlayPosition
                                 ? {
                                     left: `${autocompleteOverlayPosition.left}px`,
@@ -7465,6 +7698,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             directory={currentDirectory}
                             onSkillSelect={handleSkillSelect}
                             onClose={() => setShowSkillAutocomplete(false)}
+                            onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
                             style={isDesktopExpanded && autocompleteOverlayPosition
                                 ? {
                                     left: `${autocompleteOverlayPosition.left}px`,
@@ -7506,6 +7740,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             onAgentSelect={handleAgentSelect}
                             onSessionSelect={handleSessionSelect}
                             onClose={() => setShowFileMention(false)}
+                            onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
                             style={isDesktopExpanded && autocompleteOverlayPosition
                                 ? {
                                     left: `${autocompleteOverlayPosition.left}px`,

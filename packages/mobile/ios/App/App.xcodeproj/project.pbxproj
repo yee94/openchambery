@@ -34,6 +34,16 @@
 		D0F2000000000000000000B3 /* OpenChamberVirtualAssetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */; };
 		D0G2000000000000000000B1 /* OpenChamberMediaPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0G1000000000000000000A1 /* OpenChamberMediaPlugin.swift */; };
 		D0H2000000000000000000B1 /* OpenChamberPhysicalScalePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0H1000000000000000000A1 /* OpenChamberPhysicalScalePlugin.swift */; };
+		D0J2000000000000000000B1 /* OpenChamberComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A1 /* OpenChamberComposerView.swift */; };
+		D0J2000000000000000000B2 /* OpenChamberComposerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A2 /* OpenChamberComposerPlugin.swift */; };
+		D0J2000000000000000000B3 /* OpenChamberComposerAutocomplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0J1000000000000000000A3 /* OpenChamberComposerAutocomplete.swift */; };
+		D0K2000000000000000000B1 /* OpenChamberTabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0K1000000000000000000A1 /* OpenChamberTabBarView.swift */; };
+		D0K2000000000000000000B2 /* OpenChamberTabBarPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0K1000000000000000000A2 /* OpenChamberTabBarPlugin.swift */; };
+		D0L2000000000000000000B1 /* OpenChamberActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */; };
+		D0L2000000000000000000B2 /* OpenChamberActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */; };
+		D0L2000000000000000000B3 /* OpenChamberLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A2 /* OpenChamberLiveActivityManager.swift */; };
+		D0L2000000000000000000B4 /* OpenChamberLiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A3 /* OpenChamberLiveActivityPlugin.swift */; };
+		D0L2000000000000000000B5 /* OpenChamberLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0L1000000000000000000A4 /* OpenChamberLiveActivity.swift */; };
 		D0E2000000000000000000B1 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A1 /* ShareViewController.swift */; };
 		D0E2000000000000000000B2 /* OpenChamberShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* OpenChamberShareStore.swift */; };
 		D0E2000000000000000000B3 /* OpenChamberShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -76,6 +86,15 @@
 		D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVirtualAssetPlugin.swift; sourceTree = "<group>"; };
 		D0G1000000000000000000A1 /* OpenChamberMediaPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberMediaPlugin.swift; sourceTree = "<group>"; };
 		D0H1000000000000000000A1 /* OpenChamberPhysicalScalePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberPhysicalScalePlugin.swift; sourceTree = "<group>"; };
+		D0J1000000000000000000A1 /* OpenChamberComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberComposerView.swift; sourceTree = "<group>"; };
+		D0J1000000000000000000A2 /* OpenChamberComposerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberComposerPlugin.swift; sourceTree = "<group>"; };
+		D0J1000000000000000000A3 /* OpenChamberComposerAutocomplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberComposerAutocomplete.swift; sourceTree = "<group>"; };
+		D0K1000000000000000000A1 /* OpenChamberTabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberTabBarView.swift; sourceTree = "<group>"; };
+		D0K1000000000000000000A2 /* OpenChamberTabBarPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberTabBarPlugin.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberActivityAttributes.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A2 /* OpenChamberLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLiveActivityManager.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A3 /* OpenChamberLiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLiveActivityPlugin.swift; sourceTree = "<group>"; };
+		D0L1000000000000000000A4 /* OpenChamberLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLiveActivity.swift; sourceTree = "<group>"; };
 		D0E1000000000000000000A1 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		D0E1000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D0E1000000000000000000A3 /* OpenChamberShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenChamberShareExtension.entitlements; sourceTree = "<group>"; };
@@ -184,6 +203,8 @@
 			children = (
 				D0A1000000000000000000A1 /* WidgetShared.swift */,
 				D0A1000000000000000000A2 /* OpenChamberWidgets.swift */,
+				D0L1000000000000000000A1 /* OpenChamberActivityAttributes.swift */,
+				D0L1000000000000000000A4 /* OpenChamberLiveActivity.swift */,
 				D0A1000000000000000000A3 /* OpenChamberControl.swift */,
 				D0A1000000000000000000A4 /* Assets.xcassets */,
 				D0A1000000000000000000A5 /* Info.plist */,
@@ -217,6 +238,13 @@
 				D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */,
 				D0G1000000000000000000A1 /* OpenChamberMediaPlugin.swift */,
 				D0H1000000000000000000A1 /* OpenChamberPhysicalScalePlugin.swift */,
+				D0J1000000000000000000A1 /* OpenChamberComposerView.swift */,
+				D0J1000000000000000000A2 /* OpenChamberComposerPlugin.swift */,
+				D0J1000000000000000000A3 /* OpenChamberComposerAutocomplete.swift */,
+				D0K1000000000000000000A1 /* OpenChamberTabBarView.swift */,
+				D0K1000000000000000000A2 /* OpenChamberTabBarPlugin.swift */,
+				D0L1000000000000000000A2 /* OpenChamberLiveActivityManager.swift */,
+				D0L1000000000000000000A3 /* OpenChamberLiveActivityPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				D0C1000000000000000000A1 /* PrivacyInfo.xcprivacy */,
@@ -434,6 +462,14 @@
 				D0F2000000000000000000B3 /* OpenChamberVirtualAssetPlugin.swift in Sources */,
 				D0G2000000000000000000B1 /* OpenChamberMediaPlugin.swift in Sources */,
 				D0H2000000000000000000B1 /* OpenChamberPhysicalScalePlugin.swift in Sources */,
+				D0J2000000000000000000B1 /* OpenChamberComposerView.swift in Sources */,
+				D0J2000000000000000000B2 /* OpenChamberComposerPlugin.swift in Sources */,
+				D0J2000000000000000000B3 /* OpenChamberComposerAutocomplete.swift in Sources */,
+				D0K2000000000000000000B1 /* OpenChamberTabBarView.swift in Sources */,
+				D0K2000000000000000000B2 /* OpenChamberTabBarPlugin.swift in Sources */,
+				D0L2000000000000000000B1 /* OpenChamberActivityAttributes.swift in Sources */,
+				D0L2000000000000000000B3 /* OpenChamberLiveActivityManager.swift in Sources */,
+				D0L2000000000000000000B4 /* OpenChamberLiveActivityPlugin.swift in Sources */,
 				D0A2000000000000000000B6 /* OpenChamberControl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -444,6 +480,8 @@
 			files = (
 				D0A2000000000000000000B1 /* WidgetShared.swift in Sources */,
 				D0A2000000000000000000B2 /* OpenChamberWidgets.swift in Sources */,
+				D0L2000000000000000000B2 /* OpenChamberActivityAttributes.swift in Sources */,
+				D0L2000000000000000000B5 /* OpenChamberLiveActivity.swift in Sources */,
 				D0A2000000000000000000B3 /* OpenChamberControl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

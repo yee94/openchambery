@@ -3,8 +3,10 @@ import {
   applyPrimaryComposerSelectionChange,
   applyPrimaryComposerSessionRestore,
   capturePrimaryComposerSendConfig,
+  parseLatestAssistantExecutionFromMessages,
   resolvePrimaryComposerSendConfig,
   resolvePrimaryComposerSessionSelection,
+  shouldHoldPrimaryComposerUserPick,
 } from './primaryComposerSelection';
 
 const createConfig = (currentAgentName = 'build') => {
@@ -319,6 +321,58 @@ describe('resolvePrimaryComposerSessionSelection', () => {
     });
   });
 
+  test('skips history and memory while the transcript is still loading', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_partial',
+        agent: 'plan',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+      },
+      catalog,
+      memory: {
+        getSessionAgentSelection: () => 'build',
+        getAgentModelForSession: () => ({ providerId: 'openai', modelId: 'gpt-5.5' }),
+      },
+      sessionEntity: {
+        agent: 'plan',
+        model: {
+          id: 'claude-sonnet',
+          providerID: 'anthropic',
+        },
+      },
+      transcriptReady: false,
+    });
+
+    expect(resolved).toEqual({
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+      source: 'session-entity',
+    });
+  });
+
+  test('returns null while loading when session-entity is also unavailable', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_partial',
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+      },
+      catalog,
+      memory: {
+        getSessionAgentSelection: () => 'build',
+        getAgentModelForSession: () => ({ providerId: 'openai', modelId: 'gpt-5.5' }),
+      },
+      transcriptReady: false,
+    });
+
+    expect(resolved).toBeNull();
+  });
+
   test('prefers history over session-entity when history validates', () => {
     const resolved = resolvePrimaryComposerSessionSelection({
       sessionId: 'ses_1',
@@ -347,6 +401,206 @@ describe('resolvePrimaryComposerSessionSelection', () => {
       variant: undefined,
       source: 'history',
       messageId: 'msg_1',
+    });
+  });
+
+  test('prefers latest assistant execution over user choice and session memory', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_user',
+        agent: 'build',
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+        variant: 'high',
+      },
+      latestExecution: {
+        id: 'msg_assistant',
+        agent: 'plan',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+        variant: undefined,
+      },
+      catalog,
+      memory: {
+        getSessionModelSelection: () => ({ providerId: 'openai', modelId: 'gpt-5.5' }),
+        getSessionAgentSelection: () => 'build',
+        getAgentModelForSession: () => ({ providerId: 'openai', modelId: 'gpt-5.5' }),
+      },
+      sessionEntity: {
+        agent: 'build',
+        model: {
+          id: 'gpt-5.5',
+          providerID: 'openai',
+          variant: 'high',
+        },
+      },
+    });
+
+    expect(resolved).toEqual({
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+      source: 'execution',
+      messageId: 'msg_assistant',
+    });
+  });
+
+  test('falls through to user history when the assistant execution model is missing from catalog', () => {
+    const resolved = resolvePrimaryComposerSessionSelection({
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_user',
+        agent: 'build',
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+      },
+      latestExecution: {
+        id: 'msg_assistant',
+        agent: 'plan',
+        providerID: 'missing',
+        modelID: 'gone',
+      },
+      catalog,
+    });
+
+    expect(resolved).toEqual({
+      agent: 'build',
+      providerID: 'openai',
+      modelID: 'gpt-5.5',
+      variant: undefined,
+      source: 'history',
+      messageId: 'msg_user',
+    });
+  });
+
+  test('updates from session-entity to assistant execution once the transcript is ready', () => {
+    const shared = {
+      sessionId: 'ses_1',
+      latestUserChoice: {
+        id: 'msg_user',
+        agent: 'build',
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+      },
+      latestExecution: {
+        id: 'msg_assistant',
+        agent: 'plan',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+      },
+      catalog,
+      memory: {
+        getSessionAgentSelection: () => 'build',
+        getAgentModelForSession: () => ({ providerId: 'openai', modelId: 'gpt-5.5' }),
+      },
+      sessionEntity: {
+        agent: 'plan',
+        model: {
+          id: 'claude-sonnet',
+          providerID: 'anthropic',
+        },
+      },
+      fallbackAgentName: 'build',
+    };
+
+    const whileLoading = resolvePrimaryComposerSessionSelection({
+      ...shared,
+      transcriptReady: false,
+    });
+    expect(whileLoading).toEqual({
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+      source: 'session-entity',
+    });
+
+    const afterTranscript = resolvePrimaryComposerSessionSelection({
+      ...shared,
+      transcriptReady: true,
+    });
+    expect(afterTranscript).toEqual({
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+      source: 'execution',
+      messageId: 'msg_assistant',
+    });
+  });
+});
+
+describe('parseLatestAssistantExecutionFromMessages', () => {
+  test('reads providerID/modelID from the newest assistant message', () => {
+    expect(parseLatestAssistantExecutionFromMessages([
+      {
+        id: 'msg_user',
+        role: 'user',
+        agent: 'build',
+        model: { providerID: 'openai', modelID: 'gpt-5.5' },
+      },
+      {
+        id: 'msg_old',
+        role: 'assistant',
+        agent: 'build',
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+      },
+      {
+        id: 'msg_assistant',
+        role: 'assistant',
+        agent: 'plan',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+      },
+    ])).toEqual({
+      id: 'msg_assistant',
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: undefined,
+    });
+  });
+
+  test('returns null when a newer user send supersedes the last assistant execution', () => {
+    expect(parseLatestAssistantExecutionFromMessages([
+      {
+        id: 'msg_assistant',
+        role: 'assistant',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+      },
+      {
+        id: 'msg_user',
+        role: 'user',
+        model: { providerID: 'openai', modelID: 'gpt-5.5' },
+      },
+    ])).toBeNull();
+  });
+
+  test('keeps the last assistant when a later user message has no model', () => {
+    expect(parseLatestAssistantExecutionFromMessages([
+      {
+        id: 'msg_assistant',
+        role: 'assistant',
+        agent: 'plan',
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+        variant: 'high',
+      },
+      {
+        id: 'msg_user',
+        role: 'user',
+        agent: 'plan',
+      },
+    ])).toEqual({
+      id: 'msg_assistant',
+      agent: 'plan',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      variant: 'high',
     });
   });
 });
@@ -505,6 +759,40 @@ describe('capturePrimaryComposerSendConfig', () => {
       agent: undefined,
       variant: undefined,
     });
+  });
+});
+
+describe('shouldHoldPrimaryComposerUserPick', () => {
+  test('does not hold when the user has not edited this session', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 0,
+      pinnedHistoryMessageId: null,
+      latestHistoryMessageId: 'msg_1',
+    })).toBe(false);
+  });
+
+  test('holds a pick made while the transcript was still loading', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 1,
+      pinnedHistoryMessageId: null,
+      latestHistoryMessageId: 'msg_1',
+    })).toBe(true);
+  });
+
+  test('holds a pick against the same latest history message', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 1,
+      pinnedHistoryMessageId: 'msg_1',
+      latestHistoryMessageId: 'msg_1',
+    })).toBe(true);
+  });
+
+  test('releases when a newer history message arrives after the pick', () => {
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 1,
+      pinnedHistoryMessageId: 'msg_1',
+      latestHistoryMessageId: 'msg_2',
+    })).toBe(false);
   });
 });
 

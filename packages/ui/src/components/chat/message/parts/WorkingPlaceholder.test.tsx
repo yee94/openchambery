@@ -162,4 +162,40 @@ describe('WorkingPlaceholder status stickiness', () => {
     expect(text()).not.toContain('Running command');
     expect(container.querySelector('[role="status"]')).toBeNull();
   });
+
+  test('isTurnSettled clears the status immediately without the 600ms linger', async () => {
+    await render({
+      isWorking: true,
+      statusText: 'Thinking',
+      isGenericStatus: false,
+    });
+    expect(text()).toContain('Thinking');
+
+    await render({
+      isWorking: false,
+      statusText: null,
+      isGenericStatus: false,
+      isTurnSettled: true,
+    });
+    expect(text()).not.toContain('Thinking');
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  test('isTurnSettled hides the hint even while isWorking is still true', async () => {
+    await render({
+      isWorking: true,
+      statusText: 'Composing',
+      isGenericStatus: false,
+    });
+    expect(text()).toContain('Composing');
+
+    await render({
+      isWorking: true,
+      statusText: 'Composing',
+      isGenericStatus: false,
+      isTurnSettled: true,
+    });
+    expect(text()).not.toContain('Composing');
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  });
 });

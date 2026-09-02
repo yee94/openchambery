@@ -43,6 +43,8 @@ interface StatusRowProps {
   abortActive?: boolean;
   retryInfo?: { attempt?: number; next?: number } | null;
   turnStartedAt?: number;
+  /** Authoritative turn settle — drop the working-hint slot immediately. */
+  isTurnSettled?: boolean;
   // Abort status display
   showAbortStatus?: boolean;
   /** First Esc armed: show "press Esc again to abort" until window expires. */
@@ -62,6 +64,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   abortActive,
   retryInfo,
   turnStartedAt,
+  isTurnSettled = false,
   showAbortStatus,
   showAbortPrompt = false,
   showAssistantStatus = true,
@@ -134,9 +137,14 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const hasAbortPrompt = Boolean(showAbortPrompt);
   // Keep the assistant status slot mounted briefly after isWorking drops so
   // WorkingPlaceholder can linger (~600ms) across step gaps without collapsing
-  // the row (scrollHeight ±28px chase).
+  // the row (scrollHeight ±28px chase). Skip that linger once the turn is
+  // authoritatively settled — otherwise the hint flashes after Changes chrome.
   const [assistantStatusLinger, setAssistantStatusLinger] = React.useState(false);
   React.useEffect(() => {
+    if (isTurnSettled) {
+      setAssistantStatusLinger(false);
+      return;
+    }
     if (isWorking) {
       setAssistantStatusLinger(true);
       return;
@@ -144,10 +152,9 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     if (!assistantStatusLinger) return;
     const timer = window.setTimeout(() => setAssistantStatusLinger(false), 600);
     return () => window.clearTimeout(timer);
-  }, [isWorking, assistantStatusLinger]);
+  }, [isWorking, assistantStatusLinger, isTurnSettled]);
   const hasAssistantContent = showAssistantStatus && (
-    isWorking ||
-    assistantStatusLinger ||
+    (!isTurnSettled && (isWorking || assistantStatusLinger)) ||
     Boolean(wasAborted) ||
     Boolean(showAbortStatus)
   );
@@ -269,6 +276,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
               isWaitingForPermission={isWaitingForPermission}
               retryInfo={retryInfo}
               turnStartedAt={turnStartedAt}
+              isTurnSettled={isTurnSettled}
               agentName={agentName}
             />
           ) : leftAccessory ? (

@@ -318,9 +318,6 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.showReasoningTraces === 'boolean') {
       result.showReasoningTraces = candidate.showReasoningTraces;
     }
-    if (typeof candidate.sessionRecapEnabled === 'boolean') {
-      result.sessionRecapEnabled = candidate.sessionRecapEnabled;
-    }
     if (typeof candidate.sessionTitleRefreshEnabled === 'boolean') {
       result.sessionTitleRefreshEnabled = candidate.sessionTitleRefreshEnabled;
     }

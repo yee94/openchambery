@@ -260,7 +260,13 @@ session data.
 
 `useGlobalSessionsStore.ts` distinguishes bounded display snapshots from the full
 retention catalog. Sidebar active/archived loads are directory-keyed, capped, and
-deduplicated. `isVisibleGlobalSession` (shared with live aggregate and event
+deduplicated. Catalog snapshots still fetch OpenCode `session.list({ archived })`
+pages, but membership is re-cut by `time.archived` before they enter
+`activeSessions` / `archivedSessions`: a session is archived only when that
+timestamp is truthy (`0` and missing stay active). Duplicate ids collapse to one
+row. Directory active/archived refreshes and live upserts share the same field.
+List labels are a fetch hint, not the archive contract; this does not add
+requests. `isVisibleGlobalSession` (shared with live aggregate and event
 reducers) excludes SmartFetch temporary titles, any session with a non-empty
 `parentID` (subagents never belong in the root catalog; they load only on
   parent expand), and system-owned sessions whose metadata carries a non-empty

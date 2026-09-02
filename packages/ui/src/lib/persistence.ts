@@ -460,9 +460,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   if (typeof settings.showReasoningTraces === 'boolean' && settings.showReasoningTraces !== store.showReasoningTraces) {
     store.setShowReasoningTraces(settings.showReasoningTraces);
   }
-  if (typeof settings.sessionRecapEnabled === 'boolean' && settings.sessionRecapEnabled !== store.sessionRecapEnabled) {
-    store.setSessionRecapEnabled(settings.sessionRecapEnabled);
-  }
   if (typeof settings.sessionTitleRefreshEnabled === 'boolean' && settings.sessionTitleRefreshEnabled !== store.sessionTitleRefreshEnabled) {
     store.setSessionTitleRefreshEnabled(settings.sessionTitleRefreshEnabled);
   }
@@ -843,9 +840,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.showReasoningTraces === 'boolean') {
     result.showReasoningTraces = candidate.showReasoningTraces;
-  }
-  if (typeof candidate.sessionRecapEnabled === 'boolean') {
-    result.sessionRecapEnabled = candidate.sessionRecapEnabled;
   }
   if (typeof candidate.sessionTitleRefreshEnabled === 'boolean') {
     result.sessionTitleRefreshEnabled = candidate.sessionTitleRefreshEnabled;

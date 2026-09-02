@@ -8,7 +8,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     syncToHmrState,
     openCodeWatcherRuntime,
     sessionRuntime,
-    sessionAssistRuntime,
     sessionTitleRuntime,
     sessionGoalRuntime,
     scheduledTasksRuntime,
@@ -43,7 +42,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
 
     openCodeWatcherRuntime.stop();
     sessionRuntime.dispose();
-    sessionAssistRuntime?.stop?.();
     sessionTitleRuntime?.stop?.();
     sessionGoalRuntime?.stop?.();
     // Stop timers/queue only. Keep the process-lifetime run history store open so

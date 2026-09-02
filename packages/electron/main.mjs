@@ -11,12 +11,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
-import { createCredentialSyncAuthStore } from './credential-sync-auth-store.mjs';
 import { createDirectConfigSyncController } from './direct-config-sync.mjs';
 import { createSettingsStore } from './settings-store.mjs';
 import { createTrayController } from './tray.mjs';
 import {
-  syncTargetIdForDirectHost,
   syncTargetIdForRelayServer,
 } from './sync-run-store.mjs';
 import {
@@ -32,7 +30,8 @@ import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
 import { createIdleUpdateDownloadScheduler } from './updater-idle-download.mjs';
 import { getUpdateDownloadSnapshot } from './updater-download-status.mjs';
-import { resolveUpdaterFeed } from './updater-feed.mjs';
+import { PRODUCTION_CHANGELOG_URL, resolveUpdaterFeed } from './updater-feed.mjs';
+import { parseRelevantChangelogNotes as fetchRelevantChangelogNotes } from './updater-changelog.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 import { getMenuLabels, normalizeMenuLocale } from './menu-i18n.mjs';
@@ -338,7 +337,9 @@ const REMOTE_DESKTOP_CLIENT_KIND = 'desktop';
 const ENV_OVERRIDE_HOST_ID = '__env';
 const GITHUB_REPOSITORY = Object.freeze({ owner: 'yee94', repo: 'openchamber' });
 const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY.owner}/${GITHUB_REPOSITORY.repo}`;
-const CHANGELOG_URL = `https://raw.githubusercontent.com/${GITHUB_REPOSITORY.owner}/${GITHUB_REPOSITORY.repo}/main/CHANGELOG.md`;
+// Fallback release notes: same update-service origin as the desktop feed
+// (deploy-authoritative /CHANGELOG.md), not a GitHub branch-pinned raw URL.
+const CHANGELOG_URL = PRODUCTION_CHANGELOG_URL;
 const GITHUB_BUG_REPORT_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=bug_report.yml`;
 const GITHUB_FEATURE_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`;
 const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
@@ -649,19 +650,16 @@ const settingsFilePath = () => {
 const settingsStore = createSettingsStore({ resolveFilePath: settingsFilePath });
 const readSettingsRoot = () => settingsStore.readRoot();
 const mutateSettingsRoot = (mutator) => settingsStore.mutate(mutator);
-const credentialSyncAuthStore = createCredentialSyncAuthStore({ settingsStore });
 
 const sshManager = new ElectronSshManager({
   settingsFilePath: settingsFilePath(),
   settingsStore,
-  credentialSyncAuthStore,
   appVersion: APP_VERSION,
   opencodeCliVersion: OPENCODE_CLI_VERSION,
   emit: (event, detail) => emitToAllWindows(event, detail),
 });
 
 const directConfigSync = createDirectConfigSyncController({
-  credentialSyncAuthStore,
   syncRunStore: sshManager.syncRunStore,
   runExclusiveForTarget: (targetId, stage, work) => sshManager.runExclusiveForTarget(targetId, stage, work),
 });
@@ -3389,24 +3387,12 @@ const setupAutoUpdater = () => {
   });
 };
 
-const parseRelevantChangelogNotes = async (fromVersion, toVersion) => {
-  try {
-    const response = await fetch(CHANGELOG_URL, { signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return null;
-    const changelog = await response.text();
-    const sections = changelog.split(/^##\s+\[/m).slice(1);
-    const relevant = [];
-    for (const section of sections) {
-      const version = section.split(']')[0];
-      if (compareSemver(version, fromVersion) > 0 && compareSemver(version, toVersion) <= 0) {
-        relevant.push(`## [${section}`.trim());
-      }
-    }
-    return relevant.length > 0 ? relevant.join('\n\n') : null;
-  } catch {
-    return null;
-  }
-};
+const parseRelevantChangelogNotes = (fromVersion, toVersion) => fetchRelevantChangelogNotes({
+  changelogUrl: CHANGELOG_URL,
+  fromVersion,
+  toVersion,
+  compareVersions: compareSemver,
+});
 
 const buildInstalledAppsCachePath = () => path.join(path.dirname(settingsFilePath()), INSTALLED_APPS_CACHE_FILE);
 
@@ -4923,45 +4909,6 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         agentsRoot: plan.agentsRoot ? { fileCount: Number(plan.agentsRoot.fileCount) || 0 } : null,
         authFile: plan.authFile ? { bytes: Number(plan.authFile.bytes) || 0 } : null,
       };
-    }
-
-    // Local renderer only: credential-sync grant is a trust-channel privilege
-    // (instance/host/pairing-settings). Never expose to remote host pages.
-    case 'desktop_ssh_credential_sync_get': {
-      const id = String(args.id || '').trim();
-      if (args.targetKind === 'direct') {
-        return credentialSyncAuthStore.getGrant(syncTargetIdForDirectHost(id));
-      }
-      if (args.targetKind === 'relay') {
-        return credentialSyncAuthStore.getGrant(syncTargetIdForRelayServer(id));
-      }
-      return sshManager.getCredentialSyncGrant(id);
-    }
-
-    case 'desktop_ssh_credential_sync_grant': {
-      const id = String(args.id || '').trim();
-      if (args.targetKind === 'direct') {
-        return await credentialSyncAuthStore.grant(syncTargetIdForDirectHost(id), {
-          channel: 'host-settings',
-        });
-      }
-      if (args.targetKind === 'relay') {
-        return await credentialSyncAuthStore.grant(syncTargetIdForRelayServer(id), {
-          channel: 'pairing-settings',
-        });
-      }
-      return await sshManager.grantCredentialSync(id);
-    }
-
-    case 'desktop_ssh_credential_sync_revoke': {
-      const id = String(args.id || '').trim();
-      if (args.targetKind === 'direct') {
-        return await credentialSyncAuthStore.revoke(syncTargetIdForDirectHost(id));
-      }
-      if (args.targetKind === 'relay') {
-        return await credentialSyncAuthStore.revoke(syncTargetIdForRelayServer(id));
-      }
-      return await sshManager.revokeCredentialSync(id);
     }
 
     // Local renderer only: remote host pages must not control local shell menu language.

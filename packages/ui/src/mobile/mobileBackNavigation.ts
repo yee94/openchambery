@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 
+import { concealNativeComposerIfLeavingChat } from '@/lib/native-ios-composer-leave';
 import { isCapacitorApp } from '@/lib/platform';
 
 export type MobileBackRouteLayer = 'root' | 'overlay';
@@ -553,6 +554,7 @@ export const useMobileNavigationDriver = ({
     });
 
     const finish = (commit: boolean, finalProgress?: number, velocityX?: number): boolean => {
+      if (commit) concealNativeComposerIfLeavingChat();
       if (settlingPresentation) {
         if (commit && routeIsEligible(mobileBackNavigationCoordinator.getTopRoute())) {
           commitQueue.enqueue();

@@ -10,8 +10,6 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     server,
     __dirname,
     openchamberDataDir,
-    readSettingsFromDiskMigrated,
-    persistSettings,
     fetchFreeZenModels,
     getCachedZenModels,
     sessionIndexService,
@@ -22,11 +20,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
 
   registerSessionIndexRoutes(app, { sessionIndexService, sessionIndexSyncRuntime });
   registerTranscriptCacheRoutes(app, { transcriptCacheService });
-  registerConfigSyncRoutes(app, {
-    readSettingsFromDiskMigrated,
-    persistSettings,
-    express,
-  });
+  registerConfigSyncRoutes(app, { express });
 
   app.get('/api/openchamber/update-check', async (req, res) => {
     try {

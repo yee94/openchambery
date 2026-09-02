@@ -22,11 +22,12 @@
 | 新版本含原生壳变更（`mode: "native"`，即 break change） | 上行全部 + iOS 内测 TestFlight；端内检测抬 `minShellReleaseVersion` 引导重装 | `vX.Y.Z-beta.N` | `release.yml`（`build_ios` 由 plan mode 决定） |
 | 用户明确只要已装手机 App 的 web 热更、不要任何安装包 | 仅 web bundle OTA（无 iOS） | `mobile-beta/vX.Y.Z-beta.N` | `mobile-beta-ota.yml` |
 | 稳定版 | 桌面 + Android APK/AAB + npm + 同版本 OTA + iOS TestFlight（关联外测组 + Beta App Review） | `vX.Y.Z` | `release.yml`（`build_ios: true`） |
+| 仅 Relay 服务（npm + Docker） | 只发 `@openchambery/relay-server`（含 Layer 1 与 Push CLI）与同一 immutable Relay Docker 镜像。**不**触发桌面、Android、iOS/TestFlight、OTA。 | `relay/vX.Y.Z` 或 `relay/vX.Y.Z-beta.N` | `relay-release.yml`（先跑包测试门禁，再复用 `relay-docker.yml`） |
 | 稳定通道同等判定 | 上表把 `beta` 换成 `stable`，默认新版本用无后缀 `vX.Y.Z`；仅热更用 `mobile-stable/vX.Y.Z` | 同上 | 同上 |
 
 **TestFlight 跟随「是否需要原生壳」，不跟随 tag**：`mode: native` 的 beta 与所有稳定版上传 iOS（beta 仅内测，稳定版关联外测组）；`mode: ota` 的 beta 不碰 iOS。**端内一键更新 vs 跳转重装由 `activeBundle.minShellReleaseVersion`（版本语义）决定，与 OTA 发布是两条独立链路**：只有 `mode: native` 把下限写成**本轮发布版本号**；`github.run_number` / `nativeBuild` 只用于 TestFlight/商店记账，**不再参与端内更新判定**。稳定版也不因发了安装包而抬门。
 
-默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。
+默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。`relay/v*` 是独立命名空间，只发 Relay npm 与 Docker，不会走 `release.yml`。
 
 仅当用户明确只要 OTA、不要安装包时，才只打 OTA tag，且不要同时打 `v$VERSION`。OTA 版本必须**高于**当前通道 `activeBundle.releaseVersion`。`version:bump` 与 `CHANGELOG.md` 两路都要写。
 
@@ -83,7 +84,7 @@ git push origin "v$VERSION"
 
 `release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和 Android、上传产物，将 `@openchambery/web` 与 `@openchambery/relay-server` 发布到 npm，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。同版本 web bundle 由 `mobile-native-targets` 写入 OTA。**iOS/TestFlight 由 `mobile-release-plan` 的 mode 决定**：`mode: native` 的 beta 与所有稳定版构建并上传 iOS（beta 走内测、不关联外测组、不提 Beta App Review；稳定版额外关联外测组）；`mode: ota` 的 beta 与 `mobile-beta/*` OTA-only tag 不构建 iOS。iOS 上传失败会拖住 `mobile-native-targets`（同版本 OTA 发布），用 `gh run rerun <run-id> --failed` 重跑即可。
 
-npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@openchambery/web`。
+npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publish 权限）。稳定版发到 `latest`；含 `-` 的 prerelease 使用 `--tag beta`，不会覆盖 `latest`。`dry_run=true` 会跳过 npm 发布。SSH 远程预装与 `scripts/install.sh` 安装的都是 `@openchambery/web`。完整 `v*` 仍会同时发布 `@openchambery/web` 与 `@openchambery/relay-server` 以及 Relay Docker；只发 Relay 时改用 `relay/v*`（见下文）。
 
 ### Beta / prerelease
 
@@ -135,6 +136,45 @@ curl -sS https://openchamber-update.vercel.app/desktop/latest-mac.yml | head -3
 ```
 
 Agent 入口命令：`.opencode/commands/release.md`。
+
+### Relay-only releases（`relay/v*`）
+
+只发布 `@openchambery/relay-server` 与 Relay Docker 时，打独立 tag，不要打普通 `v*`。`relay/v*` **不会**创建 GitHub Release，也**不会**跑桌面、Android、iOS/TestFlight 或 OTA。
+
+| Tag | npm dist-tag | Docker | 其它产物 |
+|---|---|---|---|
+| `relay/vX.Y.Z` | `latest` | `relay-docker.yml` 多平台镜像（`:version` + `:latest`） | 无 |
+| `relay/vX.Y.Z-beta.N`（任意含 `-` 的 prerelease） | `beta` | 同上 | 无 |
+
+版本从 tag 解析（去掉 `relay/v` 前缀），必须**严格等于** `packages/relay-server/package.json` 的 `version`。根目录 `package.json` 不必一致。普通 `v*` 路径仍要求根版本与 Relay 包版本一致。
+
+```bash
+VERSION=1.19.0-beta.38
+# 先让 packages/relay-server/package.json 的 version 等于 $VERSION 并提交
+git tag "relay/v$VERSION"
+git push origin "relay/v$VERSION"
+```
+
+`relay-release.yml` 会校验 tag / 包版本、要求 `NPM_TOKEN`，并用 pinned Bun 1.3.14 / Node 24 做 frozen install 后跑 Relay 全量 Vitest、type-check、lint、Node smoke 与 `npm pack --dry-run` 包契约检查。npm 与 Docker 发布都依赖该测试 job 成功；`release-gate` 纳入测试结果。Docker 复用 `.github/workflows/relay-docker.yml`（`linux/amd64` + `linux/arm64`），并关闭根版本匹配。镜像默认入口仍是 Layer 1，同时携带 Node 24 与 `openchamber-push-relay`。Secrets / variables 与完整 release 相同：`NPM_TOKEN`、`DOCKERHUB_TOKEN`、`DOCKERHUB_USERNAME`。普通 `v*` 行为不变。
+
+手动验证（不发 npm、Docker 只构建不推送）：
+
+```bash
+gh workflow run relay-release.yml \
+  --repo yee94/openchamber \
+  --ref main \
+  -f version="$VERSION" \
+  -f dry_run=true
+```
+
+查看运行：
+
+```bash
+gh run list --repo yee94/openchamber --workflow relay-release.yml --limit 3
+gh run watch <run-id> --repo yee94/openchamber
+```
+
+仅镜像重发、不发 npm 时，仍可直接跑 `Relay Docker` workflow，或 `release.yml` 的 `relay_only`（那两条会校验根版本与 Relay 包版本都匹配）。
 
 ### iOS 外测自动发布
 
@@ -319,6 +359,7 @@ Capacitor 移动端支持 **web bundle OTA**（Capgo-style，自托管在 update
 | `mobile-beta/vX.Y.Z-beta.N` | 仅发布 **beta** 通道 web bundle OTA | `.github/workflows/mobile-beta-ota.yml`（name: Mobile OTA Release） |
 | `mobile-stable/vX.Y.Z` | 仅发布 **stable** 通道 web bundle OTA | 同上 |
 | `vX.Y.Z-beta.N` / `vX.Y.Z` | 完整原生壳 + 桌面等正式发布 | `.github/workflows/release.yml` → `mobile-release`（`ota_channel`：beta / stable） |
+| `relay/vX.Y.Z` / `relay/vX.Y.Z-beta.N` | 仅发布 Relay npm + Docker | `.github/workflows/relay-release.yml`（调用 `relay-docker.yml`） |
 
 OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/v…`），仅作灾难恢复归档（zip + 对应 channel json）。**禁止**成为 `/releases/latest`，也**禁止**写入稳定桌面/Android 自动更新 feed。
 
@@ -431,7 +472,9 @@ node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to st
 - 无密钥时走明文 zip，`checksum` 为 **纯 64 位 hex（无 `sha256:` 前缀）**——原生插件按字面值比较自身摘要，带前缀会导致下载校验失败。脚本会自动剥掉输入的前缀。
 - 检查端点对加密 bundle 同时返回 `session_key` 与 `sessionKey` 两个键：Android 解析 `sessionKey`，iOS 解析 `session_key`。
 - 回滚加密 bundle 属于已知限制：回滚 zip 只能携带明文摘要，配置了公钥的壳无法校验，会自动回退到上一个成功 bundle。
-- zip **必须 < 24 MiB**；超限失败并提示迁移 COS。CI 只部署 Vercel（权威源）；EdgeOne（`openchamber.xiaobe.top`，国内入口）由 git 自动部署 + `/ota/*` 边缘反向代理跟随 Vercel，无需 CI 双发。服务端 bundle 分发支持 HTTP Range 断点续传（EdgeOne 代理已透传 `Range` / `Content-Range`，部分响应不落边缘缓存）。
+- zip **必须 < 24 MiB**；超限失败并提示迁移 COS。CI 只部署 Vercel（权威源）；EdgeOne（`openchamber.xiaobe.top`，国内入口）由 git 自动部署 + 边缘反向代理跟随 Vercel，无需 CI 双发。服务端 bundle 分发支持 HTTP Range 断点续传（EdgeOne 代理已透传 `Range` / `Content-Range`，部分响应不落边缘缓存）。
+- 反向代理路径为**白名单**：`/ota/channels/*.json`、`/ota/bundles/*.zip`、`/CHANGELOG.md`。前两者是 OTA 快照，第三者承载客户端更新日志——CHANGELOG 若不经代理，EdgeOne 就会一直吐自己 git 部署时的旧文件，客户端更新对话框的「更新内容」会整段消失（按分支发版时必现，因为 `main` 上没有那些段落）。代理路径必须精确匹配，不能放宽成通配符。
+- EdgeOne 构建**不得**输出静态 `CHANGELOG.md`（`OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY=1`，已写进 `deploy/update-service/edgeone.json`）：EdgeOne 上静态资源会遮蔽同名 edge function，输出了静态文件代理就永远不生效。Vercel 仍需静态文件，它是权威源。
 
 ### 通道隔离保证
 

@@ -28,6 +28,8 @@
  *        → apply_ota (build must not gate)
  *     4. Already on bundle — currentBundleId "1.18.3-beta.2" (= active)
  *        → none
+ *     5. Same-core stripped iOS — nativeVersion "1.18.3", currentBundleId "builtin"
+ *        → apply_ota (stripped stable ranks above the same-core beta gate)
  *
  *   Fixture B — legacy manifest without minShellReleaseVersion:
  *     Old shell, nativeBuild 21 + old web identity → apply_ota (no gate)
@@ -163,7 +165,13 @@ function buildProfiles(manifest, expectedVersion = version) {
   // When a gate is present (native, or carried forward), old shells reinstall.
   const oldShellExpect = gate ? 'install_native_required' : 'apply_ota'
   const oldIdentity = versionBelow(gate || expectedVersion)
-  const oldIosNative = stripPrerelease(oldIdentity)
+  // Same-core stripped stable (1.19.0) ranks above a beta gate (1.19.0-beta.37).
+  // Old iOS + builtin falls back to nativeVersion, so that identity must be
+  // truly below the gate. Stepping down from the stripped stable gate avoids
+  // collapsing the old-shell profile to a same-core stable identity.
+  const oldIosNative = gate
+    ? stripPrerelease(versionBelow(stripPrerelease(gate)))
+    : stripPrerelease(oldIdentity)
 
   // Profile 3 ("new shell"): prove nativeBuild no longer gates. Prefer an
   // identity that clears the version gate without already being on active:
@@ -339,6 +347,20 @@ function buildFixtureAProfiles() {
       expect: 'none',
       activeVersion,
     },
+    {
+      name: 'fixtureA same-core stripped iOS vs beta gate',
+      body: {
+        channel: 'beta',
+        platform: 'ios',
+        deviceId: 'fixture-a-same-core-stripped',
+        nativeVersion: '1.18.3',
+        nativeBuild: 21,
+        shellApiVersion: shellApi,
+        currentBundleId: 'builtin',
+      },
+      expect: 'apply_ota',
+      activeVersion,
+    },
   ]
 }
 
@@ -416,9 +438,10 @@ function assertFixtureTables() {
     'install_native_required',
     'apply_ota',
     'none',
+    'apply_ota',
   ]
-  if (tableA.length !== 4) throw new Error(`fixture A must have 4 profiles, got ${tableA.length}`)
-  for (let i = 0; i < 4; i += 1) {
+  if (tableA.length !== 5) throw new Error(`fixture A must have 5 profiles, got ${tableA.length}`)
+  for (let i = 0; i < 5; i += 1) {
     if (tableA[i].expect !== expectedA[i]) {
       throw new Error(`fixture A[${i}] expect ${expectedA[i]}, got ${tableA[i].expect}`)
     }
@@ -434,6 +457,9 @@ function assertFixtureTables() {
   }
   if (tableA[3].body.currentBundleId !== '1.18.3-beta.2') {
     throw new Error('fixture A[3] must already be on 1.18.3-beta.2')
+  }
+  if (tableA[4].body.nativeVersion !== '1.18.3' || tableA[4].body.currentBundleId !== 'builtin') {
+    throw new Error('fixture A[4] must be same-core stripped 1.18.3 + builtin')
   }
 
   const tableB = buildFixtureBProfiles()
@@ -463,6 +489,9 @@ function assertFixtureTables() {
   }
   if (liveFromA[0].expect !== 'install_native_required' || liveFromA[3].expect !== 'none') {
     throw new Error('live profile builder mismapped gated expects')
+  }
+  if (liveFromA[0].body.nativeVersion !== '1.18.2' || liveFromA[0].body.currentBundleId !== 'builtin') {
+    throw new Error('live old iOS profile must use a stripped identity truly below the beta gate')
   }
   const liveFromB = buildProfiles(fixtureB, '1.18.3-beta.2')
   if (liveFromB[0].expect !== 'apply_ota' || liveFromB[1].expect !== 'apply_ota') {

@@ -11,6 +11,7 @@ import {
     useSessionStatus,
 } from '@/sync/sync-context';
 import { isCompactionCommandParts } from '@/components/chat/lib/messageDisplayNormalization';
+import { hasConfirmedFinalBody } from '@/components/chat/lib/turns/assistantMessageLifecycle';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { useSessionActivity } from './useSessionActivity';
@@ -36,6 +37,12 @@ interface WorkingSummary {
     abortActive: boolean;
     lastCompletionId: string | null;
     isComplete: boolean;
+    /**
+     * Last assistant has a confirmed final body (same authority as Changes
+     * chrome). When true the working hint must hide immediately — no step-gap
+     * linger after the turn has settled.
+     */
+    isTurnSettled: boolean;
     retryInfo: { attempt?: number; next?: number } | null;
     turnStartedAt?: number;
 }
@@ -69,6 +76,7 @@ const DEFAULT_WORKING: WorkingSummary = {
     abortActive: false,
     lastCompletionId: null,
     isComplete: false,
+    isTurnSettled: false,
     retryInfo: null,
     turnStartedAt: undefined,
 };
@@ -288,12 +296,20 @@ export function useAssistantStatus(
 
     // Only subscribe to parts for the last assistant message — avoids re-render
     // on every part delta for earlier messages.
-    const lastAssistantId = React.useMemo(() => {
+    const lastAssistant = React.useMemo(() => {
         for (let i = rawSessionMessages.length - 1; i >= 0; i--) {
-            if (rawSessionMessages[i].role === 'assistant') return rawSessionMessages[i].id;
+            const message = rawSessionMessages[i];
+            if (message.role === 'assistant') {
+                return {
+                    id: message.id,
+                    finish: (message as { finish?: unknown }).finish,
+                    error: (message as { error?: unknown }).error,
+                };
+            }
         }
-        return null;
+        return { id: null as string | null, finish: undefined as unknown, error: undefined as unknown };
     }, [rawSessionMessages]);
+    const lastAssistantId = lastAssistant.id;
 
     const lastUser = React.useMemo(() => {
         for (let i = rawSessionMessages.length - 1; i >= 0; i--) {
@@ -321,6 +337,10 @@ export function useAssistantStatus(
         currentSessionId ?? undefined,
     );
     const lastUserIsCompaction = Boolean(lastUserId) && isCompactionCommandParts(lastUserParts);
+    const isTurnSettled = Boolean(
+        lastAssistantId
+        && hasConfirmedFinalBody(lastAssistant.finish, lastAssistantParts, lastAssistant.error),
+    );
     const lastAssistantStatusSignature = React.useMemo(() => {
         const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
         const parts = lastAssistantId ? lastAssistantParts : EMPTY_PARTS;
@@ -382,6 +402,19 @@ export function useAssistantStatus(
             };
         }
 
+        // Same authority as Changes chrome: once the last assistant has a
+        // confirmed final body, the working hint must not stay painted or
+        // linger — session.status can still be busy for a frame (or flap)
+        // after the turn has already settled.
+        if (isTurnSettled) {
+            return {
+                ...DEFAULT_WORKING,
+                isComplete: true,
+                isTurnSettled: true,
+                turnStartedAt: lastUser.turnStartedAt,
+            };
+        }
+
         const isWorking = isPhaseWorking;
         const isStreaming = activityPhase === 'busy';
         const isCooldown = false;
@@ -422,10 +455,11 @@ export function useAssistantStatus(
             abortActive: false,
             lastCompletionId: null,
             isComplete: false,
+            isTurnSettled: false,
             retryInfo,
             turnStartedAt: lastUser.turnStartedAt,
         };
-    }, [activityPhase, isPhaseWorking, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
+    }, [activityPhase, isPhaseWorking, isTurnSettled, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
 
     const forming = React.useMemo<FormingSummary>(() => {
         const isActive = isPhaseWorking && parsedStatus.activePartType === 'text';
@@ -452,6 +486,8 @@ export function useAssistantStatus(
                 canAbort: false,
                 activePartType: undefined,
                 activeToolName: undefined,
+                isComplete: false,
+                isTurnSettled: false,
                 retryInfo: null,
             };
         }

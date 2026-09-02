@@ -199,6 +199,25 @@ test('minShellReleaseVersion gate: stripped iOS identity below floor requires na
   assert.equal(decision.ota.state, 'incompatible');
 });
 
+test('minShellReleaseVersion gate: same-core stripped stable ranks above prerelease gate', () => {
+  // iOS 剥离营销版号 "1.18.3" 相对 gate "1.18.3-beta.1" 为 semver 更高，过门后仍 apply_ota。
+  // verifier old-shell 使用低 core stripped stable 作为真实低于 gate 的身份。
+  const manifest = parseOtaManifest(validManifest({
+    activeBundle: activeBundle({
+      releaseVersion: '1.18.3-beta.2',
+      minShellReleaseVersion: '1.18.3-beta.1',
+    }),
+  })).manifest;
+  const decision = resolveMobileUpdate(manifest, baseRequest({
+    currentBundleId: 'builtin',
+    nativeVersion: '1.18.3',
+    nativeBuild: 21,
+  }));
+  assert.equal(decision.primaryAction, 'apply_ota');
+  assert.equal(decision.ota.state, 'available');
+  assert.equal(decision.ota.bundle.releaseVersion, '1.18.3-beta.2');
+});
+
 test('minShellReleaseVersion gate: stripped identity equal to stable floor is allowed', () => {
   const manifest = parseOtaManifest(validManifest({
     activeBundle: activeBundle({

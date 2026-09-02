@@ -49,9 +49,6 @@ import type { PendingPairingRecord, RemoteClientRecord } from '@/lib/api/types';
 import { buildPairingConnectionPayload, encodePairingConnectionPayload, parsePairingConnectionPayload, type PairingEndpointCandidate } from '@/lib/connectionPayload';
 import {
   buildDefaultSyncSelections,
-  desktopSshCredentialSyncGet,
-  desktopSshCredentialSyncGrant,
-  desktopSshCredentialSyncRevoke,
   desktopSshLogsClear,
   desktopSshLogs,
   desktopSshSyncOpencodeConfigApply,
@@ -206,8 +203,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const [selectionShape, setSelectionShape] = React.useState<SyncSelectionShape | null>(null);
   const [localPlan, setLocalPlan] = React.useState<DesktopSshConfigSyncPlan | null>(null);
   const [preview, setPreview] = React.useState<DesktopSshConfigSyncPreview | null>(null);
-  const [credentialAuthorized, setCredentialAuthorized] = React.useState(false);
-  const [credentialGrantBusy, setCredentialGrantBusy] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [errorStep, setErrorStep] = React.useState<1 | 2 | null>(null);
   // Snapshot frozen at preview time so apply cannot drift from the reviewed plan.
@@ -222,8 +217,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     setSelectionShape(null);
     setLocalPlan(null);
     setPreview(null);
-    setCredentialAuthorized(false);
-    setCredentialGrantBusy(false);
     setErrorMessage(null);
     setErrorStep(null);
     confirmedSelectionsRef.current = EMPTY_SYNC_SELECTIONS;
@@ -266,7 +259,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
         return;
       }
       setPreview(next);
-      setCredentialAuthorized(next.credentialAuthorized === true);
       confirmedSelectionsRef.current = nextSelections;
       setStep(3);
       setPhase('review');
@@ -294,13 +286,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
     setPreview(null);
 
     try {
-      const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
-        ? relayHost.relay.serverId
-        : instanceId;
-      const grant = await desktopSshCredentialSyncGet(grantId, { targetKind });
-      const authorized = grant?.authorized === true;
-      setCredentialAuthorized(authorized);
-
       // Omit selections until shape is known so the scan can return selectionShape
       // without a guessed allowlist length. Reuse matching selections on later passes.
       const canReuseSelections = selectionShape != null
@@ -339,12 +324,9 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
       }
 
       setSelectionShape(shape);
-      let resolvedSelections = canReuseSelections
+      const resolvedSelections = canReuseSelections
         ? nextSelections
         : buildDefaultSyncSelections(shape, { includeAuthFile: false });
-      if (!authorized && resolvedSelections.authFile) {
-        resolvedSelections = { ...resolvedSelections, authFile: false };
-      }
       setSelections(resolvedSelections);
       setLocalPlan(plan);
       await runCompareRemote(nextDirection, resolvedSelections);
@@ -384,30 +366,6 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
   const deleteCount = plan
     ? plan.deletes.length + (plan.agentsRoot && preview?.remoteAgentsRootExists ? 1 : 0)
     : 0;
-
-  const handleGrantCredentialSync = useEvent(async (): Promise<boolean> => {
-    if (!instanceId || credentialGrantBusy || isApplying) return false;
-    const grantId = targetKind === 'relay' && relayHost?.relay?.serverId
-      ? relayHost.relay.serverId
-      : instanceId;
-    setCredentialGrantBusy(true);
-    try {
-      const grant = await desktopSshCredentialSyncGrant(grantId, { targetKind });
-      const authorized = grant?.authorized === true;
-      setCredentialAuthorized(authorized);
-      if (!authorized) {
-        toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'));
-      }
-      return authorized;
-    } catch (err) {
-      toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
-        description: err instanceof Error ? err.message : String(err),
-      });
-      return false;
-    } finally {
-      setCredentialGrantBusy(false);
-    }
-  });
 
   const handleRetry = useEvent(() => {
     if (errorStep === 2) {
@@ -565,19 +523,13 @@ const SyncConfigDialog: React.FC<SyncConfigDialogProps> = ({
           <label className="flex items-center gap-2 typography-meta">
             <Checkbox
               checked={selections.authFile}
-              disabled={isApplying || !scopeReady || credentialGrantBusy}
+              disabled={isApplying || !scopeReady}
               ariaLabel={t('settings.remoteInstances.page.sync.section.authFile')}
               onChange={(checked) => {
                 if (!scopeReady) return;
-                void (async () => {
-                  if (checked && !credentialAuthorized) {
-                    const authorized = await handleGrantCredentialSync();
-                    if (!authorized) return;
-                  }
-                  const next = { ...selections, authFile: checked };
-                  setSelections(next);
-                  if (phase === 'review') void runCompareRemote(direction, next);
-                })();
+                const next = { ...selections, authFile: checked };
+                setSelections(next);
+                if (phase === 'review') void runCompareRemote(direction, next);
               }}
             />
             {t('settings.remoteInstances.page.sync.section.authFile')}
@@ -1088,8 +1040,6 @@ export const RemoteInstancesPage: React.FC = () => {
   }, [instances, selectedId]);
 
   const [draft, setDraft] = React.useState<DesktopSshInstance | null>(null);
-  const [credentialSyncAuthorized, setCredentialSyncAuthorized] = React.useState(false);
-  const [credentialSyncBusy, setCredentialSyncBusy] = React.useState(false);
   const [syncRuns, setSyncRuns] = React.useState<DesktopSshSyncRunRecord[]>([]);
   const [logDialogOpen, setLogDialogOpen] = React.useState(false);
   const [logDialogLoading, setLogDialogLoading] = React.useState(false);
@@ -1741,23 +1691,11 @@ export const RemoteInstancesPage: React.FC = () => {
   React.useEffect(() => {
     let cancelled = false;
     if (!selectedId || selectedInstance?.remoteOpenchamber?.mode !== 'managed') {
-      setCredentialSyncAuthorized(false);
       setSyncRuns([]);
       return () => {
         cancelled = true;
       };
     }
-    void desktopSshCredentialSyncGet(selectedId)
-      .then((grant) => {
-        if (!cancelled) {
-          setCredentialSyncAuthorized(grant?.authorized === true);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCredentialSyncAuthorized(false);
-        }
-      });
     void desktopSshSyncRunsList(selectedId)
       .then((runs) => {
         if (!cancelled) {
@@ -3203,59 +3141,6 @@ export const RemoteInstancesPage: React.FC = () => {
               </div>
             ))
           )}
-        </SettingsGroup>
-      ) : null}
-
-      {isManagedMode ? (
-        <SettingsGroup
-          label={t('settings.remoteInstances.page.section.credentialSync')}
-          description={t('settings.remoteInstances.page.credentialSync.description')}
-        >
-          <SettingsToggleRow
-            checked={credentialSyncAuthorized}
-            disabled={credentialSyncBusy}
-            ariaLabel={t('settings.remoteInstances.page.credentialSync.toggleAria')}
-            label={t('settings.remoteInstances.page.credentialSync.toggleLabel')}
-            description={t('settings.remoteInstances.page.credentialSync.toggleDescription')}
-            onChange={(checked) => {
-              if (!draft?.id) return;
-              if (checked) {
-                const ok = window.confirm(t('settings.remoteInstances.page.credentialSync.confirmGrant'));
-                if (!ok) return;
-                setCredentialSyncBusy(true);
-                void desktopSshCredentialSyncGrant(draft.id)
-                  .then((grant) => {
-                    setCredentialSyncAuthorized(grant?.authorized === true);
-                    toast.success(t('settings.remoteInstances.page.credentialSync.toast.granted'));
-                  })
-                  .catch((err) => {
-                    toast.error(t('settings.remoteInstances.page.credentialSync.toast.grantFailed'), {
-                      description: err instanceof Error ? err.message : String(err),
-                    });
-                  })
-                  .finally(() => {
-                    setCredentialSyncBusy(false);
-                  });
-                return;
-              }
-              const ok = window.confirm(t('settings.remoteInstances.page.credentialSync.confirmRevoke'));
-              if (!ok) return;
-              setCredentialSyncBusy(true);
-              void desktopSshCredentialSyncRevoke(draft.id)
-                .then((grant) => {
-                  setCredentialSyncAuthorized(grant?.authorized === true);
-                  toast.success(t('settings.remoteInstances.page.credentialSync.toast.revoked'));
-                })
-                .catch((err) => {
-                  toast.error(t('settings.remoteInstances.page.credentialSync.toast.revokeFailed'), {
-                    description: err instanceof Error ? err.message : String(err),
-                  });
-                })
-                .finally(() => {
-                  setCredentialSyncBusy(false);
-                });
-            }}
-          />
         </SettingsGroup>
       ) : null}
 

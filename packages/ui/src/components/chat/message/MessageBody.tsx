@@ -756,7 +756,7 @@ interface MessageBodyProps {
     editStaged?: boolean;
     onCancelEdit?: () => void;
     errorMessage?: string;
-    errorVariant?: 'error' | 'info';
+    errorVariant?: 'error' | 'info' | 'muted';
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
     reviewTransferDirection?: ReviewTransferDirection | null;
@@ -1863,6 +1863,7 @@ const AssistantMessageBody = React.memo(({
         && !(isCompactionTurn && isActivityExpanded);
     const showErrorMessage = Boolean(errorMessage);
     const errorIconName = errorVariant === 'info' ? 'information' : 'error-warning';
+    const isMutedError = errorVariant === 'muted';
     const shouldShowMessageActions = hasCopyableText;
     // Settled turns (stop / completed / interrupt-error) get the footer even
     // when text is empty, so duration + TPS still show after user abort.
@@ -2402,6 +2403,19 @@ const AssistantMessageBody = React.memo(({
                     {renderedParts}
                     {showErrorMessage && (
                         <FadeInOnReveal key="assistant-error">
+                            {isMutedError ? (
+                                <div
+                                    role="status"
+                                    className="my-1.5 flex max-w-full items-center gap-1.5 break-words typography-meta text-muted-foreground"
+                                >
+                                    <Icon
+                                        name="stop-circle"
+                                        className="size-3.5 shrink-0"
+                                        aria-hidden="true"
+                                    />
+                                    <span className="min-w-0">{errorMessage}</span>
+                                </div>
+                            ) : (
                             <div className={cn(
                                 'group/assistant-text relative flow-root my-1.5 break-words max-w-full',
                                 // Info: quiet chip — 圆角/padding 与 tool row 几何一致
@@ -2464,6 +2478,7 @@ const AssistantMessageBody = React.memo(({
                                     />
                                 </div>
                             </div>
+                            )}
                         </FadeInOnReveal>
                     )}
                 </div>

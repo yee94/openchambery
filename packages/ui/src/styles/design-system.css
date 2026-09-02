@@ -18,7 +18,8 @@
     /* User density setting (useUIStore.applyPadding writes this name).
        --padding-scale stacks it with --dpt-n so every Tailwind spacing
        utility (p, py, gap, size classes) rides the physical design-pt scale
-       on Android while iOS and desktop (--dpt-n = 1) stay pixel-identical.
+       on Capacitor (iOS 10/9, Android physical × 0.95/0.9 cap 0.95).
+       Desktop (--dpt-n = 1) stays pixel-identical.
        Lengths cannot multiply lengths, hence the unitless --dpt-n twin.
        Fixed-rem geometry (--oc-mobile-dock-height, --oc-settings-row-min-height,
        --form-control-height, touch min 36px) intentionally does NOT ride this

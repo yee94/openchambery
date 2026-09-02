@@ -1,16 +1,56 @@
-import type { SVGProps } from 'react';
+import type { ComponentPropsWithoutRef } from 'react';
+import { Icon } from '@/components/icon/Icon';
+import { cn } from '@/lib/utils';
 
-export function StopIcon(props: SVGProps<SVGSVGElement>) {
+/**
+ * Composer abort / send control: inverted filled circle.
+ * Stop uses a CSS square (not sprite `stop`) because button SVG rects are
+ * forced to `fill: none` in the global WebKit icon workaround.
+ * Native iOS `OpenChamberComposer` paints the same 24pt disc (arrow 56% /
+ * stop square 38% with 20% radius) in `composerCircleImage`.
+ */
+function ComposerCircleGlyph({
+    className,
+    children,
+    ...props
+}: ComponentPropsWithoutRef<'span'>) {
     return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="1em"
-            height="1em"
-            fill="currentColor"
-            viewBox="0 0 256 256"
+        <span
+            className={cn(
+                'inline-flex shrink-0 items-center justify-center rounded-full bg-foreground text-background',
+                className,
+            )}
             {...props}
+            aria-hidden
         >
-            <path d="M200,40H56A16,16,0,0,0,40,56V200a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Z" />
-        </svg>
+            {children}
+        </span>
+    );
+}
+
+export function StopIcon({ className, ...props }: ComponentPropsWithoutRef<'span'>) {
+    return (
+        <ComposerCircleGlyph className={className} {...props}>
+            <span
+                data-stop-glyph="true"
+                className="block size-[38%] rounded-[20%] bg-current"
+            />
+        </ComposerCircleGlyph>
+    );
+}
+
+export function SendCircleIcon({
+    className,
+    spinning = false,
+    ...props
+}: ComponentPropsWithoutRef<'span'> & { spinning?: boolean }) {
+    return (
+        <ComposerCircleGlyph className={className} {...props}>
+            <Icon
+                name={spinning ? 'loader-4' : 'arrow-up'}
+                weight="medium"
+                className={cn(spinning ? 'size-[50%] animate-spin' : 'size-[56%]')}
+            />
+        </ComposerCircleGlyph>
     );
 }

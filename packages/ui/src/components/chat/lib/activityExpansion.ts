@@ -119,8 +119,8 @@ export const resolveTurnSettledForPresentation = (input: {
 
 /**
  * Last-assistant bottom padding: live work uses `pb-1` so StatusRow sits
- * under the last tool; idle Processed rows keep the between-turns `pb-8`
- * that SessionRecapNote's `-mt-6` pulls into. `isInActiveTurn` stays true
+ * under the last tool; idle Processed rows keep the between-turns `pb-8`.
+ * `isInActiveTurn` stays true
  * after an abnormal settle whenever `time.completed` never lands (the
  * incomplete-assistant fallback in MessageList), so it cannot own the
  * tighten by itself once header chrome has already demoted to Processed.

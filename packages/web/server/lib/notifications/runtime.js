@@ -49,24 +49,16 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   // Generic notification for native push (per the mobile design): a fixed, scenario-based
   // title + the session name as the body. No model/project/message content crosses the relay.
-  const APNS_TITLE_BY_TYPE = {
-    ready: 'Agent response is ready',
-    error: 'Agent hit an error',
-    question: 'Agent needs your input',
-    permission: 'Agent needs permission',
-    goal_complete: 'Goal complete',
-    goal_blocked: 'Goal blocked',
-    goal_budget: 'Goal reached its token budget',
-  };
-
+  // Title strings are localized per device token locale inside sendApnsToAllUiSessions.
   const toApnsGenericPayload = (payload) => {
     const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
     const sessionName = typeof data.sessionName === 'string' && data.sessionName.trim().length > 0
       ? data.sessionName.trim()
-      : 'Session';
+      : '';
+    const type = typeof data.type === 'string' ? data.type : undefined;
     return {
-      title: APNS_TITLE_BY_TYPE[data.type] || 'Agent update',
-      body: sessionName,
+      type,
+      sessionName,
       badge: trackPushAndCountBadge(typeof payload?.tag === 'string' ? payload.tag : undefined),
       tag: payload?.tag,
       // sessionId is forwarded so a tapped push can deep-link; it is an opaque id, not content.

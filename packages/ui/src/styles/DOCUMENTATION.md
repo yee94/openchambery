@@ -104,6 +104,8 @@ Legitimate glass fallbacks:
 
 Android System WebView should be Chromium **111+** for `color-mix()` and reliable translucency (`packages/mobile/HANDOFF.md`).
 
+Phone conversation headers (session chat and Assistant) share `--oc-mobile-header-fade` for the overlay/collapsing gradient (`color-mix` of `--surface-background` at 85%). Change that token when the fade strength should shift; do not restyle one surface with a local mix.
+
 ## Layout chrome dividers
 
 Desktop shell edges (left/right sidebars, header/content split, context panel) use one token pair in `design-system.css`:
@@ -151,14 +153,20 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 
 If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` uses `min-height: min-content`. Its motion viewport and reveal keep popup overflow available.
 
-The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and an overlay Composer foot only while React `isMobile` is true. Draft, empty, history-error, desktop, and disabled surfaces keep the in-flow expanded Composer. In-flow feet pin `--oc-mobile-composer-swap: 0` and hide `.oc-mobile-composer-compact-layer`, because opening a new chat from a session reuses ChatContainer's root node and can leak the session's inline compact swap onto the draft page — the pill then paints "Tap to type" with `pointer-events: none` and the real textarea is gone. The hook also `clearComposerSwap`s the previous scope when it unmounts or detaches. The Hook publishes `--oc-mobile-composer-swap` plus phase and rest attributes: upward scroll starts tracking immediately (~40px → follow half that only exits the expanded card); finishing ≥0.5 auto-snaps so the compact pill rises, otherwise idle snaps back over 240ms. A brief post-compact settle suppresses return-follow for momentum only; it is not a permanent latch, and snaps are interruptible so repeat cycles keep working. The complete card and queue / changes / todos descend as one expanded layer while an independent 80% glass preview rises from below; the real textarea remains in the expanded layer. Layers are staggered so progress 0.5 never paints both at once. The fixed `--oc-chat-foot-inset: calc(8rem + safe-area)` preserves transcript geometry, and motion uses transforms and opacity without JavaScript measurement or padding mutation. A tap on the compact preview restores expansion and focuses the textarea. The compact layer reuses the mobile glass control recipe (`--oc-mobile-glass-fill`, `--oc-mobile-glass-shadow` with its top inset highlight, and glass blur/saturate) shared with the bottom Tab dock and settings search field. Focus, dictation, and native keyboard pin expansion; reduced motion makes snapping immediate, and reduced transparency keeps an opaque elevated fill while preserving the glass shadow.
+The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and an overlay Composer foot only while React `isMobile` is true. Draft, empty, history-error, desktop, and disabled surfaces keep the in-flow expanded Composer. In-flow feet pin `--oc-mobile-composer-swap: 0` and hide `.oc-mobile-composer-compact-layer`, because opening a new chat from a session reuses ChatContainer's root node and can leak the session's inline compact swap onto the draft page — the pill then paints "Tap to type" with `pointer-events: none` and the real textarea is gone. Native iOS in-flow feet add `padding-bottom: calc(var(--oc-native-composer-height) - 8px)` so project / branch stay above the pill (overlay pages already reserve that hole via absolute docking). The hook also `clearComposerSwap`s the previous scope when it unmounts or detaches. The Hook publishes `--oc-mobile-composer-swap` plus phase and rest attributes: upward scroll starts tracking immediately (~40px → follow half that only exits the expanded card); finishing ≥0.5 auto-snaps so the compact pill rises, otherwise idle snaps back over 240ms. A brief post-compact settle suppresses return-follow for momentum only; it is not a permanent latch, and snaps are interruptible so repeat cycles keep working. The complete card and queue / changes / todos descend as one expanded layer while an independent 80% glass preview rises from below; the real textarea remains in the expanded layer. Layers are staggered so progress 0.5 never paints both at once. The fixed `--oc-chat-foot-inset: calc(8rem + safe-area)` preserves transcript geometry, and motion uses transforms and opacity without JavaScript measurement or padding mutation. Capacitor iOS primary chat can replace the web textarea/pill with `OpenChamberComposer` (process-owned: conceal immediately on leave, teardown after the remount window, do not rebuild across phone-page remounts); `:root.oc-native-ios-composer` hides those layers and the web scroll-to-bottom controls, keeps swap tracking for fade-only motion, and retargets `--oc-chat-foot-inset` at collapsed `--oc-native-composer-height` plus `--oc-native-composer-accessory` without writing `--oc-chat-foot-inset` from JS. **Both foot-inset declarations live on the root and differ only by `.oc-native-ios-composer`.** The web default used to be scope-qualified (`:root.mobile-pointer:not(.desktop-runtime) .oc-chat-composer-swap-scope`, 0-4-0) while the native override is a plain root-class selector (0-3-0), so the default out-specified it and native iOS silently kept the 8rem web reservation — the transcript reserved less than the pill plus its queued-message accessory actually occupied, and the newest message sat under the queue card. A root declaration also means no consumer resolves an undefined inset when React `isMobile` disagrees with `mobile-pointer`. `mobileComposerOverflow.test.ts` resolves the property through `getComputedStyle` on both class shapes rather than asserting selector text, so a re-qualified selector fails on the value it produces. Changes / TODO / queue stay absolutely docked to the overlay just above the pill (8px settle toward the pill) and fade with `--oc-native-composer-dock` (distance from the live edge; default hidden until published; approaching stays hidden until the true bottom). The queue card hides `data-oc-queue-composer-overlap` and uses matching vertical padding because the native pill no longer covers that tail. Swap rest is not the fade source: a downward reveal can expand the composer hundreds of px from the bottom, and those rows have no background veil. Native scroll-to-bottom stays on the overlay, appears after ~80px of upward travel, and is excluded from published occupancy. Native height is the collapsed pill occupancy (not the keyboard-raised frame) so CSS must not add safe-area again. Keyboard hide still clears leftover `--oc-kb-layout` / `oc-keyboard-open` even while composer FLIP is skipped. A tap on the compact preview restores expansion and focuses the textarea. The compact layer reuses the mobile glass control recipe (`--oc-mobile-glass-fill`, `--oc-mobile-glass-shadow` with its top inset highlight, and glass blur/saturate) shared with the bottom Tab dock and settings search field. Focus, dictation, and native keyboard pin expansion; reduced motion makes snapping immediate, and reduced transparency keeps an opaque elevated fill while preserving the glass shadow.
 
 ## Design pt (`--dpt`)
 
-`--dpt` is `1px` everywhere except Capacitor Android, where
-`packages/ui/src/lib/designPtScale.ts` overwrites it from
-`DisplayMetrics.xdpi/ydpi` so `1dpt ≈ 1/163in` (iPhone pt), then caps
-Android at `0.9` as a visibility experiment. iOS stays `1`.
+`--dpt` is `1px` everywhere except Capacitor native shells, where
+`packages/ui/src/lib/designPtScale.ts` overwrites it.
+
+- iOS: `10/9`.
+- Android: physical `xdpi/ydpi` so `1dpt ≈ 1/163in`, then × `0.95/0.9`
+  and cap at `0.95`. Typical math already sits at ~0.9, so a cap-only
+  change stays 0.9; the multiply is what actually moves those phones.
+  A bare `1` or iOS `10/9` is too large because WebView CSS px is 1 dp.
+
+Cache key `openchamber.designPtScale.v7` drops v6 (`0.9`).
 
 `scripts/postcss-dpt-font-size.mjs` rewrites compiled `font-size`,
 `line-height`, and `--text-*` px/rem values to `calc(N * var(--dpt))`.
@@ -172,9 +180,9 @@ depends on the PostCSS `font-size` rewrite.
 
 The composer highlight overlay (`[data-composer-highlight="true"]`) must
 use the same `calc(16 * var(--dpt))` as the textarea. Attachment chips
-turn the overlay on (textarea becomes `text-transparent`); a 16px overlay
-against a 14.4px field looks like the font suddenly grew and puts the
-caret in the wrong place.
+turn the overlay on (textarea becomes `text-transparent`); a fixed-px
+overlay against a `--dpt`-scaled field looks like the font suddenly grew
+and puts the caret in the wrong place.
 
 ## Related owners
 

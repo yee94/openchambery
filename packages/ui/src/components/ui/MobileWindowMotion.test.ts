@@ -119,7 +119,7 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileResizableSheetSource).toContain('const fillAvailableHeight = expanded || !fitContent;');
     expect(chatInputSource).toContain('id="android-media-pick-sheet"');
     expect(chatInputSource).toContain('overflow-hidden rounded-2xl bg-[var(--surface-muted)]');
-    expect(chatInputSource).toContain('h-auto min-h-12 w-full justify-start gap-3 rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0');
+    expect(chatInputSource).toContain('h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0');
     expect(mobileResizableSheetSource).toContain('trailing?: React.ReactNode;');
     expect(mobileResizableSheetSource).toContain('{trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}\n                <div ref={setHeaderActionsSlot} className="contents" />');
     expect(mobileResizableSheetSource).toContain('export const MobileSheetHeaderActions');

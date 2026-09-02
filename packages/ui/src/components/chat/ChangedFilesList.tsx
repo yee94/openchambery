@@ -8,6 +8,7 @@ import {
     statusBarPopoverListClassName,
     statusBarPopoverRowClassName,
 } from './statusBarPopover';
+import { TruncatedPath } from '@/components/ui/truncated-path';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -43,24 +44,11 @@ export const ChangedFilesList: React.FC<ChangedFilesListProps> = ({ files, curre
                             onClick={() => onOpenFile(file)}
                         >
                             <FileTypeIcon filePath={file.path} className="h-3 w-3 shrink-0 md:h-3.5 md:w-3.5" />
-                            <span className="min-w-0 flex-1 flex items-baseline overflow-hidden" title={file.path}>
-                                {dirPart ? (
-                                    <>
-                                        <span
-                                            className="min-w-0 truncate text-muted-foreground"
-                                            style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
-                                        >
-                                            {dirPart}
-                                        </span>
-                                        <span className="flex-shrink-0">
-                                            <span className="text-muted-foreground">/</span>
-                                            <span className="text-foreground">{fileName}</span>
-                                        </span>
-                                    </>
-                                ) : (
-                                    <span className="truncate text-foreground">{fileName}</span>
-                                )}
-                            </span>
+                            <TruncatedPath
+                                path={dirPart ? `${dirPart}/${fileName}` : fileName}
+                                title={file.path}
+                                className="min-w-0 flex-1"
+                            />
                             {(stats.additions > 0 || stats.deletions > 0) ? (
                                 <span className="flex-shrink-0 inline-flex items-baseline gap-1 text-xs tabular-nums leading-4 md:text-[0.8125rem] md:leading-5">
                                     {stats.additions > 0 ? <span style={{ color: 'var(--status-success)' }}>+{stats.additions}</span> : null}

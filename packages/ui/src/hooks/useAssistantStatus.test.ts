@@ -15,4 +15,11 @@ describe('useAssistantStatus compaction hint', () => {
         expect(statusSource).toContain('preferCompactionStatus ? t(\'chat.assistantStatus.compacting\') : parsedStatus.statusText');
         expect(statusSource).toContain('!preferCompactionStatus && (parsedStatus.activePartType === \'tool\' || parsedStatus.activePartType === \'editing\')');
     });
+
+    test('confirmed final body settles the working hint immediately', () => {
+        expect(statusSource).toContain('hasConfirmedFinalBody');
+        expect(statusSource).toContain('if (isTurnSettled)');
+        expect(statusSource).toContain('isTurnSettled: true');
+        expect(statusSource).toContain('isTurnSettled: false');
+    });
 });

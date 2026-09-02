@@ -1,21 +1,23 @@
 import React from 'react';
 
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { useI18nStore } from '@/lib/i18n';
 import { getClientPlatform } from '@/lib/platform';
 import { useUIStore } from '@/stores/useUIStore';
 
 /**
- * Registers the native iOS APNs device token with the connected server so the app can
+ * Registers the native iOS/Android device token with the connected server so the app can
  * receive remote push even when suspended/closed. Delivery goes through the central relay
  * (server posts generic text → relay signs+sends) — see
  * `packages/web/server/lib/notifications/APNS.md`.
  *
  * Lazy-imports `@capacitor/push-notifications` (only present in the Capacitor shell),
  * mirroring the other `@capacitor/*` integrations in MobileApp. On `registration` the
- * device token is sent to the server via `apis.push.registerApnsToken`; tapping a push
- * deep-links to its session. Pass `enabled = isNativeMobileApp && isConnected`; the hook
- * additionally gates on the `nativeNotificationsEnabled` setting and re-registers when
- * the connection (and thus the active server endpoint) changes.
+ * device token is sent to the server via `apis.push.registerApnsToken` with the app UI
+ * locale so push titles match the user's language; tapping a push deep-links to its
+ * session. Pass `enabled = isNativeMobileApp && isConnected`; the hook additionally
+ * gates on the `nativeNotificationsEnabled` setting and re-registers when the connection
+ * (and thus the active server endpoint) or locale changes.
  */
 // Native push: iOS uses APNs, Android uses FCM. Both are set up natively (google-services.json +
 // the Google Services Gradle plugin on Android), so @capacitor/push-notifications' register()
@@ -28,10 +30,22 @@ const isNativePushPlatform = (): boolean => {
   return platform === 'ios' || platform === 'android';
 };
 
+const registerTokenWithServer = (token: string, locale: string): void => {
+  const apis = getRegisteredRuntimeAPIs();
+  void apis?.push?.registerApnsToken?.({
+    token,
+    platform: getClientPlatform(),
+    locale,
+  });
+};
+
 export const useNativePushRegistration = (options: { enabled: boolean }): void => {
   const { enabled } = options;
   const nativeNotificationsEnabled = useUIStore((state) => state.nativeNotificationsEnabled);
+  const locale = useI18nStore((state) => state.locale);
   const lastTokenRef = React.useRef<string | null>(null);
+  const localeRef = React.useRef(locale);
+  localeRef.current = locale;
 
   React.useEffect(() => {
     if (!enabled || !nativeNotificationsEnabled || !isNativePushPlatform()) {
@@ -55,8 +69,7 @@ export const useNativePushRegistration = (options: { enabled: boolean }): void =
 
         const registrationHandle = await PushNotifications.addListener('registration', (token) => {
           lastTokenRef.current = token.value;
-          const apis = getRegisteredRuntimeAPIs();
-          void apis?.push?.registerApnsToken?.({ token: token.value, platform: getClientPlatform() });
+          registerTokenWithServer(token.value, localeRef.current);
         });
 
         const registrationErrorHandle = await PushNotifications.addListener('registrationError', (error) => {
@@ -86,6 +99,15 @@ export const useNativePushRegistration = (options: { enabled: boolean }): void =
       cleanup.forEach((remove) => remove());
     };
   }, [enabled, nativeNotificationsEnabled]);
+
+  // Push registration events only fire on token mint/refresh. When the user changes app
+  // language, re-POST the last token so the server stores the new locale for titles.
+  React.useEffect(() => {
+    if (!enabled || !nativeNotificationsEnabled || !isNativePushPlatform()) return;
+    const token = lastTokenRef.current;
+    if (!token) return;
+    registerTokenWithServer(token, locale);
+  }, [enabled, nativeNotificationsEnabled, locale]);
 
   // When notifications are turned off, drop the token from the server so it stops
   // pushing to this device. (Separate from the register effect so a transient

@@ -848,7 +848,6 @@ export function ScheduledTasksWorkspace({
                 size="sm"
                 role="tab"
                 aria-selected={workspaceView === view}
-                data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                 className={cn(
                   isMobileTab
                     ? 'oc-mobile-segmented-item'
@@ -902,13 +901,12 @@ export function ScheduledTasksWorkspace({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                   className={cn(
                     isMobileTab
                       ? 'oc-mobile-segmented-item'
                       // Avoid overflow-hidden (mobile.css → overflow-y:auto). Soft
                       // selected-pill shadow must not be clipped on desktop either.
-                      : 'relative border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none active:scale-[0.97]',
+                      : 'relative border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color] duration-150 ease-out motion-reduce:transition-none',
                     !isMobileTab && (isMobilePanel ? 'h-11 min-h-11 min-w-0 flex-1 rounded-xl px-2' : '!h-9 !min-h-9 rounded-xl px-3'),
                     !isMobileTab && (filter === value
                       ? 'text-foreground hover:bg-transparent hover:text-foreground'
@@ -936,8 +934,8 @@ export function ScheduledTasksWorkspace({
             {isMobileTab ? (
               <Button
                 variant="ghost"
-                data-mobile-press-feedback="none"
-                className="oc-mobile-segmented-action shrink-0 bg-foreground text-background transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:scale-[0.97] motion-reduce:transition-none"
+                data-mobile-press-feedback="compact"
+                className="oc-mobile-segmented-action shrink-0 bg-foreground text-background transition-[background-color,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:bg-interactive-active motion-reduce:transition-none"
                 onClick={handleCreate}
                 disabled={!createProjectID}
                 aria-label={t('sessions.scheduledTasks.dialog.actions.create')}
@@ -948,8 +946,9 @@ export function ScheduledTasksWorkspace({
               <div className="flex min-w-0 items-center gap-2">
                 <Button
                   variant="ghost"
+                  data-mobile-press-feedback={isMobilePanel ? 'compact' : undefined}
                   className={cn(
-                    'shrink-0 rounded-full bg-foreground text-background transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:scale-[0.97] motion-reduce:transition-none',
+                    'shrink-0 rounded-full bg-foreground text-background transition-[background-color,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:bg-interactive-active motion-reduce:transition-none',
                     isMobilePanel ? 'size-11 min-h-11 px-0 min-[400px]:w-auto min-[400px]:px-3.5' : '!h-9 !min-h-9 px-3.5',
                   )}
                   onClick={handleCreate}
@@ -1219,7 +1218,6 @@ export function ScheduledTasksWorkspace({
                             <button
                               type="button"
                               data-mobile-press-surface-trigger
-                              data-mobile-press-feedback="none"
                               className={cn(
                                 'oc-mobile-scheduled-task-row w-full p-3 text-left outline-none',
                                 'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]',
@@ -1399,12 +1397,11 @@ export function ScheduledTasksWorkspace({
                             setContextMenuTaskIdentity(identityKey);
                           } : undefined}
                           data-mobile-press-surface-trigger={isMobileTab ? true : undefined}
-                          data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                           className={cn(
                             'flex min-h-11 min-w-0 flex-1 items-center rounded-xl border py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
                             isMobileTab
                               ? 'oc-mobile-project-trigger oc-mobile-scheduled-task-row border-0 bg-transparent transition-opacity duration-150'
-                              : 'transition-[background-color,border-color,box-shadow,transform,opacity] duration-150 ease-out active:scale-[0.995]',
+                              : 'transition-[background-color,border-color,box-shadow,opacity] duration-150 ease-out active:bg-interactive-active',
                             isMobilePanel && !isMobileTab ? 'gap-2.5 px-3' : !isMobileTab ? 'gap-3 px-4' : undefined,
                             !isMobileTab && (selected
                               ? 'border-border/50 bg-[var(--surface-elevated)] shadow-sm dark:shadow-none'
@@ -1475,7 +1472,7 @@ export function ScheduledTasksWorkspace({
                           variant="ghost"
                           size="icon"
                           className={cn(
-                            'shrink-0 self-center text-muted-foreground transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 data-[popup-open]:bg-interactive-hover motion-reduce:transition-none',
+                            'shrink-0 self-center text-muted-foreground transition-[opacity,transform,background-color] duration-150 ease-out data-[popup-open]:bg-interactive-hover motion-reduce:transition-none',
                             isMobileTab
                               ? 'oc-mobile-project-action oc-mobile-scheduled-task-action rounded-full'
                               : 'rounded-lg',
