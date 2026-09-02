@@ -1796,7 +1796,7 @@ describe('useGlobalSessionsStore', () => {
       error: undefined,
       response: new Response(null, { status: 200 }),
     });
-    const sdk = { experimental: { session: { list } } } as unknown as OpencodeClient;
+    const sdk = { experimental: { session: { list } } } as unknown as OpenCodeClient;
     const originalGetSdkClient = opencodeClient.getSdkClient;
     opencodeClient.getSdkClient = () => sdk;
     restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
@@ -1846,7 +1846,7 @@ describe('useGlobalSessionsStore', () => {
       error: undefined,
       response: new Response(null, { status: 200 }),
     });
-    const sdk = { experimental: { session: { list } } } as unknown as OpencodeClient;
+    const sdk = { experimental: { session: { list } } } as unknown as OpenCodeClient;
     const originalGetSdkClient = opencodeClient.getSdkClient;
     opencodeClient.getSdkClient = () => sdk;
     restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
