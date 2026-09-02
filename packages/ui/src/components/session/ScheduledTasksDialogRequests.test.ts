@@ -63,7 +63,10 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('getNextPageParam: (lastPage) => lastPage.complete ? undefined : lastPage.nextCursor ?? undefined');
     expect(content).toContain('await runsQuery.fetchNextPage()');
     expect(content).toContain('new Set<string>()');
-    expect(content).toContain('invalidateQueries({ queryKey: globalScheduledTaskRunsQueryKey, exact: true })');
+    expect(content).toContain('invalidateQueries({ queryKey: globalScheduledTaskRunsQueryKey })');
+    expect(content).toContain('historyTaskFilter?.projectId ?? \'\'');
+    expect(content).toContain('historyTaskFilter?.taskId ?? \'\'');
+    expect(content).toContain('projectId: historyTaskFilter.projectId, taskId: historyTaskFilter.taskId');
   });
 
   test('renders history with compact duration beside status and icon-value meta', async () => {
@@ -137,14 +140,14 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('{renderMenuItems(ContextMenuItem)}');
   });
 
-  test('opens the latest task history session from task rows, menus, and the editor', async () => {
+  test('opens a task-filtered history view from task rows, menus, and the editor', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
     const [workspaceContent, editorContent] = await Promise.all([
       readFile(join(directory, 'ScheduledTasksDialog.tsx'), 'utf8'),
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
     ]);
-    const latestHandler = workspaceContent.slice(
-      workspaceContent.indexOf('const handleOpenLatestTaskSession'),
+    const historyHandler = workspaceContent.slice(
+      workspaceContent.indexOf('const handleOpenTaskHistory'),
       workspaceContent.indexOf('const handleRetryRuns'),
     );
     const taskMenuItems = workspaceContent.slice(
@@ -152,25 +155,22 @@ describe('ScheduledTasksDialog queries', () => {
       workspaceContent.indexOf('return (', workspaceContent.indexOf('const renderMenuItems = (Item: React.ElementType)')),
     );
 
-    expect(workspaceContent).toContain('const hasScheduledTaskRun = (task: ScheduledTask)');
-    expect(latestHandler).toContain('projectId: entry.projectId');
-    expect(latestHandler).toContain('taskId: entry.task.id');
-    expect(latestHandler).toContain('limit: 1');
-    expect(latestHandler).toContain('const latestRun = response.runs[0]');
-    expect(latestHandler).toContain('latestRun?.sessionId || entry.task.state?.lastSessionId');
-    expect(latestHandler).toContain('latestRun?.directory || projectById.get(entry.projectId)?.path');
-    expect(latestHandler).toContain("toast.error(error instanceof Error ? error.message : t('sessions.scheduledTasks.dialog.toast.loadFailed'))");
-    expect(taskMenuItems).toContain('void handleOpenLatestTaskSession(entry)');
-    expect(taskMenuItems).toContain("t('sessions.scheduledTasks.history.openSession')");
-    expect(workspaceContent).toContain("name={isOpeningLatestSession ? 'loader-4' : 'history'}");
-    expect(workspaceContent).toContain('onOpenLatestSession={handleEditorOpenLatestSession}');
+    expect(historyHandler).toContain('setHistoryTaskFilter({ projectId: entry.projectId, taskId: entry.task.id })');
+    expect(historyHandler).toContain("setWorkspaceView('history')");
+    expect(historyHandler).toContain("syncScheduledPath('history', null)");
+    expect(historyHandler).not.toContain('openSessionWithFeedback');
+    expect(taskMenuItems).toContain('handleOpenTaskHistory(entry)');
+    expect(taskMenuItems).toContain("t('sessions.scheduledTasks.workspace.views.history')");
+    expect(workspaceContent).toContain('onOpenTaskHistory={handleEditorOpenTaskHistory}');
+    expect(workspaceContent).toContain("t('sessions.scheduledTasks.history.filter.aria'");
+    expect(workspaceContent).toContain("t('sessions.scheduledTasks.history.filter.clearAria')");
     expect(workspaceContent).toContain('{renderMenuItems(DropdownMenuItem)}');
     expect(workspaceContent).toContain('{renderMenuItems(ContextMenuItem)}');
 
-    expect(editorContent).toContain('onOpenLatestSession?: (task: ScheduledTask) => Promise<void>');
-    expect(editorContent).toContain('const canOpenLatestSession = Boolean(');
-    expect(editorContent).toContain('onSelect={() => void onOpenLatestSession?.(task)}');
-    expect(editorContent).toContain("t('sessions.scheduledTasks.history.openSession')");
+    expect(editorContent).toContain('onOpenTaskHistory?: (task: ScheduledTask) => void');
+    expect(editorContent).toContain('const canOpenTaskHistory = Boolean(task && onOpenTaskHistory)');
+    expect(editorContent).toContain('onSelect={() => onOpenTaskHistory?.(task)}');
+    expect(editorContent).toContain("t('sessions.scheduledTasks.workspace.views.history')");
     expect(editorContent).toContain('trailing={editorOverflowMenu}');
   });
 
@@ -218,7 +218,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain("? 'flex-none overflow-visible pt-[var(--oc-mobile-page-gap)]'");
     expect(workspaceContent).not.toContain("overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5");
     // History mobile-tab: tablist has no mb-3 so only page-gap separates tab→list.
-    expect(workspaceContent).toContain("(workspaceView === 'tasks' || !isMobileTab) && 'mb-3'");
+    expect(workspaceContent).toContain("(workspaceView === 'tasks' || historyTaskFilter || !isMobileTab) && 'mb-3'");
     expect(editorContent).toContain('overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem');
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });

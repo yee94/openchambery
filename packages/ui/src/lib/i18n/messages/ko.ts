@@ -271,6 +271,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.history.duration.hoursMinutes': '{hours}시간 {minutes}분',
   'sessions.scheduledTasks.history.duration.hours': '{count}시간',
   'sessions.scheduledTasks.history.openSession': '세션 열기',
+  'sessions.scheduledTasks.history.filter.aria': '{name} 기록',
+  'sessions.scheduledTasks.history.filter.clearAria': '전체 기록 보기',
   'sessions.toast.openFailed': '대화 {sessionId}을(를) 불러올 수 없습니다',
   'sessions.toast.openFailedMissingDirectory': '대화 {sessionId}을(를) 불러올 수 없습니다. 작업 영역 경로가 없습니다.',
   'sessions.toast.openFailedMissingSessionId': '대화를 열 수 없습니다. 세션 ID가 없습니다.',

@@ -271,6 +271,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.history.duration.hoursMinutes": "{hours} год {minutes} хв",
   "sessions.scheduledTasks.history.duration.hours": "{count} год",
   "sessions.scheduledTasks.history.openSession": "Відкрити сеанс",
+  "sessions.scheduledTasks.history.filter.aria": "Історія: {name}",
+  "sessions.scheduledTasks.history.filter.clearAria": "Показати всю історію",
   "sessions.toast.openFailed": "Не вдалося завантажити розмову {sessionId}",
   "sessions.toast.openFailedMissingDirectory": "Не вдалося завантажити розмову {sessionId}. Відсутній шлях робочого простору.",
   "sessions.toast.openFailedMissingSessionId": "Не вдалося відкрити розмову. Відсутній ідентифікатор сесії.",

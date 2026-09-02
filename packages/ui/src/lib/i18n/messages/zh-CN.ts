@@ -271,6 +271,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.history.duration.hoursMinutes': '{hours} 小时 {minutes} 分',
   'sessions.scheduledTasks.history.duration.hours': '{count} 小时',
   'sessions.scheduledTasks.history.openSession': '打开会话',
+  'sessions.scheduledTasks.history.filter.aria': '{name} 的历史记录',
+  'sessions.scheduledTasks.history.filter.clearAria': '显示全部历史记录',
   'sessions.toast.openFailed': '对话 {sessionId} 无法加载',
   'sessions.toast.openFailedMissingDirectory': '对话 {sessionId} 无法加载：缺少工作区路径',
   'sessions.toast.openFailedMissingSessionId': '无法打开对话：缺少会话 ID',

@@ -284,6 +284,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.history.duration.hoursMinutes': '{hours} 小時 {minutes} 分',
   'sessions.scheduledTasks.history.duration.hours': '{count} 小時',
   'sessions.scheduledTasks.history.openSession': '開啟工作階段',
+  'sessions.scheduledTasks.history.filter.aria': '{name} 的歷史記錄',
+  'sessions.scheduledTasks.history.filter.clearAria': '顯示全部歷史記錄',
   'sessions.toast.openFailed': '對話 {sessionId} 無法載入',
   'sessions.toast.openFailedMissingDirectory': '對話 {sessionId} 無法載入：缺少工作區路徑',
   'sessions.toast.openFailedMissingSessionId': '無法開啟對話：缺少工作階段 ID',

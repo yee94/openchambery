@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.2] - 2026-09-03
+
+### 定时任务
+
+- 任务里打开的是该任务的历史记录，并带任务筛选，而不是直接打开最近一次会话。
+
 ## [1.19.3-beta.1] - 2026-09-03
 
 ### 移动端

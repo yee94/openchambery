@@ -276,6 +276,8 @@ export const dict = {
   'sessions.scheduledTasks.history.duration.hoursMinutes': '{hours} h {minutes} min',
   'sessions.scheduledTasks.history.duration.hours': '{count} h',
   'sessions.scheduledTasks.history.openSession': 'Open session',
+  'sessions.scheduledTasks.history.filter.aria': 'History for {name}',
+  'sessions.scheduledTasks.history.filter.clearAria': 'Show all history',
   'sessions.toast.openFailed': 'Unable to load conversation {sessionId}',
   'sessions.toast.openFailedMissingDirectory': 'Unable to load conversation {sessionId}. Workspace path is missing.',
   'sessions.toast.openFailedMissingSessionId': 'Unable to open conversation. Session id is missing.',

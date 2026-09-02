@@ -372,6 +372,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.history.duration.hoursMinutes': '{hours} h {minutes} min',
   'sessions.scheduledTasks.history.duration.hours': '{count} h',
   'sessions.scheduledTasks.history.openSession': 'Otwórz sesję',
+  'sessions.scheduledTasks.history.filter.aria': 'Historia: {name}',
+  'sessions.scheduledTasks.history.filter.clearAria': 'Pokaż całą historię',
   'sessions.toast.openFailed': 'Nie można wczytać rozmowy {sessionId}',
   'sessions.toast.openFailedMissingDirectory': 'Nie można wczytać rozmowy {sessionId}. Brak ścieżki obszaru roboczego.',
   'sessions.toast.openFailedMissingSessionId': 'Nie można otworzyć rozmowy. Brak identyfikatora sesji.',

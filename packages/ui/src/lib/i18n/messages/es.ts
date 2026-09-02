@@ -271,6 +271,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.history.duration.hoursMinutes": "{hours} h {minutes} min",
   "sessions.scheduledTasks.history.duration.hours": "{count} h",
   "sessions.scheduledTasks.history.openSession": "Abrir sesión",
+  "sessions.scheduledTasks.history.filter.aria": "Historial de {name}",
+  "sessions.scheduledTasks.history.filter.clearAria": "Mostrar todo el historial",
   "sessions.toast.openFailed": "No se puede cargar la conversación {sessionId}",
   "sessions.toast.openFailedMissingDirectory": "No se puede cargar la conversación {sessionId}. Falta la ruta del espacio de trabajo.",
   "sessions.toast.openFailedMissingSessionId": "No se puede abrir la conversación. Falta el id de sesión.",

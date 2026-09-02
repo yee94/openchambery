@@ -271,6 +271,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.scheduledTasks.history.duration.hoursMinutes": "{hours} h {minutes} min",
   "sessions.scheduledTasks.history.duration.hours": "{count} h",
   "sessions.scheduledTasks.history.openSession": "Abrir sessão",
+  "sessions.scheduledTasks.history.filter.aria": "Histórico de {name}",
+  "sessions.scheduledTasks.history.filter.clearAria": "Mostrar todo o histórico",
   "sessions.toast.openFailed": "Não foi possível carregar a conversa {sessionId}",
   "sessions.toast.openFailedMissingDirectory": "Não foi possível carregar a conversa {sessionId}. O caminho do workspace está ausente.",
   "sessions.toast.openFailedMissingSessionId": "Não foi possível abrir a conversa. O id da sessão está ausente.",

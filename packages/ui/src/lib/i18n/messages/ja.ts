@@ -271,6 +271,8 @@ export const dict: Record<I18nKey, string> = {
   'sessions.scheduledTasks.history.duration.hoursMinutes': '{hours}時間{minutes}分',
   'sessions.scheduledTasks.history.duration.hours': '{count}時間',
   'sessions.scheduledTasks.history.openSession': 'セッションを開く',
+  'sessions.scheduledTasks.history.filter.aria': '{name} の履歴',
+  'sessions.scheduledTasks.history.filter.clearAria': 'すべての履歴を表示',
   'sessions.toast.openFailed': '会話 {sessionId} を読み込めません',
   'sessions.toast.openFailedMissingDirectory': '会話 {sessionId} を読み込めません。ワークスペースパスがありません。',
   'sessions.toast.openFailedMissingSessionId': '会話を開けません。セッション ID がありません。',

@@ -79,6 +79,8 @@ export const dict = {
   'sessions.scheduledTasks.history.duration.hoursMinutes': '{hours} h {minutes} min',
   'sessions.scheduledTasks.history.duration.hours': '{count} h',
   'sessions.scheduledTasks.history.openSession': 'Ouvrir la session',
+  'sessions.scheduledTasks.history.filter.aria': 'Historique de {name}',
+  'sessions.scheduledTasks.history.filter.clearAria': 'Afficher tout l’historique',
   'sessions.toast.openFailed': 'Impossible de charger la conversation {sessionId}',
   'sessions.toast.openFailedMissingDirectory': 'Impossible de charger la conversation {sessionId}. Le chemin de l’espace de travail est manquant.',
   'sessions.toast.openFailedMissingSessionId': 'Impossible d’ouvrir la conversation. L’identifiant de session est manquant.',
