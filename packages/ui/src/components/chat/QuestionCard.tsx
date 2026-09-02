@@ -15,7 +15,7 @@ import { useSessions } from '@/sync/sync-context';
 import * as sessionActions from '@/sync/session-actions';
 import { useI18n } from '@/lib/i18n';
 import { serializeQuestionAsJson, serializeQuestionAsMarkdown } from './questionSerializers';
-import { QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT, getQuestionCustomTextareaHeight } from './questionTextareaSizing';
+import { QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT, clampQuestionCustomTextareaHeight } from './questionTextareaSizing';
 
 interface QuestionCardProps {
   question: QuestionRequest;
@@ -32,7 +32,7 @@ interface CustomAnswerTextareaProps {
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
-const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
+export const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
   value,
   placeholder,
   disabled,
@@ -110,18 +110,20 @@ const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const nextHeight = getQuestionCustomTextareaHeight({
-      scrollHeight: textarea.scrollHeight,
-      currentHeight: height,
-    });
-    const nextScrollable = textarea.scrollHeight > (nextHeight ?? height);
-    if (isScrollable !== nextScrollable) {
-      setIsScrollable(nextScrollable);
-    }
-    if (nextHeight !== null) {
-      setHeight(nextHeight);
-    }
-  }, [height, isScrollable, localValue]);
+    // Collapse before measuring so deleting a line can shrink. Measuring
+    // against a leftover pixel height + border-box padding oscillates
+    // (Maximum update depth) if that height is written back into state.
+    textarea.style.height = 'auto';
+    textarea.style.overflowY = 'hidden';
+    const measured = textarea.scrollHeight;
+    const nextHeight = clampQuestionCustomTextareaHeight(measured);
+    const nextScrollable = measured > nextHeight;
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = '';
+
+    setHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+    setIsScrollable((prev) => (prev === nextScrollable ? prev : nextScrollable));
+  }, [localValue]);
 
   return (
     <textarea

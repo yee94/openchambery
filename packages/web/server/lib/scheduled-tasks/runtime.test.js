@@ -993,4 +993,225 @@ describe('scheduled-tasks run history and session lifecycle', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it('persists lastSessionId when an error run still created a session', async () => {
+    const history = createHistoryStore();
+    createSuccessfulClient({ settlement: 'assistant-error' });
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('prompt_async')) {
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('error');
+    const finalPatch = updateScheduledTaskState.mock.calls.at(-1)[2];
+    expect(finalPatch.lastStatus).toBe('error');
+    expect(finalPatch.lastSessionId).toBe('ses_1');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('omits lastSessionId from the final patch when the failed run has no session', async () => {
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState);
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('error');
+    const finalPatch = updateScheduledTaskState.mock.calls.at(-1)[2];
+    expect(finalPatch.lastStatus).toBe('error');
+    expect(Object.hasOwn(finalPatch, 'lastSessionId')).toBe(false);
+  });
+
+  it('corrects lastStatus error → success on idle after a continuation, without rewriting history', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({ settlement: 'assistant-error' });
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('prompt_async')) {
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const emitTaskRunEvent = vi.fn();
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      emitTaskRunEvent,
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+    expect(result.status).toBe('error');
+    expect(history.finishRun).toHaveBeenCalledTimes(1);
+
+    client.messages.mockImplementation(async () => ({
+      data: [{
+        info: {
+          id: 'msg_ok',
+          role: 'assistant',
+          time: { completed: Date.now() },
+        },
+      }],
+    }));
+
+    await runtime.observeSessionEvent({
+      payload: {
+        type: 'session.idle',
+        properties: { sessionID: 'ses_1' },
+      },
+    });
+
+    expect(history.finishRun).toHaveBeenCalledTimes(1);
+    const correctionPatch = updateScheduledTaskState.mock.calls.at(-1)[2];
+    expect(correctionPatch).toEqual(expect.objectContaining({
+      lastStatus: 'success',
+      lastError: undefined,
+      lastSessionId: 'ses_1',
+    }));
+    expect(Object.hasOwn(correctionPatch, 'lastRunAt')).toBe(false);
+    expect(Object.hasOwn(correctionPatch, 'lastDurationMs')).toBe(false);
+    expect(Object.hasOwn(correctionPatch, 'nextRunAt')).toBe(false);
+    expect(emitTaskRunEvent).toHaveBeenCalledWith(expect.objectContaining({
+      projectID: 'project-1',
+      taskID: 'task-1',
+      status: 'success',
+      sessionID: 'ses_1',
+    }));
+
+    vi.unstubAllGlobals();
+  });
+
+  it('does not correct lastStatus while the task is still running', async () => {
+    vi.useFakeTimers();
+    const history = createHistoryStore();
+    const erroredTask = {
+      ...scheduledTask,
+      state: {
+        ...scheduledTask.state,
+        lastStatus: 'error',
+        lastSessionId: 'ses_1',
+        lastError: 'ProviderError',
+      },
+    };
+    createSuccessfulClient({ settlement: 'busy-then-success' });
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('prompt_async')) {
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const emitTaskRunEvent = vi.fn();
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...erroredTask, state: { ...erroredTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      projectConfigRuntime: {
+        listScheduledTasks: vi.fn(async () => [erroredTask]),
+        updateScheduledTaskState,
+        upsertScheduledTask: vi.fn(),
+      },
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      emitTaskRunEvent,
+    });
+    await runtime.syncProject('project-1');
+
+    const runPromise = runtime.runNow('project-1', 'task-1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(history.finishRun).not.toHaveBeenCalled();
+
+    const successEmitsBefore = emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success').length;
+    await runtime.observeSessionEvent({
+      payload: {
+        type: 'session.idle',
+        properties: { sessionID: 'ses_1' },
+      },
+    });
+    expect(history.finishRun).not.toHaveBeenCalled();
+    expect(updateScheduledTaskState.mock.calls.map((call) => call[2].lastStatus)).not.toContain('success');
+    expect(emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success')).toHaveLength(successEmitsBefore);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    const result = await runPromise;
+    expect(result.ok).toBe(true);
+
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('does not correct lastStatus when it is already success', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient();
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('prompt_async')) {
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const emitTaskRunEvent = vi.fn();
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      emitTaskRunEvent,
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+    expect(result.ok).toBe(true);
+    expect(history.finishRun).toHaveBeenCalledTimes(1);
+    const stateWritesAfterRun = updateScheduledTaskState.mock.calls.length;
+    const successEmitsAfterRun = emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success').length;
+
+    client.messages.mockImplementation(async () => ({
+      data: [{
+        info: {
+          id: 'msg_ok',
+          role: 'assistant',
+          time: { completed: Date.now() },
+        },
+      }],
+    }));
+
+    await runtime.observeSessionEvent({
+      payload: {
+        type: 'session.status',
+        properties: {
+          sessionID: 'ses_1',
+          status: { type: 'idle' },
+        },
+      },
+    });
+
+    expect(history.finishRun).toHaveBeenCalledTimes(1);
+    expect(updateScheduledTaskState).toHaveBeenCalledTimes(stateWritesAfterRun);
+    expect(emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success')).toHaveLength(successEmitsAfterRun);
+
+    vi.unstubAllGlobals();
+  });
 });

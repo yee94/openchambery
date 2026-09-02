@@ -65,6 +65,7 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - `syncAllProjects()`
   - `syncProject(projectId)`
   - `runNow(projectId, taskId)`
+  - `observeSessionEvent(event)`
 
 Dependencies include optional `runHistoryStore` with:
 
@@ -212,10 +213,32 @@ Every actual run (timer or manual):
     row so the session stays openable from history. Task state persistence
     failures also finalize history as `error`. A failed history finalize
     returns error and may leave a `running` row for next-start convergence.
- 11. `lastSessionId` remains success-only on the task state; full association
-     lives in the history table.
+  11. `lastSessionId` is written on the task state whenever the run has a
+     session (success or error). If the run has no session, omit
+     `lastSessionId` from the patch so a previous value is preserved. Full
+     association still lives in the history table; history rows are not
+     rewritten after finalize.
 
 SSE events keep the existing `openchamber:scheduled-task-ran` shape.
+
+## Post-run continuation
+
+After a run has finalized (including as `error`) with a session, the user may
+continue chatting in that same history session. When that session later becomes
+idle and a single outcome snapshot is success, the runtime corrects **only
+task state**:
+
+- `lastStatus` → `success`
+- clear `lastError`
+- keep/set `lastSessionId`
+- do not change `lastRunAt` / `lastDurationMs` / `nextRunAt`
+- do not call `finishRun` again (the history row stays the original run snapshot)
+
+Correction is event-driven via `observeSessionEvent` (`session.idle` or idle
+`session.status`). A live run (`runningTaskKeys`) owns settlement; the observer
+is a no-op while the task is running, if `lastStatus` is already `success` or
+`running`, or if the snapshot is still error/busy/unknown. Observer failures
+are logged and must not throw out of the event bus.
 
 ## Watchdog cancel / upstream abort
 
