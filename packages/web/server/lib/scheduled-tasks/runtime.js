@@ -308,7 +308,7 @@ const snapshotSessionOutcome = async ({
         directory: projectPath,
       }, requestOptions);
       if (!sessionResult?.error) {
-        const goal = extractGoalFromSession(sessionResult?.data);
+        const goal = extractGoalFromSession(sessionResult?.data ?? sessionResult);
         if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
           if (goal.status === 'complete') {
             return { outcome: 'success' };
@@ -325,17 +325,12 @@ const snapshotSessionOutcome = async ({
     return { outcome: 'busy' };
   }
 
-  if (typeof client?.session?.status === 'function') {
+  if (typeof client?.session?.active === 'function') {
     try {
-      const statusResult = await client.session.status({
-        directory: projectPath,
-      }, requestOptions);
-      if (!statusResult?.error && statusResult?.data && typeof statusResult.data === 'object') {
-        const statusValue = statusResult.data[sessionID];
-        const type = statusValue?.type ?? statusValue?.status;
-        if (type === 'busy' || type === 'retry') {
-          return { outcome: 'busy' };
-        }
+      const activeMap = await client.session.active(requestOptions);
+      if (activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap)
+        && Object.prototype.hasOwnProperty.call(activeMap, sessionID)) {
+        return { outcome: 'busy' };
       }
     } catch (error) {
       if (signal?.aborted) throw error;

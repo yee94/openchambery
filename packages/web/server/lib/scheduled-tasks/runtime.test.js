@@ -297,7 +297,7 @@ describe('scheduled-tasks v2 cutover residuals', () => {
     expect(source).not.toContain('createOpencodeClient');
     expect(source).not.toContain('prompt_async');
     expect(source).not.toContain('session.abort');
-    expect(source).not.toContain('session.status');
+    expect(source).not.toContain('session.status({');
     expect(source).not.toContain('session.messages');
     expect(source).not.toContain('session.update');
     expect(source).not.toContain('time: { archived');
@@ -994,13 +994,11 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(result.status).toBe('error');
     expect(history.finishRun).toHaveBeenCalledTimes(1);
 
-    client.messages.mockImplementation(async () => ({
+    client.messageList.mockImplementation(async () => ({
       data: [{
-        info: {
-          id: 'msg_ok',
-          role: 'assistant',
-          time: { completed: Date.now() },
-        },
+        id: 'msg_ok',
+        type: 'assistant',
+        time: { completed: Date.now() },
       }],
     }));
 
@@ -1118,13 +1116,11 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const stateWritesAfterRun = updateScheduledTaskState.mock.calls.length;
     const successEmitsAfterRun = emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success').length;
 
-    client.messages.mockImplementation(async () => ({
+    client.messageList.mockImplementation(async () => ({
       data: [{
-        info: {
-          id: 'msg_ok',
-          role: 'assistant',
-          time: { completed: Date.now() },
-        },
+        id: 'msg_ok',
+        type: 'assistant',
+        time: { completed: Date.now() },
       }],
     }));
 
