@@ -128,7 +128,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.dateGroup.older': '以前',
   'mobile.sessions.section.worktrees': 'ワークツリー',
   'mobile.sessions.mainWorkspace': 'メインワークスペース',
-  'mobile.sessions.section.pinned': 'ピン留め',
+  'mobile.sessions.section.pinned': 'ピン留め / 進行中',
   'mobile.sessions.searchAria': 'セッションを検索',
   'mobile.sessions.section.otherProjects': 'プロジェクトを切り替え',
   'mobile.sessions.section.projects': 'プロジェクト',

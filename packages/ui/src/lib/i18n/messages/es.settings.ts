@@ -1738,6 +1738,8 @@ export const settingsDict = {
   "settings.openchamber.visual.field.macVibrancyHint": "Usa el desenfoque nativo de macOS (vibrancy) detrás de la barra lateral. Desactívalo para superficies totalmente sólidas y opacas.",
   "settings.openchamber.visual.field.dockBadge": "Insignia en el Dock",
   "settings.openchamber.visual.field.dockBadgeHint": "Muestra en el icono del Dock de macOS el número de chats con actividad sin ver.",
+  "settings.openchamber.visual.field.iosNativeUi": "Interfaz nativa de iOS",
+  "settings.openchamber.visual.field.iosNativeUiHint": "Usa el compositor nativo, la barra de pestañas y las Live Activities. Desactívalo para igualar la vista web de Android.",
   "settings.openchamber.visual.actions.saveAndRestart": "Guardar y reiniciar",
   "settings.openchamber.visual.actions.restarting": "Reiniciando…",
   "settings.openchamber.visual.actions.reloadingThemes": "Recargando temas...",

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0-beta.42] - 2026-09-02
+
+### Added
+
+- On iPhone, Appearance Settings can turn off the native composer, tab bar, and Live Activities so the app matches the Android web view.
+- The phone homepage Pinned group also lists running and unread sessions.
+
+### Changed
+
+- The global CLI also installs as `openchambery`.
+- Product README presents OpenChamberY and current mobile screens.
+
 ## [1.19.0-beta.41] - 2026-09-01
 
 ### Fixed

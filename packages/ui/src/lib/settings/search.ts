@@ -1,4 +1,5 @@
 import type { I18nKey } from '@/lib/i18n/store';
+import { canShowIosNativeUiSetting } from '@/lib/iosNativeUi';
 import { isCapacitorApp } from '@/lib/platform';
 import { isTranscriptDiagnosticsEnabled } from '@/sync/transcript-diagnostics-runtime';
 import type { SettingsPageSlug, SettingsRuntimeContext } from './metadata';
@@ -125,6 +126,14 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     descriptionKey: 'settings.openchamber.visual.field.mobileKeyboardModeHint',
     keywords: ['mobile', 'keyboard', 'resize'],
     isAvailable: (ctx) => ctx.isMobile && ctx.isWeb && !ctx.isDesktop && !ctx.isVSCode,
+  },
+  {
+    id: 'appearance.ios-native-ui',
+    page: 'appearance',
+    titleKey: 'settings.openchamber.visual.field.iosNativeUi',
+    descriptionKey: 'settings.openchamber.visual.field.iosNativeUiHint',
+    keywords: ['ios', 'native', 'webview', 'composer', 'tab bar', 'live activity'],
+    isAvailable: () => canShowIosNativeUiSetting(),
   },
   {
     id: 'appearance.interface-font-size',

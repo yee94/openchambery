@@ -4,6 +4,7 @@ import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
 import { useNativeIosComposer } from './useNativeIosComposer';
+import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, getNativeIosComposerPlugin, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
@@ -1058,6 +1059,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     surface: surfaceProp,
 }) => {
     const { t } = useI18n();
+    const iosNativeUiEnabled = useIosNativeUiEnabled();
     const [attachmentPopup, setAttachmentPopup] = React.useState<ToolPopupContent>({
         open: false,
         title: '',
@@ -2106,7 +2108,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     // Combined source-mode highlight: markdown syntax + @mentions. Returns null
     // when there's nothing to highlight so the overlay stays off for plain text.
-    const nativeComposerOwnedInput = canUseNativeIosComposer(isMobile) && surface.kind === 'primary';
+    const nativeComposerOwnedInput = iosNativeUiEnabled && canUseNativeIosComposer(isMobile) && surface.kind === 'primary';
     const highlightedComposerContent = React.useMemo(() => {
         if (!message || inputMode === 'shell') {
             return null;

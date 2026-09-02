@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 
 import { getAgentColor } from '@/lib/agentColors';
 import { getAgentIdenticonMatrix } from '@/lib/agentIdenticon';
+import { isIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
 export const NATIVE_IOS_COMPOSER_CLASS = 'oc-native-ios-composer';
@@ -189,13 +190,20 @@ export type NativeIosComposerAvailabilityInput = {
   platform: string;
   pluginAvailable: boolean;
   isMobile: boolean;
+  nativeUiEnabled?: boolean;
 };
 
 export const evaluateNativeIosComposerAvailability = (
   input: NativeIosComposerAvailabilityInput,
-): boolean => input.isCapacitor && input.platform === 'ios' && input.pluginAvailable && input.isMobile;
+): boolean => (
+  input.isCapacitor
+  && input.platform === 'ios'
+  && input.pluginAvailable
+  && input.isMobile
+  && input.nativeUiEnabled !== false
+);
 
-/** True only on Capacitor iPhone/iPad when the native composer plugin is registered. */
+/** True only on Capacitor iPhone/iPad when the native composer plugin is registered and native UI is on. */
 export function canUseNativeIosComposer(isMobile: boolean): boolean {
   if (typeof window === 'undefined') return false;
   return evaluateNativeIosComposerAvailability({
@@ -203,6 +211,7 @@ export function canUseNativeIosComposer(isMobile: boolean): boolean {
     platform: getClientPlatform(),
     pluginAvailable: Capacitor.isPluginAvailable(NATIVE_IOS_COMPOSER_PLUGIN),
     isMobile,
+    nativeUiEnabled: isIosNativeUiEnabled(),
   });
 }
 

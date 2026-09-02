@@ -1649,6 +1649,8 @@
   'settings.openchamber.visual.field.macVibrancyHint': '在側邊欄後使用 macOS 原生模糊（vibrancy）。關閉以獲得完全不透明的介面。',
   'settings.openchamber.visual.field.dockBadge': 'Dock 標記',
   'settings.openchamber.visual.field.dockBadgeHint': '在 macOS Dock 圖示上顯示有未讀動態的對話數量。',
+  'settings.openchamber.visual.field.iosNativeUi': '原生 iOS 介面',
+  'settings.openchamber.visual.field.iosNativeUiHint': '使用原生輸入框、標籤列和即時動態。關閉後與 Android 的 WebView 表現一致。',
   'settings.openchamber.visual.actions.saveAndRestart': '儲存並重新啟動',
   'settings.openchamber.visual.actions.restarting': '正在重新啟動…',
   'settings.openchamber.visual.actions.reloadingThemes': '正在重新載入主題...',

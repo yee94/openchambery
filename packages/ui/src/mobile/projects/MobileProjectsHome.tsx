@@ -85,6 +85,7 @@ export type MobileProjectHomeItem = MobileProjectCardModel & {
 export type MobileProjectsHomeProps = {
   projects: MobileProjectHomeItem[];
   pinnedSessions: MobileSessionTreeNode[];
+  inProgressSessions?: MobileSessionTreeNode[];
   onAddProject: () => void;
   onNewSession: () => void;
   onScanQr?: () => void;
@@ -477,6 +478,7 @@ function MobileWorktreeGroupLabel({
 export function MobileProjectsHome({
   projects,
   pinnedSessions,
+  inProgressSessions = [],
   onAddProject,
   onNewSession,
   onScanQr,
@@ -635,7 +637,7 @@ export function MobileProjectsHome({
         </div>
       ) : null}
 
-      {!searching && pinnedSessions.length > 0 ? (
+      {!searching && (pinnedSessions.length > 0 || inProgressSessions.length > 0) ? (
         <MobileFloatingSurface asChild>
           <section className="oc-mobile-project-shell" aria-label={t('mobile.sessions.section.pinned')}>
             <MobileProjectCard
@@ -644,7 +646,7 @@ export function MobileProjectsHome({
                 name: t('mobile.sessions.section.pinned'),
                 path: '',
                 icon: 'pushpin',
-                sessionCount: pinnedSessions.length,
+                sessionCount: pinnedSessions.length + inProgressSessions.length,
               }}
               expanded={pinnedExpanded}
               embedded
@@ -652,15 +654,28 @@ export function MobileProjectsHome({
             />
             {pinnedExpanded ? (
               <div className="oc-mobile-project-groups" role="group">
-                <div className="oc-mobile-labeled-surface-group">
-                  <SessionList
-                    sessions={pinnedSessions}
-                    onSelectSession={onSelectSession}
-                    onPinSession={onPinSession}
-                    onArchiveSession={onArchiveSession}
-                    onOpenSessionActions={onOpenSessionActions}
-                  />
-                </div>
+                {pinnedSessions.length > 0 ? (
+                  <div className="oc-mobile-labeled-surface-group">
+                    <SessionList
+                      sessions={pinnedSessions}
+                      onSelectSession={onSelectSession}
+                      onPinSession={onPinSession}
+                      onArchiveSession={onArchiveSession}
+                      onOpenSessionActions={onOpenSessionActions}
+                    />
+                  </div>
+                ) : null}
+                {inProgressSessions.length > 0 ? (
+                  <div className="oc-mobile-labeled-surface-group">
+                    <SessionList
+                      sessions={inProgressSessions}
+                      onSelectSession={onSelectSession}
+                      onPinSession={onPinSession}
+                      onArchiveSession={onArchiveSession}
+                      onOpenSessionActions={onOpenSessionActions}
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </section>

@@ -6,6 +6,7 @@ import {
   hasActiveMobileOverlay,
   MOBILE_OVERLAY_ACTIVE_ATTRIBUTE,
 } from '@/components/ui/MobileOverlayPresence';
+import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import {
   canUseNativeIosTabBar,
   getNativeIosTabBarPlugin,
@@ -38,7 +39,8 @@ export type NativeIosTabBarMode = 'web' | 'pending' | 'native';
  * `tabSelected`. Older iOS / web / Android keep the Web `MobileTabBar`.
  */
 export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBarMode {
-  const available = canUseNativeIosTabBar();
+  const nativeUiEnabled = useIosNativeUiEnabled();
+  const available = nativeUiEnabled && canUseNativeIosTabBar();
   const [adopted, setAdopted] = useState(false);
   const [rejected, setRejected] = useState(false);
   const [overlayBusy, setOverlayBusy] = useState(false);

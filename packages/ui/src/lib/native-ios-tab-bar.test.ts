@@ -49,6 +49,18 @@ describe('native iOS tab bar contract', () => {
       platform: 'ios',
       pluginAvailable: false,
     })).toBe(false);
+    expect(evaluateNativeIosTabBarAvailability({
+      isCapacitor: true,
+      platform: 'ios',
+      pluginAvailable: true,
+      nativeUiEnabled: false,
+    })).toBe(false);
+    expect(evaluateNativeIosTabBarAvailability({
+      isCapacitor: true,
+      platform: 'ios',
+      pluginAvailable: true,
+      nativeUiEnabled: true,
+    })).toBe(true);
   });
 
   test('parses allowlisted tab ids and rejects anything else', () => {

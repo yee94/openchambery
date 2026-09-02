@@ -1772,6 +1772,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.macVibrancyHint': 'Use the native macOS blur (vibrancy) behind the sidebar. Turn off for fully solid, opaque surfaces.',
   'settings.openchamber.visual.field.dockBadge': 'Dock badge',
   'settings.openchamber.visual.field.dockBadgeHint': 'Show a count of chats with unseen activity on the macOS dock icon.',
+  'settings.openchamber.visual.field.iosNativeUi': 'Native iOS interface',
+  'settings.openchamber.visual.field.iosNativeUiHint': 'Use the native composer, tab bar, and Live Activities. Turn off to match the Android web view.',
   'settings.openchamber.visual.actions.saveAndRestart': 'Save & restart',
   'settings.openchamber.visual.actions.restarting': 'Restarting…',
   'settings.openchamber.visual.field.themeImportInfoAria': 'Theme import info',

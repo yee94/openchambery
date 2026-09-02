@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
+import { isIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { resolveCssVarToHex } from '@/lib/native-ios-composer';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
@@ -58,19 +59,26 @@ export type NativeIosTabBarAvailabilityInput = {
   isCapacitor: boolean;
   platform: string;
   pluginAvailable: boolean;
+  nativeUiEnabled?: boolean;
 };
 
 export const evaluateNativeIosTabBarAvailability = (
   input: NativeIosTabBarAvailabilityInput,
-): boolean => input.isCapacitor && input.platform === 'ios' && input.pluginAvailable;
+): boolean => (
+  input.isCapacitor
+  && input.platform === 'ios'
+  && input.pluginAvailable
+  && input.nativeUiEnabled !== false
+);
 
-/** True on Capacitor iOS when the native tab-bar plugin is registered. Glass adoption is decided natively. */
+/** True on Capacitor iOS when the native tab-bar plugin is registered and native UI is on. Glass adoption is decided natively. */
 export function canUseNativeIosTabBar(): boolean {
   if (typeof window === 'undefined') return false;
   return evaluateNativeIosTabBarAvailability({
     isCapacitor: isCapacitorApp(),
     platform: getClientPlatform(),
     pluginAvailable: Capacitor.isPluginAvailable(NATIVE_IOS_TAB_BAR_PLUGIN),
+    nativeUiEnabled: isIosNativeUiEnabled(),
   });
 }
 

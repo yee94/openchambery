@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
+import { isIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
 const NATIVE_IOS_LIVE_ACTIVITY_PLUGIN = 'OpenChamberLiveActivity';
@@ -63,18 +64,27 @@ type NativeLiveActivityAvailabilityInput = {
   isCapacitor: boolean;
   platform: string;
   pluginAvailable: boolean;
+  nativeUiEnabled?: boolean;
 };
 
 export const evaluateNativeIosLiveActivityAvailability = (
   input: NativeLiveActivityAvailabilityInput,
-): boolean => input.isCapacitor && input.platform === 'ios' && input.pluginAvailable;
+): boolean => (
+  input.isCapacitor
+  && input.platform === 'ios'
+  && input.pluginAvailable
+  && input.nativeUiEnabled !== false
+);
 
-/** True only on Capacitor native iOS when the Live Activity plugin is registered. */
+/** True only on Capacitor native iOS when the Live Activity plugin is registered and native UI is on. */
 export function canUseNativeIosLiveActivity(): boolean {
   if (typeof window === 'undefined') return false;
-  if (!isCapacitorApp()) return false;
-  if (getClientPlatform() !== 'ios') return false;
-  return Capacitor.isPluginAvailable(NATIVE_IOS_LIVE_ACTIVITY_PLUGIN);
+  return evaluateNativeIosLiveActivityAvailability({
+    isCapacitor: isCapacitorApp(),
+    platform: getClientPlatform(),
+    pluginAvailable: Capacitor.isPluginAvailable(NATIVE_IOS_LIVE_ACTIVITY_PLUGIN),
+    nativeUiEnabled: isIosNativeUiEnabled(),
+  });
 }
 
 export const getNativeIosLiveActivityPlugin = (): NativeLiveActivityPlugin => OpenChamberLiveActivity;

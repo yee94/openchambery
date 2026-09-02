@@ -22,7 +22,10 @@ import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrder
 import { useNotificationStore } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
-import { useAlwaysVisibleSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import {
+  mergeAlwaysVisibleSessionIds,
+  useRunningSessionIds,
+} from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
 import { derivePinnedSessions } from '@/components/session/sidebar/pinnedSessions';
 import { createSessionOwnershipIndex } from '@/components/session/sidebar/sessionOwnership';
 import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
@@ -149,9 +152,33 @@ export const listProjectAreaRootSessions = (
   omitPinnedSessions: true,
 }).map((node) => node.session);
 
+/**
+ * Non-pinned home-attention rows: live busy/retry sessions, plus top-level
+ * unread sessions (the blue completed-unread marker). Pinned ids stay in the
+ * pinned group; archived sessions stay out of this ephemeral set.
+ */
+export const listInProgressHomeSessions = (
+  sessions: Session[],
+  pinnedSessionIds: ReadonlySet<string>,
+  runningSessionIds: ReadonlySet<string>,
+  unseenBySession: Readonly<Record<string, number>>,
+): Session[] => {
+  const active: Session[] = [];
+  for (const session of sessions) {
+    if (pinnedSessionIds.has(session.id) || isSessionArchived(session)) continue;
+    const running = runningSessionIds.has(session.id);
+    const unread = (unseenBySession[session.id] ?? 0) > 0 && !getParentId(session);
+    if (!running && !unread) continue;
+    active.push(session);
+  }
+  active.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
+  return active;
+};
+
 export type MobileProjectsHomeModel = {
   projects: MobileProjectHomeItem[];
   pinnedSessions: MobileSessionTreeNode[];
+  inProgressSessions: MobileSessionTreeNode[];
   sessionById: Map<string, Session>;
   projectMetaById: Map<string, ProjectMeta>;
   allSessions: Session[];
@@ -188,7 +215,11 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const unseenBySession = useNotificationStore((state) => state.index.session.unseenCount);
   // Ephemeral per-bucket visible root count (mirrors MobileSessionsSheet).
   const [visibleCountByBucket, setVisibleCountByBucket] = React.useState<Map<string, number>>(new Map());
-  const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds();
+  const runningSessionIds = useRunningSessionIds();
+  const alwaysVisibleSessionIds = React.useMemo(
+    () => mergeAlwaysVisibleSessionIds(runningSessionIds, currentSessionId),
+    [currentSessionId, runningSessionIds],
+  );
 
   const projectsMeta = React.useMemo<ProjectMeta[]>(
     () =>
@@ -312,25 +343,45 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     return map;
   }, [projectsMeta]);
 
-  const pinnedSessions = React.useMemo<MobileSessionTreeNode[]>(() => {
+  const { pinnedSessions, inProgressSessions } = React.useMemo(() => {
     const projectById = new Map(projectsMeta.map((project) => [project.id, project]));
-    return derivePinnedSessions(sessions, pinnedSessionIds).flatMap((session) => {
+    const untitled = t('mobile.sessions.untitled');
+    const toNode = (session: Session, pinned: boolean): MobileSessionTreeNode[] => {
       const owner = ownership.bySessionId.get(session.id);
       const project = owner ? projectById.get(owner.projectId) : undefined;
       if (!project) return [];
       return [{
         id: session.id,
         directory: getSessionDirectory(session),
-        title: session.title?.trim() || t('mobile.sessions.untitled'),
+        title: session.title?.trim() || untitled,
         subtitle: project.label,
         activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
         unread: (unseenBySession[session.id] ?? 0) > 0,
-        pinned: true,
+        pinned,
         archived: isSessionArchived(session),
         active: currentSessionId === session.id,
       }];
-    });
-  }, [currentSessionId, ownership, pinnedSessionIds, projectsMeta, sessions, t, unseenBySession]);
+    };
+    return {
+      pinnedSessions: derivePinnedSessions(sessions, pinnedSessionIds)
+        .flatMap((session) => toNode(session, true)),
+      inProgressSessions: listInProgressHomeSessions(
+        sessions,
+        pinnedSessionIds,
+        runningSessionIds,
+        unseenBySession,
+      ).flatMap((session) => toNode(session, false)),
+    };
+  }, [
+    currentSessionId,
+    ownership,
+    pinnedSessionIds,
+    projectsMeta,
+    runningSessionIds,
+    sessions,
+    t,
+    unseenBySession,
+  ]);
 
   const bucketIndex = React.useMemo(() => {
     const map = new Map<string, { path: string; rootCount: number; hasWorktrees: boolean }>();
@@ -544,6 +595,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   return {
     projects: homeProjects,
     pinnedSessions,
+    inProgressSessions,
     sessionById,
     projectMetaById,
     allSessions: sessions,

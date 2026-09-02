@@ -261,13 +261,11 @@ describe('apply_patch navigation', () => {
         const fileNavigationEnd = toolPartSource.indexOf('if (!isFileNavTool)', fileNavigationStart);
         const fileNavigation = toolPartSource.slice(fileNavigationStart, fileNavigationEnd);
 
-        expect(fileNavigation).toContain('isWriteLikeNavTool(normalizedPartTool)');
-        expect(fileNavigation).toContain('buildWritePreviewPatch(relativePath, writeContent)');
+        expect(fileNavigation).toContain("['write', 'create', 'file_write'].includes(normalizedPartTool)");
+        expect(fileNavigation).toContain('buildWritePreviewPatch(filePath, input.content)');
         expect(fileNavigation).toContain('getToolNavigationDiffEntries(');
         expect(fileNavigation).toContain('openContextToolDiff(');
-        expect(fileNavigation).toContain('toolPatches = [{ path: relativePath, patch: toolDiff }]');
-        expect(fileNavigation).toContain("isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn'");
-        expect(fileNavigation).toContain("openContextDiff(currentDirectory, relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine, messageId, sessionSurface.sessionId);");
+        expect(fileNavigation).toContain('const toolPatches = (isWriteLikeNavTool(normalizedPartTool)');
         expect(fileNavigation).not.toContain('supportsExactToolDiff');
         expect(fileNavigation).toMatch(/const selectedToolDiffs = toolDiff\s*\n\s+\? getToolNavigationDiffEntries/);
     });

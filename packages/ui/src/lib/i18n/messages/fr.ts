@@ -2923,7 +2923,7 @@ export const dict = {
   'mobile.sessions.dateGroup.older': 'Plus ancien',
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.mainWorkspace': 'Espace de travail principal',
-  'mobile.sessions.section.pinned': 'Épinglés',
+  'mobile.sessions.section.pinned': 'Épinglés / En cours',
   'mobile.sessions.searchAria': 'Rechercher des sessions',
   'mobile.sessions.section.otherProjects': 'Changer de projet',
   'mobile.sessions.section.projects': 'Projets',

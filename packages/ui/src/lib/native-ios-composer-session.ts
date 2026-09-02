@@ -175,6 +175,19 @@ export const createNativeIosComposerSession = (
         commitHide(root);
       }, 0);
     },
+    /**
+     * Drop a warmed/retained overlay immediately (native-UI kill switch).
+     * Resets `warmed` so a later `warm` can reinstall.
+     */
+    shutdown(root: HTMLElement = document.documentElement): void {
+      cancelHide();
+      retainCount = 0;
+      warmed = false;
+      concealed = false;
+      handlers = null;
+      setNativeComposerDocumentClass(root, false);
+      void getPlugin().dismiss();
+    },
     /** Test / reset only. */
     snapshot(): {
       retainCount: number;

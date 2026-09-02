@@ -128,7 +128,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.sessions.dateGroup.older": "Mais antigos",
   "mobile.sessions.section.worktrees": "Worktrees",
   "mobile.sessions.mainWorkspace": "Área de trabalho principal",
-  "mobile.sessions.section.pinned": "Fixados",
+  "mobile.sessions.section.pinned": "Fixados / Em andamento",
   "mobile.sessions.searchAria": "Pesquisar sessões",
   "mobile.sessions.section.otherProjects": "Trocar de projeto",
   "mobile.sessions.section.projects": "Projetos",

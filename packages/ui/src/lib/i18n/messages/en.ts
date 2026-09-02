@@ -128,7 +128,7 @@ export const dict = {
   'mobile.sessions.dateGroup.older': 'Older',
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.mainWorkspace': 'Main workspace',
-  'mobile.sessions.section.pinned': 'Pinned',
+  'mobile.sessions.section.pinned': 'Pinned / In progress',
   'mobile.sessions.searchAria': 'Search sessions',
   'mobile.sessions.section.otherProjects': 'Switch project',
   'mobile.sessions.section.projects': 'Projects',

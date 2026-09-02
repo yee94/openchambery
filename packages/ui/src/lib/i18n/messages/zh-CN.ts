@@ -128,7 +128,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.dateGroup.older': '更早',
   'mobile.sessions.section.worktrees': '工作树',
   'mobile.sessions.mainWorkspace': '主工作区',
-  'mobile.sessions.section.pinned': '置顶',
+  'mobile.sessions.section.pinned': '置顶/进行中',
   'mobile.sessions.searchAria': '搜索会话',
   'mobile.sessions.section.otherProjects': '切换项目',
   'mobile.sessions.section.projects': '项目',

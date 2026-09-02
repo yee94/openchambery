@@ -129,7 +129,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.dateGroup.older': 'Starsze',
   'mobile.sessions.section.worktrees': 'Worktrees',
   'mobile.sessions.mainWorkspace': 'Główny obszar roboczy',
-  'mobile.sessions.section.pinned': 'Przypięte',
+  'mobile.sessions.section.pinned': 'Przypięte / W toku',
   'mobile.sessions.searchAria': 'Szukaj sesji',
   'mobile.sessions.section.otherProjects': 'Zmień projekt',
   'mobile.sessions.section.projects': 'Projekty',

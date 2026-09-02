@@ -1738,6 +1738,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.macVibrancyHint': '사이드바 뒤에 macOS 기본 블러(vibrancy)를 사용합니다. 완전히 불투명한 표면을 원하면 끄세요.',
   'settings.openchamber.visual.field.dockBadge': 'Dock 배지',
   'settings.openchamber.visual.field.dockBadgeHint': '확인하지 않은 활동이 있는 채팅 수를 macOS Dock 아이콘에 표시합니다.',
+  'settings.openchamber.visual.field.iosNativeUi': '네이티브 iOS 인터페이스',
+  'settings.openchamber.visual.field.iosNativeUiHint': '네이티브 입력창, 탭 바, 실시간 활동을 사용합니다. 끄면 Android WebView와 같이 동작합니다.',
   'settings.openchamber.visual.actions.saveAndRestart': '저장 후 재시작',
   'settings.openchamber.visual.actions.restarting': '재시작 중…',
   'settings.openchamber.visual.actions.reloadingThemes': '테마 다시 로드 중...',

@@ -37,7 +37,9 @@ import {
     SettingsField,
     SettingsGroup,
     SettingsRow,
+    SettingsToggleRow,
 } from '@/components/sections/shared/SettingsGroup';
+import { canShowIosNativeUiSetting, useIosNativeUiStore } from '@/lib/iosNativeUi';
 import {
     Dialog,
     DialogContent,
@@ -426,6 +428,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setPromptNavigatorEnabled = useUIStore(state => state.setPromptNavigatorEnabled);
     const expandedEditorToolbar = useUIStore(state => state.expandedEditorToolbar);
     const setExpandedEditorToolbar = useUIStore(state => state.setExpandedEditorToolbar);
+    const iosNativeUiEnabled = useIosNativeUiStore((state) => state.enabled);
+    const setIosNativeUiEnabled = useIosNativeUiStore((state) => state.setEnabled);
     const wideChatLayoutEnabled = useUIStore(state => state.wideChatLayoutEnabled);
     const setWideChatLayoutEnabled = useUIStore(state => state.setWideChatLayoutEnabled);
     const codeBlockLineWrap = useUIStore(state => state.codeBlockLineWrap);
@@ -733,11 +737,12 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     };
 
     const isVSCode = isVSCodeRuntime();
+    const showIosNativeUiSetting = canShowIosNativeUiSetting();
     const hasThemeSettings = shouldShow('theme') && !isVSCode;
     const hasLocalizationSettings = shouldShow('theme') || shouldShow('timeFormat') || shouldShow('weekStart');
     const hasAppearanceSettings = isVSCode
         ? (hasLocalizationSettings || shouldShow('sidebarBrand'))
-        : (shouldShow('theme') || shouldShow('sidebarBrand') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('mobileKeyboardMode') || shouldShow('timeFormat') || shouldShow('weekStart'));
+        : (shouldShow('theme') || shouldShow('sidebarBrand') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('mobileKeyboardMode') || shouldShow('timeFormat') || shouldShow('weekStart') || showIosNativeUiSetting);
     const hasLayoutSettings = shouldShow('fontSize') || shouldShow('codeFontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') || shouldShow('spacing') || shouldShow('inputBarOffset');
     const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || shouldShow('fileEditorKeymap') || shouldShow('expandedEditorToolbar');
     const hasBehaviorSettings = shouldShow('mermaidRendering')
@@ -1095,6 +1100,19 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </div>
                                     </div>
                                 )}
+                            </ResponsiveSettingsGroup>
+                        )}
+
+                        {showIosNativeUiSetting && (
+                            <ResponsiveSettingsGroup isMobile={isMobile}>
+                                <SettingsToggleRow
+                                    itemId="appearance.ios-native-ui"
+                                    checked={iosNativeUiEnabled}
+                                    onChange={setIosNativeUiEnabled}
+                                    label={t('settings.openchamber.visual.field.iosNativeUi')}
+                                    description={t('settings.openchamber.visual.field.iosNativeUiHint')}
+                                    ariaLabel={t('settings.openchamber.visual.field.iosNativeUi')}
+                                />
                             </ResponsiveSettingsGroup>
                         )}
 

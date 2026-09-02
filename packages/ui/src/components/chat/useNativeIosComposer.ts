@@ -5,6 +5,7 @@ import { findAttachmentCitationRanges } from '@/components/chat/attachmentCitati
 import type { ComposerAutocompleteListRow } from '@/lib/composer-autocomplete';
 import { rasterizeSpriteIconPngBase64 } from '@/lib/composer-autocomplete';
 import { resolveModelLogoSrc } from '@/hooks/useModelLogo';
+import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { attachNativeIosComposerLeaveConceal } from '@/lib/native-ios-composer-leave';
 import { nativeIosComposerSession } from '@/lib/native-ios-composer-session';
 import {
@@ -134,7 +135,8 @@ const noopAutocompleteDismiss = (): void => undefined;
  * the resulting File objects.
  */
 export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
-  const available = args.enabled && canUseNativeIosComposer(args.isMobile);
+  const nativeUiEnabled = useIosNativeUiEnabled();
+  const available = nativeUiEnabled && args.enabled && canUseNativeIosComposer(args.isMobile);
   const lastStateRef = useRef<NativeIosComposerState | null>(null);
   const nativeTextRef = useRef(args.text);
   const echoingNativeRef = useRef(false);

@@ -71,8 +71,47 @@ describe('MobileProjectsHome workspace groups', () => {
     expect(html).toContain('OpenChamber');
     expect(html).toContain('oc-mobile-project-shell');
     expect(html.indexOf('Global pinned session')).toBeLessThan(html.indexOf('Main session'));
-    expect(html.match(/aria-label="Pinned"/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Pinned \/ In progress"/g)).toHaveLength(1);
     expect(html).toContain('oc-mobile-project-card');
+  });
+
+  test('groups pinned sessions above in-progress sessions without extra labels', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileProjectsHome
+          {...props}
+          inProgressSessions={[{
+            id: 'running-session',
+            kind: 'pagination',
+            title: 'Running session',
+            subtitle: 'OpenChamber',
+          }]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html.indexOf('Global pinned session')).toBeLessThan(html.indexOf('Running session'));
+    expect(html.indexOf('Running session')).toBeLessThan(html.indexOf('Main session'));
+  });
+
+  test('still renders the attention card when only in-progress sessions exist', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileProjectsHome
+          {...props}
+          pinnedSessions={[]}
+          inProgressSessions={[{
+            id: 'unread-session',
+            kind: 'pagination',
+            title: 'Unread session',
+            unread: true,
+          }]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Unread session');
+    expect(html).toContain('aria-label="Pinned / In progress"');
   });
 
   test('renders main sessions directly and keeps linked worktree headers', () => {

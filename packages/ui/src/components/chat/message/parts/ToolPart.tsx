@@ -441,17 +441,7 @@ const getPrimaryDiffFromMetadata = (
     metadata?: Record<string, unknown>,
     preferredPath?: string,
 ): string | undefined => {
-    if (
-        !metadata
-        || (
-            tool !== 'edit'
-            && tool !== 'multiedit'
-            && tool !== 'apply_patch'
-            && tool !== 'write'
-            && tool !== 'create'
-            && tool !== 'file_write'
-        )
-    ) {
+    if (!metadata || (tool !== 'edit' && tool !== 'multiedit' && tool !== 'apply_patch')) {
         return undefined;
     }
 
@@ -465,11 +455,8 @@ const getPrimaryDiffFromMetadata = (
                 if (!file || typeof file !== 'object') {
                     return false;
                 }
-                const candidate = file as { relativePath?: unknown; filePath?: unknown; movePath?: unknown; file?: unknown };
-                return candidate.relativePath === preferred
-                    || candidate.filePath === preferred
-                    || candidate.movePath === preferred
-                    || candidate.file === preferred;
+                const candidate = file as { relativePath?: unknown; filePath?: unknown; movePath?: unknown };
+                return candidate.relativePath === preferred || candidate.filePath === preferred || candidate.movePath === preferred;
             })
             : files[0];
 
@@ -629,23 +616,14 @@ const getPrimaryToolPath = (
                     : null;
     }
 
-    if (toolName === 'write' || toolName === 'create' || toolName === 'file_write') {
-        if (fileDiffPath) {
-            return fileDiffPath;
-        }
+    if (toolName === 'write') {
         return typeof input?.filePath === 'string'
             ? input.filePath
             : typeof input?.file_path === 'string'
                 ? input.file_path
                 : typeof input?.path === 'string'
                     ? input.path
-                    : typeof metadata?.filePath === 'string'
-                        ? metadata.filePath
-                        : typeof metadata?.file_path === 'string'
-                            ? metadata.file_path
-                            : typeof metadata?.path === 'string'
-                                ? metadata.path
-                                : null;
+                    : null;
     }
 
     return null;
@@ -2302,11 +2280,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             : null;
     }, [metadata, normalizedPartTool]);
     const writeLineCount = React.useMemo(() => {
-        if (normalizedPartTool !== 'write' && normalizedPartTool !== 'create' && normalizedPartTool !== 'file_write') {
-            return null;
-        }
-        return parseWriteLineCount(input) ?? parseDiffCount(metadata?.additions);
-    }, [input, metadata, normalizedPartTool]);
+        return normalizedPartTool === 'write' ? parseWriteLineCount(input) : null;
+    }, [input, normalizedPartTool]);
     const isMultiFileApplyPatch = normalizedPartTool === 'apply_patch' && Array.isArray(metadata?.files) && (metadata?.files as []).length > 1;
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
     const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
@@ -2497,15 +2472,12 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             if (typeof filePath === 'string') {
                 toolDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath);
             }
-        } else if (isWriteLikeNavTool(normalizedPartTool)) {
-            filePath = getPrimaryToolPath(normalizedPartTool, input, metadata)
-                || input?.filePath
-                || input?.file_path
-                || input?.path
-                || metadata?.filePath
-                || metadata?.file_path
-                || metadata?.path;
+        } else if (['write', 'create', 'file_write'].includes(normalizedPartTool)) {
+            filePath = input?.filePath || input?.file_path || input?.path || metadata?.filePath || metadata?.file_path || metadata?.path;
             targetLine = 1;
+            if (typeof filePath === 'string' && typeof input?.content === 'string') {
+                toolDiff = buildWritePreviewPatch(filePath, input.content);
+            }
         } else if (normalizedPartTool === 'lsp') {
             filePath = input?.filePath || input?.file_path || input?.path;
             const line = input?.line;
@@ -2522,22 +2494,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
             if (isFileNavTool) {
                 const relativePath = getRelativePath(absolutePath, currentDirectory);
-                if (isWriteLikeNavTool(normalizedPartTool)) {
-                    const metadataDiff = getPrimaryDiffFromMetadata(normalizedPartTool, metadata, relativePath)
-                        ?? (typeof filePath === 'string'
-                            ? getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath)
-                            : undefined)
-                        ?? getPrimaryDiffFromMetadata(normalizedPartTool, metadata);
-                    const writeContent = typeof input?.content === 'string' ? input.content : undefined;
-                    toolDiff = metadataDiff
-                        ?? (writeContent ? buildWritePreviewPatch(relativePath, writeContent) : undefined);
-                    if (toolDiff) {
-                        const line = extractFirstChangedLineFromDiff(toolDiff);
-                        if (typeof line === 'number' && Number.isFinite(line)) {
-                            targetLine = line;
-                        }
-                    }
-                }
                 const selectedToolDiffs = toolDiff
                     ? getToolNavigationDiffEntries(
                         normalizedPartTool,
@@ -2547,17 +2503,13 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         (path) => getRelativePath(path, currentDirectory),
                     )
                     : [];
-                let toolPatches = selectedToolDiffs.map((entry) => ({
-                    path: entry.title,
-                    patch: entry.patch,
-                }));
-                // Parsed patch titles can keep a/b prefixes or absolute tails;
-                // the opened view keys files by this path and the click target.
-                if (toolDiff && toolPatches.length === 0) {
-                    toolPatches = [{ path: relativePath, patch: toolDiff }];
-                } else if (isWriteLikeNavTool(normalizedPartTool) && toolPatches.length === 1 && toolPatches[0]) {
-                    toolPatches = [{ path: relativePath, patch: toolPatches[0].patch }];
-                }
+                // 写入是单文件补丁：打开视图按点击目标寻址，把补丁路径统一成
+                // relativePath，避免绝对路径 / a-b 前缀让单文件视图找不到该文件。
+                const toolPatches = (isWriteLikeNavTool(normalizedPartTool)
+                    && selectedToolDiffs.length === 1
+                    && selectedToolDiffs[0])
+                    ? [{ path: relativePath, patch: selectedToolDiffs[0].patch }]
+                    : selectedToolDiffs.map((entry) => ({ path: entry.title, patch: entry.patch }));
 
                 if (runtime?.runtime.isVSCode && runtime.editor && toolDiff) {
                     const label = `${relativePath} (changes)`;

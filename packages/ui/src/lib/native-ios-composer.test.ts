@@ -99,6 +99,20 @@ describe('native iOS composer contract', () => {
       pluginAvailable: true,
       isMobile: false,
     })).toBe(false);
+    expect(evaluateNativeIosComposerAvailability({
+      isCapacitor: true,
+      platform: 'ios',
+      pluginAvailable: true,
+      isMobile: true,
+      nativeUiEnabled: false,
+    })).toBe(false);
+    expect(evaluateNativeIosComposerAvailability({
+      isCapacitor: true,
+      platform: 'ios',
+      pluginAvailable: true,
+      isMobile: true,
+      nativeUiEnabled: true,
+    })).toBe(true);
   });
 
   test('parses overlay height and ignores invalid payloads', () => {

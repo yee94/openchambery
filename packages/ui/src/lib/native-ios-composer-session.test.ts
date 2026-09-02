@@ -140,6 +140,26 @@ describe('native iOS composer session', () => {
     expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(true);
   });
 
+  test('shutdown dismisses a warmed overlay and allows warm again', async () => {
+    const { plugin } = createPlugin();
+    const session = createNativeIosComposerSession(() => plugin);
+    const root = document.createElement('html');
+
+    await session.warm();
+    session.shutdown(root);
+    expect(plugin.dismiss).toHaveBeenCalledTimes(1);
+    expect(session.snapshot()).toMatchObject({
+      retainCount: 0,
+      warmed: false,
+      concealed: false,
+    });
+    expect(root.classList.contains(NATIVE_IOS_COMPOSER_CLASS)).toBe(false);
+
+    await session.warm();
+    expect(plugin.present).toHaveBeenCalledTimes(2);
+    expect(session.snapshot().warmed).toBe(true);
+  });
+
   test('warm is a no-op while the overlay is retained', async () => {
     const { plugin } = createPlugin();
     const session = createNativeIosComposerSession(() => plugin);

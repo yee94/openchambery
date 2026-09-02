@@ -563,6 +563,7 @@ export function MobileProjectsHomeContainer({
         className={className}
         projects={model.projects}
         pinnedSessions={model.pinnedSessions}
+        inProgressSessions={model.inProgressSessions}
         onAddProject={onAddProject}
         onNewSession={handleNewSession}
         onScanQr={onScanQr}

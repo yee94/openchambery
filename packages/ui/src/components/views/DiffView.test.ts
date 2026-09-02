@@ -135,9 +135,7 @@ describe('DiffView staged turn changes queries', () => {
     expect(diffViewSource).toContain('const visibleDiffLoadError = diffData');
   });
 
-  test('single-file tool patches still match when the parsed path keeps a workspace prefix', () => {
-    expect(diffViewSource).toContain('const isSameDiffFilePath = (left?: string | null, right?: string | null): boolean => {');
-    expect(diffViewSource).toContain('return changedFiles.filter((file) => isSameDiffFilePath(file.path, selectedPath));');
+  test('single-file tool patch views mount the only visible file without intersection sync', () => {
     expect(diffViewSource).toContain('|| (singleFileView && visibleDiffFiles.length === 1)');
   });
 

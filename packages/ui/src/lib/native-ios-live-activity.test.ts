@@ -92,6 +92,18 @@ describe('native iOS Live Activity availability', () => {
       platform: 'ios',
       pluginAvailable: false,
     })).toBe(false);
+    expect(evaluateNativeIosLiveActivityAvailability({
+      isCapacitor: true,
+      platform: 'ios',
+      pluginAvailable: true,
+      nativeUiEnabled: false,
+    })).toBe(false);
+    expect(evaluateNativeIosLiveActivityAvailability({
+      isCapacitor: true,
+      platform: 'ios',
+      pluginAvailable: true,
+      nativeUiEnabled: true,
+    })).toBe(true);
   });
 });
 

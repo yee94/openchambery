@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useEvent } from '@reactuses/core';
 
+import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import {
   canUseNativeIosLiveActivity,
   createInitialNativeLiveActivityState,
@@ -27,7 +28,8 @@ export type UseNativeLiveActivityArgs = {
  * Plugin calls are no-ops on web / Electron / VS Code / Android.
  */
 export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
-  const available = canUseNativeIosLiveActivity();
+  const nativeUiEnabled = useIosNativeUiEnabled();
+  const available = nativeUiEnabled && canUseNativeIosLiveActivity();
   const connected = useConfigStore((state) => state.isConnected);
   const sessionId = available ? (args.sessionId ?? '') : '';
   const directory = available ? (args.directory ?? undefined) : undefined;
