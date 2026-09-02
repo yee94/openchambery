@@ -1,5 +1,4 @@
 import type { Session } from '@/lib/opencode/v2-types';
-import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
 import { rankFileMentionSearch, type FileMentionSearchHit } from '@/lib/search/fileMentionSearch';
 import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
