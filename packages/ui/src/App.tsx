@@ -39,7 +39,6 @@ import { markSessionViewed } from '@/sync/notification-store';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { opencodeClient } from '@/lib/opencode/client';
-import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeKey, isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { createRuntimeEndpointTransitionCoalescer } from '@/lib/runtime-endpoint-transition';
 import { useAutoReviewStore } from '@/stores/useAutoReviewStore';

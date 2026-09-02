@@ -47,7 +47,6 @@ import { isIPadApp } from '@/lib/platform';
 import { resolveProjectForDirectory, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, QUOTA_PROVIDERS } from '@/lib/quota';
 import { getDisplayModelName } from '@/lib/quota/model-families';
-import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { cn } from '@/lib/utils';
