@@ -314,6 +314,7 @@ struct OpenChamberWidgetBundle: WidgetBundle {
         QuickActionsWidget()
         LockNewSessionWidget()
         LockAttentionWidget()
+        OpenChamberLiveActivity()
         if #available(iOS 18.0, *) {
             OpenChamberNewSessionControl()
         }

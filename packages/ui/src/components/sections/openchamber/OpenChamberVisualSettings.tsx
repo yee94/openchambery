@@ -37,7 +37,9 @@ import {
     SettingsField,
     SettingsGroup,
     SettingsRow,
+    SettingsToggleRow,
 } from '@/components/sections/shared/SettingsGroup';
+import { canShowIosNativeUiSetting, useIosNativeUiStore } from '@/lib/iosNativeUi';
 import {
     Dialog,
     DialogContent,
@@ -402,9 +404,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const { browserTab } = usePwaDetection();
     const directoryShowHidden = useDirectoryShowHidden();
     const showReasoningTraces = useUIStore(state => state.showReasoningTraces);
-    const sessionRecapEnabled = useUIStore(state => state.sessionRecapEnabled);
     const sessionTitleRefreshEnabled = useUIStore(state => state.sessionTitleRefreshEnabled);
-    const setSessionRecapEnabled = useUIStore(state => state.setSessionRecapEnabled);
     const setSessionTitleRefreshEnabled = useUIStore(state => state.setSessionTitleRefreshEnabled);
     const sessionGoalEnabled = useUIStore(state => state.sessionGoalEnabled);
     const setSessionGoalEnabled = useUIStore(state => state.setSessionGoalEnabled);
@@ -428,6 +428,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setPromptNavigatorEnabled = useUIStore(state => state.setPromptNavigatorEnabled);
     const expandedEditorToolbar = useUIStore(state => state.expandedEditorToolbar);
     const setExpandedEditorToolbar = useUIStore(state => state.setExpandedEditorToolbar);
+    const iosNativeUiEnabled = useIosNativeUiStore((state) => state.enabled);
+    const setIosNativeUiEnabled = useIosNativeUiStore((state) => state.setEnabled);
     const wideChatLayoutEnabled = useUIStore(state => state.wideChatLayoutEnabled);
     const setWideChatLayoutEnabled = useUIStore(state => state.setWideChatLayoutEnabled);
     const codeBlockLineWrap = useUIStore(state => state.codeBlockLineWrap);
@@ -735,11 +737,12 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     };
 
     const isVSCode = isVSCodeRuntime();
+    const showIosNativeUiSetting = canShowIosNativeUiSetting();
     const hasThemeSettings = shouldShow('theme') && !isVSCode;
     const hasLocalizationSettings = shouldShow('theme') || shouldShow('timeFormat') || shouldShow('weekStart');
     const hasAppearanceSettings = isVSCode
         ? (hasLocalizationSettings || shouldShow('sidebarBrand'))
-        : (shouldShow('theme') || shouldShow('sidebarBrand') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('mobileKeyboardMode') || shouldShow('timeFormat') || shouldShow('weekStart'));
+        : (shouldShow('theme') || shouldShow('sidebarBrand') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('mobileKeyboardMode') || shouldShow('timeFormat') || shouldShow('weekStart') || showIosNativeUiSetting);
     const hasLayoutSettings = shouldShow('fontSize') || shouldShow('codeFontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') || shouldShow('spacing') || shouldShow('inputBarOffset');
     const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || shouldShow('fileEditorKeymap') || shouldShow('expandedEditorToolbar');
     const hasBehaviorSettings = shouldShow('mermaidRendering')
@@ -1097,6 +1100,19 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </div>
                                     </div>
                                 )}
+                            </ResponsiveSettingsGroup>
+                        )}
+
+                        {showIosNativeUiSetting && (
+                            <ResponsiveSettingsGroup isMobile={isMobile}>
+                                <SettingsToggleRow
+                                    itemId="appearance.ios-native-ui"
+                                    checked={iosNativeUiEnabled}
+                                    onChange={setIosNativeUiEnabled}
+                                    label={t('settings.openchamber.visual.field.iosNativeUi')}
+                                    description={t('settings.openchamber.visual.field.iosNativeUiHint')}
+                                    ariaLabel={t('settings.openchamber.visual.field.iosNativeUi')}
+                                />
                             </ResponsiveSettingsGroup>
                         )}
 
@@ -2015,50 +2031,27 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             label={<span data-settings-item="chat.session-assistance">{t('settings.openchamber.visual.section.sessionAssistance')}</span>}
                                         >
                                             {shouldShow('sessionAssist') && (
-                                        <>
-                                        <div
-                                            data-settings-item="chat.session-recap"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={sessionRecapEnabled}
-                                            onClick={() => setSessionRecapEnabled(!sessionRecapEnabled)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setSessionRecapEnabled(!sessionRecapEnabled);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={sessionRecapEnabled}
-                                                onChange={setSessionRecapEnabled}
-                                                ariaLabel={t('settings.openchamber.visual.field.sessionRecapAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sessionRecap')}</span>
-                                        </div>
-                                        <div
-                                            data-settings-item="chat.session-title-refresh"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={sessionTitleRefreshEnabled}
-                                            onClick={() => setSessionTitleRefreshEnabled(!sessionTitleRefreshEnabled)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setSessionTitleRefreshEnabled(!sessionTitleRefreshEnabled);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={sessionTitleRefreshEnabled}
-                                                onChange={setSessionTitleRefreshEnabled}
-                                                ariaLabel={t('settings.openchamber.visual.field.sessionTitleRefreshAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sessionTitleRefresh')}</span>
-                                        </div>
-                                        </>
+                                                <div
+                                                    data-settings-item="chat.session-title-refresh"
+                                                    className="group flex cursor-pointer items-center gap-2 py-0.5"
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    aria-pressed={sessionTitleRefreshEnabled}
+                                                    onClick={() => setSessionTitleRefreshEnabled(!sessionTitleRefreshEnabled)}
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === ' ' || event.key === 'Enter') {
+                                                            event.preventDefault();
+                                                            setSessionTitleRefreshEnabled(!sessionTitleRefreshEnabled);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Checkbox
+                                                        checked={sessionTitleRefreshEnabled}
+                                                        onChange={setSessionTitleRefreshEnabled}
+                                                        ariaLabel={t('settings.openchamber.visual.field.sessionTitleRefreshAria')}
+                                                    />
+                                                    <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sessionTitleRefresh')}</span>
+                                                </div>
                                             )}
                                             {shouldShow('subagentReadOnlyBanner') && (
                                                 <div

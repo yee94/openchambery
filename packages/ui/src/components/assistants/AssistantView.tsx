@@ -87,6 +87,7 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
       title={displayName || t('assistants.title')}
       backAriaLabel={t('assistants.actions.backToChat')}
       onBack={onBack}
+      overlay
     />
   );
 };
@@ -143,7 +144,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
               setMenuOpen(true);
             }}
             className={cn(
-              'flex w-full min-h-11 items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,transform,opacity] duration-150 ease-out active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
+              'flex w-full min-h-11 items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,opacity] duration-150 ease-out active:bg-interactive-active focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
               selected
                 ? 'border-border/50 bg-[var(--surface-elevated)]'
                 : 'border-transparent hover:bg-interactive-hover',
@@ -623,15 +624,15 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     }
     returnToChat();
   });
-  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
+  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="relative flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
   if (capabilityQuery.isPending || snapshotQuery.isPending) return renderState('ai-agent', t('assistants.state.unavailable'));
   if (capabilityQuery.isError || !capabilityQuery.data?.supported || !capabilityQuery.data.enabled || !snapshot?.enabled) return renderState('cloud-off', t('assistants.state.unavailable'));
   if (!snapshot.assistants.length) return renderState('ai-agent', t('assistants.onboarding.title'), t('assistants.onboarding.description'), <Button onClick={openCreateSettings}>{t('assistants.onboarding.action')}</Button>);
   if (!assistant) return renderState('ai-agent', t('assistants.state.unavailable'));
   if (!surface) return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="relative flex h-full min-h-0 flex-col bg-background">
       {isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6" aria-busy="true" aria-label={t('assistants.state.unavailable')}>
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))]" aria-busy="true" aria-label={t('assistants.state.unavailable')}>
         <div className="size-10 animate-pulse rounded-xl bg-[var(--surface-muted)] motion-reduce:animate-none" />
         <div className="h-3.5 w-36 animate-pulse rounded-md bg-[var(--surface-muted)] motion-reduce:animate-none" />
       </div>
@@ -679,7 +680,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
         open={deleteTarget !== null}
         onOpenChange={handleDeleteDialogOpenChange}
       />
-      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-border/60')}>
+      <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-border/60')}>
         {isMobileSurface ? (
           <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} />
         ) : (

@@ -35,6 +35,13 @@
     },
     "packages/relay-server": {
       "entry": [
+        "bin/openchamber-relay.js",
+        "bin/openchamber-push-relay.js",
+        "src/index.js",
+        "src/index.d.ts",
+        "src/push/index.js",
+        "src/push/index.d.ts",
+        "test/node-smoke.js",
         "test/**/*.{test,spec}.{js,cjs,mjs,ts,tsx}"
       ],
       "project": [

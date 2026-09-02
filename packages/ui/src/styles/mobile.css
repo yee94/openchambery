@@ -11,6 +11,13 @@
      inside keeps its own fixed touch size. */
   --oc-mobile-detail-navigation-height: calc(3.5rem * var(--padding-scale, 1));
   --oc-mobile-detail-action-edge-inset: 1rem;
+  /* Shared overlay/collapsing-header fade. Strong enough to read the
+     title over scrolling transcript, still open at the bottom edge. */
+  --oc-mobile-header-fade: color-mix(
+    in srgb,
+    var(--surface-background) 85%,
+    transparent
+  );
 }
 
 /* Projects home floating material. Project capsule, session container, and
@@ -35,6 +42,13 @@
     var(--surface-foreground) 9%,
     transparent
   );
+  /* Momentary row/card press only — a wash, not a slab. Full
+     --interactive-hover reads too dense on Projects home glass. */
+  --oc-mobile-press-fill: color-mix(
+    in srgb,
+    var(--surface-foreground) 7%,
+    transparent
+  );
   --oc-mobile-surface-radius: 1.5rem;
   --oc-mobile-inset-radius: 1rem;
   --oc-mobile-control-radius: 1.25rem;
@@ -50,7 +64,7 @@
   --oc-mobile-entity-title-line-height: 1.25rem;
   --oc-mobile-entity-meta-size: 0.8125rem;
   --oc-mobile-entity-meta-line-height: 1rem;
-  /* 2.875rem × 0.9 = 41.4px — still above the 36px touch minimum. */
+  /* 2.875rem at --dpt 1 = 46px — still above the 36px touch minimum. */
   --oc-mobile-session-row-height: calc(2.875rem * var(--padding-scale, 1));
   --oc-mobile-session-actions-width: 7rem;
   --oc-mobile-worktree-action-width: 3.5rem;
@@ -149,6 +163,11 @@
   --form-control-border: var(--oc-mobile-control-border);
   --form-surface-border: var(--oc-mobile-border);
   --form-row-divider: var(--oc-mobile-divider);
+  --oc-mobile-press-fill: color-mix(
+    in srgb,
+    var(--surface-foreground) 10%,
+    transparent
+  );
   --oc-mobile-shadow-far: rgb(0 0 0 / 0.24);
   --oc-mobile-shadow-near: rgb(0 0 0 / 0.14);
   --oc-mobile-shadow-control: rgb(0 0 0 / 0.22);
@@ -473,8 +492,8 @@
   opacity: var(--oc-mobile-title-collapse);
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--surface-background) 95%, transparent) 0%,
-    color-mix(in srgb, var(--surface-background) 95%, transparent)
+    var(--oc-mobile-header-fade) 0%,
+    var(--oc-mobile-header-fade)
       calc(var(--oc-safe-area-top, 0px) + 35%),
     transparent 100%
   );
@@ -513,6 +532,16 @@
 }
 
 .oc-mobile-project-shell {
+  --oc-mobile-project-group-gap: 0.625rem;
+  --oc-mobile-project-header-height: calc(4.625rem * var(--padding-scale, 1));
+  --oc-mobile-project-icon-size: calc(2.375rem * var(--padding-scale, 1));
+  --oc-mobile-entity-title-size: 0.875rem;
+  --oc-mobile-entity-title-line-height: 1.125rem;
+  --oc-mobile-entity-meta-size: 0.75rem;
+  --oc-mobile-entity-meta-line-height: 0.9375rem;
+  --oc-mobile-session-row-height: calc(2.5rem * var(--padding-scale, 1));
+  --oc-mobile-session-actions-width: 6.25rem;
+  --oc-mobile-worktree-action-width: 3.125rem;
   display: flex;
   flex-direction: column;
   /* Allow worktree/session swipe rails to paint without clipping. */
@@ -531,6 +560,11 @@
   padding: 0.75rem;
 }
 
+.oc-mobile-project-shell .oc-mobile-project-trigger {
+  gap: 0.4375rem;
+  padding: 0.625rem;
+}
+
 .oc-mobile-project-icon {
   width: var(--oc-mobile-project-icon-size);
   height: var(--oc-mobile-project-icon-size);
@@ -539,6 +573,11 @@
 .oc-mobile-project-icon-glyph {
   width: 1.25rem;
   height: 1.25rem;
+}
+
+.oc-mobile-project-shell .oc-mobile-project-icon-glyph {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 .oc-mobile-entity-title {
@@ -554,8 +593,8 @@
 }
 
 .oc-mobile-project-chevron {
-  width: 1rem;
-  height: 1rem;
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .oc-mobile-project-action {
@@ -570,7 +609,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--oc-mobile-project-group-gap);
-  padding: 0.125rem 0.875rem 1rem;
+  padding: 0.125rem 0.75rem 0.875rem;
 }
 
 .oc-mobile-labeled-surface-group {
@@ -594,6 +633,17 @@
   box-shadow: none;
 }
 
+.oc-mobile-labeled-surface-group-label:first-child {
+  overflow: hidden;
+  border-start-start-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+  border-start-end-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+}
+
+.oc-mobile-labeled-surface-group-label:last-child {
+  border-end-end-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+  border-end-start-radius: calc(var(--oc-mobile-inset-radius) - 1px);
+}
+
 .oc-mobile-page-section-label {
   display: block;
   padding: 0.25rem 0.5rem;
@@ -608,7 +658,7 @@
 
 .oc-mobile-group-label {
   display: flex;
-  min-height: 3rem;
+  min-height: 2.625rem;
   min-width: 0;
   align-items: center;
   gap: 0.25rem;
@@ -616,13 +666,13 @@
 
 .oc-mobile-group-label-trigger {
   display: flex;
-  min-height: 3rem;
+  min-height: 2.625rem;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4375rem;
   border-radius: var(--oc-mobile-inset-radius);
-  padding: 0.5rem 0.75rem;
+  padding: 0.375rem 0.625rem;
   text-align: left;
 }
 
@@ -641,8 +691,8 @@ button.oc-mobile-group-label-trigger:focus-visible {
 
 .oc-mobile-group-label-icon {
   display: flex;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.125rem;
+  height: 1.125rem;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -650,13 +700,13 @@ button.oc-mobile-group-label-trigger:focus-visible {
 }
 
 .oc-mobile-group-label-trigger .typography-ui-label {
-  font-size: 0.8125rem !important;
+  font-size: 0.75rem !important;
   line-height: 1rem !important;
 }
 
 .oc-mobile-group-label-trigger .typography-small {
-  font-size: 0.75rem !important;
-  line-height: 1rem !important;
+  font-size: 0.6875rem !important;
+  line-height: 0.875rem !important;
 }
 
 .oc-mobile-group-action {
@@ -700,11 +750,11 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-worktree-more {
-  width: 2rem;
-  min-width: 2rem !important;
-  min-height: 2rem !important;
-  height: 2rem;
-  margin-right: 0.25rem;
+  width: 2.25rem;
+  min-width: 2.25rem !important;
+  min-height: 2.25rem !important;
+  height: 2.25rem;
+  margin-right: 0.125rem;
   padding: 0 !important;
 }
 
@@ -716,8 +766,36 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-row {
+  --oc-mobile-session-radius-start-start: 0;
+  --oc-mobile-session-radius-start-end: 0;
+  --oc-mobile-session-radius-end-end: 0;
+  --oc-mobile-session-radius-end-start: 0;
   min-width: 0;
+  overflow: hidden;
+  border-start-start-radius: var(--oc-mobile-session-radius-start-start);
+  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
+  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
+  border-end-start-radius: var(--oc-mobile-session-radius-end-start);
   background: transparent;
+}
+
+.oc-mobile-labeled-surface-group > .oc-mobile-session-row:first-child {
+  --oc-mobile-session-radius-start-start: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
+  --oc-mobile-session-radius-start-end: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
+}
+
+.oc-mobile-labeled-surface-group > .oc-mobile-session-row:last-child,
+.oc-mobile-labeled-surface-group-content > .oc-mobile-session-row:last-child {
+  --oc-mobile-session-radius-end-end: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
+  --oc-mobile-session-radius-end-start: calc(
+    var(--oc-mobile-inset-radius) - 1px
+  );
 }
 
 .oc-mobile-session-row:not(:last-child) {
@@ -740,6 +818,10 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-session-row-content,
 .oc-mobile-session-pagination-row {
   /* Transparent so swipe rails and group chrome do not double-paint a slab. */
+  border-start-start-radius: var(--oc-mobile-session-radius-start-start);
+  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
+  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
+  border-end-start-radius: var(--oc-mobile-session-radius-end-start);
   background: transparent;
 }
 
@@ -747,19 +829,24 @@ button.oc-mobile-worktree-label-trigger:active,
    that looked like a stuck tap highlight after returning to Home. */
 .oc-mobile-session-row-content:has(.oc-mobile-session-row-main:active):not([data-dragging="true"]),
 .oc-mobile-session-pagination-row:active {
-  background: var(--interactive-hover);
+  background: var(--oc-mobile-press-fill);
+}
+
+.oc-mobile-project-card:has([data-mobile-press-surface-trigger]:active),
+.oc-mobile-project-card[data-pressed="true"] {
+  background: var(--oc-mobile-press-fill);
 }
 
 .oc-mobile-session-row-main {
-  gap: 0.5625rem;
-  padding-block: 0.4375rem;
+  gap: 0.5rem;
+  padding-block: 0.3125rem;
   padding-right: 0.125rem;
 }
 
 .oc-mobile-session-status {
   display: inline-flex;
-  width: 0.875rem;
-  height: 0.875rem;
+  width: 0.75rem;
+  height: 0.75rem;
   align-items: center;
   justify-content: center;
 }
@@ -771,8 +858,8 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-title {
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   letter-spacing: -0.012em;
 }
 
@@ -783,12 +870,15 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-session-time {
-  font-size: 0.6875rem;
-  line-height: 0.875rem;
+  font-size: 0.625rem;
+  line-height: 0.75rem;
 }
 
 .oc-mobile-session-actions {
   width: var(--oc-mobile-session-actions-width);
+  overflow: hidden;
+  border-start-end-radius: var(--oc-mobile-session-radius-start-end);
+  border-end-end-radius: var(--oc-mobile-session-radius-end-end);
 }
 
 .oc-mobile-session-action {
@@ -798,14 +888,22 @@ button.oc-mobile-worktree-label-trigger:active,
   border-radius: 0 !important;
 }
 
+.oc-mobile-project-shell .oc-mobile-session-action {
+  height: 100%;
+  min-height: 36px !important;
+  align-items: center;
+  justify-content: center;
+  padding-block: 0;
+}
+
 .oc-mobile-session-pagination-row {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.5rem 2.5rem;
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
+  gap: 0.4375rem;
+  padding: 0.375rem 0.625rem 0.375rem 2.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
   outline: none;
 }
 
@@ -1219,13 +1317,17 @@ button.oc-mobile-worktree-label-trigger:active,
   overflow: visible;
   transition:
     color 150ms ease-out,
-    background-color 150ms ease-out,
-    transform 150ms ease-out;
+    background-color 150ms ease-out;
 }
 
 /* Selected pill inherits the same item radius (no separate inset token). */
 .oc-mobile-segmented-item > .oc-segmented-selected-pill {
   border-radius: var(--oc-mobile-segmented-item-radius);
+  transition: background-color 80ms ease-out;
+}
+
+.oc-mobile-segmented-item:active > .oc-segmented-selected-pill {
+  background: var(--interactive-active);
 }
 
 /* Trailing control on a segmented track (e.g. create +) — same height as items.
@@ -1252,17 +1354,13 @@ button.oc-mobile-worktree-label-trigger:active,
   color: var(--foreground);
 }
 
-.oc-mobile-segmented-item:active {
-  transform: scale(0.97);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .oc-mobile-segmented-item {
     transition: none;
   }
 
-  .oc-mobile-segmented-item:active {
-    transform: none;
+  .oc-mobile-segmented-item > .oc-segmented-selected-pill {
+    transition: none;
   }
 }
 
@@ -1465,8 +1563,8 @@ button.oc-mobile-worktree-label-trigger:active,
   pointer-events: none;
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--surface-background) 95%, transparent) 0%,
-    color-mix(in srgb, var(--surface-background) 95%, transparent)
+    var(--oc-mobile-header-fade) 0%,
+    var(--oc-mobile-header-fade)
       calc(var(--oc-safe-area-top, 0px) + 35%),
     transparent 100%
   );
@@ -2123,30 +2221,32 @@ button.oc-mobile-worktree-label-trigger:active,
     pointer-events: auto;
   }
 
-  /* Touch press feedback (shrink-in), pure CSS — no JS size measurement.
+  /* Touch press feedback (grow-out), pure CSS — no JS size measurement.
      Default is a gentle soft scale for ordinary controls and full-width rows
      (tool / subagent / reasoning rows, list rows, standard buttons).
-     Punchy compact scale is opt-in and reserved for particularly small
+     Brighter compact scale is opt-in and reserved for particularly small
      controls (icon buttons, dense chips) via data-mobile-press-feedback="compact".
-     Soft scale ≈ 1 - (2 * edge-inset) / width using container query units
+     Soft scale ≈ 1 + (2 * edge-outset) / width using container query units
      against a full-bleed ancestor (see shells below). When no query container
      exists, cqi falls back to the small viewport size, which is close enough
      for near-full-width mobile chrome.
-     - default / soft: gentle edge-inset scale (rows, standard buttons)
-     - compact:        fixed punchy scale for small icon-sized controls only
+     - default / soft: gentle edge-outset scale (rows, standard buttons)
+     - compact:        fixed brighter scale for small icon-sized controls only
      - surface:        whole floating card (data-mobile-press-surface + trigger)
-     - none:           opt out (drag handles, surface triggers, custom feedback)
-     Press-in is duration 0. Release is pure ease-out (no y>1 overshoot). */
+     - none:           opt out (drag handles and custom fill-only feedback)
+     Press-in engages quickly; release uses one restrained spring-like settle. */
   :root.mobile-pointer:not(.desktop-runtime) {
-    --oc-press-edge-inset: 3px;
-    --oc-press-compact-scale: 0.92;
-    --oc-press-release-duration: 160ms;
-    --oc-press-release-ease: cubic-bezier(0.22, 1, 0.36, 1);
-    /* ~per-side inset via scale; clamp so tiny/huge widths never look broken */
+    --oc-press-edge-outset: 3px;
+    --oc-press-compact-scale: 1.05;
+    --oc-press-engage-duration: 80ms;
+    --oc-press-engage-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --oc-press-release-duration: 260ms;
+    --oc-press-release-ease: cubic-bezier(0.2, 1.28, 0.3, 1);
+    /* ~per-side outset via scale; clamp so tiny/huge widths stay restrained */
     --oc-press-soft-scale: clamp(
-      0.97,
-      calc(1 - (2 * var(--oc-press-edge-inset)) / 100cqi),
-      0.994
+      1.006,
+      calc(1 + (2 * var(--oc-press-edge-outset)) / 100cqi),
+      1.03
     );
   }
 
@@ -2170,46 +2270,63 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 
   :root.mobile-pointer:not(.desktop-runtime) .oc-changes-panel {
-    --oc-press-edge-inset: 2px;
+    --oc-press-edge-outset: 2px;
     --oc-press-soft-scale: clamp(
-      0.985,
-      calc(1 - (2 * var(--oc-press-edge-inset)) / 100cqi),
-      0.994
+      1.004,
+      calc(1 + (2 * var(--oc-press-edge-outset)) / 100cqi),
+      1.02
     );
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
     :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
-    ):not([data-mobile-press-feedback="none"]) {
+    ):not([data-slot="select-trigger"]):not(
+      [data-mobile-press-feedback="none"]
+    ):not(
+      [data-mobile-press-surface-trigger]
+    ) {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     transform-origin: center;
     transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
   }
 
-  /* Default + soft: gentle absolute-ish edge inset. Wide tool/subagent rows,
-     settings nav, and ordinary buttons all stay here — never the punchy
-     compact scale that reads as a full-card shrink. */
+  /* Default + soft: gentle absolute-ish edge outset. Wide tool/subagent rows,
+     settings nav, and ordinary buttons use this restrained scale. */
   :root.mobile-pointer:not(.desktop-runtime)
     :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
       [aria-disabled="true"]
-    ):not([data-mobile-press-feedback="none"]):not(
+    ):not([data-slot="select-trigger"]):not(
+      [data-mobile-press-feedback="none"]
+    ):not(
       [data-mobile-press-feedback="compact"]
+    ):not(
+      [data-mobile-press-surface-trigger]
     ):active:not(:has(:where(button, [role="button"], [role="menuitem"]):active)) {
     scale: var(--oc-press-soft-scale);
-    transition-duration: 0ms;
+    transition-duration: var(--oc-press-engage-duration);
+    transition-timing-function: var(--oc-press-engage-ease);
   }
 
   /* Compact: opt-in only for particularly small controls (icon buttons). */
   :root.mobile-pointer:not(.desktop-runtime)
     :where(button, [role="button"], [role="menuitem"])[data-mobile-press-feedback="compact"]:not(
       :disabled
-    ):not([aria-disabled="true"]):active:not(
+    ):not([aria-disabled="true"]):not([data-slot="select-trigger"]):not(
+      [data-mobile-press-surface-trigger]
+    ):active:not(
       :has(:where(button, [role="button"], [role="menuitem"]):active)
     ) {
     scale: var(--oc-press-compact-scale);
-    transition-duration: 0ms;
+    transition-duration: var(--oc-press-engage-duration);
+    transition-timing-function: var(--oc-press-engage-ease);
+  }
+
+  /* Menu rows use semantic pressed fill while their soft grow remains subtle. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    [role="menuitem"]:not([aria-disabled="true"]):active {
+    background-color: var(--interactive-active) !important;
   }
 
   /* Floating card chrome: whole shell moves together (border/shadow/content). */
@@ -2225,7 +2342,14 @@ button.oc-mobile-worktree-label-trigger:active,
       [data-mobile-press-surface-trigger]:active
     ) {
     scale: var(--oc-press-soft-scale);
-    transition-duration: 0ms;
+    transition-duration: var(--oc-press-engage-duration);
+    transition-timing-function: var(--oc-press-engage-ease);
+  }
+
+  /* typography.css keeps a desktop favorite-button press transform. Mobile
+     gives the shared compositor scale sole ownership of the gesture. */
+  :root.mobile-pointer:not(.desktop-runtime) .model-favorite-button:active {
+    transform: none;
   }
 
   /* Composer surface must not press-scale. Scaling the card (or leaving a
@@ -2237,7 +2361,11 @@ button.oc-mobile-worktree-label-trigger:active,
     :root.mobile-pointer:not(.desktop-runtime)
       :where(button, [role="button"], [role="menuitem"]):not(:disabled):not(
         [aria-disabled="true"]
-      ):not([data-mobile-press-feedback="none"]),
+      ):not([data-slot="select-trigger"]):not(
+        [data-mobile-press-feedback="none"]
+      ):not(
+        [data-mobile-press-surface-trigger]
+      ),
     :root.mobile-pointer:not(.desktop-runtime)
       [data-mobile-press-surface="soft"] {
       transition: none;
@@ -3089,9 +3217,18 @@ button.oc-mobile-worktree-label-trigger:active,
   initial-value: 0;
 }
 
-/* The transcript keeps one fixed reservation while the two Composer layers
-   exchange through paint-only motion. */
-:root.mobile-pointer:not(.desktop-runtime) .oc-chat-composer-swap-scope {
+/* Bottom chrome the transcript reserves below its last message: the web
+   Composer keeps one fixed reservation while its two layers exchange through
+   paint-only motion.
+
+   Declared on the root rather than on `.oc-chat-composer-swap-scope`, because
+   the native iOS override further down is a plain root-class selector: a
+   scope-qualified default carries more specificity and won a cascade the
+   source order suggested it lost, so the measured native reservation never
+   applied. Both declarations now sit on the root and differ only by that
+   class. A root declaration also means no consumer can resolve an undefined
+   inset when React `isMobile` disagrees with `mobile-pointer`. */
+:root {
   --oc-chat-foot-inset: calc(
     8rem + var(--oc-safe-area-bottom-visual, 0px)
   );
@@ -3278,18 +3415,19 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-composer-compact-chrome--with-scroll
-  ~ .oc-mobile-composer-compact-preview {
-  right: 2.75rem;
-}
-
+  ~ .oc-mobile-composer-compact-preview,
 .oc-mobile-composer-compact-chrome--aborting
+  ~ .oc-mobile-composer-compact-preview,
+.oc-mobile-composer-compact-chrome--sending
   ~ .oc-mobile-composer-compact-preview {
-  right: 2.75rem;
+  right: 2.25rem;
 }
 
 .oc-mobile-composer-compact-chrome--with-scroll.oc-mobile-composer-compact-chrome--aborting
+  ~ .oc-mobile-composer-compact-preview,
+.oc-mobile-composer-compact-chrome--with-scroll.oc-mobile-composer-compact-chrome--sending
   ~ .oc-mobile-composer-compact-preview {
-  /* Attach left + scroll + stop on the right. */
+  /* Attach left + scroll + send/stop on the right. */
   right: 5rem;
 }
 
@@ -3309,7 +3447,10 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-mobile-composer-compact-chrome {
   position: absolute;
   z-index: 40;
-  inset: 0 0.25rem 0 0.625rem;
+  /* 0.625rem right/left: 24px action circle (same as expanded) sits concentric
+     in the 2.75rem pill — (44px - 24px) / 2 = 10px. Vertical stays 0 so attach
+     keeps the full cap; flex centering supplies the matching 10px ring. */
+  inset: 0 0.625rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3512,4 +3653,113 @@ html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
   font-size: 28px;
   line-height: 1;
   cursor: pointer;
+}
+
+/* Capacitor iOS native composer overlay owns the input chrome. Queue, status,
+   and draft pickers stay in the WebView, just above the pill (not a
+   collapsed layer). Overlay pages dock that strip absolutely; draft /
+   empty / history-error keep the in-flow foot and reserve the collapsed
+   pill height so the same strip (project / branch) sits above the input.
+   The native field does not morph.
+   --oc-native-composer-dock (distance from the live edge, not swap rest)
+   fades that strip. Approaching stays hidden until the true bottom; leaving
+   fades over the first follow-range px. Swap can rest expanded far from the
+   bottom; these rows have no background and must stay hidden until the
+   viewport is actually there. The queue card drops the composer-overlap
+   tail (the padding that used to tuck behind the web input) and sits fully
+   above the pill with symmetric padding. The native scroll-to-bottom
+   control stays on the overlay, appears after ~80px of upward travel, and
+   does not change published occupancy.
+   --oc-native-composer-height is collapsed pill occupancy only. */
+:root.oc-native-ios-composer {
+  --oc-chat-foot-inset: calc(
+    var(--oc-native-composer-height, 5.5rem)
+    + var(--oc-native-composer-accessory, 0px)
+  );
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-expanded-layer {
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer {
+  padding-bottom: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  will-change: auto;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer::after {
+  content: none;
+}
+
+:root.oc-native-ios-composer .oc-composer-queue {
+  margin-bottom: 0;
+}
+
+:root.oc-native-ios-composer .oc-composer-queue [data-oc-queue-composer-overlap] {
+  display: none;
+}
+
+:root.oc-native-ios-composer .oc-composer-queue [data-oc-queue-card-body] {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+
+/* Static ancestors so absolute docking uses the inset:0 overlay, not a
+   zero-height stack. Accessories settle 8px into the pill so Changes /
+   Tasks sit against the overlay, not a floating gap. Occupancy never
+   reserves the native scroll button. */
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay {
+  overflow: visible;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer,
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-stack,
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-expanded-layer,
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer-reveal {
+  position: static !important;
+  padding-bottom: 0;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay .oc-mobile-composer {
+  pointer-events: none;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-foot--overlay [data-native-composer-accessories] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--oc-native-composer-height, 5.5rem) - 8px);
+  z-index: 25;
+  pointer-events: auto;
+  /* Default 1 keeps the strip hidden until JS publishes a real distance. */
+  opacity: calc(1 - min(1, var(--oc-native-composer-dock, 1) * 2));
+}
+
+/* Draft / empty / history-error stay in-flow (no overlay, no compact leak).
+   The web textarea is display:none, so without this hole the project /
+   branch chips sit under the native pill. Same occupancy Changes / TODO
+   get from `bottom: calc(var(--oc-native-composer-height) - 8px)` on
+   overlay pages. These pages have no transcript to leave, so the strip
+   stays visible. */
+:root.oc-native-ios-composer
+  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {
+  padding-bottom: calc(var(--oc-native-composer-height, 5.5rem) - 8px);
+}
+
+:root.oc-native-ios-composer
+  .oc-chat-composer-swap-scope[data-oc-native-composer-dock="away"]
+  [data-native-composer-accessories] {
+  pointer-events: none;
+}
+
+:root.oc-native-ios-composer .oc-mobile-composer-motion-viewport,
+:root.oc-native-ios-composer .oc-mobile-composer-compact-layer,
+:root.oc-native-ios-composer .oc-mobile-composer-full-chrome,
+:root.oc-native-ios-composer .oc-mobile-composer-attachment-content,
+:root.oc-native-ios-composer .oc-scroll-to-bottom--expanded,
+:root.oc-native-ios-composer .oc-scroll-to-bottom--compact {
+  display: none !important;
 }

@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 import { I18nProvider } from '@/lib/i18n';
+import { MOBILE_PRESS_TARGET_SELECTOR } from '@/hooks/streamingHaptics';
 
 import {
   MobileProjectsHome,
@@ -129,6 +130,35 @@ describe('MobileProjectsHome header menu', () => {
     const bodyText = document.body.textContent ?? '';
     expect(bodyText).toContain('Scan QR code');
     expect(bodyText).toContain('Switch instance');
+
+    root.unmount();
+    document.body.innerHTML = '';
+  });
+
+  test('all four actions use semantic active fill and one global menuitem haptic target', async () => {
+    const { root, container } = mount({
+      ...baseProps,
+      onScanQr: noop,
+      onSwitchInstance: noop,
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]');
+    expect(trigger?.getAttribute('data-mobile-press-feedback')).toBe('compact');
+    clickMenuTrigger(container);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const items = Array.from(document.body.querySelectorAll<HTMLElement>('[data-slot="dropdown-menu-item"]'));
+    expect(items).toHaveLength(4);
+    for (const item of items) {
+      expect(item.getAttribute('role')).toBe('menuitem');
+      expect(item.className).toContain('active:bg-interactive-active');
+      expect(item.matches(MOBILE_PRESS_TARGET_SELECTOR)).toBe(true);
+      expect(item.getAttribute('data-mobile-press-feedback')).toBeNull();
+      expect(item.querySelector('svg')?.closest(MOBILE_PRESS_TARGET_SELECTOR)).toBe(item);
+    }
 
     root.unmount();
     document.body.innerHTML = '';

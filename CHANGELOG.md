@@ -4,6 +4,384 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.1] - 2026-09-02
+
+### 其它
+
+- 修复应用内更新 OpenCode 时因缺少版本号而报 Bad Request。
+
+## [1.19.0] - 2026-09-02
+
+汇总 1.18.6-beta.1 ~ 1.19.0-beta.42。
+
+### 聊天
+
+- 新时间线引擎，打开会话直接落在最新消息。
+- 发送后把这条消息停在上方，下方留给回复。
+- 会话里的 subagent 可以直接打开。
+
+### iPhone
+
+- 原生液态玻璃输入框，支持附件、`/` 和 `@`。
+- iOS 26 首页原生液态玻璃底栏。
+- 任务进行中会在灵动岛和锁屏显示 Live Activity。
+- 外观设置可开关原生体验，默认关闭。
+
+### 移动端
+
+- 首页置顶分组会列出进行中和未读会话。
+- 按钮、卡片和菜单有按压缩放和轻触感。
+
+### 其它
+
+- 自托管 Relay 支持推送，并提供 `openchamber-push-relay`。
+- 命令行也可安装为 `openchambery`。
+- 凭证同步改成配置同步里的可选项。
+
+## [1.19.0-beta.42] - 2026-09-02
+
+### Added
+
+- On iPhone, Appearance Settings can turn off the native composer, tab bar, and Live Activities so the app matches the Android web view.
+- The phone homepage Pinned group also lists running and unread sessions.
+
+### Changed
+
+- The global CLI also installs as `openchambery`.
+- Product README presents OpenChamberY and current mobile screens.
+
+## [1.19.0-beta.41] - 2026-09-01
+
+### Fixed
+
+- Clicking a Write tool for a newly created file opens that file's diff instead of an empty last-turn changes view.
+- Session lists treat archive membership as `time.archived`, so a session does not stay in the wrong Active / Archived bucket.
+
+## [1.19.0-beta.40] - 2026-09-01
+
+### Changed
+
+- Phone buttons, cards, tags, and menus share a slight press scale, elastic settle, and pressed fill.
+- The four items in the project-page plus menu now use pressed fill and a single light haptic.
+
+### Fixed
+
+- Beta OTA iOS detectability checks use the correct marketing-version profile.
+
+## [1.19.0-beta.39] - 2026-09-01
+
+### Fixed
+
+- Phone session row actions keep a correct swipe-rail layout; leftover pinned icons are removed.
+
+### Changed
+
+- APNs titles follow the device language and re-register when the language changes.
+- Push Relay batches deliveries, caps concurrency, reduces payload privacy exposure, and hardens collapse-id handling.
+- Default iOS Bundle ID matches the shipping app identity.
+
+## [1.19.0-beta.37] - 2026-09-01
+
+### Fixed
+
+- Opening the phone recent-sessions sheet keeps the last All / pinned / project tab instead of forcing the current project; only a removed-project filter is corrected.
+- Chat composer model selection prefers the latest assistant execution in the transcript over older history or leftover session memory when switching chats.
+- Phone homepage session rows no longer clip the swipe action rail under rounded group chrome.
+
+### Changed
+
+- iPhone native composer attach / send / stop taps use the shared light haptic path. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Phone row action sheets fire a light haptic on tap even when press-scale feedback is off.
+- Push delivery can register device tokens through the self-hosted relay and re-bind when the relay URL changes.
+
+### Added
+
+- `@openchambery/relay-server` exposes a push-relay package entry and `openchamber-push-relay` CLI; Relay-only releases use the `relay/v*` tag path without desktop or mobile installers.
+
+## [1.19.0-beta.36] - 2026-08-31
+
+### Changed
+
+- On iPhone, Live Activity starts after 5 seconds of continuous work.
+
+## [1.19.0-beta.35] - 2026-08-31
+
+### Added
+
+- On iPhone, active agent work appears as a Live Activity in the Dynamic Island and on the Lock Screen after 12 seconds, with task state, elapsed time, attention requests, completion or error state, and a shortcut back to the session. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Fixed
+
+- Full and OTA-only release workflows now package Capgo bundles correctly from the Bun mobile workspace.
+
+## [1.19.0-beta.34] - 2026-08-30
+
+### Changed
+
+- On the phone homepage, destructive actions like Remove sit in their own group below the other sheet actions, so they are harder to tap by accident.
+- Homepage action-sheet rows are taller and easier to tap.
+
+## [1.19.0-beta.33] - 2026-08-30
+
+### Fixed
+
+- Phone Settings selects (theme, language, and other dropdowns) open as a bottom sheet instead of a clipped popup.
+- On iPhone, the `/` and `@` suggestion list can be scrolled with a pan; tapping a row still inserts. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Editing a message on iPhone restores the full text in the native composer even if the input pill was collapsed.
+
+## [1.19.0-beta.32] - 2026-08-30
+
+### Fixed
+
+- Typing in the iPhone native composer no longer slows down the longer you type or the more you use it: duplicate typing events and unchanged height reports are skipped, theme colors are resolved once instead of on every keystroke, and markdown highlight recalculation for the hidden web input is skipped while the native composer owns input. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+## [1.19.0-beta.31] - 2026-08-30
+
+### Fixed
+
+- Typing in the iPhone native composer no longer slows down the longer you type or the more you use it: duplicate typing events and unchanged height reports are skipped, theme colors are resolved once instead of on every keystroke, and markdown highlight recalculation for the hidden web input is skipped while the native composer owns input. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+## [1.19.0-beta.30] - 2026-08-30
+
+### Fixed
+
+- Opening chat on iPhone no longer stalls the first frame while the native composer glass overlay is created; the shell warms it while hidden on the homepage. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Native composer chrome updates no longer repaint chip ranges on every send or scroll tick, which had made entering chat and controlling the input feel laggy.
+
+### Changed
+
+- `/` and `@` tokens in the iPhone native composer render as primary-colored labels with whole-token delete, without rasterized icon overlays, to keep typing smooth. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+## [1.19.0-beta.29] - 2026-08-30
+
+### Fixed
+
+- On iPhone, tapping the agent name next to the identicon also cycles the role, not only the avatar. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+## [1.19.0-beta.28] - 2026-08-30
+
+### Changed
+
+- The phone chat header fade is a bit less see-through so the title stays readable over scrolling messages.
+- Phone chat keeps more empty space under the newest message so you can scroll it up off the composer.
+- Ready Send and Stop on the iPhone native composer now match the web inverted disc. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Fixed
+
+- On iPhone, the chat list now reserves the real native composer and queue height, so the last message is no longer clipped against the input when something is queued.
+- After sending, scrolling the transcript no longer bounces or gets pulled back while a reply is streaming.
+- Switching chats on iPhone updates the native input's model name and thinking strength, not only the icon. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+## [1.19.0-beta.27] - 2026-08-30
+
+### Fixed
+
+- Opening a chat no longer leaves the previous model's icon in the input while messages load, and Send uses the model you see.
+- On iPhone, tapping a `/` or `@` suggestion now inserts the same way as the web composer: it replaces the token you were typing and moves the caret after it. File and agent `@` matches also follow the same ranking as web. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- The iPhone homepage dock uses the system tab bar for the selected liquid-glass lens (and light mode) instead of a nested glass pill that read as a black shadow.
+
+## [1.19.0-beta.26] - 2026-08-30
+
+### Added
+
+- iPhone homepage tabs use a native liquid-glass dock on iOS 26. Older iOS, Android, and the web app keep the existing bar. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+## [1.19.0-beta.25] - 2026-08-30
+
+### Added
+
+- On iPhone, typing `/` or `@` in the native composer opens a liquid-glass suggestion list above the input — same width as the card, with a small gap, internal scroll, and room so it does not collide with the header. Search as you type; tap a row or press Return to insert. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+## [1.19.0-beta.24] - 2026-08-30
+
+### Added
+
+- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Fixed
+
+- On a new chat, project and branch pickers sit above the input, same as Changes and To-do.
+- After sending, the reserved reply space is the middle of the screen (safe area and header counted, about 40% max). You can no longer scroll into empty space under the parked message.
+
+### Changed
+
+- Leaving chat hides the native composer immediately so it does not linger over Projects.
+- Changes and the queue sit closer against the native composer pill.
+
+## [1.19.0-beta.23] - 2026-08-30
+
+### Changed
+
+- Android type and spacing lift from the old ~0.9 density result to about 0.95 (still below 1). Typical phones already compute 0.9, so the value is multiplied rather than only raising the cap.
+
+## [1.19.0-beta.22] - 2026-08-30
+
+### Changed
+
+- Android type and spacing return to the original physical-density scale (xdpi/ydpi toward 1/163 inch, capped at 0.9). Pinning Android to 1 or 10/9 skipped that shrink and made both type and gaps jump.
+
+## [1.19.0-beta.21] - 2026-08-30
+
+### Fixed
+
+- After sending a message, the reserved space under the parked bubble is now the bottom of the chat. You can no longer scroll into the empty inset under it (which hid Changes and showed the scroll-to-bottom button). Tapping that button keeps the reserved space and returns to the parked message.
+
+## [1.19.0-beta.20] - 2026-08-30
+
+### Changed
+
+- Android type and spacing drop back from the iOS-matched 10/9 trial to a pinned scale of 1, which is still larger than the old ~0.9 density result.
+
+## [1.19.0-beta.19] - 2026-08-30
+
+### Changed
+
+- Android now uses the same 10/9 design-pt scale as iOS, so type and spacing can be compared side by side.
+
+## [1.19.0-beta.18] - 2026-08-30
+
+### Added
+
+- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+
+### Changed
+
+- Leaving chat hides the native composer immediately so it does not linger over Projects.
+
+## [1.19.0-beta.17] - 2026-08-30
+
+### Changed
+
+- Mobile type and spacing are a bit larger. iOS uses a 10/9 design-pt scale; Android keeps its own physical density with a smaller 1.05 lift (typical ~0.9 becomes ~0.945) and a cap of 1, so it does not copy the iOS parameter.
+
+## [1.19.0-beta.16] - 2026-08-30
+
+### Fixed
+
+- The thinking/composing status hint now disappears as soon as the turn is done (when Changes appears), instead of lingering and causing a height jump.
+
+## [1.19.0-beta.15] - 2026-08-29
+
+### Changed
+
+- Projects home tap highlight is a bit stronger so press feedback stays visible without going back to a full hover slab.
+
+## [1.19.0-beta.14] - 2026-08-29
+
+### Added
+
+- Sending a message on the new timeline now parks that message near the top of the transcript, with the sending or thinking status staying under the bubble. Space below is reserved for the reply (capped at about 60% of the viewport), and you can still scroll away and back.
+
+### Changed
+
+- Composer Send and Stop use a filled circular control so the stop square stays visible on WebKit.
+- Long file paths in diffs and change lists keep the filename readable by truncating the middle.
+- Stopping generation shows muted “Generation stopped” copy instead of an error banner.
+
+### Removed
+
+- Session recap is gone: the setting, transcript spacer, and server assist runtime. The small-model description now refers to session titles and summaries.
+
+## [1.19.0-beta.13] - 2026-08-29
+
+### Fixed
+
+- Clicking scroll-to-bottom now actually jumps to the newest message on the new timeline. The control previously called a no-op writer that is disabled there.
+
+## [1.19.0-beta.12] - 2026-08-29
+
+### Fixed
+
+- Services panel shortcuts now toggle closed when already on the requested tab, and switch tab when the panel is open on a different one. Desktop toggle opens instance; the usage shortcut opens usage.
+
+## [1.19.0-beta.11] - 2026-08-29
+
+### Fixed
+
+- Opening a session that is still streaming now lands on its newest message instead of gliding partway and stopping mid-conversation with follow disengaged.
+
+## [1.19.0-beta.10] - 2026-08-29
+
+### Changed
+
+- Credential sync is now an opt-in item of the config sync selection instead of a separate per-target authorization, removing the standalone grant step that previously gated `auth.json` transfers.
+
+## [1.19.0-beta.9] - 2026-08-29
+
+### Fixed
+
+- Loading older history no longer jumps the transcript to the newest message. The at-end signal could stay stale after switching sessions, which made the load-older button skip releasing end pinning, and the list then treated the prepended history as a reason to scroll to the live edge.
+- The read position is now captured when older history is requested rather than when it arrives, so end pinning is stood down before the new rows can move the viewport.
+
+## [1.19.0-beta.8] - 2026-08-29
+
+### 聊天
+
+- **加载更早历史时，你正在看的那条消息一动不动：** 上一版让列表在插入历史后多补偿一段时间，但真正的问题不是补偿多久，而是列表**按哪一条消息**来对齐——它选的是「视口里最上面那条」。点「加载更多」时你正处在最顶端，于是新插进来的消息立刻变成了最上面那条，而它们刚落位时用的还是估算高度；列表于是死死盯住一条估算高度的消息，随着逐行实测，整段历史的误差全部累加到你的阅读位置上方，最后视口就停到了会话中间。现在改为显式记住你点击前正在看的那条消息（取数据之前就已记录），并一直把它钉在原来的屏幕位置上，直到新插入的这批内容彻底停止变化——这比固定时间窗更久，因为消息正文的排版会在稍后再变一次高度。位置校正走列表自己的滚动接口、且每次都是绝对目标，不再与列表内部的位置调整互相抢写。你一旦上滑或触屏，锚点立即让位给你。
+- **加载过程中输入框不再闪出：** 上一版已让滚动容器在重新锚定期间对外声明状态，但这个声明是在画面绘制之后才挂上的，而列表在同一次提交里就已经调整了滚动位置——浏览器把那一帧的滚动事件抢在声明之前发了出去。就这一帧没被标记，却是一次很大的「离底距离」变化，被输入框读成了用户的主动下滑。现在声明改在绘制之前完成，并覆盖整个锚定过程。
+
+包含 1.19.0-beta.1 ~ beta.7 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.7] - 2026-08-29
+
+### 聊天
+
+- **滚动经过的消息不再卡在 loading 骨架：** 消息正文先以骨架挂载，等一次「水合」把它换成正式排版；而滚动中途换排版会顶动正在读的内容，所以只允许在滚动停下来之后换。但新引擎只有滚动事件这一个触发点，它调度的那一次水合就在同一帧里执行，永远不算「已停下」——于是快速滚动时越过预加载窗口的消息被跳过后再也没有第二次机会，只能退出重进对话才恢复。现在滚动停下来后会补一次水合，单次提交超过上限而剩下的部分也会继续排队补完。
+
+包含 1.19.0-beta.1 ~ beta.6 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.6] - 2026-08-29
+
+### 聊天
+
+- **加载更早历史时视口原地不动：** 上一版已经先释放端部跟随，但插入的历史是先按估算高度落位、随后才逐行实测，而新引擎当初关掉了列表默认的尺寸补偿，于是这些实测差值全部累加到阅读位置上方——加载完成的一瞬间视口被推到了别处。现在每次插入更早历史后会在一个短窗口内开启尺寸补偿，把这批新行的实测差值吸收掉；窗口之外，工具调用展开之类的原地增长照旧向下生长。
+- **加载过程中输入框不再闪出：** 插入内容与列表的位置纠正落在不同帧，「离底距离」先跳远再跳回，回来那一帧和用户快速下滑无法区分，于是输入框在加载中途闪成展开态。现在滚动容器会在重新锚定期间对外声明状态，这些帧不再计入手势行程，输入框保持原样直到锚定结束。
+
+包含 1.19.0-beta.1 ~ beta.5 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.5] - 2026-08-29
+
+### 聊天
+
+- **加载更早历史不再把视图甩走：** 新引擎把「插入更早消息」当成一次内容增长，而此时端部跟随还开着，于是列表立刻把视口纠回最新消息处。现在点「加载更多」（以及滚动到顶部触发的加载）会先释放端部跟随再取数据，插入的历史落在阅读位置上方，读到哪儿还在哪儿。已经贴在底部时不做释放——那种情况下纠正本身就是空操作。
+- **手动上滑后不会再被自动拉回底部：** 新引擎原本只按「离底距离」判断是否继续跟随，离底不足十分之一屏就照旧跟随，流式回复时轻轻上滑会被拽回去，而且无需下滑就会悄悄恢复跟随。现在上滑手势会粘性地交出跟随权，只有真正回到底部、点「回到底部」或切换会话才重新接管。
+
+包含 1.19.0-beta.1 ~ beta.4 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.4] - 2026-08-29
+
+### 移动端
+
+- **流式回复时输入框不再闪成收起态：** 新引擎在会话进行中用动画方式把视图滑回底部，收起判定只看「离底距离」，于是把这段动画误读成用户上滑。现在收起只由真实手势触发，内容增长和列表自身的回滑不再影响输入框的吸底展开；滑到真正底部仍会展开，抬手后的惯性滑动照旧生效。
+
+包含 1.19.0-beta.1 ~ beta.3 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.3] - 2026-08-29
+
+### 移动端
+
+- **顶部导航与输入框不再压住正文：** 新时间线引擎下聊天记录上下两侧的留白丢失，首条消息被顶部导航遮住、末条被输入框遮住。留白改为由列表实际测量的占位承担，安全区、导航高度、输入框高度等变量继续动态生效。
+- **顺带修好三处新引擎下的静默失效：** 附件定位、展开/折叠工具调用后的滚动位置回补、以及聊天容器的兜底查询——它们都通过 `data-scrollbar="chat"` 找滚动容器，而新引擎下这个标记丢了；聊天滚动条样式同时恢复。
+
+包含 1.19.0-beta.1 ~ beta.2 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.2] - 2026-08-29
+
+### 移动端
+
+- **往下滚动时输入框会回来了：** 之前输入框收起后，只有滚到接近底部（离底 80px 内）才重新出现，从很上面往下滑要一路滑到底才看得到。现在只要往下滑动一小段就会唤出，唤出后在同一次下滑手势里保持展开，直到再次上滑才收起。离底 80px 内的按位置比例跟随、以及收起后的惯性沉降窗口保持原样；顶部橡皮筋回弹不再被误当成下滑意图。
+
+包含 1.19.0-beta.1 的全部内容（Beta 新时间线引擎）。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
+## [1.19.0-beta.1] - 2026-08-29
+
+### 聊天（Beta 新时间线引擎）
+
+- **进入会话不再闪动：** 聊天记录改由单一列表持有滚动位置（替换 TanStack 虚拟化 + 自动跟随钉底的组合），打开会话直接落在最新消息；迟到的异步内容增长由列表自身跟随，不再触发逐帧滚动校正。默认启用，可在 DevTools 控制台执行 `localStorage.setItem('oc:legend-timeline', '0')` 并刷新回退旧引擎。
+- **新引擎下交互与流式正常：** 展开工具调用、切换活动密度等行内状态即时生效；流式回复按块即时上屏；Markdown 渐进加载只重绘真正变化的行。
+- **加载更早历史与"回到底部"按钮改读列表真实位置：** 修复新引擎下滚动到顶部附近不再触发历史加载、按钮不再常隐的问题。
+- 本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+
 ## [1.18.6-beta.2] - 2026-08-28
 
 ### 修复

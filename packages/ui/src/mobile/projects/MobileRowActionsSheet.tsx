@@ -5,6 +5,7 @@ import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { Button } from '@/components/ui/button';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { triggerMobileHaptic } from '@/hooks/streamingHaptics';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import {
   buildProjectMenuItems,
@@ -62,14 +63,19 @@ function ActionRow({
   disabled = false,
   spinning = false,
 }: ActionRowProps) {
-  const handleClick = useEvent(onClick);
+  // Keep press-scale off (sheet rows use fill feedback), but still fire the
+  // shared light haptic that useMobilePressHaptics would skip for "none".
+  const handleClick = useEvent(() => {
+    triggerMobileHaptic('light');
+    onClick();
+  });
 
   return (
     <Button
       type="button"
       variant={destructive ? 'destructive' : 'ghost'}
       size="lg"
-      className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
+      className="h-auto min-h-14 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 leading-6 border-b border-[var(--surface-subtle)] last:border-b-0 active:bg-interactive-active dark:active:bg-interactive-active"
       data-mobile-press-feedback="none"
       disabled={disabled}
       onClick={handleClick}
@@ -85,25 +91,39 @@ function renderMenuItems(
   t: (key: I18nKey) => string,
   run: (action?: () => void) => () => void,
 ) {
-  return items.map((item) => {
-    const row = (
-      <ActionRow
-        key={item.id}
-        icon={item.icon}
-        label={resolveMobileMenuItemLabel(item, t)}
-        onClick={run(item.onClick)}
-        destructive={item.destructive}
-        disabled={item.disabled}
-        spinning={item.spinning}
-      />
-    );
-    if (!item.separated) return row;
-    return (
-      <div key={item.id} className="border-t border-[var(--surface-subtle)]">
-        {row}
-      </div>
-    );
-  });
+  const groups = items.reduce<Array<{ separated: boolean; items: MobileMenuItem[] }>>(
+    (result, item) => {
+      const separated = Boolean(item.separated);
+      const currentGroup = result.at(-1);
+      if (currentGroup?.separated === separated) {
+        currentGroup.items.push(item);
+      } else {
+        result.push({ separated, items: [item] });
+      }
+      return result;
+    },
+    [],
+  );
+
+  return groups.map((group) => (
+    <div
+      key={group.items[0]?.id}
+      className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
+      data-mobile-action-group={group.separated ? 'separated' : 'standard'}
+    >
+      {group.items.map((item) => (
+        <ActionRow
+          key={item.id}
+          icon={item.icon}
+          label={resolveMobileMenuItemLabel(item, t)}
+          onClick={run(item.onClick)}
+          destructive={item.destructive}
+          disabled={item.disabled}
+          spinning={item.spinning}
+        />
+      ))}
+    </div>
+  ));
 }
 
 export function MobileRowActionsSheet({
@@ -169,7 +189,7 @@ export function MobileRowActionsSheet({
     >
       <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
         <div
-          className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
+          className="flex flex-col gap-5"
           data-page-scroll-lock="true"
         >
           {renderMenuItems(menuItems, t, run)}

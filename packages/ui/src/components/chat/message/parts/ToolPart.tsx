@@ -267,6 +267,10 @@ const FILE_NAV_TOOL_NAMES = new Set([
 
 const isFileNavToolName = (toolName: string): boolean => FILE_NAV_TOOL_NAMES.has(toolName);
 
+const isWriteLikeNavTool = (toolName: string): boolean => (
+    toolName === 'write' || toolName === 'create' || toolName === 'file_write'
+);
+
 const formatDuration = (start: number, end?: number, now: number = Date.now()) => {
     const duration = Math.min(Math.max(0, (end ?? now) - start), MAX_DURATION_MS);
     const seconds = duration / 1000;
@@ -2499,10 +2503,13 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         (path) => getRelativePath(path, currentDirectory),
                     )
                     : [];
-                const toolPatches = selectedToolDiffs.map((entry) => ({
-                    path: entry.title,
-                    patch: entry.patch,
-                }));
+                // 写入是单文件补丁：打开视图按点击目标寻址，把补丁路径统一成
+                // relativePath，避免绝对路径 / a-b 前缀让单文件视图找不到该文件。
+                const toolPatches = (isWriteLikeNavTool(normalizedPartTool)
+                    && selectedToolDiffs.length === 1
+                    && selectedToolDiffs[0])
+                    ? [{ path: relativePath, patch: selectedToolDiffs[0].patch }]
+                    : selectedToolDiffs.map((entry) => ({ path: entry.title, patch: entry.patch }));
 
                 if (runtime?.runtime.isVSCode && runtime.editor && toolDiff) {
                     const label = `${relativePath} (changes)`;
@@ -2524,7 +2531,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                             mobileActions.openChanges({ diffPath: relativePath, staged: false, targetLine });
                         }
                     } else if (isMobile) {
-                        navigateToDiff(relativePath, false, 'turn', targetLine);
+                        navigateToDiff(relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine);
                     } else {
                         if (toolPatches.length > 0) {
                             openContextToolDiff(
@@ -2536,7 +2543,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 sessionSurface.sessionId,
                             );
                         } else {
-                            openContextDiff(currentDirectory, relativePath, false, 'turn', targetLine, messageId, sessionSurface.sessionId);
+                            openContextDiff(currentDirectory, relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine, messageId, sessionSurface.sessionId);
                         }
                     }
                     return;

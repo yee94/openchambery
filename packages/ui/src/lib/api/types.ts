@@ -799,6 +799,8 @@ export interface ApnsTokenPayload {
   token: string;
   /** 'ios' (APNs) or 'android' (FCM) — lets the relay route the token to the right service. */
   platform?: string;
+  /** App UI locale (e.g. 'zh-CN') so native push titles match the user's language. */
+  locale?: string;
 }
 
 export interface PushAPI {

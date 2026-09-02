@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import {
+  PRODUCTION_CHANGELOG_URL,
   PRODUCTION_UPDATER_FEED,
+  PRODUCTION_UPDATE_SERVICE_ORIGIN,
   parseLoopbackUpdaterUrl,
   resolveUpdaterFeed,
 } from './updater-feed.mjs';
@@ -18,6 +20,8 @@ test('production updater feed is immutable Vercel generic configuration', () => 
     provider: 'generic',
     url: 'https://openchamber-update.vercel.app/desktop/',
   });
+  assert.equal(PRODUCTION_UPDATE_SERVICE_ORIGIN, 'https://openchamber-update.vercel.app');
+  assert.equal(PRODUCTION_CHANGELOG_URL, 'https://openchamber-update.vercel.app/CHANGELOG.md');
 });
 
 test('requires the complete E2E environment and embedded build-marker conjunction', () => {

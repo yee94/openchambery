@@ -3,7 +3,7 @@
  *
  * Tunnel clients live in the UI process; Electron main cannot open E2EE tunnels.
  * This module runs probe/prepare/put/download/finalize over `tunnel.fetch`, while
- * credential grants and sync-run records stay in Electron IPC (`relay:<serverId>`).
+ * sync-run records stay in Electron IPC (`relay:<serverId>`).
  *
  * Identity gate: every preview/apply refreshes candidates (when a refresh hook is
  * provided) and refuses to continue if `serverId` changed (`relay_identity_changed`).
@@ -15,7 +15,6 @@ import {
 import type { DesktopHost, DesktopHostRelay } from '@/lib/desktopHosts';
 import {
   buildDefaultSyncSelections,
-  desktopSshCredentialSyncGet,
   desktopSshSyncOpencodeConfigLocalScan,
   type DesktopSshConfigSyncDirection,
   type DesktopSshConfigSyncOptions,
@@ -70,7 +69,6 @@ type ProbeResult = {
   remoteAgentsRootExists: boolean;
   remoteAuthFileExists: boolean;
   inventory?: unknown;
-  inboundCredentialAuthorized?: boolean;
 };
 
 const inflightByTarget = new Map<string, string>();
@@ -120,17 +118,6 @@ const assertRelayIdentity = async (
   }
 };
 
-const assertCredentialAuthorized = (
-  plan: DesktopSshConfigSyncPlan,
-  credentialAuthorized: boolean,
-  targetId: string,
-): void => {
-  if (!plan.authFile || credentialAuthorized) return;
-  const error = new Error(`Credential sync is not authorized for ${targetId}`);
-  (error as Error & { code?: string }).code = 'credential_sync_unauthorized';
-  throw error;
-};
-
 const emptyResult = (plan: DesktopSshConfigSyncPlan): DesktopSshConfigSyncResult & { plan: DesktopSshConfigSyncPlan } => ({
   ok: true as const,
   files: 0,
@@ -155,7 +142,6 @@ const requireSelectionShape = (
 const mergeSelections = (
   shape: DesktopSshConfigSyncSelectionShape,
   options: DesktopSshConfigSyncOptions,
-  credentialAuthorized: boolean,
 ): DesktopSshConfigSyncSelections => {
   const defaults = buildDefaultSyncSelections(shape, { includeAuthFile: false });
   const provided = options.selections;
@@ -164,7 +150,7 @@ const mergeSelections = (
     singleFiles: provided?.singleFiles ?? defaults.singleFiles,
     directories: provided?.directories ?? defaults.directories,
     agentsRoot: provided?.agentsRoot !== false,
-    authFile: credentialAuthorized && provided?.authFile === true,
+    authFile: provided?.authFile === true,
   };
 };
 
@@ -172,13 +158,11 @@ const buildPullPlan = (
   probe: ProbeResult,
   localPlan: DesktopSshConfigSyncPlan | null,
   selections: DesktopSshConfigSyncSelections,
-  credentialAuthorized: boolean,
-  targetId: string,
 ): DesktopSshConfigSyncPlan => {
   const inventory = (probe.inventory && typeof probe.inventory === 'object')
     ? probe.inventory as RemoteInventory
     : null;
-  const plan: DesktopSshConfigSyncPlan = {
+  return {
     direction: 'pull',
     files: inventory?.files ?? localPlan?.files ?? [],
     directories: inventory?.directories ?? localPlan?.directories ?? [],
@@ -188,26 +172,18 @@ const buildPullPlan = (
     totalBytes: localPlan?.totalBytes ?? 0,
     selections,
   };
-  assertCredentialAuthorized(plan, credentialAuthorized, targetId);
-  return plan;
 };
 
 const buildPushPlan = (
   localPlan: DesktopSshConfigSyncPlan,
   selections: DesktopSshConfigSyncSelections,
-  credentialAuthorized: boolean,
-  targetId: string,
-): DesktopSshConfigSyncPlan => {
-  const plan: DesktopSshConfigSyncPlan = {
-    ...localPlan,
-    direction: 'push',
-    authFile: selections.authFile ? localPlan.authFile : null,
-    agentsRoot: selections.agentsRoot ? localPlan.agentsRoot : null,
-    selections,
-  };
-  assertCredentialAuthorized(plan, credentialAuthorized, targetId);
-  return plan;
-};
+): DesktopSshConfigSyncPlan => ({
+  ...localPlan,
+  direction: 'push',
+  authFile: selections.authFile ? localPlan.authFile : null,
+  agentsRoot: selections.agentsRoot ? localPlan.agentsRoot : null,
+  selections,
+});
 
 const planHasPayload = (plan: DesktopSshConfigSyncPlan): boolean => (
   plan.files.length > 0
@@ -271,7 +247,6 @@ const createRelayHttpExecutor = (
         remoteAgentsRootExists: result.remoteAgentsRootExists === true,
         remoteAuthFileExists: result.remoteAuthFileExists === true,
         inventory: result.inventory,
-        inboundCredentialAuthorized: result.inboundCredentialAuthorized === true,
       };
     },
     async prepare(plan, syncRunId) {
@@ -393,15 +368,12 @@ export type RelayConfigSyncHooks = {
  * then (when needed) re-scan with those selections applied.
  */
 const resolveAuthSelectionsAndScan = async (
-  serverId: string,
   direction: DesktopSshConfigSyncDirection,
   options: DesktopSshConfigSyncOptions,
 ) => {
-  const grant = await desktopSshCredentialSyncGet(serverId, { targetKind: 'relay' });
-  const credentialAuthorized = grant?.authorized === true;
   const shapeScan = await desktopSshSyncOpencodeConfigLocalScan({ direction, targetKind: 'relay' });
   const selectionShape = requireSelectionShape(shapeScan);
-  const selections = mergeSelections(selectionShape, options, credentialAuthorized);
+  const selections = mergeSelections(selectionShape, options);
   // Push needs the filtered inventory; pull can reuse the shape scan for deletes/totalBytes.
   const localPlan = direction === 'push'
     ? await desktopSshSyncOpencodeConfigLocalScan({ direction, selections, targetKind: 'relay' })
@@ -409,7 +381,7 @@ const resolveAuthSelectionsAndScan = async (
   if (direction === 'push' && !localPlan) {
     throw new Error('Local sync inventory unavailable');
   }
-  return { credentialAuthorized, selectionShape, selections, localPlan };
+  return { selectionShape, selections, localPlan };
 };
 
 /**
@@ -427,8 +399,7 @@ export const previewRelayConfigSync = async (
 
   return runExclusive(targetId, 'preview', direction, async () => {
     await assertRelayIdentity(relay.serverId, hooks.refreshCandidates);
-    const { credentialAuthorized, selectionShape, selections, localPlan } = await resolveAuthSelectionsAndScan(
-      relay.serverId,
+    const { selectionShape, selections, localPlan } = await resolveAuthSelectionsAndScan(
       direction,
       options,
     );
@@ -436,25 +407,23 @@ export const previewRelayConfigSync = async (
     try {
       if (direction === 'pull') {
         const probe = await executor.probe({});
-        const plan = buildPullPlan(probe, localPlan, selections, credentialAuthorized, targetId);
+        const plan = buildPullPlan(probe, localPlan, selections);
         return {
           plan,
           remoteExisting: probe.remoteExisting,
           remoteAgentsRootExists: probe.remoteAgentsRootExists,
           remoteAuthFileExists: probe.remoteAuthFileExists,
-          credentialAuthorized,
           selectionShape,
         };
       }
 
-      const plan = buildPushPlan(localPlan!, selections, credentialAuthorized, targetId);
+      const plan = buildPushPlan(localPlan!, selections);
       const probe = await executor.probe(plan);
       return {
         plan,
         remoteExisting: probe.remoteExisting,
         remoteAgentsRootExists: probe.remoteAgentsRootExists,
         remoteAuthFileExists: probe.remoteAuthFileExists,
-        credentialAuthorized,
         selectionShape: localPlan?.selectionShape ?? selectionShape,
       };
     } finally {
@@ -478,8 +447,7 @@ export const applyRelayConfigSync = async (
 
   return runExclusive(targetId, 'apply', direction, async ({ syncRunId }) => {
     await assertRelayIdentity(relay.serverId, hooks.refreshCandidates);
-    const { credentialAuthorized, selections, localPlan } = await resolveAuthSelectionsAndScan(
-      relay.serverId,
+    const { selections, localPlan } = await resolveAuthSelectionsAndScan(
       direction,
       options,
     );
@@ -489,7 +457,7 @@ export const applyRelayConfigSync = async (
         // Probe + download over the tunnel, then Electron extracts locally.
         // Do NOT call previewRelayConfigSync — that would re-enter the mutex.
         const probe = await executor.probe({});
-        const plan = buildPullPlan(probe, localPlan, selections, credentialAuthorized, targetId);
+        const plan = buildPullPlan(probe, localPlan, selections);
         if (!planHasPayload(plan)) return emptyResult(plan);
 
         const configTar = (plan.files.length > 0 || plan.directories.length > 0)
@@ -512,7 +480,7 @@ export const applyRelayConfigSync = async (
         return { ...applied, plan };
       }
 
-      const plan = buildPushPlan(localPlan!, selections, credentialAuthorized, targetId);
+      const plan = buildPushPlan(localPlan!, selections);
       if (!planHasPayload(plan)) return emptyResult(plan);
       if (!hasDesktopInvoke()) {
         throw new Error('Relay push apply requires the OpenChamber desktop app');

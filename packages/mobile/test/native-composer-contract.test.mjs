@@ -1,0 +1,228 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { test } from 'vitest';
+
+const root = new URL('../', import.meta.url);
+
+async function source(path) {
+  return readFile(new URL(path, root), 'utf8');
+}
+
+test('native composer pins to the keyboard end-frame and rest safe area, not a sticky layout guide', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const contract = await source('contracts/native-composer-keyboard.mjs');
+  assert.match(contract, /nextNativeComposerKeyboardSession/);
+  assert.match(plugin, /keyboardSessionOpen/);
+  assert.match(plugin, /keyboardFrameEndUserInfoKey/);
+  assert.match(plugin, /bottomConstraint/);
+  assert.match(plugin, /handleKeyboardDidHide/);
+  assert.match(plugin, /handleHostTap/);
+  assert.match(plugin, /hideOverlay/);
+  assert.match(plugin, /@objc func hide\(_ call: CAPPluginCall\)/);
+  assert.match(plugin, /@objc func show\(_ call: CAPPluginCall\)/);
+  assert.match(plugin, /composerView\?\.isHidden = true/);
+  const hideOverlay = plugin.match(/private func hideOverlay\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(hideOverlay, /isHidden = true/);
+  assert.ok(
+    hideOverlay.indexOf('isHidden = true') < hideOverlay.indexOf('blurInput'),
+    'visual hide must precede blur / keyboard teardown',
+  );
+  assert.doesNotMatch(plugin, /func hideOverlay\(\)[\s\S]*removeFromSuperview/);
+  assert.doesNotMatch(plugin, /dismiss[\s\S]*tearDown/);
+  assert.match(plugin, /window\?\.safeAreaInsets\.bottom/);
+  assert.doesNotMatch(plugin, /keyboardLayoutGuide\.topAnchor/);
+  assert.match(view, /func handleKeyboardDidHide\(\)/);
+  assert.match(view, /setExpanded\(false, animated: false\)/);
+  assert.match(view, /UIView\.performWithoutAnimation/);
+});
+
+test('native composer glass chrome lives in the effect contentView with interactive hover lift', async () => {
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  assert.match(view, /var contentView: UIView \{ blurView\.contentView \}/);
+  assert.match(view, /UIGlassEffect\(style: \.regular\)/);
+  assert.match(view, /glass\.isInteractive = true/);
+  assert.match(view, /UIHoverStyle\(effect: \.lift/);
+  assert.match(view, /UIHoverStyle\(effect: \.highlight/);
+});
+
+test('native composer rest height stays collapsed and scroll lives above send', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const contract = await source('contracts/openchamber-composer.mjs');
+  assert.match(contract, /scrollToBottom/);
+  assert.match(plugin, /lastRestHeight/);
+  assert.match(plugin, /isExpandedState/);
+  assert.match(plugin, /restTop/);
+  assert.match(view, /scrollButton/);
+  assert.match(view, /arrow\.down/);
+  assert.match(view, /footer\.isHidden = !expanded/);
+  assert.match(view, /composerViewDidRequestScrollToBottom/);
+  assert.match(view, /scrollChrome/);
+  const restTop = view.match(/func restTop\(in host: UIView\) -> CGFloat \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(restTop, /func restTop/);
+  assert.doesNotMatch(restTop, /scrollChrome/);
+  assert.match(plugin, /not change this value/);
+  assert.match(view, /setCornerRadius\(18\)/);
+  assert.match(view, /agentButton\.widthAnchor\.constraint\(equalToConstant: 16\)/);
+  assert.match(view, /shouldApplyText/);
+  assert.match(view, /markedTextRange/);
+  assert.match(view, /returnKeyType = \.send/);
+  assert.match(view, /shouldChangeTextIn/);
+  assert.match(view, /queueSendButton/);
+  assert.match(view, /let showQueueSend = isExpanded && canAbort && \(canSend \|\| hasSendableText\)/);
+  assert.match(view, /hasSendableText/);
+  assert.match(view, /refreshSendButton\(\)/);
+  assert.match(view, /composerCircleImage/);
+  assert.match(view, /case \.send:/);
+  assert.match(view, /case \.stop:/);
+  assert.match(view, /size \* 0\.56/);
+  assert.match(view, /size \* 0\.38/);
+  assert.match(view, /cornerRadius: side \* 0\.20/);
+  assert.doesNotMatch(view, /let symbol = canAbort \? "stop\.fill"/);
+  assert.match(plugin, /DispatchQueue\.main\.async \{ \[weak self\] in\s+self\?\.notifyListeners\("send"/);
+  assert.doesNotMatch(view, /func sendTapped\(\)[\s\S]*guard canSend/);
+  assert.doesNotMatch(view, /if canSend \{\s+delegate\?\.composerViewDidRequestSend/);
+  assert.match(plugin, /previewSignature/);
+  assert.match(plugin, /optionalBool/);
+  assert.match(plugin, /must not clobber live state/);
+  assert.match(plugin, /setAttachChooser/);
+  assert.match(plugin, /keepExpandedThroughPicker/);
+  assert.match(plugin, /beginAttachPicker/);
+  assert.match(plugin, /PHPickerViewController/);
+  assert.doesNotMatch(plugin, /preferredStyle: \.actionSheet/);
+  assert.doesNotMatch(plugin, /presentAttachChooser/);
+  assert.match(plugin, /presentPhotoPicker/);
+  assert.doesNotMatch(plugin, /func presentPhotoPicker\(\)[\s\S]*blurInput/);
+  assert.doesNotMatch(plugin, /func presentFilePicker\(\)[\s\S]*blurInput/);
+  assert.match(view, /showsMenuAsPrimaryAction/);
+  assert.match(view, /UIMenu\(title:/);
+  assert.match(view, /composerViewDidRequestAttachPhotos/);
+  assert.match(view, /keepExpandedThroughPicker/);
+  assert.match(view, /func dismissAttachMenu\(\)/);
+  assert.match(view, /contextMenuInteraction\?\.dismissMenu\(\)/);
+  assert.match(plugin, /dismissAttachMenu\(\)/);
+  assert.match(view, /modelVariantLabel/);
+  assert.match(view, /rasterModelChrome/);
+  assert.match(view, /modelNameView/);
+  assert.match(view, /modelVariantView/);
+  assert.doesNotMatch(view, /private let modelNameLabel = UILabel/);
+  assert.match(view, /systemFont\(ofSize: 11, weight: \.regular\)/);
+  assert.doesNotMatch(view, /UIButton\.Configuration/);
+  assert.match(plugin, /forceText/);
+  assert.match(contract, /removeAttachment/);
+  assert.match(plugin, /removeAttachment/);
+  assert.match(plugin, /attachmentPreviews/);
+  assert.match(plugin, /citationRanges/);
+  assert.match(plugin, /chipRanges/);
+  assert.match(plugin, /parseChipRanges/);
+  assert.match(plugin, /composing/);
+  assert.match(view, /applyAttachmentPreviews/);
+  assert.match(view, /applyCitationRanges/);
+  assert.match(view, /applyChipRanges/);
+  assert.match(view, /refreshChipPaint/);
+  assert.match(view, /chipsEqual/);
+  assert.match(view, /composerIconSlotScalar/);
+  assert.match(view, /collapseComposerIconSlots/);
+  assert.match(view, /Paint-only collapse; delivery text keeps the glyph/);
+  assert.match(view, /lastModelChromeStamp/);
+  assert.match(view, /modelChromeChanged/);
+  assert.match(plugin, /Chrome-only updates omit chipRanges/);
+  assert.doesNotMatch(plugin, /else \{\s*composerView\?\.refreshChipPaint/);
+  assert.doesNotMatch(view, /layoutChipIcons/);
+  assert.doesNotMatch(view, /chipIconViews/);
+  assert.doesNotMatch(plugin, /chipIconCache/);
+  assert.match(view, /markedTextRange == nil/);
+  assert.match(view, /citationRanges \+ chips\.map/);
+  assert.match(view, /expandedCitationEdit/);
+  assert.match(view, /AttachmentPreviewCell/);
+  assert.match(view, /attachmentStrip/);
+  assert.doesNotMatch(view, /paperclip/);
+});
+
+test('native composer attach presents a document picker and expanded chrome matches web order', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const contract = await source('contracts/openchamber-composer.mjs');
+  assert.match(contract, /filesPicked/);
+  assert.match(plugin, /UIDocumentPickerViewController/);
+  assert.match(plugin, /filesPicked/);
+  assert.match(plugin, /UTType\.item/);
+  assert.match(view, /addArrangedSubview\(agentCluster\)/);
+  assert.doesNotMatch(view, /insertArrangedSubview\(agentCluster/);
+  assert.match(view, /revealAgentNameBriefly/);
+  assert.match(view, /agentCluster.addGestureRecognizer\(agentTap\)/);
+  assert.match(view, /agentButton.isUserInteractionEnabled = false/);
+  assert.match(view, /templateModelIcon/);
+  assert.match(view, /footerSpacer/);
+});
+
+test('native composer autocomplete sits above the card and accepts Return or tap', async () => {
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const popup = await source('ios/App/App/OpenChamberComposerAutocomplete.swift');
+  const contract = await source('contracts/openchamber-composer.mjs');
+  assert.match(contract, /autocompleteAccept/);
+  assert.match(contract, /OpenChamberComposerAutocomplete.swift/);
+  assert.match(plugin, /parseAutocomplete/);
+  assert.match(plugin, /applyAutocomplete/);
+  assert.match(plugin, /selectionStart/);
+  assert.match(plugin, /autocompleteAccept/);
+  assert.match(view, /applyAutocomplete/);
+  assert.match(view, /clampAutocompleteHeight/);
+  assert.match(view, /acceptHighlighted/);
+  assert.match(view, /autocomplete.bottomAnchor.constraint\(equalTo: card.topAnchor, constant: -8\)/);
+  assert.match(view, /ComposerAutocompleteMetrics.maxHeight/);
+  assert.match(view, /headerFloor\(safeAreaTop:/);
+  assert.match(popup, /viewportRatio: CGFloat = 0.4/);
+  assert.match(popup, /softMinHeight: CGFloat = 120/);
+  assert.match(popup, /contentInsetAdjustmentBehavior = \.never/);
+  assert.match(popup, /addSubview\(tableView\)/);
+  assert.doesNotMatch(popup, /chrome\.contentView\.addSubview\(tableView\)/);
+  assert.match(popup, /chrome\.isUserInteractionEnabled = false/);
+  assert.match(popup, /delaysContentTouches = true/);
+  assert.match(popup, /didSelectRowAt/);
+  assert.doesNotMatch(popup, /acceptTapped/);
+  assert.doesNotMatch(popup, /touchUpInside/);
+  assert.match(popup, /UIGraphicsImageRenderer/);
+  assert.match(plugin, /optionalInt\(call, "caret"\)/);
+  assert.match(view, /caret: Int\?/);
+  assert.match(popup, /overrideUserInterfaceStyle/);
+  assert.match(plugin, /jsString\(object, "title"\)/);
+  assert.match(view, /overrideUserInterfaceStyle/);
+  assert.match(popup, /GlassBackdropView/);
+  assert.match(popup, /UITableView/);
+  const restTop = view.match(/func restTop\(in host: UIView\) -> CGFloat \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.doesNotMatch(restTop, /autocomplete/);
+});
+
+test('native composer typing path dedupes identical textChanged payloads and skips unchanged height reports', async () => {
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  assert.match(view, /private var lastEmittedTextChange: \(text: String, start: Int, end: Int\)\?/);
+  const emitTextChange = view.match(/private func emitTextChange\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(emitTextChange, /if let last = lastEmittedTextChange, last == next \{ return \}/);
+  assert.match(emitTextChange, /lastEmittedTextChange = next/);
+  const emitHeightChange = view.match(/private func emitHeightChange\(force: Bool\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(emitHeightChange, /if !force, let last = lastEmittedRestTop, abs\(nextRestTop - last\) <= 0\.5/);
+  const didChange = view.match(/func textViewDidChange\(_ textView: UITextView\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(didChange, /let heightChanged = relayoutTextHeight\(\)/);
+  assert.match(didChange, /if heightChanged \{\s*emitHeightChange\(force: true\)/);
+});
+
+test('native composer coalesces layout height reports and only refreshes geometry at visibility boundaries', async () => {
+  const view = await source('ios/App/App/OpenChamberComposerView.swift');
+  const plugin = await source('ios/App/App/OpenChamberComposerPlugin.swift');
+  const layoutSubviews = view.match(/override func layoutSubviews\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(layoutSubviews, /emitHeightChange\(force: false\)/);
+
+  const reportHeight = plugin.match(/private func reportHeight\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.doesNotMatch(reportHeight, /layoutIfNeeded\(\)/);
+
+  const freshGeometry = plugin.match(/private func reportHeightWithFreshGeometry\(\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(freshGeometry, /superview\?\.layoutIfNeeded\(\)/);
+  assert.match(freshGeometry, /reportHeight\(\)/);
+
+  const applyKeyboard = plugin.match(/private func applyKeyboard\(_ notification: Notification\) \{[\s\S]*?\n    \}/)?.[0] ?? '';
+  assert.match(applyKeyboard, /if abs\(target - current\) <= 0\.5/);
+  assert.match(plugin, /private static func shouldReportKeyboardHeight/);
+});

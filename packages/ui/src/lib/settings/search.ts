@@ -1,4 +1,5 @@
 import type { I18nKey } from '@/lib/i18n/store';
+import { canShowIosNativeUiSetting } from '@/lib/iosNativeUi';
 import { isCapacitorApp } from '@/lib/platform';
 import { isTranscriptDiagnosticsEnabled } from '@/sync/transcript-diagnostics-runtime';
 import type { SettingsPageSlug, SettingsRuntimeContext } from './metadata';
@@ -127,6 +128,14 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => ctx.isMobile && ctx.isWeb && !ctx.isDesktop && !ctx.isVSCode,
   },
   {
+    id: 'appearance.ios-native-ui',
+    page: 'appearance',
+    titleKey: 'settings.openchamber.visual.field.iosNativeUi',
+    descriptionKey: 'settings.openchamber.visual.field.iosNativeUiHint',
+    keywords: ['ios', 'native', 'webview', 'composer', 'tab bar', 'live activity'],
+    isAvailable: () => canShowIosNativeUiSetting(),
+  },
+  {
     id: 'appearance.interface-font-size',
     page: 'appearance',
     titleKey: 'settings.openchamber.visual.field.interfaceFontSize',
@@ -231,16 +240,10 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['streaming', 'sse', 'websocket'],
   },
   {
-    id: 'chat.session-recap',
-    page: 'chat',
-    titleKey: 'settings.openchamber.visual.field.sessionRecap',
-    keywords: ['recap', 'assist', 'small model', 'summary'],
-  },
-  {
     id: 'chat.session-assistance',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.sessionAssistance',
-    keywords: ['recap', 'assist', 'subagent'],
+    keywords: ['title', 'assist', 'subagent'],
   },
   {
     id: 'chat.session-title-refresh',

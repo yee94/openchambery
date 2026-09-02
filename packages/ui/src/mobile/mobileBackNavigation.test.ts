@@ -299,6 +299,14 @@ describe('MobileTabsRoot secondary enter', () => {
     expect(styles).toContain('.oc-mobile-floating-shell.overflow-hidden');
     expect(styles).toContain('background-color: var(--oc-mobile-page-background)');
   });
+
+  test('adopts the native iOS liquid-glass dock and keeps the web bar as fallback', async () => {
+    const source = await readFile(join(here, 'MobileTabsRoot.tsx'), 'utf8');
+    expect(source).toContain('useNativeIosTabBar');
+    expect(source).toContain("nativeTabBarMode === 'web'");
+    expect(source).toContain('<MobileTabBar activeTab={selectedTab}');
+    expect(source).toContain('nativeIosComposerSession.warm');
+  });
 });
 
 describe('resolveMobileSecondaryBackDecision', () => {

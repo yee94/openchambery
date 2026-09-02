@@ -3,6 +3,12 @@ import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
+import { resolveChatBottomZoneThresholdPx } from '@/components/chat/lib/scroll/chatTailSpacer';
+import {
+    TOUCH_FINGER_DOWN_THRESHOLD,
+    isReleaseKey,
+    nestedScrollableCanConsumeUp,
+} from '@/hooks/lib/chatUpwardIntent';
 import { getViewportSessionMemory, useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
 
 type AutoFollowState = 'following' | 'released';
@@ -100,10 +106,7 @@ export interface UseChatAutoFollowResult {
 // bottom ownership during that transaction.
 // ──────────────────────────────────────────────────────────────────────────
 
-const BOTTOM_SPACER_DESKTOP_VH = 0.10;
-const BOTTOM_SPACER_MOBILE_PX = 40;
 const SAVE_DEBOUNCE_MS = 150;
-const TOUCH_FINGER_DOWN_THRESHOLD = 2;
 // How long an "auto" (programmatic) scroll position stays trusted. Browsers can
 // dispatch the `scroll` event for our write asynchronously, after newer content
 // has already changed the geometry; the window keeps us from reading that lag as
@@ -145,10 +148,11 @@ export const isWithinSessionOpenPinGrace = (nowMs: number, graceUntilMs: number)
 
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-// The bottom of the chat has an empty spacer (10vh on desktop, 40px on mobile)
-// — its height is exactly how far above scrollHeight the user can be while still
-// looking at "empty" space. We use that same value as the threshold for both
-// re-pinning auto-follow and showing the scroll-to-bottom button.
+// The empty spacer at the bottom of the chat is exactly how far above
+// scrollHeight the user can be while still looking at "empty" space, so its
+// height is also the threshold for re-pinning auto-follow and for showing the
+// scroll-to-bottom button — see chat/lib/scroll/chatTailSpacer, which owns both
+// readings.
 // One scroll event used to read scrollTop/scrollHeight/clientHeight five times
 // through the helpers below, with React writes interleaved between the reads —
 // every read after a write is a forced layout, and it showed up as the single
@@ -166,12 +170,6 @@ const readScrollGeometry = (el: HTMLElement): ScrollGeometry => ({
     clientHeight: el.clientHeight,
 });
 
-const computeBottomZoneThresholdFor = (isMobile: boolean, clientHeight: number): number => {
-    if (isMobile) return BOTTOM_SPACER_MOBILE_PX;
-    if (clientHeight <= 0) return 96;
-    return Math.max(48, clientHeight * BOTTOM_SPACER_DESKTOP_VH);
-};
-
 const distanceFromBottomOf = (geometry: ScrollGeometry): number => {
     return geometry.scrollHeight - geometry.scrollTop - geometry.clientHeight;
 };
@@ -185,41 +183,7 @@ const canScrollGeometry = (geometry: ScrollGeometry): boolean => {
 };
 
 const isNearBottomOf = (geometry: ScrollGeometry, isMobile: boolean): boolean => {
-    return distanceFromBottomOf(geometry) <= computeBottomZoneThresholdFor(isMobile, geometry.clientHeight);
-};
-
-const isReleaseKey = (event: KeyboardEvent): boolean => {
-    if (event.altKey || event.ctrlKey || event.metaKey) {
-        return false;
-    }
-    switch (event.key) {
-        case 'ArrowUp':
-        case 'PageUp':
-        case 'Home':
-            return true;
-        default:
-            return false;
-    }
-};
-
-// Wheel/touch upward intent must not fire while a nested scroller inside the
-// chat root can still consume the gesture. Walk ancestors from event.target to
-// (but not including) root; geometry alone — no selectors, no getComputedStyle.
-const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | null): boolean => {
-    let node: Element | null = target instanceof Element
-        ? target
-        : target instanceof Node
-            ? target.parentElement
-            : null;
-    while (node && node !== root) {
-        if (node instanceof HTMLElement) {
-            if (node.scrollTop > 0 && node.scrollHeight > node.clientHeight + 1) {
-                return true;
-            }
-        }
-        node = node.parentElement;
-    }
-    return false;
+    return distanceFromBottomOf(geometry) <= resolveChatBottomZoneThresholdPx(isMobile, geometry.clientHeight);
 };
 
 export const useChatAutoFollow = ({
@@ -426,6 +390,7 @@ export const useChatAutoFollow = ({
     React.useEffect(() => () => cancelForcedBottom(), [containerEl]);
 
     const forceBottomDefeatingMomentum = useEvent(() => {
+        if (!enabled) return;
         const el = scrollRef.current;
         if (!el) return;
 
@@ -489,6 +454,7 @@ export const useChatAutoFollow = ({
     // `force` true = user-intent jump (clears released and always scrolls).
     // `force` false = passive follow (only while still following — idle ok).
     const scrollToBottom = useEvent((force: boolean, behavior: ScrollBehavior = 'auto') => {
+        if (!enabled) return;
         const el = scrollRef.current;
 
         if (force && stateRef.current !== 'following') {

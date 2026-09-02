@@ -167,8 +167,8 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  *
  * - `hydrating`: stable skeleton — loading, user retry, or cold with no settled failure
  * - `load-error`: settled failure only (error + not loading + not retrying + no shell)
- * - `pass`: repository P0, a running shell, retained/hosted rows, a previously
- *   painted transcript, or a ready empty snapshot
+ * - `pass`: any landed/pending/hosted shell, a previously painted transcript on
+ *   this mount, or a ready empty snapshot
  *
  * Retry from the load-error wall sets `userRetrying` so the gate returns to
  * `hydrating` on the click, then `retryTranscriptInitial` purges the failed
@@ -180,6 +180,10 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  * back empty for one refetch. Demoting there swaps the whole viewport for the
  * skeleton branch, which unmounts the scroll container and composer and so
  * resets scroll, focus, and the composer caret.
+ *
+ * A repository P0 latch without rows is not a shell. Session-view remount
+ * (desktop cache miss) can still see that latch after Query GC; treating it as
+ * `pass` paints the empty-chat welcome for a frame before the tail returns.
  */
 export type ChatSessionTranscriptGate = 'pass' | 'hydrating' | 'load-error'
 
@@ -210,7 +214,9 @@ export const resolveChatSessionTranscriptGate = (input: {
   /** This session already painted a transcript under the current mount. */
   hasPaintedTranscript?: boolean
 }): ChatSessionTranscriptGate => {
-  if (input.p0Satisfied || input.hasBusyShell || input.hasImmediateShell) return 'pass'
+  // Visible rows always win. P0 without a shell must not: that latch outlives
+  // Query data, and passing here flashes the empty-chat welcome on remount.
+  if (input.hasTranscriptShell || input.hasBusyShell || input.hasImmediateShell) return 'pass'
 
   // Retained content outranks both the skeleton and the failure wall: a
   // refetch that errors must not blank a transcript the user is reading.

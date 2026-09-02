@@ -68,8 +68,6 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
             title={label}
             onClick={handleTabClick}
             onKeyDown={handleTabKeyDown}
-            // Dock glass fill is the press feedback; skip the shared scale system.
-            data-mobile-press-feedback="none"
             className={cn(
               // Equal flex slots + min-w-0 so long locale strings truncate, never overflow.
               'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-hidden',
@@ -77,7 +75,7 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
               // The dock supplies immediate touch-down glass feedback in mobile.css.
               'transition-[background-color,color,box-shadow,transform] duration-100',
               'hover:bg-transparent hover:text-foreground',
-              'active:scale-[0.985]',
+              'active:bg-interactive-active',
               'motion-reduce:transition-none',
               selected && [
                 // Lighter than full interactive-selection so the pill is soft on glass.

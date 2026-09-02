@@ -1,5 +1,5 @@
 {
-  "buildCommand": "OPENCHAMBER_UPDATE_OUTPUT_DIR=dist OPENCHAMBER_UPDATE_SKIP_OTA_COPY=1 node scripts/build.mjs",
+  "buildCommand": "OPENCHAMBER_UPDATE_OUTPUT_DIR=dist OPENCHAMBER_UPDATE_SKIP_OTA_COPY=1 OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY=1 node scripts/build.mjs",
   "installCommand": "echo 'no package dependencies'",
   "outputDirectory": "dist",
   "headers": [
@@ -17,7 +17,7 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=300, stale-while-revalidate=900"
+          "value": "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
         }
       ]
     },

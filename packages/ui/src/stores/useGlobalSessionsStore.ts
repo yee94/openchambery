@@ -420,6 +420,72 @@ const sameSessionList = (prev: Session[], next: Session[]): boolean => {
   return true;
 };
 
+/** Archive membership is `time.archived`, not the OpenCode `session.list({ archived })` label. */
+const isArchivedByTimeField = (session: Session): boolean => Boolean(session.time?.archived);
+
+/**
+ * Re-cut active/archived buckets by `time.archived` and collapse duplicate ids.
+ * List labels are only a fetch hint; `0` / missing archived timestamps stay active.
+ * Already-correct lists keep their previous array references.
+ */
+const classifySessionsByArchivedField = (
+  listedActive: Session[],
+  listedArchived: Session[],
+): { activeSessions: Session[]; archivedSessions: Session[] } => {
+  const activeIds = new Set<string>();
+  let misclassified = false;
+  for (const session of listedActive) {
+    if (!session?.id || activeIds.has(session.id) || isArchivedByTimeField(session)) {
+      misclassified = true;
+      break;
+    }
+    activeIds.add(session.id);
+  }
+  if (!misclassified) {
+    const archivedIds = new Set<string>();
+    for (const session of listedArchived) {
+      if (
+        !session?.id
+        || archivedIds.has(session.id)
+        || activeIds.has(session.id)
+        || !isArchivedByTimeField(session)
+      ) {
+        misclassified = true;
+        break;
+      }
+      archivedIds.add(session.id);
+    }
+  }
+  if (!misclassified) {
+    return { activeSessions: listedActive, archivedSessions: listedArchived };
+  }
+
+  const byId = new Map<string, Session>();
+  for (const session of listedActive) {
+    if (!session?.id) continue;
+    byId.set(session.id, session);
+  }
+  for (const session of listedArchived) {
+    if (!session?.id) continue;
+    const existing = byId.get(session.id);
+    byId.set(session.id, existing ? mergeSessionDirectoryMetadata(session, existing) : session);
+  }
+
+  const activeSessions: Session[] = [];
+  const archivedSessions: Session[] = [];
+  const seen = new Set<string>();
+  const take = (session: Session) => {
+    if (!session?.id || seen.has(session.id)) return;
+    seen.add(session.id);
+    const resolved = byId.get(session.id) ?? session;
+    if (isArchivedByTimeField(resolved)) archivedSessions.push(resolved);
+    else activeSessions.push(resolved);
+  };
+  listedActive.forEach(take);
+  listedArchived.forEach(take);
+  return { activeSessions, archivedSessions };
+};
+
 const filterPendingDeletionSessions = (sessions: Session[], pendingDeletionIds: ReadonlySet<string>): Session[] => {
   if (pendingDeletionIds.size === 0) return sessions;
   const firstPendingIndex = sessions.findIndex((session) => pendingDeletionIds.has(session.id));
@@ -768,9 +834,6 @@ const applyDirectoryRefreshPatch = (
         input.directories,
       );
   nextActiveSessions = mergeSessionLists(nextActiveSessions, fallbackActive);
-  if (sameSessionList(state.activeSessions, nextActiveSessions)) {
-    nextActiveSessions = state.activeSessions;
-  }
 
   const incomingArchivedSessions = input.archivedSessions === undefined
     ? undefined
@@ -782,6 +845,12 @@ const applyDirectoryRefreshPatch = (
         incomingArchivedSessions,
         input.directories,
       );
+  const classified = classifySessionsByArchivedField(nextActiveSessions, nextArchivedSessions);
+  nextActiveSessions = classified.activeSessions;
+  nextArchivedSessions = classified.archivedSessions;
+  if (sameSessionList(state.activeSessions, nextActiveSessions)) {
+    nextActiveSessions = state.activeSessions;
+  }
   if (sameSessionList(state.archivedSessions, nextArchivedSessions)) {
     nextArchivedSessions = state.archivedSessions;
   }
@@ -911,8 +980,9 @@ const applySnapshot = (
   archivedSessions: Session[],
   status: GlobalSessionsStatus,
 ): Partial<GlobalSessionsState> | GlobalSessionsState => {
-  const filteredActiveSessions = filterPendingDeletionSessions(activeSessions, state.pendingDeletionIds);
-  const filteredArchivedSessions = filterPendingDeletionSessions(archivedSessions, state.pendingDeletionIds);
+  const classified = classifySessionsByArchivedField(activeSessions, archivedSessions);
+  const filteredActiveSessions = filterPendingDeletionSessions(classified.activeSessions, state.pendingDeletionIds);
+  const filteredArchivedSessions = filterPendingDeletionSessions(classified.archivedSessions, state.pendingDeletionIds);
   const nextActiveSessions = sameSessionList(state.activeSessions, filteredActiveSessions)
     ? state.activeSessions
     : filteredActiveSessions;
@@ -1370,7 +1440,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
             fullCatalogGeneration: state.fullCatalogGeneration + 1,
           };
         });
-        return { activeSessions: nextActiveSessions, archivedSessions: nextArchivedSessions };
+        return { activeSessions: get().activeSessions, archivedSessions: get().archivedSessions };
       } catch (error) {
         if (generation !== loadGeneration) {
           return { activeSessions: [], archivedSessions: [] };
@@ -1379,7 +1449,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         const nextArchivedSessions = current.archivedSessions;
         console.warn('[GlobalSessions] Failed to load sessions, using fallback snapshot:', error);
         set((state) => applySnapshot(state, nextActiveSessions, nextArchivedSessions, 'error'));
-        return { activeSessions: nextActiveSessions, archivedSessions: nextArchivedSessions };
+        return { activeSessions: get().activeSessions, archivedSessions: get().archivedSessions };
       } finally {
         if (inflightLoad === load) {
           inflightLoad = null;
@@ -1734,17 +1804,31 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
           });
           if (generation !== loadGeneration) return false;
           set((state) => {
-            const nextArchived = replaceSessionsForDirectories(
+            const replacedArchived = replaceSessionsForDirectories(
               state.archivedSessions,
               filterPendingDeletionSessions(archivedSessions, state.pendingDeletionIds),
               new Set([directory]),
             );
+            const classified = classifySessionsByArchivedField(state.activeSessions, replacedArchived);
+            const nextActiveSessions = sameSessionList(state.activeSessions, classified.activeSessions)
+              ? state.activeSessions
+              : classified.activeSessions;
+            const nextArchivedSessions = sameSessionList(state.archivedSessions, classified.archivedSessions)
+              ? state.archivedSessions
+              : classified.archivedSessions;
             const nextLoaded = new Set(state.archivedLoadedDirectories);
             const nextLoading = new Set(state.archivedLoadingDirectories);
             nextLoaded.add(directory);
             nextLoading.delete(directory);
             return {
-              archivedSessions: sameSessionList(state.archivedSessions, nextArchived) ? state.archivedSessions : nextArchived,
+              activeSessions: nextActiveSessions,
+              archivedSessions: nextArchivedSessions,
+              sessionsByDirectory: nextActiveSessions === state.activeSessions
+                ? state.sessionsByDirectory
+                : buildSessionsByDirectory(nextActiveSessions),
+              reviewTransferBySessionId: nextActiveSessions === state.activeSessions
+                ? state.reviewTransferBySessionId
+                : buildReviewTransferMap(nextActiveSessions),
               archivedLoadedDirectories: nextLoaded,
               archivedLoadingDirectories: nextLoading,
             };
@@ -1790,7 +1874,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         ?? state.archivedSessions.find((candidate) => candidate.id === session.id)
         ?? null;
       const sessionWithMetadata = mergeSessionDirectoryMetadata(session, existingSession);
-      const isArchived = Boolean(sessionWithMetadata.time?.archived);
+      const isArchived = isArchivedByTimeField(sessionWithMetadata);
       const nextActiveSessions = isArchived
         ? state.activeSessions.filter((candidate) => candidate.id !== session.id)
         : upsertSessionIntoList(state.activeSessions, sessionWithMetadata);

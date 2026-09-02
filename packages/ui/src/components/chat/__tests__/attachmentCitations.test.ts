@@ -4,6 +4,8 @@ import {
     assignImageAttachmentFilenames,
     buildAttachmentCitationText,
     collectDetachedAttachmentFilenames,
+    inferSimpleDeletionRange,
+    reconcileComposerAttachmentTextDeletion,
     expandCodeSelectionCitations,
     expandImageAttachmentCitations,
     findAttachmentCitationRanges,
@@ -88,6 +90,43 @@ describe('attachment citations', () => {
     test('never detaches when the text did not change', () => {
         const previous = `look ${buildAttachmentCitationText(['image-1.png'])}`;
         expect(collectDetachedAttachmentFilenames(['image-1.png'], previous, previous)).toEqual([]);
+    });
+
+    test('infers a simple deletion span from prefix and suffix', () => {
+        expect(inferSimpleDeletionRange('look [image-1.png]', 'look [image-1.png')).toEqual({
+            start: 17,
+            end: 18,
+        });
+        expect(inferSimpleDeletionRange('abc', 'abc')).toBeNull();
+        expect(inferSimpleDeletionRange('ab', 'abc')).toBeNull();
+        expect(inferSimpleDeletionRange('hello', 'hi')).toBeNull();
+    });
+
+    test('expands a one-character citation edit into a whole-token attachment delete', () => {
+        const previous = `look ${buildAttachmentCitationText(['image-2.png'])}`;
+        const next = previous.slice(0, -1);
+        expect(reconcileComposerAttachmentTextDeletion(previous, next, ['image-2.png'])).toEqual({
+            text: 'look',
+            caret: 4,
+            removedFilenames: ['image-2.png'],
+        });
+    });
+
+    test('drops attachments when the native field already removed the whole citation', () => {
+        const previous = `keep ${buildAttachmentCitationText(['image-1.png'])} extra`;
+        expect(reconcileComposerAttachmentTextDeletion(previous, 'keep extra', ['image-1.png'])).toEqual({
+            text: 'keep extra',
+            caret: 5,
+            removedFilenames: ['image-1.png'],
+        });
+    });
+
+    test('leaves ordinary native typing alone', () => {
+        expect(reconcileComposerAttachmentTextDeletion(
+            'hello',
+            'hell',
+            ['image-1.png'],
+        )).toBeNull();
     });
 
     test('strips reserved icon slots before delivery', () => {

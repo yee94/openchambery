@@ -125,16 +125,15 @@ export function MobileProjectCard({
   const card = (
     <article
         data-mobile-press-surface="soft"
+        data-pressed={pressed ? 'true' : undefined}
         className={cn(
           'oc-mobile-project-card relative flex items-stretch overflow-hidden rounded-[var(--oc-mobile-surface-radius)]',
-          pressed && 'bg-interactive-hover',
           className,
         )}
       >
         <button
           type="button"
           data-mobile-press-surface-trigger
-          data-mobile-press-feedback="none"
           className="oc-mobile-project-trigger flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           aria-expanded={expanded}
           onClick={handleToggle}

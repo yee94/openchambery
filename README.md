@@ -1,114 +1,129 @@
-# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/openchamber-logo-dark.svg"><img src="docs/references/badges/openchamber-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> OpenChamber
+# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/openchamber-logo-dark.svg"><img src="docs/references/badges/openchamber-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> OpenChamberY
 
 [![GitHub stars](https://img.shields.io/github/stars/yee94/openchamber?style=flat&labelColor=100F0F&color=66800B)](https://github.com/yee94/openchamber/stargazers)
 [![GitHub release](https://img.shields.io/github/v/release/yee94/openchamber?style=flat&labelColor=100F0F&color=205EA6)](https://github.com/yee94/openchamber/releases/latest)
 [![Created with OpenCode](docs/references/badges/created-with-opencode.svg)](https://opencode.ai)
 
-**A rich GUI for [OpenCode](https://opencode.ai) — with a Codex-like interaction experience.**
+**The full-surface GUI and mission control for [OpenCode](https://opencode.ai).**
 
-Desktop · Browser · Phone · VS Code
+Desktop · Mobile · Browser · VS Code
 
 [中文说明](./README_ZH.md)
 
-<table align="center" border="0" cellspacing="0" cellpadding="6">
+<p align="center">
+  <img src="docs/references/chat_example.png" alt="OpenChamberY Desktop UI" width="100%" />
+</p>
+
+<table align="center" border="0" cellspacing="0" cellpadding="4">
   <tr>
-    <td width="75%" valign="top">
-      <img src="docs/references/chat_example.png" alt="OpenChamber main UI — desktop" width="100%" />
+    <td width="33.3%" valign="top">
+      <img src="docs/references/mobile_projects.png" alt="Mobile project and session branches" width="100%" />
     </td>
-    <td width="25%" valign="top">
-      <img src="docs/references/chat_mobile_dark.png" alt="OpenChamber mobile UI — projects" width="100%" />
+    <td width="33.3%" valign="top">
+      <img src="docs/references/mobile_chat.png" alt="Mobile live diff and execution state" width="100%" />
+    </td>
+    <td width="33.3%" valign="top">
+      <img src="docs/references/mobile_schedules.png" alt="Scheduled tasks and automations" width="100%" />
     </td>
   </tr>
 </table>
 
 ---
 
-## Why this fork exists
+## About OpenChamberY
 
-[OpenCode](https://opencode.ai) is a strong open-source coding-agent runtime.  
-What many of us still miss day to day is the **Codex-style desktop interaction**: session trees, leader-key chords, one-click fork, a dense status bar, and a run loop you can interrupt without thinking.
+**OpenChamberY** is maintained by [@yee94](https://github.com/yee94), forked from the upstream open-source project [fedaykindev/openchamber](https://github.com/fedaykindev/openchamber) by Bohdan Triapitsyn.
 
-This repository ([yee94/openchamber](https://github.com/yee94/openchamber)) builds on upstream [OpenChamber](https://github.com/fedaykindev/openchamber) with a clear goal:
+Building upon the upstream cross-surface architecture and [OpenCode](https://opencode.ai) runtime engine, OpenChamberY focuses on:
+- **Codex-grade desktop flow**: `Ctrl+X` leader shortcuts, double-`Esc` abort, `/fork` session branching, and keyboard-first operations.
+- **Deep native mobile experience**: iOS Live Activities & Dynamic Island, refined haptics, native composer, and system share integration.
+- **Scheduled automations & Goal mode**: Built-in Cron scheduler for recurring codebase health audits, standup digests, and autonomous tasks.
+- **Reliability & cross-device sync**: SQLite session indexing, coalesced cold-start queries, and resilient synchronization.
 
-> **Bring a Codex-like interaction experience to OpenCode.**
+---
 
-We keep OpenCode as the engine. We invest in the layer you *feel*:
+## Features
 
-| Focus | What we ship |
-|------|----------------|
-| **Interaction parity** | `Ctrl+X` leader shortcuts, double-Esc abort, pin/switch sessions, `/fork` `/compact`, and familiar agent workflows |
-| **Session workflow** | Branchable timeline, cold-start fork, instant new-session loading, workspace panels bound per session |
-| **Reliability** | SQLite session index, coalesced cold-start traffic, queue scheduling, authoritative sync state |
-| **Everywhere** | Desktop, browser, phone, and VS Code on one shared UI + runtime contract |
+### 1. Chat & Interaction
+- **Codex-grade keyboard flow**: `Ctrl+X` leader chords, double-`Esc` abort, `/fork`, `/compact`, and `Ctrl+C` input clear.
+- **Branchable session tree**: Fork sessions anytime from earlier turns, explore alternative paths, and navigate past timelines with `/undo` and `/redo`.
+- **Smart tool UI**: Live visual diff cards, file operations, permission prompts, and long-running task progress (with real-time tok/s).
+- **Plan / Build mode**: Dedicated plan drafting view; add inline comments on diffs and plans to feed back to the agent.
+- **Parallel subagents & worktrees**: Spawn child agents running inside isolated Git worktrees without touching your active branch.
+- **Voice mode & diagrams**: Speech input and read-aloud responses; embedded Mermaid diagram rendering.
 
-## Recent work in this fork
+### 2. Git & GitHub Workflows
+- **Full Git sidebar**: Staging, commits, push/pull, branch management, rebase, and merge flows.
+- **Automated PR workflows**: AI-generated PR descriptions, integrated CI status checks, and in-app merging.
+- **Issue & PR context**: Start dedicated sessions directly from GitHub issues or pull requests with context pre-attached.
 
-Highlights toward “Codex feel + OpenCode power”:
+### 3. Files, Diff & Integrated Terminal
+- **Interactive diff viewer**: Stacked and inline views, lazy loading for large changesets, and one-click file jump.
+- **Workspace file tree**: Built-in editor with syntax highlighting, Vim mode, and live Markdown preview.
+- **High-performance terminal**: Powered by the Ghostty engine with multi-tab support and stability under heavy output.
 
-- **Keyboard & commands** — `Ctrl+X` leader mode, double-Esc abort with first-press hint, `/fork` `/compact`, composer clear, `openchamber://` deeplinks
-- **Sessions & workspace** — cold-start fork fallback, new-session loading transition, per-session right panels, pinned session subtrees
-- **Reliability** — queue scheduling with strict directory scope, request coalescing on cold start, draft/attachment persistence, runtime-isolated queues
-- **Polish** — denser chat status chrome, AI summary settings, localized fork progress, mobile haptics
+### 4. Native Mobile Experience (iOS / Android / PWA)
+- **iOS Live Activities & Dynamic Island**: Track active tasks, runtime, and attention prompts without keeping the app open.
+- **Refined touch & native composer**: Elastic press feedback, light haptics, and a mobile-optimized input experience.
+- **System share integration**: Share links, text snippets, and images from any mobile app directly into OpenChamberY assistants.
+- **Push alerts**: Remote notifications supported via APNs and self-hosted Push Relay.
 
-See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/yee94/openchamber/releases) for the full trail.
+### 5. Scheduled Tasks & Automations
+- **Built-in Cron / recurring schedules**: Trigger runs daily, weekly, or via custom Cron expressions.
+- **Goal Mode**: Hand off high-level prompts that agents pursue autonomously until done, with complete run logs.
+- **Common use cases**: Daily codebase morning digests, periodic dependency audits, and weekly architecture reviews.
+
+### 6. Multi-Surface & Connectivity
+- **One-tap QR pairing**: Scan from the mobile app to pair devices instantly with isolated authorization tokens.
+- **Private Relay**: End-to-end encrypted remote access without opening router ports or exposing public IPs.
+- **Desktop extras**: Floating Mini Chat, multi-window workspace, and SSH remote instance management with port forwarding.
+- **VS Code Extension**: Run full sessions directly in your editor sidebar with Agent Manager and context menus.
+
+### 7. Customization & Insights
+- **18+ built-in themes**: Light and dark variants with hot-reloading for custom JSON themes.
+- **Token usage & cost metrics**: Real-time token breakdowns across providers, run pacing, and raw message inspector.
+- **Project notes & skills**: Persistent workspace Notes and Todos, plus built-in Skills catalog and management.
+
+---
 
 ## Downloads
 
-| Surface | Install |
-|---------|---------|
+| Platform | Installation |
+|---|---|
 | **Desktop** (macOS / Windows / Linux) | [GitHub Releases](https://github.com/yee94/openchamber/releases) |
-| **iOS** (TestFlight) | [Join the beta](https://testflight.apple.com/join/ZCENBHtm) — install [TestFlight](https://apps.apple.com/app/testflight/id899247664) on your iPhone or iPad, then open the link |
-| **Android** | [GitHub Releases](https://github.com/yee94/openchamber/releases) (`app-release.apk`) |
-| **VS Code** | [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) |
-| **Web / CLI** | [Install script](https://raw.githubusercontent.com/yee94/openchamber/main/scripts/install.sh) · `openchamber` |
+| **iOS** (TestFlight) | [Join Public Beta](https://testflight.apple.com/join/ZCENBHtm) (requires TestFlight on device) |
+| **Android** | [GitHub Releases](https://github.com/yee94/openchamber/releases/latest) (`app-release.apk`) |
+| **VS Code** | Search `OpenChamber` in Extensions or install from [Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) |
+| **Web / CLI** | Install via `openchambery` script (see below) |
+
+---
 
 ## Quick Start
 
-> **Prerequisite:** Desktop bundles a matching OpenCode CLI. CLI/Web and VS Code use your installed [OpenCode CLI](https://opencode.ai).
+> Desktop bundles a matching OpenCode CLI. Web/CLI and VS Code use your locally installed [OpenCode](https://opencode.ai).
 
-### Desktop (macOS + Windows + Linux)
+### Web / CLI Server
 
-Download from [Releases](https://github.com/yee94/openchamber/releases).
-
-On Linux, use the AppImage for your arch (`linux-x86_64` / `linux-arm64`), `chmod +x` it, and keep it in a writable location for in-app updates. FUSE (`libfuse.so.2`) is required; or run:
-
-```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./OpenChamber-*-linux-*.AppImage
-```
-
-### VS Code
-
-Install from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) or search **OpenChamber** in Extensions.
-
-### Mobile (iOS TestFlight + Android)
-
-- **iOS (TestFlight):** [testflight.apple.com/join/ZCENBHtm](https://testflight.apple.com/join/ZCENBHtm)  
-  Public beta. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664) first, then open the link on your device. First-time external testers may need Apple Beta App Review approval before the build becomes installable.
-- **Android:** download the signed APK from [Releases](https://github.com/yee94/openchamber/releases/latest) (`app-release.apk`). Package id is `com.yee94.openchamber`; uninstall any older `com.openchamber.app` install first if the update is refused.
-
-The native app connects to an existing OpenChamber server; it does not embed OpenCode itself.
-
-### CLI (Web + PWA)
-
-_Requires Node.js 22+_
+Requires Node.js 22+:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yee94/openchamber/main/scripts/install.sh | bash
-openchamber --ui-password be-creative-here
+openchambery --ui-password your-secure-password
 ```
 
+Open `http://localhost:3000`. Under Settings → Remote Instances, generate a QR code to pair your mobile app.
+
 <details>
-<summary>Advanced CLI options</summary>
+<summary>Common openchambery CLI commands</summary>
 
 ```bash
-openchamber --port 8080              # Custom port
-openchamber --lan --port 3000        # Listen on LAN (0.0.0.0)
-openchamber --ui-password secret     # Password-protect UI
-openchamber startup enable           # Start at login as a native service
-openchamber connect-url --port 3000 --qr
-OPENCODE_PORT=4096 OPENCODE_SKIP_START=true openchamber
-openchamber stop
-openchamber update
+openchambery --port 8080              # Custom port
+openchambery --lan --port 3000        # Listen on LAN (0.0.0.0)
+openchambery --ui-password secret     # Require UI password
+openchambery startup enable           # Enable auto-start service on boot
+openchambery connect-url --port 3000 --qr # Print pairing QR in terminal
+openchambery stop                     # Stop background service
+openchambery update                   # Update to latest version
 ```
 
 </details>
@@ -120,46 +135,22 @@ openchamber update
 docker compose up -d
 ```
 
-Available at `http://localhost:3000`. Set `UI_PASSWORD` as needed. Ensure `data/` is writable (`chown -R 1000:1000 data/`).
+Available at `http://localhost:3000`. Set `UI_PASSWORD` in your environment.
 
 </details>
 
-## Features (core)
-
-- Branchable chat timeline with `/undo`, `/redo`, and one-click forks
-- Smart tool UIs for diffs, files, permissions, and long-running tasks
-- Multi-agent runs with isolated worktrees
-- In-app Git / GitHub workflows (commits, PRs, checks, merge)
-- Plan/Build mode, inline comments on diffs and plans
-- Integrated terminal, skills catalog, voice mode
-- Desktop: multi-window, Mini Chat, SSH remote instances, deep links
-- Web/PWA: pairing QR onboarding, mobile-first chat, self-update
-- VS Code: editor-native sessions, Agent Manager, context actions
+---
 
 ## Attribution
 
-| Role | Credit |
-|------|--------|
-| **This fork** | [yee94](https://github.com/yee94) (Yee) — Codex-aligned interaction, session reliability, multi-surface polish |
-| **Upstream OpenChamber** | [Bohdan Triapitsyn / fedaykindev](https://github.com/fedaykindev/openchamber) — original product & architecture |
-| **Runtime** | [OpenCode](https://opencode.ai) — agent engine and APIs |
+| Role | Details |
+|---|---|
+| **This fork** | Maintained by [yee94](https://github.com/yee94) (Yee) — Codex interaction parity, mobile UX, session reliability, and multi-surface polish |
+| **Upstream OpenChamber** | [Bohdan Triapitsyn / fedaykindev](https://github.com/fedaykindev/openchamber) — original architecture & foundational product |
+| **Runtime Engine** | [OpenCode](https://opencode.ai) — open-source AI agent runtime & SDK |
 
-Independent project, not affiliated with the OpenCode team.
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md). Docs live in [`packages/docs`](packages/docs/README.md).
+Independent community project; not affiliated with the OpenCode team.
 
 ## License
 
-MIT
-
----
-
-<p align="center">
-  <sub>
-    Maintained by <a href="https://github.com/yee94">@yee94</a>
-    · Built on <a href="https://github.com/fedaykindev/openchamber">OpenChamber</a>
-    · Powered by <a href="https://opencode.ai">OpenCode</a>
-  </sub>
-</p>
+[MIT](./LICENSE)

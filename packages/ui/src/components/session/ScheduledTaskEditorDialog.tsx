@@ -39,7 +39,7 @@ import { isValidCronExpression, getNextRuns, CRON_EXAMPLES } from '@/lib/cron';
 
 const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const;
 
-const FORM_CONTROL_CLASS = '!h-9 !min-h-9 w-full min-w-0 rounded-full border-0 bg-[var(--surface-elevated)] px-3 py-1 ring-1 ring-inset ring-border/60 transition-[background-color,box-shadow,transform] duration-150 ease-out hover:[&:not(:focus)]:bg-[var(--surface-subtle)] hover:[&:not(:focus)]:ring-transparent active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] data-[popup-open]:bg-[var(--surface-subtle)] data-[popup-open]:shadow-sm motion-reduce:transition-none';
+const FORM_CONTROL_CLASS = '!h-9 !min-h-9 w-full min-w-0 rounded-full border-0 bg-[var(--surface-elevated)] px-3 py-1 ring-1 ring-inset ring-border/60 transition-[background-color,box-shadow] duration-150 ease-out hover:[&:not(:focus)]:bg-[var(--surface-subtle)] hover:[&:not(:focus)]:ring-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] data-[popup-open]:bg-[var(--surface-subtle)] data-[popup-open]:shadow-sm motion-reduce:transition-none';
 const PANEL_CONTROL_CLASS = 'oc-settings-inline-value';
 const PANEL_ROW_CLASS = `oc-settings-split-row ${groupedCardRowClassName}`;
 const MOBILE_PANEL_CONTROL_CLASS = PANEL_CONTROL_CLASS;
@@ -1833,7 +1833,7 @@ export function ScheduledTaskEditorDialog(props: {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className={cn('rounded-lg transition-transform duration-150 active:scale-90 motion-reduce:transition-none', isMobile ? 'size-11' : 'size-8')}
+                      className={cn('rounded-lg', isMobile ? 'size-11' : 'size-8')}
                       disabled={saving || actionBusy}
                       aria-label={t('sessions.scheduledTasks.dialog.actions.moreAria', { taskName: task.name })}
                     >
@@ -1865,21 +1865,21 @@ export function ScheduledTaskEditorDialog(props: {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className={cn('group rounded-lg transition-transform duration-150 active:scale-90 motion-reduce:transition-none', isMobile ? 'size-11' : 'size-8')}
+                  className={cn('rounded-lg', isMobile ? 'size-11' : 'size-8')}
                   disabled={saving || actionBusy}
                   onClick={() => void onToggleEnabled(task, !task.enabled)}
                   aria-label={task.enabled
                     ? t('sessions.scheduledTasks.dialog.taskToggle.pauseAria', { taskName: task.name })
                     : t('sessions.scheduledTasks.dialog.taskToggle.enableAria', { taskName: task.name })}
                 >
-                  <Icon name={task.enabled ? 'pause' : 'play'} className="size-4 transition-transform duration-150 group-active:scale-75 motion-reduce:transition-none" />
+                  <Icon name={task.enabled ? 'pause' : 'play'} className="size-4" />
                 </Button>
               ) : null}
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className={cn('rounded-lg transition-transform duration-150 active:scale-90 motion-reduce:transition-none', isMobile ? 'size-11' : 'size-8')}
+                className={cn('rounded-lg', isMobile ? 'size-11' : 'size-8')}
                 onClick={() => onOpenChange(false)}
                 aria-label={t('sessions.scheduledTasks.editor.actions.cancel')}
               >

@@ -129,7 +129,8 @@ describe('shouldTightenWorkingBottomGap', () => {
     test('idle Processed chrome restores pb-8 even when isInActiveTurn never cleared', () => {
         // Incomplete last assistant (no time.completed) keeps the
         // streamingAssistantMessageId fallback after header demotion.
-        // SessionRecapNote's -mt-6 needs that pb-8 or it overlaps "已处理".
+        // Idle Processed chrome still needs pb-8 so the next turn does not
+        // overlap the Processed header.
         expect(shouldTightenWorkingBottomGap({
             isWorking: false,
             isInActiveTurn: true,

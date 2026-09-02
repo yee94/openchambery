@@ -134,6 +134,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   };
 
+  const normalizeOpenCodeUpgradeTarget = (value) => {
+    if (typeof value !== 'string') return '';
+    return value.trim().replace(/^v/i, '');
+  };
+
+  const readOpenCodeUpgradeError = (payload, fallback) => {
+    if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error.trim();
+    if (typeof payload?.data?.message === 'string' && payload.data.message.trim()) {
+      return payload.data.message.trim();
+    }
+    if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message.trim();
+    return fallback;
+  };
+
   app.get('/api/config/settings', async (req, res) => {
     try {
       const settings = await readSettingsFromDiskMigrated();

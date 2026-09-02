@@ -94,3 +94,17 @@ export const resolveOpenCodeUpgradeStatusVersion = (
   if (typeof status.latestVersion !== 'string') return '';
   return status.latestVersion.trim();
 };
+
+/**
+ * Builds the JSON body for `POST /api/opencode/upgrade`.
+ *
+ * OpenCode requires `{ target: <semver> }`. The leading `v` is stripped
+ * because the upstream schema uses `semver.valid`. Returns `null` when
+ * `version` is empty so the caller can refuse the request.
+ */
+export const buildOpenCodeUpgradeRequestBody = (
+  version: string,
+): { target: string } | null => {
+  const target = version.trim().replace(/^v/i, '');
+  return target ? { target } : null;
+};

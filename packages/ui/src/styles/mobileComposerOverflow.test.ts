@@ -10,6 +10,8 @@ const chatPromptComposerSource = readFileSync(join(here, '../components/chat/Cha
 const chatContainerSource = readFileSync(join(here, '../components/chat/ChatContainer.tsx'), 'utf-8');
 const autoFollowSource = readFileSync(join(here, '../hooks/useChatAutoFollow.ts'), 'utf-8');
 const swapHookSource = readFileSync(join(here, '../components/chat/useMobileComposerSwap.ts'), 'utf-8');
+const queuedChipsSource = readFileSync(join(here, '../components/chat/QueuedMessageChips.tsx'), 'utf-8');
+const mobileAppSource = readFileSync(join(here, '../apps/MobileApp.tsx'), 'utf-8');
 const injected = new Set<HTMLElement>();
 
 afterEach(() => {
@@ -93,6 +95,7 @@ describe('mobile composer overflow and swap contract', () => {
         expect(chatInputSource).toContain('placement="compact"');
         expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--with-scroll');
         expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--aborting');
+        expect(chatInputSource).toContain('oc-mobile-composer-compact-chrome--sending');
         expect(chatInputSource).toContain('data-mobile-composer-compact-slot="trailing"');
         expect(readFileSync(join(here, '../components/chat/components/ScrollToBottomButton.tsx'), 'utf-8')).toContain(
             "isCompactInline ? 'ghost' : 'outline'",
@@ -135,8 +138,171 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileCss).toMatch(/prefers-reduced-transparency:\s*reduce[\s\S]*\.oc-mobile-composer-compact-layer/);
     });
 
+    test('hides web composer chrome when the iOS native overlay is active', () => {
+        expect(mobileCss).toContain(':root.oc-native-ios-composer');
+        expect(mobileCss).toContain('--oc-native-composer-height');
+        expect(mobileCss).not.toMatch(
+            /:root\.oc-native-ios-composer \.oc-chat-composer-swap-scope\s*\{[^}]*--oc-mobile-composer-swap:\s*0\s*!important/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer\s*\{[^}]*--oc-chat-foot-inset:\s*calc\(\s*var\(--oc-native-composer-height/,
+        );
+        expect(mobileCss).toContain('--oc-native-composer-accessory');
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none\s*!important;[^}]*opacity:\s*1\s*!important/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*calc\(\s*var\(--oc-native-composer-height/,
+        );
+        expect(mobileCss).not.toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*padding-bottom:\s*8px/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-mobile-composer-foot--overlay \[data-native-composer-accessories\]\s*\{[^}]*opacity:\s*calc\(1 - min\(1, var\(--oc-native-composer-dock/,
+        );
+        expect(mobileCss).toMatch(
+            /data-oc-native-composer-dock="away"[\s\S]*?\[data-native-composer-accessories\][\s\S]*?pointer-events:\s*none/,
+        );
+        expect(swapHookSource).toContain('publishNativeComposerDock');
+        expect(mobileCss).not.toContain('[data-native-composer-accessories]:has(*)::before');
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-composer-queue\s*\{[^}]*margin-bottom:\s*0/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-composer-queue \[data-oc-queue-composer-overlap\]\s*\{[^}]*display:\s*none/,
+        );
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-composer-queue \[data-oc-queue-card-body\]\s*\{[^}]*padding-top:\s*0\.375rem;[^}]*padding-bottom:\s*0\.375rem/,
+        );
+        expect(queuedChipsSource).toContain('data-oc-queue-composer-overlap');
+        expect(queuedChipsSource).toContain('data-oc-queue-card');
+        expect(queuedChipsSource).toContain("'oc-composer-queue relative z-0 -mb-5 w-full'");
+        expect(queuedChipsSource).toMatch(/data-oc-queue-composer-overlap[\s\S]*isMobile \? 'h-4' : 'h-5'/);
+        expect(mobileCss.match(/\.oc-composer-queue\s*\{[^}]*margin-bottom:\s*0/g)).toHaveLength(1);
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer \.oc-scroll-to-bottom--expanded,\s*:root\.oc-native-ios-composer \.oc-scroll-to-bottom--compact/,
+        );
+        expect(chatInputSource).toContain('data-native-composer-accessories');
+        expect(chatInputSource).toContain('applyNativeComposerAccessoryVar');
+        expect(chatInputSource).toContain('useNativeIosComposer');
+        expect(chatInputSource).toContain('data-native-ios-composer');
+        expect(chatInputSource).toContain('showScrollToBottom: Boolean(showScrollToBottom && onScrollToBottom)');
+        expect(chatInputSource).toContain('reconcileComposerAttachmentTextDeletion');
+        expect(chatInputSource).toContain('onRemoveAttachment');
+        expect(chatInputSource).toContain('nativeIosComposerActive ? null');
+        expect(chatInputSource).not.toContain("setProperty('--oc-chat-foot-inset'");
+        expect(chatContainerSource).not.toContain('canUseNativeIosComposer');
+        expect(chatContainerSource).toMatch(
+            /useMobileComposerSwap\(\{\s*enabled:\s*isMobile,/,
+        );
+        expect(mobileAppSource).toContain("root.classList.contains('oc-native-ios-composer')");
+        expect(mobileAppSource).toContain('unwindKeyboardShell');
+        expect(mobileAppSource).toContain('getNativeIosComposerPlugin().blur()');
+        expect(mobileAppSource).toMatch(
+            /oc-native-ios-composer[\s\S]*unwindKeyboardShell\(\)/,
+        );
+        expect(mobileAppSource).toContain("setVar('--oc-kb-layout', 0)");
+    });
+
+    /**
+     * A source regex cannot tell which foot-inset declaration actually wins.
+     * The native reservation used to be scoped to `.oc-chat-composer-swap-scope`
+     * while the web default was scoped to `:root.mobile-pointer:not(...)` and
+     * the same scope class — one extra compound selector, so the web default
+     * out-specified it and the transcript reserved a fixed 8rem no matter how
+     * tall the native pill plus the queued-message strip really were. Resolve
+     * the value through the cascade so weight, not source order, is asserted.
+     */
+    test('native iOS foot inset wins the cascade over the fixed web reservation', () => {
+        const footInsetRules: string[] = [];
+        for (let cursor = 0; ;) {
+            const declaration = mobileCss.indexOf('--oc-chat-foot-inset:', cursor);
+            if (declaration === -1) break;
+            const blockEnd = mobileCss.indexOf('}', declaration);
+            const blockStart = mobileCss.lastIndexOf('{', declaration);
+            footInsetRules.push(mobileCss.slice(mobileCss.lastIndexOf('}', blockStart) + 1, blockEnd + 1));
+            cursor = blockEnd + 1;
+        }
+        // Every declaration is in the fixture, so a third one cannot be added
+        // without this assertion resolving it too.
+        expect(footInsetRules).toHaveLength(2);
+
+        const resolveFootInset = (nativeIos: boolean): string => {
+            document.documentElement.className = nativeIos
+                ? 'mobile-pointer oc-native-ios-composer'
+                : 'mobile-pointer';
+            const style = document.createElement('style');
+            style.textContent = `
+              :root {
+                --oc-native-composer-height: 90px;
+                --oc-native-composer-accessory: 100px;
+                --oc-safe-area-bottom-visual: 34px;
+              }
+              ${footInsetRules.join('\n')}
+            `;
+            document.head.appendChild(style);
+            injected.add(style);
+            return getComputedStyle(document.documentElement)
+                .getPropertyValue('--oc-chat-foot-inset')
+                .replace(/\s+/g, '');
+        };
+
+        expect(resolveFootInset(false)).toBe('calc(8rem+34px)');
+        expect(resolveFootInset(true)).toBe('calc(90px+100px)');
+    });
+
+    test('queue card tuck stays on web and Android; native iOS hides the overlap', () => {
+        const start = mobileCss.indexOf(':root.oc-native-ios-composer .oc-composer-queue {');
+        const end = mobileCss.indexOf('/* Static ancestors so absolute docking', start);
+        expect(start).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(start);
+        const queueCss = mobileCss.slice(start, end);
+
+        const mountQueue = (nativeIos: boolean) => {
+            document.documentElement.className = nativeIos ? 'oc-native-ios-composer' : '';
+            const style = document.createElement('style');
+            style.textContent = `
+              .oc-composer-queue { margin-bottom: -1.25rem; }
+              [data-oc-queue-card-body] { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+              [data-oc-queue-composer-overlap] { height: 1rem; }
+              ${queueCss}
+            `;
+            document.head.appendChild(style);
+            injected.add(style);
+            const host = document.createElement('div');
+            host.innerHTML = `
+              <div class="oc-composer-queue">
+                <div data-oc-queue-card="">
+                  <div data-oc-queue-card-body=""></div>
+                  <div data-oc-queue-composer-overlap=""></div>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(host);
+            injected.add(host);
+            return {
+                queue: host.querySelector<HTMLElement>('.oc-composer-queue')!,
+                body: host.querySelector<HTMLElement>('[data-oc-queue-card-body]')!,
+                overlap: host.querySelector<HTMLElement>('[data-oc-queue-composer-overlap]')!,
+            };
+        };
+
+        const web = mountQueue(false);
+        expect(getComputedStyle(web.queue).marginBottom).toBe('-20px');
+        expect(getComputedStyle(web.overlap).display).not.toBe('none');
+        expect(getComputedStyle(web.overlap).height).toBe('16px');
+        expect(getComputedStyle(web.body).paddingTop).toBe('4px');
+        expect(getComputedStyle(web.body).paddingBottom).toBe('4px');
+
+        const ios = mountQueue(true);
+        expect(getComputedStyle(ios.queue).marginBottom).toBe('0px');
+        expect(getComputedStyle(ios.overlap).display).toBe('none');
+        expect(getComputedStyle(ios.body).paddingTop).toBe('6px');
+        expect(getComputedStyle(ios.body).paddingBottom).toBe('6px');
+    });
+
     test('settings inputBarOffset applies only in the native app while the keyboard is down', () => {
-        expect(chatInputSource).toContain('isMobile && isCapacitorApp() && inputBarOffset > 0 && !mobileTextareaFocused');
+        expect(chatInputSource).toContain('isMobile && isCapacitorApp() && !nativeIosComposerActive && inputBarOffset > 0 && !mobileTextareaFocused');
     });
 
     test('in-flow draft feet pin expanded and hide leftover compact pills', () => {
@@ -149,6 +315,56 @@ describe('mobile composer overflow and swap contract', () => {
         expect(swapHookSource).toContain('clearComposerSwap');
         expect(chatContainerSource.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(2);
         expect(chatContainerSource).toContain('oc-draft-center');
+    });
+
+    test('native iOS in-flow feet reserve the pill so draft pickers sit above the input', () => {
+        expect(mobileCss).toMatch(
+            /:root\.oc-native-ios-composer\s+\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s*\{[^}]*padding-bottom:\s*calc\(\s*var\(--oc-native-composer-height/,
+        );
+        expect(chatInputSource).toContain('oc-mobile-draft-target-selectors');
+        expect(chatInputSource).toContain('data-native-composer-accessories');
+
+        const start = mobileCss.indexOf(
+            ':root.oc-native-ios-composer\n  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {',
+        );
+        expect(start).toBeGreaterThan(-1);
+        const end = mobileCss.indexOf('}', start);
+        const inFlowNativeCss = mobileCss.slice(start, end + 1);
+
+        const mountFeet = (nativeIos: boolean) => {
+            document.documentElement.className = nativeIos ? 'oc-native-ios-composer' : '';
+            const style = document.createElement('style');
+            style.textContent = `
+              :root { --oc-native-composer-height: 88px; }
+              .oc-mobile-composer-foot { padding-bottom: 0; }
+              ${inFlowNativeCss}
+            `;
+            document.head.appendChild(style);
+            injected.add(style);
+            const host = document.createElement('div');
+            host.innerHTML = `
+              <div class="oc-mobile-composer-foot">
+                <div data-native-composer-accessories="" data-testid="draft-accessories"></div>
+              </div>
+              <div class="oc-mobile-composer-foot oc-mobile-composer-foot--overlay">
+                <div data-native-composer-accessories="" data-testid="overlay-accessories"></div>
+              </div>
+            `;
+            document.body.appendChild(host);
+            injected.add(host);
+            return {
+                draft: host.querySelector<HTMLElement>('.oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay)')!,
+                overlay: host.querySelector<HTMLElement>('.oc-mobile-composer-foot--overlay')!,
+            };
+        };
+
+        const web = mountFeet(false);
+        expect(getComputedStyle(web.draft).paddingBottom).toBe('0px');
+        expect(getComputedStyle(web.overlay).paddingBottom).toBe('0px');
+
+        const ios = mountFeet(true);
+        expect(getComputedStyle(ios.draft).paddingBottom).toBe('calc(88px - 8px)');
+        expect(getComputedStyle(ios.overlay).paddingBottom).toBe('0px');
     });
 
     test('leftover session swap cannot cover the in-flow draft composer', () => {

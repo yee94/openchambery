@@ -71,7 +71,7 @@ export type ResolvedPrimaryComposerSessionSelection = {
   modelID: string;
   /** Explicit variant to apply; `undefined` clears any previous variant. */
   variant: string | undefined;
-  source: 'history' | 'session-memory' | 'session-entity';
+  source: 'execution' | 'history' | 'session-memory' | 'session-entity';
   messageId?: string;
 };
 
@@ -211,18 +211,88 @@ const resolveHistoryModelVariant = (options: {
   return undefined;
 };
 
+const resolveTranscriptBackedChoice = (options: {
+  sessionId: string;
+  choice: PrimaryComposerLatestUserChoice;
+  catalog: PrimaryComposerCatalog;
+  memory?: Pick<
+    PrimaryComposerSelectionMemory,
+    'getSessionAgentSelection' | 'getAgentModelVariantForSession'
+  >;
+  fallbackAgentName?: string;
+  source: 'execution' | 'history';
+}): ResolvedPrimaryComposerSessionSelection | null => {
+  const { sessionId, choice, catalog, memory, fallbackAgentName, source } = options;
+  if (
+    !choice.providerID
+    || !choice.modelID
+    || !catalogHasProviderModel(catalog, choice.providerID, choice.modelID)
+  ) {
+    return null;
+  }
+
+  const choiceAgent =
+    choice.agent && catalogHasAgent(catalog, choice.agent)
+      ? choice.agent
+      : (memory?.getSessionAgentSelection?.(sessionId)
+        && catalogHasAgent(catalog, memory.getSessionAgentSelection(sessionId)!)
+        ? memory.getSessionAgentSelection(sessionId)!
+        : (fallbackAgentName && catalogHasAgent(catalog, fallbackAgentName)
+          ? fallbackAgentName
+          : undefined));
+
+  const memoryVariant = choiceAgent
+    ? memory?.getAgentModelVariantForSession?.(
+      sessionId,
+      choiceAgent,
+      choice.providerID,
+      choice.modelID,
+    )
+    : undefined;
+  const variant = resolveHistoryModelVariant({
+    catalog,
+    providerID: choice.providerID,
+    modelID: choice.modelID,
+    historyVariant: choice.variant,
+    memoryVariant,
+  });
+
+  return {
+    agent: choiceAgent,
+    providerID: choice.providerID,
+    modelID: choice.modelID,
+    variant,
+    source,
+    messageId: choice.id,
+  };
+};
+
 /**
  * Resolve the session selection to restore into the primary composer.
  *
- * Cascade: history (latest user message) → same-client selection-store memory →
- * session-entity (SDK Session.agent / Session.model, server-maintained). History
- * is the cross-client authoritative baseline; memory covers unread transcripts
- * and omitted variants; session-entity survives lazy transcript loads and local
- * storage loss/eviction.
+ * Cascade: latest assistant execution → history (latest user send) →
+ * same-client selection-store memory → session-entity (SDK Session.agent /
+ * Session.model, server-maintained). Execution is the last real run in the
+ * loaded transcript; history covers a newer send that has not been answered
+ * yet; memory covers unread transcripts and omitted variants; session-entity
+ * is the loading-phase authority and survives lazy transcript loads / local
+ * storage loss.
+ *
+ * While the transcript is still loading (`transcriptReady === false`),
+ * execution, history, and memory are skipped. An empty or partial message
+ * list is not "no history" — treating it that way paints the previous
+ * session's model in the composer and lets send flush later pick the
+ * conversation model.
  */
 export const resolvePrimaryComposerSessionSelection = (options: {
   sessionId: string;
   latestUserChoice?: PrimaryComposerLatestUserChoice | null;
+  /**
+   * Latest assistant execution that has not been superseded by a later user
+   * send. Preferred over user-choice history and session memory once the
+   * transcript is renderable.
+   */
+  latestExecution?: PrimaryComposerLatestUserChoice | null;
   catalog: PrimaryComposerCatalog;
   memory?: Pick<
     PrimaryComposerSelectionMemory,
@@ -235,51 +305,53 @@ export const resolvePrimaryComposerSessionSelection = (options: {
   sessionEntity?: PrimaryComposerSessionEntity | null;
   /** Current config agent used only when history omits agent and memory has none. */
   fallbackAgentName?: string;
+  /**
+   * False while `useSessionMaterializationStatus.renderable` is false.
+   * Defaults to true so flush (after `ensureSessionRenderable`) keeps the
+   * full cascade.
+   */
+  transcriptReady?: boolean;
 }): ResolvedPrimaryComposerSessionSelection | null => {
-  const { sessionId, latestUserChoice, catalog, memory, sessionEntity, fallbackAgentName } = options;
+  const {
+    sessionId,
+    latestUserChoice,
+    latestExecution,
+    catalog,
+    memory,
+    sessionEntity,
+    fallbackAgentName,
+    transcriptReady = true,
+  } = options;
 
-  if (
-    latestUserChoice?.providerID
-    && latestUserChoice.modelID
-    && catalogHasProviderModel(catalog, latestUserChoice.providerID, latestUserChoice.modelID)
-  ) {
-    const historyAgent =
-      latestUserChoice.agent && catalogHasAgent(catalog, latestUserChoice.agent)
-        ? latestUserChoice.agent
-        : (memory?.getSessionAgentSelection?.(sessionId)
-          && catalogHasAgent(catalog, memory.getSessionAgentSelection(sessionId)!)
-          ? memory.getSessionAgentSelection(sessionId)!
-          : (fallbackAgentName && catalogHasAgent(catalog, fallbackAgentName)
-            ? fallbackAgentName
-            : undefined));
-
-    const memoryVariant = historyAgent
-      ? memory?.getAgentModelVariantForSession?.(
-        sessionId,
-        historyAgent,
-        latestUserChoice.providerID,
-        latestUserChoice.modelID,
-      )
-      : undefined;
-    const variant = resolveHistoryModelVariant({
+  if (transcriptReady && latestExecution) {
+    const executed = resolveTranscriptBackedChoice({
+      sessionId,
+      choice: latestExecution,
       catalog,
-      providerID: latestUserChoice.providerID,
-      modelID: latestUserChoice.modelID,
-      historyVariant: latestUserChoice.variant,
-      memoryVariant,
+      memory,
+      fallbackAgentName,
+      source: 'execution',
     });
-
-    return {
-      agent: historyAgent,
-      providerID: latestUserChoice.providerID,
-      modelID: latestUserChoice.modelID,
-      variant,
-      source: 'history',
-      messageId: latestUserChoice.id,
-    };
+    if (executed) {
+      return executed;
+    }
   }
 
-  if (memory) {
+  if (transcriptReady && latestUserChoice) {
+    const history = resolveTranscriptBackedChoice({
+      sessionId,
+      choice: latestUserChoice,
+      catalog,
+      memory,
+      fallbackAgentName,
+      source: 'history',
+    });
+    if (history) {
+      return history;
+    }
+  }
+
+  if (transcriptReady && memory) {
     const savedAgentName = memory.getSessionAgentSelection?.(sessionId) ?? null;
     const agentName =
       savedAgentName && catalogHasAgent(catalog, savedAgentName)
@@ -469,6 +541,27 @@ export const capturePrimaryComposerSendConfig = (
 };
 
 /**
+ * Keep an explicit composer pick instead of re-applying session restore.
+ *
+ * Loading the existing transcript (pinned id is null, then a message appears)
+ * is not "history advanced". A later user message with a different id is.
+ */
+export const shouldHoldPrimaryComposerUserPick = (options: {
+  editRevision: number;
+  pinnedHistoryMessageId: string | null;
+  latestHistoryMessageId: string | null;
+}): boolean => {
+  if (options.editRevision <= 0) {
+    return false;
+  }
+  const historyAdvanced =
+    options.pinnedHistoryMessageId != null
+    && options.latestHistoryMessageId != null
+    && options.latestHistoryMessageId !== options.pinnedHistoryMessageId;
+  return !historyAdvanced;
+};
+
+/**
  * Resolve the provider/model used for a primary send after selection.flush.
  *
  * Prefer a scope-matched live config capture. When worktree→project resolution
@@ -500,16 +593,59 @@ export const resolvePrimaryComposerSendConfig = (input: {
   };
 };
 
+type PrimaryComposerMessageRecord = {
+  id?: string;
+  role?: string;
+  agent?: string;
+  mode?: string;
+  providerID?: string;
+  modelID?: string;
+  model?: { providerID?: string; modelID?: string; variant?: string };
+  variant?: string;
+};
+
+const readNonEmptyMessageString = (value: unknown): string | undefined => (
+  typeof value === 'string' && value.trim().length > 0 ? value : undefined
+);
+
+const readMessageAgent = (message: PrimaryComposerMessageRecord): string | undefined => (
+  readNonEmptyMessageString(message.agent) ?? readNonEmptyMessageString(message.mode)
+);
+
+const readMessageVariant = (message: PrimaryComposerMessageRecord): string | undefined => (
+  // OpenCode 1.4.0 moved variant from top-level to model.variant.
+  readNonEmptyMessageString(message.model?.variant) ?? readNonEmptyMessageString(message.variant)
+);
+
+const readUserMessageModel = (
+  message: PrimaryComposerMessageRecord,
+): { providerID: string; modelID: string } | null => {
+  const providerID = readNonEmptyMessageString(message.model?.providerID);
+  const modelID = readNonEmptyMessageString(message.model?.modelID);
+  if (!providerID || !modelID) {
+    return null;
+  }
+  return { providerID, modelID };
+};
+
+const readAssistantMessageModel = (
+  message: PrimaryComposerMessageRecord,
+): { providerID: string; modelID: string } | null => {
+  const providerID =
+    readNonEmptyMessageString(message.providerID)
+    ?? readNonEmptyMessageString(message.model?.providerID);
+  const modelID =
+    readNonEmptyMessageString(message.modelID)
+    ?? readNonEmptyMessageString(message.model?.modelID);
+  if (!providerID || !modelID) {
+    return null;
+  }
+  return { providerID, modelID };
+};
+
 /** Extract the latest user message choice from a message list (newest last). */
 export const parseLatestUserChoiceFromMessages = (
-  messages: ReadonlyArray<{
-    id?: string;
-    role?: string;
-    agent?: string;
-    mode?: string;
-    model?: { providerID?: string; modelID?: string; variant?: string };
-    variant?: string;
-  }>,
+  messages: ReadonlyArray<PrimaryComposerMessageRecord>,
 ): PrimaryComposerLatestUserChoice | null => {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
@@ -517,33 +653,51 @@ export const parseLatestUserChoiceFromMessages = (
       continue;
     }
 
-    const providerID =
-      typeof message.model?.providerID === 'string' && message.model.providerID.trim().length > 0
-        ? message.model.providerID
-        : undefined;
-    const modelID =
-      typeof message.model?.modelID === 'string' && message.model.modelID.trim().length > 0
-        ? message.model.modelID
-        : undefined;
-    const agent =
-      typeof message.agent === 'string' && message.agent.trim().length > 0
-        ? message.agent
-        : (typeof message.mode === 'string' && message.mode.trim().length > 0
-          ? message.mode
-          : undefined);
-    // OpenCode 1.4.0 moved variant from top-level to model.variant.
-    const variantCandidate = message.model?.variant ?? message.variant;
-    const variant =
-      typeof variantCandidate === 'string' && variantCandidate.trim().length > 0
-        ? variantCandidate
-        : undefined;
+    const model = readUserMessageModel(message);
+    return {
+      id: typeof message.id === 'string' ? message.id : undefined,
+      agent: readMessageAgent(message),
+      providerID: model?.providerID,
+      modelID: model?.modelID,
+      variant: readMessageVariant(message),
+    };
+  }
+  return null;
+};
+
+/**
+ * Extract the latest assistant execution model (newest last).
+ *
+ * Assistant messages carry providerID/modelID at the top level. A later user
+ * message that itself records a model is a newer send — return null so restore
+ * keeps that send instead of rolling back to the previous turn's execution.
+ */
+export const parseLatestAssistantExecutionFromMessages = (
+  messages: ReadonlyArray<PrimaryComposerMessageRecord>,
+): PrimaryComposerLatestUserChoice | null => {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role === 'user') {
+      if (readUserMessageModel(message)) {
+        return null;
+      }
+      continue;
+    }
+    if (message.role !== 'assistant') {
+      continue;
+    }
+
+    const model = readAssistantMessageModel(message);
+    if (!model) {
+      continue;
+    }
 
     return {
       id: typeof message.id === 'string' ? message.id : undefined,
-      agent,
-      providerID,
-      modelID,
-      variant,
+      agent: readMessageAgent(message),
+      providerID: model.providerID,
+      modelID: model.modelID,
+      variant: readMessageVariant(message),
     };
   }
   return null;

@@ -211,6 +211,64 @@ export const collectDetachedAttachmentFilenames = (
     return detached;
 };
 
+/**
+ * Pure deletion span from `previous` → `next`. Null when the edit also
+ * inserted characters (IME replacement, paste-over) or the texts match.
+ */
+export const inferSimpleDeletionRange = (
+    previous: string,
+    next: string,
+): CitationRange | null => {
+    if (next.length >= previous.length) return null;
+    let start = 0;
+    const prefixLimit = Math.min(previous.length, next.length);
+    while (start < prefixLimit && previous[start] === next[start]) start += 1;
+    let suffix = 0;
+    while (
+        suffix < previous.length - start
+        && suffix < next.length - start
+        && previous[previous.length - 1 - suffix] === next[next.length - 1 - suffix]
+    ) {
+        suffix += 1;
+    }
+    const previousEnd = previous.length - suffix;
+    const nextEnd = next.length - suffix;
+    if (nextEnd !== start || previousEnd <= start) return null;
+    return { start, end: previousEnd };
+};
+
+export interface ComposerAttachmentTextDeletion {
+    text: string;
+    caret: number;
+    removedFilenames: string[];
+}
+
+/**
+ * Native UITextView has no chip keydown. Expand a simple deletion that
+ * touches a citation into the whole token, then drop attachments whose
+ * citations disappeared.
+ */
+export const reconcileComposerAttachmentTextDeletion = (
+    previous: string,
+    next: string,
+    filenames: readonly string[],
+): ComposerAttachmentTextDeletion | null => {
+    if (previous === next || filenames.length === 0) return null;
+    const names = [...filenames];
+    const deletion = inferSimpleDeletionRange(previous, next);
+    if (deletion) {
+        const expanded = resolveAttachmentCitationDeletion(previous, names, {
+            key: 'Backspace',
+            selectionStart: deletion.start,
+            selectionEnd: deletion.end,
+        });
+        if (expanded) return expanded;
+    }
+    const removedFilenames = collectDetachedAttachmentFilenames(names, previous, next);
+    if (removedFilenames.length === 0) return null;
+    return { text: next, caret: next.length, removedFilenames };
+};
+
 /** Drop reserved icon wells before delivery so agents see plain `[filename]`. */
 export const stripAttachmentCitationSlotsForDelivery = (text: string): string => (
     text.replaceAll(`[${COMPOSER_TRIGGER_ICON_SLOT}`, '[')

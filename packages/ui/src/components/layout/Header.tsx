@@ -63,6 +63,7 @@ import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
 import { forceKillTerminal } from '@/lib/terminalApi';
 import { useTerminalStore } from '@/stores/useTerminalStore';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
+import { resolveServicesPanelIntent } from '@/components/layout/servicesPanelIntent';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { canUseElectronDesktopIPC, getElectronPlatform, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
@@ -1730,20 +1731,31 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [blurActiveElement, closeMobileHeaderPanels, isMobile, setActiveMainTab, tabs]);
 
+  const applyServicesPanelOpen = React.useCallback((tab: 'instance' | 'usage') => {
+    setDesktopServicesTab(tab);
+    setIsDesktopServicesOpen(true);
+    void refreshCurrentInstanceLabel();
+    if (tab === 'usage' && quotaResults.length === 0) {
+      void fetchAllQuotas();
+    }
+  }, [fetchAllQuotas, quotaResults.length, refreshCurrentInstanceLabel]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const toggleServicesCombo = getEffectiveShortcutCombo('toggle_services_menu', shortcutOverrides);
       if (eventMatchesShortcut(e, toggleServicesCombo)) {
         e.preventDefault();
 
-        if (isDesktopServicesOpen) {
+        const targetTab = isDesktopApp ? 'instance' : 'usage';
+        const intent = resolveServicesPanelIntent({
+          isOpen: isDesktopServicesOpen,
+          activeTab: desktopServicesTab,
+          targetTab,
+        });
+        if (!intent.open) {
           setIsDesktopServicesOpen(false);
         } else {
-          setIsDesktopServicesOpen(true);
-          void refreshCurrentInstanceLabel();
-          if (desktopServicesTab === 'usage' && quotaResults.length === 0) {
-            void fetchAllQuotas();
-          }
+          applyServicesPanelOpen(intent.tab);
         }
         return;
       }
@@ -1772,11 +1784,16 @@ export const Header: React.FC<HeaderProps> = ({
       const openUsageCombo = getEffectiveShortcutCombo('open_usage', shortcutOverrides);
       if (eventMatchesShortcut(e, openUsageCombo)) {
         e.preventDefault();
-        setDesktopServicesTab('usage');
-        setIsDesktopServicesOpen(true);
-        void refreshCurrentInstanceLabel();
-        if (quotaResults.length === 0) {
-          void fetchAllQuotas();
+
+        const intent = resolveServicesPanelIntent({
+          isOpen: isDesktopServicesOpen,
+          activeTab: desktopServicesTab,
+          targetTab: 'usage',
+        });
+        if (!intent.open) {
+          setIsDesktopServicesOpen(false);
+        } else {
+          applyServicesPanelOpen(intent.tab);
         }
         return;
       }
@@ -1792,12 +1809,14 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     shortcutOverrides,
+    isDesktopApp,
     isDesktopServicesOpen,
     desktopServicesTab,
     servicesTabs,
     quotaResults.length,
     fetchAllQuotas,
     refreshCurrentInstanceLabel,
+    applyServicesPanelOpen,
     handleOpenContextPlan,
   ]);
 
@@ -1858,13 +1877,8 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const openServicesPanelFromMenu = React.useCallback((tab: 'instance' | 'usage') => {
-    setDesktopServicesTab(tab);
-    setIsDesktopServicesOpen(true);
-    void refreshCurrentInstanceLabel();
-    if (tab === 'usage' && quotaResults.length === 0) {
-      void fetchAllQuotas();
-    }
-  }, [fetchAllQuotas, quotaResults.length, refreshCurrentInstanceLabel]);
+    applyServicesPanelOpen(tab);
+  }, [applyServicesPanelOpen]);
 
   const sessionMenuTriggerRef = React.useRef<HTMLDivElement | null>(null);
 
