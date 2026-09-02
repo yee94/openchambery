@@ -2,15 +2,15 @@ import { create } from 'zustand';
 
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 
-/** Persist off as `'0'`. Missing / any other value means native UI stays on. */
+/** Persist on as `'1'`. Missing / any other value keeps the WebView default. */
 export const IOS_NATIVE_UI_STORAGE_KEY = 'openchamber.iosNativeUi';
 
 export const readStoredIosNativeUiEnabled = (): boolean => {
-  if (typeof window === 'undefined') return true;
+  if (typeof window === 'undefined') return false;
   try {
-    return window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY) !== '0';
+    return window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY) === '1';
   } catch {
-    return true;
+    return false;
   }
 };
 
@@ -18,9 +18,9 @@ export const persistIosNativeUiEnabled = (enabled: boolean): void => {
   if (typeof window === 'undefined') return;
   try {
     if (enabled) {
-      window.localStorage.removeItem(IOS_NATIVE_UI_STORAGE_KEY);
+      window.localStorage.setItem(IOS_NATIVE_UI_STORAGE_KEY, '1');
     } else {
-      window.localStorage.setItem(IOS_NATIVE_UI_STORAGE_KEY, '0');
+      window.localStorage.removeItem(IOS_NATIVE_UI_STORAGE_KEY);
     }
   } catch {
     // Restricted storage still applies the in-memory flag for this session.

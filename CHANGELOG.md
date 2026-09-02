@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- iOS native experience is off by default. Turning it on may stutter.
+
 ## [1.19.0-beta.42] - 2026-09-02
 
 ### Added

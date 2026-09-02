@@ -10,7 +10,7 @@ import {
 
 const reset = (): void => {
   window.localStorage.removeItem(IOS_NATIVE_UI_STORAGE_KEY);
-  useIosNativeUiStore.setState({ enabled: true });
+  useIosNativeUiStore.setState({ enabled: false });
 };
 
 afterEach(() => {
@@ -18,30 +18,30 @@ afterEach(() => {
 });
 
 describe('ios native UI setting', () => {
-  test('defaults to enabled when nothing is stored', () => {
-    expect(readStoredIosNativeUiEnabled()).toBe(true);
-    expect(isIosNativeUiEnabled()).toBe(true);
+  test('defaults to disabled when nothing is stored', () => {
+    expect(readStoredIosNativeUiEnabled()).toBe(false);
+    expect(isIosNativeUiEnabled()).toBe(false);
   });
 
-  test('persists off as 0 and reads back disabled', () => {
+  test('persists on as 1 and reads back enabled', () => {
+    persistIosNativeUiEnabled(true);
+    expect(window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY)).toBe('1');
+    expect(readStoredIosNativeUiEnabled()).toBe(true);
+  });
+
+  test('clearing storage turns native UI back off', () => {
+    persistIosNativeUiEnabled(true);
     persistIosNativeUiEnabled(false);
-    expect(window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY)).toBe('0');
+    expect(window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY)).toBeNull();
     expect(readStoredIosNativeUiEnabled()).toBe(false);
   });
 
-  test('clearing storage turns native UI back on', () => {
-    persistIosNativeUiEnabled(false);
-    persistIosNativeUiEnabled(true);
-    expect(window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY)).toBeNull();
-    expect(readStoredIosNativeUiEnabled()).toBe(true);
-  });
-
   test('store setter updates memory and storage together', () => {
-    useIosNativeUiStore.getState().setEnabled(false);
-    expect(isIosNativeUiEnabled()).toBe(false);
-    expect(window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY)).toBe('0');
     useIosNativeUiStore.getState().setEnabled(true);
     expect(isIosNativeUiEnabled()).toBe(true);
+    expect(window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY)).toBe('1');
+    useIosNativeUiStore.getState().setEnabled(false);
+    expect(isIosNativeUiEnabled()).toBe(false);
     expect(window.localStorage.getItem(IOS_NATIVE_UI_STORAGE_KEY)).toBeNull();
   });
 });
