@@ -59,7 +59,7 @@ export async function createChatCompletion({
 }) {
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
   // Bundled OpenCode 1.18.4 generate is a full-turn JSON reply (sessionless
-  // generate or throwaway session.prompt). This gateway does not token-stream.
+  // generate or throwaway session.promptAsync). This gateway does not token-stream.
   // Do not emit fake SSE after the fact.
   if (body.stream === true) {
     throw new LlmError(
@@ -85,16 +85,31 @@ export async function createChatCompletion({
     );
   }
 
-  const generated = await generateText({
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
-    providerID: resolved.providerID,
-    modelID: resolved.modelID,
-    messages,
-    fetchImpl,
-    clientFactory,
-    ensureTempDirectory,
-  });
+  let generated;
+  try {
+    generated = await generateText({
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+      providerID: resolved.providerID,
+      modelID: resolved.modelID,
+      messages,
+      fetchImpl,
+      clientFactory,
+      ensureTempDirectory,
+    });
+  } catch (error) {
+    if (error instanceof LlmError) throw error;
+    if (error?.code === 'validation_error') {
+      throw new LlmError('validation_error', 400, error.message || 'validation_error');
+    }
+    throw new LlmError(
+      'upstream_error',
+      502,
+      typeof error?.message === 'string' && error.message.trim()
+        ? error.message
+        : 'OpenCode generate failed',
+    );
+  }
   const text = typeof generated?.text === 'string' ? generated.text.trim() : '';
   if (!text) throw new LlmError('upstream_error', 502, 'OpenCode returned no assistant text');
 

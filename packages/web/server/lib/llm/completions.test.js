@@ -53,4 +53,24 @@ describe('createChatCompletion', () => {
       statusCode: 400,
     })
   })
+
+  it('wraps generate failures as 502 with the OpenCode error message', async () => {
+    const generateText = vi.fn(async () => {
+      const error = new Error('model refused the request')
+      error.code = 'upstream_error'
+      throw error
+    })
+    await expect(createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({
+        models: [{ providerID: 'opencode', modelID: 'gpt-5-nano' }],
+        connected: ['opencode'],
+      }),
+      body: { model: 'opencode/gpt-5-nano', messages: [{ role: 'user', content: 'hi' }] },
+    })).rejects.toMatchObject({
+      code: 'upstream_error',
+      statusCode: 502,
+      message: 'model refused the request',
+    })
+  })
 })

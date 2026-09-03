@@ -2,6 +2,9 @@ import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 
 const LLM_AGENT_NAME = 'openchamber-llm';
 const GENERATE_TIMEOUT_MS = 90_000;
+const SETTLE_POLL_MS = 250;
+const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
+const EMPTY_IDLE_PROBES = 5;
 
 const AGENT_MARKDOWN = `---
 mode: primary
@@ -21,10 +24,55 @@ const isMissing = (result) =>
   || result?.error?.code === 'not_found'
   || result?.status === 404;
 
+const promptAdmitted = (result) =>
+  !result?.error
+  && (result?.response?.status === 204
+    || result?.status === 204
+    || result?.data !== undefined
+    || result?.response?.ok === true);
+
 const sdkErrorMessage = (result, fallback) => {
   const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status;
   const message = result?.error?.message || result?.error?.data?.message || fallback;
   return status ? `${message} (${status})` : message;
+};
+
+const failGenerate = (message) => {
+  const error = new Error(message);
+  error.code = 'upstream_error';
+  throw error;
+};
+
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
+    return;
+  }
+  const timer = setTimeout(resolve, ms);
+  const onAbort = () => {
+    clearTimeout(timer);
+    reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
+  };
+  signal?.addEventListener?.('abort', onAbort, { once: true });
+});
+
+const readMessageInfo = (message) => {
+  if (!message || typeof message !== 'object') return null;
+  if (message.info && typeof message.info === 'object') return message.info;
+  return message;
+};
+
+const assistantErrorDetail = (error) => {
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object') {
+    if (typeof error.message === 'string' && error.message.trim()) return error.message;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return '';
 };
 
 const assistantTextFromPrompt = (data) => {
@@ -35,8 +83,28 @@ const assistantTextFromPrompt = (data) => {
     .join('');
   if (text.trim()) return text;
   const info = data?.info ?? data?.data?.info;
-  if (typeof info?.error === 'string' && info.error) {
-    throw new Error(info.error);
+  if (info?.error) {
+    const detail = assistantErrorDetail(info.error);
+    if (detail) failGenerate(detail);
+  }
+  return '';
+};
+
+const assistantTextFromMessages = (messages) => {
+  if (!Array.isArray(messages) || messages.length === 0) return '';
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    const info = readMessageInfo(message);
+    if (info?.role !== 'assistant') continue;
+    if (info.error) {
+      const detail = assistantErrorDetail(info.error);
+      failGenerate(detail || 'OpenCode assistant error');
+    }
+    const parts = Array.isArray(message?.parts) ? message.parts : [];
+    return parts
+      .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('');
   }
   return '';
 };
@@ -47,6 +115,70 @@ const deniedTools = (ids) => {
     if (typeof id === 'string' && id.trim()) tools[id.trim()] = false;
   }
   return tools;
+};
+
+const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) => {
+  let incompleteAssistantProbes = 0;
+  let emptyIdleProbes = 0;
+
+  for (;;) {
+    signal?.throwIfAborted?.();
+
+    let sessionBusy = false;
+    try {
+      const statusResult = await client.session.status({ directory }, { signal });
+      if (!statusResult?.error && statusResult?.data && typeof statusResult.data === 'object') {
+        const statusValue = statusResult.data[sessionID];
+        const type = statusValue?.type ?? statusValue?.status;
+        sessionBusy = type === 'busy' || type === 'retry';
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+
+    if (sessionBusy) {
+      incompleteAssistantProbes = 0;
+      emptyIdleProbes = 0;
+      await sleep(SETTLE_POLL_MS, signal);
+      continue;
+    }
+
+    try {
+      const messagesResult = await client.session.messages({
+        sessionID,
+        directory,
+        limit: 20,
+      }, { signal });
+      if (!messagesResult?.error && Array.isArray(messagesResult?.data)) {
+        const lastInfo = readMessageInfo(messagesResult.data.at(-1));
+        if (lastInfo?.role === 'assistant') {
+          emptyIdleProbes = 0;
+          if (lastInfo.error) {
+            const detail = assistantErrorDetail(lastInfo.error);
+            failGenerate(detail || 'OpenCode assistant error');
+          }
+          if (lastInfo.time?.completed) {
+            return messagesResult.data;
+          }
+          incompleteAssistantProbes += 1;
+          if (incompleteAssistantProbes >= INCOMPLETE_ASSISTANT_SETTLE_PROBES) {
+            return messagesResult.data;
+          }
+        } else {
+          incompleteAssistantProbes = 0;
+          emptyIdleProbes += 1;
+          if (emptyIdleProbes >= EMPTY_IDLE_PROBES && lastInfo?.role === 'user') {
+            failGenerate('OpenCode LLM generator ended without assistant text');
+          }
+        }
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (error?.code === 'upstream_error') throw error;
+    }
+
+    await sleep(SETTLE_POLL_MS, signal);
+  }
 };
 
 /**
@@ -108,7 +240,7 @@ async function generateViaSessionless({ fetchImpl, url, headers, providerID, mod
   });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`OpenCode generate failed (${response.status})${body ? `: ${body.slice(0, 200)}` : ''}`);
+    failGenerate(`OpenCode generate failed (${response.status})${body ? `: ${body.slice(0, 200)}` : ''}`);
   }
   const payload = await response.json();
   const text = typeof payload?.text === 'string'
@@ -116,7 +248,7 @@ async function generateViaSessionless({ fetchImpl, url, headers, providerID, mod
     : typeof payload?.message === 'string'
       ? payload.message
       : '';
-  if (!text.trim()) throw new Error('OpenCode generate returned no text');
+  if (!text.trim()) failGenerate('OpenCode generate returned no text');
   return { text: text.trim(), source: 'generate' };
 }
 
@@ -124,6 +256,10 @@ async function generateViaSessionless({ fetchImpl, url, headers, providerID, mod
  * Generate assistant text through OpenCode's connected providers.
  * Sessionless generate if the binary exposes it; otherwise a throwaway
  * archived session used only as a tools-denied text generator.
+ *
+ * V2 session.prompt only forwards { id, prompt, delivery, resume } and drops
+ * model/parts/tools. Use promptAsync (body still has model, parts, tools,
+ * system, agent) then wait for idle and read session.messages.
  */
 export async function generateOpenCodeText({
   buildOpenCodeUrl,
@@ -186,7 +322,7 @@ export async function generateOpenCodeText({
     }, { signal: controller.signal });
     const sessionID = created?.data?.id;
     if (created?.error || !sessionID) {
-      throw new Error(`OpenCode LLM session create failed: ${sdkErrorMessage(created, 'create failed')}`);
+      failGenerate(`OpenCode LLM session create failed: ${sdkErrorMessage(created, 'create failed')}`);
     }
 
     try {
@@ -204,12 +340,11 @@ export async function generateOpenCodeText({
         });
       }
       if (archived?.error) {
-        throw new Error(`OpenCode LLM session archive failed: ${sdkErrorMessage(archived, 'archive failed')}`);
+        failGenerate(`OpenCode LLM session archive failed: ${sdkErrorMessage(archived, 'archive failed')}`);
       }
 
-      // session.prompt (sync) returns the assistant turn. This is a throwaway
-      // text generator — not the Assistant contact harness / transcript.
-      const prompted = await client.session.prompt({
+      // promptAsync still forwards model/parts/tools. v2 session.prompt does not.
+      const prompted = await client.session.promptAsync({
         sessionID,
         directory: workingDirectory,
         agent: LLM_AGENT_NAME,
@@ -218,12 +353,22 @@ export async function generateOpenCodeText({
         tools,
         parts: [{ type: 'text', text: flattened.prompt, synthetic: false }],
       }, { signal: controller.signal });
-      if (prompted?.error) {
-        throw new Error(`OpenCode LLM prompt failed: ${sdkErrorMessage(prompted, 'prompt failed')}`);
+      if (!promptAdmitted(prompted)) {
+        failGenerate(`OpenCode LLM promptAsync failed: ${sdkErrorMessage(prompted, 'promptAsync failed')}`);
       }
-      const text = assistantTextFromPrompt(prompted?.data ?? prompted);
+
+      let text = assistantTextFromPrompt(prompted?.data ?? prompted);
       if (!text.trim()) {
-        throw new Error('OpenCode LLM generator returned no assistant text');
+        const settled = await waitForIdleAssistant({
+          client,
+          sessionID,
+          directory: workingDirectory,
+          signal: controller.signal,
+        });
+        text = assistantTextFromMessages(settled);
+      }
+      if (!text.trim()) {
+        failGenerate('OpenCode LLM generator returned no assistant text');
       }
       return { text: text.trim(), source: 'throwaway-session' };
     } finally {
@@ -242,6 +387,7 @@ export const _test = {
   flattenMessages,
   deniedTools,
   assistantTextFromPrompt,
+  assistantTextFromMessages,
   LLM_AGENT_NAME,
   AGENT_MARKDOWN,
 };

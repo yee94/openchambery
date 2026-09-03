@@ -11,8 +11,8 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
 - `POST /api/openchamber/llm/chat/completions` — `{ model, messages, stream?,
   providerID?, modelID? }` → OpenAI `chat.completion` JSON.
   This gateway is **non-streaming**. Bundled OpenCode 1.18.4 generate
-  (`POST /generate` when present, otherwise throwaway `session.prompt`)
-  returns a full assistant turn. `stream: true` is rejected with
+  (`POST /generate` when present, otherwise throwaway `session.promptAsync`
+  plus idle wait) returns a full assistant turn. `stream: true` is rejected with
   `validation_error` (HTTP 400). Do not emit fake SSE after the fact.
   The contact UI waits for the completed turn; it does not typewrite tokens.
 
@@ -28,15 +28,18 @@ The 1.18.4 client exposes `GET /provider`, `GET /config/providers`, and
    the running OpenCode actually serves it.
 2. Otherwise create a throwaway archived OpenCode session, deny every tool
    (`client.tool.ids()` → `{ [id]: false }`), send our messages as
-   `system` + user text via `session.prompt`, read assistant text, delete
-   the session. This is a text generator only — never the contact transcript
-   and never a coding SessionPrompt loop.
+   `system` + user text via `session.promptAsync` (v2 `session.prompt` only
+   forwards `{ id, prompt, delivery, resume }` and drops `model`/`parts` —
+   that produced empty assistant text and a 502), wait for idle via
+   `session.status` + `session.messages`, then delete the session. This is a
+   text generator only — never the contact transcript and never a coding
+   SessionPrompt loop. Upstream `info.error.message` is forwarded on 502.
 
 Credentials stay in OpenCode. This module does not read `auth.json`, does not
 call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
 
 No connected provider → `no_provider` (HTTP 400). Upstream failure is never
-an empty success.
+an empty success. The 502 body includes `{ error, message }`.
 
 ## Ownership
 
