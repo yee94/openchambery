@@ -14,23 +14,19 @@ WORKDIR /build
 COPY packages/relay-server/src ./packages/relay-server/src
 COPY packages/relay-server/bin ./packages/relay-server/bin
 
-RUN mkdir -p /out/packages/relay-server/bin \
-  && bun build --compile --outfile /out/packages/relay-server/bin/openchamber-relay ./packages/relay-server/bin/openchamber-relay.js
-
 FROM node:24-bookworm-slim AS runtime
 
 WORKDIR /app
 
-# Layer-1 remains a Bun 1.3.14 compile standalone. Do not Bun-compile the Push entry.
-COPY --from=builder --chown=node:node /out/packages/relay-server/bin/openchamber-relay ./packages/relay-server/bin/openchamber-relay
-
-# Push Relay runs on Node 24 with node:sqlite from source/bin/package files.
+# Layer-1 and Push both run on Node 24 from source: combined mode mounts Push
+# routes in the Layer-1 process and needs node:sqlite, which Bun 1.3.14 does
+# not implement. The standalone openchamber-push-relay entry keeps working.
+COPY --from=builder --chown=node:node /build/packages/relay-server/node_modules ./packages/relay-server/node_modules
 COPY --chown=node:node packages/relay-server/package.json ./packages/relay-server/package.json
-COPY --chown=node:node packages/relay-server/bin/cli-entry.js ./packages/relay-server/bin/cli-entry.js
-COPY --chown=node:node packages/relay-server/bin/openchamber-push-relay.js ./packages/relay-server/bin/openchamber-push-relay.js
-COPY --chown=node:node packages/relay-server/src/push ./packages/relay-server/src/push
+COPY --chown=node:node packages/relay-server/src ./packages/relay-server/src
+COPY --chown=node:node packages/relay-server/bin ./packages/relay-server/bin
 
-RUN chmod 0755 /app/packages/relay-server/bin/openchamber-relay \
+RUN chmod 0755 /app/packages/relay-server/bin/openchamber-relay.js \
   /app/packages/relay-server/bin/openchamber-push-relay.js \
   && mkdir -p /data \
   && touch /data/.keep \
@@ -46,4 +42,4 @@ EXPOSE 8787 8788
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:8787/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
 
-ENTRYPOINT ["/app/packages/relay-server/bin/openchamber-relay"]
+ENTRYPOINT ["node", "/app/packages/relay-server/bin/openchamber-relay.js"]
