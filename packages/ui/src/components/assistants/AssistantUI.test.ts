@@ -462,7 +462,8 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).toContain('const sessionIsRunning = sessionPhase === \'busy\' || sessionPhase === \'retry\'');
     expect(chatInput).toContain('(sessionIsRunning || autoReviewRunning)');
     expect(queueServer).toContain("deliveryTarget.kind === 'assistant' && !deliveryParts");
-    expect(conversation).toContain('assistant.effectiveWorkspacePath');
+    expect(conversation).toContain('sendAssistantContactMessage');
+    expect(conversation).not.toContain('assistant.effectiveWorkspacePath');
     expect(conversation).not.toContain('flattenAssistantHistoryPages');
     expect(conversation).not.toContain('onRevertMessage');
     expect(chatContainer).toContain('sessionID={currentSessionId ?? undefined}');
