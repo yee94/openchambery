@@ -301,8 +301,12 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('appendAssistantContactCard');
     expect(conversation).not.toContain('parseContactComposerInput');
     expect(conversation).not.toContain('assistants.contact.composerHint');
+    expect(conversation).not.toContain('/card <sessionID>');
+    expect(conversation).not.toContain('/dm <assistantID>');
     expect(english).not.toContain('/card <sessionID>');
     expect(english).not.toContain('/dm <assistantID>');
+    expect(english).not.toContain('Card: /card');
+    expect(english).not.toContain('Message another assistant');
     expect(english).toContain('Message {name}…');
     expect(conversation).not.toContain('EventSource');
     expect(conversation).not.toContain('text/event-stream');
@@ -355,6 +359,21 @@ describe('Assistant UI product contract', () => {
     // Optimistic ticket owns the message ID when present; the draft send falls back to its pinned ID.
     expect(chatInput).toContain('? { messageID: optimisticTicket.messageID, ticket: optimisticTicket }');
     expect(chatInput).toContain('? { messageID: draftMessageID }');
+  });
+
+  test('keeps /card and /dm out of every locale dictionary — cards are assistant-emitted', async () => {
+    const { readdir } = await import('node:fs/promises');
+    const messagesDir = join(directory, '../../lib/i18n/messages');
+    const files = (await readdir(messagesDir)).filter((name) => name.endsWith('.ts'));
+    expect(files.length).toBeGreaterThan(8);
+    const sources = await Promise.all(files.map((name) => read(`../../lib/i18n/messages/${name}`)));
+    for (const source of sources) {
+      expect(source).not.toContain('assistants.contact.composerHint');
+      expect(source).not.toContain('/card <sessionID>');
+      expect(source).not.toContain('/dm <assistantID>');
+      expect(source).not.toContain('Card: /card');
+      expect(source).not.toContain('Message another assistant');
+    }
   });
 
   test('loads the OpenChamber contact transcript instead of OpenCode session history', async () => {
