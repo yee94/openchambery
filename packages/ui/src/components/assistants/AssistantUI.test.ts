@@ -271,10 +271,12 @@ describe('Assistant UI product contract', () => {
   });
 
   test('hosts a contact transcript with session cards and peer DMs, not ChatContainer', async () => {
-    const [view, conversation, card, chatContainer, chatInput, promptComposer, host, english] = await Promise.all([
+    const [view, conversation, card, assistantCard, scheduleCard, chatContainer, chatInput, promptComposer, host, english] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
       read('AssistantSessionCard.tsx'),
+      read('AssistantAssistantCard.tsx'),
+      read('AssistantScheduleCard.tsx'),
       read('../chat/ChatContainer.tsx'),
       read('../chat/ChatInput.tsx'),
       read('../chat/ChatPromptComposer.tsx'),
@@ -293,6 +295,8 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<TimelineDialog');
     expect(conversation).not.toContain('<ChatInput');
     expect(conversation).toContain('<AssistantSessionCard');
+    expect(conversation).toContain('<AssistantAssistantCard');
+    expect(conversation).toContain('<AssistantScheduleCard');
     expect(conversation).not.toContain('<Activity');
     expect(conversation).not.toContain('thinkingLevel');
     expect(conversation).toContain("data-assistant-contact-role={message.role}");
@@ -320,6 +324,14 @@ describe('Assistant UI product contract', () => {
     expect(card).toContain('data-assistant-contact-card="session"');
     expect(card).toContain('<Button');
     expect(card).toContain('statusChipClass');
+    expect(assistantCard).toContain('openAssistant(card.assistantID)');
+    expect(assistantCard).toContain('data-assistant-contact-card="assistant"');
+    expect(assistantCard).toContain("t('assistants.contact.card.assistant.open')");
+    expect(scheduleCard).toContain("setActiveMainTab('schedule')");
+    expect(scheduleCard).toContain('setScheduledTasksDialogOpen(true)');
+    expect(scheduleCard).toContain('data-assistant-contact-card="schedule"');
+    expect(english).toContain("'assistants.contact.card.assistant.open': 'Open contact'");
+    expect(english).toContain("'assistants.contact.card.schedule.open': 'Open schedule'");
     expect(host).toContain('export type ChatContainerHost');
     expect(host).toContain('composerSurface: ChatInputSurface');
     expect(chatContainer).toContain('if (props.host)');

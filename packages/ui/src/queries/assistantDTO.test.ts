@@ -100,4 +100,32 @@ describe('Assistant DTO parsing', () => {
       toAssistantID: 'asst_b',
     }).toAssistantID).toBe('asst_b');
   });
+  test('parses assistant and schedule contact cards', () => {
+    const page = parseAssistantContactPage({
+      complete: true,
+      nextCursor: null,
+      messages: [{
+        messageID: 'card_1',
+        assistantID: 'asst_host',
+        role: 'assistant',
+        turnID: 'card_1',
+        bubbleIndex: 0,
+        createdAt: 1,
+        ordinal: 1,
+        status: 'complete',
+        fromAssistantID: null,
+        fromAssistantName: null,
+        parts: [
+          { type: 'card', cardType: 'assistant', assistantID: 'asst_flow', name: 'FlowQA', providerID: 'opencode-go', modelID: 'deepseek-v4-flash', mode: 'continuous' },
+          { type: 'card', cardType: 'schedule', taskID: 'task_1', projectID: 'proj_1', name: 'Daily ping', kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai', prompt: 'ping' },
+        ],
+        text: '',
+        cards: [],
+      }],
+    });
+    expect(page.messages[0]?.cards).toEqual([
+      { type: 'card', cardType: 'assistant', assistantID: 'asst_flow', name: 'FlowQA', providerID: 'opencode-go', modelID: 'deepseek-v4-flash', mode: 'continuous' },
+      { type: 'card', cardType: 'schedule', taskID: 'task_1', projectID: 'proj_1', name: 'Daily ping', kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai', prompt: 'ping' },
+    ]);
+  });
 });

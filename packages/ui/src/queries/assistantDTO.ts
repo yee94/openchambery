@@ -13,7 +13,7 @@ export interface MessageAdmission { binding: SessionBinding; messageID: string; 
 export interface ShareOperation { operationID: string; assistantID: string; sessionID: string | null; messageID: string | null; state: 'submitting' | 'running' | 'completed' | 'failed' | 'unresolved'; phase: string; attempt: number; leaseExpiresAt: number | null; errorCode: string | null; }
 export interface AssistantHistoryEntry { sessionID: string; directory: string | null; info: Message; parts: Part[]; }
 export interface AssistantHistoryPage { entries: AssistantHistoryEntry[]; nextCursor: string | null; complete: boolean; }
-export type AssistantContactCardType = 'session';
+export type AssistantContactCardType = 'session' | 'assistant' | 'schedule';
 export type AssistantContactTextPart = { type: 'text'; text: string };
 export type AssistantContactSessionCardPart = {
   type: 'card';
@@ -24,7 +24,31 @@ export type AssistantContactSessionCardPart = {
   status: string | null;
   branch: string | null;
 };
-export type AssistantContactPart = AssistantContactTextPart | AssistantContactSessionCardPart;
+export type AssistantContactAssistantCardPart = {
+  type: 'card';
+  cardType: 'assistant';
+  assistantID: string;
+  name: string;
+  providerID: string;
+  modelID: string;
+  mode: AssistantMode;
+};
+export type AssistantContactScheduleCardPart = {
+  type: 'card';
+  cardType: 'schedule';
+  taskID: string;
+  projectID: string;
+  name: string;
+  kind: string | null;
+  time: string | null;
+  timezone: string | null;
+  prompt: string | null;
+};
+export type AssistantContactCardPart =
+  | AssistantContactSessionCardPart
+  | AssistantContactAssistantCardPart
+  | AssistantContactScheduleCardPart;
+export type AssistantContactPart = AssistantContactTextPart | AssistantContactCardPart;
 export type AssistantContactRole = 'user' | 'assistant' | 'peer';
 export interface AssistantContactMessage {
   messageID: string;
@@ -39,7 +63,7 @@ export interface AssistantContactMessage {
   fromAssistantName: string | null;
   parts: AssistantContactPart[];
   text: string;
-  cards: AssistantContactSessionCardPart[];
+  cards: AssistantContactCardPart[];
 }
 export interface AssistantContactPage {
   messages: AssistantContactMessage[];
@@ -49,7 +73,7 @@ export interface AssistantContactPage {
 export interface AssistantContactCardAdmission {
   messageID: string;
   admitted: true;
-  card: AssistantContactSessionCardPart;
+  card: AssistantContactCardPart;
 }
 export interface AssistantContactPeerAdmission {
   messageID: string;
@@ -118,15 +142,39 @@ const parseContactPart = (value: unknown): AssistantContactPart => {
   const part = record(value, 'assistant_contact_part');
   if (part.type === 'text') return { type: 'text', text: string(part.text, 'assistant_contact_part') };
   if (part.type === 'card') {
-    if (enumValue(part.cardType, ['session'] as const, 'assistant_contact_part') !== 'session') return invalid('assistant_contact_part');
+    const cardType = enumValue(part.cardType, ['session', 'assistant', 'schedule'] as const, 'assistant_contact_part');
+    if (cardType === 'session') {
+      return {
+        type: 'card',
+        cardType: 'session',
+        sessionID: string(part.sessionID, 'assistant_contact_part'),
+        directory: string(part.directory, 'assistant_contact_part'),
+        title: nullableString(part.title ?? null, 'assistant_contact_part'),
+        status: nullableString(part.status ?? null, 'assistant_contact_part'),
+        branch: nullableString(part.branch ?? null, 'assistant_contact_part'),
+      };
+    }
+    if (cardType === 'assistant') {
+      return {
+        type: 'card',
+        cardType: 'assistant',
+        assistantID: string(part.assistantID, 'assistant_contact_part'),
+        name: string(part.name, 'assistant_contact_part'),
+        providerID: string(part.providerID, 'assistant_contact_part'),
+        modelID: string(part.modelID, 'assistant_contact_part'),
+        mode: enumValue(part.mode ?? 'continuous', ['continuous', 'stateless'] as const, 'assistant_contact_part'),
+      };
+    }
     return {
       type: 'card',
-      cardType: 'session',
-      sessionID: string(part.sessionID, 'assistant_contact_part'),
-      directory: string(part.directory, 'assistant_contact_part'),
-      title: nullableString(part.title ?? null, 'assistant_contact_part'),
-      status: nullableString(part.status ?? null, 'assistant_contact_part'),
-      branch: nullableString(part.branch ?? null, 'assistant_contact_part'),
+      cardType: 'schedule',
+      taskID: string(part.taskID, 'assistant_contact_part'),
+      projectID: string(part.projectID, 'assistant_contact_part'),
+      name: string(part.name, 'assistant_contact_part'),
+      kind: nullableString(part.kind ?? null, 'assistant_contact_part'),
+      time: nullableString(part.time ?? null, 'assistant_contact_part'),
+      timezone: nullableString(part.timezone ?? null, 'assistant_contact_part'),
+      prompt: nullableString(part.prompt ?? null, 'assistant_contact_part'),
     };
   }
   return invalid('assistant_contact_part');
@@ -156,7 +204,7 @@ export const parseAssistantContactPage = (payload: unknown): AssistantContactPag
         fromAssistantName: nullableString(message.fromAssistantName ?? null, 'assistant_contact_message'),
         parts,
         text: typeof message.text === 'string' ? message.text : parts.filter((part): part is AssistantContactTextPart => part.type === 'text').map((part) => part.text).join(''),
-        cards: parts.filter((part): part is AssistantContactSessionCardPart => part.type === 'card'),
+        cards: parts.filter((part): part is AssistantContactCardPart => part.type === 'card'),
       };
     }),
     nextCursor,

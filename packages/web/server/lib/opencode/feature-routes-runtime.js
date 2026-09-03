@@ -227,6 +227,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenCodeAuthHeaders,
       getServerId,
       getAllowedRoots: () => assistantAllowedRoots,
+      listProjects: async () => {
+        const settings = await readSettingsFromDiskMigrated();
+        return sanitizeProjects(settings?.projects ?? [])
+          .filter((project) => project && typeof project.id === 'string' && typeof project.path === 'string')
+          .map((project) => ({ id: project.id, path: project.path }));
+      },
+      upsertScheduledTask: (projectID, task) => projectConfigRuntime.upsertScheduledTask(projectID, task),
+      syncScheduledTaskProject: (projectID) => scheduledTasksRuntime.syncProject(projectID),
       refreshAllowedRoots: refreshAssistantAllowedRoots,
       globalEventHub: globalMessageStreamHub,
       onRevisionTip: (tip) => broadcastAssistantRevisionTip({

@@ -738,6 +738,133 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('creates another assistant from create_assistant and persists the assistant card', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ tools }) => {
+        const create = tools.find((tool) => tool.name === 'create_assistant');
+        const result = await create.execute('call_1', { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' });
+        return {
+          text: 'Created FlowQA.',
+          bubbles: ['Created FlowQA.'],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await service.send(host.id, {
+      messageID: 'client_create_assistant',
+      parts: [{ type: 'text', text: '建一个助理叫 FlowQA，模型 opencode-go/deepseek-v4-flash' }],
+    });
+    const created = service.snapshot().assistants.find((item) => item.name === 'FlowQA');
+    expect(created).toMatchObject({
+      name: 'FlowQA',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      mode: 'continuous',
+    });
+    const page = service.contactMessages(host.id);
+    expect(page.messages.some((message) => message.parts.some((part) => (
+      part.type === 'card' && part.cardType === 'assistant' && part.name === 'FlowQA' && part.assistantID === created.id
+    )))).toBe(true);
+    service.close();
+  });
+
+  it('creates a scheduled task from schedule_task and persists the schedule card', async () => {
+    const directory = root();
+    const upserts = [];
+    const service = setup(directory, {}, {
+      listProjects: async () => [{ id: 'proj_app', path: directory }],
+      upsertScheduledTask: async (projectID, task) => {
+        upserts.push({ projectID, task });
+        return {
+          created: true,
+          task: {
+            id: 'task_ping',
+            name: task.name,
+            schedule: task.schedule,
+            execution: task.execution,
+          },
+          tasks: [],
+        };
+      },
+      syncScheduledTaskProject: async () => true,
+      runContactTurn: async ({ tools }) => {
+        const schedule = tools.find((tool) => tool.name === 'schedule_task');
+        const result = await schedule.execute('call_1', {
+          name: 'Daily ping',
+          prompt: 'ping',
+          time: '18:00',
+          timezone: 'Asia/Shanghai',
+        });
+        return {
+          text: 'Scheduled the ping.',
+          bubbles: ['Scheduled the ping.'],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await service.send(host.id, {
+      messageID: 'client_schedule',
+      parts: [{ type: 'text', text: '每天 18:00 Asia/Shanghai 排一个 ping 定时任务' }],
+    });
+    expect(upserts).toEqual([expect.objectContaining({
+      projectID: 'proj_app',
+      task: expect.objectContaining({
+        name: 'Daily ping',
+        enabled: true,
+        schedule: expect.objectContaining({
+          kind: 'daily',
+          time: '18:00',
+          timezone: 'Asia/Shanghai',
+        }),
+        execution: expect.objectContaining({
+          prompt: 'ping',
+          providerID: 'p',
+          modelID: 'm',
+        }),
+      }),
+    })]);
+    const page = service.contactMessages(host.id);
+    expect(page.messages.some((message) => message.parts.some((part) => (
+      part.type === 'card' && part.cardType === 'schedule' && part.taskID === 'task_ping' && part.time === '18:00'
+    )))).toBe(true);
+    expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
+    service.close();
+  });
+
+  it('appends assistant and schedule cards without creating session watches', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'assistant',
+      assistantID: 'asst_flow',
+      name: 'FlowQA',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      mode: 'continuous',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'schedule',
+      taskID: 'task_ping',
+      projectID: 'proj_app',
+      name: 'Daily ping',
+      kind: 'daily',
+      time: '18:00',
+      timezone: 'Asia/Shanghai',
+      prompt: 'ping',
+    });
+    expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
+    expect(service.snapshot().assistants[0].working).toBe(false);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => message.parts[0]?.cardType)).toEqual(['assistant', 'schedule']);
+    service.close();
+  });
+
   it('fails assign clearly when no project is registered and does not use assistant-workspaces', async () => {
     const directory = root();
     const creates = [];

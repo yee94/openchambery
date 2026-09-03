@@ -6,7 +6,7 @@ import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 import { reduceBackfillState } from './history-state.js';
 import { getWorktrees as defaultListWorktrees } from '../git/service.js';
-import { parseContactCard, parseContactPart } from './cards.js';
+import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
 import {
   CONTACT_SETTLE_TEXT,
   contactHistoryForLlm,
@@ -21,7 +21,7 @@ import {
   upsertContactWatch,
 } from './contact-store.js';
 import { ASSIGNED_SESSION_FALLBACK_BUBBLE, createContactTools } from './contact-tools.js';
-import { assignSession } from './assign.js';
+import { AssignError, ASSIGN_CODES, assignSession, resolveAssignDirectory } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
 
 const require = createRequire(import.meta.url);
@@ -64,7 +64,7 @@ const isTransientMessagesFailure = (result, error) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -631,7 +631,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         });
       });
       cards.forEach((cardInput, index) => {
-        const card = parseContactCard({ type: 'card', cardType: 'session', ...cardInput });
+        const card = parseContactCard({ type: 'card', cardType: cardInput?.cardType || 'session', ...cardInput });
         if (!card) return;
         ordinal += 1;
         insertContactMessage(db, {
@@ -645,13 +645,15 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           status: 'complete',
           parts: [card],
         });
-        upsertContactWatch(db, {
-          assistantID,
-          sessionID: card.sessionID,
-          directory: card.directory,
-          status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
-          updatedAt: now(),
-        });
+        if (card.cardType === 'session' && card.sessionID) {
+          upsertContactWatch(db, {
+            assistantID,
+            sessionID: card.sessionID,
+            directory: card.directory,
+            status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
+            updatedAt: now(),
+          });
+        }
       });
       bump();
       db.exec('COMMIT');
@@ -671,6 +673,76 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     promptExisting: (prompted) => client().session.promptAsync(prompted),
     messageID: params?.messageID || `msg_assign_${id()}`,
   });
+  const matchRegisteredProject = async (directory) => {
+    const projects = await listProjects();
+    const resolved = path.resolve(directory);
+    let real = resolved;
+    try { real = fs.realpathSync(resolved); } catch { /* Compare the resolved path when realpath is unavailable. */ }
+    const contained = (candidate, root) => candidate === root || candidate.startsWith(`${root}${path.sep}`);
+    for (const project of Array.isArray(projects) ? projects : []) {
+      if (typeof project?.id !== 'string' || typeof project?.path !== 'string') continue;
+      let projectPath = path.resolve(project.path);
+      try { projectPath = fs.realpathSync(projectPath); } catch { /* Keep the resolved project path. */ }
+      if (projectPath === real || contained(real, projectPath)) return { id: project.id, path: projectPath };
+    }
+    return null;
+  };
+  const scheduleWork = async (row, params) => {
+    if (typeof upsertScheduledTask !== 'function') {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Scheduling a task is unavailable.');
+    }
+    const projectDirectory = resolveAssignDirectory({
+      projectPath: params?.projectPath,
+      directory: params?.directory,
+      branch: null,
+      allowedRoots: getAllowedRoots(),
+      managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
+      defaultProjectPath: row.workspace_path,
+    });
+    const project = await matchRegisteredProject(projectDirectory);
+    if (!project) {
+      throw new AssignError(
+        ASSIGN_CODES.PROJECT_REQUIRED,
+        'Choose a registered project path. Several projects are configured; schedule_task cannot guess.',
+      );
+    }
+    const kind = typeof params?.kind === 'string' && params.kind.trim() ? params.kind.trim() : 'daily';
+    const weekdays = Array.isArray(params?.weekdays)
+      ? params.weekdays
+      : typeof params?.weekdays === 'string'
+        ? params.weekdays.split(',').map((item) => Number(item.trim())).filter((item) => Number.isInteger(item))
+        : undefined;
+    const upserted = await upsertScheduledTask(project.id, {
+      name: params.name,
+      enabled: true,
+      schedule: {
+        kind,
+        ...(params.time ? { time: params.time } : {}),
+        ...(params.timezone ? { timezone: params.timezone } : {}),
+        ...(params.date ? { date: params.date } : {}),
+        ...(weekdays && weekdays.length > 0 ? { weekdays } : {}),
+        ...(params.cron ? { cron: params.cron } : {}),
+      },
+      execution: {
+        prompt: params.prompt,
+        providerID: params.providerID,
+        modelID: params.modelID,
+      },
+    });
+    if (typeof syncScheduledTaskProject === 'function') {
+      try { await syncScheduledTaskProject(project.id); } catch { /* Card persistence does not depend on scheduler sync. */ }
+    }
+    return {
+      task: upserted?.task,
+      taskID: upserted?.task?.id,
+      projectID: project.id,
+      name: upserted?.task?.name || params.name,
+      kind: upserted?.task?.schedule?.kind || kind,
+      time: upserted?.task?.schedule?.time || upserted?.task?.schedule?.times?.[0] || params.time || null,
+      timezone: upserted?.task?.schedule?.timezone || params.timezone || null,
+      prompt: upserted?.task?.execution?.prompt || params.prompt,
+    };
+  };
   const send = async (assistantID, input) => {
     if (!plainObject(input)) fail('validation_error');
     if (input.parts !== undefined) validateParts(input.parts);
@@ -685,6 +757,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const assignedCards = [];
     const tools = createContactTools({
       assignWork: (params) => assignWork(row, params),
+      createAssistant: (input) => createAssistant(input),
+      scheduleTask: (params) => scheduleWork(row, params),
+      currentAssistant: output(row),
       onCard: (card) => assignedCards.push(card),
     });
     let generated;
@@ -706,7 +781,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const cards = [
       ...assignedCards,
       ...(Array.isArray(generated?.cards) ? generated.cards : []),
-    ].filter((card, index, list) => list.findIndex((item) => item?.sessionID === card?.sessionID && item?.directory === card?.directory) === index);
+    ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
     if (bubbles.length === 0 && cards.length === 0) fail('upstream_error');
     persistContactTurn(row.assistant_id, {
       userMessageID: messageID,
@@ -741,13 +816,15 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         status: 'complete',
         parts: [card],
       });
-      upsertContactWatch(db, {
-        assistantID: row.assistant_id,
-        sessionID: card.sessionID,
-        directory: card.directory,
-        status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
-        updatedAt: now(),
-      });
+      if (card.cardType === 'session' && card.sessionID) {
+        upsertContactWatch(db, {
+          assistantID: row.assistant_id,
+          sessionID: card.sessionID,
+          directory: card.directory,
+          status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
+          updatedAt: now(),
+        });
+      }
       bump();
       db.exec('COMMIT');
     } catch (error) {

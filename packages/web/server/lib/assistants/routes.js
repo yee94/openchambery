@@ -18,7 +18,7 @@ export const registerAssistantRoutes = (app, dependencies) => {
     }),
     ensureTempDirectory: ensureLlmTempDirectory,
   });
-  const service = createAssistantsService({ dbPath: dependencies.dbPath, dataDir: dependencies.openchamberDataDir, buildOpenCodeUrl: dependencies.buildOpenCodeUrl, getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders, getServerId: dependencies.getServerId, getAllowedRoots: dependencies.getAllowedRoots, globalEventHub: dependencies.globalEventHub, onRevisionTip: dependencies.onRevisionTip, createChatCompletion: boundCompletion });
+  const service = createAssistantsService({ dbPath: dependencies.dbPath, dataDir: dependencies.openchamberDataDir, buildOpenCodeUrl: dependencies.buildOpenCodeUrl, getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders, getServerId: dependencies.getServerId, getAllowedRoots: dependencies.getAllowedRoots, listProjects: dependencies.listProjects, upsertScheduledTask: dependencies.upsertScheduledTask, syncScheduledTaskProject: dependencies.syncScheduledTaskProject, globalEventHub: dependencies.globalEventHub, onRevisionTip: dependencies.onRevisionTip, createChatCompletion: boundCompletion });
   setAssignedSessionSettleHandler(({ sessionId, status }) => service.reportAssignedSessionSettle(sessionId, status));
   app.use('/api/openchamber/assistants', (req, res, next) => Promise.resolve(dependencies.refreshAllowedRoots?.()).then(next).catch((error) => respond(res, () => { throw error; })));
   app.get('/api/openchamber/assistants/capability', (_req, res) => respond(res, () => service.capability()));

@@ -58,7 +58,9 @@ export const CONTACT_SYSTEM_PROMPT = [
   "You are OpenChamber's in-app assistant — a personable contact, not a coding agent.",
   'Reply in short chat bubbles: a few sentences each, separated by a blank line.',
   'Do not expose chain-of-thought, tool traces, Activity, or editor actions.',
-  'Do not run bash, edit, read, or write. Assign coding work with assign_session so a real Chat session does the work.',
+  'Do not run bash, edit, read, or write.',
+  'Understand natural language in any language, including Chinese: 建助理 means create_assistant, 建会话 means assign_session, 排定时任务 means schedule_task, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
+  'Assign coding work with assign_session so a real Chat session does the work.',
 ].join(' ');
 
 const emptyUsage = () => ({

@@ -16,6 +16,8 @@ import {
 } from '@/queries/assistantQueries'
 import { AssistantAPIError } from '@/queries/assistantDTO'
 import { getAssistantPresentation } from './assistantPresentation'
+import { AssistantAssistantCard } from './AssistantAssistantCard'
+import { AssistantScheduleCard } from './AssistantScheduleCard'
 import { AssistantSessionCard } from './AssistantSessionCard'
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
 import { useAssistantContactWorkingStore, useAssistantWorking } from './assistantWorking'
@@ -36,10 +38,11 @@ type AssistantConversationSurfaceProps = {
  * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
  * first-class session cards — not ChatContainer, Activity, or markdown links.
  *
- * Cards are assistant-emitted UI (assign_session, later watch/PR). The
- * composer is a message box — not slash commands. Peer DMs arrive from the
- * harness/API. TODO(watch/summon): inbound unsolicited user pushes and full
- * summon-to-work MUST use this transcript. Do not invent a second inbox.
+ * Cards are assistant-emitted UI (assign_session, create_assistant,
+ * schedule_task; later watch/PR). The composer is a message box — not slash
+ * commands. Peer DMs arrive from the harness/API. TODO(watch/summon): inbound
+ * unsolicited user pushes and full summon-to-work MUST use this transcript.
+ * Do not invent a second inbox.
  */
 export const AssistantConversationSurface: React.FC<AssistantConversationSurfaceProps> = ({
   assistant,
@@ -175,6 +178,12 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                     {message.parts.map((part, index) => {
                       if (part.type === 'card' && part.cardType === 'session') {
                         return <AssistantSessionCard key={`${message.messageID}:card:${index}`} card={part} />
+                      }
+                      if (part.type === 'card' && part.cardType === 'assistant') {
+                        return <AssistantAssistantCard key={`${message.messageID}:card:${index}`} card={part} />
+                      }
+                      if (part.type === 'card' && part.cardType === 'schedule') {
+                        return <AssistantScheduleCard key={`${message.messageID}:card:${index}`} card={part} />
                       }
                       if (part.type === 'text' && part.text.trim()) {
                         return (

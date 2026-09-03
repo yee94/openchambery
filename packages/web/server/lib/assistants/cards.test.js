@@ -20,6 +20,44 @@ describe('contact cards', () => {
       branch: 'feat-login',
     })
     expect(CONTACT_CARD_TYPES).toContain('session')
+    expect(CONTACT_CARD_TYPES).toContain('assistant')
+    expect(CONTACT_CARD_TYPES).toContain('schedule')
+  })
+
+  it('creates assistant and schedule cards in the same slot', () => {
+    expect(parseContactCard({
+      cardType: 'assistant',
+      assistantID: 'asst_flow',
+      name: 'FlowQA',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+    })).toEqual({
+      type: 'card',
+      cardType: 'assistant',
+      assistantID: 'asst_flow',
+      name: 'FlowQA',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      mode: 'continuous',
+    })
+    expect(parseContactCard({
+      cardType: 'schedule',
+      taskID: 'task_1',
+      projectID: 'proj_1',
+      name: 'Daily ping',
+      kind: 'daily',
+      time: '18:00',
+      timezone: 'Asia/Shanghai',
+      prompt: 'ping',
+    })).toMatchObject({
+      type: 'card',
+      cardType: 'schedule',
+      taskID: 'task_1',
+      projectID: 'proj_1',
+      name: 'Daily ping',
+      kind: 'daily',
+      time: '18:00',
+    })
   })
 
   it('rejects unknown card types so later types reuse this slot', () => {

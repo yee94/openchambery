@@ -91,6 +91,8 @@ describe('runContactTurn', () => {
       expect(options.initialState.tools.map((tool) => tool.name)).toEqual(['assign_session'])
       expect(options.initialState.tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false)
       expect(options.initialState.systemPrompt).toContain('assign_session')
+      expect(options.initialState.systemPrompt).toContain('create_assistant')
+      expect(options.initialState.systemPrompt).toContain('建助理')
       this.state = { ...options.initialState, messages: [] }
       this.prompt = async () => {
         this.state.messages = [
