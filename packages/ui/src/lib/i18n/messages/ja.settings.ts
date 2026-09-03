@@ -2043,6 +2043,8 @@ export const settingsDict = {
   'assistants.contact.loadFailed': '会話を読み込めませんでした。',
   'assistants.contact.card.session.aria': 'セッション {title}',
   'assistants.contact.card.session.untitled': '無題のセッション',
+  'assistants.contact.card.session.changes.filesSingle': '{count} 件のファイル',
+  'assistants.contact.card.session.changes.filesPlural': '{count} 件のファイル',
   'assistants.contact.card.session.status.idle': '待機中',
   'assistants.contact.card.session.status.busy': '作業中',
   'assistants.contact.card.session.status.retry': '再試行中',

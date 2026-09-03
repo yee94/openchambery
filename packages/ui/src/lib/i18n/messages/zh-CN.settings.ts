@@ -2043,6 +2043,8 @@ export const settingsDict = {
   'assistants.contact.loadFailed': '无法加载对话。',
   'assistants.contact.card.session.aria': '会话 {title}',
   'assistants.contact.card.session.untitled': '未命名会话',
+  'assistants.contact.card.session.changes.filesSingle': '{count} 个文件',
+  'assistants.contact.card.session.changes.filesPlural': '{count} 个文件',
   'assistants.contact.card.session.status.idle': '空闲',
   'assistants.contact.card.session.status.busy': '工作中',
   'assistants.contact.card.session.status.retry': '重试中',

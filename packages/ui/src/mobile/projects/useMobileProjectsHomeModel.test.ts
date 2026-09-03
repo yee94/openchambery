@@ -106,6 +106,7 @@ describe('useMobileProjectsHomeModel shared pin contract', () => {
   test('uses a shared project · branch subtitle for pinned and in-progress rows', () => {
     expect(modelSource).toContain('formatHomeSessionSubtitle(project.label, worktree?.branch)');
     expect(modelSource).not.toContain('subtitle: pinned ? project.label : undefined');
+    expect(modelSource).toContain('formatSessionChangeCounts(readSessionChangeSummary(session))');
   });
 });
 

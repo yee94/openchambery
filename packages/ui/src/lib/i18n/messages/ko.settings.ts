@@ -2043,6 +2043,8 @@ export const settingsDict = {
   'assistants.contact.loadFailed': '대화를 불러오지 못했습니다.',
   'assistants.contact.card.session.aria': '세션 {title}',
   'assistants.contact.card.session.untitled': '제목 없는 세션',
+  'assistants.contact.card.session.changes.filesSingle': '파일 {count}개',
+  'assistants.contact.card.session.changes.filesPlural': '파일 {count}개',
   'assistants.contact.card.session.status.idle': '대기 중',
   'assistants.contact.card.session.status.busy': '작업 중',
   'assistants.contact.card.session.status.retry': '다시 시도 중',

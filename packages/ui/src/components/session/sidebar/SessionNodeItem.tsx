@@ -10,6 +10,7 @@ import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Icon } from "@/components/icon/Icon";
+import { formatSessionChangeCounts, readSessionChangeSummary } from '@/lib/sessionChangeSummary';
 import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
 import type { ChildSessionExport } from '@/lib/exportSession';
 import {
@@ -476,6 +477,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     }
   }, [isActive, rowFocus]);
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
+  const sessionChangeCounts = formatSessionChangeCounts(readSessionChangeSummary(resolvedSession));
   const titleRefreshMetadata = (resolvedSession as Session & {
     metadata?: {
       openchamber?: {
@@ -1305,6 +1307,11 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                       >
                         {renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}
                       </div>
+                      {sessionChangeCounts ? (
+                        <span className="shrink-0 typography-micro tabular-nums text-muted-foreground">
+                          {sessionChangeCounts}
+                        </span>
+                      ) : null}
                       {isAssistantSession ? <Icon name="ai-agent" className="size-3 shrink-0 text-muted-foreground" aria-label="Assistant" /> : null}
                       {pendingPermissionCount > 0 ? (
                         <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1 py-0.5 text-[0.7rem] text-destructive flex-shrink-0" title={t('sessions.sidebar.session.status.permissionRequired')} aria-label={t('sessions.sidebar.session.status.permissionRequired')}>

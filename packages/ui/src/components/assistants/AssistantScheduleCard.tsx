@@ -4,6 +4,7 @@ import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
 import type { AssistantContactScheduleCardPart } from '@/queries/assistantQueries'
 import { useUIStore } from '@/stores/useUIStore'
+import { CONTACT_CARD_CHROME_CLASS, activateContactCardOnKeyDown } from './contactCardChrome'
 
 type AssistantScheduleCardProps = {
   card: AssistantContactScheduleCardPart
@@ -23,14 +24,12 @@ export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ ca
     useUIStore.getState().setScheduledTasksDialogOpen(true)
   })
   const onActivateKeyDown = useEvent((event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    openSchedule()
+    activateContactCardOnKeyDown(event, openSchedule)
   })
 
   return (
     <article
-      className="w-full max-w-md cursor-pointer rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-interactive-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+      className={CONTACT_CARD_CHROME_CLASS}
       role="button"
       tabIndex={0}
       aria-label={t('assistants.contact.card.schedule.aria', { name: title })}
@@ -38,14 +37,16 @@ export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ ca
       onClick={openSchedule}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-start gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
-          <Icon name="calendar" className="size-4" />
+      <div className="flex items-start gap-2.5">
+        <span className="relative inline-block size-8 shrink-0 leading-none">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-foreground">
+            <Icon name="calendar" className="size-3.5" />
+          </span>
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <h3 className="min-w-0 truncate typography-ui-label font-medium text-foreground">{title}</h3>
           {metadata.length > 0 ? (
-            <p className="mt-1 truncate typography-micro text-muted-foreground">{metadata.join(' · ')}</p>
+            <p className="truncate typography-micro text-muted-foreground">{metadata.join(' · ')}</p>
           ) : null}
         </div>
       </div>

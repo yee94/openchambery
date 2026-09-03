@@ -2043,6 +2043,8 @@ export const settingsDict = {
   'assistants.contact.loadFailed': 'The conversation could not be loaded.',
   'assistants.contact.card.session.aria': 'Session {title}',
   'assistants.contact.card.session.untitled': 'Untitled session',
+  'assistants.contact.card.session.changes.filesSingle': '{count} file',
+  'assistants.contact.card.session.changes.filesPlural': '{count} files',
   'assistants.contact.card.session.status.idle': 'Idle',
   'assistants.contact.card.session.status.busy': 'Working',
   'assistants.contact.card.session.status.retry': 'Retrying',

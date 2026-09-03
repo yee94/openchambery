@@ -2,6 +2,12 @@ import React from 'react'
 import { useEvent } from '@reactuses/core'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
+import {
+  formatSessionChangeCounts,
+  readSessionBranchLabel,
+  readSessionChangeSummary,
+  readSessionModelLabel,
+} from '@/lib/sessionChangeSummary'
 import { cn } from '@/lib/utils'
 import { findSessionById } from '@/router/sessionLookup'
 import type { AssistantContactSessionCardPart } from '@/queries/assistantQueries'
@@ -11,6 +17,7 @@ import { useMobileAppActions } from '@/apps/mobileAppContext'
 import { isIPadApp } from '@/lib/platform'
 import { useGlobalSessionStatus } from '@/sync/sync-context'
 import { openSessionWithFeedback } from '@/sync/openSessionWithFeedback'
+import { CONTACT_CARD_CHROME_CLASS, activateContactCardOnKeyDown } from './contactCardChrome'
 
 type AssistantSessionCardProps = {
   card: AssistantContactSessionCardPart
@@ -48,28 +55,39 @@ const directoryName = (directory: string) => {
 }
 
 /**
- * Assistant-emitted in-transcript session card (Grok-Bot style): title,
- * status chip, metadata. The card itself opens the session. Not a slash
- * command, not Activity/tool UI.
+ * Compact assistant-emitted session cover: short title, project, status,
+ * optional model/branch/changes. The card itself opens the session.
  */
 export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card }) => {
   const { t } = useI18n()
   const mobileActions = useMobileAppActions()
   const isPhoneShell = Boolean(mobileActions && !isIPadApp())
-  const liveTitle = useGlobalSessionsStore((state) => {
-    const session = state.activeSessions.find((item) => item.id === card.sessionID)
-      ?? state.archivedSessions.find((item) => item.id === card.sessionID)
-    return typeof session?.title === 'string' && session.title.trim() ? session.title : null
-  })
+  const liveSession = useGlobalSessionsStore((state) => (
+    state.activeSessions.find((item) => item.id === card.sessionID)
+    ?? state.archivedSessions.find((item) => item.id === card.sessionID)
+    ?? null
+  ))
   const liveStatus = useGlobalSessionStatus(card.sessionID)
+  const liveTitle = typeof liveSession?.title === 'string' && liveSession.title.trim()
+    ? liveSession.title.trim()
+    : null
   const title = liveTitle || card.title || t('assistants.contact.card.session.untitled')
   const status = displayStatus(liveStatus?.type, card.status)
   const statusLabelKey = statusKey(status)
-  const metadata = [card.branch, card.sessionID, directoryName(card.directory)].filter(Boolean)
+  const working = status === 'busy' || status === 'retry'
+  const directory = (typeof liveSession?.directory === 'string' && liveSession.directory.trim())
+    ? liveSession.directory.trim()
+    : card.directory
+  const project = directoryName(directory)
+  const branch = readSessionBranchLabel(liveSession) || card.branch
+  const model = readSessionModelLabel(liveSession)
+  const changes = readSessionChangeSummary(liveSession)
+  const changeCounts = formatSessionChangeCounts(changes)
+  const contextLine = [model, branch].filter((item): item is string => Boolean(item && item.trim()))
   const openSession = useEvent(() => {
     const live = findSessionById(card.sessionID)
-    const directory = live?.directory || card.directory
-    openSessionWithFeedback(card.sessionID, directory, {
+    const nextDirectory = live?.directory || card.directory
+    openSessionWithFeedback(card.sessionID, nextDirectory, {
       phoneShell: isPhoneShell,
       switchToChat: true,
     })
@@ -78,14 +96,12 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
     }
   })
   const onActivateKeyDown = useEvent((event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    openSession()
+    activateContactCardOnKeyDown(event, openSession)
   })
 
   return (
     <article
-      className="w-full max-w-md cursor-pointer rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-interactive-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+      className={CONTACT_CARD_CHROME_CLASS}
       role="button"
       tabIndex={0}
       aria-label={t('assistants.contact.card.session.aria', { title })}
@@ -93,12 +109,21 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
       onClick={openSession}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-start gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
-          <Icon name="chat-3" className="size-4" />
+      <div className="flex items-start gap-2.5">
+        <span className="relative inline-block size-8 shrink-0 leading-none">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-foreground">
+            <Icon name="chat-3" className="size-3.5" />
+          </span>
+          {working ? (
+            <span
+              className="pointer-events-none absolute right-0 bottom-0 size-2 translate-x-1/4 translate-y-1/4 rounded-full bg-[var(--status-success)] ring-2 ring-[var(--surface-elevated)]"
+              data-assistant-working-dot=""
+              aria-hidden
+            />
+          ) : null}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="flex items-center gap-2">
             <h3 className="min-w-0 flex-1 truncate typography-ui-label font-medium text-foreground">{title}</h3>
             {statusLabelKey ? (
               <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 typography-micro leading-none', statusChipClass(status))}>
@@ -106,8 +131,28 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
               </span>
             ) : null}
           </div>
-          {metadata.length > 0 ? (
-            <p className="mt-1 truncate typography-micro text-muted-foreground">{metadata.join(' · ')}</p>
+          {project ? (
+            <p className="truncate typography-micro text-muted-foreground">{project}</p>
+          ) : null}
+          {contextLine.length > 0 ? (
+            <p className="truncate typography-micro text-muted-foreground">{contextLine.join(' · ')}</p>
+          ) : null}
+          {changeCounts || changes?.files !== undefined ? (
+            <p className="flex flex-wrap items-baseline gap-x-1.5 typography-micro tabular-nums">
+              {changes?.additions !== undefined ? (
+                <span className="text-[var(--status-success)]">+{changes.additions}</span>
+              ) : null}
+              {changes?.deletions !== undefined ? (
+                <span className="text-[var(--status-error)]">−{changes.deletions}</span>
+              ) : null}
+              {changes?.files !== undefined ? (
+                <span className="text-muted-foreground">
+                  {changes.files === 1
+                    ? t('assistants.contact.card.session.changes.filesSingle', { count: changes.files })
+                    : t('assistants.contact.card.session.changes.filesPlural', { count: changes.files })}
+                </span>
+              ) : null}
+            </p>
           ) : null}
         </div>
       </div>

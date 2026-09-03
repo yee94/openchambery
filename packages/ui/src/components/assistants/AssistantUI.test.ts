@@ -324,7 +324,10 @@ describe('Assistant UI product contract', () => {
     expect(card).toContain('data-assistant-contact-card="session"');
     expect(card).toContain('role="button"');
     expect(card).toContain('onClick={openSession}');
-    expect(card).toContain('cursor-pointer');
+    expect(card).toContain('CONTACT_CARD_CHROME_CLASS');
+    expect(card).toContain('readSessionChangeSummary');
+    expect(card).toContain('directoryName(directory)');
+    expect(card).toContain('relative inline-block size-8');
     expect(card).not.toContain('<Button');
     expect(card).not.toContain('assistants.contact.card.session.open');
     expect(card).toContain('statusChipClass');
@@ -332,7 +335,8 @@ describe('Assistant UI product contract', () => {
     expect(assistantCard).toContain('data-assistant-contact-card="assistant"');
     expect(assistantCard).toContain('role="button"');
     expect(assistantCard).toContain('onClick={openContact}');
-    expect(assistantCard).toContain('cursor-pointer');
+    expect(assistantCard).toContain('CONTACT_CARD_CHROME_CLASS');
+    expect(assistantCard).toContain('relative inline-block size-8');
     expect(assistantCard).not.toContain('<Button');
     expect(assistantCard).not.toContain('assistants.contact.card.assistant.open');
     expect(scheduleCard).toContain("setActiveMainTab('schedule')");
@@ -340,7 +344,7 @@ describe('Assistant UI product contract', () => {
     expect(scheduleCard).toContain('data-assistant-contact-card="schedule"');
     expect(scheduleCard).toContain('role="button"');
     expect(scheduleCard).toContain('onClick={openSchedule}');
-    expect(scheduleCard).toContain('cursor-pointer');
+    expect(scheduleCard).toContain('CONTACT_CARD_CHROME_CLASS');
     expect(scheduleCard).not.toContain('<Button');
     expect(scheduleCard).not.toContain('assistants.contact.card.schedule.open');
     expect(english).not.toContain('assistants.contact.card.assistant.open');
@@ -700,6 +704,8 @@ describe('Assistant UI product contract', () => {
       read('../../../../web/server/lib/llm/generate.js'),
     ]);
     expect(avatar).toContain('data-assistant-working-dot');
+    expect(avatar).toContain('data-assistant-working-avatar');
+    expect(avatar).toContain('relative inline-block shrink-0 align-middle');
     expect(avatar).toContain('bg-[var(--status-success)]');
     expect(avatar).toContain('absolute right-0 bottom-0 size-2');
     expect(working).toContain('isAssistantWorking');

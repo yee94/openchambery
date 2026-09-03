@@ -2044,6 +2044,8 @@ export const settingsDict = {
   'assistants.contact.loadFailed': 'Nie udało się wczytać rozmowy.',
   'assistants.contact.card.session.aria': 'Sesja {title}',
   'assistants.contact.card.session.untitled': 'Sesja bez tytułu',
+  'assistants.contact.card.session.changes.filesSingle': '{count} plik',
+  'assistants.contact.card.session.changes.filesPlural': '{count} plików',
   'assistants.contact.card.session.status.idle': 'Bezczynna',
   'assistants.contact.card.session.status.busy': 'Pracuje',
   'assistants.contact.card.session.status.retry': 'Ponawianie',

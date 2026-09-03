@@ -2043,6 +2043,8 @@ export const settingsDict = {
   'assistants.contact.loadFailed': 'Не вдалося завантажити розмову.',
   'assistants.contact.card.session.aria': 'Сесія {title}',
   'assistants.contact.card.session.untitled': 'Сесія без назви',
+  'assistants.contact.card.session.changes.filesSingle': '{count} файл',
+  'assistants.contact.card.session.changes.filesPlural': '{count} файлів',
   'assistants.contact.card.session.status.idle': 'Очікує',
   'assistants.contact.card.session.status.busy': 'Працює',
   'assistants.contact.card.session.status.retry': 'Повтор',

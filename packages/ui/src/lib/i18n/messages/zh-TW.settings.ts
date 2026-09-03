@@ -2043,6 +2043,8 @@
   'assistants.contact.loadFailed': '無法載入對話。',
   'assistants.contact.card.session.aria': '工作階段 {title}',
   'assistants.contact.card.session.untitled': '未命名工作階段',
+  'assistants.contact.card.session.changes.filesSingle': '{count} 個檔案',
+  'assistants.contact.card.session.changes.filesPlural': '{count} 個檔案',
   'assistants.contact.card.session.status.idle': '閒置',
   'assistants.contact.card.session.status.busy': '工作中',
   'assistants.contact.card.session.status.retry': '重試中',
