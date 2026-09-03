@@ -1,6 +1,6 @@
 {
   "name": "@openchambery/relay-server",
-  "version": "1.19.3-beta.9",
+  "version": "1.19.3-beta.10",
   "description": "Self-hosted private relay server for OpenChamber",
   "private": false,
   "type": "module",
@@ -46,8 +46,8 @@
   "scripts": {
     "test": "vitest run",
     "test:node": "node test/node-smoke.js",
-    "type-check": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js && node --check src/push/index.js && node --check src/push/server.js && node --check src/push/cli.js && node --check src/push/config.js && node --check src/push/schema.js && node --check src/push/crypto.js && node --check src/push/store.js && node --check src/push/guard.js && node --check src/push/apns.js && node --check bin/openchamber-push-relay.js",
-    "lint": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js && node --check src/push/index.js && node --check src/push/server.js && node --check src/push/cli.js && node --check src/push/config.js && node --check src/push/schema.js && node --check src/push/crypto.js && node --check src/push/store.js && node --check src/push/guard.js && node --check src/push/apns.js && node --check bin/openchamber-push-relay.js",
+    "type-check": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js && node --check src/push/index.js && node --check src/push/server.js && node --check src/push/cli.js && node --check src/push/config.js && node --check src/push/schema.js && node --check src/push/crypto.js && node --check src/push/store.js && node --check src/push/guard.js && node --check src/push/apns.js && node --check bin/openchamber-push-relay.js && node --check src/push/handler.js && node --check src/push/combined.js",
+    "lint": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js && node --check src/push/index.js && node --check src/push/server.js && node --check src/push/cli.js && node --check src/push/config.js && node --check src/push/schema.js && node --check src/push/crypto.js && node --check src/push/store.js && node --check src/push/guard.js && node --check src/push/apns.js && node --check bin/openchamber-push-relay.js && node --check src/push/handler.js && node --check src/push/combined.js",
     "build:standalone": "bun build --compile --outfile dist/openchamber-relay bin/openchamber-relay.js"
   },
   "dependencies": {
