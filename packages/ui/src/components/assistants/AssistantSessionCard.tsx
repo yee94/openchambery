@@ -17,7 +17,7 @@ import { useMobileAppActions } from '@/apps/mobileAppContext'
 import { isIPadApp } from '@/lib/platform'
 import { useGlobalSessionStatus } from '@/sync/sync-context'
 import { openSessionWithFeedback } from '@/sync/openSessionWithFeedback'
-import { CONTACT_CARD_CHROME_CLASS, activateContactCardOnKeyDown } from './contactCardChrome'
+import { CONTACT_SESSION_CARD_COVER_CLASS, activateContactCardOnKeyDown } from './contactCardChrome'
 
 type AssistantSessionCardProps = {
   card: AssistantContactSessionCardPart
@@ -83,7 +83,7 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
   const model = readSessionModelLabel(liveSession)
   const changes = readSessionChangeSummary(liveSession)
   const changeCounts = formatSessionChangeCounts(changes)
-  const contextLine = [model, branch].filter((item): item is string => Boolean(item && item.trim()))
+  const metaLine = [project, model, branch].filter((item): item is string => Boolean(item && item.trim()))
   const openSession = useEvent(() => {
     const live = findSessionById(card.sessionID)
     const nextDirectory = live?.directory || card.directory
@@ -101,7 +101,7 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
 
   return (
     <article
-      className={CONTACT_CARD_CHROME_CLASS}
+      className={CONTACT_SESSION_CARD_COVER_CLASS}
       role="button"
       tabIndex={0}
       aria-label={t('assistants.contact.card.session.aria', { title })}
@@ -109,10 +109,10 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
       onClick={openSession}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-start gap-2.5">
-        <span className="relative inline-block size-8 shrink-0 leading-none">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-foreground">
-            <Icon name="chat-3" className="size-3.5" />
+      <div className="flex items-start gap-2">
+        <span className="relative inline-block size-6 shrink-0 leading-none">
+          <span className="flex size-6 items-center justify-center rounded-md bg-[var(--surface-muted)] text-foreground">
+            <Icon name="chat-3" className="size-3" />
           </span>
           {working ? (
             <span
@@ -123,7 +123,7 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
           ) : null}
         </span>
         <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <h3 className="min-w-0 flex-1 truncate typography-ui-label font-medium text-foreground">{title}</h3>
             {statusLabelKey ? (
               <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 typography-micro leading-none', statusChipClass(status))}>
@@ -131,13 +131,10 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
               </span>
             ) : null}
           </div>
-          {project ? (
-            <p className="truncate typography-micro text-muted-foreground">{project}</p>
+          {metaLine.length > 0 ? (
+            <p className="truncate typography-micro text-muted-foreground">{metaLine.join(' · ')}</p>
           ) : null}
-          {contextLine.length > 0 ? (
-            <p className="truncate typography-micro text-muted-foreground">{contextLine.join(' · ')}</p>
-          ) : null}
-          {changeCounts || changes?.files !== undefined ? (
+          {changeCounts || (changes?.files !== undefined && changes.files > 0) ? (
             <p className="flex flex-wrap items-baseline gap-x-1.5 typography-micro tabular-nums">
               {changes?.additions !== undefined ? (
                 <span className="text-[var(--status-success)]">+{changes.additions}</span>

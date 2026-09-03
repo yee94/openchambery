@@ -7,7 +7,7 @@ import { useMobileAppActions } from '@/apps/mobileAppContext'
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore'
 import type { AssistantContactAssistantCardPart } from '@/queries/assistantQueries'
 import { openAssistant } from '@/stores/useAssistantUIStore'
-import { CONTACT_CARD_CHROME_CLASS, activateContactCardOnKeyDown } from './contactCardChrome'
+import { CONTACT_CARD_COVER_CLASS, activateContactCardOnKeyDown } from './contactCardChrome'
 
 type AssistantAssistantCardProps = {
   card: AssistantContactAssistantCardPart
@@ -36,7 +36,7 @@ export const AssistantAssistantCard: React.FC<AssistantAssistantCardProps> = ({ 
 
   return (
     <article
-      className={CONTACT_CARD_CHROME_CLASS}
+      className={CONTACT_CARD_COVER_CLASS}
       role="button"
       tabIndex={0}
       aria-label={t('assistants.contact.card.assistant.aria', { name: title })}
@@ -44,10 +44,10 @@ export const AssistantAssistantCard: React.FC<AssistantAssistantCardProps> = ({ 
       onClick={openContact}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-start gap-2.5">
-        <span className="relative inline-block size-8 shrink-0 leading-none">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-foreground">
-            <Icon name="robot-2" className="size-3.5" />
+      <div className="flex items-center gap-2">
+        <span className="relative inline-block size-6 shrink-0 leading-none">
+          <span className="flex size-6 items-center justify-center rounded-md bg-[var(--surface-muted)] text-foreground">
+            <Icon name="robot-2" className="size-3" />
           </span>
         </span>
         <div className="min-w-0 flex-1 space-y-0.5">

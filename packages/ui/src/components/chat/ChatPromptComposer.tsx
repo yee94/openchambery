@@ -49,6 +49,8 @@ type ChatPromptComposerProps = Omit<React.ComponentProps<typeof ChatComposerSurf
   inputSectionClassName?: string;
   autoResize?: boolean;
   disableInputWhilePending?: boolean;
+  /** stacked = Chat textarea + footer band. inline = one compact row, send on the right. */
+  layout?: 'stacked' | 'inline';
   children?: React.ReactNode;
 };
 
@@ -109,11 +111,13 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   inputSectionClassName,
   autoResize = true,
   disableInputWhilePending = true,
+  layout = 'stacked',
   children,
   className,
   expanded = false,
   ...surfaceProps
 }) => {
+  const inline = layout === 'inline';
   const localInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -202,9 +206,20 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           is CSS-only (same DOM node) rather than a remounting conditional tree. */}
       <div
         data-composer-content="true"
-        className={cn('relative flex min-h-0 flex-col', expanded && 'flex-1', contentClassName)}
+        data-composer-layout={layout}
+        className={cn(
+          'relative flex min-h-0',
+          inline ? 'min-h-12 flex-row items-end' : 'flex-col',
+          expanded && 'flex-1',
+          contentClassName,
+        )}
       >
-        <div className={cn('overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col', inputSectionClassName)}>
+        <div className={cn(
+          'overflow-hidden',
+          inline && 'min-w-0 flex-1',
+          expanded && 'flex min-h-0 flex-1 flex-col',
+          inputSectionClassName,
+        )}>
           {inputHeader}
           {attachmentContent}
           {imageAttachments.length > 0 ? (
@@ -253,7 +268,10 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               enterKeyHint={isMobile ? 'send' : textareaProps?.enterKeyHint}
               outerClassName={cn('ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0', expanded && 'min-h-0 flex-1', inputOuterClassName)}
               className={cn(
-                'relative z-10 min-h-[52px] max-h-40 resize-none overflow-y-hidden appearance-none rounded-b-none border-0 bg-transparent px-3 pb-2 pt-4 typography-markdown hover:border-transparent md:typography-ui-label',
+                'relative z-10 resize-none overflow-y-hidden appearance-none border-0 bg-transparent typography-markdown hover:border-transparent md:typography-ui-label',
+                inline
+                  ? 'min-h-8 max-h-32 self-center px-3 py-2 leading-5'
+                  : 'min-h-[52px] max-h-40 rounded-b-none px-3 pb-2 pt-4',
                 textLayoutClassName,
                 inputClassName,
                 highlightedContent && 'text-transparent caret-[var(--surface-foreground)]',
@@ -263,18 +281,28 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
             />
           </div>
         </div>
-        <ChatPromptFooter
-          className={footerClassName}
-          style={footerStyle}
-        >
-          {footerContent ?? (
-            <>
-              <div className="flex items-center gap-1.5">{leftControls ?? defaultLeftControls}</div>
-              {hint ? <div className="min-w-0 flex-1 truncate typography-micro text-muted-foreground">{hint}</div> : <div className="flex-1" />}
-              <div className="flex items-center gap-1.5">{rightControls ?? defaultRightControls}</div>
-            </>
-          )}
-        </ChatPromptFooter>
+        {inline ? (
+          <div
+            className={cn('flex h-12 shrink-0 items-center pr-1.5', footerClassName)}
+            style={footerStyle}
+            data-composer-inline-send="true"
+          >
+            {rightControls ?? defaultRightControls}
+          </div>
+        ) : (
+          <ChatPromptFooter
+            className={footerClassName}
+            style={footerStyle}
+          >
+            {footerContent ?? (
+              <>
+                <div className="flex items-center gap-1.5">{leftControls ?? defaultLeftControls}</div>
+                {hint ? <div className="min-w-0 flex-1 truncate typography-micro text-muted-foreground">{hint}</div> : <div className="flex-1" />}
+                <div className="flex items-center gap-1.5">{rightControls ?? defaultRightControls}</div>
+              </>
+            )}
+          </ChatPromptFooter>
+        )}
       </div>
     </ChatComposerSurface>
   );

@@ -26,6 +26,21 @@ describe('sessionChangeSummary', () => {
     expect(readSessionChangeSummary(null)).toBeNull()
   })
 
+  test('suppresses all-zero and zero-only change summaries', () => {
+    expect(readSessionChangeSummary({
+      summary: { additions: 0, deletions: 0, files: 0 },
+    })).toBeNull()
+    expect(readSessionChangeSummary({
+      summary: { additions: 5, deletions: 0, files: 0 },
+    })).toEqual({ additions: 5 })
+    expect(readSessionChangeSummary({
+      summary: { additions: 0, deletions: 3 },
+    })).toEqual({ deletions: 3 })
+    expect(formatSessionChangeCounts({ additions: 0, deletions: 0 })).toBeNull()
+    expect(formatSessionChangeCounts({ additions: 5, deletions: 0 })).toBe('+5')
+    expect(formatSessionChangeCounts({ additions: 0, deletions: 3 })).toBe('−3')
+  })
+
   test('formats +N −M from present counts only', () => {
     expect(formatSessionChangeCounts({ additions: 12, deletions: 3 })).toBe('+12 −3')
     expect(formatSessionChangeCounts({ additions: 4 })).toBe('+4')

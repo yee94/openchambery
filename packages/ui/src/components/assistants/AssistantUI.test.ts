@@ -295,6 +295,7 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<TimelineDialog');
     expect(conversation).not.toContain('<ChatInput');
     expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).toContain('layout="inline"');
     expect(conversation).toContain('data-assistant-contact-composer');
     expect(conversation).toContain('data-assistant-contact-composer-surface');
     expect(conversation).toContain('sendLabel={t(\'assistants.contact.send\')}');
@@ -343,10 +344,14 @@ describe('Assistant UI product contract', () => {
     expect(card).toContain('data-assistant-contact-card="session"');
     expect(card).toContain('role="button"');
     expect(card).toContain('onClick={openSession}');
-    expect(card).toContain('CONTACT_CARD_CHROME_CLASS');
+    expect(card).toContain('CONTACT_SESSION_CARD_COVER_CLASS');
+    expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[15rem]');
+    expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[20rem]');
+    expect(await read('contactCardChrome.ts')).toContain('rounded-2xl');
     expect(card).toContain('readSessionChangeSummary');
     expect(card).toContain('directoryName(directory)');
-    expect(card).toContain('relative inline-block size-8');
+    expect(card).toContain('relative inline-block size-6');
+    expect(card).toContain('absolute right-0 bottom-0');
     expect(card).not.toContain('<Button');
     expect(card).not.toContain('assistants.contact.card.session.open');
     expect(card).toContain('statusChipClass');
@@ -354,8 +359,8 @@ describe('Assistant UI product contract', () => {
     expect(assistantCard).toContain('data-assistant-contact-card="assistant"');
     expect(assistantCard).toContain('role="button"');
     expect(assistantCard).toContain('onClick={openContact}');
-    expect(assistantCard).toContain('CONTACT_CARD_CHROME_CLASS');
-    expect(assistantCard).toContain('relative inline-block size-8');
+    expect(assistantCard).toContain('CONTACT_CARD_COVER_CLASS');
+    expect(assistantCard).toContain('relative inline-block size-6');
     expect(assistantCard).not.toContain('<Button');
     expect(assistantCard).not.toContain('assistants.contact.card.assistant.open');
     expect(scheduleCard).toContain("setActiveMainTab('schedule')");
@@ -363,7 +368,8 @@ describe('Assistant UI product contract', () => {
     expect(scheduleCard).toContain('data-assistant-contact-card="schedule"');
     expect(scheduleCard).toContain('role="button"');
     expect(scheduleCard).toContain('onClick={openSchedule}');
-    expect(scheduleCard).toContain('CONTACT_CARD_CHROME_CLASS');
+    expect(scheduleCard).toContain('CONTACT_CARD_COVER_CLASS');
+    expect(scheduleCard).toContain('relative inline-block size-6');
     expect(scheduleCard).not.toContain('<Button');
     expect(scheduleCard).not.toContain('assistants.contact.card.schedule.open');
     expect(english).not.toContain('assistants.contact.card.assistant.open');
@@ -435,6 +441,14 @@ describe('Assistant UI product contract', () => {
     expect(surface).toContain("backgroundColor: 'var(--surface-subtle)'");
     expect(surface).toContain('focus-within:ring-primary/50');
     expect(conversation).toContain("borderRadius: '1.5rem'");
+    expect(conversation).toContain('layout="inline"');
+    expect(promptComposer).toContain("layout = 'stacked'");
+    expect(promptComposer).toContain("layout === 'inline'");
+    expect(promptComposer).toContain('data-composer-inline-send="true"');
+    expect(promptComposer).toContain('data-composer-layout={layout}');
+    expect(promptComposer).toContain('min-h-12 flex-row items-end');
+    expect(promptComposer).toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
+    expect(promptComposer).toContain('flex h-12 shrink-0 items-center pr-1.5');
   });
 
   test('keeps /card and /dm out of every locale dictionary — cards are assistant-emitted', async () => {

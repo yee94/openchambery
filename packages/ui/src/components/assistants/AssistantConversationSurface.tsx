@@ -225,6 +225,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         >
           <div className="chat-input-column relative overflow-visible">
             <ChatPromptComposer
+              layout="inline"
               value={draft}
               pending={sending}
               isMobile={isMobile}

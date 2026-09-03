@@ -17,13 +17,18 @@ const readSummaryRecord = (session: unknown): Record<string, unknown> | null => 
   return summary as Record<string, unknown>
 }
 
-/** Read additions / deletions / files from an OpenCode session summary. No invented zeros. */
+const nonzeroCount = (value: unknown): number | undefined => {
+  const next = finiteCount(value)
+  return next !== undefined && next > 0 ? next : undefined
+}
+
+/** Read additions / deletions / files from an OpenCode session summary. Zero counts stay off. */
 export function readSessionChangeSummary(session: unknown): SessionChangeSummary | null {
   const summary = readSummaryRecord(session)
   if (!summary) return null
-  const additions = finiteCount(summary.additions)
-  const deletions = finiteCount(summary.deletions)
-  const files = finiteCount(summary.files) ?? finiteCount(summary.diffCount)
+  const additions = nonzeroCount(summary.additions)
+  const deletions = nonzeroCount(summary.deletions)
+  const files = nonzeroCount(summary.files) ?? nonzeroCount(summary.diffCount)
   if (additions === undefined && deletions === undefined && files === undefined) return null
   return {
     ...(additions !== undefined ? { additions } : {}),
@@ -32,12 +37,12 @@ export function readSessionChangeSummary(session: unknown): SessionChangeSummary
   }
 }
 
-/** Compact `+12 −3` from actual counts only. */
+/** Compact `+12 −3` from non-zero counts only. */
 export function formatSessionChangeCounts(summary: SessionChangeSummary | null): string | null {
   if (!summary) return null
   const parts: string[] = []
-  if (summary.additions !== undefined) parts.push(`+${summary.additions}`)
-  if (summary.deletions !== undefined) parts.push(`−${summary.deletions}`)
+  if (summary.additions !== undefined && summary.additions > 0) parts.push(`+${summary.additions}`)
+  if (summary.deletions !== undefined && summary.deletions > 0) parts.push(`−${summary.deletions}`)
   return parts.length > 0 ? parts.join(' ') : null
 }
 
