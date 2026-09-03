@@ -11,7 +11,7 @@ export class LlmError extends Error {
   }
 }
 
-export const normalizeCompletionFilePart = (part) => {
+const normalizeCompletionFilePart = (part) => {
   if (!isRecord(part) || part.type !== 'file') return null;
   if (typeof part.mime !== 'string' || !part.mime.trim()) return null;
   if (typeof part.url !== 'string' || !part.url.trim()) return null;

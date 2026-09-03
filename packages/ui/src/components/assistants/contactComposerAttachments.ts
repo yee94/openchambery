@@ -2,7 +2,7 @@ import { createUuid } from '@/lib/uuid'
 import type { ChatPromptAttachment } from '@/components/chat/ChatPromptComposer'
 
 export const MAX_CONTACT_COMPOSER_FILE_BYTES = 50 * 1024 * 1024
-export const MAX_CONTACT_COMPOSER_FILES = 64
+const MAX_CONTACT_COMPOSER_FILES = 64
 
 const readFileAsDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader()

@@ -272,7 +272,7 @@ const decodeDataUrlText = (url, mime) => {
   }
 };
 
-export const describeContactFilePart = (part) => {
+const describeContactFilePart = (part) => {
   const name = part.filename || 'attachment';
   const mime = part.mime || 'application/octet-stream';
   if (typeof mime === 'string' && mime.startsWith('image/')) return `[image: ${name} (${mime})]`;
