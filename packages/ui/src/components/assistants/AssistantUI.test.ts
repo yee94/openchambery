@@ -667,7 +667,7 @@ describe('Assistant UI product contract', () => {
     expect(card).toContain("if (liveType === 'idle') return 'complete'");
     expect(generate).toContain('client.session.promptAsync');
     expect(generate).not.toContain('client.session.prompt(');
-    expect(generate).toContain('v2 session.prompt only forwards');
+    expect(generate).toContain('V2 session.prompt only forwards');
   });
 
 });
