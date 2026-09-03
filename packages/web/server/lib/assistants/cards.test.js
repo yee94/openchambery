@@ -8,6 +8,7 @@ describe('contact cards', () => {
       directory: '/tmp/project',
       title: 'Fix login',
       status: 'idle',
+      branch: 'feat-login',
     })
     expect(part).toEqual({
       type: 'card',
@@ -16,6 +17,7 @@ describe('contact cards', () => {
       directory: '/tmp/project',
       title: 'Fix login',
       status: 'idle',
+      branch: 'feat-login',
     })
     expect(CONTACT_CARD_TYPES).toContain('session')
   })
@@ -30,5 +32,23 @@ describe('contact cards', () => {
 
   it('requires a sessionID for session cards', () => {
     expect(() => createSessionCardPart({ directory: '/tmp/project' })).toThrow(/sessionID/)
+  })
+
+  it('treats omitted branch as null so older persisted cards still parse', () => {
+    expect(parseContactCard({
+      cardType: 'session',
+      sessionID: 'ses_1',
+      directory: '/tmp/project',
+      title: 'Fix login',
+      status: 'idle',
+    })).toEqual({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_1',
+      directory: '/tmp/project',
+      title: 'Fix login',
+      status: 'idle',
+      branch: null,
+    })
   })
 })

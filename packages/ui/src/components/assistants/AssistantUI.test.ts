@@ -296,12 +296,13 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('thinkingLevel');
     expect(conversation).toContain("data-assistant-contact-role={message.role}");
     expect(conversation).toContain("message.role === 'peer'");
-    expect(conversation).toContain('deliverAssistantContactDm');
-    expect(conversation).toContain('assistants.contact.composerHint');
-    expect(english).toContain('/card <sessionID> [title]');
-    expect(english).toContain('/dm <assistantID> <text>');
-    expect(english).not.toContain('/card Optional title');
-    expect(english).not.toContain('/dm hello');
+    expect(conversation).not.toContain('deliverAssistantContactDm');
+    expect(conversation).not.toContain('appendAssistantContactCard');
+    expect(conversation).not.toContain('parseContactComposerInput');
+    expect(conversation).not.toContain('assistants.contact.composerHint');
+    expect(english).not.toContain('/card <sessionID>');
+    expect(english).not.toContain('/dm <assistantID>');
+    expect(english).toContain('Message {name}…');
     expect(conversation).not.toContain('EventSource');
     expect(conversation).not.toContain('text/event-stream');
     expect(conversation).not.toContain('stream: true');
@@ -309,6 +310,11 @@ describe('Assistant UI product contract', () => {
     expect(card).toContain('openSessionWithFeedback');
     expect(card).toContain('phoneShell: isPhoneShell');
     expect(card).toContain('card.sessionID');
+    expect(card).toContain('card.branch');
+    expect(card).toContain('<article');
+    expect(card).toContain('data-assistant-contact-card="session"');
+    expect(card).toContain('<Button');
+    expect(card).toContain('statusChipClass');
     expect(host).toContain('export type ChatContainerHost');
     expect(host).toContain('composerSurface: ChatInputSurface');
     expect(chatContainer).toContain('if (props.host)');
@@ -357,8 +363,8 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(conversation).toContain('useAssistantContactMessagesQuery');
     expect(conversation).toContain('sendAssistantContactMessage');
-    expect(conversation).toContain('appendAssistantContactCard');
-    expect(conversation).toContain('parseContactComposerInput');
+    expect(conversation).not.toContain('appendAssistantContactCard');
+    expect(conversation).not.toContain('parseContactComposerInput');
     expect(queries).toContain('/contact/messages');
     expect(queries).toContain('/contact/cards');
     expect(queries).toContain('/contact/dm');
@@ -393,7 +399,7 @@ describe('Assistant UI product contract', () => {
       read('AssistantSessionCard.tsx'),
     ]);
     expect(conversation).toContain('sendAssistantContactMessage');
-    expect(conversation).toContain('appendAssistantContactCard');
+    expect(conversation).not.toContain('appendAssistantContactCard');
     expect(conversation).toContain('<AssistantSessionCard');
     expect(card).toContain('openSessionWithFeedback');
     expect(card).toContain('useMobileAppActions');

@@ -25,6 +25,7 @@ export function parseContactCard(value) {
       directory,
       title: string(value.title) || null,
       status: string(value.status) || null,
+      branch: string(value.branch) || null,
     };
   }
   return null;

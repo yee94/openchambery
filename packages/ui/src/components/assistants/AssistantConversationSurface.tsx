@@ -8,10 +8,7 @@ import { useI18n } from '@/lib/i18n'
 import { createUuid } from '@/lib/uuid'
 import { cn } from '@/lib/utils'
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
-import { findSessionById } from '@/router/sessionLookup'
 import {
-  appendAssistantContactCard,
-  deliverAssistantContactDm,
   sendAssistantContactMessage,
   useAssistantCapabilityQuery,
   useAssistantContactMessagesQuery,
@@ -21,7 +18,6 @@ import {
 import { AssistantAPIError } from '@/queries/assistantDTO'
 import { getAssistantPresentation } from './assistantPresentation'
 import { AssistantSessionCard } from './AssistantSessionCard'
-import { parseContactComposerInput } from './contactComposerCommand'
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO
@@ -33,10 +29,10 @@ type AssistantConversationSurfaceProps = {
  * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
  * first-class session cards — not ChatContainer, Activity, or markdown links.
  *
- * Assign auto-inserts the same session card. TODO(watch/summon): inbound
- * unsolicited user pushes and full summon-to-work MUST use this transcript:
- * cards for work, peer DMs for read-only coordination. Do not invent a
- * second inbox.
+ * Cards are assistant-emitted UI (assign_session, later watch/PR). The
+ * composer is a message box — not slash commands. Peer DMs arrive from the
+ * harness/API. TODO(watch/summon): inbound unsolicited user pushes and full
+ * summon-to-work MUST use this transcript. Do not invent a second inbox.
  */
 export const AssistantConversationSurface: React.FC<AssistantConversationSurfaceProps> = ({
   assistant,
@@ -72,37 +68,20 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   }, [messages.length, sending])
 
   const submit = useEvent(async () => {
-    const command = parseContactComposerInput(draft)
-    if (!command || sending) return
+    const text = draft.trim()
+    if (!text || sending) return
     setSending(true)
     setSendError(null)
     try {
-      if (command.kind === 'session-card') {
-        const live = findSessionById(command.sessionID)
-        const directory = live?.directory || assistant.effectiveWorkspacePath
-        const title = command.title || live?.session?.title || null
-        await appendAssistantContactCard(assistant.id, {
-          sessionID: command.sessionID,
-          directory,
-          title,
-          status: null,
-        })
-      } else if (command.kind === 'peer-dm') {
-        await deliverAssistantContactDm(assistant.id, {
-          toAssistantID: command.toAssistantID,
-          text: command.text,
-        })
-      } else {
-        await sendAssistantContactMessage(assistant.id, `oc_contact_${createUuid()}`, command.text)
-        if (capabilityQuery.data?.serverInstanceID) {
-          void donateNativeAssistantInteraction({
-            serverInstanceID: capabilityQuery.data.serverInstanceID,
-            assistantID: assistant.id,
-            name: displayName,
-            avatarSeed: assistant.id,
-            ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
-          }).catch(() => undefined)
-        }
+      await sendAssistantContactMessage(assistant.id, `oc_contact_${createUuid()}`, text)
+      if (capabilityQuery.data?.serverInstanceID) {
+        void donateNativeAssistantInteraction({
+          serverInstanceID: capabilityQuery.data.serverInstanceID,
+          assistantID: assistant.id,
+          name: displayName,
+          avatarSeed: assistant.id,
+          ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
+        }).catch(() => undefined)
       }
       setDraft('')
     } catch (error) {
@@ -230,9 +209,6 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             {t('assistants.contact.send')}
           </Button>
         </div>
-        <p className="mx-auto mt-2 max-w-2xl typography-micro text-muted-foreground">
-          {t('assistants.contact.composerHint')}
-        </p>
       </div>
     </div>
   )

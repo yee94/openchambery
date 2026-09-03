@@ -201,7 +201,7 @@ export async function assignSession(input = {}) {
     if (!promptAdmitted(prompted)) {
       throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Failed to submit the prompt to the existing session.');
     }
-    return { sessionID, directory, title, status: 'busy', reused: true, messageID };
+    return { sessionID, directory, title, status: 'busy', reused: true, messageID, branch: branchName };
   }
 
   if (typeof input.createSession !== 'function' || typeof input.promptExisting !== 'function') {
@@ -219,5 +219,5 @@ export async function assignSession(input = {}) {
     throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Failed to submit the prompt to the new session.');
   }
 
-  return { sessionID: createdID, directory, title, status: 'busy', reused: false, messageID };
+  return { sessionID: createdID, directory, title, status: 'busy', reused: false, messageID, branch: branchName };
 }

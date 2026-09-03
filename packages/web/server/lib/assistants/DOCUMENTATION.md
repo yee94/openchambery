@@ -6,9 +6,9 @@ The in-app Assistant is an OpenChamber-owned **contact**. OpenCode is only the L
 
 **Session cards (this PR)**
 
-- First-class contact parts: `{ type: 'card', cardType: 'session', sessionID, directory, title, status }`.
+- First-class contact parts: `{ type: 'card', cardType: 'session', sessionID, directory, title, status, branch }`.
 - Persist in `assistant_contact_message` / `assistant_contact_part`. Survive reload.
-- Insert: `POST /:id/contact/cards`, composer `/card <sessionID> [title]` (`sessionID` required), and **assign auto-card** after `assign_session`. Later project/worktree/watch, inbound pushes, and summon **must** reuse this card slot.
+- Cards are **assistant-emitted UI**, not user slash commands. The user never types `/card`. Insert: `assign_session` auto-card, and API `POST /:id/contact/cards` for harness/tests. Later project/worktree/watch/PR, inbound pushes, and summon **must** reuse this card slot.
 
 **Assign work (this PR)**
 
@@ -22,7 +22,7 @@ The in-app Assistant is an OpenChamber-owned **contact**. OpenCode is only the L
 
 **Inter-assistant DM (this PR, read-only)**
 
-- `POST /:fromAssistantID/contact/dm` `{ toAssistantID, text, parts? }` (composer `/dm <assistantID> <text>`, both required) delivers into B’s contact transcript as `role: 'peer'` with `fromAssistantID` / `fromAssistantName`.
+- `POST /:fromAssistantID/contact/dm` `{ toAssistantID, text, parts? }` delivers into B’s contact transcript as `role: 'peer'` with `fromAssistantID` / `fromAssistantName`. The user never types `/dm`; the harness/API sends peer messages.
 - Read-only: no `session.promptAsync`, no session/file/worktree mutation, no tools on the recipient. Assign is not delivered here.
 - Peer rows are excluded from `contactHistoryForLlm` so they cannot become harness turns.
 - This is the inbox primitive for later summon. Do not invent a second inbox.

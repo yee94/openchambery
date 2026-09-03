@@ -22,6 +22,7 @@ export type AssistantContactSessionCardPart = {
   directory: string;
   title: string | null;
   status: string | null;
+  branch: string | null;
 };
 export type AssistantContactPart = AssistantContactTextPart | AssistantContactSessionCardPart;
 export type AssistantContactRole = 'user' | 'assistant' | 'peer';
@@ -121,6 +122,7 @@ const parseContactPart = (value: unknown): AssistantContactPart => {
       directory: string(part.directory, 'assistant_contact_part'),
       title: nullableString(part.title ?? null, 'assistant_contact_part'),
       status: nullableString(part.status ?? null, 'assistant_contact_part'),
+      branch: nullableString(part.branch ?? null, 'assistant_contact_part'),
     };
   }
   return invalid('assistant_contact_part');

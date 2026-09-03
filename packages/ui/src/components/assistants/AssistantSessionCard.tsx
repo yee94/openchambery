@@ -1,6 +1,7 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
 import { Icon } from '@/components/icon/Icon'
+import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { findSessionById } from '@/router/sessionLookup'
@@ -20,12 +21,26 @@ const statusKey = (status: string | null | undefined) => {
   if (status === 'busy') return 'assistants.contact.card.session.status.busy' as const
   if (status === 'retry') return 'assistants.contact.card.session.status.retry' as const
   if (status === 'idle') return 'assistants.contact.card.session.status.idle' as const
+  if (status === 'complete') return 'assistants.contact.card.session.status.complete' as const
   return null
 }
 
+const statusChipClass = (status: string | null | undefined) => {
+  if (status === 'busy') return 'bg-[var(--status-info)]/10 text-[var(--status-info)]'
+  if (status === 'retry') return 'bg-[var(--status-warning)]/10 text-[var(--status-warning)]'
+  if (status === 'idle' || status === 'complete') return 'bg-[var(--status-success)]/10 text-[var(--status-success)]'
+  return 'bg-[var(--surface-muted)] text-muted-foreground'
+}
+
+const directoryName = (directory: string) => {
+  const parts = directory.split(/[/\\]/u).filter(Boolean)
+  return parts.at(-1) || directory
+}
+
 /**
- * First-class in-transcript session card. Reuses existing session title/status
- * and `openSessionWithFeedback` — not a markdown link and not Activity/tool UI.
+ * Assistant-emitted in-transcript session card (Grok-Bot style): title,
+ * status chip, metadata, primary open action. Not a slash command, not
+ * Activity/tool UI.
  */
 export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card }) => {
   const { t } = useI18n()
@@ -40,6 +55,7 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
   const title = liveTitle || card.title || t('assistants.contact.card.session.untitled')
   const status = liveStatus?.type ?? card.status
   const statusLabelKey = statusKey(status)
+  const metadata = [card.branch, card.sessionID, directoryName(card.directory)].filter(Boolean)
   const openSession = useEvent(() => {
     const live = findSessionById(card.sessionID)
     const directory = live?.directory || card.directory
@@ -53,26 +69,34 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
   })
 
   return (
-    <button
-      type="button"
-      onClick={openSession}
+    <article
+      className="w-full max-w-md rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3.5 py-3"
       aria-label={t('assistants.contact.card.session.aria', { title })}
-      className={cn(
-        'flex w-full max-w-md items-center gap-3 rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3 py-3 text-left outline-none transition-[background-color,border-color] duration-150 ease-out',
-        'hover:bg-interactive-hover active:bg-interactive-active',
-        'focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
-      )}
+      data-assistant-contact-card="session"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
-        <Icon name="chat-3" className="size-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate typography-ui-label font-medium text-foreground">{title}</span>
-        <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
-          {statusLabelKey ? t(statusLabelKey) : t('assistants.contact.card.session.open')}
+      <div className="flex items-start gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
+          <Icon name="chat-3" className="size-4" />
         </span>
-      </span>
-      <Icon name="arrow-right-s" className="size-4 shrink-0 text-muted-foreground" />
-    </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-2">
+            <h3 className="min-w-0 flex-1 truncate typography-ui-label font-medium text-foreground">{title}</h3>
+            {statusLabelKey ? (
+              <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 typography-micro leading-none', statusChipClass(status))}>
+                {t(statusLabelKey)}
+              </span>
+            ) : null}
+          </div>
+          {metadata.length > 0 ? (
+            <p className="mt-1 truncate typography-micro text-muted-foreground">{metadata.join(' · ')}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" size="sm" onClick={openSession}>
+          {t('assistants.contact.card.session.open')}
+        </Button>
+      </div>
+    </article>
   )
 }

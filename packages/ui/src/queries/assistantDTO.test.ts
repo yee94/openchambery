@@ -87,6 +87,7 @@ describe('Assistant DTO parsing', () => {
       directory: '/repo',
       title: 'Login',
       status: 'idle',
+      branch: null,
     });
     expect(parseAssistantContactPeerAdmission({
       messageID: 'peer_1',

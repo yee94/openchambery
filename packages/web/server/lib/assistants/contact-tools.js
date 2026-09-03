@@ -134,6 +134,7 @@ export function createContactTools({ assignWork, onCard } = {}) {
           directory: assigned.directory,
           title: assigned.title,
           status: assigned.status || 'busy',
+          branch: assigned.branch,
         });
         if (typeof onCard === 'function') onCard(card);
         return {
