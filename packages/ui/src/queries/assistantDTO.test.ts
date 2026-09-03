@@ -80,7 +80,14 @@ describe('Assistant DTO parsing', () => {
     });
     expect(page.messages[0]?.role).toBe('peer');
     expect(page.messages[0]?.fromAssistantID).toBe('asst_a');
-    expect(page.messages[0]?.cards[0]).toMatchObject({ cardType: 'session', sessionID: 'ses_1' });
+    expect(page.messages[0]?.cards[0]).toEqual({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_1',
+      directory: '/repo',
+      title: 'Login',
+      status: 'idle',
+    });
     expect(parseAssistantContactPeerAdmission({
       messageID: 'peer_1',
       admitted: true,
