@@ -74,9 +74,17 @@ enum OpenChamberLiveActivityManager {
     static let successDismissal: TimeInterval = 15 * 60
     static let errorDismissal: TimeInterval = 60 * 60
 
+    typealias PushTokenListener = (_ activityId: String, _ sessionId: String, _ token: String) -> Void
+
     /// Process-scoped: a user-dismissed Activity is not rebuilt for the same task.
     private static var dismissedSessionIDs = Set<String>()
     private static var trackedSessionIDs = Set<String>()
+    private static var pushTokenTasks: [String: Task<Void, Never>] = [:]
+    private static var pushTokenListener: PushTokenListener?
+
+    static func setPushTokenListener(_ listener: PushTokenListener?) {
+        pushTokenListener = listener
+    }
 
     /// Millisecond timestamps (e.g. 1_700_000_000_000) must replace a recovered small counter.
     static func shouldApply(eventVersion: Int, onto current: Int) -> Bool {
@@ -197,6 +205,7 @@ private extension OpenChamberLiveActivityManager {
                 await existing.update(makeContent(request))
             }
             track(request.sessionId)
+            ensurePushTokenUpdates(for: existing)
             return existing.id
         }
 
@@ -213,9 +222,10 @@ private extension OpenChamberLiveActivityManager {
             let activity = try Activity.request(
                 attributes: attributes,
                 content: makeContent(request),
-                pushType: nil
+                pushType: .token
             )
             track(request.sessionId)
+            ensurePushTokenUpdates(for: activity)
             return activity.id
         } catch {
             throw OpenChamberLiveActivityError.requestFailed(error.localizedDescription)
@@ -235,6 +245,7 @@ private extension OpenChamberLiveActivityManager {
         for extra in matching.dropFirst() {
             await endImmediately(extra)
         }
+        ensurePushTokenUpdates(for: existing)
         guard shouldApply(eventVersion: request.eventVersion, onto: existing.content.state.eventVersion) else {
             return
         }
@@ -256,6 +267,7 @@ private extension OpenChamberLiveActivityManager {
         guard shouldApply(eventVersion: request.eventVersion, onto: existing.content.state.eventVersion) else {
             return
         }
+        cancelPushTokenTask(for: existing.id)
         await existing.end(makeContent(request), dismissalPolicy: dismissalPolicy(for: request))
         clearTask(for: request.sessionId)
     }
@@ -289,11 +301,47 @@ private extension OpenChamberLiveActivityManager {
     }
 
     static func endImmediately(_ activity: Activity<OpenChamberActivityAttributes>) async {
+        cancelPushTokenTask(for: activity.id)
         let content = ActivityContent(
             state: activity.content.state,
             staleDate: activity.content.staleDate
         )
         await activity.end(content, dismissalPolicy: .immediate)
+    }
+
+    static func ensurePushTokenUpdates(for activity: Activity<OpenChamberActivityAttributes>) {
+        let activityId = activity.id
+        if pushTokenTasks[activityId] != nil {
+            return
+        }
+        let sessionId = activity.attributes.sessionID
+        pushTokenTasks[activityId] = Task {
+            for await pushToken in activity.pushTokenUpdates {
+                if Task.isCancelled { break }
+                emitPushToken(
+                    activityId: activityId,
+                    sessionId: sessionId,
+                    token: hexString(from: pushToken)
+                )
+            }
+        }
+    }
+
+    static func cancelPushTokenTask(for activityId: String) {
+        pushTokenTasks[activityId]?.cancel()
+        pushTokenTasks.removeValue(forKey: activityId)
+    }
+
+    static func emitPushToken(activityId: String, sessionId: String, token: String) {
+        guard !token.isEmpty else { return }
+        let listener = pushTokenListener
+        DispatchQueue.main.async {
+            listener?(activityId, sessionId, token)
+        }
+    }
+
+    static func hexString(from token: Data) -> String {
+        token.map { String(format: "%02x", $0) }.joined()
     }
 }
 #endif

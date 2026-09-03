@@ -366,6 +366,9 @@ const apnsRuntime = createApnsRuntime({
 const addOrUpdateApnsToken = (...args) => apnsRuntime.addOrUpdateApnsToken(...args);
 const removeApnsToken = (...args) => apnsRuntime.removeApnsToken(...args);
 const sendApnsToAllUiSessions = (...args) => apnsRuntime.sendApnsToAllUiSessions(...args);
+const addOrUpdateLiveActivityToken = (...args) => apnsRuntime.addOrUpdateLiveActivityToken(...args);
+const removeLiveActivityToken = (...args) => apnsRuntime.removeLiveActivityToken(...args);
+const sendLiveActivityEnd = (...args) => apnsRuntime.sendLiveActivityEnd(...args);
 
 const TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW = 128;
 const TERMINAL_INPUT_WS_REBIND_WINDOW_MS = 60 * 1000;
@@ -660,6 +663,7 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
   broadcastUiNotification,
   sendPushToAllUiSessions,
   sendApnsToAllUiSessions,
+  sendLiveActivityEnd,
   isAnyInteractiveClientVisible,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
@@ -1447,6 +1451,9 @@ async function main(options = {}) {
     removePushSubscription,
     addOrUpdateApnsToken,
     removeApnsToken,
+    addOrUpdateLiveActivityToken,
+    removeLiveActivityToken,
+    sendLiveActivityEnd,
     updateUiVisibility,
     clearPendingPushBadge: () => clearPendingPushBadge(),
     isUiVisible,

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.6] - 2026-09-03
+
+### 移动端
+
+- iOS Live Activity 支持系统计时，并在后台更新完成/错误状态。
+
 ## [1.19.3-beta.5] - 2026-09-03
 
 ### 聊天

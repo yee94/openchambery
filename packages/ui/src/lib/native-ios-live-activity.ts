@@ -1,4 +1,4 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 import { isIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
@@ -29,6 +29,12 @@ type NativeLiveActivityFields = {
   dismissalSeconds?: number;
 };
 
+export type NativeLiveActivityPushTokenEvent = {
+  activityId: string;
+  sessionId: string;
+  token: string;
+};
+
 export type NativeLiveActivityPlugin = {
   isSupported: () => Promise<{ supported: boolean }>;
   start: (options: {
@@ -56,6 +62,10 @@ export type NativeLiveActivityPlugin = {
     endedAt?: number;
     dismissalSeconds?: number;
   }) => Promise<void>;
+  addListener: (
+    event: 'pushToken',
+    listener: (payload: NativeLiveActivityPushTokenEvent) => void,
+  ) => Promise<PluginListenerHandle>;
 };
 
 const OpenChamberLiveActivity = registerPlugin<NativeLiveActivityPlugin>(NATIVE_IOS_LIVE_ACTIVITY_PLUGIN);
@@ -558,4 +568,245 @@ export const runNativeLiveActivityStep = async (input: {
       superseded: false,
     };
   }
+};
+
+export type NativeLiveActivityTokenSnapshot = {
+  activityId: string;
+  sessionId: string;
+  token: string;
+};
+
+export type NativeLiveActivityRegisteredToken = NativeLiveActivityTokenSnapshot & {
+  runtimeIdentity: string;
+};
+
+export type NativeLiveActivityTokenState = {
+  desired: NativeLiveActivityTokenSnapshot | null;
+  registered: NativeLiveActivityRegisteredToken | null;
+};
+
+export type NativeLiveActivityTokenContext = {
+  selectedSessionId: string | null;
+  runtimeIdentity: string;
+  connected: boolean;
+  enabled: boolean;
+};
+
+export type NativeLiveActivityTokenAction =
+  | NativeLiveActivityPushTokenEvent & { type: 'pushToken' }
+  | { type: 'sync' }
+  | { type: 'localEndSucceeded' }
+  | { type: 'dispose' };
+
+type NativeLiveActivityTokenCommand =
+  | {
+      type: 'register';
+      payload: NativeLiveActivityTokenSnapshot;
+      runtimeIdentity: string;
+    }
+  | {
+      type: 'unregister';
+      payload: { token: string };
+      runtimeIdentity: string;
+    };
+
+export const createInitialNativeLiveActivityTokenState = (): NativeLiveActivityTokenState => ({
+  desired: null,
+  registered: null,
+});
+
+const readLiveActivityTokenField = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+export const parseNativeLiveActivityPushTokenEvent = (
+  payload: unknown,
+): NativeLiveActivityPushTokenEvent | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+  const activityId = readLiveActivityTokenField(record.activityId);
+  const sessionId = readLiveActivityTokenField(record.sessionId);
+  const token = readLiveActivityTokenField(record.token);
+  if (!activityId || !sessionId || !token) return null;
+  return { activityId, sessionId, token };
+};
+
+const sameLiveActivityTokenIdentity = (
+  left: NativeLiveActivityTokenSnapshot,
+  right: NativeLiveActivityTokenSnapshot,
+): boolean => left.activityId === right.activityId && left.token === right.token;
+
+const clearDesiredLiveActivityToken = (
+  state: NativeLiveActivityTokenState,
+  runtimeIdentity: string,
+): NativeLiveActivityTokenState => {
+  const registered = state.registered?.runtimeIdentity === runtimeIdentity
+    ? state.registered
+    : null;
+  if (state.desired === null && registered === state.registered) return state;
+  return { desired: null, registered };
+};
+
+const planNativeLiveActivityTokenCommands = (
+  state: NativeLiveActivityTokenState,
+  context: NativeLiveActivityTokenContext,
+): NativeLiveActivityTokenCommand[] => {
+  if (!context.connected) return [];
+
+  if (
+    state.desired
+    && context.enabled
+    && context.selectedSessionId
+    && state.desired.sessionId === context.selectedSessionId
+  ) {
+    const registered = state.registered;
+    if (
+      registered
+      && sameLiveActivityTokenIdentity(registered, state.desired)
+      && registered.runtimeIdentity === context.runtimeIdentity
+    ) {
+      return [];
+    }
+    return [{
+      type: 'register',
+      payload: {
+        activityId: state.desired.activityId,
+        sessionId: state.desired.sessionId,
+        token: state.desired.token,
+      },
+      runtimeIdentity: context.runtimeIdentity,
+    }];
+  }
+
+  if (state.registered && state.registered.runtimeIdentity === context.runtimeIdentity) {
+    return [{
+      type: 'unregister',
+      payload: { token: state.registered.token },
+      runtimeIdentity: context.runtimeIdentity,
+    }];
+  }
+
+  return [];
+};
+
+/**
+ * Pure Live Activity token planner. Desired tokens stay in memory across
+ * disconnects; HTTP commands only target the current runtime identity.
+ */
+export const reduceNativeLiveActivityToken = (
+  state: NativeLiveActivityTokenState,
+  context: NativeLiveActivityTokenContext,
+  action: NativeLiveActivityTokenAction,
+): { state: NativeLiveActivityTokenState; commands: NativeLiveActivityTokenCommand[] } => {
+  let next = state;
+
+  if (action.type === 'pushToken') {
+    if (!context.enabled || action.sessionId !== context.selectedSessionId) {
+      return { state, commands: [] };
+    }
+    next = {
+      ...state,
+      desired: {
+        activityId: action.activityId,
+        sessionId: action.sessionId,
+        token: action.token,
+      },
+    };
+  } else if (action.type === 'localEndSucceeded' || action.type === 'dispose') {
+    next = clearDesiredLiveActivityToken(state, context.runtimeIdentity);
+  } else if (!context.enabled || (state.desired && state.desired.sessionId !== context.selectedSessionId)) {
+    next = clearDesiredLiveActivityToken(state, context.runtimeIdentity);
+  } else if (state.registered && state.registered.runtimeIdentity !== context.runtimeIdentity && !state.desired) {
+    next = { ...state, registered: null };
+  }
+
+  return { state: next, commands: planNativeLiveActivityTokenCommands(next, context) };
+};
+
+const settleLiveActivityTokenResult = async (
+  work: Promise<{ ok: true } | null>,
+): Promise<{ ok: true } | null> => {
+  try {
+    return await work;
+  } catch {
+    return null;
+  }
+};
+
+export const applyNativeLiveActivityTokenCommands = async (input: {
+  state: NativeLiveActivityTokenState;
+  commands: NativeLiveActivityTokenCommand[];
+  getRuntimeIdentity: () => string;
+  register: (payload: NativeLiveActivityTokenSnapshot) => Promise<{ ok: true } | null>;
+  unregister: (payload: { token: string }) => Promise<{ ok: true } | null>;
+}): Promise<NativeLiveActivityTokenState> => {
+  let state = input.state;
+
+  for (const command of input.commands) {
+    if (command.runtimeIdentity !== input.getRuntimeIdentity()) {
+      if (
+        command.type === 'unregister'
+        && state.registered?.runtimeIdentity === command.runtimeIdentity
+      ) {
+        state = { ...state, registered: null };
+      }
+      continue;
+    }
+
+    if (command.type === 'register') {
+      const previous = state.registered;
+      if (command.runtimeIdentity !== input.getRuntimeIdentity()) continue;
+      const result = await settleLiveActivityTokenResult(input.register(command.payload));
+      if (result?.ok !== true) continue;
+      if (command.runtimeIdentity !== input.getRuntimeIdentity()) continue;
+      state = {
+        ...state,
+        registered: {
+          ...command.payload,
+          runtimeIdentity: command.runtimeIdentity,
+        },
+      };
+      if (
+        previous
+        && previous.runtimeIdentity === command.runtimeIdentity
+        && previous.token !== command.payload.token
+      ) {
+        if (command.runtimeIdentity !== input.getRuntimeIdentity()) continue;
+        await settleLiveActivityTokenResult(input.unregister({ token: previous.token }));
+      }
+      continue;
+    }
+
+    if (command.runtimeIdentity !== input.getRuntimeIdentity()) {
+      if (state.registered?.runtimeIdentity === command.runtimeIdentity) {
+        state = { ...state, registered: null };
+      }
+      continue;
+    }
+    const result = await settleLiveActivityTokenResult(input.unregister(command.payload));
+    if (result?.ok === true && state.registered?.token === command.payload.token) {
+      state = { ...state, registered: null };
+    }
+  }
+
+  return state;
+};
+
+export const runNativeLiveActivityTokenStep = async (input: {
+  state: NativeLiveActivityTokenState;
+  context: NativeLiveActivityTokenContext;
+  action: NativeLiveActivityTokenAction;
+  register: (payload: NativeLiveActivityTokenSnapshot) => Promise<{ ok: true } | null>;
+  unregister: (payload: { token: string }) => Promise<{ ok: true } | null>;
+}): Promise<NativeLiveActivityTokenState> => {
+  const reduced = reduceNativeLiveActivityToken(input.state, input.context, input.action);
+  return applyNativeLiveActivityTokenCommands({
+    state: reduced.state,
+    commands: reduced.commands,
+    getRuntimeIdentity: () => input.context.runtimeIdentity,
+    register: input.register,
+    unregister: input.unregister,
+  });
 };

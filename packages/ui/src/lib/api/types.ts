@@ -803,6 +803,16 @@ export interface ApnsTokenPayload {
   locale?: string;
 }
 
+export interface LiveActivityTokenPayload {
+  activityId: string;
+  sessionId: string;
+  token: string;
+}
+
+export interface LiveActivityTokenUnregisterPayload {
+  token: string;
+}
+
 export interface PushAPI {
   getVapidPublicKey(): Promise<{ publicKey: string } | null>;
   subscribe(payload: PushSubscribePayload): Promise<{ ok: true } | null>;
@@ -811,6 +821,9 @@ export interface PushAPI {
   /** Register a native iOS APNs device token (Capacitor mobile app only). */
   registerApnsToken(payload: ApnsTokenPayload): Promise<{ ok: true } | null>;
   unregisterApnsToken(payload: ApnsTokenPayload): Promise<{ ok: true } | null>;
+  /** Register an iOS Live Activity push token (Capacitor iOS only; other runtimes no-op). */
+  registerLiveActivityToken(payload: LiveActivityTokenPayload): Promise<{ ok: true } | null>;
+  unregisterLiveActivityToken(payload: LiveActivityTokenUnregisterPayload): Promise<{ ok: true } | null>;
 }
 
 /** Capacitor mobile app only; optional elsewhere. Capgo-style self-hosted OTA. */

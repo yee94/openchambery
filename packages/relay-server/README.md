@@ -261,7 +261,7 @@ These variables belong on the OpenChamber Host, not on the Push process:
 | `OPENCHAMBER_PUSH_RELAY_URL` | derived from the effective Relay `ws`/`wss` URL | Host override for `https://` or `http://` `…/v1/push/send` |
 | `OPENCHAMBER_PUSH_RELAY_DISABLED` | unset | Host-only; `true` skips Push Relay and uses direct APNs |
 
-The derived send URL always uses `/v1/push/send` on the same host and port as the Relay URL. `wss` maps to `https`; `ws` maps to `http`. Register is the same origin with `/v1/push/register-token`.
+The derived send URL always uses `/v1/push/send` on the same host and port as the Relay URL. `wss` maps to `https`; `ws` maps to `http`. Register is the same origin with `/v1/push/register-token`. iOS Live Activity tokens use `/v1/push/register-live-activity-token`, `/v1/push/unregister-live-activity-token`, and `/v1/push/live-activity` on that same origin. Live Activity APNs requests use topic `{bundleId}.push-type.liveactivity` and never include session IDs, titles, alerts, or collapse IDs.
 
 ### Push process environment
 

@@ -1,15 +1,24 @@
-import { useEffect, useRef } from 'react';
+import type { PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
+import { useEffect, useRef } from 'react';
 
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import {
+  applyNativeLiveActivityTokenCommands,
   canUseNativeIosLiveActivity,
   createInitialNativeLiveActivityState,
+  createInitialNativeLiveActivityTokenState,
   getNativeIosLiveActivityPlugin,
+  parseNativeLiveActivityPushTokenEvent,
+  reduceNativeLiveActivityToken,
   runNativeLiveActivityStep,
   type NativeLiveActivityObservation,
   type NativeLiveActivityState,
+  type NativeLiveActivityTokenAction,
+  type NativeLiveActivityTokenState,
 } from '@/lib/native-ios-live-activity';
+import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { useConfigStore } from '@/stores/useConfigStore';
 import {
   useLiveSessionStatus,
@@ -38,9 +47,12 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
   const permissions = useSessionPermissions(sessionId, directory, { bootstrap: false });
   const questions = useSessionQuestions(sessionId, directory, { bootstrap: false });
   const stateRef = useRef<NativeLiveActivityState>(createInitialNativeLiveActivityState());
+  const tokenStateRef = useRef<NativeLiveActivityTokenState>(createInitialNativeLiveActivityTokenState());
   const supportedRef = useRef<boolean | null>(null);
   const epochRef = useRef(0);
   const chainRef = useRef(Promise.resolve());
+  const tokenChainRef = useRef(Promise.resolve());
+  const pushTokenHandleRef = useRef<PluginListenerHandle | null>(null);
 
   const hasPendingPermissions = permissions.length > 0;
   const hasPendingQuestions = questions.length > 0;
@@ -58,8 +70,51 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
     connected,
   }));
 
+  const dispatchTokenAction = useEvent((action: NativeLiveActivityTokenAction): void => {
+    tokenChainRef.current = tokenChainRef.current.then(async () => {
+      const reduced = reduceNativeLiveActivityToken(tokenStateRef.current, {
+        selectedSessionId: args.sessionId ?? null,
+        runtimeIdentity: getRuntimeTransportIdentity(),
+        connected,
+        enabled: available,
+      }, action);
+      tokenStateRef.current = reduced.state;
+      if (reduced.commands.length === 0) return;
+      tokenStateRef.current = await applyNativeLiveActivityTokenCommands({
+        state: tokenStateRef.current,
+        commands: reduced.commands,
+        getRuntimeIdentity: getRuntimeTransportIdentity,
+        register: (payload) => getRegisteredRuntimeAPIs()?.push?.registerLiveActivityToken?.(payload) ?? Promise.resolve(null),
+        unregister: (payload) => getRegisteredRuntimeAPIs()?.push?.unregisterLiveActivityToken?.(payload) ?? Promise.resolve(null),
+      });
+    }).catch(() => undefined);
+  });
+
+  const handlePushToken = useEvent((payload: unknown): void => {
+    const parsed = parseNativeLiveActivityPushTokenEvent(payload);
+    if (!parsed) return;
+    dispatchTokenAction({ type: 'pushToken', ...parsed });
+  });
+
   useEffect(() => {
-    if (!available) return;
+    dispatchTokenAction({ type: available ? 'sync' : 'dispose' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- available/sessionId/connected are the real inputs; dispatchTokenAction is useEvent-stable and must not control this effect.
+  }, [available, args.sessionId, connected]);
+
+  useEffect(
+    () => subscribeRuntimeEndpointChanged(() => {
+      dispatchTokenAction({ type: 'sync' });
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once on mount; dispatchTokenAction is useEvent-stable and must not control this effect.
+    [],
+  );
+
+  useEffect(() => {
+    if (!available) {
+      void pushTokenHandleRef.current?.remove();
+      pushTokenHandleRef.current = null;
+      return;
+    }
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -80,6 +135,7 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
         }
 
         const observation = observe();
+        const previousStarted = stateRef.current.started;
         const result = await runNativeLiveActivityStep({
           available: true,
           plugin,
@@ -92,6 +148,9 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
         });
         if (cancelled || epochRef.current !== epoch || result.superseded) return;
         stateRef.current = result.state;
+        if (previousStarted && !result.state.started) {
+          dispatchTokenAction({ type: 'localEndSucceeded' });
+        }
         if (result.retry) retryCount += 1;
         else retryCount = 0;
         if (result.delayMs != null) {
@@ -102,13 +161,31 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
       }).catch(() => undefined);
     };
 
-    run();
+    chainRef.current = chainRef.current.then(async () => {
+      if (cancelled || epochRef.current !== epoch) return;
+      if (pushTokenHandleRef.current) return;
+      try {
+        const handle = await plugin.addListener('pushToken', (payload) => {
+          handlePushToken(payload);
+        });
+        if (cancelled) {
+          await handle.remove();
+          return;
+        }
+        pushTokenHandleRef.current = handle;
+      } catch {
+        return;
+      }
+    }).then(() => {
+      if (!cancelled && epochRef.current === epoch) run();
+    }).catch(() => undefined);
 
     return () => {
       cancelled = true;
       if (epochRef.current === epoch) epochRef.current += 1;
       if (timer !== null) clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- session/status/connection identity is the real input; observe/handlePushToken/dispatchTokenAction are useEvent-stable and must not control this effect.
   }, [
     available,
     args.sessionId,
@@ -119,4 +196,14 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
     hasSessionError,
     errorAt,
   ]);
+
+  useEffect(
+    () => () => {
+      void pushTokenHandleRef.current?.remove();
+      pushTokenHandleRef.current = null;
+      dispatchTokenAction({ type: 'dispose' });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only; dispatchTokenAction is useEvent-stable and must not control this effect.
+    [],
+  );
 }

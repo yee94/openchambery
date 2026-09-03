@@ -14,6 +14,16 @@ class OpenChamberLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
     ]
 
+    override func load() {
+        OpenChamberLiveActivityManager.setPushTokenListener { [weak self] activityId, sessionId, token in
+            self?.notifyListeners("pushToken", data: [
+                "activityId": activityId,
+                "sessionId": sessionId,
+                "token": token,
+            ])
+        }
+    }
+
     @objc func isSupported(_ call: CAPPluginCall) {
         call.resolve(["supported": OpenChamberLiveActivityManager.isSupported()])
     }

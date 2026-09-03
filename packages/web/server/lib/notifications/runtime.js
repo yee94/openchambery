@@ -11,6 +11,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     broadcastUiNotification,
     sendPushToAllUiSessions,
     sendApnsToAllUiSessions,
+    sendLiveActivityEnd,
     isAnyInteractiveClientVisible,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -369,13 +370,23 @@ export const createNotificationTriggerRuntime = (deps) => {
 
     if (payload.type === 'message.updated') {
       const info = payload.properties?.info;
-      if (
+      const isAssistantTerminal = Boolean(
         sessionId
         && info?.role === 'assistant'
-        && (info?.finish === 'stop' || info?.finish === 'error')
-        && await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)
-      ) {
+        && (info?.finish === 'stop' || info?.finish === 'error'),
+      );
+      if (isAssistantTerminal && await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)) {
         return;
+      }
+      if (isAssistantTerminal) {
+        try {
+          await sendLiveActivityEnd?.({
+            sessionId,
+            status: info.finish === 'error' ? 'error' : 'complete',
+          });
+        } catch (error) {
+          console.warn('[Live Activity] end failed:', error?.message ?? error);
+        }
       }
       if (info?.role === 'assistant' && info?.finish === 'stop' && sessionId) {
         const settings = await readSettingsFromDisk();

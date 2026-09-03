@@ -4,7 +4,7 @@ import { createApnsProvider } from './apns.js';
 import { normalizePushRelayOptions, resolvePushRelayClientIp, formatPushRelayUrl } from './config.js';
 import { deriveServerId, verifyP1363 } from './crypto.js';
 import { createInFlightGate, createReplayGuard, createSlidingWindowLimiter, createWorkTracker } from './guard.js';
-import { JSON_BODY_BYTES, validateRegisterBody, validateSendBody } from './schema.js';
+import { JSON_BODY_BYTES, buildLiveActivityPayload, validateLiveActivityBody, validateLiveActivityRegisterBody, validateRegisterBody, validateSendBody } from './schema.js';
 import { createTokenStore } from './store.js';
 
 const WINDOW_MS = 60_000;
@@ -98,16 +98,33 @@ export const createPushRelayServer = (options = {}) => {
   };
 
   const handleRegister = (parsed) => {
-    const authError = authenticate(parsed.publicKeyJwk, `${parsed.ts}.${parsed.token}.${parsed.platform}`, parsed.sig, parsed.ts);
+    const message = parsed.kind
+      ? `${parsed.ts}.${parsed.token}.${parsed.platform}.${parsed.kind}`
+      : `${parsed.ts}.${parsed.token}.${parsed.platform}`;
+    const authError = authenticate(parsed.publicKeyJwk, message, parsed.sig, parsed.ts);
     if (authError) return { status: 401, body: { error: authError } };
     const serverId = deriveServerId(parsed.publicKeyJwk);
-    const replayKey = `register.${serverId}.${parsed.ts}.${parsed.sig.toString('base64url')}`;
+    const replayKey = `${parsed.kind ? 'register-live-activity' : 'register'}.${serverId}.${parsed.ts}.${parsed.sig.toString('base64url')}`;
     if (replay.has(replayKey)) return { status: 200, body: { ok: true } };
     const tokens = liveStore();
     const existing = tokens.get(parsed.token);
     if (!existing && tokens.count() >= limits.maxTokens) { reasons.limited += 1; return { status: 429, body: { error: 'token_limit' } }; }
     if (!replay.remember(replayKey)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
     tokens.upsert(parsed.token, serverId, parsed.platform, clock.now());
+    return { status: 200, body: { ok: true } };
+  };
+
+  const handleUnregisterLiveActivity = (parsed) => {
+    const authError = authenticate(parsed.publicKeyJwk, `${parsed.ts}.${parsed.token}.${parsed.platform}.${parsed.kind}`, parsed.sig, parsed.ts);
+    if (authError) return { status: 401, body: { error: authError } };
+    const serverId = deriveServerId(parsed.publicKeyJwk);
+    const replayKey = `unregister-live-activity.${serverId}.${parsed.ts}.${parsed.sig.toString('base64url')}`;
+    if (replay.has(replayKey)) return { status: 200, body: { ok: true } };
+    const tokens = liveStore();
+    const existing = tokens.get(parsed.token);
+    if (existing && existing.serverId !== serverId) { reasons.authRejected += 1; return { status: 401, body: { error: 'invalid_signature' } }; }
+    if (!replay.remember(replayKey)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
+    if (existing) tokens.delete(parsed.token);
     return { status: 200, body: { ok: true } };
   };
 
@@ -142,6 +159,47 @@ export const createPushRelayServer = (options = {}) => {
     return { status: 200, body: { results } };
   };
 
+  const handleLiveActivity = async (parsed) => {
+    const sorted = [...parsed.tokens].sort();
+    const contentState = parsed.contentState;
+    const message = `${parsed.ts}.${sorted.join(',')}.${parsed.event}.${contentState.status}.${contentState.eventVersion}.${contentState.updatedAt}.${contentState.endedAt ?? ''}.${parsed.dismissalDate ?? ''}.${parsed.staleDate ?? ''}`;
+    const authError = authenticate(parsed.publicKeyJwk, message, parsed.sig, parsed.ts);
+    if (authError) return { status: 401, body: { error: authError } };
+    const serverId = deriveServerId(parsed.publicKeyJwk);
+    const replayKey = `live-activity.${serverId}.${parsed.ts}.${parsed.sig.toString('base64url')}`;
+    if (replay.has(replayKey)) { reasons.replayRejected += 1; return { status: 401, body: { error: 'replay' } }; }
+    if (!replay.remember(replayKey)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
+    if (!sendServerLimit.allow(serverId)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
+    const payload = buildLiveActivityPayload({
+      event: parsed.event,
+      contentState,
+      dismissalDate: parsed.dismissalDate,
+      staleDate: parsed.staleDate,
+      timestamp: Math.floor(clock.now() / 1000),
+    });
+    const tokens = liveStore();
+    const results = await Promise.all(parsed.uniqueTokens.map(async (token) => {
+      const binding = tokens.get(token);
+      if (!binding || binding.serverId !== serverId) return { token, ok: false };
+      const acquired = await inFlight.acquire();
+      if (!acquired) { reasons.limited += 1; return { token, ok: false }; }
+      try {
+        const outcome = await apns.send({ token, env: parsed.env, payload, pushType: 'liveactivity' });
+        if (outcome?.drop === true) {
+          tokens.delete(token);
+          return { token, ok: false, drop: true };
+        }
+        if (outcome?.ok === true && parsed.event === 'end') tokens.delete(token);
+        return { token, ok: outcome?.ok === true };
+      } catch {
+        return { token, ok: false };
+      } finally {
+        inFlight.release(acquired);
+      }
+    }));
+    return { status: 200, body: { results } };
+  };
+
   const onRequest = (request, response) => {
     let pathname;
     try { pathname = new URL(request.url ?? '/', 'http://push-relay').pathname; } catch { response.writeHead(404); response.end(); return; }
@@ -152,22 +210,31 @@ export const createPushRelayServer = (options = {}) => {
       return;
     }
     const isRegister = pathname === '/v1/push/register-token';
+    const isRegisterLive = pathname === '/v1/push/register-live-activity-token';
+    const isUnregisterLive = pathname === '/v1/push/unregister-live-activity-token';
     const isSend = pathname === '/v1/push/send';
-    if (request.method !== 'POST' || (!isRegister && !isSend) || state !== 'running') { response.writeHead(404); response.end(); return; }
+    const isLiveActivity = pathname === '/v1/push/live-activity';
+    if (request.method !== 'POST' || (!isRegister && !isRegisterLive && !isUnregisterLive && !isSend && !isLiveActivity) || state !== 'running') { response.writeHead(404); response.end(); return; }
     const ip = resolveClientIp(request);
-    const limiter = isRegister ? registerIpLimit : sendIpLimit;
+    const limiter = (isRegister || isRegisterLive || isUnregisterLive) ? registerIpLimit : sendIpLimit;
     if (!limiter.allow(ip)) { reasons.limited += 1; sendJson(response, 429, { error: 'rate_limited' }); return; }
     const endHttp = httpWork.begin();
     readBody(request, limits.jsonBodyBytes ?? JSON_BODY_BYTES).then(async (buffer) => {
       let body;
       try { body = JSON.parse(buffer.toString('utf8')); } catch { reasons.policyRejected += 1; sendJson(response, 400, { error: 'invalid_request' }); return; }
-      const parsed = isRegister ? validateRegisterBody(body) : validateSendBody(body);
+      const parsed = isRegister ? validateRegisterBody(body)
+        : (isRegisterLive || isUnregisterLive) ? validateLiveActivityRegisterBody(body)
+          : isLiveActivity ? validateLiveActivityBody(body)
+            : validateSendBody(body);
       if (parsed.error) {
         reasons.policyRejected += 1;
         sendJson(response, 400, { error: parsed.error });
         return;
       }
-      const result = isRegister ? handleRegister(parsed.value) : await handleSend(parsed.value);
+      const result = (isRegister || isRegisterLive) ? handleRegister(parsed.value)
+        : isUnregisterLive ? handleUnregisterLiveActivity(parsed.value)
+          : isLiveActivity ? await handleLiveActivity(parsed.value)
+            : await handleSend(parsed.value);
       sendJson(response, result.status, result.body);
     }).catch((error) => {
       if (error?.code === 'PAYLOAD_TOO_LARGE') { reasons.policyRejected += 1; sendJson(response, 413, { error: 'payload_too_large' }); return; }
