@@ -34,7 +34,7 @@ const promptAdmitted = (result) => (
   && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true)
 );
 
-export function normalizeProjectRoots(allowedRoots = []) {
+function normalizeProjectRoots(allowedRoots = []) {
   const seen = new Set();
   const roots = [];
   for (const root of allowedRoots) {

@@ -1,22 +1,41 @@
-import { Type } from 'typebox';
-import { AssignError, assignSession } from './assign.js';
+import { AssignError } from './assign.js';
 import { createSessionCardPart } from './cards.js';
 
+const typeboxString = (description) => {
+  const schema = { type: 'string', description };
+  Object.defineProperty(schema, '~kind', { value: 'String' });
+  return schema;
+};
+
+const typeboxOptional = (schema) => {
+  Object.defineProperty(schema, '~optional', { value: true });
+  return schema;
+};
+
+const typeboxObject = (properties) => {
+  const required = Object.entries(properties)
+    .filter(([, schema]) => !schema['~optional'])
+    .map(([key]) => key);
+  const schema = { type: 'object', required, properties };
+  Object.defineProperty(schema, '~kind', { value: 'Object' });
+  return schema;
+};
+
 export const ASSIGN_SESSION_TOOL_NAME = 'assign_session';
-export const CONTACT_TOOL_FENCE = 'openchamber-tool';
+const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
 
 const DENIED_CODING_TOOLS = new Set(['bash', 'edit', 'read', 'write', 'glob', 'grep', 'shell']);
 
 const FENCE = new RegExp(`\`\`\`${CONTACT_TOOL_FENCE}\\s*([\\s\\S]*?)\`\`\``, 'u');
 
-const assignParameters = Type.Object({
-  prompt: Type.String({ description: 'Coding prompt to kick into the worker OpenCode session.' }),
-  projectPath: Type.Optional(Type.String({ description: 'Registered project path. Required when more than one project exists.' })),
-  directory: Type.Optional(Type.String({ description: 'Existing project or worktree directory to reuse.' })),
-  branch: Type.Optional(Type.String({ description: 'Existing Chat worktree branch to reuse. Do not create a new worktree.' })),
-  sessionID: Type.Optional(Type.String({ description: 'Existing OpenCode session to reuse instead of creating one.' })),
-  title: Type.Optional(Type.String({ description: 'Optional title for the worker session and contact card.' })),
+const assignParameters = typeboxObject({
+  prompt: typeboxString('Coding prompt to kick into the worker OpenCode session.'),
+  projectPath: typeboxOptional(typeboxString('Registered project path. Required when more than one project exists.')),
+  directory: typeboxOptional(typeboxString('Existing project or worktree directory to reuse.')),
+  branch: typeboxOptional(typeboxString('Existing Chat worktree branch to reuse. Do not create a new worktree.')),
+  sessionID: typeboxOptional(typeboxString('Existing OpenCode session to reuse instead of creating one.')),
+  title: typeboxOptional(typeboxString('Optional title for the worker session and contact card.')),
 });
 
 const allowedToolName = (name, allowedNames) => {
@@ -136,5 +155,3 @@ export function createContactTools({ assignWork, onCard } = {}) {
     },
   }];
 }
-
-export { assignSession };
