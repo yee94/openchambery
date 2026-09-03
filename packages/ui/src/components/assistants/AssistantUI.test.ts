@@ -97,8 +97,9 @@ describe('Assistant UI product contract', () => {
       read('AssistantView.tsx'),
       read('../sections/assistants/AssistantsSettingsPage.tsx'),
     ]);
-    expect(view).toContain('useScopedProvidersQuery(directory || null');
-    expect(view).toContain('useScopedAgentsQuery(directory || null');
+    expect(view).not.toContain('useScopedProvidersQuery');
+    expect(view).not.toContain('useScopedAgentsQuery');
+    expect(view).not.toContain('activeProjectId');
     expect(settings).toContain('draft.workspacePath ?? selected?.managedWorkspacePath ?? null');
     expect(settings).toContain('useScopedProvidersQuery(catalogDirectory, { enabled: true })');
     expect(settings).toContain('useScopedAgentsQuery(catalogDirectory, { enabled: true })');

@@ -1,6 +1,38 @@
 import { Agent } from '@earendil-works/pi-agent-core';
-import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { splitContactBubbles } from './bubbles.js';
+
+function createAssistantMessageEventStream() {
+  const events = [];
+  let pending = null;
+  let done = false;
+  const wake = () => {
+    pending?.();
+    pending = null;
+  };
+  return {
+    push(event) {
+      events.push(event);
+      wake();
+    },
+    end() {
+      // Completion is already a typed event (`done` / `error`). Do not push
+      // the raw assistant message again — callers read events.at(-1).type.
+      done = true;
+      wake();
+    },
+    async *[Symbol.asyncIterator]() {
+      let index = 0;
+      while (true) {
+        while (index < events.length) {
+          yield events[index];
+          index += 1;
+        }
+        if (done) return;
+        await new Promise((resolve) => { pending = resolve; });
+      }
+    },
+  };
+}
 
 export const CONTACT_SYSTEM_PROMPT = [
   "You are OpenChamber's in-app assistant — a personable contact, not a coding agent.",

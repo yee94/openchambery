@@ -595,13 +595,23 @@ describe('assistants service', () => {
     const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
     const initial = await service.ensure(assistant.id);
     expect(initial.sessionID).toBe('ses_1');
-    // Stateless send replaces the binding: execution lives on a fresh session.
-    const first = await service.send(assistant.id, { ...initial, messageID: 'msg_user_1', parts: [{ type: 'text', text: 'one' }] });
+    // Contact send no longer replaces the OpenCode binding. Queued/share
+    // delivery still creates a fresh stateless execution session.
+    const scope = { sessionID: `assistant:${assistant.id}`, directory: initial.directory };
+    const first = await service.sendWithCapturedConfig({
+      deliveryTarget: service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope }),
+      messageID: 'msg_user_1',
+      parts: [{ type: 'text', text: 'one' }],
+    });
     expect(first.binding.sessionID).toBe('ses_2');
     service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_user_1', sessionID: first.binding.sessionID, role: 'user', time: { created: 10 } } } });
     service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_reply_1', sessionID: first.binding.sessionID, role: 'assistant', time: { created: 20 } } } });
     service.processEvent({ type: 'message.part.updated', properties: { sessionID: first.binding.sessionID, part: { id: 'part_reply_1', sessionID: first.binding.sessionID, messageID: 'msg_reply_1', type: 'text', text: 'reply-one' } } });
-    await service.send(assistant.id, { ...first.binding, messageID: 'msg_user_2', parts: [{ type: 'text', text: 'two' }] });
+    await service.sendWithCapturedConfig({
+      deliveryTarget: service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope }),
+      messageID: 'msg_user_2',
+      parts: [{ type: 'text', text: 'two' }],
+    });
     const page = await service.historicalMessages(assistant.id, { limit: 10 });
     expect(page.entries.map((entry) => [entry.sessionID, entry.info.id, entry.info.role])).toEqual(expect.arrayContaining([
       [first.binding.sessionID, 'msg_user_1', 'user'],
@@ -728,10 +738,10 @@ describe('assistants service', () => {
     const service = setup();
     const sender = service.createAssistant({ ...assistantInput, name: 'Sender' });
     const recipient = service.createAssistant({ ...assistantInput, name: 'Recipient' });
-    await expect(service.deliverPeerMessage(sender.id, {
+    expect(() => service.deliverPeerMessage(sender.id, {
       toAssistantID: sender.id,
       text: 'loop',
-    })).rejects.toMatchObject({ code: 'validation_error' });
+    })).toThrow('validation_error');
     service.deliverPeerMessage(sender.id, { toAssistantID: recipient.id, text: 'ping' });
     const sent = await service.send(recipient.id, {
       messageID: 'after-peer',
