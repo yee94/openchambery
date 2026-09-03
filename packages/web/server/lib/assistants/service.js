@@ -343,6 +343,76 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     return changed;
   };
+  const sessionStatusType = (session) => {
+    if (typeof session?.status?.type === 'string') return session.status.type;
+    if (typeof session?.status === 'string') return session.status;
+    if (typeof session?.type === 'string') return session.type;
+    return '';
+  };
+  const lastAssistantInfo = (messages) => {
+    if (!Array.isArray(messages)) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const info = messages[index]?.info ?? messages[index];
+      if (info?.role === 'assistant') return info;
+    }
+    return null;
+  };
+  const inferAssignedSessionSettleStatus = (getResult, messagesResult) => {
+    if (isMissing(getResult)) return 'complete';
+    if (getResult?.error) return null;
+    const session = getResult?.data;
+    if (session?.error) return 'error';
+    const statusType = sessionStatusType(session);
+    if (statusType === 'busy' || statusType === 'retry') return null;
+    if (isMissing(messagesResult)) return 'complete';
+    const assistant = messagesResult && !messagesResult.error ? lastAssistantInfo(messagesResult.data) : null;
+    if (assistant?.error) return 'error';
+    if (statusType === 'idle' || session?.time?.completed) return 'complete';
+    if (assistant?.time?.completed) return 'complete';
+    return null;
+  };
+  const resolveWatchDirectory = (watch) => {
+    if (nonEmptyString(watch.directory)) {
+      try { return workspace(watch.directory, watch.assistantID); } catch { /* Fall through to the assistant workspace. */ }
+    }
+    const row = assistant(watch.assistantID);
+    if (!row || row.tombstone_at) return null;
+    try { return effectiveWorkspace(row); } catch { return null; }
+  };
+  const reconcileInFlightWatches = async () => {
+    if (closed) return;
+    let watches;
+    try {
+      watches = listInFlightWatches(db);
+    } catch {
+      return;
+    }
+    for (const watch of watches) {
+      if (closed) return;
+      try {
+        const directory = resolveWatchDirectory(watch);
+        if (!directory) continue;
+        let getResult;
+        try {
+          getResult = await client().session.get({ sessionID: watch.sessionID, directory });
+        } catch {
+          continue;
+        }
+        if (closed) return;
+        let messagesResult = null;
+        try {
+          messagesResult = await client().session.messages({ sessionID: watch.sessionID, directory, limit: 100 });
+        } catch {
+          messagesResult = null;
+        }
+        if (closed) return;
+        const status = inferAssignedSessionSettleStatus(getResult, messagesResult);
+        if (status) reportAssignedSession(watch.sessionID, status);
+      } catch {
+        // One failed watch must not block unrelated watches.
+      }
+    }
+  };
   const processEvent = (event) => {
     const payload = event?.payload?.payload ?? event?.payload ?? event;
     const properties = payload?.properties;
@@ -768,14 +838,24 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const claim = (operationID, retry = false) => { db.exec('BEGIN IMMEDIATE'); try { const operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (!operation) { db.exec('COMMIT'); return null; } const at = now(); const eligible = operation.state === 'failed' ? retry : operation.state === 'running' && operation.lease_expires_at <= at && operation.phase === 'admitted'; if (!eligible || operation.attempt >= SHARE_MAX_ATTEMPTS) { db.exec('COMMIT'); return null; } const result = db.prepare("UPDATE assistant_share_operation SET state='running',phase='submitting',attempt=attempt+1,lease_expires_at=?,error_code=NULL,updated_at=? WHERE operation_id=? AND state=? AND phase=? AND attempt<? AND (state='failed' OR lease_expires_at<=?)").run(at + SHARE_LEASE_MS, at, operationID, operation.state, operation.phase, SHARE_MAX_ATTEMPTS, at); const claimed = result.changes ? db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID) : null; db.exec('COMMIT'); return claimed; } catch (error) { db.exec('ROLLBACK'); throw error; } };
   const completeOrFail = (operation, errorCode = null) => { const at = now(); if (errorCode) db.prepare("UPDATE assistant_share_operation SET state='failed',phase='admitted',error_code=?,lease_expires_at=NULL,updated_at=? WHERE operation_id=? AND state='running' AND phase='submitting'").run(errorCode, at, operation.operation_id); else db.prepare("UPDATE assistant_share_operation SET state='running',phase='submitted',error_code=NULL,lease_expires_at=?,updated_at=? WHERE operation_id=? AND state='running' AND phase='submitting'").run(at + SHARE_LEASE_MS, at, operation.operation_id); };
   const submitClaim = async (operation) => { const payload = parse(operation.response); const row = active(operation.assistant_id); try { const config = configuration(row); const result = await client().session.promptAsync({ sessionID: operation.session_id, directory: effectiveWorkspace(row), ...config, parts: payload.parts, messageID: operation.message_id }); if (!promptAdmitted(result)) fail('upstream_error'); mirrorAdmittedUserMessage(row, operation.session_id, operation.message_id, payload.parts, config); completeOrFail(operation); } catch (error) { completeOrFail(operation, error instanceof AssistantError ? error.code : 'upstream_error'); } };
-  const reconcile = async () => { const candidates = db.prepare("SELECT * FROM assistant_share_operation WHERE state='running'").all(); for (const operation of candidates) { const row = assistant(operation.assistant_id); if (!row || !operation.session_id || !operation.message_id) continue; try { const result = await client().session.messages({ sessionID: operation.session_id, directory: effectiveWorkspace(row), limit: 100 }); const messages = result.data ?? []; const found = Array.isArray(messages) && messages.some((message) => message?.info?.id === operation.message_id || message?.id === operation.message_id); if (found) db.prepare("UPDATE assistant_share_operation SET state='completed',phase='submitted',lease_expires_at=NULL,updated_at=? WHERE operation_id=? AND state='running'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now() && operation.attempt >= SHARE_MAX_ATTEMPTS) db.prepare("UPDATE assistant_share_operation SET state='failed',lease_expires_at=NULL,error_code='attempt_limit',updated_at=? WHERE operation_id=? AND state='running' AND phase='admitted'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now()) { const claimed = claim(operation.operation_id); if (claimed) void submitClaim(claimed); } else if (operation.phase === 'submitted' && operation.lease_expires_at <= now()) db.prepare("UPDATE assistant_share_operation SET state='unresolved',lease_expires_at=NULL,error_code='message_unresolved',updated_at=? WHERE operation_id=? AND state='running' AND phase='submitted'").run(now(), operation.operation_id); } catch { /* Reconciliation remains retryable until its lease expires. */ } } };
+  const reconcileShareOperations = async () => { const candidates = db.prepare("SELECT * FROM assistant_share_operation WHERE state='running'").all(); for (const operation of candidates) { const row = assistant(operation.assistant_id); if (!row || !operation.session_id || !operation.message_id) continue; try { const result = await client().session.messages({ sessionID: operation.session_id, directory: effectiveWorkspace(row), limit: 100 }); const messages = result.data ?? []; const found = Array.isArray(messages) && messages.some((message) => message?.info?.id === operation.message_id || message?.id === operation.message_id); if (found) db.prepare("UPDATE assistant_share_operation SET state='completed',phase='submitted',lease_expires_at=NULL,updated_at=? WHERE operation_id=? AND state='running'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now() && operation.attempt >= SHARE_MAX_ATTEMPTS) db.prepare("UPDATE assistant_share_operation SET state='failed',lease_expires_at=NULL,error_code='attempt_limit',updated_at=? WHERE operation_id=? AND state='running' AND phase='admitted'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now()) { const claimed = claim(operation.operation_id); if (claimed) void submitClaim(claimed); } else if (operation.phase === 'submitted' && operation.lease_expires_at <= now()) db.prepare("UPDATE assistant_share_operation SET state='unresolved',lease_expires_at=NULL,error_code='message_unresolved',updated_at=? WHERE operation_id=? AND state='running' AND phase='submitted'").run(now(), operation.operation_id); } catch { /* Reconciliation remains retryable until its lease expires. */ } } };
+  const reconcile = async () => {
+    if (closed) return;
+    try {
+      await reconcileShareOperations();
+      if (closed) return;
+      await reconcileInFlightWatches();
+    } catch {
+      // Reconcile remains retryable on the next timer.
+    }
+  };
   const share = async (assistantID, input) => { if (!plainObject(input) || !plainObject(input.payload)) fail('validation_error'); validateParts(input.payload.parts); const operationID = string(input.operationID, 128, true); const messageID = string(input.payload.messageID, 256, true); const payloadHash = hash(input.payload); active(assistantID); const at = now(); let operation; let reservationOwner = false; db.exec('BEGIN IMMEDIATE'); try { const inserted = db.prepare('INSERT OR IGNORE INTO assistant_share_operation(operation_id,assistant_id,payload_hash,phase,session_id,message_id,state,response,error_code,attempt,lease_expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run(operationID, assistantID, payloadHash, 'reserving', null, messageID, 'running', json(input.payload), null, 0, null, at, at); operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (operation.assistant_id !== assistantID || operation.payload_hash !== payloadHash) fail('idempotency_conflict'); reservationOwner = inserted.changes === 1; db.exec('COMMIT'); } catch (error) { db.exec('ROLLBACK'); throw error; }
     let resolveReservation; if (reservationOwner) shareReservations.set(operationID, new Promise((resolve) => { resolveReservation = resolve; })); else await shareReservations.get(operationID);
     if (reservationOwner) {
       try { const row = active(assistantID); const target = row.mode === 'stateless' ? await createNew(assistantID) : await ensure(assistantID); const attachedAt = now(); const attached = db.prepare("UPDATE assistant_share_operation SET phase='admitted',session_id=?,message_id=?,lease_expires_at=?,updated_at=? WHERE operation_id=? AND state='running' AND phase='reserving'").run(target.sessionID, messageID, attachedAt, attachedAt, operationID); if (!attached.changes) fail('upstream_error'); } catch (error) { db.prepare("DELETE FROM assistant_share_operation WHERE operation_id=? AND state='running' AND phase='reserving'").run(operationID); throw error; } finally { shareReservations.delete(operationID); resolveReservation(); }
     }
     operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (operation?.phase !== 'reserving') { const claimed = claim(operationID, operation?.state === 'failed'); if (claimed) await submitClaim(claimed); } return shareOperation(operationID); };
-  const timer = setIntervalFn(() => { if (!closed) { db.prepare('DELETE FROM assistant_share_operation WHERE updated_at<?').run(now() - SHARE_RETENTION_MS); void reconcile(); } }, reconcileIntervalMs);
+  const timer = setIntervalFn(() => { if (!closed) { db.prepare('DELETE FROM assistant_share_operation WHERE updated_at<?').run(now() - SHARE_RETENTION_MS); return reconcile(); } }, reconcileIntervalMs);
   void reconcile();
   return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId() }), snapshot: () => ({ revision: revision(), enabled: enabled(), assistants: db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output) }), createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
     db.exec('BEGIN IMMEDIATE');
@@ -794,5 +874,5 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, appendContactCard, deliverPeerMessage, processEvent, reportAssignedSessionSettle: reportAssignedSession, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, appendContactCard, deliverPeerMessage, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

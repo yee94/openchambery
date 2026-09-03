@@ -812,6 +812,198 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('reconciles a missed assigned-session idle on boot and the 60s timer', async () => {
+    const directory = root();
+    const first = setup(directory);
+    const assistant = first.createAssistant(assistantInput);
+    first.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_missed',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(first.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: ['ses_missed'],
+      working: true,
+    });
+    first.close();
+
+    let tick;
+    const service = setup(directory, {
+      get: async ({ sessionID }) => (
+        sessionID === 'ses_missed' || sessionID === 'ses_timer'
+          ? { data: { id: sessionID, status: { type: 'idle' } } }
+          : { data: { id: sessionID } }
+      ),
+      messages: async ({ sessionID }) => (
+        sessionID === 'ses_missed' || sessionID === 'ses_timer'
+          ? { data: [{ info: { id: `msg_${sessionID}`, role: 'assistant', time: { completed: 1 } } }] }
+          : { data: [] }
+      ),
+    }, {
+      setIntervalFn: (fn) => {
+        tick = fn;
+        return 1;
+      },
+    });
+    await service.reconcile();
+    let page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('complete');
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_timer',
+      directory,
+      title: 'Follow-up',
+      status: 'busy',
+    });
+    expect(service.snapshot().assistants[0].working).toBe(true);
+    await tick();
+    page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card' && part.sessionID === 'ses_timer'))?.parts[0].status).toBe('complete');
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(2);
+    expect(service.snapshot().assistants[0].working).toBe(false);
+    service.close();
+  });
+
+  it('reconciles a missing assigned session as complete and an assistant error as failed', async () => {
+    const directory = root();
+    const service = setup(directory, {
+      get: async ({ sessionID }) => {
+        if (sessionID === 'ses_gone') return { error: { status: 404 } };
+        if (sessionID === 'ses_fail') return { data: { id: 'ses_fail' } };
+        return { data: { id: sessionID } };
+      },
+      messages: async ({ sessionID }) => {
+        if (sessionID === 'ses_fail') return { data: [{ info: { id: 'msg_fail', role: 'assistant', error: { message: 'boom' } } }] };
+        return { data: [] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_gone',
+      directory,
+      title: 'Gone',
+      status: 'busy',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_fail',
+      directory,
+      title: 'Fail',
+      status: 'busy',
+    });
+    await service.reconcile();
+    const cards = service.contactMessages(assistant.id).messages
+      .filter((message) => message.parts.some((part) => part.type === 'card'))
+      .map((message) => message.parts[0]);
+    expect(cards.find((card) => card.sessionID === 'ses_gone')?.status).toBe('complete');
+    expect(cards.find((card) => card.sessionID === 'ses_fail')?.status).toBe('error');
+    const texts = service.contactMessages(assistant.id).messages.map((message) => message.text);
+    expect(texts.filter((text) => text === 'oc.settle.complete')).toHaveLength(1);
+    expect(texts.filter((text) => text === 'oc.settle.error')).toHaveLength(1);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    await service.reconcile();
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.error')).toHaveLength(1);
+    service.close();
+  });
+
+  it('does not settle in-flight watches on fetch failure or while the session is still running', async () => {
+    const directory = root();
+    const service = setup(directory, {
+      get: async ({ sessionID }) => {
+        if (sessionID === 'ses_down') throw new Error('network');
+        if (sessionID === 'ses_busy') return { data: { id: 'ses_busy', status: { type: 'busy' } } };
+        if (sessionID === 'ses_idle') return { data: { id: 'ses_idle', status: { type: 'idle' } } };
+        return { data: { id: sessionID } };
+      },
+      messages: async ({ sessionID }) => {
+        if (sessionID === 'ses_idle') return { data: [{ info: { id: 'msg_idle', role: 'assistant', time: { completed: 1 } } }] };
+        if (sessionID === 'ses_busy') return { data: [{ info: { id: 'msg_busy', role: 'assistant' } }] };
+        throw new Error('should not settle from messages after get failure');
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_down',
+      directory,
+      title: 'Down',
+      status: 'busy',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_busy',
+      directory,
+      title: 'Busy',
+      status: 'busy',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_idle',
+      directory,
+      title: 'Idle',
+      status: 'busy',
+    });
+    await service.reconcile();
+    const cards = Object.fromEntries(service.contactMessages(assistant.id).messages
+      .filter((message) => message.parts.some((part) => part.type === 'card'))
+      .map((message) => [message.parts[0].sessionID, message.parts[0].status]));
+    expect(cards).toMatchObject({
+      ses_down: 'busy',
+      ses_busy: 'busy',
+      ses_idle: 'complete',
+    });
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.snapshot().assistants[0].assignedSessionIDs.sort()).toEqual(['ses_busy', 'ses_down']);
+    expect(service.snapshot().assistants[0].working).toBe(true);
+    service.close();
+  });
+
+  it('does not rewrite a reconciled session.error as complete on a later idle poll', async () => {
+    const directory = root();
+    let idle = false;
+    const service = setup(directory, {
+      get: async ({ sessionID }) => (
+        sessionID === 'ses_err'
+          ? { data: idle ? { id: 'ses_err', status: { type: 'idle' } } : { id: 'ses_err', error: { message: 'boom' } } }
+          : { data: { id: sessionID } }
+      ),
+      messages: async () => ({ data: [{ info: { id: 'msg_err', role: 'assistant', time: { completed: 1 } } }] }),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_err',
+      directory,
+      title: 'Err',
+      status: 'busy',
+    });
+    await service.reconcile();
+    expect(service.contactMessages(assistant.id).messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'oc.settle.error')).toBe(true);
+    idle = true;
+    await service.reconcile();
+    expect(service.contactMessages(assistant.id).messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'oc.settle.complete')).toBe(false);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    service.close();
+  });
+
   it('accepts a session-goal settle into the same card without mutating the worker', () => {
     const directory = root();
     const service = setup(directory);

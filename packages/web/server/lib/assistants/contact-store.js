@@ -173,9 +173,17 @@ export function listWatchesBySession(db, sessionID) {
 }
 
 export function listInFlightWatches(db, assistantID) {
-  return db.prepare('SELECT session_id, status FROM assistant_contact_watch WHERE assistant_id=?').all(assistantID)
+  const rows = typeof assistantID === 'string' && assistantID
+    ? db.prepare('SELECT assistant_id, session_id, directory, status FROM assistant_contact_watch WHERE assistant_id=?').all(assistantID)
+    : db.prepare('SELECT assistant_id, session_id, directory, status FROM assistant_contact_watch').all();
+  return rows
     .filter((row) => IN_FLIGHT_WATCH.has(row.status))
-    .map((row) => ({ sessionID: row.session_id, status: row.status }));
+    .map((row) => ({
+      assistantID: row.assistant_id,
+      sessionID: row.session_id,
+      directory: row.directory,
+      status: row.status,
+    }));
 }
 
 export function updateSessionCardStatus(db, { assistantID, sessionID, status }) {
