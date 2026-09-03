@@ -41,6 +41,38 @@ openchamber-push-relay --host 127.0.0.1 --port 8788
 
 The Host maps the effective Relay `wss://`/`ws://` URL to the same host as `https://`/`http://` `/v1/push/send`. Set `OPENCHAMBER_PUSH_RELAY_URL` on the Host to override. After a Relay switch, the Host re-registers persisted tokens and binds them before the first send. iOS Live Activity uses the same Push origin: `POST /v1/push/register-live-activity-token`, `POST /v1/push/unregister-live-activity-token`, and `POST /v1/push/live-activity`. Each Live Activity APNs request authenticates with the Host signing key, uses topic `{bundleId}.push-type.liveactivity`, and carries only `aps.timestamp`, `aps.event`, `aps.content-state`, and optional `dismissal-date` / `stale-date`. Successful `end` deliveries delete the token binding.
 
+### Combined mode (single port)
+
+When `openchamber-relay` sees any non-empty `OPENCHAMBER_PUSH_RELAY_APNS_*` variable, it mounts Push HTTP on the same listener at `/v1/push/*`. Missing required APNs fields fail startup instead of silently skipping Push. With no such variables, Layer 1 does not load the Push module.
+
+Combined mode ignores `OPENCHAMBER_PUSH_RELAY_HOST` and `OPENCHAMBER_PUSH_RELAY_PORT`. Public `/healthz` and `/readyz` stay Layer 1. The standalone `openchamber-push-relay` entry is unchanged.
+
+```sh
+export OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>'
+export OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>'
+export OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID=com.yee94.openchamber
+export OPENCHAMBER_PUSH_RELAY_APNS_P8_PATH=/etc/openchamber/AuthKey.p8
+export OPENCHAMBER_PUSH_RELAY_DATABASE_PATH=/var/lib/openchamber/push-relay.sqlite
+openchamber-relay --public-url wss://relay.example.com/ws
+```
+
+Minimal Compose environment:
+
+```yaml
+services:
+  relay:
+    image: openchamber-relay:<version>
+    environment:
+      OPENCHAMBER_RELAY_SERVER_PUBLIC_URL: wss://relay.example.com/ws
+      OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID: ${OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID}
+      OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID: ${OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID}
+      OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID: com.yee94.openchamber
+      OPENCHAMBER_PUSH_RELAY_APNS_P8_PATH: /run/secrets/apns_p8
+      OPENCHAMBER_PUSH_RELAY_DATABASE_PATH: /data/push-relay.sqlite
+    ports:
+      - "127.0.0.1:8787:8787"
+```
+
 ### Caddy
 
 ```caddyfile

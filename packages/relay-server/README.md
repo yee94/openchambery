@@ -59,6 +59,43 @@ openchamber-push-relay --host 127.0.0.1 --port 8788
 
 Keep Push on loopback behind the same TLS reverse proxy. Route only `/v1/push/*` to port 8788.
 
+### Combined mode (single port)
+
+`openchamber-relay` can mount Push on the same listener. If any `OPENCHAMBER_PUSH_RELAY_APNS_*` variable is non-empty, Layer 1 loads Push and serves `/v1/push/*` on the Relay port. Partial APNs configuration fails startup; it does not silently disable Push. With no APNs variables set, Layer 1 behavior is unchanged and Push is not loaded.
+
+In combined mode:
+
+- Push routes share the Relay port at `/v1/push/*`.
+- `/healthz` and `/readyz` remain Layer 1 endpoints.
+- `OPENCHAMBER_PUSH_RELAY_HOST` and `OPENCHAMBER_PUSH_RELAY_PORT` are ignored.
+- `openchamber-push-relay` is unchanged and remains the isolated two-process option.
+
+```sh
+export OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>'
+export OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>'
+export OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID=com.yee94.openchamber
+export OPENCHAMBER_PUSH_RELAY_APNS_P8_PATH=/etc/openchamber/AuthKey.p8
+export OPENCHAMBER_PUSH_RELAY_DATABASE_PATH=/var/lib/openchamber/push-relay.sqlite
+openchamber-relay --public-url wss://relay.example.com/ws
+```
+
+Minimal Compose environment for combined mode:
+
+```yaml
+services:
+  relay:
+    image: openchamber-relay:<version>
+    environment:
+      OPENCHAMBER_RELAY_SERVER_PUBLIC_URL: wss://relay.example.com/ws
+      OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID: ${OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID}
+      OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID: ${OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID}
+      OPENCHAMBER_PUSH_RELAY_APNS_BUNDLE_ID: com.yee94.openchamber
+      OPENCHAMBER_PUSH_RELAY_APNS_P8_PATH: /run/secrets/apns_p8
+      OPENCHAMBER_PUSH_RELAY_DATABASE_PATH: /data/push-relay.sqlite
+    ports:
+      - "127.0.0.1:8787:8787"
+```
+
 OpenChamber Hosts do not need a separate Push URL when they already have a Relay URL. The effective `wss://` or `ws://` Relay URL maps to the same host as `https://` or `http://` `/v1/push/send` (register is `/v1/push/register-token`). Set `OPENCHAMBER_PUSH_RELAY_URL` on the Host to override that mapping. After a Relay switch, the Host re-registers persisted device tokens and binds them again before the first send.
 
 ### Build a standalone executable
