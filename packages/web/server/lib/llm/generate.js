@@ -181,10 +181,27 @@ const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) =>
   }
 };
 
+const isJsonContentType = (response) => /json/i.test(response?.headers?.get?.('content-type') || '');
+
+const looksLikeJsonObject = (text) => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed || trimmed.startsWith('<')) return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed !== null && typeof parsed === 'object';
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Detect a sessionless generate endpoint on the running OpenCode.
  * Bundled 1.18.4 does not expose POST /generate; keep the probe so a later
  * OpenCode that does can be used without changing the public completions API.
+ *
+ * SPA / OpenCode HTML often answers 200 text/html `<!doctype html>` for
+ * unknown paths. That is not generate — only JSON (Content-Type or body)
+ * counts as available.
  */
 export async function detectSessionlessGenerate({ fetchImpl, baseUrl, headers }) {
   const clientShape = typeof arguments[0]?.client?.generate === 'function'
@@ -202,7 +219,9 @@ export async function detectSessionlessGenerate({ fetchImpl, baseUrl, headers })
         body: JSON.stringify({ probe: true }),
         signal: AbortSignal.timeout(4_000),
       });
-      if (response.status !== 404 && response.status !== 405) {
+      if (response.status === 404 || response.status === 405) continue;
+      const body = await response.text().catch(() => '');
+      if (isJsonContentType(response) || looksLikeJsonObject(body)) {
         return { available: true, mode: 'http', url };
       }
     } catch {

@@ -668,6 +668,8 @@ describe('Assistant UI product contract', () => {
     expect(generate).toContain('client.session.promptAsync');
     expect(generate).not.toContain('client.session.prompt(');
     expect(generate).toContain('V2 session.prompt only forwards');
+    expect(generate).toContain('isJsonContentType');
+    expect(generate).toContain('looksLikeJsonObject');
   });
 
 });

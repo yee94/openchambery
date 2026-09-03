@@ -19,13 +19,32 @@ describe('detectSessionlessGenerate', () => {
     })).resolves.toEqual({ available: false, mode: 'throwaway-session' })
   })
 
-  it('returns available when the probe is not 404', async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
+  it('returns available when the probe returns JSON', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
     await expect(detectSessionlessGenerate({
       fetchImpl,
       baseUrl: 'http://127.0.0.1:4096',
       headers: {},
     })).resolves.toMatchObject({ available: true, mode: 'http' })
+  })
+
+  it('treats HTML 200 on /generate as unavailable', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      expect(String(url)).toMatch(/\/generate$/)
+      return new Response('<!doctype html><html><body>OpenChamber</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    })
+    await expect(detectSessionlessGenerate({
+      fetchImpl,
+      baseUrl: 'http://127.0.0.1:4096',
+      headers: {},
+    })).resolves.toEqual({ available: false, mode: 'throwaway-session' })
+    expect(fetchImpl).toHaveBeenCalled()
   })
 })
 
@@ -109,6 +128,39 @@ describe('generateOpenCodeText', () => {
       code: 'upstream_error',
       message: 'model refused the request',
     })
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('falls through to promptAsync when the /generate probe returns HTML 200', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<!doctype html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    }))
+    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
+    const prompt = vi.fn()
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'glm-5.3-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      fetchImpl,
+      clientFactory: () => ({
+        session: {
+          create: async () => ({ data: { id: 'ses_tmp' } }),
+          update: async () => ({ data: { id: 'ses_tmp' } }),
+          prompt,
+          promptAsync,
+          status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
+          messages: async () => ({ data: [completedAssistant('reply')] }),
+          delete: async () => ({ data: true }),
+        },
+        tool: { ids: async () => ({ data: [] }) },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+    })
+    expect(result).toEqual({ text: 'reply', source: 'throwaway-session' })
+    expect(promptAsync).toHaveBeenCalled()
     expect(prompt).not.toHaveBeenCalled()
   })
 })

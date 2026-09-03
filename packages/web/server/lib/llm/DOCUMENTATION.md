@@ -25,7 +25,9 @@ The 1.18.4 client exposes `GET /provider`, `GET /config/providers`, and
 `POST /api/generate` or any other sessionless generate method.
 
 1. Probe `POST /generate` (and SDK `generate` if present). Use it only when
-   the running OpenCode actually serves it.
+   the response is JSON (`Content-Type` or a JSON object body). SPA / OpenCode
+   HTML `200 <!doctype` is not generate — fall through to the throwaway path.
+   Bundled 1.18.4 has no sessionless generate.
 2. Otherwise create a throwaway archived OpenCode session, deny every tool
    (`client.tool.ids()` → `{ [id]: false }`), send our messages as
    `system` + user text via `session.promptAsync` (v2 `session.prompt` only
