@@ -5,7 +5,8 @@ import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero-wi
 import androidDirectShareImage from '@/assets/assistant-share-welcome/android-direct-share.jpg';
 import iosShareSheetImage from '@/assets/assistant-share-welcome/ios-share-sheet.jpg';
 import selectAssistantImage from '@/assets/assistant-share-welcome/select-assistant.jpg';
-import { AgentAvatar } from '@/components/chat/AgentAvatar';
+import { AssistantWorkingAvatar } from '@/components/assistants/AssistantWorkingAvatar';
+import { useAssistantWorking } from '@/components/assistants/assistantWorking';
 import { AssistantDeleteConfirmDialog } from '@/components/assistants/AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
 import { Icon } from '@/components/icon/Icon';
@@ -132,6 +133,8 @@ type MobileAssistantCardProps = {
   onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  assignedSessionIDs?: string[];
+  serverWorking?: boolean;
 };
 
 function MobileAssistantCard({
@@ -146,7 +149,10 @@ function MobileAssistantCard({
   onOpen,
   onEdit,
   onDelete,
+  assignedSessionIDs = [],
+  serverWorking = false,
 }: MobileAssistantCardProps) {
+  const working = useAssistantWorking(assistantID, assignedSessionIDs, serverWorking);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [pressed, setPressed] = React.useState(false);
   const longPressRef = React.useRef<MobileLongPressController | null>(null);
@@ -231,11 +237,12 @@ function MobileAssistantCard({
               ? 'oc-mobile-assistant-avatar--emoji'
               : 'oc-mobile-assistant-avatar--visual',
           )}>
-            <AgentAvatar
+            <AssistantWorkingAvatar
               name={assistantID}
               emoji={avatarEmoji}
               size={avatarEmoji ? 40 : 38}
               label={displayName}
+              working={working}
             />
           </span>
           <span className="oc-mobile-assistant-card-content min-w-0 flex-1">
@@ -339,6 +346,8 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
                 enabled={assistant.enabled}
                 editLabel={editLabel}
                 deleteLabel={deleteLabel}
+                assignedSessionIDs={assistant.assignedSessionIDs}
+                serverWorking={assistant.working}
                 onOpen={() => handleOpenAssistant(assistant.id)}
                 onEdit={() => handleEdit(assistant.id)}
                 onDelete={() => handleRequestDelete(assistant)}

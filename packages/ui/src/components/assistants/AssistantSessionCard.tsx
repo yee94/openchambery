@@ -17,17 +17,28 @@ type AssistantSessionCardProps = {
   card: AssistantContactSessionCardPart
 }
 
+const displayStatus = (liveType: string | undefined, persisted: string | null | undefined) => {
+  if (liveType === 'busy' || liveType === 'retry') return liveType
+  if (persisted === 'error' || persisted === 'question' || persisted === 'complete') return persisted
+  if (liveType === 'idle') return 'complete'
+  if (persisted === 'busy' || persisted === 'retry' || persisted === 'idle') return persisted
+  return persisted || 'busy'
+}
+
 const statusKey = (status: string | null | undefined) => {
   if (status === 'busy') return 'assistants.contact.card.session.status.busy' as const
   if (status === 'retry') return 'assistants.contact.card.session.status.retry' as const
   if (status === 'idle') return 'assistants.contact.card.session.status.idle' as const
   if (status === 'complete') return 'assistants.contact.card.session.status.complete' as const
+  if (status === 'error') return 'assistants.contact.card.session.status.error' as const
+  if (status === 'question') return 'assistants.contact.card.session.status.question' as const
   return null
 }
 
 const statusChipClass = (status: string | null | undefined) => {
   if (status === 'busy') return 'bg-[var(--status-info)]/10 text-[var(--status-info)]'
-  if (status === 'retry') return 'bg-[var(--status-warning)]/10 text-[var(--status-warning)]'
+  if (status === 'retry' || status === 'question') return 'bg-[var(--status-warning)]/10 text-[var(--status-warning)]'
+  if (status === 'error') return 'bg-[var(--status-error)]/10 text-[var(--status-error)]'
   if (status === 'idle' || status === 'complete') return 'bg-[var(--status-success)]/10 text-[var(--status-success)]'
   return 'bg-[var(--surface-muted)] text-muted-foreground'
 }
@@ -53,7 +64,7 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
   })
   const liveStatus = useGlobalSessionStatus(card.sessionID)
   const title = liveTitle || card.title || t('assistants.contact.card.session.untitled')
-  const status = liveStatus?.type ?? card.status
+  const status = displayStatus(liveStatus?.type, card.status)
   const statusLabelKey = statusKey(status)
   const metadata = [card.branch, card.sessionID, directoryName(card.directory)].filter(Boolean)
   const openSession = useEvent(() => {

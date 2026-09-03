@@ -164,6 +164,7 @@ describe('Assistant UI product contract', () => {
       mobileStyles.indexOf('.oc-mobile-assistant-avatar {'),
       mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
     );
+    expect(avatarStyles).toContain('overflow: visible');
     expect(avatarStyles).toContain('border-radius: 999px');
     expect(avatarStyles).toContain(':is(img, svg)');
     expect(avatarStyles).toContain('object-fit: cover');
@@ -639,6 +640,34 @@ describe('Assistant UI product contract', () => {
     expect(view).not.toContain('kind: \'secondary\'');
     expect(surface).toContain('resolveChatInputDraftBusy');
     expect(surface).toContain("surface.kind === 'secondary' ? surface.resources?.busy ?? false : primaryDraftBusy");
+  });
+
+  test('shows a Grok-Bot working dot on list and conversation avatars, not an Activity banner', async () => {
+    const [view, conversation, avatar, working, card, mobileTab, generate] = await Promise.all([
+      read('AssistantView.tsx'),
+      read('AssistantConversationSurface.tsx'),
+      read('AssistantWorkingAvatar.tsx'),
+      read('assistantWorking.ts'),
+      read('AssistantSessionCard.tsx'),
+      read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('../../../../web/server/lib/llm/generate.js'),
+    ]);
+    expect(avatar).toContain('data-assistant-working-dot');
+    expect(avatar).toContain('bg-[var(--status-success)]');
+    expect(avatar).toContain('absolute right-0 bottom-0 size-2');
+    expect(working).toContain('isAssistantWorking');
+    expect(working).toContain('serverWorking');
+    expect(view).toContain('<AssistantWorkingAvatar');
+    expect(view).toContain('useAssistantWorking');
+    expect(conversation).toContain('<AssistantWorkingAvatar');
+    expect(conversation).toContain('oc.settle.complete');
+    expect(conversation).not.toContain('<Activity');
+    expect(mobileTab).toContain('<AssistantWorkingAvatar');
+    expect(card).toContain("persisted === 'error' || persisted === 'question' || persisted === 'complete'");
+    expect(card).toContain("if (liveType === 'idle') return 'complete'");
+    expect(generate).toContain('client.session.promptAsync');
+    expect(generate).not.toContain('client.session.prompt(');
+    expect(generate).toContain('v2 session.prompt only forwards');
   });
 
 });

@@ -1,6 +1,5 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
-import { AgentAvatar } from '@/components/chat/AgentAvatar'
 import { Icon } from '@/components/icon/Icon'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,6 +17,14 @@ import {
 import { AssistantAPIError } from '@/queries/assistantDTO'
 import { getAssistantPresentation } from './assistantPresentation'
 import { AssistantSessionCard } from './AssistantSessionCard'
+import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
+import { useAssistantContactWorkingStore, useAssistantWorking } from './assistantWorking'
+
+const SETTLE_TEXT: Record<string, 'assistants.contact.settle.complete' | 'assistants.contact.settle.error' | 'assistants.contact.settle.question'> = {
+  'oc.settle.complete': 'assistants.contact.settle.complete',
+  'oc.settle.error': 'assistants.contact.settle.error',
+  'oc.settle.question': 'assistants.contact.settle.question',
+}
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO
@@ -58,6 +65,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const [draft, setDraft] = React.useState('')
   const [sending, setSending] = React.useState(false)
   const [sendError, setSendError] = React.useState<string | null>(null)
+  const setContactSending = useAssistantContactWorkingStore((state) => state.setSending)
+  const working = useAssistantWorking(assistant.id, assistant.assignedSessionIDs ?? [], Boolean(assistant.working))
   const scrollerRef = React.useRef<HTMLDivElement | null>(null)
   const messages = contactQuery.data?.messages ?? []
 
@@ -71,6 +80,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     const text = draft.trim()
     if (!text || sending) return
     setSending(true)
+    setContactSending(assistant.id, true)
     setSendError(null)
     try {
       await sendAssistantContactMessage(assistant.id, `oc_contact_${createUuid()}`, text)
@@ -86,9 +96,17 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       setDraft('')
     } catch (error) {
       const code = error instanceof AssistantAPIError ? error.code : ''
-      setSendError(code === 'no_provider' ? t('assistants.contact.noProvider') : t('assistants.contact.sendFailed'))
+      const detail = error instanceof AssistantAPIError && error.message && error.message !== error.code
+        ? error.message
+        : ''
+      setSendError(
+        code === 'no_provider'
+          ? t('assistants.contact.noProvider')
+          : detail || t('assistants.contact.sendFailed'),
+      )
     } finally {
       setSending(false)
+      setContactSending(assistant.id, false)
     }
   })
 
@@ -139,12 +157,13 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                   data-assistant-contact-role={message.role}
                 >
                   {!isUser ? (
-                    <AgentAvatar
+                    <AssistantWorkingAvatar
                       name={sender?.id || message.fromAssistantID || assistant.id}
                       emoji={senderPresentation?.avatarEmoji}
                       size={24}
                       label={senderName}
-                      className="mt-1 mr-2 shrink-0"
+                      working={!isPeer && working}
+                      className="mt-1 mr-2"
                     />
                   ) : null}
                   <div className={cn('flex min-w-0 max-w-[min(100%,28rem)] flex-col gap-2', isUser && 'items-end')}>
@@ -171,7 +190,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                   : 'bg-[var(--surface-elevated)] text-foreground',
                             )}
                           >
-                            {part.text}
+                            {SETTLE_TEXT[part.text] ? t(SETTLE_TEXT[part.text]) : part.text}
                           </div>
                         )
                       }

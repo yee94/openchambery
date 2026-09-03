@@ -47,7 +47,7 @@ export const retainAssistantHistoryPlaceholder = (
   }
   return previousData;
 };
-const requestJSON = async <T>(path: string, init: RequestInit = {}): Promise<T> => { const response = await runtimeFetch(path, init); const payload = await response.json().catch(() => null) as { error?: unknown } | T | null; if (!response.ok) throw new AssistantAPIError(payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string' ? payload.error : 'request_failed', response.status); return payload as T; };
+const requestJSON = async <T>(path: string, init: RequestInit = {}): Promise<T> => { const response = await runtimeFetch(path, init); const payload = await response.json().catch(() => null) as { error?: unknown; message?: unknown } | T | null; if (!response.ok) { const code = payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string' ? payload.error : 'request_failed'; const message = payload && typeof payload === 'object' && 'message' in payload && typeof payload.message === 'string' ? payload.message : undefined; throw new AssistantAPIError(code, response.status, undefined, message); } return payload as T; };
 const jsonInit = (method: string, body?: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 const assertCurrent = (transport: string, generation: number) => { if (getRuntimeTransportIdentity() !== transport || getRuntimeGeneration() !== generation) throw new AssistantAPIError('runtime_stale', 409); };
 const applyBinding = (assistantID: string, binding: SessionBinding, transport: string) => {

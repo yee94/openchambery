@@ -18,6 +18,8 @@ describe('Assistant DTO parsing', () => {
     expect(snapshot.assistants[0]?.mode).toBe('continuous');
     expect(snapshot.assistants[0]?.historySessionIDs).toEqual(['ses-0']);
     expect(snapshot.assistants[0]?.historySessionCount).toBe(1);
+    expect(snapshot.assistants[0]?.assignedSessionIDs).toEqual([]);
+    expect(snapshot.assistants[0]?.working).toBe(false);
     expect('skillRoots' in snapshot.assistants[0]).toBe(false);
     expect(binding.directory).toBe('/workspace');
     expect(compact.binding.sessionID).toBe('ses_fixture');

@@ -8,12 +8,17 @@ import { reduceBackfillState } from './history-state.js';
 import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { parseContactCard, parseContactPart } from './cards.js';
 import {
+  CONTACT_SETTLE_TEXT,
   contactHistoryForLlm,
   deleteContactMessages,
   ensureContactSchema,
   insertContactMessage,
   listContactMessages,
+  listInFlightWatches,
+  listWatchesBySession,
   nextContactOrdinal,
+  updateSessionCardStatus,
+  upsertContactWatch,
 } from './contact-store.js';
 import { ASSIGNED_SESSION_FALLBACK_BUBBLE, createContactTools } from './contact-tools.js';
 import { assignSession } from './assign.js';
@@ -33,8 +38,13 @@ const json = (value) => JSON.stringify(value);
 const parse = (value) => JSON.parse(value);
 const hash = (value) => crypto.createHash('sha256').update(json(value)).digest('hex');
 const id = () => crypto.randomUUID();
-export class AssistantError extends Error { constructor(code) { super(code); this.code = code; } }
-const fail = (code) => { throw new AssistantError(code); };
+export class AssistantError extends Error {
+  constructor(code, message) {
+    super(typeof message === 'string' && message.trim() ? message.trim() : code);
+    this.code = code;
+  }
+}
+const fail = (code, message) => { throw new AssistantError(code, message); };
 const string = (value, max = 10_000, required = false) => { if (value == null && !required) return null; if (typeof value !== 'string' || value.length > max || (required && !value.trim())) fail('validation_error'); return value.trim(); };
 const nonEmptyString = (value, max = 10_000) => typeof value === 'string' && value.length > 0 && value.length <= max;
 const isMissing = (result) => result?.error?.status === 404 || result?.error?.statusCode === 404 || result?.error?.code === 'not_found' || result?.status === 404;
@@ -120,7 +130,33 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
     db.prepare("UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND COALESCE(json_extract(info_json,'$.role'),'')<>'user' AND COALESCE(json_extract(info_json,'$.openchamberAssistantAdmission'),0)<>1").run(assistantID, sessionID);
   };
-  const output = (row) => ({ id: row.assistant_id, revision: row.revision, enabled: Boolean(row.enabled), name: row.name, defaultPrompt: row.default_prompt, workspacePath: row.workspace_path, managedWorkspacePath: workspace(null, row.assistant_id, true), effectiveWorkspacePath: effectiveWorkspace(row), providerID: row.provider_id, modelID: row.model_id, agent: row.agent, variant: row.variant, mode: row.mode === 'stateless' ? 'stateless' : 'continuous', sessionID: row.current_session_id, sessionGeneration: row.session_generation, historySessionIDs: historyIDs(row.assistant_id), historySessionCount: historyCount(row.assistant_id), createdAt: row.created_at, updatedAt: row.updated_at, tombstoneAt: row.tombstone_at });
+  const output = (row) => {
+    const watches = listInFlightWatches(db, row.assistant_id);
+    return {
+      id: row.assistant_id,
+      revision: row.revision,
+      enabled: Boolean(row.enabled),
+      name: row.name,
+      defaultPrompt: row.default_prompt,
+      workspacePath: row.workspace_path,
+      managedWorkspacePath: workspace(null, row.assistant_id, true),
+      effectiveWorkspacePath: effectiveWorkspace(row),
+      providerID: row.provider_id,
+      modelID: row.model_id,
+      agent: row.agent,
+      variant: row.variant,
+      mode: row.mode === 'stateless' ? 'stateless' : 'continuous',
+      sessionID: row.current_session_id,
+      sessionGeneration: row.session_generation,
+      historySessionIDs: historyIDs(row.assistant_id),
+      historySessionCount: historyCount(row.assistant_id),
+      assignedSessionIDs: watches.map((watch) => watch.sessionID),
+      working: watches.some((watch) => watch.status === 'busy'),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      tombstoneAt: row.tombstone_at,
+    };
+  };
   const binding = (row) => ({ sessionID: row.current_session_id, directory: effectiveWorkspace(row), sessionGeneration: row.session_generation });
   const client = () => clientFactory ? clientFactory() : createOpencodeClient({ baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''), headers: getOpenCodeAuthHeaders() });
   const metadata = (row) => ({ openchamber: { assistant: { assistantID: row.assistant_id, name: row.name } } });
@@ -249,6 +285,64 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID);
     db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
   };
+  const eventSessionID = (properties) => {
+    const sessionID = properties?.sessionID || properties?.sessionId || properties?.info?.sessionID || properties?.info?.sessionId;
+    return nonEmptyString(sessionID) ? sessionID : '';
+  };
+  const settleStatusFromEvent = (payload, properties) => {
+    if (payload.type === 'session.error') return 'error';
+    if (payload.type === 'question.asked' || payload.type === 'permission.asked') return 'question';
+    if (payload.type === 'session.idle') return 'complete';
+    if (payload.type === 'session.status') {
+      const statusType = typeof properties.status?.type === 'string' ? properties.status.type : typeof properties.info?.type === 'string' ? properties.info.type : '';
+      if (statusType === 'busy' || statusType === 'retry') return 'busy';
+      if (statusType === 'idle') return 'complete';
+    }
+    return null;
+  };
+  const reportAssignedSession = (sessionID, status) => {
+    const watches = listWatchesBySession(db, sessionID);
+    if (watches.length === 0) return false;
+    let changed = false;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const watch of watches) {
+        if (watch.status === status) continue;
+        // session.idle / status idle follow session.error. Do not rewrite 失败 as 完成.
+        if (status === 'complete' && watch.status === 'error') continue;
+        updateSessionCardStatus(db, { assistantID: watch.assistantID, sessionID, status });
+        upsertContactWatch(db, {
+          assistantID: watch.assistantID,
+          sessionID,
+          directory: watch.directory,
+          status,
+          updatedAt: now(),
+        });
+        const settleText = CONTACT_SETTLE_TEXT[status];
+        const settleID = `settle_${watch.assistantID}_${sessionID}_${status}`;
+        if (settleText && !db.prepare('SELECT 1 AS ok FROM assistant_contact_message WHERE message_id=?').get(settleID)) {
+          insertContactMessage(db, {
+            messageID: settleID,
+            assistantID: watch.assistantID,
+            role: 'assistant',
+            turnID: `settle:${sessionID}`,
+            bubbleIndex: 0,
+            createdAt: now(),
+            ordinal: nextContactOrdinal(db, watch.assistantID),
+            status: 'complete',
+            parts: [{ type: 'text', text: settleText }],
+          });
+        }
+        changed = true;
+      }
+      if (changed) bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return changed;
+  };
   const processEvent = (event) => {
     const payload = event?.payload?.payload ?? event?.payload ?? event;
     const properties = payload?.properties;
@@ -274,16 +368,24 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').run(assistantID, sessionID, messageID, partID); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateMessageCoverage(assistantID, sessionID, messageID); } return assistants.length > 0;
     }
     if (payload.type === 'session.idle' || payload.type === 'session.error') {
-      const sessionID = properties.sessionID;
-      if (!nonEmptyString(sessionID)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+      const sessionID = eventSessionID(properties);
+      if (!sessionID) return false;
+      const reported = reportAssignedSession(sessionID, settleStatusFromEvent(payload, properties));
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
     }
     if (payload.type === 'session.status') {
-      const sessionID = properties.sessionID;
-      const statusType = typeof properties.status?.type === 'string' ? properties.status.type : typeof properties.info?.type === 'string' ? properties.info.type : '';
-      if (!nonEmptyString(sessionID) || !nonEmptyString(statusType)) return false;
-      if (statusType !== 'busy' && statusType !== 'retry' && statusType !== 'idle') return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+      const sessionID = eventSessionID(properties);
+      const status = settleStatusFromEvent(payload, properties);
+      if (!sessionID || !status) return false;
+      const reported = reportAssignedSession(sessionID, status);
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+    }
+    if (payload.type === 'question.asked' || payload.type === 'permission.asked') {
+      const sessionID = eventSessionID(properties);
+      if (!sessionID) return false;
+      return reportAssignedSession(sessionID, 'question');
     }
     return false;
   };
@@ -473,6 +575,13 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           status: 'complete',
           parts: [card],
         });
+        upsertContactWatch(db, {
+          assistantID,
+          sessionID: card.sessionID,
+          directory: card.directory,
+          status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
+          updatedAt: now(),
+        });
       });
       bump();
       db.exec('COMMIT');
@@ -519,8 +628,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       });
     } catch (error) {
       if (error instanceof AssistantError) throw error;
-      if (error?.code === 'no_provider') fail('no_provider');
-      fail('upstream_error');
+      const detail = typeof error?.message === 'string' && error.message.trim() ? error.message : undefined;
+      if (error?.code === 'no_provider') fail('no_provider', detail);
+      fail('upstream_error', detail);
     }
     const bubbles = Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : [];
     const cards = [
@@ -560,6 +670,13 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         ordinal: nextContactOrdinal(db, row.assistant_id),
         status: 'complete',
         parts: [card],
+      });
+      upsertContactWatch(db, {
+        assistantID: row.assistant_id,
+        sessionID: card.sessionID,
+        directory: card.directory,
+        status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
+        updatedAt: now(),
       });
       bump();
       db.exec('COMMIT');

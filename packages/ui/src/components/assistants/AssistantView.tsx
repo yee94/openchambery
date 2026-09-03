@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
-import { AgentAvatar } from '@/components/chat/AgentAvatar';
+import { AssistantWorkingAvatar } from './AssistantWorkingAvatar';
+import { useAssistantWorking } from './assistantWorking';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,7 +25,7 @@ import { AssistantDeleteConfirmDialog } from './AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from './assistantPresentation';
 
 type MobileAssistantConversationHeaderProps = {
-  assistant?: { id: string; name: string; mode: 'continuous' | 'stateless' } | null;
+  assistant?: Pick<AssistantDTO, 'id' | 'name' | 'assignedSessionIDs' | 'working'> | null;
   onBack: () => void;
 };
 
@@ -32,10 +33,24 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
   const { t } = useI18n();
   const presentation = assistant ? getAssistantPresentation(assistant.name) : null;
   const displayName = assistant && presentation ? presentation.displayName || assistant.name : '';
+  const working = useAssistantWorking(assistant?.id ?? '', assistant?.assignedSessionIDs ?? [], Boolean(assistant?.working));
 
   return (
     <MobileDetailNavigation
-      title={displayName || t('assistants.title')}
+      title={
+        assistant ? (
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <AssistantWorkingAvatar
+              name={assistant.id}
+              emoji={presentation?.avatarEmoji}
+              size={24}
+              label={displayName}
+              working={working}
+            />
+            <span className="truncate">{displayName || t('assistants.title')}</span>
+          </span>
+        ) : (displayName || t('assistants.title'))
+      }
       backAriaLabel={t('assistants.actions.backToChat')}
       onBack={onBack}
       overlay
@@ -55,6 +70,8 @@ type AssistantListItemProps = {
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  assignedSessionIDs?: string[];
+  serverWorking?: boolean;
 };
 
 const AssistantListItem: React.FC<AssistantListItemProps> = ({
@@ -69,7 +86,10 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
   onSelect,
   onEdit,
   onDelete,
+  assignedSessionIDs = [],
+  serverWorking = false,
 }) => {
+  const working = useAssistantWorking(assistantID, assignedSessionIDs, serverWorking);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const handleSelect = useEvent(() => onSelect());
   const handleEdit = useEvent(() => {
@@ -104,7 +124,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
           />
         }
       >
-        <AgentAvatar name={assistantID} emoji={avatarEmoji} size={24} label={displayName} />
+        <AssistantWorkingAvatar name={assistantID} emoji={avatarEmoji} size={24} label={displayName} working={working} />
         <span className="min-w-0 flex-1">
           <span className="block truncate typography-ui-label font-medium">{displayName}</span>
           <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
@@ -155,6 +175,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const selectAssistant = useAssistantUIStore((state) => state.selectAssistant);
   const requestCreate = useAssistantUIStore((state) => state.requestCreate);
   const assistant = snapshot?.assistants.find((item) => item.id === selectedAssistantID) ?? null;
+  const selectedWorking = useAssistantWorking(assistant?.id ?? '', assistant?.assignedSessionIDs ?? [], Boolean(assistant?.working));
 
   React.useEffect(() => { if (!selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id); }, [selectAssistant, selectedAssistantID, snapshot?.assistants]);
   React.useEffect(() => { if (snapshotQuery.isSuccess && selectedAssistantID && !assistant) selectAssistant(snapshot?.assistants[0]?.id ?? null); }, [assistant, selectAssistant, selectedAssistantID, snapshot?.assistants, snapshotQuery.isSuccess]);
@@ -208,6 +229,8 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
                     enabled={item.enabled}
                     editLabel={t('assistants.menu.edit')}
                     deleteLabel={t('assistants.settings.delete')}
+                    assignedSessionIDs={item.assignedSessionIDs}
+                    serverWorking={item.working}
                     onSelect={() => selectAssistant(item.id)}
                     onEdit={() => openEditSettings(item.id)}
                     onDelete={() => requestDeleteAssistant(item)}
@@ -228,7 +251,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
           <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} />
         ) : (
           <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 px-4 sm:px-5">
-            <AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} />
+            <AssistantWorkingAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} working={selectedWorking} />
             <div className="min-w-0 flex-1">
               <div className="truncate typography-ui-label font-medium">{presentation.displayName}</div>
               <div className="mt-0.5 truncate typography-micro leading-none text-muted-foreground/70">

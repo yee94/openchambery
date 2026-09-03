@@ -27,7 +27,25 @@ export const CONTACT_SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS assistant_contact_part_message
     ON assistant_contact_part(message_id, ordinal, part_id);
+  CREATE TABLE IF NOT EXISTS assistant_contact_watch (
+    assistant_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    directory TEXT,
+    status TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (assistant_id, session_id)
+  );
+  CREATE INDEX IF NOT EXISTS assistant_contact_watch_session
+    ON assistant_contact_watch(session_id, status);
 `;
+
+export const CONTACT_SETTLE_TEXT = Object.freeze({
+  complete: 'oc.settle.complete',
+  error: 'oc.settle.error',
+  question: 'oc.settle.question',
+});
+
+const IN_FLIGHT_WATCH = new Set(['busy', 'question']);
 
 export function ensureContactSchema(db) {
   db.exec(CONTACT_SCHEMA_SQL);
@@ -135,6 +153,44 @@ export function deleteContactMessages(db, assistantID) {
     db.prepare('DELETE FROM assistant_contact_part WHERE message_id=?').run(messageID);
   }
   db.prepare('DELETE FROM assistant_contact_message WHERE assistant_id=?').run(assistantID);
+  db.prepare('DELETE FROM assistant_contact_watch WHERE assistant_id=?').run(assistantID);
+}
+
+export function upsertContactWatch(db, { assistantID, sessionID, directory, status, updatedAt }) {
+  db.prepare(
+    'INSERT INTO assistant_contact_watch(assistant_id,session_id,directory,status,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET directory=excluded.directory,status=excluded.status,updated_at=excluded.updated_at',
+  ).run(assistantID, sessionID, directory || null, status, updatedAt);
+}
+
+export function listWatchesBySession(db, sessionID) {
+  return db.prepare('SELECT assistant_id, session_id, directory, status FROM assistant_contact_watch WHERE session_id=?').all(sessionID)
+    .map((row) => ({
+      assistantID: row.assistant_id,
+      sessionID: row.session_id,
+      directory: row.directory,
+      status: row.status,
+    }));
+}
+
+export function listInFlightWatches(db, assistantID) {
+  return db.prepare('SELECT session_id, status FROM assistant_contact_watch WHERE assistant_id=?').all(assistantID)
+    .filter((row) => IN_FLIGHT_WATCH.has(row.status))
+    .map((row) => ({ sessionID: row.session_id, status: row.status }));
+}
+
+export function updateSessionCardStatus(db, { assistantID, sessionID, status }) {
+  const rows = db.prepare(
+    'SELECT p.message_id, p.part_id, p.ordinal, p.part_json FROM assistant_contact_part p JOIN assistant_contact_message m ON m.message_id=p.message_id WHERE m.assistant_id=?',
+  ).all(assistantID);
+  let updated = 0;
+  for (const row of rows) {
+    const part = parseContactPart(parse(row.part_json));
+    if (!part || part.type !== 'card' || part.cardType !== 'session' || part.sessionID !== sessionID) continue;
+    const next = { ...part, status };
+    db.prepare('UPDATE assistant_contact_part SET part_json=? WHERE message_id=? AND part_id=?').run(json(serializeContactPart(next, row.ordinal - 1)), row.message_id, row.part_id);
+    updated += 1;
+  }
+  return updated;
 }
 
 export function contactHistoryForLlm(db, assistantID) {

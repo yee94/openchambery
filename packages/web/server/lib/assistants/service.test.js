@@ -779,6 +779,74 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('subscribes assigned sessions so idle updates the card, appends a settle message, and clears working', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_work',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: ['ses_work'],
+      working: true,
+    });
+    expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_work' } })).toBe(true);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0]).toMatchObject({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_work',
+      status: 'complete',
+    });
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_work' } })).toBe(false);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    service.close();
+  });
+
+  it('maps question and error onto the same card and does not rewrite error as complete', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_ask',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(service.processEvent({ type: 'question.asked', properties: { sessionID: 'ses_ask' } })).toBe(true);
+    let page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('question');
+    expect(page.messages.some((message) => message.text === 'oc.settle.question')).toBe(true);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: ['ses_ask'],
+      working: false,
+    });
+    expect(service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_ask' } })).toBe(true);
+    page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(page.messages.some((message) => message.text === 'oc.settle.error')).toBe(true);
+    expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_ask' } })).toBe(false);
+    expect(service.processEvent({ type: 'session.status', properties: { sessionID: 'ses_ask', status: { type: 'idle' } } })).toBe(false);
+    page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(page.messages.some((message) => message.text === 'oc.settle.complete')).toBe(false);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    service.close();
+  });
+
   it('persists a session card in the contact transcript across reload', () => {
     const directory = root();
     const service = setup(directory);
