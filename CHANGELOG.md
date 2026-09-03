@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.8] - 2026-09-03
+
+### 移动端
+
+- 修复 iOS Live Activity 灵动岛布局变宽与计时不显示，恢复原始紧凑样式。
+
 ## [1.19.3-beta.7] - 2026-09-03
 
 ### 移动端

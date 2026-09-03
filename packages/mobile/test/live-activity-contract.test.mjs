@@ -156,20 +156,22 @@ test('millisecond eventVersion immediately supersedes a recovered small counter'
   assert.equal(shouldApply(6, 7), false);
 });
 
-test('live activity elapsed time uses the system timer and freezes to a fixed duration', async () => {
+test('live activity elapsed time uses the system timer interval and freezes to a fixed duration', async () => {
   const visual = await source('ios/App/OpenChamberWidget/OpenChamberLiveActivity.swift');
   const elapsedView = visual.match(
     /private struct LiveActivityElapsedTime: View \{([\s\S]*?)\n\}\n\nprivate struct LiveActivityFreshness:/,
   );
 
   assert.ok(elapsedView, 'missing LiveActivityElapsedTime');
-  assert.match(elapsedView[1], /Text\(startDate, style: \.timer\)/);
+  assert.match(elapsedView[1], /Text\(timerInterval: startDate\.\.\.upperBound, countsDown: false\)/);
+  assert.match(elapsedView[1], /startedAt \+ 8 \* 3600/);
   assert.doesNotMatch(elapsedView[1], /distantFuture/);
+  assert.doesNotMatch(elapsedView[1], /style: \.timer/);
   assert.doesNotMatch(elapsedView[1], /TimelineView/);
-  assert.match(elapsedView[1], /endedAt - startedAt/);
-  assert.match(elapsedView[1], /let minutes = elapsedSeconds \/ 60/);
-  assert.match(elapsedView[1], /let seconds = elapsedSeconds % 60/);
-  assert.match(elapsedView[1], /Text\(verbatim: fixedElapsedText\)/);
+  assert.match(elapsedView[1], /private func formattedElapsed\(at date: Date\) -> String/);
+  assert.match(elapsedView[1], /\\\(Int\(floor\(elapsed\)\)\)S"/);
+  assert.match(elapsedView[1], /\\\(Int\(floor\(elapsed \/ 60\)\)\)M"/);
+  assert.match(elapsedView[1], /accessibilityValue\(Text\(verbatim: formattedElapsed\(at: frozenDate \?\? \.now\)\)\)/);
 });
 
 test('docs describe Live Activity APNs updates and user-dismiss semantics', async () => {
@@ -226,9 +228,14 @@ test('live activity sources keep OpenChamber branding and never log session or t
   assert.match(visual, /struct OpenChamberLiveActivity: Widget/);
   assert.match(visual, /ActivityConfiguration\(for: OpenChamberActivityAttributes\.self\)/);
   assert.match(visual, /accessibilityLabel\(Text\("Open session"\)\)/);
-  assert.match(visual, /Text\(startDate, style: \.timer\)/);
+  assert.match(visual, /Text\(timerInterval: startDate\.\.\.upperBound, countsDown: false\)/);
   assert.doesNotMatch(visual, /distantFuture/);
-  assert.match(visual, /Text\(verbatim: fixedElapsedText\)/);
+  assert.doesNotMatch(visual, /style: \.timer/);
+  assert.match(visual, /private func formattedElapsed\(at date: Date\) -> String/);
+  assert.match(visual, /\\\(Int\(floor\(elapsed\)\)\)S"/);
+  assert.match(visual, /\\\(Int\(floor\(elapsed \/ 60\)\)\)M"/);
+  assert.match(visual, /\.accessibilityValue\(Text\(verbatim: formattedElapsed\(at: frozenDate \?\? \.now\)\)\)/);
+  assert.match(visual, /startedAt \+ 8 \* 3600/);
   assert.doesNotMatch(visual, /LiveActivityElapsedSchedule/);
   assert.doesNotMatch(visual, /TimelineView\(LiveActivityElapsedSchedule/);
   assert.doesNotMatch(visual, /configurationDisplayName\("OpenCode"\)/);

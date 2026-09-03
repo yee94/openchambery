@@ -204,17 +204,24 @@ private struct LiveActivityElapsedTime: View {
         Date(timeIntervalSince1970: startedAt)
     }
 
-    private var fixedElapsedText: String? {
+    // Live Activities end after 8 hours system-side; a finite upper bound keeps the
+    // system-driven timer interval renderable (an unbounded end date breaks it) and
+    // the elapsed width identical to the original "42S" / "3M" text once frozen.
+    private var upperBound: Date {
+        Date(timeIntervalSince1970: startedAt + 8 * 3600)
+    }
+
+    private var frozenDate: Date? {
         guard let endedAt, endedAt.isFinite else { return nil }
-        let elapsedSeconds = max(0, Int((endedAt - startedAt).rounded(.down)))
-        let minutes = elapsedSeconds / 60
-        let seconds = elapsedSeconds % 60
+        return Date(timeIntervalSince1970: max(startedAt, endedAt))
+    }
 
-        if minutes == 0 {
-            return "\(seconds)s"
+    private func formattedElapsed(at date: Date) -> String {
+        let elapsed = max(0, date.timeIntervalSince(startDate))
+        if elapsed < 60 {
+            return "\(Int(floor(elapsed)))S"
         }
-
-        return "\(minutes)m \(seconds)s"
+        return "\(Int(floor(elapsed / 60)))M"
     }
 
     var body: some View {
@@ -225,14 +232,14 @@ private struct LiveActivityElapsedTime: View {
             .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, compact ? 2 : 0)
             .accessibilityLabel(Text("Elapsed time"))
+            .accessibilityValue(Text(verbatim: formattedElapsed(at: frozenDate ?? .now)))
     }
 
     private var timerText: Text {
-        if let fixedElapsedText {
-            Text(verbatim: fixedElapsedText)
-        } else {
-            Text(startDate, style: .timer)
+        if let frozenDate {
+            return Text(verbatim: formattedElapsed(at: frozenDate))
         }
+        return Text(timerInterval: startDate...upperBound, countsDown: false)
     }
 }
 
