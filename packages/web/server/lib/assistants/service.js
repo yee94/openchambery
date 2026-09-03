@@ -759,6 +759,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       assignWork: (params) => assignWork(row, params),
       createAssistant: (input) => createAssistant(input),
       scheduleTask: (params) => scheduleWork(row, params),
+      deliverPeerMessage: (input) => deliverPeerMessage(row.assistant_id, input),
+      listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
       currentAssistant: output(row),
       onCard: (card) => assignedCards.push(card),
     });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   CREATE_ASSISTANT_TOOL_NAME,
+  MESSAGE_ASSISTANT_TOOL_NAME,
   MISSED_FENCE_RETRY_USER_TEXT,
   MISSED_TOOL_FAILURE_BUBBLE,
   createContactTools,
@@ -122,7 +123,9 @@ describe('runContactTurn', () => {
       expect(options.initialState.tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false)
       expect(options.initialState.systemPrompt).toContain('assign_session')
       expect(options.initialState.systemPrompt).toContain('create_assistant')
+      expect(options.initialState.systemPrompt).toContain('message_assistant')
       expect(options.initialState.systemPrompt).toContain('建助理')
+      expect(options.initialState.systemPrompt).toContain('说一声')
       expect(options.initialState.systemPrompt).toContain('A reply without the tool call does nothing')
       expect(options.initialState.systemPrompt).toContain('已创建')
       this.state = { ...options.initialState, messages: [] }
@@ -264,5 +267,64 @@ describe('runContactTurn', () => {
     expect(result.cards).toEqual([])
     expect(result.bubbles).toEqual([MISSED_TOOL_FAILURE_BUBBLE])
     expect(result.bubbles.join('')).not.toContain('已创建')
+  })
+
+  it('retries a missed fence once and then executes message_assistant', async () => {
+    const deliverPeerMessage = vi.fn(async (input) => ({
+      admitted: true,
+      role: 'peer',
+      toAssistantID: input.toAssistantID,
+    }))
+    const tools = createContactTools({
+      deliverPeerMessage,
+      listAssistants: async () => [{ id: 'asst_peer', name: 'PeerQA' }],
+      currentAssistant: { id: 'asst_host', name: 'DeepSeekQA', providerID: 'opencode-go', modelID: 'deepseek-v4-flash' },
+    })
+    const prompts = []
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async (text) => {
+        prompts.push(text)
+        this.state.messages.push({ role: 'user', content: text, timestamp: Date.now() })
+        if (text === MISSED_FENCE_RETRY_USER_TEXT) {
+          const tool = this.state.tools.find((item) => item.name === MESSAGE_ASSISTANT_TOOL_NAME)
+          const result = await tool.execute('call_retry', { to: 'PeerQA', text: 'hello-from-assistant 写好了' })
+          this.state.messages.push(
+            { role: 'assistant', content: [{ type: 'text', text: '' }] },
+            {
+              role: 'toolResult',
+              toolName: MESSAGE_ASSISTANT_TOOL_NAME,
+              content: result.content,
+              details: result.details,
+            },
+          )
+          return
+        }
+        this.state.messages.push({
+          role: 'assistant',
+          content: [{ type: 'text', text: '好的，我去说一声。' }],
+        })
+      }
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash', defaultPrompt: '' },
+      history: [],
+      userText: '给 PeerQA 说一声 hello-from-assistant 写好了',
+      createChatCompletion: vi.fn(),
+      tools,
+      AgentImpl,
+    })
+    expect(prompts).toEqual([
+      '给 PeerQA 说一声 hello-from-assistant 写好了',
+      MISSED_FENCE_RETRY_USER_TEXT,
+    ])
+    expect(deliverPeerMessage).toHaveBeenCalledWith({
+      toAssistantID: 'asst_peer',
+      text: 'hello-from-assistant 写好了',
+    })
+    expect(result.cards).toEqual([])
+    expect(result.bubbles.join('')).toContain('Sent to PeerQA')
+    expect(result.bubbles.join('')).not.toContain('好的，我去说一声')
   })
 })

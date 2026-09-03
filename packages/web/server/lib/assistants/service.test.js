@@ -1213,6 +1213,41 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('sends a read-only peer message from message_assistant without promptAsync', async () => {
+    const prompts = [];
+    const directory = root();
+    const service = setup(directory, { promptAsync: async (input) => { prompts.push(input); return { response: { status: 204 } }; } }, {
+      runContactTurn: async ({ tools }) => {
+        const message = tools.find((tool) => tool.name === 'message_assistant');
+        const result = await message.execute('call_1', { to: 'PeerQA', text: 'hello-from-assistant 写好了' });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          tools,
+        };
+      },
+    });
+    const sender = service.createAssistant({ ...assistantInput, name: 'DeepSeekQA' });
+    const recipient = service.createAssistant({ ...assistantInput, name: 'PeerQA' });
+    await service.send(sender.id, {
+      messageID: 'client_message_assistant',
+      parts: [{ type: 'text', text: '给 PeerQA 说一声 hello-from-assistant 写好了' }],
+    });
+    expect(prompts).toEqual([]);
+    expect(service.contactMessages(recipient.id).messages).toEqual([expect.objectContaining({
+      role: 'peer',
+      fromAssistantID: sender.id,
+      fromAssistantName: 'DeepSeekQA',
+      text: 'hello-from-assistant 写好了',
+    })]);
+    const senderPage = service.contactMessages(sender.id);
+    expect(senderPage.messages.some((message) => message.role === 'user')).toBe(true);
+    expect(senderPage.messages.some((message) => message.text.includes('Sent to PeerQA'))).toBe(true);
+    expect(senderPage.messages.some((message) => message.parts.some((part) => part.type === 'card'))).toBe(false);
+    service.close();
+  });
+
   it('delivers a read-only peer DM into the recipient contact transcript without OpenCode', async () => {
     const prompts = [];
     const directory = root();

@@ -16,7 +16,7 @@ The Assistant conversation is a Grok-like **contact**, not an OpenCode coding ag
 
 **Inter-assistant DM (this PR, read-only)**
 
-- Assistant A can deliver a message to assistant B by `assistantID` (`POST /:fromID/contact/dm` `{ toAssistantID, text, parts? }`). The user never types `/dm`; the harness/API sends peer messages.
+- Assistant A can deliver a message to assistant B by name or `assistantID`. Natural Chinese (`给 PeerQA 说一声 …`) calls the `message_assistant` contact tool, which uses `POST /:fromID/contact/dm` `{ toAssistantID, text, parts? }`. The user never types `/dm`.
 - Delivery is **read-only coordination**: it inserts text (and later cards) into B’s OpenChamber contact transcript only. It must not call OpenCode `session.promptAsync`, mutate B’s sessions/files/worktrees, or run tools on B’s behalf.
 - The user sees inbound peer rows in the contact UI, visually distinct from user and assistant turns (`role: 'peer'`).
 - Peer rows persist in the same contact store as user/assistant bubbles and session cards.
