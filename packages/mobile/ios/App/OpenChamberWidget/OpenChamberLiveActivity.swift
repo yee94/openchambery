@@ -204,9 +204,17 @@ private struct LiveActivityElapsedTime: View {
         Date(timeIntervalSince1970: startedAt)
     }
 
-    private var frozenDate: Date? {
+    private var fixedElapsedText: String? {
         guard let endedAt, endedAt.isFinite else { return nil }
-        return Date(timeIntervalSince1970: max(startedAt, endedAt))
+        let elapsedSeconds = max(0, Int((endedAt - startedAt).rounded(.down)))
+        let minutes = elapsedSeconds / 60
+        let seconds = elapsedSeconds % 60
+
+        if minutes == 0 {
+            return "\(seconds)s"
+        }
+
+        return "\(minutes)m \(seconds)s"
     }
 
     var body: some View {
@@ -220,10 +228,10 @@ private struct LiveActivityElapsedTime: View {
     }
 
     private var timerText: Text {
-        if let frozenDate {
-            Text(timerInterval: startDate...frozenDate, countsDown: false)
+        if let fixedElapsedText {
+            Text(verbatim: fixedElapsedText)
         } else {
-            Text(timerInterval: startDate...Date.distantFuture, countsDown: false)
+            Text(startDate, style: .timer)
         }
     }
 }

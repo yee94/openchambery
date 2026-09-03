@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.7] - 2026-09-03
+
+### 移动端
+
+- 修复 iOS Live Activity 通知卡片渲染为空。
+
 ## [1.19.3-beta.6] - 2026-09-03
 
 ### 移动端

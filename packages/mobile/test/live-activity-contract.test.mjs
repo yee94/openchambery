@@ -156,6 +156,22 @@ test('millisecond eventVersion immediately supersedes a recovered small counter'
   assert.equal(shouldApply(6, 7), false);
 });
 
+test('live activity elapsed time uses the system timer and freezes to a fixed duration', async () => {
+  const visual = await source('ios/App/OpenChamberWidget/OpenChamberLiveActivity.swift');
+  const elapsedView = visual.match(
+    /private struct LiveActivityElapsedTime: View \{([\s\S]*?)\n\}\n\nprivate struct LiveActivityFreshness:/,
+  );
+
+  assert.ok(elapsedView, 'missing LiveActivityElapsedTime');
+  assert.match(elapsedView[1], /Text\(startDate, style: \.timer\)/);
+  assert.doesNotMatch(elapsedView[1], /distantFuture/);
+  assert.doesNotMatch(elapsedView[1], /TimelineView/);
+  assert.match(elapsedView[1], /endedAt - startedAt/);
+  assert.match(elapsedView[1], /let minutes = elapsedSeconds \/ 60/);
+  assert.match(elapsedView[1], /let seconds = elapsedSeconds % 60/);
+  assert.match(elapsedView[1], /Text\(verbatim: fixedElapsedText\)/);
+});
+
 test('docs describe Live Activity APNs updates and user-dismiss semantics', async () => {
   const [readme, handoff] = await Promise.all([
     source('README.md'),
@@ -210,8 +226,9 @@ test('live activity sources keep OpenChamber branding and never log session or t
   assert.match(visual, /struct OpenChamberLiveActivity: Widget/);
   assert.match(visual, /ActivityConfiguration\(for: OpenChamberActivityAttributes\.self\)/);
   assert.match(visual, /accessibilityLabel\(Text\("Open session"\)\)/);
-  assert.match(visual, /Text\(timerInterval:/);
-  assert.match(visual, /countsDown: false/);
+  assert.match(visual, /Text\(startDate, style: \.timer\)/);
+  assert.doesNotMatch(visual, /distantFuture/);
+  assert.match(visual, /Text\(verbatim: fixedElapsedText\)/);
   assert.doesNotMatch(visual, /LiveActivityElapsedSchedule/);
   assert.doesNotMatch(visual, /TimelineView\(LiveActivityElapsedSchedule/);
   assert.doesNotMatch(visual, /configurationDisplayName\("OpenCode"\)/);
