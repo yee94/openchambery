@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.4-beta.1] - 2026-09-03
+
+### 其它
+
+- 开启 1.19.4 预发布周期。
+
 ## [1.19.3] - 2026-09-03
 
 汇总 1.19.3-beta.1 ~ 1.19.3-beta.9。
