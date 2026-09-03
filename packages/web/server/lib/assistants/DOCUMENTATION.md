@@ -27,7 +27,8 @@ The in-app Assistant is an OpenChamber-owned **contact**. OpenCode is only the L
 
 - `create_assistant` calls the same in-process `createAssistant` (`name`, connected OpenCode `providerID`/`modelID`, `mode: 'continuous'`). It emits an `assistant` card that opens that contact.
 - `schedule_task` calls in-process `projectConfigRuntime.upsertScheduledTask` with the same payload as `PUT /api/projects/:id/scheduled-tasks` (`name`, `schedule.kind/time/timezone`, `execution.prompt` + provider/model) on a registered project, then best-effort `scheduledTasksRuntime.syncProject`. It emits a `schedule` card.
-- `CONTACT_SYSTEM_PROMPT` + `formatContactToolsPrompt` tell the model to call these from natural language (建助理 / 建会话 / 排定时任务). No slash commands. No second store.
+- `CONTACT_SYSTEM_PROMPT` + `formatContactToolsPrompt` tell the model to call these from natural language (建助理 / 建会话 / 排定时任务). A reply without the tool call does nothing; never say 已创建 unless the tool returned. Completions are messages-only (no native tools), so `parseContactToolCalls` accepts a fence, a whole-message JSON object, or a bare `{name, arguments}` object anywhere in the reply.
+- If the user asked for `create_assistant` / `schedule_task` / `assign_session` and the first completion has no tool call, the harness runs **one** follow-up completion whose user content is only `emit the fence now, do not claim success.` If still no tool, the turn replies that it could not complete and does not fake a card. No slash commands. No second store.
 
 **Inter-assistant DM (this PR, read-only)**
 

@@ -30,6 +30,13 @@ export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
 const DENIED_CODING_TOOLS = new Set(['bash', 'edit', 'read', 'write', 'glob', 'grep', 'shell']);
 
 const FENCE = new RegExp(`\`\`\`${CONTACT_TOOL_FENCE}\\s*([\\s\\S]*?)\`\`\``, 'u');
+export const MISSED_FENCE_RETRY_USER_TEXT = 'emit the fence now, do not claim success.';
+export const MISSED_TOOL_FAILURE_BUBBLE = 'I could not complete that. No tool ran, so nothing was created.';
+
+const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^。\n!]{0,24}助理|加一个助理|create (?:an |a new )?assistant|new assistant/iu;
+const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|schedule (?:a )?(?:daily )?(?:task|ping)|scheduled task|排个?(?:每日)?(?:任务|ping)/iu;
+const ASSIGN_SESSION_INTENT = /建会话|开会话|开(?:一个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session|write a file|写(?:一个)?文件/giu;
+const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
 
 const assignParameters = typeboxObject({
   prompt: typeboxString('Coding prompt to kick into the worker OpenCode session.'),
@@ -84,6 +91,51 @@ const parseToolPayload = (raw, allowedNames) => {
   return { name, arguments: args && typeof args === 'object' ? args : {} };
 };
 
+const extractJsonObjectAt = (text, start) => {
+  if (text[start] !== '{') return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (character === '\\') {
+        escape = true;
+        continue;
+      }
+      if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  return null;
+};
+
+const findEmbeddedToolCall = (text, allowedNames) => {
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== '{') continue;
+    const snippet = extractJsonObjectAt(text, index);
+    if (!snippet) continue;
+    const toolCall = parseToolPayload(snippet, allowedNames);
+    if (!toolCall) continue;
+    const chatText = stripContactToolFences(`${text.slice(0, index)}${text.slice(index + snippet.length)}`.trim());
+    return { chatText, toolCall };
+  }
+  return null;
+};
+
 export function stripContactToolFences(text) {
   if (typeof text !== 'string') return '';
   return text.replace(new RegExp(`\`\`\`${CONTACT_TOOL_FENCE}[\\s\\S]*?\`\`\``, 'gu'), '').trim();
@@ -107,7 +159,46 @@ export function parseContactToolCalls(text, allowedNames = []) {
     const toolCall = parseToolPayload(trimmed, allowed);
     if (toolCall) return { chatText: '', toolCall };
   }
+  const embedded = findEmbeddedToolCall(raw, allowed);
+  if (embedded) return embedded;
   return { chatText, toolCall: null };
+}
+
+const isNegatedAt = (text, index) => INTENT_NEGATION.test(text.slice(Math.max(0, index - 12), index));
+
+const hasAssignSessionIntent = (text) => {
+  ASSIGN_SESSION_INTENT.lastIndex = 0;
+  let match = ASSIGN_SESSION_INTENT.exec(text);
+  while (match) {
+    if (!isNegatedAt(text, match.index)) return true;
+    match = ASSIGN_SESSION_INTENT.exec(text);
+  }
+  return false;
+};
+
+/** Which attached tools the user asked for in natural language. */
+export function detectRequestedContactTools(userText, allowedNames = []) {
+  const allowed = new Set(
+    (Array.isArray(allowedNames) ? allowedNames : [])
+      .filter((name) => typeof name === 'string' && name.trim() && !DENIED_CODING_TOOLS.has(name.trim()))
+      .map((name) => name.trim()),
+  );
+  const text = typeof userText === 'string' ? userText : '';
+  const requested = [];
+  if (allowed.has(CREATE_ASSISTANT_TOOL_NAME) && CREATE_ASSISTANT_INTENT.test(text)) {
+    requested.push(CREATE_ASSISTANT_TOOL_NAME);
+  }
+  if (allowed.has(SCHEDULE_TASK_TOOL_NAME) && SCHEDULE_TASK_INTENT.test(text)) {
+    requested.push(SCHEDULE_TASK_TOOL_NAME);
+  }
+  if (allowed.has(ASSIGN_SESSION_TOOL_NAME) && hasAssignSessionIntent(text)) {
+    requested.push(ASSIGN_SESSION_TOOL_NAME);
+  }
+  return requested;
+}
+
+export function contactTurnHasToolResult(messages) {
+  return (Array.isArray(messages) ? messages : []).some((message) => message?.role === 'toolResult');
 }
 
 const trim = (value, max = 10_000) => {
@@ -159,6 +250,8 @@ export function formatContactToolsPrompt(tools) {
     'assign_session opens a real OpenChamber/OpenCode session on a registered project. You are not the worker.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
+    'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建) is not creating.',
+    'Never say 已创建, created, scheduled, or opened unless the tool already returned success.',
     'Never emit bash, edit, read, write, or other coding tools. Never assign through a peer DM.',
     'If no registered project exists, tell the user to add one in Settings — do not use assistant-workspaces.',
     'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces.',

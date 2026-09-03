@@ -1,8 +1,12 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { splitContactBubbles } from './bubbles.js';
 import {
+  contactTurnHasToolResult,
+  detectRequestedContactTools,
   extractContactCardsFromMessages,
   formatContactToolsPrompt,
+  MISSED_FENCE_RETRY_USER_TEXT,
+  MISSED_TOOL_FAILURE_BUBBLE,
   parseContactToolCalls,
   stripContactToolFences,
 } from './contact-tools.js';
@@ -60,6 +64,7 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Do not expose chain-of-thought, tool traces, Activity, or editor actions.',
   'Do not run bash, edit, read, or write.',
   'Understand natural language in any language, including Chinese: 建助理 means create_assistant, 建会话 means assign_session, 排定时任务 means schedule_task, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
+  'A reply without the tool call does nothing. Never say 已创建, created, scheduled, or opened unless the tool already returned success.',
   'Assign coding work with assign_session so a real Chat session does the work.',
 ].join(' ');
 
@@ -198,6 +203,11 @@ export function createContactStreamFn(createChatCompletion) {
   };
 }
 
+const userMessageText = (message) => {
+  if (typeof message?.content === 'string') return message.content;
+  return (message?.content || []).map((part) => (typeof part?.text === 'string' ? part.text : '')).join('');
+};
+
 const extractAssistantText = (messages) => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -214,6 +224,42 @@ const extractAssistantText = (messages) => {
     }
   }
   return '';
+};
+
+const extractToolResultText = (messages) => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'toolResult') continue;
+    const text = (message.content || [])
+      .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('')
+      .trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+const extractContactTurnOutcome = (messages, retried) => {
+  const list = Array.isArray(messages) ? messages : [];
+  let start = 0;
+  if (retried) {
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (list[index]?.role === 'user') {
+        start = index;
+        break;
+      }
+    }
+    if (start === 0) {
+      const toolIndex = list.findIndex((message) => message?.role === 'toolResult');
+      if (toolIndex >= 0) start = toolIndex;
+    }
+  }
+  const slice = list.slice(start);
+  const cards = extractContactCardsFromMessages(slice);
+  const hasTool = contactTurnHasToolResult(slice);
+  const text = extractAssistantText(slice) || (hasTool ? extractToolResultText(slice) : '');
+  return { text, cards, hasTool };
 };
 
 /**
@@ -271,9 +317,29 @@ export async function runContactTurn({
     error.code = 'upstream_error';
     throw error;
   }
-  const text = stripContactToolFences(extractAssistantText(agent.state.messages));
-  const cards = extractContactCardsFromMessages(agent.state.messages);
-  if (!text.trim() && cards.length === 0) {
+  const requested = detectRequestedContactTools(userText, contactTools.map((tool) => tool.name));
+  let retried = false;
+  if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
+    retried = true;
+    await agent.prompt(MISSED_FENCE_RETRY_USER_TEXT);
+    if (agent.state.errorMessage) {
+      const error = new Error(agent.state.errorMessage);
+      error.code = 'upstream_error';
+      throw error;
+    }
+  }
+  if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
+    return {
+      text: MISSED_TOOL_FAILURE_BUBBLE,
+      bubbles: [MISSED_TOOL_FAILURE_BUBBLE],
+      cards: [],
+      thinkingLevel: agent.state.thinkingLevel,
+      tools: [...agent.state.tools],
+    };
+  }
+  const outcome = extractContactTurnOutcome(agent.state.messages, retried);
+  const text = stripContactToolFences(outcome.text);
+  if (!text.trim() && outcome.cards.length === 0) {
     const error = new Error('Assistant returned no text');
     error.code = 'upstream_error';
     throw error;
@@ -281,7 +347,7 @@ export async function runContactTurn({
   return {
     text,
     bubbles: splitContactBubbles(text),
-    cards,
+    cards: outcome.cards,
     thinkingLevel: agent.state.thinkingLevel,
     tools: [...agent.state.tools],
   };

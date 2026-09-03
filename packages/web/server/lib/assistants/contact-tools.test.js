@@ -5,6 +5,7 @@ import {
   CREATE_ASSISTANT_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
   createContactTools,
+  detectRequestedContactTools,
   formatContactToolsPrompt,
   parseContactToolCalls,
   resolveContactProviderModel,
@@ -43,6 +44,29 @@ describe('contact tool protocol', () => {
     });
   });
 
+  it('parses a bare {name, arguments} object anywhere in the assistant text', () => {
+    const parsed = parseContactToolCalls(
+      '好的，我来直接创建这个助理，不开编码会话。\n{"name":"create_assistant","arguments":{"name":"FlowNL","model":"opencode-go/deepseek-v4-flash"}}',
+      [CREATE_ASSISTANT_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME],
+    );
+    expect(parsed.toolCall).toEqual({
+      name: CREATE_ASSISTANT_TOOL_NAME,
+      arguments: { name: 'FlowNL', model: 'opencode-go/deepseek-v4-flash' },
+    });
+    expect(parsed.chatText).toContain('好的，我来直接创建这个助理');
+    expect(parsed.chatText).not.toContain('create_assistant');
+  });
+
+  it('detects 建助理 without treating 不要开编码 session as assign_session', () => {
+    const tools = [CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME];
+    expect(detectRequestedContactTools('帮我新建一个助理，名叫 FlowNL，不要开编码 session', tools)).toEqual([
+      CREATE_ASSISTANT_TOOL_NAME,
+    ]);
+    expect(detectRequestedContactTools('每天 18:00 排一个 ping 定时任务', tools)).toEqual([SCHEDULE_TASK_TOOL_NAME]);
+    expect(detectRequestedContactTools('建会话写一个文件', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('不要开编码 session', tools)).toEqual([]);
+  });
+
   it('ignores bash/edit tool fences', () => {
     const text = '```openchamber-tool\n{"name":"bash","arguments":{"command":"ls"}}\n```';
     expect(parseContactToolCalls(text, ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCall).toBeNull();
@@ -57,6 +81,8 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('排定时任务');
     expect(prompt).not.toContain('/card');
     expect(prompt).not.toContain('/dm');
+    expect(prompt).toContain('A reply without the tool call does nothing');
+    expect(prompt).toContain('已创建');
   });
 
   it('resolves provider/model from a combined OpenCode id', () => {
