@@ -2345,6 +2345,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             setAnchoredUserMessageId(null);
         }
     });
+    useIsomorphicLayoutEffect(() => {
+        if (!enableSendPark) return;
+        return () => {
+            // Same-turn Strict remount still peeks the latch during render.
+            // A later reopen must not, or the list parks on the old user row.
+            queueMicrotask(() => {
+                clearConsumedUserSendAnimation(sessionKey);
+            });
+        };
+    }, [enableSendPark, sessionKey]);
     const stableGetAnimationHandlers = useEvent(getAnimationHandlers);
     const stableScrollToBottom = useEvent(() => {
         scrollToBottom?.();

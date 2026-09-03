@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.5] - 2026-09-03
+
+### 聊天
+
+- 再次进入会话会滚到最新，不再停在上次发出的那条消息上。
+
 ## [1.19.3-beta.4] - 2026-09-03
 
 ### 移动端
