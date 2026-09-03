@@ -100,6 +100,43 @@ describe('Electron session index', () => {
     service.close();
   });
 
+  it('keeps contact-assigned worker sessions visible in ordinary sidebar summaries', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    const worker = {
+      ...session('ses_worker', 100),
+      metadata: {
+        openchamber: {
+          assigned: { from: 'contact', assistantID: 'assistant_1', name: 'A' },
+        },
+      },
+    };
+    const legacyWorker = {
+      ...session('ses_legacy_worker', 99),
+      metadata: {
+        openchamber: {
+          assistant: { assistantID: 'assistant_1', name: 'A' },
+          assigned: { from: 'contact' },
+        },
+      },
+    };
+    const hiddenBinding = {
+      ...session('ses_binding', 98),
+      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
+    };
+    service.replaceDirectory({
+      directory: '/repo',
+      sessions: [worker, legacyWorker, hiddenBinding],
+      cursor: null,
+      hasMore: false,
+    });
+    expect(service.snapshot().directories[0].sessions.map((item) => item.id)).toEqual([
+      'ses_worker',
+      'ses_legacy_worker',
+    ]);
+    service.close();
+  });
+
   it('keeps runtime targets isolated in one Electron database', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);

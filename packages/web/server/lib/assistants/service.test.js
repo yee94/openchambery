@@ -812,6 +812,25 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('accepts a session-goal settle into the same card without mutating the worker', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_goal',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(service.reportAssignedSessionSettle('ses_goal', 'complete')).toBe(true);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('complete');
+    expect(page.messages.some((message) => message.text === 'oc.settle.complete')).toBe(true);
+    expect(service.snapshot().assistants[0].working).toBe(false);
+    service.close();
+  });
+
   it('maps question and error onto the same card and does not rewrite error as complete', () => {
     const directory = root();
     const service = setup(directory);

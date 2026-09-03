@@ -219,9 +219,8 @@ const extractAssistantText = (messages) => {
  * tools only + thinkingLevel off. Transcript in, completions via streamFn,
  * bubbles and session cards out. Never bash/edit/read/write.
  *
- * TODO(watch): session-goal settle already notifies. Do not invent a second
- * scheduler. A later thin tool can post a read-only session status card when
- * metadata.openchamber.goal settles. Skipped this slice to keep assign+card first.
+ * Assigned-session settle reuses the assistants event hub plus session-goal
+ * `emitGoalNotification` — read-only into the contact transcript.
  */
 export async function runContactTurn({
   assistant,

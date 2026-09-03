@@ -135,7 +135,10 @@ before touching the filesystem). Rationale: metadata rides every
      continuation prompt using the last assistant message's
      provider/model/agent — the goal spends the session's own subscription.
 4. Settling (`complete`/`blocked`/`budgetLimited`) fires the injected
-   `emitGoalNotification` so the user hears about it even with the UI closed:
+   `emitGoalNotification` so the user hears about it even with the UI closed.
+   The same settle also notifies a registered Assistant contact reporter
+   (`setAssignedSessionSettleHandler`) so an assigned/watched session updates
+   its contact card — read-only, no second scheduler:
    desktop + UI broadcast + the standard push fanout (web-push with full
    text; APNs with a generic per-type title and the session name as body).
    It obeys the notify-on-completion setting. Conversely, while a goal is

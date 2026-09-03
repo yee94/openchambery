@@ -10,10 +10,14 @@ const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
 const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
 
 /** System sessions are isolated by authoritative metadata only — never by title prefix. */
+const isContactAssignedSession = (openchamber) => openchamber?.assigned?.from === 'contact';
+
 const isSystemSession = (session) => {
   const openchamber = session?.metadata?.openchamber;
   if (!openchamber || typeof openchamber !== 'object') return false;
-  if (nonEmptySystemID(openchamber.assistant?.assistantID)) return true;
+  // Contact-assigned workers stay visible in Chat. Only archived Assistant
+  // bindings use `openchamber.assistant` as a hide marker.
+  if (nonEmptySystemID(openchamber.assistant?.assistantID) && !isContactAssignedSession(openchamber)) return true;
   if (nonEmptySystemID(openchamber.scheduledTask?.taskID)) return true;
   if (nonEmptySystemID(openchamber.smallModel?.purpose)) return true;
   return false;

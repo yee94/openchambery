@@ -149,6 +149,19 @@ describe('listGlobalSessionPages', () => {
       metadata: { openchamber: { kind: 'review' } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({ title: 'smartfetch-secondary' } as never)).toBe(false)
+    expect(isVisibleGlobalSession({
+      title: 'Login',
+      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
+    } as never)).toBe(true)
+    expect(isVisibleGlobalSession({
+      title: 'Login',
+      metadata: {
+        openchamber: {
+          assistant: { assistantID: 'assistant_1', name: 'Ops' },
+          assigned: { from: 'contact' },
+        },
+      },
+    } as never)).toBe(true)
   })
 
   test('hides subagent sessions with a parentID from the sidebar catalog', () => {

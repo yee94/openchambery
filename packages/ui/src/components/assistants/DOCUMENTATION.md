@@ -8,7 +8,7 @@ The Assistant conversation is a Grok-like **contact**, not an OpenCode coding ag
 
 - Cards are first-class in-transcript UI (`type: 'card'`, `cardType: 'session'`, optional `branch`), not markdown links and not Activity/tool rows.
 - A session card shows title, a status chip (`Working` / `完成` / `失败` / `需要你`), metadata (branch / session id / directory), and a primary button that opens the session through `openSessionWithFeedback` (phone: `openSession`; desktop: `setActiveMainTab('chat')` + `setCurrentSession` / `/session/$id`).
-- Assigned-session finish/error/question updates **that same card** plus a settle bubble. The UI does not invent a second status banner.
+- Assigned-session finish/error/question (and session-goal settle) updates **that same card** plus a settle bubble. The UI does not invent a second status banner. The worker session stays visible in Chat.
 - Cards persist in the OpenChamber-owned contact transcript (SQLite) and survive reload.
 - The card slot is extensible. Later project / worktree / watch cards reuse `cardType`. Do not invent a second card system.
 - Cards are **assistant-emitted UI** (Grok-Bot style: title, status chip, metadata, primary open button). The user never types `/card`. Insert: `assign_session` auto-card, and API `POST /api/openchamber/assistants/:id/contact/cards` for harness/tests.

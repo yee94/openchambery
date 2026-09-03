@@ -163,6 +163,7 @@ const extractSessionStatus = (payload) => {
 export const isSystemOwnedSession = (sessionOrInfo) => {
   const openchamber = sessionOrInfo?.metadata?.openchamber;
   if (!openchamber || typeof openchamber !== 'object') return false;
+  if (openchamber.assigned?.from === 'contact') return false;
   if (typeof openchamber.assistant?.assistantID === 'string' && openchamber.assistant.assistantID) return true;
   if (typeof openchamber.scheduledTask?.taskID === 'string' && openchamber.scheduledTask.taskID) return true;
   if (typeof openchamber.smallModel?.purpose === 'string' && openchamber.smallModel.purpose) return true;

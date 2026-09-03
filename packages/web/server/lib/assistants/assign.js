@@ -175,13 +175,15 @@ export async function assignSession(input = {}) {
   const messageID = trim(input.messageID, 256) || `msg_assign_${crypto.randomUUID()}`;
   const model = { providerID, modelID };
   const parts = [{ type: 'text', text: prompt }];
+  // Subscriber identity lives on `assigned`, not `assistant`.
+  // `openchamber.assistant.assistantID` marks a hidden system binding.
   const metadata = {
     openchamber: {
-      assistant: {
+      assigned: {
+        from: 'contact',
         assistantID: assistant.id || assistant.assistantID || null,
         name: assistant.name || null,
       },
-      assigned: { from: 'contact' },
     },
   };
   const promptInput = {

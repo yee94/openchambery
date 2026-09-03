@@ -81,8 +81,13 @@ describe('assignSession', () => {
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       directory: fs.realpathSync(project),
       title: 'Login',
-      metadata: expect.objectContaining({ openchamber: expect.objectContaining({ assigned: { from: 'contact' } }) }),
+      metadata: {
+        openchamber: {
+          assigned: { from: 'contact', assistantID: 'asst_1', name: 'Ada' },
+        },
+      },
     }));
+    expect(createSession.mock.calls[0][0].metadata.openchamber.assistant).toBeUndefined();
     expect(promptExisting).toHaveBeenCalledWith(expect.objectContaining({
       sessionID: 'ses_worker',
       directory: fs.realpathSync(project),
