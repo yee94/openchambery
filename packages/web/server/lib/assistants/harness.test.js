@@ -33,6 +33,51 @@ describe('createContactStreamFn', () => {
     await expect(stream.result()).resolves.toMatchObject({ stopReason: 'stop' })
   })
 
+  it('forwards contact file parts on the last user completion message', async () => {
+    const createChatCompletion = vi.fn(async () => ({
+      completion: { choices: [{ message: { content: 'saw the image' } }] },
+    }))
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' }
+    const streamFn = createContactStreamFn(createChatCompletion, { pendingFileParts: [image, file] })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'look', timestamp: 1 }] },
+    )
+    for await (const event of stream) void event
+    expect(createChatCompletion.mock.calls[0][0].body.messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'look',
+      parts: [image, file],
+    })
+  })
+
+  it('keeps thinking off and never installs bash/edit/read/write when sending attachments', async () => {
+    const prompt = vi.fn(async function prompt() {
+      this.state.messages = [{
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Got it.' }],
+      }]
+    })
+    function AgentImpl(options) {
+      expect(options.initialState.thinkingLevel).toBe('off')
+      expect(options.initialState.tools).toEqual([])
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = prompt
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: '[attachment]',
+      userParts: [{ type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }],
+      createChatCompletion: vi.fn(),
+      AgentImpl,
+    })
+    expect(result.thinkingLevel).toBe('off')
+    expect(result.tools).toEqual([])
+    expect(prompt).toHaveBeenCalledWith('[attachment]')
+  })
+
   it('replays an assign_session fence as a toolUse burst, not token SSE', async () => {
     const createChatCompletion = vi.fn(async () => ({
       completion: {

@@ -128,4 +128,34 @@ describe('Assistant DTO parsing', () => {
       { type: 'card', cardType: 'schedule', taskID: 'task_1', projectID: 'proj_1', name: 'Daily ping', kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai', prompt: 'ping' },
     ]);
   });
+  test('parses contact file and image parts', () => {
+    const page = parseAssistantContactPage({
+      complete: true,
+      nextCursor: null,
+      messages: [{
+        messageID: 'user_1',
+        assistantID: 'asst_host',
+        role: 'user',
+        turnID: 'user_1',
+        bubbleIndex: 0,
+        createdAt: 1,
+        ordinal: 1,
+        status: 'complete',
+        fromAssistantID: null,
+        fromAssistantName: null,
+        parts: [
+          { type: 'text', text: 'look' },
+          { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
+          { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+        ],
+        text: 'look',
+        cards: [],
+      }],
+    });
+    expect(page.messages[0]?.parts).toEqual([
+      { type: 'text', text: 'look' },
+      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
+      { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+    ]);
+  });
 });

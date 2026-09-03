@@ -47,6 +47,25 @@ describe('createChatCompletion', () => {
     expect(result.modelID).toBe('gpt-5.2')
   })
 
+  it('forwards optional file parts on user messages', async () => {
+    const generateText = vi.fn(async () => ({ text: 'saw it', source: 'throwaway-session' }))
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    await createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({
+        models: [{ providerID: 'openai', modelID: 'gpt-5.2' }],
+        connected: ['openai'],
+      }),
+      body: {
+        model: 'openai/gpt-5.2',
+        messages: [{ role: 'user', content: 'look', parts: [image] }],
+      },
+    })
+    expect(generateText.mock.calls[0][0].messages).toEqual([
+      { role: 'user', content: 'look', parts: [image] },
+    ])
+  })
+
   it('LlmError carries a stable code', () => {
     expect(new LlmError('no_provider', 400, 'missing')).toMatchObject({
       code: 'no_provider',

@@ -1,6 +1,6 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
-import { ChatPromptComposer } from '@/components/chat/ChatPromptComposer'
+import { ChatPromptComposer, type ChatPromptAttachment } from '@/components/chat/ChatPromptComposer'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
 import { createUuid } from '@/lib/uuid'
@@ -21,6 +21,12 @@ import { AssistantScheduleCard } from './AssistantScheduleCard'
 import { AssistantSessionCard } from './AssistantSessionCard'
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
 import { useAssistantContactWorkingStore, useAssistantWorking } from './assistantWorking'
+import {
+  filesFromClipboard,
+  filesFromDrop,
+  mergeContactComposerAttachments,
+  readContactComposerFiles,
+} from './contactComposerAttachments'
 
 const SETTLE_TEXT: Record<string, 'assistants.contact.settle.complete' | 'assistants.contact.settle.error' | 'assistants.contact.settle.question'> = {
   'oc.settle.complete': 'assistants.contact.settle.complete',
@@ -67,6 +73,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     return fromAssistantName || t('assistants.contact.peer.unknown')
   }
   const [draft, setDraft] = React.useState('')
+  const [attachments, setAttachments] = React.useState<ChatPromptAttachment[]>([])
   const [sending, setSending] = React.useState(false)
   const [sendError, setSendError] = React.useState<string | null>(null)
   const setContactSending = useAssistantContactWorkingStore((state) => state.setSending)
@@ -80,14 +87,48 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     node.scrollTop = node.scrollHeight
   }, [messages.length, sending])
 
+  const addFiles = useEvent(async (files: ArrayLike<File> | null) => {
+    const result = await readContactComposerFiles(files)
+    if (result.skippedTooLarge > 0) {
+      setSendError(t('assistants.contact.attachment.tooLarge'))
+    }
+    if (result.attachments.length === 0) return
+    setAttachments((current) => mergeContactComposerAttachments(current, result.attachments))
+  })
+  const handlePaste = useEvent((event: React.ClipboardEvent) => {
+    const files = filesFromClipboard(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    void addFiles(files)
+  })
+  const handleDragOver = useEvent((event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  })
+  const handleDrop = useEvent((event: React.DragEvent) => {
+    const files = filesFromDrop(event.dataTransfer)
+    if (files.length === 0) return
+    event.preventDefault()
+    void addFiles(files)
+  })
   const submit = useEvent(async () => {
     const text = draft.trim()
-    if (!text || sending) return
+    if ((!text && attachments.length === 0) || sending) return
+    const parts = [
+      ...(text ? [{ type: 'text' as const, text }] : []),
+      ...attachments.map((attachment) => ({
+        type: 'file' as const,
+        mime: attachment.mime,
+        url: attachment.url,
+        filename: attachment.name,
+      })),
+    ]
     setSending(true)
     setContactSending(assistant.id, true)
     setSendError(null)
     try {
-      await sendAssistantContactMessage(assistant.id, `oc_contact_${createUuid()}`, text)
+      await sendAssistantContactMessage(assistant.id, `oc_contact_${createUuid()}`, { parts })
       if (capabilityQuery.data?.serverInstanceID) {
         void donateNativeAssistantInteraction({
           serverInstanceID: capabilityQuery.data.serverInstanceID,
@@ -98,6 +139,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         }).catch(() => undefined)
       }
       setDraft('')
+      setAttachments([])
     } catch (error) {
       const code = error instanceof AssistantAPIError ? error.code : ''
       const detail = error instanceof AssistantAPIError && error.message && error.message !== error.code
@@ -179,6 +221,31 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       if (part.type === 'card' && part.cardType === 'schedule') {
                         return <AssistantScheduleCard key={`${message.messageID}:card:${index}`} card={part} />
                       }
+                      if (part.type === 'file' && part.mime.startsWith('image/') && part.url) {
+                        return (
+                          <img
+                            key={`${message.messageID}:file:${index}`}
+                            src={part.url}
+                            alt={part.filename || t('assistants.contact.attachment.image')}
+                            className="max-h-64 max-w-full rounded-2xl border border-border object-contain"
+                            data-assistant-contact-image=""
+                          />
+                        )
+                      }
+                      if (part.type === 'file') {
+                        return (
+                          <div
+                            key={`${message.messageID}:file:${index}`}
+                            className="flex max-w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-elevated)] px-3 py-2"
+                            data-assistant-contact-file=""
+                          >
+                            <Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 truncate typography-ui">
+                              {part.filename || t('assistants.contact.attachment.file')}
+                            </span>
+                          </div>
+                        )
+                      }
                       if (part.type === 'text' && part.text.trim()) {
                         return (
                           <div
@@ -197,7 +264,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                           </div>
                         )
                       }
-                      return null
+                      return null}
                     })}
                   </div>
                 </div>
@@ -222,19 +289,34 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             event.preventDefault()
             void submit()
           }}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
         >
           <div className="chat-input-column relative overflow-visible">
             <ChatPromptComposer
               layout="inline"
               value={draft}
+              attachments={attachments}
               pending={sending}
               isMobile={isMobile}
               placeholder={t('assistants.contact.placeholder', { name: displayName })}
               sendLabel={t('assistants.contact.send')}
+              addFilesLabel={t('assistants.contact.addFiles')}
+              removeAttachmentLabel={t('assistants.contact.removeAttachment')}
+              fileAccept="*/*"
               onChange={(value) => setDraft(value)}
               onSubmit={() => {
                 void submit()
               }}
+              onAddFiles={(files) => {
+                void addFiles(files)
+              }}
+              onRemoveAttachment={(id) => {
+                setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+              }}
+              onPaste={handlePaste}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
               className={cn('relative z-10', isMobile && 'oc-mobile-composer-surface')}
               style={{ borderRadius: '1.5rem' }}
               data-assistant-contact-composer-surface=""

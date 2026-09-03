@@ -11,6 +11,18 @@ export class LlmError extends Error {
   }
 }
 
+export const normalizeCompletionFilePart = (part) => {
+  if (!isRecord(part) || part.type !== 'file') return null;
+  if (typeof part.mime !== 'string' || !part.mime.trim()) return null;
+  if (typeof part.url !== 'string' || !part.url.trim()) return null;
+  return {
+    type: 'file',
+    mime: part.mime.trim(),
+    url: part.url.trim(),
+    ...(typeof part.filename === 'string' && part.filename.trim() ? { filename: part.filename.trim() } : {}),
+  };
+};
+
 const normalizeMessages = (messages) => {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new LlmError('validation_error', 400, 'messages is required');
@@ -23,7 +35,10 @@ const normalizeMessages = (messages) => {
     if (role !== 'system' && role !== 'user' && role !== 'assistant') {
       throw new LlmError('validation_error', 400, 'message role must be system, user, or assistant');
     }
-    return { role, content: message.content };
+    const parts = Array.isArray(message.parts)
+      ? message.parts.map(normalizeCompletionFilePart).filter(Boolean)
+      : [];
+    return parts.length > 0 ? { role, content: message.content, parts } : { role, content: message.content };
   });
 };
 

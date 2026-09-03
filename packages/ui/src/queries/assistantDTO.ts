@@ -15,6 +15,7 @@ export interface AssistantHistoryEntry { sessionID: string; directory: string | 
 export interface AssistantHistoryPage { entries: AssistantHistoryEntry[]; nextCursor: string | null; complete: boolean; }
 export type AssistantContactCardType = 'session' | 'assistant' | 'schedule';
 export type AssistantContactTextPart = { type: 'text'; text: string };
+export type AssistantContactFilePart = { type: 'file'; mime: string; url: string; filename?: string };
 export type AssistantContactSessionCardPart = {
   type: 'card';
   cardType: 'session';
@@ -48,7 +49,7 @@ export type AssistantContactCardPart =
   | AssistantContactSessionCardPart
   | AssistantContactAssistantCardPart
   | AssistantContactScheduleCardPart;
-export type AssistantContactPart = AssistantContactTextPart | AssistantContactCardPart;
+export type AssistantContactPart = AssistantContactTextPart | AssistantContactFilePart | AssistantContactCardPart;
 export type AssistantContactRole = 'user' | 'assistant' | 'peer';
 export interface AssistantContactMessage {
   messageID: string;
@@ -141,6 +142,17 @@ export const parseAssistantHistoryPage = (payload: unknown): AssistantHistoryPag
 const parseContactPart = (value: unknown): AssistantContactPart => {
   const part = record(value, 'assistant_contact_part');
   if (part.type === 'text') return { type: 'text', text: string(part.text, 'assistant_contact_part') };
+  if (part.type === 'file') {
+    const filename = part.filename === undefined || part.filename === null
+      ? undefined
+      : string(part.filename, 'assistant_contact_part');
+    return {
+      type: 'file',
+      mime: string(part.mime, 'assistant_contact_part'),
+      url: string(part.url, 'assistant_contact_part'),
+      ...(filename ? { filename } : {}),
+    };
+  }
   if (part.type === 'card') {
     const cardType = enumValue(part.cardType, ['session', 'assistant', 'schedule'] as const, 'assistant_contact_part');
     if (cardType === 'session') {

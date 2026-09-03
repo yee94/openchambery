@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONTACT_CARD_TYPES, createSessionCardPart, parseContactCard } from './cards.js'
+import { CONTACT_CARD_TYPES, createSessionCardPart, parseContactCard, parseContactPart } from './cards.js'
 
 describe('contact cards', () => {
   it('creates an extensible session card part', () => {
@@ -66,6 +66,30 @@ describe('contact cards', () => {
       sessionID: 'ses_1',
       directory: '/tmp/project',
     })).toBeNull()
+  })
+
+  it('parses contact file parts with optional filename', () => {
+    expect(parseContactPart({
+      type: 'file',
+      mime: 'image/png',
+      url: 'data:image/png;base64,aa',
+      filename: 'shot.png',
+    })).toEqual({
+      type: 'file',
+      mime: 'image/png',
+      url: 'data:image/png;base64,aa',
+      filename: 'shot.png',
+    })
+    expect(parseContactPart({
+      type: 'file',
+      mime: 'text/plain',
+      url: 'data:text/plain;base64,eA==',
+    })).toEqual({
+      type: 'file',
+      mime: 'text/plain',
+      url: 'data:text/plain;base64,eA==',
+    })
+    expect(parseContactPart({ type: 'file', mime: 'image/png' })).toBeNull()
   })
 
   it('requires a sessionID for session cards', () => {

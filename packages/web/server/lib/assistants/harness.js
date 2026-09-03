@@ -85,7 +85,7 @@ export function createContactModel(providerID, modelID) {
     provider: 'openchamber',
     baseUrl: 'http://openchamber.invalid/api/openchamber/llm',
     reasoning: false,
-    input: ['text'],
+    input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128_000,
     maxTokens: 8_192,
@@ -110,19 +110,33 @@ const assistantMessage = (model, text, stopReason, errorMessage) => ({
  * Replays the completed text as one Agent event burst — not token SSE.
  * Must not throw — encode failures on the event stream.
  */
-export function createContactStreamFn(createChatCompletion) {
+const completionFileParts = (value) => (Array.isArray(value) ? value : [])
+  .filter((part) => part?.type === 'file' && typeof part.mime === 'string' && typeof part.url === 'string')
+  .map((part) => ({
+    type: 'file',
+    mime: part.mime,
+    url: part.url,
+    ...(typeof part.filename === 'string' && part.filename.trim() ? { filename: part.filename.trim() } : {}),
+  }));
+
+export function createContactStreamFn(createChatCompletion, { pendingFileParts = [] } = {}) {
   return (model, context) => {
     const stream = createAssistantMessageEventStream();
     const run = async () => {
       try {
-        const messages = [
-          ...(context.systemPrompt ? [{ role: 'system', content: context.systemPrompt }] : []),
-          ...context.messages.flatMap((message) => {
+        const fallbackFiles = completionFileParts(pendingFileParts);
+        const mapped = context.messages.flatMap((message) => {
             if (message.role === 'user') {
               const content = typeof message.content === 'string'
                 ? message.content
                 : (message.content || []).map((part) => part?.text || '').join('');
-              return content ? [{ role: 'user', content }] : [];
+              const parts = completionFileParts(message.parts);
+              if (!content && parts.length === 0) return [];
+              return [{
+                role: 'user',
+                content: content || '[attachment]',
+                ...(parts.length > 0 ? { parts } : {}),
+              }];
             }
             if (message.role === 'assistant') {
               const content = (message.content || [])
@@ -139,8 +153,15 @@ export function createContactStreamFn(createChatCompletion) {
               return content ? [{ role: 'user', content: `OpenChamber tool ${message.toolName || 'result'}: ${content}` }] : [];
             }
             return [];
-          }),
+        });
+        const messages = [
+          ...(context.systemPrompt ? [{ role: 'system', content: context.systemPrompt }] : []),
+          ...mapped,
         ];
+        const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+        if (lastUser && fallbackFiles.length > 0 && !Array.isArray(lastUser.parts)) {
+          lastUser.parts = fallbackFiles;
+        }
         const result = await createChatCompletion({
           body: {
             model: `${model.provider === 'openchamber' ? '' : `${model.provider}/`}${model.id}`.replace(/^\//, '') || model.name,
@@ -274,6 +295,7 @@ export async function runContactTurn({
   assistant,
   history,
   userText,
+  userParts = [],
   createChatCompletion,
   tools = [],
   AgentImpl = Agent,
@@ -292,11 +314,20 @@ export async function runContactTurn({
   // streamFn receives the model; completions needs providerID/modelID.
   model.name = `${providerID}/${modelID}`;
 
+  const pendingFileParts = [
+    ...(Array.isArray(history) ? history.flatMap((message) => completionFileParts(message.parts)) : []),
+    ...completionFileParts(userParts),
+  ];
   const prior = Array.isArray(history)
     ? history.map((message) => (
       message.role === 'assistant'
         ? { role: 'assistant', content: [{ type: 'text', text: message.content }], api: model.api, provider: model.provider, model: model.id, usage: emptyUsage(), stopReason: 'stop', timestamp: Date.now() }
-        : { role: 'user', content: message.content, timestamp: Date.now() }
+        : {
+          role: 'user',
+          content: message.content,
+          ...(completionFileParts(message.parts).length > 0 ? { parts: completionFileParts(message.parts) } : {}),
+          timestamp: Date.now(),
+        }
     ))
     : [];
 
@@ -308,7 +339,7 @@ export async function runContactTurn({
       tools: contactTools,
       messages: prior,
     },
-    streamFn: createContactStreamFn(createChatCompletion),
+    streamFn: createContactStreamFn(createChatCompletion, { pendingFileParts }),
   });
 
   await agent.prompt(userText);

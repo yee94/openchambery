@@ -6,7 +6,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
 import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
-export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
+export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
 export interface AssistantDraft { enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant?: string | null; mode: AssistantMode; }
@@ -193,10 +193,22 @@ export const newAssistantSession = async (assistantID: string): Promise<SessionB
 export const compactAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<CompactResponse> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseCompactResponse(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/compact`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); return result; };
 export const abortAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<void> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/abort`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration })); assertCurrent(transport, generation); };
 export const sendAssistantMessage = async (assistantID: string, binding: SessionBinding, messageID: string, parts: AssistantPart[], source: AssistantSource = 'composer'): Promise<MessageAdmission> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); invalidateContact(assistantID, transport); return result; };
-export const sendAssistantContactMessage = async (assistantID: string, messageID: string, text: string): Promise<MessageAdmission> => {
+export type AssistantContactSendPart =
+  | { type: 'text'; text: string }
+  | { type: 'file'; mime: string; url: string; filename?: string };
+export const sendAssistantContactMessage = async (
+  assistantID: string,
+  messageID: string,
+  input: string | { text?: string; parts?: AssistantContactSendPart[] },
+): Promise<MessageAdmission> => {
   const transport = getRuntimeTransportIdentity();
   const generation = getRuntimeGeneration();
-  const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { messageID, parts: [{ type: 'text', text }] })));
+  const parts = typeof input === 'string'
+    ? [{ type: 'text' as const, text: input }]
+    : Array.isArray(input.parts) && input.parts.length > 0
+      ? input.parts
+      : [{ type: 'text' as const, text: input.text ?? '' }];
+  const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { messageID, parts })));
   assertCurrent(transport, generation);
   applyBinding(assistantID, result.binding, transport);
   invalidateContact(assistantID, transport);

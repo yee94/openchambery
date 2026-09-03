@@ -207,7 +207,11 @@ export function contactHistoryForLlm(db, assistantID) {
     .filter((message) => message.status !== 'error' && (message.role === 'user' || message.role === 'assistant'))
     // Peer DMs are read-only inbox rows. They must not become user/assistant
     // harness turns or trigger tools on the recipient.
-    .map((message) => ({ role: message.role, content: message.text }))
+    .map((message) => {
+      const files = message.parts.filter((part) => part.type === 'file');
+      const content = message.text.trim() || (files.length > 0 ? '[attachment]' : '');
+      return files.length > 0 ? { role: message.role, content, parts: files } : { role: message.role, content };
+    })
     .filter((message) => message.content.trim().length > 0);
 }
 

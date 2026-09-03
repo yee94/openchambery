@@ -600,7 +600,19 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (text) return text;
     return input.parts.some((part) => part?.type === 'file') ? '[attachment]' : '';
   };
-  const persistContactTurn = (assistantID, { userMessageID, userText, bubbles, cards = [], turnID }) => {
+  const userContactParts = (input, userText) => {
+    const parts = [];
+    if (Array.isArray(input.parts)) {
+      for (const part of input.parts) {
+        const parsed = parseContactPart(part);
+        if (parsed?.type === 'text' && parsed.text.trim()) parts.push({ type: 'text', text: parsed.text });
+        if (parsed?.type === 'file') parts.push(parsed);
+      }
+    }
+    if (parts.length === 0 && userText) parts.push({ type: 'text', text: userText });
+    return parts;
+  };
+  const persistContactTurn = (assistantID, { userMessageID, userText, userParts, bubbles, cards = [], turnID }) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       let ordinal = nextContactOrdinal(db, assistantID);
@@ -613,7 +625,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         createdAt: now(),
         ordinal,
         status: 'complete',
-        parts: [{ type: 'text', text: userText }],
+        parts: Array.isArray(userParts) && userParts.length > 0 ? userParts : [{ type: 'text', text: userText }],
       });
       bubbles.forEach((text, index) => {
         ordinal += 1;
@@ -749,6 +761,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const messageID = string(input.messageID, 256, true);
     const userText = extractUserText(input);
     if (!userText) fail('validation_error');
+    const userParts = userContactParts(input, userText);
     const row = active(assistantID);
     // Contact turns are OpenChamber-owned. Binding mismatch no longer gates send;
     // OpenCode session history is not the user-visible queue.
@@ -770,6 +783,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         assistant: output(row),
         history,
         userText,
+        userParts,
         createChatCompletion,
         tools,
       });
@@ -788,6 +802,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     persistContactTurn(row.assistant_id, {
       userMessageID: messageID,
       userText,
+      userParts,
       bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
       cards,
       turnID: messageID,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { detectSessionlessGenerate, generateOpenCodeText } from './generate.js'
+import { detectSessionlessGenerate, generateOpenCodeText, _test } from './generate.js'
 
 const completedAssistant = (text) => ({
   info: {
@@ -92,6 +92,47 @@ describe('generateOpenCodeText', () => {
     expect(messages).toHaveBeenCalledWith(expect.objectContaining({ sessionID: 'ses_tmp' }), expect.anything())
     expect(remove).toHaveBeenCalled()
     expect(result).toEqual({ text: 'reply', source: 'throwaway-session' })
+  })
+
+  it('forwards contact file parts on promptAsync so the model can see images', async () => {
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' }
+    const flattened = _test.flattenMessages([
+      { role: 'user', content: 'look', parts: [image, file] },
+    ])
+    expect(flattened.prompt).toContain('User: look')
+    expect(flattened.prompt).toContain('[image: shot.png (image/png)]')
+    expect(flattened.prompt).toContain('[file: notes.txt (text/plain)]')
+    expect(flattened.files).toEqual([image, file])
+
+    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
+    const createOpencodeClient = vi.fn(() => ({
+      session: {
+        create: async () => ({ data: { id: 'ses_tmp' } }),
+        update: async () => ({ data: { id: 'ses_tmp' } }),
+        prompt: vi.fn(),
+        promptAsync,
+        status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
+        messages: async () => ({ data: [completedAssistant('saw it')] }),
+        delete: async () => ({ data: true }),
+      },
+      tool: { ids: async () => ({ data: [] }) },
+    }))
+    await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'look', parts: [image, file] }],
+      clientFactory: createOpencodeClient,
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+    })
+    expect(promptAsync.mock.calls[0][0].parts).toEqual([
+      expect.objectContaining({ type: 'text', synthetic: false }),
+      image,
+      file,
+    ])
   })
 
   it('surfaces the OpenCode assistant error string after promptAsync 204', async () => {

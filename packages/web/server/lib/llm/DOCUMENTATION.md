@@ -32,7 +32,11 @@ The 1.18.4 client exposes `GET /provider`, `GET /config/providers`, and
    (`client.tool.ids()` → `{ [id]: false }`), send our messages as
    `system` + user text via `session.promptAsync` (v2 `session.prompt` only
    forwards `{ id, prompt, delivery, resume }` and drops `model`/`parts` —
-   that produced empty assistant text and a 502), wait for idle via
+   that produced empty assistant text and a 502). Contact file parts reuse the
+   existing OpenCode `{ type: 'file', mime, url, filename? }` delivery shape
+   (data URLs in the contact SQLite store — not a second attachment store) and
+   are forwarded on `promptAsync` so vision models can see images. Non-image
+   text files are also inlined into the flattened prompt. Wait for idle via
    `session.status` + `session.messages`, then delete the session. This is a
    text generator only — never the contact transcript and never a coding
    SessionPrompt loop. Upstream `info.error.message` is forwarded on 502.

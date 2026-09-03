@@ -27,6 +27,8 @@ type ChatPromptComposerProps = Omit<React.ComponentProps<typeof ChatComposerSurf
   onRemoveAttachment?: (id: string) => void;
   addFilesLabel?: string;
   removeAttachmentLabel?: string;
+  /** Default `image/*` keeps Chat's stacked picker image-only. Contact passes `*/*`. */
+  fileAccept?: string;
   sendLabel?: string;
   stopLabel?: string;
   hint?: React.ReactNode;
@@ -89,6 +91,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   onRemoveAttachment,
   addFilesLabel,
   removeAttachmentLabel,
+  fileAccept = 'image/*',
   sendLabel,
   stopLabel,
   hint,
@@ -148,9 +151,10 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const imageAttachments = attachments.filter((attachment) => attachment.mime.startsWith('image/'));
+  const fileAttachments = attachments.filter((attachment) => !attachment.mime.startsWith('image/'));
   const defaultLeftControls = onAddFiles ? (
     <>
-      <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+      <input ref={fileInputRef} type="file" accept={fileAccept} multiple className="hidden" onChange={handleFileChange} />
       <button
         type="button"
         className="flex size-8 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -222,6 +226,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
     </button>
   );
   const defaultRightControls = inline ? inlineRightControls : stackedRightControls;
+  const inlineLeftControls = leftControls !== undefined ? leftControls : defaultLeftControls;
 
   return (
     <ChatComposerSurface className={className} expanded={expanded} {...surfaceProps}>
@@ -259,6 +264,29 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
                     <button
                       type="button"
                       className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full border border-border bg-[var(--surface-elevated)] shadow-sm hover:bg-[var(--interactive-hover)]"
+                      onClick={() => onRemoveAttachment(attachment.id)}
+                      aria-label={removeAttachmentLabel}
+                    >
+                      <Icon name="close" className="size-3" />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {fileAttachments.length > 0 ? (
+            <div className="flex flex-wrap gap-2 px-3 pt-3" data-chat-prompt-file-attachments="true">
+              {fileAttachments.map((attachment) => (
+                <div
+                  key={attachment.id}
+                  className="relative flex max-w-[12rem] items-center gap-1.5 rounded-lg border border-border bg-[var(--surface-elevated)] px-2 py-1"
+                >
+                  <Icon name="file-text" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate typography-micro">{attachment.name}</span>
+                  {onRemoveAttachment ? (
+                    <button
+                      type="button"
+                      className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-[var(--interactive-hover)]"
                       onClick={() => onRemoveAttachment(attachment.id)}
                       aria-label={removeAttachmentLabel}
                     >
@@ -310,13 +338,23 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           </div>
         </div>
         {inline ? (
-          <div
-            className={cn('flex h-12 shrink-0 items-center pr-1.5', footerClassName)}
-            style={footerStyle}
-            data-composer-inline-send="true"
-          >
-            {rightControls ?? defaultRightControls}
-          </div>
+          <>
+            {inlineLeftControls ? (
+              <div
+                className="flex h-12 shrink-0 items-center pl-1.5"
+                data-composer-inline-attach="true"
+              >
+                {inlineLeftControls}
+              </div>
+            ) : null}
+            <div
+              className={cn('flex h-12 shrink-0 items-center pr-1.5', footerClassName)}
+              style={footerStyle}
+              data-composer-inline-send="true"
+            >
+              {rightControls ?? defaultRightControls}
+            </div>
+          </>
         ) : (
           <ChatPromptFooter
             className={footerClassName}

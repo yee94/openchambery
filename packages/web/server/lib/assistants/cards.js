@@ -71,10 +71,22 @@ export function parseContactCard(value) {
   return null;
 }
 
+export function parseContactFilePart(value) {
+  if (!isRecord(value) || value.type !== 'file') return null;
+  const mime = string(value.mime);
+  const url = typeof value.url === 'string' && value.url.trim() ? value.url.trim() : '';
+  if (!mime || !url) return null;
+  const filename = string(value.filename);
+  return filename ? { type: 'file', mime, url, filename } : { type: 'file', mime, url };
+}
+
 export function parseContactPart(value) {
   if (!isRecord(value)) return null;
   if (value.type === 'text' && typeof value.text === 'string') {
     return { type: 'text', text: value.text };
+  }
+  if (value.type === 'file') {
+    return parseContactFilePart(value);
   }
   if (value.type === 'card') {
     return parseContactCard(value);

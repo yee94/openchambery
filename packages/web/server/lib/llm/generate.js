@@ -231,19 +231,78 @@ export async function detectSessionlessGenerate({ fetchImpl, baseUrl, headers })
   return { available: false, mode: 'throwaway-session' };
 }
 
+const TEXT_FILE_MIME = /^(text\/|application\/(json|javascript|xml|sql|yaml|x-yaml|toml))/i;
+const MAX_INLINE_FILE_CHARS = 100_000;
+
+const messageText = (message) => {
+  if (typeof message?.content === 'string') return message.content;
+  if (Array.isArray(message?.content)) {
+    return message.content.map((part) => (typeof part?.text === 'string' ? part.text : '')).join('');
+  }
+  return '';
+};
+
+const messageFileParts = (message) => {
+  const fromParts = Array.isArray(message?.parts) ? message.parts : [];
+  const fromContent = Array.isArray(message?.content) ? message.content : [];
+  return [...fromParts, ...fromContent]
+    .filter((part) => part?.type === 'file' && typeof part.mime === 'string' && typeof part.url === 'string')
+    .map((part) => ({
+      type: 'file',
+      mime: part.mime,
+      url: part.url,
+      ...(typeof part.filename === 'string' && part.filename.trim() ? { filename: part.filename.trim() } : {}),
+    }));
+};
+
+const decodeDataUrlText = (url, mime) => {
+  if (!TEXT_FILE_MIME.test(mime) || typeof url !== 'string' || !url.startsWith('data:')) return null;
+  const comma = url.indexOf(',');
+  if (comma < 0) return null;
+  const meta = url.slice(5, comma);
+  const payload = url.slice(comma + 1);
+  try {
+    const bytes = meta.includes('base64')
+      ? Buffer.from(payload, 'base64')
+      : Buffer.from(decodeURIComponent(payload), 'utf8');
+    const text = bytes.toString('utf8');
+    return text.length > MAX_INLINE_FILE_CHARS ? `${text.slice(0, MAX_INLINE_FILE_CHARS)}\n…` : text;
+  } catch {
+    return null;
+  }
+};
+
+export const describeContactFilePart = (part) => {
+  const name = part.filename || 'attachment';
+  const mime = part.mime || 'application/octet-stream';
+  if (typeof mime === 'string' && mime.startsWith('image/')) return `[image: ${name} (${mime})]`;
+  const decoded = decodeDataUrlText(part.url, mime);
+  if (decoded != null) return `[file: ${name} (${mime})]\n${decoded}`;
+  return `[file: ${name} (${mime})]`;
+};
+
 const flattenMessages = (messages) => {
   const system = [];
   const turns = [];
+  const files = [];
   for (const message of messages) {
-    if (!message || typeof message.content !== 'string') continue;
-    if (message.role === 'system') system.push(message.content);
-    else if (message.role === 'user' || message.role === 'assistant') {
-      turns.push(`${message.role === 'assistant' ? 'Assistant' : 'User'}: ${message.content}`);
+    if (!message) continue;
+    const text = messageText(message);
+    const fileParts = message.role === 'user' ? messageFileParts(message) : [];
+    if (message.role === 'system') {
+      if (text.trim()) system.push(text);
+      continue;
     }
+    if (message.role !== 'user' && message.role !== 'assistant') continue;
+    const body = [text, ...fileParts.map(describeContactFilePart)].filter((item) => String(item || '').trim()).join('\n');
+    if (!body && fileParts.length === 0) continue;
+    turns.push(`${message.role === 'assistant' ? 'Assistant' : 'User'}: ${body || '[attachment]'}`);
+    files.push(...fileParts);
   }
   return {
     system: system.join('\n\n').trim(),
     prompt: turns.join('\n\n').trim(),
+    files,
   };
 };
 
@@ -297,7 +356,7 @@ export async function generateOpenCodeText({
     throw error;
   }
   const flattened = flattenMessages(messages);
-  if (!flattened.prompt) {
+  if (!flattened.prompt && flattened.files.length === 0) {
     const error = new Error('messages must include a user turn');
     error.code = 'validation_error';
     throw error;
@@ -370,7 +429,10 @@ export async function generateOpenCodeText({
         model: { providerID, modelID },
         ...(flattened.system ? { system: flattened.system } : {}),
         tools,
-        parts: [{ type: 'text', text: flattened.prompt, synthetic: false }],
+        parts: [
+          { type: 'text', text: flattened.prompt, synthetic: false },
+          ...flattened.files,
+        ],
       }, { signal: controller.signal });
       if (!promptAdmitted(prompted)) {
         failGenerate(`OpenCode LLM promptAsync failed: ${sdkErrorMessage(prompted, 'promptAsync failed')}`);
@@ -404,6 +466,7 @@ export async function generateOpenCodeText({
 
 export const _test = {
   flattenMessages,
+  describeContactFilePart,
   deniedTools,
   assistantTextFromPrompt,
   assistantTextFromMessages,

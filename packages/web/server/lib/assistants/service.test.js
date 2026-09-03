@@ -86,6 +86,60 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('persists mixed text+image+file parts and forwards them to the contact harness', async () => {
+    const directory = root();
+    let harness;
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' };
+    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' };
+    const service = setup(directory, {}, {
+      runContactTurn: async (input) => {
+        harness = input;
+        return { text: 'saw it', bubbles: ['saw it'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.send(assistant.id, {
+      messageID: 'mixed_1',
+      parts: [{ type: 'text', text: 'look' }, image, file],
+    });
+    expect(harness.userText).toBe('look');
+    expect(harness.userParts).toEqual([{ type: 'text', text: 'look' }, image, file]);
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages[0]).toMatchObject({
+      role: 'user',
+      text: 'look',
+      parts: [{ type: 'text', text: 'look' }, image, file],
+    });
+    service.close();
+    const restarted = setup(directory, {}, {
+      runContactTurn: async () => ({ text: 'again', bubbles: ['again'] }),
+    });
+    expect(restarted.contactMessages(assistant.id, { limit: 50 }).messages[0].parts).toEqual([
+      { type: 'text', text: 'look' },
+      image,
+      file,
+    ]);
+    restarted.close();
+  });
+
+  it('admits a file-only contact send and stores the file part without a fake text row', async () => {
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' };
+    let harness;
+    const service = setup(root(), {}, {
+      runContactTurn: async (input) => {
+        harness = input;
+        return { text: 'got the image', bubbles: ['got the image'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.send(assistant.id, { messageID: 'file_only_1', parts: [image] });
+    expect(harness.userText).toBe('[attachment]');
+    expect(harness.userParts).toEqual([image]);
+    const user = service.contactMessages(assistant.id).messages.find((message) => message.role === 'user');
+    expect(user.parts).toEqual([image]);
+    expect(user.text).toBe('');
+    service.close();
+  });
+
   it('returns the frozen compact and message admission DTO field sets', async () => {
     const service = setup(root(), { promptAsync: async () => ({ response: { status: 204 } }) }); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id);
     expect(await service.compact(assistant.id, current)).toEqual({ binding: current, summarized: true });

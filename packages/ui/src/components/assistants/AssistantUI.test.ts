@@ -307,7 +307,12 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('bottom-safe-area oc-mobile-composer');
     expect(conversation).toContain("event.preventDefault()");
     expect(conversation).toContain("'aria-label': t('assistants.contact.placeholder'");
-    expect(conversation).not.toContain('onAddFiles');
+    expect(conversation).toContain('onAddFiles');
+    expect(conversation).toContain('fileAccept="*/*"');
+    expect(conversation).toContain('onPaste={handlePaste}');
+    expect(conversation).toContain('onDrop={handleDrop}');
+    expect(conversation).toContain('data-assistant-contact-image');
+    expect(conversation).toContain('data-assistant-contact-file');
     expect(conversation).not.toContain('leftControls');
     expect(conversation).not.toContain('footerContent');
     expect(conversation).not.toContain('<MemoModelControls');
@@ -426,7 +431,8 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(conversation).toContain('<ChatPromptComposer');
     expect(conversation).not.toContain('<ChatInput');
-    expect(conversation).not.toContain('onAddFiles');
+    expect(conversation).toContain('onAddFiles');
+    expect(conversation).toContain('fileAccept="*/*"');
     expect(conversation).not.toContain('onStop');
     expect(conversation).not.toContain('thinkingLevel');
     expect(promptComposer).toContain('data-composer-send="true"');
@@ -448,6 +454,9 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer).toContain("layout = 'stacked'");
     expect(promptComposer).toContain("layout === 'inline'");
     expect(promptComposer).toContain('data-composer-inline-send="true"');
+    expect(promptComposer).toContain('data-composer-inline-attach="true"');
+    expect(promptComposer).toContain('data-chat-prompt-file-attachments="true"');
+    expect(promptComposer).toContain("fileAccept = 'image/*'");
     expect(promptComposer).toContain('data-composer-layout={layout}');
     expect(promptComposer).toContain('min-h-12 flex-row items-end');
     expect(promptComposer).toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
@@ -469,6 +478,23 @@ describe('Assistant UI product contract', () => {
     }
   });
 
+  test('requires contact attach keys in every locale and keeps slash commands out', async () => {
+    const { readdir } = await import('node:fs/promises');
+    const messagesDir = join(directory, '../../lib/i18n/messages');
+    const files = (await readdir(messagesDir)).filter((name) => name.endsWith('.settings.ts'));
+    expect(files.length).toBeGreaterThan(8);
+    const sources = await Promise.all(files.map((name) => read(`../../lib/i18n/messages/${name}`)));
+    for (const source of sources) {
+      expect(source).toContain("'assistants.contact.addFiles'");
+      expect(source).toContain("'assistants.contact.removeAttachment'");
+      expect(source).toContain("'assistants.contact.attachment.image'");
+      expect(source).toContain("'assistants.contact.attachment.file'");
+    }
+    const zh = sources[files.indexOf('zh-CN.settings.ts')];
+    expect(zh).toContain('添加文件');
+    expect(zh).not.toContain("'assistants.contact.addFiles': 'Attach files'");
+  });
+
   test('loads the OpenChamber contact transcript instead of OpenCode session history', async () => {
     const [conversation, queries] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
@@ -476,9 +502,11 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(conversation).toContain('useAssistantContactMessagesQuery');
     expect(conversation).toContain('sendAssistantContactMessage');
+    expect(conversation).toContain('{ parts }');
     expect(conversation).not.toContain('appendAssistantContactCard');
     expect(conversation).not.toContain('parseContactComposerInput');
     expect(queries).toContain('/contact/messages');
+    expect(queries).toContain("type: 'file'");
     expect(queries).toContain('/contact/cards');
     expect(queries).toContain('/contact/dm');
   });
