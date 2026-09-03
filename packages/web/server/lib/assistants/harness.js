@@ -1,24 +1,44 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { splitContactBubbles } from './bubbles.js';
+import {
+  extractContactCardsFromMessages,
+  formatContactToolsPrompt,
+  parseContactToolCalls,
+  stripContactToolFences,
+} from './contact-tools.js';
 
 function createAssistantMessageEventStream() {
   const events = [];
   let pending = null;
   let done = false;
+  let resolveFinal = null;
+  const finalResult = new Promise((resolve) => { resolveFinal = resolve; });
   const wake = () => {
     pending?.();
     pending = null;
   };
+  const finish = (message) => {
+    if (resolveFinal) {
+      resolveFinal(message);
+      resolveFinal = null;
+    }
+    done = true;
+    wake();
+  };
   return {
     push(event) {
       events.push(event);
-      wake();
+      if (event?.type === 'done') finish(event.message);
+      else if (event?.type === 'error') finish(event.error);
+      else wake();
     },
-    end() {
+    end(message) {
       // Completion is already a typed event (`done` / `error`). Do not push
       // the raw assistant message again — callers read events.at(-1).type.
-      done = true;
-      wake();
+      finish(message);
+    },
+    result() {
+      return finalResult;
     },
     async *[Symbol.asyncIterator]() {
       let index = 0;
@@ -37,8 +57,8 @@ function createAssistantMessageEventStream() {
 export const CONTACT_SYSTEM_PROMPT = [
   "You are OpenChamber's in-app assistant — a personable contact, not a coding agent.",
   'Reply in short chat bubbles: a few sentences each, separated by a blank line.',
-  'Do not expose chain-of-thought, tool traces, or editor actions.',
-  'Do not pretend to run bash, edit files, or open a workspace unless a later OpenChamber card tool is attached.',
+  'Do not expose chain-of-thought, tool traces, Activity, or editor actions.',
+  'Do not run bash, edit, read, or write. Assign coding work with assign_session so a real Chat session does the work.',
 ].join(' ');
 
 const emptyUsage = () => ({
@@ -104,6 +124,13 @@ export function createContactStreamFn(createChatCompletion) {
                 .join('');
               return content ? [{ role: 'assistant', content }] : [];
             }
+            if (message.role === 'toolResult') {
+              const content = (message.content || [])
+                .filter((part) => part?.type === 'text')
+                .map((part) => part.text)
+                .join('');
+              return content ? [{ role: 'user', content: `OpenChamber tool ${message.toolName || 'result'}: ${content}` }] : [];
+            }
             return [];
           }),
         ];
@@ -120,11 +147,42 @@ export function createContactStreamFn(createChatCompletion) {
         const text = result?.completion?.choices?.[0]?.message?.content
           ?? result?.text
           ?? '';
-        const partial = assistantMessage(model, text, 'stop');
+        const allowedNames = (context.tools || []).map((tool) => tool?.name).filter(Boolean);
+        const parsed = parseContactToolCalls(text, allowedNames);
+        if (parsed.toolCall) {
+          const toolCall = {
+            type: 'toolCall',
+            id: `call_${Date.now().toString(36)}`,
+            name: parsed.toolCall.name,
+            arguments: parsed.toolCall.arguments,
+          };
+          const content = [];
+          if (parsed.chatText) content.push({ type: 'text', text: parsed.chatText });
+          content.push(toolCall);
+          const partial = {
+            ...assistantMessage(model, parsed.chatText, 'toolUse'),
+            content,
+          };
+          stream.push({ type: 'start', partial });
+          if (parsed.chatText) {
+            stream.push({ type: 'text_start', contentIndex: 0, partial });
+            stream.push({ type: 'text_delta', contentIndex: 0, delta: parsed.chatText, partial });
+            stream.push({ type: 'text_end', contentIndex: 0, content: parsed.chatText, partial });
+          }
+          const toolIndex = parsed.chatText ? 1 : 0;
+          stream.push({ type: 'toolcall_start', contentIndex: toolIndex, partial });
+          stream.push({ type: 'toolcall_delta', contentIndex: toolIndex, delta: JSON.stringify(toolCall.arguments), partial });
+          stream.push({ type: 'toolcall_end', contentIndex: toolIndex, toolCall, partial });
+          stream.push({ type: 'done', reason: 'toolUse', message: partial });
+          stream.end(partial);
+          return;
+        }
+        const chatText = stripContactToolFences(text);
+        const partial = assistantMessage(model, chatText, 'stop');
         stream.push({ type: 'start', partial });
         stream.push({ type: 'text_start', contentIndex: 0, partial });
-        stream.push({ type: 'text_delta', contentIndex: 0, delta: text, partial });
-        stream.push({ type: 'text_end', contentIndex: 0, content: text, partial });
+        stream.push({ type: 'text_delta', contentIndex: 0, delta: chatText, partial });
+        stream.push({ type: 'text_end', contentIndex: 0, content: chatText, partial });
         stream.push({ type: 'done', reason: 'stop', message: partial });
         stream.end(partial);
       } catch (error) {
@@ -157,22 +215,32 @@ const extractAssistantText = (messages) => {
 };
 
 /**
- * Thin OpenChamber contact harness: pi-agent-core Agent + empty tools +
- * thinkingLevel off. Transcript in, completions via streamFn, bubbles out.
+ * Thin OpenChamber contact harness: pi-agent-core Agent + OpenChamber API
+ * tools only + thinkingLevel off. Transcript in, completions via streamFn,
+ * bubbles and session cards out. Never bash/edit/read/write.
  *
- * TODO(next-slice): attach OpenChamber API tools (open project session / watch /
- * summon) as AgentTool. Those tools MUST persist contact cards — never bash/edit/read/write.
+ * TODO(watch): session-goal settle already notifies. Do not invent a second
+ * scheduler. A later thin tool can post a read-only session status card when
+ * metadata.openchamber.goal settles. Skipped this slice to keep assign+card first.
  */
 export async function runContactTurn({
   assistant,
   history,
   userText,
   createChatCompletion,
+  tools = [],
   AgentImpl = Agent,
 }) {
   const providerID = assistant.providerID;
   const modelID = assistant.modelID;
-  const systemPrompt = [CONTACT_SYSTEM_PROMPT, assistant.defaultPrompt].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');
+  const contactTools = Array.isArray(tools)
+    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !['bash', 'edit', 'read', 'write'].includes(tool.name))
+    : [];
+  const systemPrompt = [
+    CONTACT_SYSTEM_PROMPT,
+    formatContactToolsPrompt(contactTools),
+    assistant.defaultPrompt,
+  ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');
   const model = createContactModel(providerID, modelID);
   // streamFn receives the model; completions needs providerID/modelID.
   model.name = `${providerID}/${modelID}`;
@@ -190,7 +258,7 @@ export async function runContactTurn({
       systemPrompt,
       model,
       thinkingLevel: 'off',
-      tools: [],
+      tools: contactTools,
       messages: prior,
     },
     streamFn: createContactStreamFn(createChatCompletion),
@@ -202,8 +270,9 @@ export async function runContactTurn({
     error.code = 'upstream_error';
     throw error;
   }
-  const text = extractAssistantText(agent.state.messages);
-  if (!text.trim()) {
+  const text = stripContactToolFences(extractAssistantText(agent.state.messages));
+  const cards = extractContactCardsFromMessages(agent.state.messages);
+  if (!text.trim() && cards.length === 0) {
     const error = new Error('Assistant returned no text');
     error.code = 'upstream_error';
     throw error;
@@ -211,6 +280,7 @@ export async function runContactTurn({
   return {
     text,
     bubbles: splitContactBubbles(text),
+    cards,
     thinkingLevel: agent.state.thinkingLevel,
     tools: [...agent.state.tools],
   };

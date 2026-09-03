@@ -33,9 +33,10 @@ type AssistantConversationSurfaceProps = {
  * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
  * first-class session cards — not ChatContainer, Activity, or markdown links.
  *
- * TODO(next-slice): worktree/branch assign, inbound unsolicited user pushes,
- * and full summon-to-work MUST use this transcript: cards for work, peer DMs
- * for read-only coordination. Do not invent a second inbox.
+ * Assign auto-inserts the same session card. TODO(watch/summon): inbound
+ * unsolicited user pushes and full summon-to-work MUST use this transcript:
+ * cards for work, peer DMs for read-only coordination. Do not invent a
+ * second inbox.
  */
 export const AssistantConversationSurface: React.FC<AssistantConversationSurfaceProps> = ({
   assistant,

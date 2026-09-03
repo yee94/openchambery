@@ -1,7 +1,7 @@
 export const CONTACT_CARD_TYPES = Object.freeze(['session']);
 const CARD_TYPES = new Set(CONTACT_CARD_TYPES);
-// Next slice: project | worktree | watch MUST reuse this same card slot.
-// Do not invent a second card system. Assign / inbound / summon deliver via cards.
+// Assign auto-inserts this same session card. project | worktree | watch
+// MUST reuse this slot. Do not invent a second card system.
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const string = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');

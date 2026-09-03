@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 import { reduceBackfillState } from './history-state.js';
+import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { parseContactCard, parseContactPart } from './cards.js';
 import {
   contactHistoryForLlm,
@@ -14,6 +15,8 @@ import {
   listContactMessages,
   nextContactOrdinal,
 } from './contact-store.js';
+import { ASSIGNED_SESSION_FALLBACK_BUBBLE, createContactTools } from './contact-tools.js';
+import { assignSession } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
 
 const require = createRequire(import.meta.url);
@@ -51,7 +54,7 @@ const isTransientMessagesFailure = (result, error) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -425,7 +428,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (text) return text;
     return input.parts.some((part) => part?.type === 'file') ? '[attachment]' : '';
   };
-  const persistContactTurn = (assistantID, { userMessageID, userText, bubbles, turnID }) => {
+  const persistContactTurn = (assistantID, { userMessageID, userText, bubbles, cards = [], turnID }) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       let ordinal = nextContactOrdinal(db, assistantID);
@@ -440,8 +443,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         status: 'complete',
         parts: [{ type: 'text', text: userText }],
       });
-      const messages = [];
-      messages.push(listContactMessages(db, assistantID, { limit: 1 }).messages.at(-1));
       bubbles.forEach((text, index) => {
         ordinal += 1;
         const bubbleID = `${userMessageID}:bubble:${index + 1}`;
@@ -457,6 +458,22 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           parts: [{ type: 'text', text }],
         });
       });
+      cards.forEach((cardInput, index) => {
+        const card = parseContactCard({ type: 'card', cardType: 'session', ...cardInput });
+        if (!card) return;
+        ordinal += 1;
+        insertContactMessage(db, {
+          messageID: `${userMessageID}:card:${index + 1}`,
+          assistantID,
+          role: 'assistant',
+          turnID,
+          bubbleIndex: 0,
+          createdAt: now(),
+          ordinal,
+          status: 'complete',
+          parts: [card],
+        });
+      });
       bump();
       db.exec('COMMIT');
     } catch (error) {
@@ -464,6 +481,17 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       throw error;
     }
   };
+  const assignWork = (row, params) => assignSession({
+    ...params,
+    assistant: output(row),
+    defaultProjectPath: row.workspace_path,
+    allowedRoots: getAllowedRoots(),
+    managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
+    listWorktrees,
+    createSession: (created) => client().session.create(created),
+    promptExisting: (prompted) => client().session.promptAsync(prompted),
+    messageID: params?.messageID || `msg_assign_${id()}`,
+  });
   const send = async (assistantID, input) => {
     if (!plainObject(input)) fail('validation_error');
     if (input.parts !== undefined) validateParts(input.parts);
@@ -475,6 +503,11 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     // OpenCode session history is not the user-visible queue.
     const history = contactHistoryForLlm(db, assistantID);
     if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
+    const assignedCards = [];
+    const tools = createContactTools({
+      assignWork: (params) => assignWork(row, params),
+      onCard: (card) => assignedCards.push(card),
+    });
     let generated;
     try {
       generated = await runContactTurn({
@@ -482,6 +515,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         history,
         userText,
         createChatCompletion,
+        tools,
       });
     } catch (error) {
       if (error instanceof AssistantError) throw error;
@@ -489,8 +523,18 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       fail('upstream_error');
     }
     const bubbles = Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : [];
-    if (bubbles.length === 0) fail('upstream_error');
-    persistContactTurn(row.assistant_id, { userMessageID: messageID, userText, bubbles, turnID: messageID });
+    const cards = [
+      ...assignedCards,
+      ...(Array.isArray(generated?.cards) ? generated.cards : []),
+    ].filter((card, index, list) => list.findIndex((item) => item?.sessionID === card?.sessionID && item?.directory === card?.directory) === index);
+    if (bubbles.length === 0 && cards.length === 0) fail('upstream_error');
+    persistContactTurn(row.assistant_id, {
+      userMessageID: messageID,
+      userText,
+      bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
+      cards,
+      turnID: messageID,
+    });
     return { binding: binding(row), messageID, admitted: true };
   };
   const contactMessages = (assistantID, query = {}) => {
@@ -530,7 +574,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
    * contact transcript only. Must never call OpenCode promptAsync, mutate
    * sessions/files/worktrees, or run tools on the recipient's behalf.
    *
-   * TODO(next-slice): summon/assign may attach cards on this same peer row.
+   * Assign opens a worker session on the sender's contact turn — never here.
+   * TODO(watch/summon): later inbound coordination may attach cards on this same peer row.
    */
   const deliverPeerMessage = (fromAssistantID, input) => {
     if (!plainObject(input)) fail('validation_error');

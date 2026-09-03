@@ -292,6 +292,8 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<TimelineDialog');
     expect(conversation).not.toContain('<ChatInput');
     expect(conversation).toContain('<AssistantSessionCard');
+    expect(conversation).not.toContain('<Activity');
+    expect(conversation).not.toContain('thinkingLevel');
     expect(conversation).toContain("data-assistant-contact-role={message.role}");
     expect(conversation).toContain("message.role === 'peer'");
     expect(conversation).toContain('deliverAssistantContactDm');

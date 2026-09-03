@@ -180,6 +180,10 @@ The loop here picks it up from session events like any other goal.
 
 ## Limitations
 
+- TODO(watch): Assistant contact assign skipped a watch tool this slice.
+  Goal settle already notifies. Do not invent a second scheduler. A later
+  thin contact tool can post a read-only session status card when
+  `metadata.openchamber.goal` settles.
 - Web-server feature: VS Code (extension-only) renders goal state via
   `session.updated` but does not run the loop.
 - A goal on a session with no assistant reply yet starts after the first

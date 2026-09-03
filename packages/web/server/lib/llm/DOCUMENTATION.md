@@ -40,6 +40,7 @@ an empty success.
 
 ## Ownership
 
-The Assistant contact harness owns system prompt, OpenChamber transcript, and
-bubble splitting. Next-slice OpenChamber tools (assign / watch / summon) must
-deliver through contact **cards**, not this completions payload.
+The Assistant contact harness owns system prompt, OpenChamber transcript,
+bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
+deliver through contact **cards**, not this completions payload. The gateway
+stays a text generator: OpenCode coding tools stay denied.

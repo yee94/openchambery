@@ -99,7 +99,8 @@ describe('assistants service', () => {
     await service.send(assistant.id, { ...binding, messageID: 'parts-33', parts: directParts }); await service.share(assistant.id, { operationID: 'parts-129', payload: { messageID: 'share-parts-129', parts: shareParts } });
     const deliveryTarget = service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope: { sessionID: binding.sessionID, directory: binding.directory } }); await service.sendWithCapturedConfig({ deliveryTarget, messageID: 'delivery-parts-129', parts: shareParts });
     // Composer send is the contact harness (no promptAsync). Share + queued
-    // delivery still use the legacy OpenCode path until the next assign/card slice.
+    // delivery still use the legacy OpenCode path; assign uses promptAsync on
+    // a dedicated worker session instead.
     expect(prompts.map((prompt) => prompt.parts.length)).toEqual([129, 129]); service.close();
   });
 
@@ -187,8 +188,7 @@ describe('assistants service', () => {
     const binding = await service.ensure(assistant.id);
     await service.send(assistant.id, { ...binding, messageID: 'variant-message', parts: [{ type: 'text', text: 'message' }] });
     await service.share(assistant.id, { operationID: 'variant-share', payload: { messageID: 'variant-share-message', parts: [{ type: 'text', text: 'share' }] } });
-    // Composer send is the contact harness. Share still captures the OpenCode variant
-    // until the next assign/card slice retires that path.
+    // Composer send is the contact harness. Share still captures the OpenCode variant.
     expect(prompts).toEqual(expect.arrayContaining([expect.objectContaining({ variant: 'fast' })]));
     expect(await service.updateAssistant(assistant.id, { expectedRevision: 1, variant: null })).toMatchObject({ variant: null });
     service.close();
@@ -673,6 +673,109 @@ describe('assistants service', () => {
     expect(after.prepare('SELECT covered FROM assistant_message_mirror WHERE session_id=? AND message_id=?').get(first.sessionID, 'msg_1')).toEqual({ covered: 1 });
     expect(after.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE session_id=?').get(first.sessionID)).toEqual({ cursor: null, complete: 0 });
     after.close();
+    service.close();
+  });
+
+  it('assigns a registered project session and persists the session card', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const prompts = [];
+    const archives = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: `ses_${creates.length}` } };
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+      update: async (input) => {
+        archives.push(input);
+        return { data: { id: input.sessionID } };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', { prompt: userText, projectPath: project, title: 'Login' });
+        return {
+          text: 'Opened the login session.',
+          bubbles: ['Opened the login session.'],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const sent = await service.send(assistant.id, {
+      messageID: 'client_assign',
+      parts: [{ type: 'text', text: 'Fix login' }],
+    });
+    expect(sent.admitted).toBe(true);
+    expect(creates).toEqual([expect.objectContaining({
+      directory: fs.realpathSync(project),
+      title: 'Login',
+    })]);
+    expect(creates[0].title).not.toMatch(/^\[Assistant\]/);
+    expect(prompts).toEqual([expect.objectContaining({
+      sessionID: 'ses_1',
+      directory: fs.realpathSync(project),
+      parts: [{ type: 'text', text: 'Fix login' }],
+    })]);
+    expect(archives).toEqual([]);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant']);
+    expect(page.messages.some((message) => message.role === 'peer')).toBe(false);
+    expect(page.messages.at(-1).parts[0]).toMatchObject({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_1',
+      directory: fs.realpathSync(project),
+      title: 'Login',
+    });
+    service.close();
+  });
+
+  it('fails assign clearly when no project is registered and does not use assistant-workspaces', async () => {
+    const directory = root();
+    const creates = [];
+    const prompts = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: 'ses_should_not' } };
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+    }, {
+      getAllowedRoots: () => [],
+      runContactTurn: async ({ tools }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', { prompt: 'Fix login' });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.send(assistant.id, {
+      messageID: 'client_no_project',
+      parts: [{ type: 'text', text: 'Fix login' }],
+    });
+    expect(creates).toEqual([]);
+    expect(prompts).toEqual([]);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.some((message) => message.parts.some((part) => part.type === 'card'))).toBe(false);
+    expect(page.messages.at(-1).text).toContain('Add a project in Settings');
+    expect(page.messages.at(-1).text).toContain('assistant-workspaces');
+    expect(page.messages.some((message) => message.role === 'peer')).toBe(false);
     service.close();
   });
 
