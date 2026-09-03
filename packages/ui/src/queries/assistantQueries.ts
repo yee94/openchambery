@@ -5,7 +5,7 @@ import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
-import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
+import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
 export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
@@ -205,7 +205,7 @@ export const sendAssistantContactMessage = async (assistantID: string, messageID
 export const appendAssistantContactCard = async (
   assistantID: string,
   card: Pick<AssistantContactSessionCardPart, 'sessionID' | 'directory'> & Partial<Pick<AssistantContactSessionCardPart, 'title' | 'status'>>,
-): Promise<AssistantContactSessionCardPart> => {
+): Promise<AssistantContactCardPart> => {
   const transport = getRuntimeTransportIdentity();
   const generation = getRuntimeGeneration();
   const result = parseAssistantContactCardAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/cards`, jsonInit('POST', { cardType: 'session', ...card })));
