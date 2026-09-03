@@ -156,22 +156,24 @@ test('millisecond eventVersion immediately supersedes a recovered small counter'
   assert.equal(shouldApply(6, 7), false);
 });
 
-test('live activity elapsed time uses the system timer interval and freezes to a fixed duration', async () => {
+test('live activity elapsed time uses the original compact TimelineView schedule', async () => {
   const visual = await source('ios/App/OpenChamberWidget/OpenChamberLiveActivity.swift');
   const elapsedView = visual.match(
     /private struct LiveActivityElapsedTime: View \{([\s\S]*?)\n\}\n\nprivate struct LiveActivityFreshness:/,
   );
 
   assert.ok(elapsedView, 'missing LiveActivityElapsedTime');
-  assert.match(elapsedView[1], /Text\(timerInterval: startDate\.\.\.upperBound, countsDown: false\)/);
-  assert.match(elapsedView[1], /startedAt \+ 8 \* 3600/);
-  assert.doesNotMatch(elapsedView[1], /distantFuture/);
-  assert.doesNotMatch(elapsedView[1], /style: \.timer/);
-  assert.doesNotMatch(elapsedView[1], /TimelineView/);
+  assert.match(visual, /private struct LiveActivityElapsedSchedule: TimelineSchedule/);
+  assert.match(elapsedView[1], /TimelineView\(LiveActivityElapsedSchedule\(startedAt: startDate\)\)/);
+  assert.match(elapsedView[1], /elapsedText\(at: frozenDate\)/);
+  assert.match(elapsedView[1], /Text\(verbatim: formatted\)/);
   assert.match(elapsedView[1], /private func formattedElapsed\(at date: Date\) -> String/);
   assert.match(elapsedView[1], /\\\(Int\(floor\(elapsed\)\)\)S"/);
   assert.match(elapsedView[1], /\\\(Int\(floor\(elapsed \/ 60\)\)\)M"/);
-  assert.match(elapsedView[1], /accessibilityValue\(Text\(verbatim: formattedElapsed\(at: frozenDate \?\? \.now\)\)\)/);
+  assert.match(elapsedView[1], /\.accessibilityValue\(Text\(verbatim: formatted\)\)/);
+  assert.doesNotMatch(visual, /timerInterval/);
+  assert.doesNotMatch(visual, /style: \.timer/);
+  assert.doesNotMatch(visual, /distantFuture/);
 });
 
 test('docs describe Live Activity APNs updates and user-dismiss semantics', async () => {
@@ -228,15 +230,10 @@ test('live activity sources keep OpenChamber branding and never log session or t
   assert.match(visual, /struct OpenChamberLiveActivity: Widget/);
   assert.match(visual, /ActivityConfiguration\(for: OpenChamberActivityAttributes\.self\)/);
   assert.match(visual, /accessibilityLabel\(Text\("Open session"\)\)/);
-  assert.match(visual, /Text\(timerInterval: startDate\.\.\.upperBound, countsDown: false\)/);
-  assert.doesNotMatch(visual, /distantFuture/);
+  assert.match(visual, /private struct LiveActivityElapsedSchedule: TimelineSchedule/);
+  assert.match(visual, /TimelineView\(LiveActivityElapsedSchedule\(startedAt: startDate\)\)/);
+  assert.doesNotMatch(visual, /timerInterval/);
   assert.doesNotMatch(visual, /style: \.timer/);
-  assert.match(visual, /private func formattedElapsed\(at date: Date\) -> String/);
-  assert.match(visual, /\\\(Int\(floor\(elapsed\)\)\)S"/);
-  assert.match(visual, /\\\(Int\(floor\(elapsed \/ 60\)\)\)M"/);
-  assert.match(visual, /\.accessibilityValue\(Text\(verbatim: formattedElapsed\(at: frozenDate \?\? \.now\)\)\)/);
-  assert.match(visual, /startedAt \+ 8 \* 3600/);
-  assert.doesNotMatch(visual, /LiveActivityElapsedSchedule/);
-  assert.doesNotMatch(visual, /TimelineView\(LiveActivityElapsedSchedule/);
+  assert.doesNotMatch(visual, /distantFuture/);
   assert.doesNotMatch(visual, /configurationDisplayName\("OpenCode"\)/);
 });

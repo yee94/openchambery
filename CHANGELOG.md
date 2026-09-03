@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.3-beta.9] - 2026-09-03
+
+### 移动端
+
+- 回退 iOS Live Activity 计时视图到能正常显示内容的实现，修复锁屏黑卡。
+
 ## [1.19.3-beta.8] - 2026-09-03
 
 ### 移动端
