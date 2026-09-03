@@ -1,7 +1,6 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
 import { Icon } from '@/components/icon/Icon'
-import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
 import { isIPadApp } from '@/lib/platform'
 import { useMobileAppActions } from '@/apps/mobileAppContext'
@@ -31,11 +30,21 @@ export const AssistantAssistantCard: React.FC<AssistantAssistantCardProps> = ({ 
     openAssistant(card.assistantID)
   })
 
+  const onActivateKeyDown = useEvent((event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    openContact()
+  })
+
   return (
     <article
-      className="w-full max-w-md rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3.5 py-3"
+      className="w-full max-w-md cursor-pointer rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-interactive-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+      role="button"
+      tabIndex={0}
       aria-label={t('assistants.contact.card.assistant.aria', { name: title })}
       data-assistant-contact-card="assistant"
+      onClick={openContact}
+      onKeyDown={onActivateKeyDown}
     >
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
@@ -47,11 +56,6 @@ export const AssistantAssistantCard: React.FC<AssistantAssistantCardProps> = ({ 
             <p className="mt-1 truncate typography-micro text-muted-foreground">{metadata.join(' · ')}</p>
           ) : null}
         </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" size="sm" onClick={openContact}>
-          {t('assistants.contact.card.assistant.open')}
-        </Button>
       </div>
     </article>
   )

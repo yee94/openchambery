@@ -1,7 +1,6 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
 import { Icon } from '@/components/icon/Icon'
-import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
 import type { AssistantContactScheduleCardPart } from '@/queries/assistantQueries'
 import { useUIStore } from '@/stores/useUIStore'
@@ -23,12 +22,21 @@ export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ ca
     useUIStore.getState().setActiveMainTab('schedule')
     useUIStore.getState().setScheduledTasksDialogOpen(true)
   })
+  const onActivateKeyDown = useEvent((event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    openSchedule()
+  })
 
   return (
     <article
-      className="w-full max-w-md rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3.5 py-3"
+      className="w-full max-w-md cursor-pointer rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-interactive-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+      role="button"
+      tabIndex={0}
       aria-label={t('assistants.contact.card.schedule.aria', { name: title })}
       data-assistant-contact-card="schedule"
+      onClick={openSchedule}
+      onKeyDown={onActivateKeyDown}
     >
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-foreground">
@@ -40,11 +48,6 @@ export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ ca
             <p className="mt-1 truncate typography-micro text-muted-foreground">{metadata.join(' · ')}</p>
           ) : null}
         </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" size="sm" onClick={openSchedule}>
-          {t('assistants.contact.card.schedule.open')}
-        </Button>
       </div>
     </article>
   )

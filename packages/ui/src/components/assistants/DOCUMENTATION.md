@@ -7,11 +7,11 @@ The Assistant conversation is a Grok-like **contact**, not an OpenCode coding ag
 **Session cards (this PR)**
 
 - Cards are first-class in-transcript UI (`type: 'card'`, `cardType` `session` | `assistant` | `schedule`), not markdown links and not Activity/tool rows.
-- A session card shows title, a status chip (`Working` / `完成` / `失败` / `需要你`), metadata (branch / session id / directory), and a primary button that opens the session through `openSessionWithFeedback` (phone: `openSession`; desktop: `setActiveMainTab('chat')` + `setCurrentSession` / `/session/$id`).
+- A session card shows title, a status chip (`Working` / `完成` / `失败` / `需要你`), and metadata (branch / session id / directory). The whole card is the hit target and opens the session through `openSessionWithFeedback` (phone: `openSession`; desktop: `setActiveMainTab('chat')` + `setCurrentSession` / `/session/$id`). No visible CTA button.
 - Assigned-session finish/error/question (SSE, session-goal settle, or boot/60s poll of in-flight watches) updates **that same card** plus a settle bubble. The UI does not invent a second status banner. The worker session stays visible in Chat.
 - Cards persist in the OpenChamber-owned contact transcript (SQLite) and survive reload.
 - The card slot is extensible. Later project / worktree / watch cards reuse `cardType`. Do not invent a second card system.
-- Cards are **assistant-emitted UI** (Grok-Bot style: title, status chip, metadata, primary open button). The user never types `/card`. Insert: `assign_session` / `create_assistant` / `schedule_task` auto-cards, and API `POST /api/openchamber/assistants/:id/contact/cards` for harness/tests.
+- Cards are **assistant-emitted UI** (Grok-Bot style: title, status chip, metadata). The whole card is the hit target. The user never types `/card`. Insert: `assign_session` / `create_assistant` / `schedule_task` auto-cards, and API `POST /api/openchamber/assistants/:id/contact/cards` for harness/tests.
 - Assistant cards open that contact (`openAssistant`). Schedule cards open Scheduled Tasks. Session cards still open the worker session.
 
 **Inter-assistant DM (this PR, read-only)**
