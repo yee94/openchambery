@@ -431,8 +431,11 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('thinkingLevel');
     expect(promptComposer).toContain('data-composer-send="true"');
     expect(promptComposer).toContain('data-composer-circle={sendReady ? \'true\' : undefined}');
+    expect(promptComposer).toContain('data-composer-circle="true"');
     expect(promptComposer).toContain('<SendCircleIcon');
+    expect(promptComposer).toContain('spinning={pending}');
     expect(promptComposer).toContain("name={pending ? 'loader-4' : 'send-plane-2'}");
+    expect(promptComposer).toContain('const defaultRightControls = inline ? inlineRightControls : stackedRightControls');
     expect(promptComposer).toContain('disabled={disabled || pending || !hasContent}');
     expect(promptComposer).toContain('disabled={disabled || (pending && disableInputWhilePending)}');
     expect(promptComposer).toContain("data-chat-input=\"true\"");

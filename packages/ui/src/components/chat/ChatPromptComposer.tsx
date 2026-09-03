@@ -163,7 +163,8 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
     </>
   ) : null;
   const sendReady = !disabled && !pending && hasContent;
-  const defaultRightControls = pending && onStop ? (
+  const circleGlyphClass = isMobile ? 'size-6' : 'size-full';
+  const stackedRightControls = pending && onStop ? (
     <button
       type="button"
       data-composer-stop="true"
@@ -171,7 +172,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
       onClick={onStop}
       aria-label={stopLabel}
     >
-      <StopIcon className={isMobile ? 'size-6' : 'size-full'} />
+      <StopIcon className={circleGlyphClass} />
     </button>
   ) : (
     <button
@@ -188,12 +189,39 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
       aria-label={sendLabel}
     >
       {sendReady ? (
-        <SendCircleIcon className={isMobile ? 'size-6' : 'size-full'} />
+        <SendCircleIcon className={circleGlyphClass} />
       ) : (
         <Icon name={pending ? 'loader-4' : 'send-plane-2'} className={cn('size-4', pending && 'animate-spin')} />
       )}
     </button>
   );
+  const inlineRightControls = pending && onStop ? (
+    <button
+      type="button"
+      data-composer-stop="true"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full outline-none hover:opacity-80"
+      onClick={onStop}
+      aria-label={stopLabel}
+    >
+      <StopIcon className={circleGlyphClass} />
+    </button>
+  ) : (
+    <button
+      type="submit"
+      data-composer-send="true"
+      data-composer-circle="true"
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center rounded-full outline-none',
+        sendReady ? 'hover:opacity-80' : 'cursor-not-allowed opacity-30',
+      )}
+      disabled={disabled || pending || !hasContent}
+      aria-busy={pending || undefined}
+      aria-label={sendLabel}
+    >
+      <SendCircleIcon className={circleGlyphClass} spinning={pending} />
+    </button>
+  );
+  const defaultRightControls = inline ? inlineRightControls : stackedRightControls;
 
   return (
     <ChatComposerSurface className={className} expanded={expanded} {...surfaceProps}>
