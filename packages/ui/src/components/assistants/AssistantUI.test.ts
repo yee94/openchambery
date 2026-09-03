@@ -270,7 +270,7 @@ describe('Assistant UI product contract', () => {
   });
 
   test('hosts a contact transcript with session cards and peer DMs, not ChatContainer', async () => {
-    const [view, conversation, card, chatContainer, chatInput, promptComposer, host] = await Promise.all([
+    const [view, conversation, card, chatContainer, chatInput, promptComposer, host, english] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
       read('AssistantSessionCard.tsx'),
@@ -278,6 +278,7 @@ describe('Assistant UI product contract', () => {
       read('../chat/ChatInput.tsx'),
       read('../chat/ChatPromptComposer.tsx'),
       read('../chat/chatContainerHost.ts'),
+      read('../../lib/i18n/messages/en.settings.ts'),
     ]);
     expect(view).not.toContain('SimpleMarkdownRenderer');
     expect(view).not.toContain('assistants.topics');
@@ -294,6 +295,15 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain("data-assistant-contact-role={message.role}");
     expect(conversation).toContain("message.role === 'peer'");
     expect(conversation).toContain('deliverAssistantContactDm');
+    expect(conversation).toContain('assistants.contact.composerHint');
+    expect(english).toContain('/card <sessionID> [title]');
+    expect(english).toContain('/dm <assistantID> <text>');
+    expect(english).not.toContain('/card Optional title');
+    expect(english).not.toContain('/dm hello');
+    expect(conversation).not.toContain('EventSource');
+    expect(conversation).not.toContain('text/event-stream');
+    expect(conversation).not.toContain('stream: true');
+    expect(conversation).not.toContain('activeStreamingMessageId');
     expect(card).toContain('openSessionWithFeedback');
     expect(card).toContain('phoneShell: isPhoneShell');
     expect(card).toContain('card.sessionID');

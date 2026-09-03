@@ -78,8 +78,9 @@ const assistantMessage = (model, text, stopReason, errorMessage) => ({
 });
 
 /**
- * streamFn for pi-agent-core. Calls OpenChamber's OpenAI-shaped completions
- * function (the same module as POST /api/openchamber/llm/chat/completions).
+ * streamFn for pi-agent-core. Calls OpenChamber's non-streaming completions
+ * function (POST /api/openchamber/llm/chat/completions, stream omitted).
+ * Replays the completed text as one Agent event burst — not token SSE.
  * Must not throw — encode failures on the event stream.
  */
 export function createContactStreamFn(createChatCompletion) {

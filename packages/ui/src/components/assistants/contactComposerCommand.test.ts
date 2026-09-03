@@ -30,6 +30,12 @@ describe('parseContactComposerInput', () => {
     })
   })
 
+  test('does not treat /card without a sessionID or /dm without a target as insert commands', () => {
+    expect(parseContactComposerInput('/card')).toEqual({ kind: 'send', text: '/card' })
+    expect(parseContactComposerInput('/dm hello')).toEqual({ kind: 'send', text: '/dm hello' })
+    expect(parseContactComposerInput('/dm asst_b')).toEqual({ kind: 'send', text: '/dm asst_b' })
+  })
+
   test('returns null for blank input', () => {
     expect(parseContactComposerInput('   ')).toBeNull()
   })

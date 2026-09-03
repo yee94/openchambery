@@ -44,16 +44,6 @@ export function toOpenAICompletion({ id, model, text, created = Math.floor(Date.
   };
 }
 
-export function toOpenAIChunk({ id, model, delta, finishReason = null, created = Math.floor(Date.now() / 1000) }) {
-  return {
-    id,
-    object: 'chat.completion.chunk',
-    created,
-    model,
-    choices: [{ index: 0, delta, finish_reason: finishReason }],
-  };
-}
-
 /**
  * OpenAI-shaped completions against OpenCode's already-connected providers.
  */
@@ -68,6 +58,16 @@ export async function createChatCompletion({
   fetchImpl,
 }) {
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
+  // Bundled OpenCode 1.18.4 generate is a full-turn JSON reply (sessionless
+  // generate or throwaway session.prompt). This gateway does not token-stream.
+  // Do not emit fake SSE after the fact.
+  if (body.stream === true) {
+    throw new LlmError(
+      'validation_error',
+      400,
+      'This gateway is non-streaming; omit stream or set stream:false',
+    );
+  }
   const resolved = parseModelRef(body.model, body.providerID, body.modelID);
   if (!resolved) throw new LlmError('validation_error', 400, 'model or providerID/modelID is required');
   const messages = normalizeMessages(body.messages);

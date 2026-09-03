@@ -229,6 +229,9 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             {t('assistants.contact.send')}
           </Button>
         </div>
+        <p className="mx-auto mt-2 max-w-2xl typography-micro text-muted-foreground">
+          {t('assistants.contact.composerHint')}
+        </p>
       </div>
     </div>
   )

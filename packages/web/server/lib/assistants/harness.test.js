@@ -19,6 +19,7 @@ describe('createContactStreamFn', () => {
         messages: expect.any(Array),
       }),
     }))
+    expect(createChatCompletion.mock.calls[0][0].body.stream).toBeUndefined()
     expect(events.some((event) => event.type === 'text_delta' && event.delta === 'Hi')).toBe(true)
     expect(events.at(-1).type).toBe('done')
   })

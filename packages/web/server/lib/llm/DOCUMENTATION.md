@@ -9,8 +9,12 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
   from OpenCode `GET /provider` (`connected`) plus `GET /config/providers`.
   Plugin adapter formats stay inside OpenCode; this route does not parse them.
 - `POST /api/openchamber/llm/chat/completions` — `{ model, messages, stream?,
-  providerID?, modelID? }` → OpenAI `chat.completion` (or SSE chunks when
-  `stream: true`).
+  providerID?, modelID? }` → OpenAI `chat.completion` JSON.
+  This gateway is **non-streaming**. Bundled OpenCode 1.18.4 generate
+  (`POST /generate` when present, otherwise throwaway `session.prompt`)
+  returns a full assistant turn. `stream: true` is rejected with
+  `validation_error` (HTTP 400). Do not emit fake SSE after the fact.
+  The contact UI waits for the completed turn; it does not typewrite tokens.
 
 `model` may be `providerID/modelID` or a bare `modelID` paired with `providerID`.
 

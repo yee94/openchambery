@@ -1,4 +1,4 @@
-import { createChatCompletion, LlmError, toOpenAIChunk } from './completions.js';
+import { createChatCompletion, LlmError } from './completions.js';
 import { loadConnectedCatalog } from './catalog.js';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { ensureLlmTempDirectory } from './temp-directory.js';
@@ -40,19 +40,6 @@ export const registerLlmRoutes = (app, dependencies) => {
         ensureTempDirectory: ensureLlmTempDirectory,
       }))
       .then(({ completion }) => {
-        if (req.body?.stream === true) {
-          res.status(200);
-          res.setHeader('Content-Type', 'text/event-stream');
-          res.setHeader('Cache-Control', 'no-cache');
-          const id = completion.id;
-          const model = completion.model;
-          const text = completion.choices[0]?.message?.content || '';
-          res.write(`data: ${JSON.stringify(toOpenAIChunk({ id, model, delta: { role: 'assistant', content: text } }))}\n\n`);
-          res.write(`data: ${JSON.stringify(toOpenAIChunk({ id, model, delta: {}, finishReason: 'stop' }))}\n\n`);
-          res.write('data: [DONE]\n\n');
-          res.end();
-          return;
-        }
         res.status(200).json(completion);
       })
       .catch((error) => fail(res, error));

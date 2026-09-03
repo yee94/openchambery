@@ -15,6 +15,23 @@ describe('createChatCompletion', () => {
     expect(generateText).not.toHaveBeenCalled()
   })
 
+  it('rejects stream:true instead of faking SSE after a full generate', async () => {
+    const generateText = vi.fn()
+    await expect(createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({
+        models: [{ providerID: 'openai', modelID: 'gpt-5.2' }],
+        connected: ['openai'],
+      }),
+      body: {
+        model: 'openai/gpt-5.2',
+        stream: true,
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    })).rejects.toMatchObject({ code: 'validation_error', statusCode: 400 })
+    expect(generateText).not.toHaveBeenCalled()
+  })
+
   it('returns a non-stream completion from generateText', async () => {
     const generateText = vi.fn(async () => ({ text: 'done', source: 'throwaway-session' }))
     const result = await createChatCompletion({
