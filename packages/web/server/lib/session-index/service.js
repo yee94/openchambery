@@ -56,7 +56,9 @@ const toSummary = (session, fallbackDirectory) => {
   if (!session || !isVisibleSession(session) || typeof session.id !== 'string' || !session.id) return null;
   const directory = normalizeDirectory(session.directory ?? session.project?.worktree ?? fallbackDirectory);
   if (!directory) return null;
-  const assistant = session.metadata?.openchamber?.assistant;
+  const openchamber = session.metadata?.openchamber;
+  const assistant = openchamber?.assistant;
+  const hideAssistantMarker = isContactAssignedSession(openchamber);
   return {
     id: session.id,
     directory,
@@ -67,8 +69,8 @@ const toSummary = (session, fallbackDirectory) => {
     archivedAt: toTimestamp(session.time?.archived),
     parentID: typeof session.parentID === 'string' ? session.parentID : null,
     hasChildren: typeof session.hasChildren === 'boolean' ? session.hasChildren : null,
-    assistantID: typeof assistant?.assistantID === 'string' ? assistant.assistantID : null,
-    assistantName: typeof assistant?.name === 'string' ? assistant.name : null,
+    assistantID: hideAssistantMarker || typeof assistant?.assistantID !== 'string' ? null : assistant.assistantID,
+    assistantName: hideAssistantMarker || typeof assistant?.name !== 'string' ? null : assistant.name,
   };
 };
 
