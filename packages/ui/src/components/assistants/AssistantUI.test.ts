@@ -294,6 +294,25 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<StatusRowContainer');
     expect(conversation).not.toContain('<TimelineDialog');
     expect(conversation).not.toContain('<ChatInput');
+    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).toContain('data-assistant-contact-composer');
+    expect(conversation).toContain('data-assistant-contact-composer-surface');
+    expect(conversation).toContain('sendLabel={t(\'assistants.contact.send\')}');
+    expect(conversation).toContain('pending={sending}');
+    expect(conversation).toContain('isMobile={isMobile}');
+    expect(conversation).toContain('oc-mobile-composer-surface');
+    expect(conversation).toContain('chat-input-column');
+    expect(conversation).toContain("borderRadius: '1.5rem'");
+    expect(conversation).toContain('bottom-safe-area oc-mobile-composer');
+    expect(conversation).toContain("event.preventDefault()");
+    expect(conversation).toContain("'aria-label': t('assistants.contact.placeholder'");
+    expect(conversation).not.toContain('onAddFiles');
+    expect(conversation).not.toContain('leftControls');
+    expect(conversation).not.toContain('footerContent');
+    expect(conversation).not.toContain('<MemoModelControls');
+    expect(conversation).not.toContain('<CommandAutocomplete');
+    expect(conversation).not.toContain('<Button');
+    expect(conversation).not.toContain('<Textarea');
     expect(conversation).toContain('<AssistantSessionCard');
     expect(conversation).toContain('<AssistantAssistantCard');
     expect(conversation).toContain('<AssistantScheduleCard');
@@ -391,6 +410,31 @@ describe('Assistant UI product contract', () => {
     // Optimistic ticket owns the message ID when present; the draft send falls back to its pinned ID.
     expect(chatInput).toContain('? { messageID: optimisticTicket.messageID, ticket: optimisticTicket }');
     expect(chatInput).toContain('? { messageID: draftMessageID }');
+  });
+
+  test('reuses ChatPromptComposer send/focus chrome as a contact message box', async () => {
+    const [conversation, promptComposer, surface] = await Promise.all([
+      read('AssistantConversationSurface.tsx'),
+      read('../chat/ChatPromptComposer.tsx'),
+      read('../chat/ChatComposerSurface.tsx'),
+    ]);
+    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).not.toContain('<ChatInput');
+    expect(conversation).not.toContain('onAddFiles');
+    expect(conversation).not.toContain('onStop');
+    expect(conversation).not.toContain('thinkingLevel');
+    expect(promptComposer).toContain('data-composer-send="true"');
+    expect(promptComposer).toContain('data-composer-circle={sendReady ? \'true\' : undefined}');
+    expect(promptComposer).toContain('<SendCircleIcon');
+    expect(promptComposer).toContain("name={pending ? 'loader-4' : 'send-plane-2'}");
+    expect(promptComposer).toContain('disabled={disabled || pending || !hasContent}');
+    expect(promptComposer).toContain('disabled={disabled || (pending && disableInputWhilePending)}');
+    expect(promptComposer).toContain("data-chat-input=\"true\"");
+    expect(promptComposer).toContain('isIMECompositionEvent');
+    expect(surface).toContain("borderRadius: 'var(--radius-xl)'");
+    expect(surface).toContain("backgroundColor: 'var(--surface-subtle)'");
+    expect(surface).toContain('focus-within:ring-primary/50');
+    expect(conversation).toContain("borderRadius: '1.5rem'");
   });
 
   test('keeps /card and /dm out of every locale dictionary — cards are assistant-emitted', async () => {

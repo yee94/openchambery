@@ -1,12 +1,12 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
+import { ChatPromptComposer } from '@/components/chat/ChatPromptComposer'
 import { Icon } from '@/components/icon/Icon'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/lib/i18n'
 import { createUuid } from '@/lib/uuid'
 import { cn } from '@/lib/utils'
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
+import { useUIStore } from '@/stores/useUIStore'
 import {
   sendAssistantContactMessage,
   useAssistantCapabilityQuery,
@@ -50,6 +50,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   active,
 }) => {
   const { t } = useI18n()
+  const isMobile = useUIStore((state) => state.isMobile)
   const capabilityQuery = useAssistantCapabilityQuery()
   const snapshotQuery = useAssistantSnapshotQuery()
   const contactQuery = useAssistantContactMessagesQuery(assistant.id, active)
@@ -110,13 +111,6 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     } finally {
       setSending(false)
       setContactSending(assistant.id, false)
-    }
-  })
-
-  const onKeyDown = useEvent((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault()
-      void submit()
     }
   })
 
@@ -215,29 +209,41 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           </div>
         )}
       </div>
-      <div className="shrink-0 border-t border-border/40 px-4 py-3 sm:px-6">
-        {sendError ? <p className="mb-2 typography-micro text-[var(--status-error)]">{sendError}</p> : null}
-        <div className="mx-auto flex w-full max-w-2xl items-end gap-2">
-          <Textarea
-            simple
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            disabled={sending}
-            placeholder={t('assistants.contact.placeholder', { name: displayName })}
-            aria-label={t('assistants.contact.placeholder', { name: displayName })}
-            className="min-h-11 max-h-36 flex-1 resize-none rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3 py-2"
-          />
-          <Button
-            type="button"
-            size="sm"
-            disabled={sending || !draft.trim()}
-            onClick={() => { void submit() }}
-          >
-            {t('assistants.contact.send')}
-          </Button>
-        </div>
-      </div>
+      <footer
+        className="relative z-10 shrink-0 bg-background"
+        data-assistant-contact-composer=""
+      >
+        {sendError ? (
+          <p className="chat-input-column mb-2 typography-micro text-[var(--status-error)]">{sendError}</p>
+        ) : null}
+        <form
+          className={cn('relative w-full pt-1.5 pb-4', isMobile && 'bottom-safe-area oc-mobile-composer')}
+          onSubmit={(event) => {
+            event.preventDefault()
+            void submit()
+          }}
+        >
+          <div className="chat-input-column relative overflow-visible">
+            <ChatPromptComposer
+              value={draft}
+              pending={sending}
+              isMobile={isMobile}
+              placeholder={t('assistants.contact.placeholder', { name: displayName })}
+              sendLabel={t('assistants.contact.send')}
+              onChange={(value) => setDraft(value)}
+              onSubmit={() => {
+                void submit()
+              }}
+              className={cn('relative z-10', isMobile && 'oc-mobile-composer-surface')}
+              style={{ borderRadius: '1.5rem' }}
+              data-assistant-contact-composer-surface=""
+              textareaProps={{
+                'aria-label': t('assistants.contact.placeholder', { name: displayName }),
+              }}
+            />
+          </div>
+        </form>
+      </footer>
     </div>
   )
 }
