@@ -5,8 +5,8 @@ import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
-import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
-export type { AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
+import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactPage, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
+export type { AssistantContactCardAdmission, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
 export interface AssistantDraft { enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant?: string | null; mode: AssistantMode; }
@@ -17,6 +17,7 @@ const key = {
   snapshot: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'snapshot'] as const,
   capability: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'capability'] as const,
   history: (assistantID: string, sessionID: string, sessionGeneration: number, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'history', assistantID, sessionID, sessionGeneration] as const,
+  contact: (assistantID: string, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'contact', assistantID] as const,
 };
 
 /**
@@ -135,6 +136,41 @@ export const useAssistantHistoryInfiniteQuery = (
   ...assistantHistoryInfiniteQueryOptions(assistantID, binding.sessionID ?? '', binding.sessionGeneration),
   enabled: enabled && Boolean(assistantID && binding.sessionID),
 });
+export const assistantContactQueryOptions = (
+  assistantID: string,
+  transport = getRuntimeTransportIdentity(),
+  runtimeGeneration = getRuntimeGeneration(),
+) => ({
+  queryKey: key.contact(assistantID, transport, runtimeGeneration),
+  queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    assertCurrent(transport, runtimeGeneration);
+    await waitForSessionStartupBarrier();
+    assertCurrent(transport, runtimeGeneration);
+    const page = parseAssistantContactPage(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/messages?limit=100`, { signal }));
+    assertCurrent(transport, runtimeGeneration);
+    return page;
+  },
+  retry: 2,
+});
+export const useAssistantContactMessagesQuery = (assistantID: string, enabled = true) => {
+  const transport = getRuntimeTransportIdentity();
+  const runtimeGeneration = getRuntimeGeneration();
+  const query = useQuery({
+    ...assistantContactQueryOptions(assistantID, transport, runtimeGeneration),
+    enabled: enabled && Boolean(assistantID),
+  });
+  React.useEffect(() => subscribeOpenchamberEvents((event) => {
+    if (getRuntimeTransportIdentity() !== transport) return;
+    if (event.type !== 'assistants-changed' && event.type !== 'event-stream-ready') return;
+    void queryClient.invalidateQueries({ queryKey: key.contact(assistantID, transport, runtimeGeneration), exact: true });
+  }), [assistantID, runtimeGeneration, transport]);
+  return query;
+};
+const invalidateContact = (assistantID: string, transport = getRuntimeTransportIdentity()) => {
+  void queryClient.invalidateQueries({
+    queryKey: [transport, getRuntimeGeneration(), 'assistants', 'contact', assistantID],
+  });
+};
 export const fetchAssistantSnapshot = async (signal: AbortSignal): Promise<AssistantSnapshot> => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal }));
 export const assistantCapabilityQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: key.capability(transport), queryFn: () => fetchAssistantCapability(), retry: false });
 export const useAssistantCapabilityQuery = () => useQuery(assistantCapabilityQueryOptions());
@@ -156,7 +192,38 @@ export const ensureAssistantSession = async (assistantID: string): Promise<Sessi
 export const newAssistantSession = async (assistantID: string): Promise<SessionBinding> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const binding = parseSessionBinding(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/new`, jsonInit('POST'))); assertCurrent(transport, generation); applyBinding(assistantID, binding, transport); return binding; };
 export const compactAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<CompactResponse> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseCompactResponse(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/compact`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); return result; };
 export const abortAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<void> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/abort`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration })); assertCurrent(transport, generation); };
-export const sendAssistantMessage = async (assistantID: string, binding: SessionBinding, messageID: string, parts: AssistantPart[], source: AssistantSource = 'composer'): Promise<MessageAdmission> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); return result; };
+export const sendAssistantMessage = async (assistantID: string, binding: SessionBinding, messageID: string, parts: AssistantPart[], source: AssistantSource = 'composer'): Promise<MessageAdmission> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); invalidateContact(assistantID, transport); return result; };
+export const sendAssistantContactMessage = async (assistantID: string, messageID: string, text: string): Promise<MessageAdmission> => {
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { messageID, parts: [{ type: 'text', text }] })));
+  assertCurrent(transport, generation);
+  applyBinding(assistantID, result.binding, transport);
+  invalidateContact(assistantID, transport);
+  return result;
+};
+export const appendAssistantContactCard = async (
+  assistantID: string,
+  card: Pick<AssistantContactSessionCardPart, 'sessionID' | 'directory'> & Partial<Pick<AssistantContactSessionCardPart, 'title' | 'status'>>,
+): Promise<AssistantContactSessionCardPart> => {
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  const result = parseAssistantContactCardAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/cards`, jsonInit('POST', { cardType: 'session', ...card })));
+  assertCurrent(transport, generation);
+  invalidateContact(assistantID, transport);
+  return result.card;
+};
+export const deliverAssistantContactDm = async (
+  fromAssistantID: string,
+  input: { toAssistantID: string; text?: string; parts?: Array<{ type: 'text'; text: string } | AssistantContactSessionCardPart> },
+): Promise<AssistantContactPeerAdmission> => {
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  const result = parseAssistantContactPeerAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(fromAssistantID)}/contact/dm`, jsonInit('POST', input)));
+  assertCurrent(transport, generation);
+  invalidateContact(result.toAssistantID, transport);
+  return result;
+};
 export const sendAssistantShare = async (assistantID: string, operationID: string, messageID: string, parts: AssistantPart[], source: Exclude<AssistantSource, 'composer'>): Promise<ShareOperation> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const operation = parseShareOperation(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/share`, jsonInit('POST', { operationID, payload: { messageID, parts, source } }))); assertCurrent(transport, generation); return operation; };
 export const fetchAssistantShareOperation = async (operationID: string, transport = getRuntimeTransportIdentity(), generation = getRuntimeGeneration()): Promise<ShareOperation> => { assertCurrent(transport, generation); const operation = parseShareOperation(await requestJSON<unknown>(`/api/openchamber/assistants/share-operations/${encodeURIComponent(operationID)}`)); assertCurrent(transport, generation); return operation; };
 export const waitForAssistantShare = async (operation: ShareOperation, transport = getRuntimeTransportIdentity(), generation = getRuntimeGeneration()): Promise<ShareOperation> => { let current = operation; for (let attempt = 0; attempt < 60 && (current.state === 'running' || current.state === 'submitting'); attempt += 1) { assertCurrent(transport, generation); await new Promise((resolve) => setTimeout(resolve, 750)); current = await fetchAssistantShareOperation(current.operationID, transport, generation); } assertCurrent(transport, generation); if (current.state === 'completed') return current; if (current.state === 'failed') throw new AssistantShareOperationError(current.errorCode ?? 'share_failed', 400, current); throw new AssistantShareOperationError('share_unresolved', 408, current); };

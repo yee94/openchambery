@@ -164,6 +164,9 @@ describe('Assistant query contract', () => {
     expect(source).toContain('payload: { messageID, parts, source }');
     expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }');
     expect(source).toContain('waitForSessionStartupBarrier');
+    expect(source).toContain('/contact/messages');
+    expect(source).toContain('/contact/cards');
+    expect(source).toContain('/contact/dm');
   });
 
   test('keys paged Assistant history by transport, Assistant, and binding', async () => {

@@ -1,169 +1,235 @@
-import React from 'react';
-import { ChatContainer } from '@/components/chat/ChatContainer';
-import { flattenAssistantHistoryPages } from '@/components/chat/hostedSessionHistory';
-import type { ChatContainerHost } from '@/components/chat/chatContainerHost';
-import type { ChatInputSecondarySurface } from '@/components/chat/chatInputSurface';
-import { PRIMARY_SESSION_SURFACE_CAPABILITIES, type SessionSurfaceMessageEditSnapshot } from '@/components/chat/SessionSurfaceContext';
-import type { AssistantDTO } from '@/queries/assistantQueries';
-import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
-import { useEvent } from '@reactuses/core';
-import { useMobileAppActions } from '@/apps/mobileAppContext';
-import { useDeviceInfo } from '@/lib/device';
-import { isVSCodeRuntime } from '@/lib/desktop';
-import { isIPadApp } from '@/lib/platform';
-import { useI18n } from '@/lib/i18n';
-import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
-import { useUIStore } from '@/stores/useUIStore';
+import React from 'react'
+import { useEvent } from '@reactuses/core'
+import { AgentAvatar } from '@/components/chat/AgentAvatar'
+import { Icon } from '@/components/icon/Icon'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { useI18n } from '@/lib/i18n'
+import { createUuid } from '@/lib/uuid'
+import { cn } from '@/lib/utils'
+import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
+import { findSessionById } from '@/router/sessionLookup'
 import {
-  notifySessionOpenFailed,
-  openSessionWithFeedback,
-} from '@/sync/openSessionWithFeedback';
-import { resolveAssistantNestedOpenMode } from './assistantNestedSession';
+  appendAssistantContactCard,
+  deliverAssistantContactDm,
+  sendAssistantContactMessage,
+  useAssistantCapabilityQuery,
+  useAssistantContactMessagesQuery,
+  useAssistantSnapshotQuery,
+  type AssistantDTO,
+} from '@/queries/assistantQueries'
+import { AssistantAPIError } from '@/queries/assistantDTO'
+import { getAssistantPresentation } from './assistantPresentation'
+import { AssistantSessionCard } from './AssistantSessionCard'
+import { parseContactComposerInput } from './contactComposerCommand'
 
 type AssistantConversationSurfaceProps = {
-  assistant: AssistantDTO;
-  sessionID: string;
-  warning?: string | null;
-  surface: ChatInputSecondarySurface;
-  onRevertMessage: (messageId: string) => Promise<void>;
-  onEditMessage?: (messageId: string, snapshot: SessionSurfaceMessageEditSnapshot) => Promise<void>;
-  pendingUserMessages: readonly PendingUserMessagePresentation[];
-  onPendingUserMessagesMaterialized: (messageIDs: readonly string[]) => void;
-};
+  assistant: AssistantDTO
+  warning?: string | null
+  active: boolean
+}
 
 /**
- * Assistant transcript + composer host.
- * Renders the shared ChatContainer shell (MessageList, StatusRow, Q/P cards,
- * timeline, auto-follow) with an injected secondary composer surface. Assistant
- * keeps list/selection/binding ownership in AssistantView; it does not fork the
- * session transcript rendering tree.
+ * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
+ * first-class session cards — not ChatContainer, Activity, or markdown links.
+ *
+ * TODO(next-slice): worktree/branch assign, inbound unsolicited user pushes,
+ * and full summon-to-work MUST use this transcript: cards for work, peer DMs
+ * for read-only coordination. Do not invent a second inbox.
  */
 export const AssistantConversationSurface: React.FC<AssistantConversationSurfaceProps> = ({
   assistant,
-  sessionID,
   warning,
-  surface,
-  onRevertMessage,
-  onEditMessage,
-  pendingUserMessages,
-  onPendingUserMessagesMaterialized,
+  active,
 }) => {
-  const { t } = useI18n();
-  const { isMobile } = useDeviceInfo();
-  const directory = assistant.effectiveWorkspacePath;
-  const historyQuery = useAssistantHistoryInfiniteQuery(
-    assistant.id,
-    { sessionID, sessionGeneration: assistant.sessionGeneration },
-    surface.active,
-  );
-  const historyEntries = React.useMemo(
-    () => flattenAssistantHistoryPages(historyQuery.data?.pages ?? []),
-    [historyQuery.data?.pages],
-  );
-  const historyDirectories = React.useMemo(() => {
-    const directories = new Map<string, string | null>();
-    for (const entry of historyEntries) {
-      const previous = directories.get(entry.sessionID);
-      directories.set(entry.sessionID, previous === undefined || previous === entry.directory ? entry.directory : null);
+  const { t } = useI18n()
+  const capabilityQuery = useAssistantCapabilityQuery()
+  const snapshotQuery = useAssistantSnapshotQuery()
+  const contactQuery = useAssistantContactMessagesQuery(assistant.id, active)
+  const presentation = getAssistantPresentation(assistant.name)
+  const displayName = presentation.displayName || assistant.name
+  const peerName = (fromAssistantID: string | null, fromAssistantName: string | null) => {
+    const live = fromAssistantID
+      ? snapshotQuery.data?.assistants.find((item) => item.id === fromAssistantID)
+      : undefined
+    if (live) {
+      const livePresentation = getAssistantPresentation(live.name)
+      return livePresentation.displayName || live.name
     }
-    return directories;
-  }, [historyEntries]);
-  const fetchPreviousHistory = useEvent(async () => {
-    if (historyQuery.hasNextPage || historyQuery.isFetchNextPageError) {
-      await historyQuery.fetchNextPage();
-    }
-  });
-  // Stateless turns cannot rewrite history; keep continuous Assistants mutable.
-  const mutateSession = assistant.mode === 'continuous';
-  // Dedicated MobileApp (Capacitor phone + hosted H5 phone shell) owns chat as a
-  // secondary route. Detect it the same way ChatContainer does — not Capacitor alone.
-  const mobileActions = useMobileAppActions();
-  const isPhoneShell = Boolean(mobileActions && !isIPadApp());
-  const openLinkedSession = useEvent((targetSessionID: string, targetDirectory: string) => {
-    openSessionWithFeedback(targetSessionID, targetDirectory, {
-      phoneShell: isPhoneShell,
-      switchToChat: true,
-    });
-  });
-  const openSourceSession = useEvent((targetSessionID: string, targetDirectory: string) => {
-    const expectedDirectory = targetSessionID === sessionID ? directory : historyDirectories.get(targetSessionID);
-    // History entry must carry a stable workspace path. If missing or conflicting,
-    // fail visibly — never open under the wrong current project cwd.
-    if (!expectedDirectory || expectedDirectory !== targetDirectory) {
-      notifySessionOpenFailed(targetSessionID, 'missing-directory');
-      return;
-    }
-    // Leave the Assistant surface and continue the underlying OpenCode session in Chat.
-    // Phone shell (native or hosted H5): secondary chat route owns mounting.
-    openLinkedSession(targetSessionID, targetDirectory);
-  });
-  const navigateSession = useEvent((targetSessionID: string, targetDirectory: string) => {
-    const sessionId = targetSessionID.trim();
-    const targetDirectoryValue = targetDirectory.trim();
-    if (!sessionId) {
-      notifySessionOpenFailed(targetSessionID, 'missing-session-id');
-      return;
-    }
-    if (!targetDirectoryValue) {
-      notifySessionOpenFailed(sessionId, 'missing-directory');
-      return;
-    }
-    const mode = resolveAssistantNestedOpenMode({
-      isPhoneShell,
-      isMobile,
-      isIPad: isIPadApp(),
-      isVSCode: isVSCodeRuntime(),
-    });
-    if (mode === 'session') {
-      openLinkedSession(sessionId, targetDirectoryValue);
-      return;
-    }
-    useUIStore.getState().openContextPanelTab(targetDirectoryValue, {
-      mode: 'chat',
-      dedupeKey: `session:${sessionId}`,
-      label: t('contextPanel.mode.chat'),
-      readOnly: true,
-    });
-  });
-  const sessionSurface = React.useMemo(() => ({
-    kind: 'embedded' as const,
-    surfaceId: surface.surfaceID,
-    sessionId: sessionID,
-    directory,
-    active: surface.active,
-    capabilities: {
-      ...PRIMARY_SESSION_SURFACE_CAPABILITIES,
-      forkSession: false,
-      mutateSession,
-    },
-    navigateSession,
-    onRevertMessage,
-    // Continuous Assistants stage edits into surfaceDraftKey; history segments are read-only via MessageList.
-    ...(onEditMessage ? { onEditMessage } : {}),
-    openSourceSession,
-  }), [directory, mutateSession, navigateSession, onEditMessage, onRevertMessage, openSourceSession, sessionID, surface.active, surface.surfaceID]);
+    return fromAssistantName || t('assistants.contact.peer.unknown')
+  }
+  const [draft, setDraft] = React.useState('')
+  const [sending, setSending] = React.useState(false)
+  const [sendError, setSendError] = React.useState<string | null>(null)
+  const scrollerRef = React.useRef<HTMLDivElement | null>(null)
+  const messages = contactQuery.data?.messages ?? []
 
-  // Terminal error: stop load-older from spinning forever. Background refetches
-  // must not flip loading (near-top controller). Only initial/next-page fetches load.
-  const historyComplete = historyQuery.isError || (historyQuery.isSuccess && !historyQuery.hasNextPage);
-  const historyLoading = historyQuery.isLoading || historyQuery.isFetchingNextPage;
+  React.useEffect(() => {
+    const node = scrollerRef.current
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+  }, [messages.length, sending])
 
-  const host = React.useMemo<ChatContainerHost>(() => ({
-    sessionId: sessionID,
-    directory,
-    composerSurface: surface,
-    sessionSurface,
-    warning,
-    pendingUserMessages,
-    onPendingUserMessagesMaterialized,
-    assistantHistory: {
-      entries: historyEntries,
-      complete: historyComplete,
-      loading: historyLoading,
-      fetchPrevious: fetchPreviousHistory,
-    },
-    onRevertMessage,
-  }), [directory, fetchPreviousHistory, historyComplete, historyEntries, historyLoading, onPendingUserMessagesMaterialized, onRevertMessage, pendingUserMessages, sessionID, sessionSurface, surface, warning]);
+  const submit = useEvent(async () => {
+    const command = parseContactComposerInput(draft)
+    if (!command || sending) return
+    setSending(true)
+    setSendError(null)
+    try {
+      if (command.kind === 'session-card') {
+        const live = findSessionById(command.sessionID)
+        const directory = live?.directory || assistant.effectiveWorkspacePath
+        const title = command.title || live?.session?.title || null
+        await appendAssistantContactCard(assistant.id, {
+          sessionID: command.sessionID,
+          directory,
+          title,
+          status: null,
+        })
+      } else if (command.kind === 'peer-dm') {
+        await deliverAssistantContactDm(assistant.id, {
+          toAssistantID: command.toAssistantID,
+          text: command.text,
+        })
+      } else {
+        await sendAssistantContactMessage(assistant.id, `oc_contact_${createUuid()}`, command.text)
+        if (capabilityQuery.data?.serverInstanceID) {
+          void donateNativeAssistantInteraction({
+            serverInstanceID: capabilityQuery.data.serverInstanceID,
+            assistantID: assistant.id,
+            name: displayName,
+            avatarSeed: assistant.id,
+            ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
+          }).catch(() => undefined)
+        }
+      }
+      setDraft('')
+    } catch (error) {
+      const code = error instanceof AssistantAPIError ? error.code : ''
+      setSendError(code === 'no_provider' ? t('assistants.contact.noProvider') : t('assistants.contact.sendFailed'))
+    } finally {
+      setSending(false)
+    }
+  })
 
-  return <ChatContainer autoOpenDraft={false} host={host} />;
-};
+  const onKeyDown = useEvent((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      void submit()
+    }
+  })
+
+  const loadFailed = contactQuery.isError && messages.length === 0
+  const empty = contactQuery.isSuccess && messages.length === 0
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <div
+        ref={scrollerRef}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+        data-assistant-contact-transcript=""
+      >
+        {warning ? (
+          <p className="mb-3 typography-micro text-[var(--status-warning)]">{warning}</p>
+        ) : null}
+        {loadFailed ? (
+          <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
+            <Icon name="error-warning" className="size-6 text-muted-foreground" />
+            <p className="mt-3 typography-ui text-muted-foreground">{t('assistants.contact.loadFailed')}</p>
+          </div>
+        ) : empty ? (
+          <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
+            <p className="typography-ui-header font-semibold">{t('assistants.conversation.emptyTitle', { name: displayName })}</p>
+            <p className="mt-2 max-w-md typography-ui text-muted-foreground">{t('assistants.contact.empty')}</p>
+          </div>
+        ) : (
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
+            {messages.map((message) => {
+              const isUser = message.role === 'user'
+              const isPeer = message.role === 'peer'
+              const senderName = isPeer ? peerName(message.fromAssistantID, message.fromAssistantName) : displayName
+              const sender = isPeer && message.fromAssistantID
+                ? snapshotQuery.data?.assistants.find((item) => item.id === message.fromAssistantID)
+                : assistant
+              const senderPresentation = sender ? getAssistantPresentation(sender.name) : null
+              return (
+                <div
+                  key={message.messageID}
+                  className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
+                  data-assistant-contact-role={message.role}
+                >
+                  {!isUser ? (
+                    <AgentAvatar
+                      name={sender?.id || message.fromAssistantID || assistant.id}
+                      emoji={senderPresentation?.avatarEmoji}
+                      size={24}
+                      label={senderName}
+                      className="mt-1 mr-2 shrink-0"
+                    />
+                  ) : null}
+                  <div className={cn('flex min-w-0 max-w-[min(100%,28rem)] flex-col gap-2', isUser && 'items-end')}>
+                    {isPeer ? (
+                      <span className="typography-micro text-muted-foreground">
+                        {t('assistants.contact.peer.from', { name: senderName })}
+                      </span>
+                    ) : null}
+                    {message.parts.map((part, index) => {
+                      if (part.type === 'card' && part.cardType === 'session') {
+                        return <AssistantSessionCard key={`${message.messageID}:card:${index}`} card={part} />
+                      }
+                      if (part.type === 'text' && part.text.trim()) {
+                        return (
+                          <div
+                            key={`${message.messageID}:text:${index}`}
+                            aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
+                            className={cn(
+                              'rounded-2xl px-3 py-2 typography-ui',
+                              isUser
+                                ? 'bg-[var(--primary-base)] text-[var(--primary-foreground)]'
+                                : isPeer
+                                  ? 'border border-dashed border-border bg-[var(--surface-muted)] text-foreground'
+                                  : 'bg-[var(--surface-elevated)] text-foreground',
+                            )}
+                          >
+                            {part.text}
+                          </div>
+                        )
+                      }
+                      return null
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+            {sending ? (
+              <p className="typography-micro text-muted-foreground">{t('assistants.contact.sending')}</p>
+            ) : null}
+          </div>
+        )}
+      </div>
+      <div className="shrink-0 border-t border-border/40 px-4 py-3 sm:px-6">
+        {sendError ? <p className="mb-2 typography-micro text-[var(--status-error)]">{sendError}</p> : null}
+        <div className="mx-auto flex w-full max-w-2xl items-end gap-2">
+          <Textarea
+            simple
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={sending}
+            placeholder={t('assistants.contact.placeholder', { name: displayName })}
+            aria-label={t('assistants.contact.placeholder', { name: displayName })}
+            className="min-h-11 max-h-36 flex-1 resize-none rounded-2xl border border-border/60 bg-[var(--surface-elevated)] px-3 py-2"
+          />
+          <Button
+            type="button"
+            size="sm"
+            disabled={sending || !draft.trim()}
+            onClick={() => { void submit() }}
+          >
+            {t('assistants.contact.send')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}

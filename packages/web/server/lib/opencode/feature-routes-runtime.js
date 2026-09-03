@@ -15,6 +15,7 @@ import { registerScheduledTaskToolRoute } from '../scheduled-tasks/managed-tool-
 import { registerConversationRoutes } from '../conversations/routes.js';
 import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';
 import { registerAssistantRoutes } from '../assistants/routes.js';
+import { registerLlmRoutes } from '../llm/routes.js';
 import { registerMessageQueueRoutes } from '../message-queue/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerPluginRoutes } from './plugin-routes.js';
@@ -214,6 +215,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     const broadcastAssistantRevisionTip = createOpenChamberEventBroadcaster({
       getOpenChamberEventClients,
       writeSseEvent,
+    });
+    registerLlmRoutes(app, {
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
     });
     assistantRoutesRuntime = registerAssistantRoutes(app, {
       openchamberDataDir,

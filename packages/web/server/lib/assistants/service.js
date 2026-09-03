@@ -5,6 +5,16 @@ import path from 'node:path';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 import { reduceBackfillState } from './history-state.js';
+import { parseContactCard, parseContactPart } from './cards.js';
+import {
+  contactHistoryForLlm,
+  deleteContactMessages,
+  ensureContactSchema,
+  insertContactMessage,
+  listContactMessages,
+  nextContactOrdinal,
+} from './contact-store.js';
+import { runContactTurn as defaultRunContactTurn } from './harness.js';
 
 const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 11;
@@ -41,7 +51,7 @@ const isTransientMessagesFailure = (result, error) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -62,6 +72,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     CREATE TABLE IF NOT EXISTS assistant_message_part_mirror (assistant_id TEXT NOT NULL, session_id TEXT NOT NULL, message_id TEXT NOT NULL, part_id TEXT NOT NULL, part_json TEXT NOT NULL, ordinal INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (assistant_id, session_id, message_id, part_id));
     CREATE INDEX IF NOT EXISTS assistant_message_part_mirror_message ON assistant_message_part_mirror(assistant_id, session_id, message_id, ordinal, part_id);
     CREATE TABLE IF NOT EXISTS assistant_message_backfill (assistant_id TEXT NOT NULL, session_id TEXT NOT NULL, cursor TEXT, complete INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY (assistant_id, session_id));`);
+  ensureContactSchema(db);
   const historyColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_session_history')").all().map((column) => column.name));
   if (!historyColumns.has('directory')) db.exec('ALTER TABLE assistant_session_history ADD COLUMN directory TEXT');
   const mirrorColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_message_mirror')").all().map((column) => column.name));
@@ -407,7 +418,169 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (promptAdmitted(result)) mirrorAdmittedUserMessage(row, sessionID, messageID, parts, config);
     return { result, binding: binding(row) };
   };
-  const send = async (assistantID, input) => { if (!plainObject(input)) fail('validation_error'); validateParts(input.parts); const messageID = string(input.messageID, 256, true); const row = active(assistantID); if (row.mode !== 'stateless' && (input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation)) fail('revision_conflict'); const submit = async () => { const latest = active(assistantID); const target = await prepareExecutionBinding(latest); const sent = await sendWithConfig({ row: target, sessionID: target.current_session_id, directory: effectiveWorkspace(target), config: configuration(target), parts: input.parts, messageID, restore: target.mode !== 'stateless' }); if (!promptAdmitted(sent.result)) fail('upstream_error'); return { binding: sent.binding, messageID, admitted: true }; }; return row.mode === 'stateless' ? inStatelessLane(assistantID, submit) : submit(); };
+  const extractUserText = (input) => {
+    if (typeof input.text === 'string' && input.text.trim()) return input.text.trim();
+    if (!Array.isArray(input.parts)) return '';
+    const text = input.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n').trim();
+    if (text) return text;
+    return input.parts.some((part) => part?.type === 'file') ? '[attachment]' : '';
+  };
+  const persistContactTurn = (assistantID, { userMessageID, userText, bubbles, turnID }) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      let ordinal = nextContactOrdinal(db, assistantID);
+      insertContactMessage(db, {
+        messageID: userMessageID,
+        assistantID,
+        role: 'user',
+        turnID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal,
+        status: 'complete',
+        parts: [{ type: 'text', text: userText }],
+      });
+      const messages = [];
+      messages.push(listContactMessages(db, assistantID, { limit: 1 }).messages.at(-1));
+      bubbles.forEach((text, index) => {
+        ordinal += 1;
+        const bubbleID = `${userMessageID}:bubble:${index + 1}`;
+        insertContactMessage(db, {
+          messageID: bubbleID,
+          assistantID,
+          role: 'assistant',
+          turnID,
+          bubbleIndex: index,
+          createdAt: now(),
+          ordinal,
+          status: 'complete',
+          parts: [{ type: 'text', text }],
+        });
+      });
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  const send = async (assistantID, input) => {
+    if (!plainObject(input)) fail('validation_error');
+    if (input.parts !== undefined) validateParts(input.parts);
+    const messageID = string(input.messageID, 256, true);
+    const userText = extractUserText(input);
+    if (!userText) fail('validation_error');
+    const row = active(assistantID);
+    // Contact turns are OpenChamber-owned. Binding mismatch no longer gates send;
+    // OpenCode session history is not the user-visible queue.
+    const history = contactHistoryForLlm(db, assistantID);
+    if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
+    let generated;
+    try {
+      generated = await runContactTurn({
+        assistant: output(row),
+        history,
+        userText,
+        createChatCompletion,
+      });
+    } catch (error) {
+      if (error instanceof AssistantError) throw error;
+      if (error?.code === 'no_provider') fail('no_provider');
+      fail('upstream_error');
+    }
+    const bubbles = Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : [];
+    if (bubbles.length === 0) fail('upstream_error');
+    persistContactTurn(row.assistant_id, { userMessageID: messageID, userText, bubbles, turnID: messageID });
+    return { binding: binding(row), messageID, admitted: true };
+  };
+  const contactMessages = (assistantID, query = {}) => {
+    editable(assistantID);
+    const limit = query.limit == null ? 50 : Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail('validation_error');
+    return listContactMessages(db, assistantID, { before: query.before, limit });
+  };
+  const appendContactCard = (assistantID, input) => {
+    const row = active(assistantID);
+    const card = parseContactCard({ type: 'card', ...input, cardType: input?.cardType || 'session' });
+    if (!card) fail('validation_error');
+    const messageID = string(input.messageID, 256) || `card_${id()}`;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      insertContactMessage(db, {
+        messageID,
+        assistantID: row.assistant_id,
+        role: input.role === 'user' ? 'user' : 'assistant',
+        turnID: string(input.turnID, 256) || messageID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal: nextContactOrdinal(db, row.assistant_id),
+        status: 'complete',
+        parts: [card],
+      });
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return { messageID, admitted: true, card };
+  };
+  /**
+   * Read-only inter-assistant DM. Inserts into the recipient's OpenChamber
+   * contact transcript only. Must never call OpenCode promptAsync, mutate
+   * sessions/files/worktrees, or run tools on the recipient's behalf.
+   *
+   * TODO(next-slice): summon/assign may attach cards on this same peer row.
+   */
+  const deliverPeerMessage = (fromAssistantID, input) => {
+    if (!plainObject(input)) fail('validation_error');
+    const sender = active(fromAssistantID);
+    const toAssistantID = string(input.toAssistantID, 256, true);
+    if (toAssistantID === sender.assistant_id) fail('validation_error');
+    const recipient = active(toAssistantID);
+    const parts = [];
+    const text = typeof input.text === 'string' ? input.text.trim() : '';
+    if (text) parts.push({ type: 'text', text });
+    if (input.parts !== undefined) {
+      if (!Array.isArray(input.parts)) fail('validation_error');
+      for (const part of input.parts) {
+        const parsed = parseContactPart(part);
+        if (!parsed) fail('validation_error');
+        parts.push(parsed);
+      }
+    }
+    if (parts.length === 0) fail('validation_error');
+    const messageID = string(input.messageID, 256) || `peer_${id()}`;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      insertContactMessage(db, {
+        messageID,
+        assistantID: recipient.assistant_id,
+        role: 'peer',
+        turnID: string(input.turnID, 256) || messageID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal: nextContactOrdinal(db, recipient.assistant_id),
+        status: 'complete',
+        parts,
+        fromAssistantID: sender.assistant_id,
+        fromAssistantName: sender.name,
+      });
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return {
+      messageID,
+      admitted: true,
+      role: 'peer',
+      fromAssistantID: sender.assistant_id,
+      fromAssistantName: sender.name,
+      toAssistantID: recipient.assistant_id,
+    };
+  };
   const captureQueueDeliveryTarget = ({ assistantID, scope }) => {
     const row = active(assistantID); const current = binding(row);
     const expectedSessionID = row.mode === 'stateless' ? `assistant:${assistantID}` : current.sessionID;
@@ -451,6 +624,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=?').run(assistantID);
+      deleteContactMessages(db, assistantID);
       bump();
       db.exec('COMMIT');
       return { assistantID, tombstoneAt: now() };
@@ -458,5 +632,5 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, processEvent, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, appendContactCard, deliverPeerMessage, processEvent, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

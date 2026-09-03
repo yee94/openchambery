@@ -13,6 +13,51 @@ export interface MessageAdmission { binding: SessionBinding; messageID: string; 
 export interface ShareOperation { operationID: string; assistantID: string; sessionID: string | null; messageID: string | null; state: 'submitting' | 'running' | 'completed' | 'failed' | 'unresolved'; phase: string; attempt: number; leaseExpiresAt: number | null; errorCode: string | null; }
 export interface AssistantHistoryEntry { sessionID: string; directory: string | null; info: Message; parts: Part[]; }
 export interface AssistantHistoryPage { entries: AssistantHistoryEntry[]; nextCursor: string | null; complete: boolean; }
+export type AssistantContactCardType = 'session';
+export type AssistantContactTextPart = { type: 'text'; text: string };
+export type AssistantContactSessionCardPart = {
+  type: 'card';
+  cardType: 'session';
+  sessionID: string;
+  directory: string;
+  title: string | null;
+  status: string | null;
+};
+export type AssistantContactPart = AssistantContactTextPart | AssistantContactSessionCardPart;
+export type AssistantContactRole = 'user' | 'assistant' | 'peer';
+export interface AssistantContactMessage {
+  messageID: string;
+  assistantID: string;
+  role: AssistantContactRole;
+  turnID: string;
+  bubbleIndex: number;
+  createdAt: number;
+  ordinal: number;
+  status: string;
+  fromAssistantID: string | null;
+  fromAssistantName: string | null;
+  parts: AssistantContactPart[];
+  text: string;
+  cards: AssistantContactSessionCardPart[];
+}
+export interface AssistantContactPage {
+  messages: AssistantContactMessage[];
+  nextCursor: string | null;
+  complete: boolean;
+}
+export interface AssistantContactCardAdmission {
+  messageID: string;
+  admitted: true;
+  card: AssistantContactSessionCardPart;
+}
+export interface AssistantContactPeerAdmission {
+  messageID: string;
+  admitted: true;
+  role: 'peer';
+  fromAssistantID: string;
+  fromAssistantName: string;
+  toAssistantID: string;
+}
 
 export class AssistantAPIError extends Error { constructor(public readonly code: string, public readonly status: number, public readonly resource?: string) { super(code); } }
 export class AssistantShareOperationError extends AssistantAPIError { constructor(code: string, status: number, public readonly operation: ShareOperation) { super(code, status, 'share_operation'); } }
@@ -62,5 +107,73 @@ export const parseAssistantHistoryPage = (payload: unknown): AssistantHistoryPag
     }),
     nextCursor,
     complete,
+  };
+};
+const parseContactPart = (value: unknown): AssistantContactPart => {
+  const part = record(value, 'assistant_contact_part');
+  if (part.type === 'text') return { type: 'text', text: string(part.text, 'assistant_contact_part') };
+  if (part.type === 'card') {
+    if (enumValue(part.cardType, ['session'] as const, 'assistant_contact_part') !== 'session') return invalid('assistant_contact_part');
+    return {
+      type: 'card',
+      cardType: 'session',
+      sessionID: string(part.sessionID, 'assistant_contact_part'),
+      directory: string(part.directory, 'assistant_contact_part'),
+      title: nullableString(part.title ?? null, 'assistant_contact_part'),
+      status: nullableString(part.status ?? null, 'assistant_contact_part'),
+    };
+  }
+  return invalid('assistant_contact_part');
+};
+export const parseAssistantContactPage = (payload: unknown): AssistantContactPage => {
+  const value = record(payload, 'assistant_contact');
+  const nextCursor = nullableString(value.nextCursor, 'assistant_contact');
+  const complete = bool(value.complete, 'assistant_contact');
+  if (!complete && !nextCursor) return invalid('assistant_contact');
+  if (complete && nextCursor) return invalid('assistant_contact');
+  if (!Array.isArray(value.messages)) return invalid('assistant_contact');
+  return {
+    messages: value.messages.map((item) => {
+      const message = record(item, 'assistant_contact_message');
+      if (!Array.isArray(message.parts)) return invalid('assistant_contact_message');
+      const parts = message.parts.map(parseContactPart);
+      return {
+        messageID: string(message.messageID, 'assistant_contact_message'),
+        assistantID: string(message.assistantID, 'assistant_contact_message'),
+        role: enumValue(message.role, ['user', 'assistant', 'peer'] as const, 'assistant_contact_message'),
+        turnID: string(message.turnID, 'assistant_contact_message'),
+        bubbleIndex: number(message.bubbleIndex, 'assistant_contact_message'),
+        createdAt: number(message.createdAt, 'assistant_contact_message'),
+        ordinal: number(message.ordinal, 'assistant_contact_message'),
+        status: string(message.status, 'assistant_contact_message'),
+        fromAssistantID: nullableString(message.fromAssistantID ?? null, 'assistant_contact_message'),
+        fromAssistantName: nullableString(message.fromAssistantName ?? null, 'assistant_contact_message'),
+        parts,
+        text: typeof message.text === 'string' ? message.text : parts.filter((part): part is AssistantContactTextPart => part.type === 'text').map((part) => part.text).join(''),
+        cards: parts.filter((part): part is AssistantContactSessionCardPart => part.type === 'card'),
+      };
+    }),
+    nextCursor,
+    complete,
+  };
+};
+export const parseAssistantContactCardAdmission = (payload: unknown): AssistantContactCardAdmission => {
+  const value = record(payload, 'assistant_contact_card');
+  if (value.admitted !== true) return invalid('assistant_contact_card');
+  const card = parseContactPart(value.card);
+  if (card.type !== 'card') return invalid('assistant_contact_card');
+  return { messageID: string(value.messageID, 'assistant_contact_card'), admitted: true, card };
+};
+export const parseAssistantContactPeerAdmission = (payload: unknown): AssistantContactPeerAdmission => {
+  const value = record(payload, 'assistant_contact_peer');
+  if (value.admitted !== true) return invalid('assistant_contact_peer');
+  if (value.role !== 'peer') return invalid('assistant_contact_peer');
+  return {
+    messageID: string(value.messageID, 'assistant_contact_peer'),
+    admitted: true,
+    role: 'peer',
+    fromAssistantID: string(value.fromAssistantID, 'assistant_contact_peer'),
+    fromAssistantName: string(value.fromAssistantName, 'assistant_contact_peer'),
+    toAssistantID: string(value.toAssistantID, 'assistant_contact_peer'),
   };
 };

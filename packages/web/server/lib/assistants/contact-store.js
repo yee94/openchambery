@@ -1,0 +1,150 @@
+import { parseContactCard, parseContactPart, serializeContactPart } from './cards.js';
+
+const json = (value) => JSON.stringify(value);
+const parse = (value) => JSON.parse(value);
+
+export const CONTACT_SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS assistant_contact_message (
+    message_id TEXT PRIMARY KEY,
+    assistant_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    bubble_index INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    ordinal INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'complete',
+    from_assistant_id TEXT,
+    from_assistant_name TEXT
+  );
+  CREATE INDEX IF NOT EXISTS assistant_contact_message_page
+    ON assistant_contact_message(assistant_id, ordinal, message_id);
+  CREATE TABLE IF NOT EXISTS assistant_contact_part (
+    message_id TEXT NOT NULL,
+    part_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    part_json TEXT NOT NULL,
+    PRIMARY KEY (message_id, part_id)
+  );
+  CREATE INDEX IF NOT EXISTS assistant_contact_part_message
+    ON assistant_contact_part(message_id, ordinal, part_id);
+`;
+
+export function ensureContactSchema(db) {
+  db.exec(CONTACT_SCHEMA_SQL);
+  const columns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_message')").all().map((column) => column.name));
+  if (!columns.has('from_assistant_id')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_id TEXT');
+  if (!columns.has('from_assistant_name')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_name TEXT');
+}
+
+const decodeCursor = (value) => {
+  if (value == null || value === '') return null;
+  const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+  if (!Number.isSafeInteger(parsed?.ordinal) || typeof parsed?.messageID !== 'string') return null;
+  return parsed;
+};
+
+const encodeCursor = (row) => Buffer.from(json({ ordinal: row.ordinal, messageID: row.message_id })).toString('base64url');
+
+const hydrateMessage = (db, row) => {
+  const parts = db.prepare(
+    'SELECT part_json FROM assistant_contact_part WHERE message_id=? ORDER BY ordinal ASC, part_id ASC',
+  ).all(row.message_id).map((part) => parse(part.part_json)).map(parseContactPart).filter(Boolean);
+  const fromAssistantID = typeof row.from_assistant_id === 'string' && row.from_assistant_id.trim() ? row.from_assistant_id : null;
+  const storedName = typeof row.from_assistant_name === 'string' && row.from_assistant_name.trim() ? row.from_assistant_name : null;
+  let liveName = null;
+  if (fromAssistantID) {
+    try {
+      liveName = db.prepare('SELECT name FROM assistant_v2 WHERE assistant_id=?').get(fromAssistantID)?.name;
+    } catch {
+      liveName = null;
+    }
+  }
+  return {
+    messageID: row.message_id,
+    assistantID: row.assistant_id,
+    role: row.role,
+    turnID: row.turn_id,
+    bubbleIndex: row.bubble_index,
+    createdAt: row.created_at,
+    ordinal: row.ordinal,
+    status: row.status,
+    fromAssistantID,
+    fromAssistantName: storedName || (typeof liveName === 'string' && liveName.trim() ? liveName : null),
+    parts,
+    text: parts.filter((part) => part.type === 'text').map((part) => part.text).join(''),
+    cards: parts.filter((part) => part.type === 'card'),
+  };
+};
+
+export function nextContactOrdinal(db, assistantID) {
+  return Number(db.prepare(
+    'SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM assistant_contact_message WHERE assistant_id=?',
+  ).get(assistantID).next);
+}
+
+export function insertContactMessage(db, {
+  messageID,
+  assistantID,
+  role,
+  turnID,
+  bubbleIndex = 0,
+  createdAt,
+  ordinal,
+  status = 'complete',
+  parts,
+  fromAssistantID = null,
+  fromAssistantName = null,
+}) {
+  db.prepare(
+    'INSERT INTO assistant_contact_message(message_id,assistant_id,role,turn_id,bubble_index,created_at,ordinal,status,from_assistant_id,from_assistant_name) VALUES (?,?,?,?,?,?,?,?,?,?)',
+  ).run(messageID, assistantID, role, turnID, bubbleIndex, createdAt, ordinal, status, fromAssistantID, fromAssistantName);
+  parts.forEach((part, index) => {
+    const serialized = serializeContactPart(part, index);
+    db.prepare(
+      'INSERT INTO assistant_contact_part(message_id,part_id,ordinal,part_json) VALUES (?,?,?,?)',
+    ).run(messageID, serialized.id, index + 1, json(serialized));
+  });
+}
+
+export function listContactMessages(db, assistantID, { before, limit = 50 } = {}) {
+  const cursor = before == null || before === '' ? null : decodeCursor(before);
+  if (before && !cursor) {
+    const error = new Error('validation_error');
+    error.code = 'validation_error';
+    throw error;
+  }
+  const rows = cursor
+    ? db.prepare(
+      'SELECT * FROM assistant_contact_message WHERE assistant_id=? AND (ordinal<? OR (ordinal=? AND message_id<?)) ORDER BY ordinal DESC, message_id DESC LIMIT ?',
+    ).all(assistantID, cursor.ordinal, cursor.ordinal, cursor.messageID, limit + 1)
+    : db.prepare(
+      'SELECT * FROM assistant_contact_message WHERE assistant_id=? ORDER BY ordinal DESC, message_id DESC LIMIT ?',
+    ).all(assistantID, limit + 1);
+  const page = rows.slice(0, limit);
+  const nextCursor = rows.length > limit && page[page.length - 1] ? encodeCursor(page[page.length - 1]) : null;
+  return {
+    messages: [...page].reverse().map((row) => hydrateMessage(db, row)),
+    nextCursor,
+    complete: nextCursor === null,
+  };
+}
+
+export function deleteContactMessages(db, assistantID) {
+  const ids = db.prepare('SELECT message_id FROM assistant_contact_message WHERE assistant_id=?').all(assistantID).map((row) => row.message_id);
+  for (const messageID of ids) {
+    db.prepare('DELETE FROM assistant_contact_part WHERE message_id=?').run(messageID);
+  }
+  db.prepare('DELETE FROM assistant_contact_message WHERE assistant_id=?').run(assistantID);
+}
+
+export function contactHistoryForLlm(db, assistantID) {
+  const page = listContactMessages(db, assistantID, { limit: 80 });
+  return page.messages
+    .filter((message) => message.status !== 'error' && (message.role === 'user' || message.role === 'assistant'))
+    // Peer DMs are read-only inbox rows. They must not become user/assistant
+    // harness turns or trigger tools on the recipient.
+    .map((message) => ({ role: message.role, content: message.text }))
+    .filter((message) => message.content.trim().length > 0);
+}
+
+export { parseContactCard };

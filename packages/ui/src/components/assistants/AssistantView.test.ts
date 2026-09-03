@@ -10,10 +10,10 @@ import { mergeSyntheticPartsByPartID, projectRootAttachmentViews } from './assis
 const directory = dirname(fileURLToPath(import.meta.url))
 
 describe('AssistantView synthetic part consumption', () => {
-  test('retains mobile share handoff markers via consume retain predicate', async () => {
+  test('contact AssistantView no longer consumes ChatInput draft markers', async () => {
     const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
-    expect(source).toContain('consumeDraftSyntheticParts(draftKey, isMobileShareHandoffMarkerPart)')
-    expect(source).not.toContain('filter((part) => !isMobileShareHandoffMarkerPart(part))')
+    expect(source).not.toContain('consumeDraftSyntheticParts')
+    expect(source).not.toContain('ensureAssistantSession')
   })
 
   test('consume retain keeps handoff marker in draft and returns other parts', () => {
@@ -48,18 +48,13 @@ describe('AssistantView synthetic part consumption', () => {
     ])
   })
 
-  test('wires hydrateDraftAttachments on draftKey change and root-only attachment projection', async () => {
-    const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
-    expect(source).toContain('hydrateDraftAttachments(draftKey)')
-    expect(source).toContain('draftAttachmentMetadataIdentity')
+  test('keeps root-only attachment projection helpers for share modules', async () => {
+    const source = await readFile(join(directory, 'assistantDraftAttachments.ts'), 'utf8')
     expect(source).toContain('projectRootAttachmentViews')
     expect(source).toContain('mergeSyntheticPartsByPartID')
-    expect(source).toContain('stageExclusive')
-    expect(source).toContain('assistantStagedScopeOf')
-    expect(source).toContain('clearExclusive')
-    expect(source).toContain('await clearStagedMessageEdit')
-    // Must not project via Object.values of all views (would double-send synthetic).
-    expect(source).not.toContain('Object.values(attachmentViews)')
+    const view = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
+    expect(view).not.toContain('hydrateDraftAttachments(draftKey)')
+    expect(view).not.toContain('Object.values(attachmentViews)')
   })
 
   test('attachment metadata identity changes when attachments arrive without revision coupling', () => {
@@ -116,26 +111,12 @@ describe('AssistantView synthetic part consumption', () => {
   })
 })
 
-describe('AssistantView active binding materialization', () => {
-  test('force-refreshes the active binding identity and skips invalid or inactive bindings', async () => {
+describe('AssistantView contact surface', () => {
+  test('does not ensure an OpenCode session to show the contact transcript', async () => {
     const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
-    // Gate: only active + complete (assistantID, sessionID, directory, sessionGeneration).
-    expect(source).toContain('if (!active || !assistantID || !sessionID || !directory || sessionGeneration === undefined) return;')
-    // Standard materialization path with force so TranscriptRepository initial-pulls.
-    expect(source).toContain('void refreshBinding(')
-    expect(source).toContain('{ sessionID, directory, sessionGeneration },')
-    expect(source).toContain('{ force: true },')
-    // Binding-identity deps only — snapshot churn without binding change must not re-fire.
-    expect(source).toContain('[active, assistantID, directory, refreshBinding, sessionGeneration, sessionID]')
-    // Empty-session path stays separate; inactive / missing sessionID never force-refreshes.
-    expect(source).toContain('if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID)')
-    // Must not swallow ensure failures into empty success (no catch on this materialization).
-    const materializationEffect = source.slice(
-      source.indexOf('// Active binding materialization:'),
-      source.indexOf('const removePendingMessages'),
-    )
-    expect(materializationEffect).toContain('void refreshBinding(')
-    expect(materializationEffect).not.toContain('.catch(')
-    expect(materializationEffect).not.toContain('catch (')
+    expect(source).toContain('<AssistantConversationSurface')
+    expect(source).not.toContain('ensureAssistantSession')
+    expect(source).not.toContain('refreshBinding')
+    expect(source).toContain("t('assistants.conversation.contactHint')")
   })
 })
