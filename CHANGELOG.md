@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.1] - 2026-09-04
+
+### 移动端
+
+- 关闭原生体验时，计划任务编辑不再当成二级页盖住底部 Tab；保存按钮会抬到 Tab 上方，可以正常保存。
+
 ## [1.19.4] - 2026-09-03
 
 汇总 1.19.3-beta.1 ~ 1.19.4-beta.1（1.19.3 正式版发布中断，npm 上已有同名版本，顺延为 1.19.4）。

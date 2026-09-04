@@ -208,6 +208,45 @@
   );
 }
 
+/*
+ * In-tab scheduled editor: stay inside the tab (not a shell secondary page).
+ * Web dock remains interactive; the overlay paints below it (z-index 30 < 40)
+ * and the save capsule sits above the retained dock. Native iOS dock is hidden
+ * while editing (`tabBarCovered`), so the overlay can go edge-to-edge.
+ */
+.oc-mobile-scheduled-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+:root.oc-native-ios-tab-bar .oc-mobile-scheduled-editor-overlay {
+  z-index: 50;
+}
+
+.oc-mobile-scheduled-editor-body {
+  padding-bottom: calc(
+    var(--oc-mobile-dock-height) + 2.5rem +
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+  );
+}
+
+:root:not(.oc-native-ios-tab-bar)
+  .oc-mobile-floating-bottom-bar-frame[data-scheduled-editor-footer] {
+  padding-bottom: calc(
+    var(--oc-mobile-dock-height) +
+    max(1.25rem, var(--oc-safe-area-bottom-visual, 0px)) +
+    0.75rem
+  );
+}
+
+:root:not(.oc-native-ios-tab-bar) .oc-mobile-scheduled-editor-body {
+  padding-bottom: calc(
+    (var(--oc-mobile-dock-height) * 2) + 3.25rem +
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+  );
+}
+
 .oc-mobile-floating-bottom-bar {
   pointer-events: auto;
   display: flex;
