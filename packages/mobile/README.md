@@ -2,7 +2,7 @@
 
 Capacitor shell for the dedicated OpenChamber mobile web surface.
 
-The mobile package reuses the web build, then rewrites `mobile.html` to `index.html` in `packages/mobile/dist` so native iOS/Android always launch `MobileApp` instead of the hosted surface selector.
+The mobile package reuses the web build, then rewrites `mobile.html` to `index.html` in `packages/mobile/dist` so native iOS/Android always launch `MobileApp` instead of the hosted surface selector. Workspace `bun run --filter '*' build` can run this package in parallel with `@openchambery/web`; `scripts/prepare-web-assets.mjs` retries the copy until `mobile.html` is readable so a sibling Vite `emptyOutDir` cannot fail the mobile job.
 
 ## Runtime Model
 
