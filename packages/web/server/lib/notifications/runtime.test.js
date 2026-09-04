@@ -28,7 +28,6 @@ const createRuntime = (overrides = {}) => {
     sendPushToAllUiSessions,
     sendApnsToAllUiSessions,
     sendLiveActivityEnd,
-    isAnyInteractiveClientVisible: () => false,
     buildOpenCodeUrl: (path) => `http://opencode.test${path}`,
     getOpenCodeAuthHeaders: () => ({}),
     getIsWindowFocused: () => false,
@@ -224,14 +223,13 @@ describe('notification trigger live activity end', () => {
     expect(sendApnsToAllUiSessions).not.toHaveBeenCalled();
   });
 
-  it('ends the live activity even when an interactive client is visible', async () => {
+  it('still sends native push when another client is visible', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => rootSessionResponse()));
-    const { runtime, sendLiveActivityEnd, sendApnsToAllUiSessions } = createRuntime({
-      isAnyInteractiveClientVisible: () => true,
-    });
+    const { runtime, sendLiveActivityEnd, sendApnsToAllUiSessions, sendPushToAllUiSessions } = createRuntime();
     await runtime.maybeSendPushForTrigger(completionPayload());
     expect(sendLiveActivityEnd).toHaveBeenCalledWith({ sessionId: 'ses_root', status: 'complete' });
-    expect(sendApnsToAllUiSessions).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledTimes(1);
   });
 
   it('suppresses live activity end for child and small-model sessions', async () => {

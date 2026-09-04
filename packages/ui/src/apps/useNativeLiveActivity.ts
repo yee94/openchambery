@@ -1,15 +1,17 @@
 import type { PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
+import { collectRunningSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import {
   applyNativeLiveActivityTokenCommands,
+  buildNativeLiveActivityCatalog,
   canUseNativeIosLiveActivity,
   createInitialNativeLiveActivityState,
   createInitialNativeLiveActivityTokenState,
   getNativeIosLiveActivityPlugin,
+  NATIVE_LIVE_ACTIVITY_ID,
   parseNativeLiveActivityPushTokenEvent,
   reduceNativeLiveActivityToken,
   runNativeLiveActivityStep,
@@ -20,32 +22,43 @@ import {
 } from '@/lib/native-ios-live-activity';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { useConfigStore } from '@/stores/useConfigStore';
-import {
-  useLiveSessionStatus,
-  useSessionErrorAt,
-  useSessionPermissions,
-  useSessionQuestions,
-} from '@/sync/sync-context';
+import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
+import { useAllSessionStatuses } from '@/sync/sync-context';
 
-export type UseNativeLiveActivityArgs = {
-  sessionId: string | null | undefined;
-  directory?: string | null;
-};
+const EMPTY_STATUS_BY_ID = new Map<string, { status: 'busy' | 'retry'; directory: string }>();
+const EMPTY_SESSIONS: readonly { id: string; title?: string | null; parentID?: string | null }[] = [];
 
 /**
- * Drives the Capacitor iOS Live Activity for the MobileApp's current session.
+ * Drives the Capacitor iOS Live Activity for every live working session.
  * Plugin calls are no-ops on web / Electron / VS Code / Android.
  */
-export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
-  const nativeUiEnabled = useIosNativeUiEnabled();
-  const available = nativeUiEnabled && canUseNativeIosLiveActivity();
+export function useNativeLiveActivity(): void {
+  const available = canUseNativeIosLiveActivity();
   const connected = useConfigStore((state) => state.isConnected);
-  const sessionId = available ? (args.sessionId ?? '') : '';
-  const directory = available ? (args.directory ?? undefined) : undefined;
-  const status = useLiveSessionStatus(sessionId);
-  const errorAt = useSessionErrorAt(sessionId, directory);
-  const permissions = useSessionPermissions(sessionId, directory, { bootstrap: false });
-  const questions = useSessionQuestions(sessionId, directory, { bootstrap: false });
+  const liveStatuses = useAllSessionStatuses({ enabled: available });
+  const fallbackStatuses = useGlobalSessionStatusStore((state) => (
+    available ? state.statusById : EMPTY_STATUS_BY_ID
+  ));
+  const sessions = useGlobalSessionsStore((state) => (
+    available ? state.activeSessions : EMPTY_SESSIONS
+  ));
+  const runningIds = useMemo(
+    () => (available ? collectRunningSessionIds(liveStatuses, fallbackStatuses) : new Set<string>()),
+    [available, fallbackStatuses, liveStatuses],
+  );
+  const catalog = useMemo(
+    () => (available ? buildNativeLiveActivityCatalog({
+      runningIds,
+      statuses: liveStatuses,
+      sessions,
+    }) : []),
+    [available, liveStatuses, runningIds, sessions],
+  );
+  const catalogSignature = useMemo(
+    () => catalog.map((item) => `${item.sessionId}\0${item.title}\0${item.statusType ?? ''}`).join('\n'),
+    [catalog],
+  );
   const stateRef = useRef<NativeLiveActivityState>(createInitialNativeLiveActivityState());
   const tokenStateRef = useRef<NativeLiveActivityTokenState>(createInitialNativeLiveActivityTokenState());
   const supportedRef = useRef<boolean | null>(null);
@@ -54,26 +67,21 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
   const tokenChainRef = useRef(Promise.resolve());
   const pushTokenHandleRef = useRef<PluginListenerHandle | null>(null);
 
-  const hasPendingPermissions = permissions.length > 0;
-  const hasPendingQuestions = questions.length > 0;
-  const hasSessionError = errorAt !== undefined;
-  const statusType = status?.type;
-
   const observe = useEvent((): NativeLiveActivityObservation => ({
-    sessionId: args.sessionId ?? null,
-    statusType,
-    hasPendingPermissions,
-    hasPendingQuestions,
-    hasSessionError,
-    errorAt,
+    sessionId: NATIVE_LIVE_ACTIVITY_ID,
+    statusType: undefined,
+    hasPendingPermissions: false,
+    hasPendingQuestions: false,
+    hasSessionError: false,
     now: Date.now(),
     connected,
+    catalog,
   }));
 
   const dispatchTokenAction = useEvent((action: NativeLiveActivityTokenAction): void => {
     tokenChainRef.current = tokenChainRef.current.then(async () => {
       const reduced = reduceNativeLiveActivityToken(tokenStateRef.current, {
-        selectedSessionId: args.sessionId ?? null,
+        selectedSessionId: NATIVE_LIVE_ACTIVITY_ID,
         runtimeIdentity: getRuntimeTransportIdentity(),
         connected,
         enabled: available,
@@ -93,13 +101,13 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
   const handlePushToken = useEvent((payload: unknown): void => {
     const parsed = parseNativeLiveActivityPushTokenEvent(payload);
     if (!parsed) return;
-    dispatchTokenAction({ type: 'pushToken', ...parsed });
+    dispatchTokenAction({ type: 'pushToken', ...parsed, sessionId: NATIVE_LIVE_ACTIVITY_ID });
   });
 
   useEffect(() => {
     dispatchTokenAction({ type: available ? 'sync' : 'dispose' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- available/sessionId/connected are the real inputs; dispatchTokenAction is useEvent-stable and must not control this effect.
-  }, [available, args.sessionId, connected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- available/connected are the real inputs; dispatchTokenAction is useEvent-stable and must not control this effect.
+  }, [available, connected]);
 
   useEffect(
     () => subscribeRuntimeEndpointChanged(() => {
@@ -143,7 +151,6 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
           observation,
           epoch,
           getCurrentEpoch: () => epochRef.current,
-          getCurrentSessionId: () => observe().sessionId,
           retryCount,
         });
         if (cancelled || epochRef.current !== epoch || result.superseded) return;
@@ -185,16 +192,11 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
       if (epochRef.current === epoch) epochRef.current += 1;
       if (timer !== null) clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- session/status/connection identity is the real input; observe/handlePushToken/dispatchTokenAction are useEvent-stable and must not control this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog/connection identity is the real input; observe/handlePushToken/dispatchTokenAction are useEvent-stable and must not control this effect.
   }, [
     available,
-    args.sessionId,
     connected,
-    statusType,
-    hasPendingPermissions,
-    hasPendingQuestions,
-    hasSessionError,
-    errorAt,
+    catalogSignature,
   ]);
 
   useEffect(

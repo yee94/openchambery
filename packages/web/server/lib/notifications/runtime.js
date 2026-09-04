@@ -12,7 +12,6 @@ export const createNotificationTriggerRuntime = (deps) => {
     sendPushToAllUiSessions,
     sendApnsToAllUiSessions,
     sendLiveActivityEnd,
-    isAnyInteractiveClientVisible,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
   } = deps;
@@ -68,25 +67,17 @@ export const createNotificationTriggerRuntime = (deps) => {
   };
 
   // Fan a notification out to every delivery channel: browser web-push (full templated
-  // payload) and native iOS APNs (generic model-based text). Both share the dedup tag and
-  // `requireNoSse` focus gate; a failure in one channel must not block the other.
-  const fanoutPush = (payload, options) => {
-    // Presence-aware routing: if any interactive (non-mobile) client — desktop/web/vscode — is
-    // currently visible, it already shows the in-app notification, so skip the native push to the
-    // phone. Gated on the desktop's visibility (reliable), never the phone's own. When we skip we
-    // also skip toApnsGenericPayload, so the badge isn't incremented for an undelivered push.
-    const interactiveVisible = isAnyInteractiveClientVisible?.() === true;
-    return Promise.all([
-      Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
-        console.warn('[Push] web-push fanout failed:', error?.message ?? error);
-      }),
-      interactiveVisible
-        ? Promise.resolve()
-        : Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error) => {
-            console.warn('[APNs] fanout failed:', error?.message ?? error);
-          }),
-    ]);
-  };
+  // payload) and native iOS APNs (generic model-based text). Both share the dedup tag;
+  // a failure in one channel must not block the other. Visibility on any other client
+  // never suppresses delivery — every subscribed surface gets the push.
+  const fanoutPush = (payload, options) => Promise.all([
+    Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
+      console.warn('[Push] web-push fanout failed:', error?.message ?? error);
+    }),
+    Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error) => {
+      console.warn('[APNs] fanout failed:', error?.message ?? error);
+    }),
+  ]);
 
   let getIsWindowFocused = typeof deps.getIsWindowFocused === 'function'
     ? deps.getIsWindowFocused

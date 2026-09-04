@@ -112,6 +112,9 @@ test('shared attributes and manager encode the local ActivityKit lifecycle contr
   assert.match(attributes, /var eventVersion: Int/);
   assert.match(attributes, /var updatedAt: Double/);
   assert.match(attributes, /var endedAt: Double\?/);
+  assert.match(attributes, /struct SessionItem: Codable, Hashable, Identifiable/);
+  assert.match(attributes, /var workingCount: Int\?/);
+  assert.match(attributes, /var items: \[SessionItem\]\?/);
 
   assert.match(manager, /ActivityAuthorizationInfo\(\)\.areActivitiesEnabled/);
   assert.match(manager, /Activity<OpenChamberActivityAttributes>\.activities/);
@@ -145,6 +148,8 @@ test('shared attributes and manager encode the local ActivityKit lifecycle contr
   assert.match(plugin, /"sessionId"/);
   assert.match(plugin, /"startedAt"/);
   assert.match(plugin, /"dismissalSeconds"/);
+  assert.match(plugin, /parseItems/);
+  assert.match(plugin, /"workingCount"/);
   assert.match(plugin, /Prefer Double so millisecond eventVersion/);
 });
 
@@ -159,7 +164,7 @@ test('millisecond eventVersion immediately supersedes a recovered small counter'
 test('live activity elapsed time uses the original compact TimelineView schedule', async () => {
   const visual = await source('ios/App/OpenChamberWidget/OpenChamberLiveActivity.swift');
   const elapsedView = visual.match(
-    /private struct LiveActivityElapsedTime: View \{([\s\S]*?)\n\}\n\nprivate struct LiveActivityFreshness:/,
+    /private struct LiveActivityElapsedTime: View \{([\s\S]*?)\n\}\n\nprivate struct LiveActivitySessionList:/,
   );
 
   assert.ok(elapsedView, 'missing LiveActivityElapsedTime');
@@ -168,12 +173,13 @@ test('live activity elapsed time uses the original compact TimelineView schedule
   assert.match(elapsedView[1], /elapsedText\(at: frozenDate\)/);
   assert.match(elapsedView[1], /Text\(verbatim: formatted\)/);
   assert.match(elapsedView[1], /private func formattedElapsed\(at date: Date\) -> String/);
-  assert.match(elapsedView[1], /\\\(Int\(floor\(elapsed\)\)\)S"/);
-  assert.match(elapsedView[1], /\\\(Int\(floor\(elapsed \/ 60\)\)\)M"/);
+  assert.match(elapsedView[1], /floor\(elapsed \/ 60\)\)\)m"/);
   assert.match(elapsedView[1], /\.accessibilityValue\(Text\(verbatim: formatted\)\)/);
   assert.doesNotMatch(visual, /timerInterval/);
   assert.doesNotMatch(visual, /style: \.timer/);
   assert.doesNotMatch(visual, /distantFuture/);
+  assert.match(visual, /LiveActivitySessionList/);
+  assert.match(visual, /\\\(workingCount\) working/);
 });
 
 test('docs describe Live Activity APNs updates and user-dismiss semantics', async () => {
@@ -195,7 +201,7 @@ test('docs describe Live Activity APNs updates and user-dismiss semantics', asyn
     assert.match(content, /millisecond/);
   }
 
-  assert.match(readme, /currently selected top-level session/);
+  assert.match(readme, /all live working sessions/);
   assert.match(readme, /does not recreate it for that same task/);
   assert.match(readme, /reject as unsupported instead of succeeding silently/);
   assert.match(readme, /pushType: \.token/);
@@ -229,7 +235,7 @@ test('live activity sources keep OpenChamber branding and never log session or t
   assert.match(plugin, /notifyListeners\("pushToken", data:/);
   assert.match(visual, /struct OpenChamberLiveActivity: Widget/);
   assert.match(visual, /ActivityConfiguration\(for: OpenChamberActivityAttributes\.self\)/);
-  assert.match(visual, /accessibilityLabel\(Text\("Open session"\)\)/);
+  assert.match(visual, /LiveActivitySessionList/);
   assert.match(visual, /private struct LiveActivityElapsedSchedule: TimelineSchedule/);
   assert.match(visual, /TimelineView\(LiveActivityElapsedSchedule\(startedAt: startDate\)\)/);
   assert.doesNotMatch(visual, /timerInterval/);

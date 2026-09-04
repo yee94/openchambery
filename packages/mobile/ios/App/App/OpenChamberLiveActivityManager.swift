@@ -35,6 +35,14 @@ enum OpenChamberLiveActivityError: LocalizedError {
     }
 }
 
+struct OpenChamberLiveActivityItem {
+    let sessionId: String
+    let title: String
+    let status: String
+    let startedAt: Double
+    let endedAt: Double?
+}
+
 struct OpenChamberLiveActivityRequest {
     let sessionId: String
     let startedAt: Double?
@@ -43,6 +51,9 @@ struct OpenChamberLiveActivityRequest {
     let updatedAt: Double
     let endedAt: Double?
     let dismissalSeconds: Double?
+    let title: String?
+    let workingCount: Int?
+    let items: [OpenChamberLiveActivityItem]?
 
     static let allowedStatuses: Set<String> = [
         "working", "tool", "retry", "input", "permission", "stale", "complete", "error",
@@ -178,26 +189,23 @@ enum OpenChamberLiveActivityManager {
 private extension OpenChamberLiveActivityManager {
     static func startAvailable(_ request: OpenChamberLiveActivityRequest) async throws -> String? {
         let activities = Activity<OpenChamberActivityAttributes>.activities
-        let sessionActivities = activities.filter { $0.attributes.sessionID == request.sessionId }
-        let others = activities.filter { $0.attributes.sessionID != request.sessionId }
         var reusable: [Activity<OpenChamberActivityAttributes>] = []
 
-        for activity in others {
-            await endImmediately(activity)
-            clearTask(for: activity.attributes.sessionID)
-        }
-        for activity in sessionActivities {
+        for activity in activities {
             switch activity.activityState {
             case .active, .stale:
                 reusable.append(activity)
             case .ended, .dismissed:
                 await endImmediately(activity)
+                clearTask(for: activity.attributes.sessionID)
             @unknown default:
                 await endImmediately(activity)
+                clearTask(for: activity.attributes.sessionID)
             }
         }
         for extra in reusable.dropFirst() {
             await endImmediately(extra)
+            clearTask(for: extra.attributes.sessionID)
         }
 
         if let existing = reusable.first {
@@ -232,10 +240,14 @@ private extension OpenChamberLiveActivityManager {
         }
     }
 
+    static func matchingActivities(sessionId: String) -> [Activity<OpenChamberActivityAttributes>] {
+        let activities = Activity<OpenChamberActivityAttributes>.activities
+        let exact = activities.filter { $0.attributes.sessionID == sessionId }
+        return exact.isEmpty ? activities : exact
+    }
+
     static func updateAvailable(_ request: OpenChamberLiveActivityRequest) async {
-        let matching = Activity<OpenChamberActivityAttributes>.activities.filter {
-            $0.attributes.sessionID == request.sessionId
-        }
+        let matching = matchingActivities(sessionId: request.sessionId)
         guard let existing = matching.first else {
             if trackedSessionIDs.contains(request.sessionId) {
                 markDismissed(request.sessionId)
@@ -254,9 +266,7 @@ private extension OpenChamberLiveActivityManager {
     }
 
     static func endAvailable(_ request: OpenChamberLiveActivityRequest) async {
-        let matching = Activity<OpenChamberActivityAttributes>.activities.filter {
-            $0.attributes.sessionID == request.sessionId
-        }
+        let matching = matchingActivities(sessionId: request.sessionId)
         guard let existing = matching.first else {
             clearTask(for: request.sessionId)
             return
@@ -275,11 +285,23 @@ private extension OpenChamberLiveActivityManager {
     static func makeContent(
         _ request: OpenChamberLiveActivityRequest
     ) -> ActivityContent<OpenChamberActivityAttributes.ContentState> {
+        let items = request.items?.map { item in
+            OpenChamberActivityAttributes.SessionItem(
+                sessionID: item.sessionId,
+                title: item.title,
+                status: item.status,
+                startedAt: item.startedAt,
+                endedAt: item.endedAt
+            )
+        }
         let state = OpenChamberActivityAttributes.ContentState(
             status: request.status,
             eventVersion: request.eventVersion,
             updatedAt: request.updatedAt,
-            endedAt: request.endedAt
+            endedAt: request.endedAt,
+            title: request.title,
+            workingCount: request.workingCount,
+            items: items
         )
         let staleDate = Date(timeIntervalSince1970: request.updatedAt + staleInterval)
         return ActivityContent(state: state, staleDate: staleDate)
