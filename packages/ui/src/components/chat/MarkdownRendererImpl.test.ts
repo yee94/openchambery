@@ -156,6 +156,12 @@ describe('stream completion reuses the streamed DOM', () => {
         expect(markdownRendererSource).toContain('for (const html of renderMarkdownSyncBlocks(text))');
     });
 
+    test('open fences upgrade through the Shiki line worker and prefix-diff', () => {
+        expect(markdownRendererSource).toContain('shouldPreserveStreamingFence');
+        expect(markdownRendererSource).toContain('upgradeStreamingFenceHighlight');
+        expect(markdownRendererSource).toContain('highlightLinesInWorker');
+    });
+
     test('decorated code blocks do not depend on the line-number defer flag', () => {
         // If decorate inlined the gutter, every already-painted code block would
         // be rebuilt the moment the defer flag flips at the end of a stream.

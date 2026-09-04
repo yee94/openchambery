@@ -7,7 +7,7 @@ import { createMarkdownWorkerTaskQueue } from './markdown-worker-task-queue';
 import {
   applyCodeHighlights,
   markdownBlockId,
-  parseMarkdownUnsafe,
+  parseMarkdownBlockUnsafe,
   streamBlocks,
 } from './markdownParsePipeline';
 
@@ -173,7 +173,7 @@ async function parseMarkdown(
     const parsed = [];
     for (const block of blocks) {
       if (isCancelled()) return;
-      let html = parseMarkdownUnsafe(block.src);
+      let html = parseMarkdownBlockUnsafe(block);
       if (request.highlight && block.highlight) {
         const highlighted = await applyCodeHighlights(
           html,

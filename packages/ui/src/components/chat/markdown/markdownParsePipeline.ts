@@ -3,6 +3,7 @@ import remend from 'remend';
 import katex from 'katex';
 import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '../../../lib/messages/inlineMessageLinks';
 import { parseCodeFenceInfo, type CodeFenceInfo } from './codeFenceInfo';
+import { stampOpenFenceHtml } from './codeStreamHighlight';
 import { findDollarMathStart, matchDollarMath } from './markdownMath';
 
 /**
@@ -252,6 +253,12 @@ export const parseMarkdownUnsafe = (text: string): string => (
   renderMathExpressions(parser.parse(text) as string)
 );
 
+/** Parse one segmented block. Open fences stay unhighlighted but stamped for incremental highlight. */
+export const parseMarkdownBlockUnsafe = (block: MarkdownBlock): string => {
+  const html = parseMarkdownUnsafe(block.src);
+  return block.highlight ? html : stampOpenFenceHtml(html);
+};
+
 export const CODE_BLOCK_RE = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
 
 export const CODE_HIGHLIGHT_LINE_LIMIT = 1200;
@@ -331,7 +338,7 @@ export const parseMarkdownBlocksUnsafe = (
   if (!text) return [];
   return streamBlocks(text, streaming).map((block) => ({
     id: markdownBlockId(block),
-    html: parseMarkdownUnsafe(block.src),
+    html: parseMarkdownBlockUnsafe(block),
     highlight: block.highlight,
   }));
 };

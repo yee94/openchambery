@@ -23,6 +23,11 @@ import { isImageFile } from '@/lib/toolHelpers';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { getClientPlatform } from '@/lib/platform';
 import { renderMarkdownBlocks, renderMarkdownSyncBlocks } from './markdown/markdownCore';
+import { highlightLinesInWorker } from './markdown/markdown-worker';
+import {
+  shouldPreserveStreamingFence,
+  upgradeStreamingFenceHighlight,
+} from './markdown/codeStreamHighlight';
 import { ensureMarkdownShikiTheme, getMarkdownSyntaxVars } from './markdown/markdownTheme';
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
 import { markdownHeightCacheKey, rememberMarkdownHeight } from './markdown/markdownHeightCache';
@@ -1512,6 +1517,9 @@ const useMorphdomMarkdown = ({
         morphdom(el, temp, {
           childrenOnly: true,
           onBeforeElUpdated: (fromEl, toEl) => {
+            if (shouldPreserveStreamingFence(fromEl, toEl)) {
+              return false;
+            }
             if (fromEl instanceof HTMLImageElement && toEl instanceof HTMLImageElement) {
               const source = fromEl.getAttribute('data-md-image-source');
               if (source && source === toEl.getAttribute('data-md-image-source')) {
@@ -1555,6 +1563,10 @@ const useMorphdomMarkdown = ({
       if (!ctx.deferCodeLineNumberSync) {
         applyMarkdownCodeBlockWrapState(target, ctx.codeBlockLineWrap, ctx.labels);
       }
+      void upgradeStreamingFenceHighlight(target, highlightLinesInWorker, {
+        signal: renderAbortController.signal,
+        priority: 'visible',
+      });
       notifyRichContentReady();
     };
 

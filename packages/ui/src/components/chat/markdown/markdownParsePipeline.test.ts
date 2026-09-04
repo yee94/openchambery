@@ -4,6 +4,7 @@ import {
     hasOpenFence,
     healMarkdown,
     markdownBlockId,
+    parseMarkdownBlockUnsafe,
     parseMarkdownBlocksUnsafe,
     parseMarkdownUnsafe,
     shouldUseMainThreadMarkdownParse,
@@ -54,5 +55,14 @@ describe('markdown parse pipeline', () => {
         const blocks = parseMarkdownBlocksUnsafe('One\n\nTwo', false);
         expect(blocks).toHaveLength(2);
         expect(blocks.every((block) => block.html.length > 0)).toBe(true);
+    });
+
+    test('open fence HTML is stamped for incremental highlight', () => {
+        const text = 'Intro\n\n```ts\nconst x = 1\n';
+        const blocks = streamBlocks(text, true);
+        const fence = blocks[blocks.length - 1];
+        expect(fence).toBeTruthy();
+        expect(parseMarkdownBlockUnsafe(fence!)).toContain('data-md-stream-fence="true"');
+        expect(parseMarkdownBlocksUnsafe(text, true).at(-1)?.html).toContain('data-md-stream-fence="true"');
     });
 });

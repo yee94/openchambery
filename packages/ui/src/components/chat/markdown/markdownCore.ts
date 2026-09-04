@@ -5,11 +5,13 @@ import { isVSCodeRuntime } from '@/lib/desktop';
 import { highlightCodeInWorker, parseMarkdownInWorker } from './markdown-worker';
 import type { MarkdownParsedBlock } from './markdown-worker-protocol';
 import type { MarkdownWorkerPriority } from './markdown-worker-protocol';
+import { stampOpenFenceHtml } from './codeStreamHighlight';
 import {
   applyCodeHighlights,
   CODE_HIGHLIGHT_LINE_LIMIT,
   hashMarkdown,
   markdownBlockId,
+  parseMarkdownBlockUnsafe,
   parseMarkdownUnsafe,
   shouldUseMainThreadMarkdownParse,
   streamBlocks,
@@ -140,7 +142,7 @@ const parseBlockOnMain = async (
   priority: MarkdownWorkerPriority,
 ): Promise<string | null> => {
   if (signal?.aborted) return null;
-  const parsed = parseMarkdownUnsafe(block.src);
+  const parsed = parseMarkdownBlockUnsafe(block);
   if (signal?.aborted) return null;
   const highlighted = block.highlight
     ? await highlightCodeBlocks(parsed, signal, priority)
@@ -181,7 +183,12 @@ export const renderMarkdownSync = (text: string): string => {
   if (cached !== undefined) {
     return cached;
   }
-  const html = sanitize(parseMarkdownUnsafe(text));
+  const parsed = parseMarkdownUnsafe(text);
+  const html = sanitize(
+    streamBlocks(text, false).some((block) => !block.highlight)
+      ? stampOpenFenceHtml(parsed)
+      : parsed,
+  );
   writeSyncCache(text, html);
   return html;
 };
@@ -195,26 +202,29 @@ export const renderMarkdownSync = (text: string): string => {
  */
 export const renderMarkdownSyncBlocks = (text: string): string[] => {
   if (!text) return [];
-  const sources = streamBlocks(text, false).map((block) => block.src);
-  const results: string[] = new Array(sources.length).fill('');
+  const blocks = streamBlocks(text, false);
+  const results: string[] = new Array(blocks.length).fill('');
   const pendingIndexes: number[] = [];
   const pendingHtml: string[] = [];
 
-  sources.forEach((src, index) => {
-    const cached = readSyncCache(src);
+  blocks.forEach((block, index) => {
+    const cached = readSyncCache(block.src);
     if (cached !== undefined) {
       results[index] = cached;
       return;
     }
     pendingIndexes.push(index);
-    pendingHtml.push(parseMarkdownUnsafe(src));
+    pendingHtml.push(parseMarkdownBlockUnsafe(block));
   });
 
   const sanitized = sanitizeBatch(pendingHtml);
   pendingIndexes.forEach((index, slot) => {
     const html = sanitized[slot] ?? '';
     results[index] = html;
-    writeSyncCache(sources[index], html);
+    const source = blocks[index]?.src;
+    if (source !== undefined) {
+      writeSyncCache(source, html);
+    }
   });
 
   return results;
