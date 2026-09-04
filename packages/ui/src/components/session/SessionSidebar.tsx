@@ -8,10 +8,11 @@ import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell } from '@/lib/desktop';
 import { formatDirectoryName, cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useNotificationStore } from '@/sync/notification-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
 import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { openAssistant } from '@/stores/useAssistantUIStore';
-import { useAlwaysVisibleSessionIds } from './sidebar/hooks/useAlwaysVisibleSessionIds';
+import { useAlwaysVisibleSessionIds, useRunningSessionIds } from './sidebar/hooks/useAlwaysVisibleSessionIds';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -76,7 +77,7 @@ import {
   type SessionFocusScope,
 } from '@/stores/useSessionFocusStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
-import { derivePinnedSessions } from './sidebar/pinnedSessions';
+import { derivePinnedSessions, listInProgressHomeSessions } from './sidebar/pinnedSessions';
 import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import {
   compareSessionsByPinnedAndTime,
@@ -251,6 +252,7 @@ const SIDEBAR_PR_NO_PR_RETRY_MS = 5 * 60_000;
 
 const EMPTY_SUBTREE_SET: Set<string> = new Set();
 const EMPTY_PATH_LIST: string[] = [];
+const EMPTY_UNSEEN: Readonly<Record<string, number>> = {};
 
 const useStableRenderCallback = <Args extends unknown[], Return>(
   handler: (...args: Args) => Return,
@@ -452,6 +454,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   // Viewing + running sessions stay in the visible window of already-loaded
   // lists (does not fetch more sessions from the server).
   const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds({ enabled: isVisible });
+  // Hidden surface: no unread-map subscription either — the top in-progress
+  // group recomputes from the live index once the sidebar is visible again.
+  const runningSessionIds = useRunningSessionIds({ enabled: isVisible });
+  const unseenBySession = useNotificationStore((state) =>
+    isVisible ? state.index.session.unseenCount : EMPTY_UNSEEN,
+  );
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const fullCatalogSessionIds = useGlobalSessionsStore((state) => state.fullCatalogSessionIds);
   const fullCatalogGeneration = useGlobalSessionsStore((state) => state.fullCatalogGeneration);
@@ -1726,11 +1734,20 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return derivePinnedSessions(sessions, pinnedSessionIds);
   }, [isVSCode, pinnedSessionIds, sessions]);
 
-  const pinnedItems = React.useMemo(() => {
-    if (isVSCode) {
-      return [];
-    }
+  // Top in-progress group mirrors mobile home: non-pinned, non-archived
+  // busy/retry or top-level-unread rows. VS Code has no global pinned group
+  // but still lifts these rows. Search hides the whole top section.
+  const inProgressSessions = React.useMemo(() => {
+    if (hasSessionSearchQuery) return [];
+    return listInProgressHomeSessions(
+      sessions,
+      pinnedSessionIds,
+      runningSessionIds,
+      unseenBySession,
+    );
+  }, [hasSessionSearchQuery, pinnedSessionIds, runningSessionIds, sessions, unseenBySession]);
 
+  const { pinnedItems, inProgressItems } = React.useMemo(() => {
     const toItem = (session: Session) => {
       const existing = sessionSidebarMetaById.get(session.id);
       const sessionDirectory = normalizePath(
@@ -1763,14 +1780,22 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       };
     };
 
-    return pinnedSessions
-      .map(toItem)
-      .filter(
-        (item): item is NonNullable<ReturnType<typeof toItem>> => item !== null,
-      );
+    const toItems = (source: Session[]) =>
+      source
+        .map(toItem)
+        .filter(
+          (item): item is NonNullable<ReturnType<typeof toItem>> => item !== null,
+        );
+
+    return {
+      // VS Code still renders no global pinned group.
+      pinnedItems: isVSCode ? [] : toItems(pinnedSessions),
+      inProgressItems: toItems(inProgressSessions),
+    };
   }, [
     filterSessionNodesForSearch,
     hasSessionSearchQuery,
+    inProgressSessions,
     isVSCode,
     normalizedSessionSearchQuery,
     pinnedSessions,
@@ -1848,10 +1873,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const pinnedNavigationTargets = React.useMemo<
     SessionNavigationTarget[]
   >(() => {
-    if (hasSessionSearchQuery || isVSCode) {
+    if (hasSessionSearchQuery) {
       return [];
     }
-    return pinnedSessions.map((session, visibleIndex) => {
+    // Pinned rows first, then the unlabeled in-progress rows; both live in the
+    // top `pinned` scope (VS Code included — its pinned list is simply empty).
+    return [...pinnedSessions, ...inProgressSessions].map((session, visibleIndex) => {
       const meta = sessionSidebarMetaById.get(session.id);
       return {
         scope: "pinned",
@@ -1864,7 +1891,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         visibleIndex,
       };
     });
-  }, [hasSessionSearchQuery, isVSCode, pinnedSessions, sessionSidebarMetaById]);
+  }, [hasSessionSearchQuery, inProgressSessions, pinnedSessions, sessionSidebarMetaById]);
 
   const [visiblePinnedShortcutSessionIds, setVisiblePinnedShortcutSessionIds] =
     React.useState<readonly string[] | null>(null);
@@ -1960,7 +1987,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, [numberedSidebarSessionTargets]);
 
   const pinnedFocusIdentities = React.useMemo<SessionFocusIdentity[]>(() => {
-    if (!currentSessionId || hasSessionSearchQuery || isVSCode) {
+    if (!currentSessionId || hasSessionSearchQuery) {
       return [];
     }
 
@@ -1977,8 +2004,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       node.children.forEach((child) => visit(child, projectId));
     };
     pinnedItems.forEach((item) => visit(item.node, item.projectId));
+    inProgressItems.forEach((item) => visit(item.node, item.projectId));
     return identities;
-  }, [currentSessionId, hasSessionSearchQuery, isVSCode, pinnedItems]);
+  }, [currentSessionId, hasSessionSearchQuery, inProgressItems, pinnedItems]);
 
   const projectFocusIdentities = React.useMemo<SessionFocusIdentity[]>(() => {
     if (!currentSessionId) {
@@ -2553,55 +2581,65 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         </div>
       </div>
     ) : null;
+  // Leading action buttons stay web/desktop/mobile-only; the pinned/in-progress
+  // top section also renders in VS Code (its pinned group is just empty).
+  const showSidebarActionButtons = !isVSCode && !hasSessionSearchQuery;
+  const showPinnedTopSection =
+    !hasSessionSearchQuery && (pinnedItems.length > 0 || inProgressItems.length > 0);
   const topContent =
-    !isVSCode && !hasSessionSearchQuery ? (
+    showSidebarActionButtons || showPinnedTopSection ? (
       <>
-        {mobileVariant && hasSidebarBrand ? <SidebarBrandMark /> : null}
-        <div className="space-y-0.5 py-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "w-full justify-start font-normal",
-              mobileVariant && "h-11",
-            )}
-            onClick={handleNewTask}
-          >
-            <Icon name="chat-new" className="size-4" />
-            <span className="truncate">
-              {t("sessions.sidebar.header.actions.newSession")}
-            </span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "w-full justify-start font-normal",
-              activeMainTab === "schedule" && "bg-interactive-selection text-interactive-selection-foreground",
-              mobileVariant && "h-11",
-            )}
-            onClick={handleOpenScheduledTasks}
-          >
-            <Icon name="time" className="size-4" />
-            <span className="truncate">{t("sessions.sidebar.header.actions.scheduledTasks")}</span>
-          </Button>
-          {assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "w-full justify-start font-normal",
-              activeMainTab === "assistant" && "bg-interactive-selection text-interactive-selection-foreground",
-              mobileVariant && "h-11",
-            )}
-            onClick={handleOpenAssistants}
-          >
-            <Icon name="ai-agent" className="size-4" />
-            <span className="truncate">{t("assistants.title")}</span>
-          </Button> : null}
-        </div>
-        {pinnedItems.length > 0 ? (
+        {showSidebarActionButtons ? (
+          <>
+            {mobileVariant && hasSidebarBrand ? <SidebarBrandMark /> : null}
+            <div className="space-y-0.5 py-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "w-full justify-start font-normal",
+                  mobileVariant && "h-11",
+                )}
+                onClick={handleNewTask}
+              >
+                <Icon name="chat-new" className="size-4" />
+                <span className="truncate">
+                  {t("sessions.sidebar.header.actions.newSession")}
+                </span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "w-full justify-start font-normal",
+                  activeMainTab === "schedule" && "bg-interactive-selection text-interactive-selection-foreground",
+                  mobileVariant && "h-11",
+                )}
+                onClick={handleOpenScheduledTasks}
+              >
+                <Icon name="time" className="size-4" />
+                <span className="truncate">{t("sessions.sidebar.header.actions.scheduledTasks")}</span>
+              </Button>
+              {assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "w-full justify-start font-normal",
+                  activeMainTab === "assistant" && "bg-interactive-selection text-interactive-selection-foreground",
+                  mobileVariant && "h-11",
+                )}
+                onClick={handleOpenAssistants}
+              >
+                <Icon name="ai-agent" className="size-4" />
+                <span className="truncate">{t("assistants.title")}</span>
+              </Button> : null}
+            </div>
+          </>
+        ) : null}
+        {showPinnedTopSection ? (
           <SidebarPinnedSessions
             items={pinnedItems}
+            inProgressItems={inProgressItems}
             renderSessionNode={renderSessionNode}
             currentSessionId={currentSessionId}
             editingId={editingId}
@@ -2665,7 +2703,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       {isVisible ? (
       <SidebarProjectsList
         topContent={topContent}
-        hasLeadingSection={topContent !== null && pinnedItems.length > 0}
+        hasLeadingSection={topContent !== null && (pinnedItems.length > 0 || inProgressItems.length > 0)}
         headerAccessory={projectHeaderActions}
         sectionsForRender={sectionsForSidebarRender}
         projectSections={projectSections}

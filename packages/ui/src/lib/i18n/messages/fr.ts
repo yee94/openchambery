@@ -1371,6 +1371,7 @@ export const dict = {
   'directoryTree.state.loading': 'Chargement...',
   'directoryTree.state.noDirectoriesFound': 'Aucun répertoire trouvé',
   'directoryTree.section.pinned': 'Épinglé',
+  'directoryTree.section.pinnedInProgress': 'Épinglés / En cours',
   'directoryTree.section.browse': 'Parcourir',
   'aboutDialog.versionLabel': 'Version {version}',
   'aboutDialog.openChamberVersionLabel': 'Version OpenChamber {version}',

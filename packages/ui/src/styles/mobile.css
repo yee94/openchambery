@@ -413,6 +413,30 @@
   background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
 }
 
+/* Composer `/` `@` `#` catalogs: glass panel, hairline elevation, no border-2
+   slab. Rows use momentary press only — a persisted selected fill reads as a
+   stuck tap highlight on touch. */
+.oc-composer-autocomplete-surface {
+  border: 0;
+  background: var(--oc-mobile-glass-fill);
+  box-shadow: var(--oc-mobile-glass-shadow);
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+}
+
+.oc-composer-autocomplete-row {
+  margin-inline: 0.375rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oc-composer-autocomplete-row:active {
+  background: var(--oc-mobile-press-fill);
+}
+
 .oc-mobile-round-control {
   corner-shape: round;
 }
@@ -2032,7 +2056,8 @@ button.oc-mobile-worktree-label-trigger:active,
   .oc-mobile-glass-surface,
   .oc-mobile-floating-surface,
   .oc-mobile-floating-action,
-  .oc-mobile-glass-control {
+  .oc-mobile-glass-control,
+  .oc-composer-autocomplete-surface {
     background: var(--surface-elevated);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

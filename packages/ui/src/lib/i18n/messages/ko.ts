@@ -1589,6 +1589,7 @@ export const dict: Record<I18nKey, string> = {
   'directoryTree.state.loading': '로드 중…',
   'directoryTree.state.noDirectoriesFound': '디렉터리 없음',
   'directoryTree.section.pinned': '고정됨',
+  'directoryTree.section.pinnedInProgress': '고정 / 진행 중',
   'directoryTree.section.browse': '찾아보기',
   'aboutDialog.versionLabel': '버전 {version}',
   'aboutDialog.openChamberVersionLabel': 'OpenChamber 버전 {version}',

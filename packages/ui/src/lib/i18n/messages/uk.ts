@@ -1565,6 +1565,7 @@ export const dict: Record<I18nKey, string> = {
   "directoryTree.state.loading": "Завантаження...",
   "directoryTree.state.noDirectoriesFound": "Каталоги не знайдено",
   "directoryTree.section.pinned": "Закріплено",
+  "directoryTree.section.pinnedInProgress": "Закріплені / В роботі",
   "directoryTree.section.browse": "Огляд",
   "aboutDialog.versionLabel": "Версія {version}",
   "aboutDialog.openChamberVersionLabel": "Версія OpenChamber {version}",

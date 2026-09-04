@@ -1553,6 +1553,7 @@ export const dict: Record<I18nKey, string> = {
   'directoryTree.state.loading': '加载中...',
   'directoryTree.state.noDirectoriesFound': '未找到目录',
   'directoryTree.section.pinned': '置顶',
+  'directoryTree.section.pinnedInProgress': '置顶/进行中',
   'directoryTree.section.browse': '浏览',
   'aboutDialog.versionLabel': '版本 {version}',
   'aboutDialog.openChamberVersionLabel': 'OpenChamber 版本 {version}',

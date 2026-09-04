@@ -1916,6 +1916,7 @@ export const dict: Record<I18nKey, string> = {
   'directoryTree.field.newDirectoryPlaceholder': 'new_directory',
   'directoryTree.section.browse': 'Przeglądaj',
   'directoryTree.section.pinned': 'Przypięte',
+  'directoryTree.section.pinnedInProgress': 'Przypięte / W toku',
   'directoryTree.state.loading': 'Ładowanie...',
   'directoryTree.state.locatingHomeDirectory': 'Wyszukiwanie katalogu domowego...',
   'directoryTree.state.noDirectoriesFound': 'Nie znaleziono katalogów',

@@ -1583,6 +1583,7 @@ export const dict: Record<I18nKey, string> = {
   'directoryTree.state.loading': '読み込み中...',
   'directoryTree.state.noDirectoriesFound': 'ディレクトリが見つかりません',
   'directoryTree.section.pinned': 'ピン留め',
+  'directoryTree.section.pinnedInProgress': 'ピン留め / 進行中',
   'directoryTree.section.browse': '参照',
   'aboutDialog.versionLabel': 'バージョン {version}',
   'aboutDialog.openChamberVersionLabel': 'OpenChamber バージョン {version}',

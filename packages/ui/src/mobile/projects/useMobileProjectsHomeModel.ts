@@ -26,7 +26,10 @@ import {
   mergeAlwaysVisibleSessionIds,
   useRunningSessionIds,
 } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
-import { derivePinnedSessions } from '@/components/session/sidebar/pinnedSessions';
+import {
+  derivePinnedSessions,
+  listInProgressHomeSessions,
+} from '@/components/session/sidebar/pinnedSessions';
 import { createSessionOwnershipIndex } from '@/components/session/sidebar/sessionOwnership';
 import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 import { buildSessionTree } from '@/components/session/sidebar/sessionTree';
@@ -161,28 +164,9 @@ export const listProjectAreaRootSessions = (
   omitPinnedSessions: true,
 }).map((node) => node.session);
 
-/**
- * Non-pinned home-attention rows: live busy/retry sessions, plus top-level
- * unread sessions (the blue completed-unread marker). Pinned ids stay in the
- * pinned group; archived sessions stay out of this ephemeral set.
- */
-export const listInProgressHomeSessions = (
-  sessions: Session[],
-  pinnedSessionIds: ReadonlySet<string>,
-  runningSessionIds: ReadonlySet<string>,
-  unseenBySession: Readonly<Record<string, number>>,
-): Session[] => {
-  const active: Session[] = [];
-  for (const session of sessions) {
-    if (pinnedSessionIds.has(session.id) || isSessionArchived(session)) continue;
-    const running = runningSessionIds.has(session.id);
-    const unread = (unseenBySession[session.id] ?? 0) > 0 && !getParentId(session);
-    if (!running && !unread) continue;
-    active.push(session);
-  }
-  active.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
-  return active;
-};
+// Re-exported for existing mobile imports; the shared home/sidebar contract
+// lives next to derivePinnedSessions in the sidebar module.
+export { listInProgressHomeSessions };
 
 export type MobileProjectsHomeModel = {
   projects: MobileProjectHomeItem[];

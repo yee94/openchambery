@@ -367,7 +367,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     ? 'group-hover:opacity-100 group-hover:pointer-events-auto'
     : 'group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto';
   const showOpenInEditorAction = isVSCode;
-  const showQuickUnpinAction = renderContext === 'pinned';
+  // Pinned-scope rows also host unlabeled in-progress sessions; only truly
+  // pinned rows swap the quick action to unpin.
+  const showQuickUnpinAction = renderContext === 'pinned' && pinnedSessionIds.has(node.session.id);
   const showQuickPinAction = !showQuickUnpinAction && !archivedBucket && !mobileVariant;
   // Match typography-ui-label (~14px) so action icons align with the title text.
   const actionButtonSizeClass = 'h-5 w-5';

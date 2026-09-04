@@ -14,6 +14,10 @@ import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
+import {
+  composerAutocompleteRowClassName,
+  composerAutocompleteSurfaceClassName,
+} from './composerAutocompleteChrome';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import type { Session } from '@opencode-ai/sdk/v2';
@@ -458,7 +462,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   return (
       <div
         ref={containerRef}
-        className="absolute z-[100] min-w-0 w-full max-w-[640px] max-h-64 bg-background border-2 border-border/60 rounded-xl shadow-none bottom-full mb-2 left-0 flex flex-col"
+        className={composerAutocompleteSurfaceClassName(isMobile, 'max-w-[640px] max-h-64')}
         style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}
       >
         <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0">
@@ -477,7 +481,8 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                   className={cn(
                     'flex items-start gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg',
                     isMobile && 'min-h-11',
-                    isSelected && 'bg-interactive-selection text-interactive-selection-foreground',
+                    composerAutocompleteRowClassName(isMobile, isSelected),
+                    !isMobile && isSelected && 'text-interactive-selection-foreground',
                   )}
                   {...getItemInteractionHandlers(index, () => handleAgentPick(agent.name))}
                 >
@@ -510,7 +515,8 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                   className={cn(
                     'flex items-center gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg',
                     isMobile && 'min-h-11',
-                    isSelected && 'bg-interactive-selection text-interactive-selection-foreground',
+                    composerAutocompleteRowClassName(isMobile, isSelected),
+                    !isMobile && isSelected && 'text-interactive-selection-foreground',
                   )}
                   {...getItemInteractionHandlers(rowIndex, () => handleSessionPick(session))}
                 >
@@ -549,7 +555,8 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                   className={cn(
                     "flex items-center gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg",
                     isMobile && 'min-h-11',
-                    isSelected && "bg-interactive-selection text-interactive-selection-foreground"
+                    composerAutocompleteRowClassName(isMobile, isSelected),
+                    !isMobile && isSelected && 'text-interactive-selection-foreground',
                   )}
                   {...getItemInteractionHandlers(rowIndex, () => handleFileSelect(file))}
                 >
@@ -603,7 +610,8 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                   className={cn(
                     "flex items-center gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg",
                     isMobile && 'min-h-11',
-                    isSelected && "bg-interactive-selection text-interactive-selection-foreground"
+                    composerAutocompleteRowClassName(isMobile, isSelected),
+                    !isMobile && isSelected && 'text-interactive-selection-foreground',
                   )}
                   {...getItemInteractionHandlers(rowIndex, () => handleFileSelect(file))}
                 >

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.2] - 2026-09-04
+
+### 会话
+
+- 电脑端和 VS Code 侧栏顶部也会列出进行中、未读会话，和手机首页的「置顶/进行中」一致。
+
+### 移动端
+
+- 输入框 `/`、`@`、`#` 补全面板改成玻璃底，点选后不再留下一块常亮高亮。
+
 ## [1.19.5-beta.1] - 2026-09-04
 
 ### 移动端
