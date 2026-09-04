@@ -119,4 +119,15 @@ describe('AssistantView contact surface', () => {
     expect(source).not.toContain('refreshBinding')
     expect(source).toContain("t('assistants.conversation.contactHint')")
   })
+
+  test('pending capability or snapshot uses a loading spinner, not unavailable copy', async () => {
+    const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
+    expect(source).toContain('resolveAssistantWorkspacePresentation')
+    expect(source).toContain('data-assistant-workspace-loading')
+    expect(source).toContain("t('common.loading')")
+    expect(source).toContain("name=\"loader-4\"")
+    expect(source).not.toContain("isPending) return renderState('ai-agent', t('assistants.state.unavailable')")
+    expect(source).toContain('snapshotSettled: snapshotQuery.isSuccess')
+    expect(source).toContain('hasAssistant: Boolean(assistant)')
+  })
 })

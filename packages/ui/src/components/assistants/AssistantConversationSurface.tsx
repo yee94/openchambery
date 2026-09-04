@@ -14,8 +14,18 @@ import {
   useAssistantSnapshotQuery,
   type AssistantDTO,
 } from '@/queries/assistantQueries'
-import { AssistantAPIError } from '@/queries/assistantDTO'
 import { getAssistantPresentation } from './assistantPresentation'
+import {
+  contactOptimisticSending,
+  contactSendErrorMessage,
+  createContactOptimisticTurn,
+  EMPTY_CONTACT_MESSAGES,
+  markContactOptimisticFailed,
+  mergeContactTranscript,
+  reconcileContactOptimisticTurns,
+  scopeContactOptimisticTurns,
+  type ContactOptimisticTurn,
+} from './contactOptimisticTurns'
 import { AssistantAssistantCard } from './AssistantAssistantCard'
 import { AssistantScheduleCard } from './AssistantScheduleCard'
 import { AssistantSessionCard } from './AssistantSessionCard'
@@ -74,18 +84,39 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   }
   const [draft, setDraft] = React.useState('')
   const [attachments, setAttachments] = React.useState<ChatPromptAttachment[]>([])
-  const [sending, setSending] = React.useState(false)
+  const [optimisticTurns, setOptimisticTurns] = React.useState<ContactOptimisticTurn[]>([])
   const [sendError, setSendError] = React.useState<string | null>(null)
   const setContactSending = useAssistantContactWorkingStore((state) => state.setSending)
   const working = useAssistantWorking(assistant.id, assistant.assignedSessionIDs ?? [], Boolean(assistant.working))
   const scrollerRef = React.useRef<HTMLDivElement | null>(null)
-  const messages = contactQuery.data?.messages ?? []
+  const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
+  const transcript = mergeContactTranscript(messages, optimisticTurns, assistant.id)
+  const sending = contactOptimisticSending(optimisticTurns)
+
+  React.useEffect(() => {
+    setSendError(null)
+    setOptimisticTurns((current) => reconcileContactOptimisticTurns(
+      scopeContactOptimisticTurns(current, assistant.id),
+      messages,
+    ))
+  }, [assistant.id, messages])
+
+  React.useEffect(() => {
+    setContactSending(assistant.id, sending)
+  }, [assistant.id, sending, setContactSending])
+
+  React.useEffect(() => {
+    const id = assistant.id
+    return () => {
+      setContactSending(id, false)
+    }
+  }, [assistant.id, setContactSending])
 
   React.useEffect(() => {
     const node = scrollerRef.current
     if (!node) return
     node.scrollTop = node.scrollHeight
-  }, [messages.length, sending])
+  }, [transcript.length, sending])
 
   const addFiles = useEvent(async (files: ArrayLike<File> | null) => {
     const result = await readContactComposerFiles(files)
@@ -114,7 +145,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   })
   const submit = useEvent(async () => {
     const text = draft.trim()
-    if ((!text && attachments.length === 0) || sending) return
+    if (!text && attachments.length === 0) return
     const parts = [
       ...(text ? [{ type: 'text' as const, text }] : []),
       ...attachments.map((attachment) => ({
@@ -124,40 +155,35 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         filename: attachment.name,
       })),
     ]
-    setSending(true)
-    setContactSending(assistant.id, true)
+    const messageID = `oc_contact_${createUuid()}`
+    const sentAssistantID = assistant.id
+    setOptimisticTurns((current) => [...current, createContactOptimisticTurn(sentAssistantID, messageID, parts)])
+    setDraft('')
+    setAttachments([])
     setSendError(null)
     try {
-      await sendAssistantContactMessage(assistant.id, `oc_contact_${createUuid()}`, { parts })
+      await sendAssistantContactMessage(sentAssistantID, messageID, { parts })
       if (capabilityQuery.data?.serverInstanceID) {
         void donateNativeAssistantInteraction({
           serverInstanceID: capabilityQuery.data.serverInstanceID,
-          assistantID: assistant.id,
+          assistantID: sentAssistantID,
           name: displayName,
-          avatarSeed: assistant.id,
+          avatarSeed: sentAssistantID,
           ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
         }).catch(() => undefined)
       }
-      setDraft('')
-      setAttachments([])
     } catch (error) {
-      const code = error instanceof AssistantAPIError ? error.code : ''
-      const detail = error instanceof AssistantAPIError && error.message && error.message !== error.code
-        ? error.message
-        : ''
-      setSendError(
-        code === 'no_provider'
-          ? t('assistants.contact.noProvider')
-          : detail || t('assistants.contact.sendFailed'),
-      )
-    } finally {
-      setSending(false)
-      setContactSending(assistant.id, false)
+      const detail = contactSendErrorMessage(error, {
+        noProvider: t('assistants.contact.noProvider'),
+        sendFailed: t('assistants.contact.sendFailed'),
+      })
+      setOptimisticTurns((current) => markContactOptimisticFailed(current, messageID, detail))
     }
   })
 
-  const loadFailed = contactQuery.isError && messages.length === 0
-  const empty = contactQuery.isSuccess && messages.length === 0
+  const loadFailed = contactQuery.isError && transcript.length === 0
+  const empty = contactQuery.isSuccess && transcript.length === 0
+  const optimisticByID = new Map(optimisticTurns.map((turn) => [turn.messageID, turn]))
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -181,7 +207,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           </div>
         ) : (
           <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
-            {messages.map((message) => {
+            {transcript.map((message) => {
               const isUser = message.role === 'user'
               const isPeer = message.role === 'peer'
               const senderName = isPeer ? peerName(message.fromAssistantID, message.fromAssistantName) : displayName
@@ -189,11 +215,13 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                 ? snapshotQuery.data?.assistants.find((item) => item.id === message.fromAssistantID)
                 : assistant
               const senderPresentation = sender ? getAssistantPresentation(sender.name) : null
+              const optimistic = optimisticByID.get(message.messageID)
               return (
                 <div
                   key={message.messageID}
                   className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
                   data-assistant-contact-role={message.role}
+                  data-assistant-contact-turn-status={optimistic?.status}
                 >
                   {!isUser ? (
                     <AssistantWorkingAvatar
@@ -266,13 +294,16 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       }
                       return null
                     })}
+                    {optimistic?.status === 'sending' ? (
+                      <p className="typography-micro text-muted-foreground">{t('assistants.contact.sending')}</p>
+                    ) : null}
+                    {optimistic?.status === 'failed' ? (
+                      <p className="typography-micro text-[var(--status-error)]">{optimistic.error || t('assistants.contact.sendFailed')}</p>
+                    ) : null}
                   </div>
                 </div>
               )
             })}
-            {sending ? (
-              <p className="typography-micro text-muted-foreground">{t('assistants.contact.sending')}</p>
-            ) : null}
           </div>
         )}
       </div>
@@ -297,7 +328,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               layout="inline"
               value={draft}
               attachments={attachments}
-              pending={sending}
+              pending={false}
               isMobile={isMobile}
               placeholder={t('assistants.contact.placeholder', { name: displayName })}
               sendLabel={t('assistants.contact.send')}

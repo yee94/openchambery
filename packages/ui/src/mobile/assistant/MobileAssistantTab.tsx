@@ -65,7 +65,7 @@ function MobileAssistantSkeleton() {
     <div
       className="flex h-full min-h-0 flex-col gap-3 p-5"
       aria-busy="true"
-      aria-label={t('assistants.state.unavailable')}
+      aria-label={t('common.loading')}
     >
       <div className="h-10 w-10 animate-pulse rounded-xl bg-[var(--surface-muted)] motion-reduce:animate-none" />
       <div className="mt-2 h-4 w-2/3 animate-pulse rounded-md bg-[var(--surface-muted)] motion-reduce:animate-none" />

@@ -215,6 +215,8 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain("t('assistants.guide.enableAction')");
     expect(mobileTab).toContain("t('assistants.guide.shareTitle')");
     expect(mobileTab).toContain('instanceDisabled && !unavailable');
+    expect(mobileTab).toContain("aria-label={t('common.loading')}");
+    expect(mobileTab).not.toContain("aria-label={t('assistants.state.unavailable')}");
     expect(mobileTab).toContain('snapshot.data.assistants.length === 0');
     expect(mobileTab).toContain('requestCreate();');
     expect(mobileTab).toContain("t('assistants.onboarding.action')");
@@ -299,7 +301,14 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('data-assistant-contact-composer');
     expect(conversation).toContain('data-assistant-contact-composer-surface');
     expect(conversation).toContain('sendLabel={t(\'assistants.contact.send\')}');
-    expect(conversation).toContain('pending={sending}');
+    expect(conversation).toContain('pending={false}');
+    expect(conversation).not.toContain('pending={sending}');
+    expect(conversation).toContain('createContactOptimisticTurn');
+    expect(conversation).toContain('markContactOptimisticFailed');
+    expect(conversation).toContain('contactSendErrorMessage');
+    expect(conversation.indexOf("setDraft('')")).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
+    expect(conversation.indexOf('createContactOptimisticTurn')).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
+    expect(conversation).toContain('data-assistant-contact-turn-status');
     expect(conversation).toContain('isMobile={isMobile}');
     expect(conversation).toContain('oc-mobile-composer-surface');
     expect(conversation).toContain('chat-input-column');

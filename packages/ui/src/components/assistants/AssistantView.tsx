@@ -23,6 +23,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { AssistantDeleteConfirmDialog } from './AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from './assistantPresentation';
+import { resolveAssistantWorkspacePresentation } from './assistantWorkspaceState';
 
 type MobileAssistantConversationHeaderProps = {
   assistant?: Pick<AssistantDTO, 'id' | 'name' | 'assignedSessionIDs' | 'working'> | null;
@@ -199,11 +200,36 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     }
     returnToChat();
   });
+  const workspaceState = resolveAssistantWorkspacePresentation({
+    capabilityPending: capabilityQuery.isPending,
+    snapshotPending: snapshotQuery.isPending,
+    capabilityError: capabilityQuery.isError,
+    supported: capabilityQuery.data?.supported,
+    capabilityEnabled: capabilityQuery.data?.enabled,
+    snapshotEnabled: snapshot?.enabled,
+    snapshotSettled: snapshotQuery.isSuccess,
+    assistantCount: snapshot?.assistants.length ?? 0,
+    hasAssistant: Boolean(assistant),
+  });
   const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="relative flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
-  if (capabilityQuery.isPending || snapshotQuery.isPending) return renderState('ai-agent', t('assistants.state.unavailable'));
-  if (capabilityQuery.isError || !capabilityQuery.data?.supported || !capabilityQuery.data.enabled || !snapshot?.enabled) return renderState('cloud-off', t('assistants.state.unavailable'));
-  if (!snapshot.assistants.length) return renderState('ai-agent', t('assistants.onboarding.title'), t('assistants.onboarding.description'), <Button onClick={openCreateSettings}>{t('assistants.onboarding.action')}</Button>);
-  if (!assistant) return renderState('ai-agent', t('assistants.state.unavailable'));
+  if (workspaceState === 'loading') {
+    return (
+      <div className="relative flex h-full min-h-0 flex-col">
+        {isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}
+        <div
+          className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"
+          aria-busy="true"
+          aria-label={t('common.loading')}
+          data-assistant-workspace-loading=""
+        >
+          <Icon name="loader-4" className="size-6 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+  if (workspaceState === 'unavailable') return renderState('cloud-off', t('assistants.state.unavailable'));
+  if (workspaceState === 'onboarding') return renderState('ai-agent', t('assistants.onboarding.title'), t('assistants.onboarding.description'), <Button onClick={openCreateSettings}>{t('assistants.onboarding.action')}</Button>);
+  if (!snapshot || !assistant) return renderState('cloud-off', t('assistants.state.unavailable'));
   const presentation = getAssistantPresentation(assistant.name);
   const warning = !assistant.enabled ? t('assistants.state.assistantDisabled') : snapshotQuery.isError ? t('assistants.state.staleSnapshot') : null;
   return (
