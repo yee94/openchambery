@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.6] - 2026-09-04
+
+### 会话
+
+- 打开会话或跳到最新时，消息列表等高亮完成后再显示，减少上下跳动。
+- 流式回复里还没写完的代码块会边生成边着色，不用等围栏闭合。
+
 ## [1.19.5-beta.5] - 2026-09-04
 
 ### 远程实例（SSH + Relay）
