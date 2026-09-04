@@ -1,354 +1,21 @@
-import { marked, type Tokens } from 'marked';
-import remend from 'remend';
-import katex from 'katex';
 import DOMPurify from 'dompurify';
 import { DualLimitLru } from '@/lib/dualLimitLru';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
-import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import { isVSCodeRuntime } from '@/lib/desktop';
-import { parseCodeFenceInfo, type CodeFenceInfo } from './codeFenceInfo';
-import { findDollarMathStart, matchDollarMath } from './markdownMath';
-import { highlightCodeInWorker } from './markdown-worker';
+import { highlightCodeInWorker, parseMarkdownInWorker } from './markdown-worker';
+import type { MarkdownParsedBlock } from './markdown-worker-protocol';
 import type { MarkdownWorkerPriority } from './markdown-worker-protocol';
-
-const escapeAttr = (value: string): string =>
-  value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-// ---------------------------------------------------------------------------
-// Streaming block segmentation (port of OpenCode's markdown-stream)
-// ---------------------------------------------------------------------------
-
-type MarkdownBlock = {
-  raw: string;
-  src: string;
-  mode: 'full' | 'live';
-  // When false, skip syntax highlighting for this block. Set for the actively
-  // streaming open code fence so we don't re-tokenize a growing block ~40x/sec
-  // (O(n^2)); it highlights once the fence closes and becomes a stable block.
-  highlight: boolean;
-};
-
-const hasReferenceDefinitions = (text: string): boolean =>
-  /^\[[^\]]+\]:\s+\S+/m.test(text) || /^\[\^[^\]]+\]:\s+/m.test(text);
-
-// Returns true when `raw` opens a fenced code block whose closing fence has not
-// arrived yet — meaning the block is still streaming and must be rendered as
-// raw text, not parsed.
-const hasOpenFence = (raw: string): boolean => {
-  const match = raw.match(/^[ \t]{0,3}(`{3,}|~{3,})/);
-  if (!match) return false;
-  const mark = match[1];
-  if (!mark) return false;
-  const char = mark[0];
-  const size = mark.length;
-  const last = raw.trimEnd().split('\n').at(-1)?.trim() ?? '';
-  return !new RegExp(`^[\\t ]{0,3}${char}{${size},}[\\t ]*$`).test(last);
-};
-
-const heal = (text: string): string => {
-  try {
-    return remend(text, { linkMode: 'text-only' });
-  } catch {
-    return text;
-  }
-};
-
-/**
- * Split markdown into render blocks. Heals incomplete syntax and isolates an
- * unclosed trailing code fence into its own block so a partial fence does not
- * corrupt the parse of stable content above it.
- *
- * Segmentation is deliberately identical whether or not the stream is still
- * live: only `mode` differs (the trailing block is `live` while streaming). A
- * completed message therefore lands on the SAME per-block boundaries — and the
- * same block hashes — the stream already rendered, so finishing a turn reuses
- * the per-block HTML cache and morphs nothing instead of tearing the whole
- * message down and re-parsing/re-highlighting it in one shot.
- */
-const segmentBlocks = (text: string, live: boolean): MarkdownBlock[] => {
-  const tailMode: MarkdownBlock['mode'] = live ? 'live' : 'full';
-  // Reference-style links/footnotes span multiple tokens (definition elsewhere);
-  // keep them as a single block so per-block parsing doesn't break the refs.
-  if (hasReferenceDefinitions(text)) {
-    return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
-  }
-
-  let tokens: Tokens.Generic[];
-  try {
-    tokens = marked.lexer(text) as Tokens.Generic[];
-  } catch {
-    return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
-  }
-
-  let tail = -1;
-  for (let i = tokens.length - 1; i >= 0; i -= 1) {
-    if (tokens[i]?.type !== 'space') {
-      tail = i;
-      break;
-    }
-  }
-  if (tail < 0) return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
-
-  // Split into per-token blocks. Stable leading blocks become `full` (complete,
-  // cache-stable, not re-healed); only the trailing block is `live` and gets
-  // re-parsed as content streams in. This keeps per-step work proportional to
-  // the last block rather than the whole message.
-  const blocks: MarkdownBlock[] = [];
-  for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
-    if (!token || token.type === 'space') continue;
-    const raw = token.raw ?? '';
-    const isLast = i === tail;
-    const openFence = token.type === 'code' && hasOpenFence(raw);
-    blocks.push({
-      raw,
-      src: openFence ? raw : heal(raw),
-      mode: isLast ? tailMode : 'full',
-      highlight: !openFence,
-    });
-  }
-
-  if (blocks.length === 0) {
-    return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
-  }
-  return blocks;
-};
-
-// Segmentation runs twice for the same text on a cold mount: once for the
-// synchronous first paint and once for the async pipeline. Lexing a long
-// message twice per hydrated row is enough to show up while scrolling through
-// history, so hand the second caller the blocks the first one already computed.
-const SEGMENTATION_CACHE_MAX = 16;
-const segmentationCache = new Map<string, MarkdownBlock[]>();
-
-const streamBlocks = (text: string, live: boolean): MarkdownBlock[] => {
-  const key = `${live ? 1 : 0}:${text}`;
-  const cached = segmentationCache.get(key);
-  if (cached) {
-    segmentationCache.delete(key);
-    segmentationCache.set(key, cached);
-    return cached;
-  }
-
-  const blocks = segmentBlocks(text, live);
-  while (segmentationCache.size >= SEGMENTATION_CACHE_MAX) {
-    const oldest = segmentationCache.keys().next().value;
-    if (typeof oldest !== 'string') break;
-    segmentationCache.delete(oldest);
-  }
-  segmentationCache.set(key, blocks);
-  return blocks;
-};
-
-// ---------------------------------------------------------------------------
-// marked parser (HTML string output) with safe external links
-// ---------------------------------------------------------------------------
-
-// Math delimiters that use backslashes — `\(...\)` (inline) and `\[...\]`
-// (display) — must be caught during lexing: marked treats `\(`/`\[` as
-// backslash escapes and strips the slash before any HTML post-process can see
-// them. Registering them as tokenizers also makes them code-safe for free
-// (marked tokenizes code spans/fences first, so these never fire inside code).
-// Single-dollar `$...$` is intentionally NOT supported — it collides with
-// currency text ($50, US$ 680); only `$$...$$` survives as display math (see
-// renderMathExpressions). This mirrors KaTeX auto-render's default delimiters.
-type MathToken = { type: string; raw: string; text: string };
-
-const renderKatex = (math: string, raw: string, displayMode: boolean): string => {
-  try {
-    return katex.renderToString(math, { displayMode, throwOnError: false });
-  } catch {
-    return raw;
-  }
-};
-
-const inlineMathExtension = {
-  name: 'inlineMath',
-  level: 'inline' as const,
-  start(src: string) {
-    const index = src.indexOf('\\(');
-    return index < 0 ? undefined : index;
-  },
-  tokenizer(src: string): MathToken | undefined {
-    const match = /^\\\(([\s\S]+?)\\\)/.exec(src);
-    if (!match) return undefined;
-    return { type: 'inlineMath', raw: match[0], text: match[1] ?? '' };
-  },
-  renderer(token: Tokens.Generic) {
-    const math = token as MathToken;
-    return renderKatex(math.text, math.raw, false);
-  },
-};
-
-const blockMathExtension = {
-  name: 'blockMath',
-  level: 'block' as const,
-  start(src: string) {
-    const index = src.indexOf('\\[');
-    return index < 0 ? undefined : index;
-  },
-  tokenizer(src: string): MathToken | undefined {
-    const match = /^\\\[([\s\S]+?)\\\]/.exec(src);
-    if (!match) return undefined;
-    return { type: 'blockMath', raw: match[0], text: match[1] ?? '' };
-  },
-  renderer(token: Tokens.Generic) {
-    const math = token as MathToken;
-    return renderKatex(math.text, math.raw, true);
-  },
-};
-
-// `$...$` / `$$...$$` at lex time (Pandoc pairing in markdownMath). Must run
-// as a tokenizer so `$I_m$` is not split by `_` emphasis, and so `$$...$$`
-// is not clipped into a stray `$` plus inline math.
-type DollarMathToken = MathToken & { display: boolean };
-
-const dollarMathExtension = {
-  name: 'dollarMath',
-  level: 'inline' as const,
-  start(src: string) {
-    return findDollarMathStart(src);
-  },
-  tokenizer(src: string): DollarMathToken | undefined {
-    const match = matchDollarMath(src);
-    if (!match) return undefined;
-    return { type: 'dollarMath', raw: match.raw, text: match.text, display: match.display };
-  },
-  renderer(token: Tokens.Generic) {
-    const math = token as DollarMathToken;
-    return renderKatex(math.text, math.raw, math.display);
-  },
-};
-
-const parser = marked.use({
-  gfm: true,
-  breaks: false,
-  extensions: [inlineMathExtension, blockMathExtension, dollarMathExtension],
-  renderer: {
-    link({ href, title, text }) {
-      const target = href ?? '';
-      const agentName = parseAgentHref(target);
-      if (agentName) {
-        return `<a href="${escapeAttr(buildAgentMentionUrl(agentName))}" data-openchamber-agent-mention="true" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">${text}</a>`;
-      }
-      const skillName = parseSkillHref(target);
-      if (skillName) {
-        return `<a href="${escapeAttr(target)}" data-skill-name="${escapeAttr(skillName)}" class="text-primary hover:underline">${text}</a>`;
-      }
-      const titleAttr = title ? ` title="${escapeAttr(title)}"` : '';
-      return `<a href="${escapeAttr(target)}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`;
-    },
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Math (KaTeX) — post-process the parsed HTML, skipping code/pre/kbd content
-// ---------------------------------------------------------------------------
-
-// Only `$$...$$` (display) is handled here. Single-dollar `$...$` inline math is
-// deliberately omitted: it parses currency text ($50, US$ 680, "$50M to $72M")
-// as math and corrupts it. Inline math is supported via `\(...\)` (see the
-// marked extensions above). `$$` survives marked untouched (no backslash), so
-// post-processing the parsed HTML — skipping code via renderMathExpressions —
-// stays correct and code-safe.
-const renderMathInText = (text: string): string =>
-  text.replace(/\$\$([\s\S]*?)\$\$/g, (_match, math: string) => {
-    try {
-      return katex.renderToString(math, { displayMode: true, throwOnError: false });
-    } catch {
-      return `$$${math}$$`;
-    }
-  });
-
-const renderMathExpressions = (html: string): string => {
-  // No `$` anywhere means no math to render — skip the split + regex passes on
-  // the hot streaming path (the overwhelming majority of blocks have no math).
-  if (html.indexOf('$') === -1) return html;
-
-  const codeBlockPattern = /(<(?:pre|code|kbd)[^>]*>[\s\S]*?<\/(?:pre|code|kbd)>)/gi;
-  return html
-    .split(codeBlockPattern)
-    .map((part, index) => (index % 2 === 1 ? part : renderMathInText(part)))
-    .join('');
-};
-
-// ---------------------------------------------------------------------------
-// Syntax highlighting (Shiki via @pierre/diffs shared highlighter)
-// ---------------------------------------------------------------------------
-
-const CODE_BLOCK_RE = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
-
-// Skip syntax highlighting for very large blocks — tokenizing thousands of
-// lines blocks the main thread. Plain (escaped) code is shown instead.
-const CODE_HIGHLIGHT_LINE_LIMIT = 1200;
-const VSCODE_CODE_HIGHLIGHT_LINE_LIMIT = 200;
-
-const exceedsLineLimit = (value: string, limit: number): boolean => {
-  let lines = 1;
-  for (let i = 0; i < value.length; i += 1) {
-    if (value.charCodeAt(i) === 10 && ++lines > limit) return true;
-  }
-  return false;
-};
-
-const unescapeHtml = (value: string): string =>
-  value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&');
-
-// Only a reference needs its own label; leaving plain fences with the single
-// attribute they had before keeps them morphing to identical markup.
-const codeLangAttrs = (info: CodeFenceInfo): string => (
-  info.reference
-    ? `data-md-lang="${escapeAttr(info.lang)}" data-md-label="${escapeAttr(info.label)}"`
-    : `data-md-lang="${escapeAttr(info.lang)}"`
-);
-
-const highlightCodeBlocks = async (
-  html: string,
-  signal: AbortSignal | undefined,
-  priority: MarkdownWorkerPriority,
-): Promise<string | null> => {
-  if (signal?.aborted) return null;
-  const matches = [...html.matchAll(CODE_BLOCK_RE)];
-  if (matches.length === 0) return html;
-
-  const lineLimit = isVSCodeRuntime() ? VSCODE_CODE_HIGHLIGHT_LINE_LIMIT : CODE_HIGHLIGHT_LINE_LIMIT;
-
-  let result = html;
-  for (const match of matches) {
-    if (signal?.aborted) return null;
-    const [full, rawLang, escapedCode] = match;
-    const info = parseCodeFenceInfo(rawLang);
-    // Leave mermaid fences untouched so the decorate pass can render them as
-    // diagrams (highlighting would strip the `language-mermaid` class). A
-    // reference to a `.mmd` file is source, not a diagram, so it still colors.
-    if (info.lang === 'mermaid' && !info.reference) continue;
-
-    const code = unescapeHtml(escapedCode ?? '');
-
-    // Oversized block: skip highlight, keep plain code but stamp the language.
-    if (exceedsLineLimit(code, lineLimit)) {
-      result = result.replace(full, () => full.replace('<pre', `<pre ${codeLangAttrs(info)}`));
-      continue;
-    }
-
-    // Tokenize off the main thread. On failure the worker resolves to null and
-    // we keep the original escaped <pre><code> (no main-thread highlight).
-    const highlighted = await highlightCodeInWorker(code, info.lang, { signal, priority });
-    if (signal?.aborted) return null;
-    if (highlighted) {
-      // Stamp the language so the decorate pass can show a header label.
-      const stamped = highlighted.replace(/^<pre/, `<pre ${codeLangAttrs(info)}`);
-      result = result.replace(full, () => stamped);
-    }
-  }
-
-  return result;
-};
+import {
+  applyCodeHighlights,
+  CODE_HIGHLIGHT_LINE_LIMIT,
+  hashMarkdown,
+  markdownBlockId,
+  parseMarkdownUnsafe,
+  shouldUseMainThreadMarkdownParse,
+  streamBlocks,
+  VSCODE_CODE_HIGHLIGHT_LINE_LIMIT,
+  type MarkdownBlock,
+} from './markdownParsePipeline';
 
 // ---------------------------------------------------------------------------
 // Sanitization (DOMPurify) — allow Shiki/KaTeX/SVG output
@@ -426,6 +93,9 @@ const sanitizeBatch = (htmls: string[]): string[] => {
   return results;
 };
 
+const resolveHighlightLineLimit = (): number => (
+  isVSCodeRuntime() ? VSCODE_CODE_HIGHLIGHT_LINE_LIMIT : CODE_HIGHLIGHT_LINE_LIMIT
+);
 
 // ---------------------------------------------------------------------------
 // Per-block HTML cache (LRU, mirrors OpenCode's checksum cache)
@@ -444,16 +114,6 @@ const syncHtmlCache = new DualLimitLru<string, { source: string; html: string }>
   maxBytes: SYNC_CACHE_MAX_BYTES,
 });
 
-// FNV-1a 32-bit hash of the block content.
-const hash = (value: string): string => {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    h ^= value.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(36);
-};
-
 const stringBytes = (value: string): number => value.length * 2;
 
 const cacheRenderedBlock = (key: string, entry: { hash: string; html: string }): void => {
@@ -464,19 +124,27 @@ const cacheRenderedBlock = (key: string, entry: { hash: string; html: string }):
   );
 };
 
-const parseBlock = async (
+const highlightCodeBlocks = async (
+  html: string,
+  signal: AbortSignal | undefined,
+  priority: MarkdownWorkerPriority,
+): Promise<string | null> => applyCodeHighlights(
+  html,
+  (code, lang) => highlightCodeInWorker(code, lang, { signal, priority }),
+  { lineLimit: resolveHighlightLineLimit(), isCancelled: () => Boolean(signal?.aborted) },
+);
+
+const parseBlockOnMain = async (
   block: MarkdownBlock,
   signal: AbortSignal | undefined,
   priority: MarkdownWorkerPriority,
 ): Promise<string | null> => {
   if (signal?.aborted) return null;
-  const parsed = await Promise.resolve(parser.parse(block.src));
-  if (signal?.aborted) return null;
-  const withMath = renderMathExpressions(parsed);
+  const parsed = parseMarkdownUnsafe(block.src);
   if (signal?.aborted) return null;
   const highlighted = block.highlight
-    ? await highlightCodeBlocks(withMath, signal, priority)
-    : withMath;
+    ? await highlightCodeBlocks(parsed, signal, priority)
+    : parsed;
   if (highlighted === null || signal?.aborted) return null;
   const sanitized = sanitize(highlighted);
   return signal?.aborted ? null : sanitized;
@@ -491,7 +159,7 @@ const parseBlock = async (
  * is synchronous (marked is not configured `async`), so this never blocks on a
  * worker round-trip.
  */
-const syncCacheKey = (text: string): string => `${hash(text)}:${text.length}`;
+const syncCacheKey = (text: string): string => `${hashMarkdown(text)}:${text.length}`;
 
 const readSyncCache = (text: string): string | undefined => {
   const cached = syncHtmlCache.get(syncCacheKey(text));
@@ -507,18 +175,13 @@ const writeSyncCache = (text: string, html: string): void => {
   );
 };
 
-// Markdown -> HTML for one block, everything except sanitization.
-const renderSyncUnsafe = (text: string): string => (
-  renderMathExpressions(parser.parse(text) as string)
-);
-
 export const renderMarkdownSync = (text: string): string => {
   if (!text) return '';
   const cached = readSyncCache(text);
   if (cached !== undefined) {
     return cached;
   }
-  const html = sanitize(renderSyncUnsafe(text));
+  const html = sanitize(parseMarkdownUnsafe(text));
   writeSyncCache(text, html);
   return html;
 };
@@ -544,7 +207,7 @@ export const renderMarkdownSyncBlocks = (text: string): string[] => {
       return;
     }
     pendingIndexes.push(index);
-    pendingHtml.push(renderSyncUnsafe(src));
+    pendingHtml.push(parseMarkdownUnsafe(src));
   });
 
   const sanitized = sanitizeBatch(pendingHtml);
@@ -565,15 +228,12 @@ export type RenderedBlock = {
   html: string;
 };
 
-// How long a non-streaming render may keep the main thread before yielding to
-// the next paint.
 const RENDER_SLICE_BUDGET_MS = 8;
 
 const nowMs = (): number => (
   typeof performance !== 'undefined' ? performance.now() : Date.now()
 );
 
-// Resolves after the next paint, or `false` as soon as the render is aborted.
 const waitForAfterPaint = (signal?: AbortSignal): Promise<boolean> => {
   if (signal?.aborted) {
     return Promise.resolve(false);
@@ -599,32 +259,61 @@ const waitForAfterPaint = (signal?: AbortSignal): Promise<boolean> => {
   });
 };
 
-/**
- * Render markdown into an array of per-block sanitized HTML. Streaming-aware:
- * splits into blocks, caches per-block, heals incomplete syntax. Returning
- * blocks (instead of one joined string) lets the renderer re-morph only the
- * block that changed, keeping per-step streaming cost ~O(last block).
- */
-export const renderMarkdownBlocks = async (
-  text: string,
-  streaming: boolean,
+const readCachedRenderedBlocks = (
+  blocks: MarkdownBlock[],
   cacheKey: string,
-  signal?: AbortSignal,
-): Promise<RenderedBlock[]> => {
-  if (!text) return [];
+): RenderedBlock[] | null => {
+  const rendered: RenderedBlock[] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) return null;
+    const contentHash = hashMarkdown(block.raw);
+    const key = `${cacheKey}:${index}:${block.mode}`;
+    const cached = htmlCache.get(key);
+    if (!cached || cached.hash !== contentHash) {
+      return null;
+    }
+    rendered.push({ id: markdownBlockId(block), html: cached.html });
+  }
+  return rendered;
+};
 
-  const blocks = streamBlocks(text, streaming);
+const commitParsedBlocks = (
+  blocks: MarkdownBlock[],
+  parsed: MarkdownParsedBlock[],
+  cacheKey: string,
+): RenderedBlock[] => {
+  const sanitized = sanitizeBatch(parsed.map((block) => block.html));
+  return parsed.map((block, index) => {
+    const source = blocks[index];
+    const html = sanitized[index] ?? '';
+    if (source) {
+      cacheRenderedBlock(`${cacheKey}:${index}:${source.mode}`, {
+        hash: hashMarkdown(source.raw),
+        html,
+      });
+    }
+    return { id: block.id, html };
+  });
+};
+
+const renderMarkdownBlocksOnMain = async (
+  blocks: MarkdownBlock[],
+  cacheKey: string,
+  streaming: boolean,
+  signal: AbortSignal | undefined,
+): Promise<RenderedBlock[]> => {
   const priority: MarkdownWorkerPriority = streaming ? 'visible' : 'background';
   const renderBlock = async (block: MarkdownBlock, index: number): Promise<RenderedBlock | null> => {
     if (signal?.aborted) return null;
-    const contentHash = hash(block.raw);
-    const id = `${contentHash}:${block.mode}:${block.highlight ? 1 : 0}`;
+    const contentHash = hashMarkdown(block.raw);
+    const id = markdownBlockId(block);
     const key = `${cacheKey}:${index}:${block.mode}`;
     const cached = htmlCache.get(key);
     if (cached && cached.hash === contentHash) {
       return { id, html: cached.html };
     }
-    const html = await parseBlock(block, signal, priority);
+    const html = await parseBlockOnMain(block, signal, priority);
     if (html === null || signal?.aborted) return null;
     cacheRenderedBlock(key, { hash: contentHash, html });
     return { id, html };
@@ -663,4 +352,76 @@ export const renderMarkdownBlocks = async (
     }
   }
   return rendered;
+};
+
+/**
+ * Render markdown into an array of per-block sanitized HTML. Streaming-aware:
+ * splits into blocks, caches per-block, heals incomplete syntax. Returning
+ * blocks (instead of one joined string) lets the renderer re-morph only the
+ * block that changed, keeping per-step streaming cost ~O(last block).
+ *
+ * Long messages parse off-thread. Short fence-free text stays on the sync
+ * main-thread path. A worker failure falls back to the main parser so a
+ * message is never blanked.
+ */
+export const renderMarkdownBlocks = async (
+  text: string,
+  streaming: boolean,
+  cacheKey: string,
+  signal?: AbortSignal,
+): Promise<RenderedBlock[]> => {
+  if (!text) return [];
+
+  const blocks = streamBlocks(text, streaming);
+  const cached = readCachedRenderedBlocks(blocks, cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const priority: MarkdownWorkerPriority = streaming ? 'visible' : 'background';
+  const pending: MarkdownBlock[] = [];
+  const pendingIndexes: number[] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
+    const cachedBlock = htmlCache.get(`${cacheKey}:${index}:${block.mode}`);
+    if (cachedBlock && cachedBlock.hash === hashMarkdown(block.raw)) {
+      continue;
+    }
+    pending.push(block);
+    pendingIndexes.push(index);
+  }
+
+  if (!shouldUseMainThreadMarkdownParse(text, streaming) && pending.length > 0) {
+    try {
+      const parsed = await parseMarkdownInWorker({
+        streaming,
+        highlight: true,
+        highlightLineLimit: resolveHighlightLineLimit(),
+        signal,
+        priority,
+        blocks: pending,
+      });
+      if (signal?.aborted) return [];
+      if (parsed && parsed.length === pending.length) {
+        const merged: MarkdownParsedBlock[] = blocks.map((block, index) => {
+          const pendingSlot = pendingIndexes.indexOf(index);
+          if (pendingSlot >= 0) {
+            return parsed[pendingSlot] ?? { id: markdownBlockId(block), html: '', highlight: block.highlight };
+          }
+          const cachedBlock = htmlCache.get(`${cacheKey}:${index}:${block.mode}`);
+          return {
+            id: markdownBlockId(block),
+            html: cachedBlock?.html ?? '',
+            highlight: block.highlight,
+          };
+        });
+        return commitParsedBlocks(blocks, merged, cacheKey);
+      }
+    } catch {
+      // Worker crash / unsupported environment: fall through to main parse.
+    }
+  }
+
+  return renderMarkdownBlocksOnMain(blocks, cacheKey, streaming, signal);
 };

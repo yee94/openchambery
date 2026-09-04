@@ -16,6 +16,7 @@ const markdownRendererSource = readFileSync(join(sourceDirectory, 'MarkdownRende
 // cannot be loaded here; assert on its source the way the binary-reference
 // suite below does.
 const markdownCoreSource = readFileSync(join(sourceDirectory, 'markdown', 'markdownCore.ts'), 'utf-8');
+const markdownParsePipelineSource = readFileSync(join(sourceDirectory, 'markdown', 'markdownParsePipeline.ts'), 'utf-8');
 const messageListSource = readFileSync(join(sourceDirectory, 'MessageList.tsx'), 'utf-8');
 const decorateSource = readFileSync(join(sourceDirectory, 'markdown', 'decorate.ts'), 'utf-8');
 const autoFollowSource = readFileSync(
@@ -136,13 +137,15 @@ describe('stream completion reuses the streamed DOM', () => {
         // Collapsing a finished message back into one whole-document block
         // misses every per-block cache entry and re-morphs the entire message
         // in a single commit, which reads as a full-message flash.
-        expect(markdownCoreSource).toContain("const tailMode: MarkdownBlock['mode'] = live ? 'live' : 'full';");
-        expect(markdownCoreSource).toContain("mode: isLast ? tailMode : 'full',");
+        expect(markdownParsePipelineSource).toContain("const tailMode: MarkdownBlock['mode'] = live ? 'live' : 'full';");
+        expect(markdownParsePipelineSource).toContain("mode: isLast ? tailMode : 'full',");
+        expect(markdownCoreSource).toContain('parseMarkdownInWorker');
+        expect(markdownCoreSource).toContain('shouldUseMainThreadMarkdownParse');
     });
 
     test('dollar math is lexed through the currency-safe matcher', () => {
-        expect(markdownCoreSource).toContain('matchDollarMath');
-        expect(markdownCoreSource).toContain('dollarMathExtension');
+        expect(markdownParsePipelineSource).toContain('matchDollarMath');
+        expect(markdownParsePipelineSource).toContain('dollarMathExtension');
     });
 
     test('the non-streaming render yields on a time budget, not once per block', () => {

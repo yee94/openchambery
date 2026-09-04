@@ -4,6 +4,12 @@ import { bundledLanguages, createHighlighter, type BundledLanguage, type ThemedT
 import { MARKDOWN_SHIKI_THEME, MARKDOWN_SHIKI_THEME_DEFINITION } from './markdownShikiThemeDefinition';
 import type { MarkdownWorkerJobRequest, MarkdownWorkerRequest, MarkdownWorkerResponse } from './markdown-worker-protocol';
 import { createMarkdownWorkerTaskQueue } from './markdown-worker-task-queue';
+import {
+  applyCodeHighlights,
+  markdownBlockId,
+  parseMarkdownUnsafe,
+  streamBlocks,
+} from './markdownParsePipeline';
 
 // Shiki FontStyle bitmask (from @shikijs/types). Inlined to avoid an extra import.
 const FONT_STYLE_ITALIC = 1;
@@ -46,6 +52,10 @@ const taskQueue = createMarkdownWorkerTaskQueue(async (request, isCancelled) => 
   }
   if (request.type === 'highlightTokens') {
     await highlightTokens(request, isCancelled);
+    return;
+  }
+  if (request.type === 'parse') {
+    await parseMarkdown(request, isCancelled);
     return;
   }
   await highlightLines(request, isCancelled);
@@ -129,6 +139,58 @@ async function highlightTokens(
       line.map((token) => [token.content.length, token.color ?? '', token.fontStyle ?? 0] as [number, string, number]),
     );
     post({ type: 'highlightTokens', id: request.id, lines });
+  } catch (error) {
+    if (isCancelled()) return;
+    post({ type: 'error', id: request.id, message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function highlightCodeLocal(
+  code: string,
+  lang: string,
+  isCancelled: () => boolean,
+): Promise<string | null> {
+  if (isCancelled()) return null;
+  const instance = await ensureHighlighter();
+  const resolved = await resolveLanguage(instance, lang, isCancelled);
+  if (resolved === null || isCancelled()) return null;
+  return instance.codeToHtml(code, {
+    lang: resolved,
+    theme: MARKDOWN_SHIKI_THEME,
+    tabindex: false,
+  });
+}
+
+async function parseMarkdown(
+  request: Extract<MarkdownWorkerJobRequest, { type: 'parse' }>,
+  isCancelled: () => boolean,
+): Promise<void> {
+  try {
+    if (isCancelled()) return;
+    const blocks = request.blocks && request.blocks.length > 0
+      ? request.blocks
+      : streamBlocks(request.text ?? '', request.streaming);
+    const parsed = [];
+    for (const block of blocks) {
+      if (isCancelled()) return;
+      let html = parseMarkdownUnsafe(block.src);
+      if (request.highlight && block.highlight) {
+        const highlighted = await applyCodeHighlights(
+          html,
+          (code, lang) => highlightCodeLocal(code, lang, isCancelled),
+          { lineLimit: request.highlightLineLimit, isCancelled },
+        );
+        if (highlighted === null || isCancelled()) return;
+        html = highlighted;
+      }
+      parsed.push({
+        id: markdownBlockId(block),
+        html,
+        highlight: block.highlight,
+      });
+    }
+    if (isCancelled()) return;
+    post({ type: 'parse', id: request.id, blocks: parsed });
   } catch (error) {
     if (isCancelled()) return;
     post({ type: 'error', id: request.id, message: error instanceof Error ? error.message : String(error) });
