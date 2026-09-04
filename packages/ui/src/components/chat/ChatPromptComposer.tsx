@@ -121,6 +121,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   ...surfaceProps
 }) => {
   const inline = layout === 'inline';
+  const inlineAlignEnd = attachments.length > 0 || value.includes('\n');
   const localInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -128,12 +129,17 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
     if (!autoResize || expanded || textareaProps?.fillContainer) return;
     const textarea = localInputRef.current;
     if (!textarea) return;
+    if (inline && !inlineAlignEnd) {
+      textarea.style.height = '';
+      textarea.style.overflowY = 'hidden';
+      return;
+    }
     textarea.style.height = 'auto';
     const maxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight);
     const nextHeight = Number.isFinite(maxHeight) ? Math.min(textarea.scrollHeight, maxHeight) : textarea.scrollHeight;
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = Number.isFinite(maxHeight) && textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [autoResize, expanded, textareaProps?.fillContainer, value]);
+  }, [autoResize, expanded, inline, inlineAlignEnd, textareaProps?.fillContainer, value]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     textareaProps?.onKeyDown?.(event);
@@ -227,7 +233,6 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   );
   const defaultRightControls = inline ? inlineRightControls : stackedRightControls;
   const inlineLeftControls = leftControls !== undefined ? leftControls : defaultLeftControls;
-  const inlineAlignEnd = attachments.length > 0 || value.includes('\n');
 
   return (
     <ChatComposerSurface className={className} expanded={expanded} {...surfaceProps}>
@@ -306,7 +311,14 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               ))}
             </div>
           ) : null}
-          <div className={cn('relative overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col')} data-composer-input-shell="true">
+          <div
+            className={cn(
+              'relative overflow-hidden',
+              inline && !inlineAlignEnd && 'flex h-12 items-center',
+              expanded && 'flex min-h-0 flex-1 flex-col',
+            )}
+            data-composer-input-shell="true"
+          >
             {highlightedContent ? (
               <div
                 ref={highlightRef}
@@ -320,6 +332,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
             <ChatPromptTextarea
               {...textareaProps}
               simple
+              fillContainer={inline ? false : textareaProps?.fillContainer}
               ref={(node) => {
                 localInputRef.current = node;
                 setRef(inputRef, node);
@@ -331,11 +344,19 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               disabled={disabled || (pending && disableInputWhilePending)}
               placeholder={placeholder}
               enterKeyHint={isMobile ? 'send' : textareaProps?.enterKeyHint}
-              outerClassName={cn('ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0', expanded && 'min-h-0 flex-1', inputOuterClassName)}
+              outerClassName={cn(
+                'ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0',
+                inline && 'flex-none',
+                expanded && 'min-h-0 flex-1',
+                inputOuterClassName,
+              )}
               className={cn(
                 'relative z-10 resize-none overflow-y-hidden appearance-none border-0 bg-transparent typography-markdown hover:border-transparent md:typography-ui-label',
                 inline
-                  ? 'min-h-8 max-h-32 self-center px-3 py-2 leading-5'
+                  ? cn(
+                      'max-h-32 px-3 py-[14px] leading-5',
+                      inlineAlignEnd ? 'min-h-12' : 'h-12 min-h-12',
+                    )
                   : 'min-h-[52px] max-h-40 rounded-b-none px-3 pb-2 pt-4',
                 textLayoutClassName,
                 inputClassName,

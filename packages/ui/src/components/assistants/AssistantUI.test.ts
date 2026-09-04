@@ -478,7 +478,11 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer.indexOf('data-composer-input-shell="true"')).toBeLessThan(
       promptComposer.indexOf('data-composer-inline-send="true"'),
     );
-    expect(promptComposer).toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
+    expect(promptComposer).toContain('max-h-32 px-3 py-[14px] leading-5');
+    expect(promptComposer).toContain("inlineAlignEnd ? 'min-h-12' : 'h-12 min-h-12'");
+    expect(promptComposer).toContain("fillContainer={inline ? false : textareaProps?.fillContainer}");
+    expect(promptComposer).toContain("inline && !inlineAlignEnd && 'flex h-12 items-center'");
+    expect(promptComposer).not.toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
     expect(promptComposer).toContain('flex h-12 shrink-0 items-center pr-1.5');
   });
 
