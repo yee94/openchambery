@@ -425,12 +425,15 @@
 .oc-composer-autocomplete-surface {
   border: 0;
   background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
-  box-shadow:
+  /* Shell token with a defined fallback — the token is missing outside
+     .oc-mobile-floating-shell, and an invalid var would drop the shadow. */
+  box-shadow: var(
+    --oc-mobile-glass-shadow,
     0 0 2px rgb(0 0 0 / 0.05),
     0 0 12px rgb(0 0 0 / 0.06),
     0 8px 20px -6px rgb(0 0 0 / 0.12),
-    inset 0 1px 0 rgb(255 255 255 / 0.6);
-  box-shadow: var(--oc-mobile-glass-shadow);
+    inset 0 1px 0 rgb(255 255 255 / 0.6)
+  );
   -webkit-backdrop-filter:
     blur(var(--oc-mobile-glass-blur, 20px))
     saturate(var(--oc-mobile-glass-saturate, 1.25));
@@ -441,12 +444,13 @@
 
 .dark .oc-composer-autocomplete-surface {
   background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
-  box-shadow:
+  box-shadow: var(
+    --oc-mobile-glass-shadow,
     0 0 2px rgb(0 0 0 / 0.3),
     0 0 12px rgb(0 0 0 / 0.28),
     0 8px 20px -6px rgb(0 0 0 / 0.4),
-    inset 0 1px 0 rgb(255 255 255 / 0.18);
-  box-shadow: var(--oc-mobile-glass-shadow);
+    inset 0 1px 0 rgb(255 255 255 / 0.18)
+  );
 }
 
 .oc-composer-autocomplete-row {

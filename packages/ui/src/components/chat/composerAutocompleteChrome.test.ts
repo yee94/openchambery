@@ -34,6 +34,11 @@ describe('composerAutocompleteChrome', () => {
     // outside .oc-mobile-floating-shell and too thin without blur.
     expect(surface).toContain('background: color-mix(in srgb, var(--surface-elevated)');
     expect(surface).not.toContain('var(--oc-mobile-glass-fill)');
+    // Shadow must carry a fallback: an invalid var() drops the whole property,
+    // so a bare --oc-mobile-glass-shadow outside the floating shell loses the
+    // shadow entirely (the same hole the background fix closes).
+    expect(surface).toMatch(/box-shadow: var\(\s*--oc-mobile-glass-shadow,/);
+    expect(surface).toMatch(/inset 0 1px 0 rgb\(255 255 255 \/ 0\.6\)/);
     expect(surface).toMatch(/blur\(var\(--oc-mobile-glass-blur, 20px\)\)/);
     expect(surface).toMatch(/saturate\(var\(--oc-mobile-glass-saturate, 1\.25\)\)/);
     expect(mobileStyles).toContain('.oc-composer-autocomplete-row:active {');
