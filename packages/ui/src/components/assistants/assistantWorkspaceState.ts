@@ -1,4 +1,4 @@
-export type AssistantWorkspacePresentation = 'loading' | 'unavailable' | 'onboarding' | 'ready';
+type AssistantWorkspacePresentation = 'loading' | 'unavailable' | 'onboarding' | 'ready';
 
 export const resolveAssistantWorkspacePresentation = (input: {
   capabilityPending: boolean;
