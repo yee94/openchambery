@@ -19,6 +19,9 @@
   stay flat (no expand chevron, no nested subagents). Children of pinned parents
   stay hidden only while the parent is pinned; unpinning restores the normal
   parent/child tree under Projects.
+  Top-section hover cards resolve project and branch from session ownership
+  (`resolveTopSectionSecondaryMeta`) because pinned roots are omitted from the
+  project-tree meta index.
 - The top section renders every pinned session plus unlabeled running and
   top-level-unread rows, and supports header collapse. Its title becomes
   pinned/in-progress when the in-progress group is non-empty. Web, desktop,
@@ -125,7 +128,9 @@
   persistent session index has confirmed that it has at least one child.
   Pinned rows stay flat: no subsession chevron and no nested children.
 - Session rows are single-line (no inline timestamp); details (title, relative time, folder/project,
-  branch) open in an immediate floating hover card. A shared `TooltipProvider`
+  branch) open in an immediate floating hover card. Top-section (pinned / in-progress) rows
+  always populate that project and branch from ownership, not from the omitted project-tree index.
+  A shared `TooltipProvider`
   (`delay=0`, `closeDelay=150`, `timeout=600`) groups row tips so adjacent handoff
   is instant; per-row tooltips do not nest their own Provider. Pointer click keeps
   focus for Enter-to-rename, but row `mouseleave` blurs so `:focus-within` does not

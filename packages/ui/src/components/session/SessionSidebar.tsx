@@ -77,7 +77,7 @@ import {
   type SessionFocusScope,
 } from '@/stores/useSessionFocusStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
-import { derivePinnedSessions, listInProgressHomeSessions } from './sidebar/pinnedSessions';
+import { derivePinnedSessions, listInProgressHomeSessions, resolveTopSectionSecondaryMeta } from './sidebar/pinnedSessions';
 import { usePinnedSessionIds, useTogglePinnedSession } from '@/queries/sessionIndexPinQueries';
 import {
   compareSessionsByPinnedAndTime,
@@ -1766,16 +1766,31 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       ) {
         return null;
       }
-      const secondaryMeta = existing?.secondaryMeta
-        ? {
-            projectLabel: existing.secondaryMeta.projectLabel,
-            branchLabel: isVSCode ? null : existing.secondaryMeta.branchLabel,
-          }
-        : null;
+      const owner = sessionOwnership.bySessionId.get(session.id);
+      const project = owner
+        ? sortedProjects.find((candidate) => candidate.id === owner.projectId)
+        : undefined;
+      const projectLabel = project
+        ? (formatDirectoryName(project.normalizedPath) || project.normalizedPath)
+        : (existing?.secondaryMeta?.projectLabel ?? null);
+      const secondaryMeta = resolveTopSectionSecondaryMeta({
+        projectLabel,
+        owner,
+        sessionWorktree: worktreeMetadata.get(session.id) ?? null,
+        worktrees: project
+          ? (availableWorktreesByProject.get(project.normalizedPath) ?? [])
+          : [],
+        projectRootBranch: owner
+          ? (projectRootBranches.get(owner.projectId)
+            ?? (project ? gitRepoStatus.get(project.normalizedPath)?.branch : null)
+            ?? null)
+          : null,
+        isVSCode,
+      }) ?? existing?.secondaryMeta ?? null;
       return {
         node,
-        projectId: existing?.projectId ?? null,
-        groupDirectory: existing?.groupDirectory ?? sessionDirectory,
+        projectId: owner?.projectId ?? existing?.projectId ?? null,
+        groupDirectory: owner?.scopeDirectory ?? existing?.groupDirectory ?? sessionDirectory,
         secondaryMeta,
       };
     };
@@ -1793,13 +1808,18 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       inProgressItems: toItems(inProgressSessions),
     };
   }, [
+    availableWorktreesByProject,
     filterSessionNodesForSearch,
+    gitRepoStatus,
     hasSessionSearchQuery,
     inProgressSessions,
     isVSCode,
     normalizedSessionSearchQuery,
     pinnedSessions,
+    projectRootBranches,
+    sessionOwnership,
     sessionSidebarMetaById,
+    sortedProjects,
     worktreeMetadata,
   ]);
 

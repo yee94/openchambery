@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.3] - 2026-09-04
+
+### 会话
+
+- 电脑端置顶/进行中会话 hover 会显示正确的项目和分支。
+
 ## [1.19.5-beta.2] - 2026-09-04
 
 ### 会话

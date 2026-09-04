@@ -1,6 +1,9 @@
 import type { Session } from '@opencode-ai/sdk/v2';
 
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
+import { normalizePath } from '@/lib/pathNormalization';
+import type { WorktreeMetadata } from '@/types/worktree';
+import type { DirectoryOwner } from './sessionOwnership';
 
 const getSessionCreatedAt = (session: Session): number => {
   const created = session.time?.created;
@@ -45,4 +48,52 @@ export const listInProgressHomeSessions = (
   }
   active.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
   return active;
+};
+
+export type TopSectionSecondaryMeta = {
+  projectLabel?: string | null;
+  branchLabel?: string | null;
+};
+
+const sanitizeBranchLabel = (
+  branch: string | null | undefined,
+  projectLabel: string | null,
+): string | null => {
+  const trimmed = branch?.trim() || null;
+  if (!trimmed || trimmed === 'HEAD') return null;
+  if (projectLabel && trimmed === projectLabel) return null;
+  return trimmed;
+};
+
+/**
+ * Hover-card project/branch for the top pinned + in-progress section.
+ * Pinned roots are omitted from project groups, so this cannot read the
+ * project-tree secondaryMeta index — resolve from ownership instead.
+ */
+export const resolveTopSectionSecondaryMeta = (args: {
+  projectLabel: string | null;
+  owner: DirectoryOwner | undefined;
+  sessionWorktree: Pick<WorktreeMetadata, 'branch' | 'path'> | null | undefined;
+  worktrees: readonly Pick<WorktreeMetadata, 'branch' | 'path'>[];
+  projectRootBranch: string | null | undefined;
+  isVSCode: boolean;
+}): TopSectionSecondaryMeta | null => {
+  const projectLabel = args.projectLabel?.trim() || null;
+  if (args.isVSCode) {
+    return projectLabel ? { projectLabel, branchLabel: null } : null;
+  }
+
+  let branch: string | null | undefined;
+  if (args.owner?.kind === 'worktree') {
+    const matched = args.worktrees.find(
+      (worktree) => normalizePath(worktree.path) === args.owner?.scopeDirectory,
+    );
+    branch = matched?.branch ?? args.sessionWorktree?.branch;
+  } else {
+    branch = args.projectRootBranch ?? args.sessionWorktree?.branch;
+  }
+
+  const branchLabel = sanitizeBranchLabel(branch, projectLabel);
+  if (!projectLabel && !branchLabel) return null;
+  return { projectLabel, branchLabel };
 };
