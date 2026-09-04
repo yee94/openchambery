@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.8] - 2026-09-05
+
+### 移动端
+
+- iOS Live Activity 改成「N working」多会话列表，不跟原生界面开关绑定。
+- 任意一端在前台也会照样推送手机通知。
+- 斜杠补全弹出层阴影和底色在会话切换层里更稳定。
+
+### 会话
+
+- 聊天里的 HTML 文件路径可以像 Markdown 一样点开预览。
+- 连续已用的工具调用会收成 Running / Used 一组。
+
 ## [1.19.5-beta.7] - 2026-09-04
 
 ### 会话
