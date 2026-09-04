@@ -338,9 +338,8 @@ export function confirmBubbleAfterContactReset(bubbles) {
   const list = (Array.isArray(bubbles) ? bubbles : [])
     .filter((item) => typeof item === 'string' && item.trim())
     .map((item) => item.trim());
-  if (list.includes(NEW_CONVERSATION_CONFIRM_BUBBLE)) return [NEW_CONVERSATION_CONFIRM_BUBBLE];
-  if (list.length > 0) return [list[0]];
-  return [NEW_CONVERSATION_CONFIRM_BUBBLE];
+  const confirm = list.find((item) => item === NEW_CONVERSATION_CONFIRM_BUBBLE);
+  return [confirm || NEW_CONVERSATION_CONFIRM_BUBBLE];
 }
 
 export function extractContactCardsFromMessages(messages) {

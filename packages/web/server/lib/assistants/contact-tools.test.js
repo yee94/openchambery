@@ -247,10 +247,9 @@ describe('confirmBubbleAfterContactReset', () => {
     ])).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE]);
   });
 
-  it('falls back to the first confirm bubble when the canonical string is absent', () => {
+  it('uses the canonical confirm when leftover text is the only extracted bubble', () => {
     expect(confirmBubbleAfterContactReset([
-      '好，已开新对话。',
-      'dot.png is still here',
-    ])).toEqual(['好，已开新对话。']);
+      'I still see your dot.png and note.txt from earlier.',
+    ])).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE]);
   });
 });

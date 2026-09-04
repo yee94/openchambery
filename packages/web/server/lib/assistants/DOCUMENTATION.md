@@ -33,7 +33,7 @@ The in-app Assistant is an OpenChamber-owned **contact**. OpenCode is only the L
 **New conversation (this PR)**
 
 - `new_conversation` clears this assistant's OpenChamber contact transcript via `deleteContactMessages` (messages, parts, watches), bumps revision / `assistants-changed`, and confirms with a short bubble. Shared API: `POST /api/openchamber/assistants/:id/contact/reset`.
-- The tool terminates the contact turn. Persist only `NEW_CONVERSATION_CONFIRM_BUBBLE` (or the first confirm bubble). Discard leftover assistant text and cards from the same pre-reset generation — do not re-feed that history after reset.
+- The tool terminates the contact turn. Persist only `NEW_CONVERSATION_CONFIRM_BUBBLE`. Discard leftover assistant text and cards from the same pre-reset generation — do not re-feed that history after reset.
 - It must **not** call OpenCode `session/new` / `createNew`. That path is worker binding, not contact context reset.
 - Natural language: 开新对话 / new conversation / clear chat.
 
