@@ -95,6 +95,11 @@ Examples:
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
+`useFeatureFlagsStore` owns the chat list engine flag. TanStack Virtual is the
+runtime default (`legendTimelineEnabled` is true only when
+`localStorage.oc:legend-timeline === '1'`). LegendList / TimelineList stay
+opt-in.
+
 `useSidebarBrandStore` persists the sidebar wordmark. Packaged Electron multi-window
 shares one UI origin while each window may bind a different API host, so the store
 uses transport-scoped localStorage (`createRuntimeScopedJSONStorage` in

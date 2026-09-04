@@ -454,6 +454,14 @@ describe('MessageList history virtualization handle state', () => {
     });
 });
 
+describe('runtime default list engine', () => {
+    test('TanStack is the default; LegendList is opt-in via oc:legend-timeline=1', () => {
+        const storeSource = readFileSync(join(here, '..', '..', 'stores', 'useFeatureFlagsStore.ts'), 'utf8');
+        expect(storeSource).toContain("=== '1'");
+        expect(storeSource).not.toContain("!== '0'");
+    });
+});
+
 describe('cold-start markdown pin reveal', () => {
     test('LegendList and TanStack both hide until seeded markdown reports ready', () => {
         const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
