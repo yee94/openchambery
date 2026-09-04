@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import { createSessionCardPart } from './cards.js';
 import {
+  CONTACT_LLM_FETCH_LIMIT,
   CONTACT_LLM_FILE_CHAR_WEIGHT,
   CONTACT_LLM_MAX_CHARS,
   CONTACT_LLM_MAX_TURNS,
@@ -49,6 +50,7 @@ describe('contact LLM history trim', () => {
   it('documents the budget constants in one place', () => {
     expect(CONTACT_LLM_MAX_TURNS).toBe(8);
     expect(CONTACT_LLM_MAX_CHARS).toBe(6_000);
+    expect(CONTACT_LLM_FETCH_LIMIT).toBe(40);
     expect(CONTACT_LLM_FILE_CHAR_WEIGHT).toBe(80);
   });
 
