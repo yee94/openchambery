@@ -27,9 +27,15 @@ describe('composerAutocompleteChrome', () => {
   });
 
   test('glass recipe uses shared tokens and momentary press fill', () => {
-    expect(mobileStyles).toContain('.oc-composer-autocomplete-surface {');
-    expect(mobileStyles).toContain('background: var(--oc-mobile-glass-fill)');
-    expect(mobileStyles).toContain('box-shadow: var(--oc-mobile-glass-shadow)');
+    const surface = mobileStyles.match(/\.oc-composer-autocomplete-surface \{[\s\S]*?\n\}/)?.[0] ?? '';
+    // Composer swap layers create a stacking context, so backdrop-filter cannot
+    // frost the transcript. Fill must be a defined surface mix — not the
+    // shell-scoped --oc-mobile-glass-fill token, which is invalid (transparent)
+    // outside .oc-mobile-floating-shell and too thin without blur.
+    expect(surface).toContain('background: color-mix(in srgb, var(--surface-elevated)');
+    expect(surface).not.toContain('var(--oc-mobile-glass-fill)');
+    expect(surface).toMatch(/blur\(var\(--oc-mobile-glass-blur, 20px\)\)/);
+    expect(surface).toMatch(/saturate\(var\(--oc-mobile-glass-saturate, 1\.25\)\)/);
     expect(mobileStyles).toContain('.oc-composer-autocomplete-row:active {');
     expect(mobileStyles).toContain('background: var(--oc-mobile-press-fill)');
     expect(mobileStyles).toMatch(

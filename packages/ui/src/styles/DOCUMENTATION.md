@@ -92,7 +92,7 @@ Then let the component own the real compact size via Tailwind (`h-7 w-3`, etc.).
 
 ## Floating glass (mobile)
 
-Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, `.oc-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile use `.oc-composer-autocomplete-surface` with `.oc-composer-autocomplete-row:active` press fill — not a persisted selected slab.
+Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, `.oc-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile use `.oc-composer-autocomplete-surface` with `.oc-composer-autocomplete-row:active` press fill — not a persisted selected slab. That catalog sits inside the composer swap layer, so blur cannot sample the transcript; the surface uses a `color-mix` of `--surface-elevated` as the base fill (same lesson as `.oc-mobile-overlay-surface`) instead of shell-scoped `--oc-mobile-glass-fill`, which paints a hole when the token is missing.
 
 Legitimate glass fallbacks:
 

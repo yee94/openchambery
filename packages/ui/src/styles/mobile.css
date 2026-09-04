@@ -415,17 +415,38 @@
 
 /* Composer `/` `@` `#` catalogs: glass panel, hairline elevation, no border-2
    slab. Rows use momentary press only — a persisted selected fill reads as a
-   stuck tap highlight on touch. */
+   stuck tap highlight on touch.
+   The catalog lives inside the composer swap layer (z-index + transform +
+   will-change), so backdrop-filter cannot frost the transcript. Same lesson
+   as .oc-mobile-overlay-surface: a defined elevated fill is the base; blur
+   is progressive enhancement. Do not use --oc-mobile-glass-fill here — that
+   token only exists on .oc-mobile-floating-shell, and an invalid var paints
+   a hole. */
 .oc-composer-autocomplete-surface {
   border: 0;
-  background: var(--oc-mobile-glass-fill);
+  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  box-shadow:
+    0 0 2px rgb(0 0 0 / 0.05),
+    0 0 12px rgb(0 0 0 / 0.06),
+    0 8px 20px -6px rgb(0 0 0 / 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 0.6);
   box-shadow: var(--oc-mobile-glass-shadow);
   -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--oc-mobile-glass-blur, 20px))
+    saturate(var(--oc-mobile-glass-saturate, 1.25));
   backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+    blur(var(--oc-mobile-glass-blur, 20px))
+    saturate(var(--oc-mobile-glass-saturate, 1.25));
+}
+
+.dark .oc-composer-autocomplete-surface {
+  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  box-shadow:
+    0 0 2px rgb(0 0 0 / 0.3),
+    0 0 12px rgb(0 0 0 / 0.28),
+    0 8px 20px -6px rgb(0 0 0 / 0.4),
+    inset 0 1px 0 rgb(255 255 255 / 0.18);
+  box-shadow: var(--oc-mobile-glass-shadow);
 }
 
 .oc-composer-autocomplete-row {
