@@ -56,6 +56,8 @@ import {
     writeMarkdownHydrationRestore,
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
+import { mergeMarkdownPinRevealStyle, resolveMarkdownPinRevealKeys } from './lib/markdownPinReveal';
+import { useMarkdownPinReveal } from './hooks/useMarkdownPinReveal';
 import {
     USER_SHELL_MARKER,
     isUserShellMarkerMessage,
@@ -2094,6 +2096,7 @@ type LegendTimelineHostProps = {
     onScroll?: () => void;
     followEnabled?: boolean;
     historyAnchorToken?: number;
+    pinRevealGeneration?: number;
     onIsAtEndChange?: (isAtEnd: boolean, showScrollButton?: boolean) => void;
     anchoredUserMessageId?: string | null;
     onAnchoredTurnParkReleased?: (reserveId: string) => void;
@@ -2131,6 +2134,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
     onScroll,
     followEnabled = true,
     historyAnchorToken,
+    pinRevealGeneration = 0,
     onIsAtEndChange,
     anchoredUserMessageId = null,
     onAnchoredTurnParkReleased,
@@ -2278,6 +2282,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
                 registerList={registerList}
                 followEnabled={followEnabled}
                 historyAnchorToken={historyAnchorToken}
+                pinRevealGeneration={pinRevealGeneration}
                 anchoredEndSpace={anchoredEndSpace}
                 onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}
                 sessionIsWorking={sessionIsWorking}
@@ -2592,6 +2597,29 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             ? [...historyEntries, ...trailingStreamingEntries]
             : historyEntries;
     }, [historyEntries, trailingStreamingEntries]);
+    const [pinRevealGeneration, setPinRevealGeneration] = React.useState(0);
+    const [tanstackPinRoot, setTanstackPinRoot] = React.useState<HTMLDivElement | null>(null);
+    const tanstackPinScopeKey = resolveTimelineVirtualizerCacheKey(
+        resolvedVirtualizerKey,
+        activityRenderMode,
+    );
+    const tanstackPinKeys = React.useMemo(
+        () => resolveMarkdownPinRevealKeys({
+            entryKeys: allEntries.map((entry) => entry.key),
+            seedCount: resolveMarkdownPreloadEntries(activityRenderMode),
+        }),
+        // Jump and session identity freeze the seed; length/tail cover a new last turn.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- pinRevealGeneration + tail
+        [tanstackPinScopeKey, pinRevealGeneration, allEntries.length, allEntries[allEntries.length - 1]?.key, activityRenderMode],
+    );
+    const tanstackPinHidden = useMarkdownPinReveal({
+        scopeKey: tanstackPinScopeKey,
+        generation: pinRevealGeneration,
+        root: tanstackPinRoot,
+        relevantKeys: tanstackPinKeys,
+        enabled: !legendTimelineEnabled && allEntries.length > 0,
+    });
+    const tanstackPinStyle = mergeMarkdownPinRevealStyle(undefined, tanstackPinHidden);
 
     const stableHistoryContentChange = useEvent((reason?: ContentChangeReason) => {
         onMessageContentChange(reason);
@@ -2932,6 +2960,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             },
 
             scrollToBottom: () => {
+                setPinRevealGeneration((current) => current + 1);
                 if (legendTimelineEnabled) {
                     // The parked user row is the live edge. Do not drop the
                     // reserved hole — scrollToEnd would travel through the
@@ -3010,6 +3039,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 onScroll={timelineOnScroll}
                 followEnabled={timelineFollowEnabled}
                 historyAnchorToken={timelineHistoryAnchorToken}
+                pinRevealGeneration={pinRevealGeneration}
                 onIsAtEndChange={timelineOnIsAtEndChange}
                 anchoredUserMessageId={nextAnchorId}
                 onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}
@@ -3020,7 +3050,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     return (
         <div>
                 <FadeInDisabledProvider disabled={disableFadeIn}>
-                    <div className="relative w-full">
+                    <div
+                        ref={setTanstackPinRoot}
+                        className="relative w-full"
+                        style={tanstackPinStyle}
+                    >
                         {/* Virtualized history rows unmount/remount during scroll;
                             re-running the reveal fade on every remount reads as
                             blinking. History content is never "new", so fade-in

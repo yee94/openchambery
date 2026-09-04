@@ -1778,6 +1778,8 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     <div
       aria-busy={!richReady || undefined}
       className={cn('relative break-words w-full min-w-0', className)}
+      data-markdown-ready={richReady ? 'true' : 'false'}
+      data-markdown-hydration={richReady ? 'ready' : 'pending'}
       ref={containerRef}
     >
       {!richReady && (
@@ -1901,6 +1903,8 @@ const SimpleMarkdownRendererImpl: React.FC<{
     <div
       aria-busy={!richReady || undefined}
       className={cn('relative break-words w-full min-w-0', className)}
+      data-markdown-ready={richReady ? 'true' : 'false'}
+      data-markdown-hydration={richReady ? 'ready' : 'pending'}
       ref={containerRef}
     >
       {!richReady && (

@@ -454,6 +454,19 @@ describe('MessageList history virtualization handle state', () => {
     });
 });
 
+describe('cold-start markdown pin reveal', () => {
+    test('LegendList and TanStack both hide until seeded markdown reports ready', () => {
+        const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+        const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
+        expect(messageListSource).toContain('useMarkdownPinReveal');
+        expect(messageListSource).toContain('setPinRevealGeneration((current) => current + 1)');
+        expect(messageListSource).toContain('pinRevealGeneration={pinRevealGeneration}');
+        expect(timelineSource).toContain('useMarkdownPinReveal');
+        expect(timelineSource).toContain('mergeMarkdownPinRevealStyle(style, pinHidden)');
+        expect(timelineSource).toContain('resolveMarkdownPinRevealKeys');
+    });
+});
+
 describe('column-width virtualizer invalidation', () => {
     test('ignores the first observation and sub-pixel wobble, then invalidates a real column shrink', () => {
         expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(null, 800)).toBe(false);

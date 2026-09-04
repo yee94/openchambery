@@ -49,6 +49,7 @@ const MarkdownSkeletonFallback = (props: {
       )}
       aria-busy="true"
       data-markdown-hydration="deferred"
+      data-markdown-ready="false"
     >
       <MarkdownLoadingPlaceholder
         animated={props.animated}
