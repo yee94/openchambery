@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.8] - 2026-09-04
+
+### 会话
+
+- 连续的编辑、命令和其他运行类工具会收成「运行了」一组，进行中显示「运行中」，摘要带次数和绿增红删行数。
+
 ## [1.19.5-beta.7] - 2026-09-04
 
 ### 会话
