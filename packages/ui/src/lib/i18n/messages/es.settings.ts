@@ -184,6 +184,8 @@ export const settingsDict = {
   "settings.remoteInstances.clientAuth.addDevice.relayUrlHint": "Usa el Relay oficial de OpenChamber o introduce tu propio endpoint ws:// o wss://. El dispositivo guardará el endpoint incluido en el código QR.",
   "settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink": "Despliega tu propio Relay.",
   "settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint": "Este servidor fija el endpoint Relay mediante OPENCHAMBER_RELAY_URL.",
+  "settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint": "Lo define el host conectado. El emparejamiento usa el endpoint Relay actual de ese host.",
+  "settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption": "Endpoint personalizado…",
   "settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid": "Introduce un endpoint Relay válido que empiece por ws:// o wss://.",
   "settings.remoteInstances.clientAuth.addDevice.create": "Crear código QR",
   "settings.remoteInstances.clientAuth.addDevice.targetLabel": "Instancia de destino",

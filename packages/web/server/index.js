@@ -1419,6 +1419,29 @@ async function main(options = {}) {
     // Re-evaluate the relay lifecycle after pairing/device changes (a revoked or
     // redeemed device can flip relay demand on or off).
     reconcileRelay: () => (relayServiceInstance ? relayServiceInstance.reconcile() : Promise.resolve()),
+    // Canonical endpoints the host relay currently uses (primary first).
+    // Pairing-session requests from paired desktop clients may carry a relayUrl
+    // only when it matches one of these (an echo of an advertised endpoint,
+    // never a re-point or an extension).
+    getEffectiveRelayUrls: async () => {
+      if (!relayServiceInstance) return [];
+      try {
+        const status = await relayServiceInstance.getStatus();
+        return Array.isArray(status?.relayUrls) ? status.relayUrls : [];
+      } catch {
+        return [];
+      }
+    },
+    // Every configured relay endpoint as a pairing candidate (multi-relay),
+    // for the connection-candidates refresh.
+    getRelayPairingCandidates: async () => {
+      if (!relayServiceInstance) return [];
+      try {
+        return await relayServiceInstance.getPairingCandidates();
+      } catch {
+        return [];
+      }
+    },
     getPairingTransports: async (req) => {
       const transports = resolvePairingTransports(req);
       if (!relayServiceInstance || !transports.relayAvailable) return transports;
@@ -1426,6 +1449,7 @@ async function main(options = {}) {
       return {
         ...transports,
         relayUrl: relay.relayUrl,
+        relayUrls: relay.relayUrls,
         relayUrlLocked: relay.relayUrlLocked,
       };
     },
@@ -1515,6 +1539,22 @@ async function main(options = {}) {
     },
     onRelayUrlChanged: async () => {
       await apnsRuntime.reRegisterAllTokens();
+    },
+    // Owner gate for relay-endpoint management: UI session or the local desktop
+    // shell. Paired remote clients (desktops included) are NOT endpoint owners
+    // — adding/removing endpoints is the same trust boundary as re-pointing
+    // the primary endpoint.
+    isOwnerRequest: async (req, res) => {
+      if (typeof uiAuthController?.resolveAuthContext !== 'function') return false;
+      try {
+        const context = await uiAuthController.resolveAuthContext(req, res, { allowClientAuth: true, allowUrlToken: false });
+        if (context?.type === 'session') return true;
+        if (context?.type === 'client') {
+          return context.client?.clientKind === 'desktop-local';
+        }
+      } catch {
+      }
+      return false;
     },
   });
   relayServiceInstance = relayService;

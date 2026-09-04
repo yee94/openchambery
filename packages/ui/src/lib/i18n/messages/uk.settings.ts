@@ -184,6 +184,8 @@ export const settingsDict = {
   "settings.remoteInstances.clientAuth.addDevice.relayUrlHint": "Використовуйте офіційний Relay OpenChamber або введіть власну адресу ws:// чи wss://. Пристрій збереже адресу з QR-коду.",
   "settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink": "Розгорніть власний Relay.",
   "settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint": "На цьому сервері адресу Relay зафіксовано через OPENCHAMBER_RELAY_URL.",
+  "settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint": "Визначається підключеним хостом. Пейринг використовує поточну адресу Relay цього хоста.",
+  "settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption": "Користувацька адреса…",
   "settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid": "Введіть дійсну адресу Relay, що починається з ws:// або wss://.",
   "settings.remoteInstances.clientAuth.addDevice.create": "Створити QR-код",
   "settings.remoteInstances.clientAuth.addDevice.targetLabel": "Цільовий екземпляр",
