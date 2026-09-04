@@ -19,7 +19,7 @@ import type { EditorAPI } from '@/lib/api/types';
 import { isDesktopBinaryPath, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, openDesktopPath } from '@/lib/desktop';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
-import { isImageFile } from '@/lib/toolHelpers';
+import { isHtmlFile, isImageFile } from '@/lib/toolHelpers';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { getClientPlatform } from '@/lib/platform';
 import { renderMarkdownBlocks, renderMarkdownSyncBlocks } from './markdown/markdownCore';
@@ -955,7 +955,12 @@ const useFileReferenceInteractions = ({
           if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
             return;
           }
-          if (isMobileSurface && info.isBinary && !isImageFile(latestResolved.resolvedPath)) {
+          if (
+            isMobileSurface
+            && info.isBinary
+            && !isImageFile(latestResolved.resolvedPath)
+            && !isHtmlFile(latestResolved.resolvedPath)
+          ) {
             return;
           }
 
@@ -981,14 +986,19 @@ const useFileReferenceInteractions = ({
 
       const isBinary = sourceElement.getAttribute('data-openchamber-file-binary') === 'true';
       const isApplicationBundle = resolved.resolvedPath.toLowerCase().endsWith('.app');
-      if ((isBinary || isApplicationBundle) && !isImageFile(resolved.resolvedPath)) {
+      if (
+        (isBinary || isApplicationBundle)
+        && !isImageFile(resolved.resolvedPath)
+        && !isHtmlFile(resolved.resolvedPath)
+      ) {
         if (await openDesktopPath(resolved.resolvedPath)) {
           return;
         }
       }
 
       const contextDirectory = getContextDirectory(effectiveDirectory, resolved.resolvedPath);
-      if (preferRuntimeEditor && editor) {
+      const htmlPreview = isHtmlFile(resolved.resolvedPath);
+      if (preferRuntimeEditor && editor && !htmlPreview) {
         void editor.openFile(
           resolved.resolvedPath,
           Number.isFinite(resolved.line ?? Number.NaN)
@@ -1006,6 +1016,10 @@ const useFileReferenceInteractions = ({
       }
 
       const uiStore = useUIStore.getState();
+      if (htmlPreview) {
+        uiStore.openContextFile(contextDirectory, resolved.resolvedPath, { viewerMode: 'preview' });
+        return;
+      }
       if (Number.isFinite(resolved.line ?? Number.NaN)) {
         uiStore.openContextFileAtLine(
           contextDirectory,

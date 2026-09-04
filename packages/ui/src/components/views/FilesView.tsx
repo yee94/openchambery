@@ -46,7 +46,7 @@ import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { useDeviceInfo } from '@/lib/device';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { cn, getModifierLabel, getRevealLabelKey, hasModifier } from '@/lib/utils';
-import { getLanguageFromExtension, getImageMimeType, isDrawioFile, isImageFile, isPdfFile } from '@/lib/toolHelpers';
+import { getLanguageFromExtension, getImageMimeType, isDrawioFile, isHtmlFile, isImageFile, isPdfFile } from '@/lib/toolHelpers';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { acquireRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, subscribeRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
@@ -359,12 +359,6 @@ const isMarkdownFile = (path: string): boolean => {
   if (!path) return false;
   const ext = path.toLowerCase().split('.').pop();
   return ext === 'md' || ext === 'markdown';
-};
-
-const isHtmlFile = (path: string): boolean => {
-  if (!path) return false;
-  const ext = path.toLowerCase().split('.').pop();
-  return ext === 'html' || ext === 'htm';
 };
 
 interface FileRowProps {
@@ -1039,6 +1033,8 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const setPendingFileNavigation = useUIStore((state) => state.setPendingFileNavigation);
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
   const setPendingFileFocusPath = useUIStore((state) => state.setPendingFileFocusPath);
+  const pendingFileViewerMode = useUIStore((state) => state.pendingFileViewerMode);
+  const setPendingFileViewerMode = useUIStore((state) => state.setPendingFileViewerMode);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const fileEditorKeymap = useUIStore((state) => state.fileEditorKeymap);
   const settingsDefaultFileViewerPreview = useConfigStore((state) => state.settingsDefaultFileViewerPreview);
@@ -2508,9 +2504,17 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     } catch {
       // Ignore localStorage errors
     }
+    if (
+      pendingFileViewerMode
+      && isHtmlFile(selectedPath)
+      && pendingFileFocusPath === selectedPath
+    ) {
+      htmlViewModeByPathRef.current[selectedPath] = pendingFileViewerMode;
+      setPendingFileViewerMode(null);
+    }
     setHtmlViewMode(htmlViewModeByPathRef.current[selectedPath] ?? htmlDefault);
     setDrawioViewMode(drawioViewModeByPathRef.current[selectedPath] ?? (settingsDefaultFileViewerPreview ? 'preview' : 'edit'));
-  }, [selectedFile?.path, settingsDefaultFileViewerPreview]);
+  }, [pendingFileFocusPath, pendingFileViewerMode, selectedFile?.path, setPendingFileViewerMode, settingsDefaultFileViewerPreview]);
 
   const saveTextViewMode = React.useCallback((mode: TextViewMode) => {
     const selectedPath = selectedFile?.path;

@@ -731,6 +731,7 @@ interface UIStore {
   pendingDiagramFile: string | null;
   pendingFileNavigation: PendingFileNavigation | null;
   pendingFileFocusPath: string | null;
+  pendingFileViewerMode: 'preview' | 'edit' | null;
   isMobile: boolean;
   isCommandPaletteOpen: boolean;
   isHelpDialogOpen: boolean;
@@ -873,7 +874,7 @@ interface UIStore {
   openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
   openContextToolDiff: (directory: string, filePath: string, patches: ReadonlyArray<{ path: string; patch: string }>, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
   openContextFileDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null) => void;
-  openContextFile: (directory: string, filePath: string, options?: { fileNotice?: ContextPanelFileNotice | null }) => void;
+  openContextFile: (directory: string, filePath: string, options?: { fileNotice?: ContextPanelFileNotice | null; viewerMode?: 'preview' | 'edit' }) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
   openContextOverview: (directory: string) => void;
   openContextPreview: (directory: string, url: string) => void;
@@ -902,6 +903,7 @@ interface UIStore {
   setPendingDiagramFile: (filePath: string | null) => void;
   setPendingFileNavigation: (navigation: PendingFileNavigation | null) => void;
   setPendingFileFocusPath: (path: string | null) => void;
+  setPendingFileViewerMode: (mode: 'preview' | 'edit' | null) => void;
   navigateToDiff: (filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number) => void;
   consumePendingDiffFile: () => string | null;
   navigateToDiagram: (filePath: string) => void;
@@ -1068,6 +1070,7 @@ export const useUIStore = create<UIStore>()(
         pendingDiagramFile: null,
         pendingFileNavigation: null,
         pendingFileFocusPath: null,
+        pendingFileViewerMode: null,
         isMobile: false,
         isCommandPaletteOpen: false,
         isHelpDialogOpen: false,
@@ -1492,6 +1495,7 @@ export const useUIStore = create<UIStore>()(
           });
           get().setPendingFileFocusPath(normalizedFilePath);
           get().setPendingFileNavigation(null);
+          get().setPendingFileViewerMode(options?.viewerMode ?? null);
         },
 
         openContextFileAtLine: (directory, filePath, line, column) => {
@@ -1877,6 +1881,10 @@ export const useUIStore = create<UIStore>()(
 
         setPendingFileFocusPath: (path) => {
           set({ pendingFileFocusPath: path });
+        },
+
+        setPendingFileViewerMode: (mode) => {
+          set({ pendingFileViewerMode: mode });
         },
 
         navigateToDiff: (filePath, staged = false, scope = null, targetLine) => {

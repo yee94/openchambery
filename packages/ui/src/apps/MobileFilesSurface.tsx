@@ -22,10 +22,10 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
-import { getImageMimeType, getLanguageFromExtension, isImageFile } from '@/lib/toolHelpers';
+import { getImageMimeType, getLanguageFromExtension, isHtmlFile, isImageFile } from '@/lib/toolHelpers';
 import type { FileSearchResult } from '@/lib/api/types';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
-import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
+import { acquireRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, subscribeRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
@@ -86,6 +86,11 @@ const getImageSrc = (path: string): string => {
 };
 
 const isMarkdownFile = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path);
+
+const buildFsServeAssetUrl = (filePath: string): string => {
+  const encoded = filePath.split('/').map((segment) => encodeURIComponent(segment)).join('/');
+  return getRuntimeUrlResolver().authenticatedAsset(`/api/fs/serve${encoded.startsWith('/') ? encoded : `/${encoded}`}`);
+};
 type MobileFilesSurfaceProps = {
   /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileResizableSheet / iPad right panel. */
   onClose?: () => void;
@@ -188,7 +193,12 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
     enabled: Boolean(browserDirectory && normalizedDebouncedQuery),
   });
 
-  const shouldReadFile = Boolean(filePath && files.readFile && (!isImageFile(filePath) || filePath.toLowerCase().endsWith('.svg')));
+  const shouldReadFile = Boolean(
+    filePath
+    && files.readFile
+    && !isHtmlFile(filePath)
+    && (!isImageFile(filePath) || filePath.toLowerCase().endsWith('.svg')),
+  );
   const fileQuery = useFileContentQuery({
     scopeDirectory: root,
     path: filePath,
@@ -434,7 +444,7 @@ const MobileFileDetailActions: React.FC<{
 
   return (
     <>
-      {!isImageFile(path) ? (
+      {!isImageFile(path) && !isHtmlFile(path) ? (
         <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
           <Icon name="file-copy" className="size-4" />
         </Button>
@@ -605,8 +615,10 @@ const MobileFileDetail: React.FC<{
       <div ref={contentContainerRef} className="min-h-0 flex-1 overflow-hidden">
         {isLoading || imageAuthLoading || isRelayImageLoading ? (
           <MobileFilesState loading message={t('filesView.state.loading')} />
-        ) : imageError ? (
+        ) : imageError && !isHtmlFile(path) ? (
           <MobileFilesState message={imageError} />
+        ) : isHtmlFile(path) ? (
+          <MobileHtmlPreview path={path} />
         ) : isImageFile(path) && previewImageSrc ? (
           <ScrollShadow className="h-full overflow-auto p-4">
             <button
@@ -638,6 +650,59 @@ const MobileFileDetail: React.FC<{
         </React.Suspense>
       ) : null}
     </div>
+  );
+};
+
+const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
+  const { t } = useI18n();
+  const [readyKey, setReadyKey] = React.useState('');
+  const [nonce, setNonce] = React.useState(0);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setReadyKey('');
+    const apiBaseUrl = getRuntimeApiBaseUrl();
+    const release = acquireRuntimeUrlAuthToken(apiBaseUrl);
+    void refreshRuntimeUrlAuthToken(apiBaseUrl)
+      .then((token) => {
+        if (cancelled || !token) return;
+        setReadyKey(path);
+        setError(null);
+      })
+      .catch((authError: unknown) => {
+        if (cancelled) return;
+        setError(authError instanceof Error ? authError.message : t('filesView.error.readFileFailed'));
+        setReadyKey(path);
+      });
+    const unsubscribe = subscribeRuntimeUrlAuthToken(() => {
+      if (cancelled) return;
+      setReadyKey(path);
+      setNonce((value) => value + 1);
+      setError(null);
+    });
+    return () => {
+      cancelled = true;
+      release();
+      unsubscribe();
+    };
+  }, [path, t]);
+
+  if (error) {
+    return <MobileFilesState message={error} />;
+  }
+  if (readyKey !== path) {
+    return <MobileFilesState loading message={t('filesView.state.loading')} />;
+  }
+
+  return (
+    <iframe
+      key={nonce}
+      src={buildFsServeAssetUrl(path)}
+      className="h-full w-full border-none"
+      sandbox="allow-scripts allow-same-origin allow-forms"
+      title={t('filesView.editor.htmlPreviewTitle')}
+    />
   );
 };
 
