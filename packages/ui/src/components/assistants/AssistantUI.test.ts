@@ -470,7 +470,14 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer).toContain('data-chat-prompt-file-attachments="true"');
     expect(promptComposer).toContain("fileAccept = 'image/*'");
     expect(promptComposer).toContain('data-composer-layout={layout}');
-    expect(promptComposer).toContain('min-h-12 flex-row items-end');
+    expect(promptComposer).toContain('min-h-12 flex-row');
+    expect(promptComposer).toContain("inlineAlignEnd ? 'items-end' : 'items-center'");
+    expect(promptComposer.indexOf('data-composer-inline-attach="true"')).toBeLessThan(
+      promptComposer.indexOf('data-composer-input-shell="true"'),
+    );
+    expect(promptComposer.indexOf('data-composer-input-shell="true"')).toBeLessThan(
+      promptComposer.indexOf('data-composer-inline-send="true"'),
+    );
     expect(promptComposer).toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
     expect(promptComposer).toContain('flex h-12 shrink-0 items-center pr-1.5');
   });

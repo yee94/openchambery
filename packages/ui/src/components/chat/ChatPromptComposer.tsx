@@ -51,7 +51,7 @@ type ChatPromptComposerProps = Omit<React.ComponentProps<typeof ChatComposerSurf
   inputSectionClassName?: string;
   autoResize?: boolean;
   disableInputWhilePending?: boolean;
-  /** stacked = Chat textarea + footer band. inline = one compact row, send on the right. */
+  /** stacked = Chat textarea + footer band. inline = attach left, textarea, send right. */
   layout?: 'stacked' | 'inline';
   children?: React.ReactNode;
 };
@@ -227,6 +227,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   );
   const defaultRightControls = inline ? inlineRightControls : stackedRightControls;
   const inlineLeftControls = leftControls !== undefined ? leftControls : defaultLeftControls;
+  const inlineAlignEnd = attachments.length > 0 || value.includes('\n');
 
   return (
     <ChatComposerSurface className={className} expanded={expanded} {...surfaceProps}>
@@ -242,11 +243,19 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
         data-composer-layout={layout}
         className={cn(
           'relative flex min-h-0',
-          inline ? 'min-h-12 flex-row items-end' : 'flex-col',
+          inline ? cn('min-h-12 flex-row', inlineAlignEnd ? 'items-end' : 'items-center') : 'flex-col',
           expanded && 'flex-1',
           contentClassName,
         )}
       >
+        {inline && inlineLeftControls ? (
+          <div
+            className="flex h-12 shrink-0 items-center pl-1.5"
+            data-composer-inline-attach="true"
+          >
+            {inlineLeftControls}
+          </div>
+        ) : null}
         <div className={cn(
           'overflow-hidden',
           inline && 'min-w-0 flex-1',
@@ -338,23 +347,13 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           </div>
         </div>
         {inline ? (
-          <>
-            {inlineLeftControls ? (
-              <div
-                className="flex h-12 shrink-0 items-center pl-1.5"
-                data-composer-inline-attach="true"
-              >
-                {inlineLeftControls}
-              </div>
-            ) : null}
-            <div
-              className={cn('flex h-12 shrink-0 items-center pr-1.5', footerClassName)}
-              style={footerStyle}
-              data-composer-inline-send="true"
-            >
-              {rightControls ?? defaultRightControls}
-            </div>
-          </>
+          <div
+            className={cn('flex h-12 shrink-0 items-center pr-1.5', footerClassName)}
+            style={footerStyle}
+            data-composer-inline-send="true"
+          >
+            {rightControls ?? defaultRightControls}
+          </div>
         ) : (
           <ChatPromptFooter
             className={footerClassName}
