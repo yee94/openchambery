@@ -1,4 +1,6 @@
-import { AssistantAPIError, isAbortError, type AssistantContactMessage, type AssistantContactPart } from '@/queries/assistantDTO';
+import { AssistantAPIError, isAbortError, type AssistantContactFilePart, type AssistantContactMessage, type AssistantContactPart, type AssistantContactTextPart } from '@/queries/assistantDTO';
+
+type ContactComposerSendPart = AssistantContactTextPart | AssistantContactFilePart;
 
 export const EMPTY_CONTACT_MESSAGES: AssistantContactMessage[] = [];
 
@@ -122,11 +124,11 @@ export const beginContactComposerSubmit = (input: {
   assistantID: string;
   createMessageID: () => string;
   createdAt?: number;
-}): { ok: true; messageID: string; parts: AssistantContactPart[]; turn: ContactOptimisticTurn } | { ok: false } => {
+}): { ok: true; messageID: string; parts: ContactComposerSendPart[]; turn: ContactOptimisticTurn } | { ok: false } => {
   const text = input.text.trim();
   if (input.sending || (!text && input.attachments.length === 0)) return { ok: false };
   if (!input.gate.tryAcquire()) return { ok: false };
-  const parts: AssistantContactPart[] = [
+  const parts: ContactComposerSendPart[] = [
     ...(text ? [{ type: 'text' as const, text }] : []),
     ...input.attachments.map((attachment) => ({
       type: 'file' as const,

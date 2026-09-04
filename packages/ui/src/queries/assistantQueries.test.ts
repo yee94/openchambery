@@ -341,14 +341,17 @@ describe('contact send abort', () => {
       mapContactSendFailure(new DOMException('The operation was aborted.', 'TimeoutError'));
       throw new Error('expected generate_timeout');
     } catch (error) {
-      expect(error).toBeInstanceOf(AssistantAPIError);
-      expect(error).toMatchObject({ code: 'generate_timeout', status: 408 });
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('generate_timeout');
+      expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
     }
     try {
       mapContactSendFailure(new AssistantAPIError('upstream_error', 502, undefined, 'OpenCode LLM generate timed out after 90000ms'));
       throw new Error('expected upstream_error');
     } catch (error) {
-      expect(error).toMatchObject({ code: 'upstream_error', message: 'OpenCode LLM generate timed out after 90000ms' });
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('upstream_error');
+      expect(error instanceof AssistantAPIError ? error.message : '').toBe('OpenCode LLM generate timed out after 90000ms');
     }
   });
 
@@ -360,20 +363,27 @@ describe('contact send abort', () => {
       messageID: 'oc_contact_1',
       binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
     });
-    expect(lastFetchInit?.signal).toBeInstanceOf(AbortSignal);
+    expect(lastFetchInit?.signal instanceof AbortSignal).toBe(true);
     expect(lastFetchInit?.method).toBe('POST');
 
     contactSendBehavior = 'timeout';
-    await expect(sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' })).rejects.toMatchObject({
-      code: 'generate_timeout',
-      status: 408,
-    });
+    try {
+      await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+      throw new Error('expected generate_timeout');
+    } catch (error) {
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('generate_timeout');
+      expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
+    }
 
     contactSendBehavior = 'upstream';
-    await expect(sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' })).rejects.toBeInstanceOf(AssistantAPIError);
-    await expect(sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' })).rejects.toMatchObject({
-      code: 'upstream_error',
-      message: 'OpenCode LLM generate timed out after 90000ms',
-    });
+    try {
+      await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+      throw new Error('expected upstream_error');
+    } catch (error) {
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('upstream_error');
+      expect(error instanceof AssistantAPIError ? error.message : '').toBe('OpenCode LLM generate timed out after 90000ms');
+    }
   });
 });

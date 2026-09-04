@@ -515,7 +515,7 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(conversation).toContain('useAssistantContactMessagesQuery');
     expect(conversation).toContain('sendAssistantContactMessage');
-    expect(conversation).toContain('{ parts }');
+    expect(conversation).toContain('{ parts: begun.parts }');
     expect(conversation).not.toContain('appendAssistantContactCard');
     expect(conversation).not.toContain('parseContactComposerInput');
     expect(queries).toContain('/contact/messages');
