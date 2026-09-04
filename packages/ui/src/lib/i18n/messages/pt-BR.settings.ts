@@ -2040,6 +2040,7 @@ export const settingsDict = {
   'assistants.contact.sending': 'Enviando…',
   'assistants.contact.noProvider': 'Nenhum modelo conectado está disponível para este assistente.',
   'assistants.contact.sendFailed': 'Não foi possível enviar essa mensagem.',
+  'assistants.contact.timedOut': 'O modelo não respondeu a tempo.',
   'assistants.contact.loadFailed': 'Não foi possível carregar a conversa.',
   'assistants.contact.card.session.aria': 'Sessão {title}',
   'assistants.contact.card.session.untitled': 'Sessão sem título',

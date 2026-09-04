@@ -2040,6 +2040,7 @@ export const settingsDict = {
   'assistants.contact.sending': '送信中…',
   'assistants.contact.noProvider': 'このアシスタントで使える接続済みモデルがありません。',
   'assistants.contact.sendFailed': 'メッセージを送信できませんでした。',
+  'assistants.contact.timedOut': 'モデルが制限時間内に応答しませんでした。',
   'assistants.contact.loadFailed': '会話を読み込めませんでした。',
   'assistants.contact.card.session.aria': 'セッション {title}',
   'assistants.contact.card.session.untitled': '無題のセッション',

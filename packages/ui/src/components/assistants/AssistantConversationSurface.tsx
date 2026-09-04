@@ -16,9 +16,10 @@ import {
 } from '@/queries/assistantQueries'
 import { getAssistantPresentation } from './assistantPresentation'
 import {
+  beginContactComposerSubmit,
   contactOptimisticSending,
   contactSendErrorMessage,
-  createContactOptimisticTurn,
+  createContactSendGate,
   EMPTY_CONTACT_MESSAGES,
   markContactOptimisticFailed,
   mergeContactTranscript,
@@ -86,6 +87,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const [attachments, setAttachments] = React.useState<ChatPromptAttachment[]>([])
   const [optimisticTurns, setOptimisticTurns] = React.useState<ContactOptimisticTurn[]>([])
   const [sendError, setSendError] = React.useState<string | null>(null)
+  const sendGate = React.useMemo(() => createContactSendGate(), [])
   const setContactSending = useAssistantContactWorkingStore((state) => state.setSending)
   const working = useAssistantWorking(assistant.id, assistant.assignedSessionIDs ?? [], Boolean(assistant.working))
   const scrollerRef = React.useRef<HTMLDivElement | null>(null)
@@ -144,25 +146,24 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     void addFiles(files)
   })
   const submit = useEvent(async () => {
-    const text = draft.trim()
-    if (!text && attachments.length === 0) return
-    const parts = [
-      ...(text ? [{ type: 'text' as const, text }] : []),
-      ...attachments.map((attachment) => ({
-        type: 'file' as const,
-        mime: attachment.mime,
-        url: attachment.url,
-        filename: attachment.name,
-      })),
-    ]
-    const messageID = `oc_contact_${createUuid()}`
+    const text = draft
+    const staged = attachments
     const sentAssistantID = assistant.id
-    setOptimisticTurns((current) => [...current, createContactOptimisticTurn(sentAssistantID, messageID, parts)])
+    const begun = beginContactComposerSubmit({
+      gate: sendGate,
+      sending: contactOptimisticSending(optimisticTurns),
+      text,
+      attachments: staged,
+      assistantID: sentAssistantID,
+      createMessageID: () => `oc_contact_${createUuid()}`,
+    })
+    if (!begun.ok) return
+    setOptimisticTurns((current) => [...current, begun.turn])
     setDraft('')
     setAttachments([])
     setSendError(null)
     try {
-      await sendAssistantContactMessage(sentAssistantID, messageID, { parts })
+      await sendAssistantContactMessage(sentAssistantID, begun.messageID, { parts: begun.parts })
       if (capabilityQuery.data?.serverInstanceID) {
         void donateNativeAssistantInteraction({
           serverInstanceID: capabilityQuery.data.serverInstanceID,
@@ -176,8 +177,11 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       const detail = contactSendErrorMessage(error, {
         noProvider: t('assistants.contact.noProvider'),
         sendFailed: t('assistants.contact.sendFailed'),
+        timedOut: t('assistants.contact.timedOut'),
       })
-      setOptimisticTurns((current) => markContactOptimisticFailed(current, messageID, detail))
+      setOptimisticTurns((current) => markContactOptimisticFailed(current, begun.messageID, detail))
+    } finally {
+      sendGate.release()
     }
   })
 

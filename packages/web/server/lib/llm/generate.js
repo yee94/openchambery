@@ -306,6 +306,11 @@ const flattenMessages = (messages) => {
   };
 };
 
+const filesForPrompt = (files, forwardImageParts) => {
+  if (forwardImageParts) return files;
+  return files.filter((part) => !String(part?.mime || '').startsWith('image/'));
+};
+
 async function generateViaSessionless({ fetchImpl, url, headers, providerID, modelID, messages, signal }) {
   const response = await fetchImpl(url, {
     method: 'POST',
@@ -349,6 +354,7 @@ export async function generateOpenCodeText({
   clientFactory,
   ensureTempDirectory,
   detect = detectSessionlessGenerate,
+  forwardImageParts = false,
 }) {
   if (!providerID || !modelID) {
     const error = new Error('providerID and modelID are required');
@@ -356,7 +362,8 @@ export async function generateOpenCodeText({
     throw error;
   }
   const flattened = flattenMessages(messages);
-  if (!flattened.prompt && flattened.files.length === 0) {
+  const promptFiles = filesForPrompt(flattened.files, forwardImageParts);
+  if (!flattened.prompt && promptFiles.length === 0) {
     const error = new Error('messages must include a user turn');
     error.code = 'validation_error';
     throw error;
@@ -376,7 +383,13 @@ export async function generateOpenCodeText({
         headers,
         providerID,
         modelID,
-        messages,
+        messages: forwardImageParts
+          ? messages
+          : messages.map((message) => {
+            if (!Array.isArray(message?.parts)) return message;
+            const parts = message.parts.filter((part) => part?.type !== 'file' || !String(part.mime || '').startsWith('image/'));
+            return parts.length === message.parts.length ? message : { ...message, parts };
+          }),
         signal: controller.signal,
       });
     }
@@ -431,7 +444,7 @@ export async function generateOpenCodeText({
         tools,
         parts: [
           { type: 'text', text: flattened.prompt, synthetic: false },
-          ...flattened.files,
+          ...promptFiles,
         ],
       }, { signal: controller.signal });
       if (!promptAdmitted(prompted)) {
@@ -466,6 +479,7 @@ export async function generateOpenCodeText({
 
 export const _test = {
   flattenMessages,
+  filesForPrompt,
   describeContactFilePart,
   deniedTools,
   assistantTextFromPrompt,

@@ -42,8 +42,24 @@ describe('projectConnectedModels', () => {
       ],
     })
     expect(catalog.models).toEqual([
-      { providerID: 'openai', modelID: 'gpt-5.2', name: 'GPT-5.2' },
+      { providerID: 'openai', modelID: 'gpt-5.2', name: 'GPT-5.2', acceptsImages: false },
     ])
+  })
+
+  it('marks vision models from modalities or attachment', () => {
+    const catalog = projectConnectedModels({
+      connected: ['openai'],
+      providers: [{
+        id: 'openai',
+        name: 'OpenAI',
+        models: {
+          'gpt-4o': { id: 'gpt-4o', name: 'GPT-4o', modalities: { input: ['text', 'image'] } },
+          'deepseek-v4-flash': { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash' },
+        },
+      }],
+    })
+    expect(catalog.models.find((model) => model.modelID === 'gpt-4o')?.acceptsImages).toBe(true)
+    expect(catalog.models.find((model) => model.modelID === 'deepseek-v4-flash')?.acceptsImages).toBe(false)
     expect(catalog.connected).toEqual(['openai'])
   })
 })

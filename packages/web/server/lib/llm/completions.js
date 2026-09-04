@@ -111,6 +111,9 @@ export async function createChatCompletion({
       fetchImpl,
       clientFactory,
       ensureTempDirectory,
+      forwardImageParts: Boolean(catalog.models.find((entry) => (
+        entry.providerID === resolved.providerID && entry.modelID === resolved.modelID
+      ))?.acceptsImages),
     });
   } catch (error) {
     if (error instanceof LlmError) throw error;

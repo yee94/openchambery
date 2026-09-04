@@ -303,11 +303,14 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('sendLabel={t(\'assistants.contact.send\')}');
     expect(conversation).toContain('pending={false}');
     expect(conversation).not.toContain('pending={sending}');
-    expect(conversation).toContain('createContactOptimisticTurn');
+    expect(conversation).toContain('beginContactComposerSubmit');
+    expect(conversation).toContain('createContactSendGate');
     expect(conversation).toContain('markContactOptimisticFailed');
     expect(conversation).toContain('contactSendErrorMessage');
+    expect(conversation).toContain("t('assistants.contact.timedOut')");
     expect(conversation.indexOf("setDraft('')")).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
-    expect(conversation.indexOf('createContactOptimisticTurn')).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
+    expect(conversation.indexOf('begun.turn')).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
+    expect(conversation).toContain('sendGate.release()');
     expect(conversation).toContain('data-assistant-contact-turn-status');
     expect(conversation).toContain('isMobile={isMobile}');
     expect(conversation).toContain('oc-mobile-composer-surface');
@@ -498,6 +501,7 @@ describe('Assistant UI product contract', () => {
       expect(source).toContain("'assistants.contact.removeAttachment'");
       expect(source).toContain("'assistants.contact.attachment.image'");
       expect(source).toContain("'assistants.contact.attachment.file'");
+      expect(source).toContain("'assistants.contact.timedOut'");
     }
     const zh = sources[files.indexOf('zh-CN.settings.ts')];
     expect(zh).toContain('添加文件');

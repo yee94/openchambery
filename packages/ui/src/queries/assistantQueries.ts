@@ -5,7 +5,7 @@ import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
-import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
+import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
 export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
@@ -196,6 +196,13 @@ export const sendAssistantMessage = async (assistantID: string, binding: Session
 export type AssistantContactSendPart =
   | { type: 'text'; text: string }
   | { type: 'file'; mime: string; url: string; filename?: string };
+/** Slightly above server GENERATE_TIMEOUT_MS (90s) so a 502 body can win first. */
+export const CONTACT_SEND_TIMEOUT_MS = 95_000;
+export const mapContactSendFailure = (error: unknown): never => {
+  if (error instanceof AssistantAPIError) throw error;
+  if (isAbortError(error)) throw new AssistantAPIError('generate_timeout', 408);
+  throw error;
+};
 export const sendAssistantContactMessage = async (
   assistantID: string,
   messageID: string,
@@ -208,11 +215,16 @@ export const sendAssistantContactMessage = async (
     : Array.isArray(input.parts) && input.parts.length > 0
       ? input.parts
       : [{ type: 'text' as const, text: input.text ?? '' }];
-  const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { messageID, parts })));
-  assertCurrent(transport, generation);
-  applyBinding(assistantID, result.binding, transport);
-  invalidateContact(assistantID, transport);
-  return result;
+  const signal = AbortSignal.timeout(CONTACT_SEND_TIMEOUT_MS);
+  try {
+    const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, { ...jsonInit('POST', { messageID, parts }), signal }));
+    assertCurrent(transport, generation);
+    applyBinding(assistantID, result.binding, transport);
+    invalidateContact(assistantID, transport);
+    return result;
+  } catch (error) {
+    return mapContactSendFailure(error);
+  }
 };
 export const appendAssistantContactCard = async (
   assistantID: string,

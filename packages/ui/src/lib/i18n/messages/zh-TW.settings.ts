@@ -2040,6 +2040,7 @@
   'assistants.contact.sending': '傳送中…',
   'assistants.contact.noProvider': '此助理沒有可用的已連線模型。',
   'assistants.contact.sendFailed': '無法傳送該訊息。',
+  'assistants.contact.timedOut': '模型未在時限內回覆。',
   'assistants.contact.loadFailed': '無法載入對話。',
   'assistants.contact.card.session.aria': '工作階段 {title}',
   'assistants.contact.card.session.untitled': '未命名工作階段',

@@ -2040,6 +2040,7 @@ export const settingsDict = {
   'assistants.contact.sending': '보내는 중…',
   'assistants.contact.noProvider': '이 어시스턴트에 연결된 모델이 없습니다.',
   'assistants.contact.sendFailed': '메시지를 보내지 못했습니다.',
+  'assistants.contact.timedOut': '모델이 제한 시간 안에 응답하지 않았습니다.',
   'assistants.contact.loadFailed': '대화를 불러오지 못했습니다.',
   'assistants.contact.card.session.aria': '세션 {title}',
   'assistants.contact.card.session.untitled': '제목 없는 세션',

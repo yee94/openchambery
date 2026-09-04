@@ -2040,6 +2040,7 @@ export const settingsDict = {
   'assistants.contact.sending': '发送中…',
   'assistants.contact.noProvider': '此助理没有可用的已连接模型。',
   'assistants.contact.sendFailed': '无法发送该消息。',
+  'assistants.contact.timedOut': '模型未在时限内回复。',
   'assistants.contact.loadFailed': '无法加载对话。',
   'assistants.contact.card.session.aria': '会话 {title}',
   'assistants.contact.card.session.untitled': '未命名会话',

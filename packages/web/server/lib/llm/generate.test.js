@@ -127,12 +127,50 @@ describe('generateOpenCodeText', () => {
       clientFactory: createOpencodeClient,
       ensureTempDirectory: async () => '/tmp/openchamber-llm',
       detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      forwardImageParts: true,
     })
     expect(promptAsync.mock.calls[0][0].parts).toEqual([
       expect.objectContaining({ type: 'text', synthetic: false }),
       image,
       file,
     ])
+  })
+
+  it('skips image bytes for non-vision generate and keeps text files plus the image description', async () => {
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' }
+    expect(_test.filesForPrompt([image, file], false)).toEqual([file])
+    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
+    const createOpencodeClient = vi.fn(() => ({
+      session: {
+        create: async () => ({ data: { id: 'ses_tmp' } }),
+        update: async () => ({ data: { id: 'ses_tmp' } }),
+        prompt: vi.fn(),
+        promptAsync,
+        status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
+        messages: async () => ({ data: [completedAssistant('cannot see images')] }),
+        delete: async () => ({ data: true }),
+      },
+      tool: { ids: async () => ({ data: [] }) },
+    }))
+    await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'look', parts: [image, file] }],
+      clientFactory: createOpencodeClient,
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+    })
+    expect(promptAsync.mock.calls[0][0].parts).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('[image: shot.png (image/png)]'),
+      }),
+      file,
+    ])
+    expect(promptAsync.mock.calls[0][0].parts.some((part) => part.type === 'file' && part.mime.startsWith('image/'))).toBe(false)
   })
 
   it('surfaces the OpenCode assistant error string after promptAsync 204', async () => {

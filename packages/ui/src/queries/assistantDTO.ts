@@ -90,6 +90,12 @@ export class AssistantAPIError extends Error {
     super(typeof message === 'string' && message.trim() ? message.trim() : code);
   }
 }
+
+export const isAbortError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const name = 'name' in error ? String(error.name) : '';
+  return name === 'AbortError' || name === 'TimeoutError';
+};
 export class AssistantShareOperationError extends AssistantAPIError { constructor(code: string, status: number, public readonly operation: ShareOperation) { super(code, status, 'share_operation'); } }
 const invalid = (resource: string, status = 200): never => { throw new AssistantAPIError(`invalid_${resource}_response`, status, resource); };
 const record = (value: unknown, resource: string): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid(resource);

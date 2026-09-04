@@ -53,7 +53,7 @@ describe('createChatCompletion', () => {
     await createChatCompletion({
       generateText,
       loadCatalog: async () => ({
-        models: [{ providerID: 'openai', modelID: 'gpt-5.2' }],
+        models: [{ providerID: 'openai', modelID: 'gpt-5.2', acceptsImages: true }],
         connected: ['openai'],
       }),
       body: {
@@ -64,6 +64,20 @@ describe('createChatCompletion', () => {
     expect(generateText.mock.calls[0][0].messages).toEqual([
       { role: 'user', content: 'look', parts: [image] },
     ])
+    expect(generateText.mock.calls[0][0].forwardImageParts).toBe(true)
+  })
+
+  it('asks generate to skip image bytes when the catalog model is not vision-capable', async () => {
+    const generateText = vi.fn(async () => ({ text: 'ok', source: 'throwaway-session' }))
+    await createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({
+        models: [{ providerID: 'opencode', modelID: 'deepseek-v4-flash', acceptsImages: false }],
+        connected: ['opencode'],
+      }),
+      body: { model: 'opencode/deepseek-v4-flash', messages: [{ role: 'user', content: 'look' }] },
+    })
+    expect(generateText.mock.calls[0][0].forwardImageParts).toBe(false)
   })
 
   it('LlmError carries a stable code', () => {

@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import { AssistantAPIError, type AssistantContactMessage } from '@/queries/assistantDTO'
 import {
+  beginContactComposerSubmit,
   contactSendErrorMessage,
   createContactOptimisticTurn,
+  createContactSendGate,
   markContactOptimisticFailed,
   mergeContactTranscript,
   reconcileContactOptimisticTurns,
@@ -64,15 +66,59 @@ describe('contactOptimisticTurns', () => {
     })
     expect(contactSendErrorMessage(
       new AssistantAPIError('upstream_error', 502, undefined, 'generate timed out'),
-      { noProvider: 'no provider', sendFailed: 'Could not send that message.' },
+      { noProvider: 'no provider', sendFailed: 'Could not send that message.', timedOut: 'The model did not reply in time.' },
     )).toBe('generate timed out')
     expect(contactSendErrorMessage(
       new AssistantAPIError('upstream_error', 502),
-      { noProvider: 'no provider', sendFailed: 'Could not send that message.' },
+      { noProvider: 'no provider', sendFailed: 'Could not send that message.', timedOut: 'The model did not reply in time.' },
     )).toBe('Could not send that message.')
     expect(contactSendErrorMessage(
       new AssistantAPIError('no_provider', 400),
-      { noProvider: 'no provider', sendFailed: 'Could not send that message.' },
+      { noProvider: 'no provider', sendFailed: 'Could not send that message.', timedOut: 'The model did not reply in time.' },
     )).toBe('no provider')
+    expect(contactSendErrorMessage(
+      new AssistantAPIError('generate_timeout', 408),
+      { noProvider: 'no provider', sendFailed: 'Could not send that message.', timedOut: 'The model did not reply in time.' },
+    )).toBe('The model did not reply in time.')
+    expect(contactSendErrorMessage(
+      new DOMException('The operation was aborted.', 'AbortError'),
+      { noProvider: 'no provider', sendFailed: 'Could not send that message.', timedOut: 'The model did not reply in time.' },
+    )).toBe('The model did not reply in time.')
+  })
+
+  test('two rapid submit() attempts create one optimistic turn', () => {
+    const gate = createContactSendGate()
+    const input = {
+      gate,
+      sending: false,
+      text: '乐观发图',
+      attachments: [{ mime: 'image/png', url: 'data:image/png;base64,eA==', name: 'shot.png' }],
+      assistantID: 'asst_1',
+    }
+    const first = beginContactComposerSubmit({ ...input, createMessageID: () => 'oc_contact_1' })
+    const second = beginContactComposerSubmit({ ...input, createMessageID: () => 'oc_contact_2' })
+    expect(first.ok).toBe(true)
+    if (first.ok) {
+      expect(first.messageID).toBe('oc_contact_1')
+      expect(first.parts).toEqual([
+        { type: 'text', text: '乐观发图' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,eA==', filename: 'shot.png' },
+      ])
+    }
+    expect(second).toEqual({ ok: false })
+  })
+
+  test('ignores submit while an optimistic turn is already sending without taking the lock', () => {
+    const gate = createContactSendGate()
+    const blocked = beginContactComposerSubmit({
+      gate,
+      sending: true,
+      text: 'second',
+      attachments: [],
+      assistantID: 'asst_1',
+      createMessageID: () => 'oc_contact_2',
+    })
+    expect(blocked).toEqual({ ok: false })
+    expect(gate.tryAcquire()).toBe(true)
   })
 })

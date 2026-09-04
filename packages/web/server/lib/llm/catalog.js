@@ -2,6 +2,16 @@ const isRecord = (value) => value !== null && typeof value === 'object' && !Arra
 
 const stringID = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
 
+const listIncludesImage = (value) => Array.isArray(value)
+  && value.some((item) => String(item).toLowerCase() === 'image');
+
+function modelAcceptsImages(model) {
+  if (!isRecord(model)) return false;
+  if (isRecord(model.modalities) && listIncludesImage(model.modalities.input)) return true;
+  if (listIncludesImage(model.input)) return true;
+  return model.attachment === true;
+}
+
 /**
  * Merge OpenCode `GET /provider` (connected ids) with `GET /config/providers`
  * (model catalog). Do not interpret plugin-specific provider configs.
@@ -30,7 +40,7 @@ export function projectConnectedModels(source) {
       if (!isRecord(model)) continue;
       const modelID = stringID(model.id);
       if (!modelID) continue;
-      const entry = { providerID, modelID, name: stringID(model.name) || modelID };
+      const entry = { providerID, modelID, name: stringID(model.name) || modelID, acceptsImages: modelAcceptsImages(model) };
       models.push(entry);
       providerModels.push({ id: modelID, name: entry.name });
     }

@@ -2040,6 +2040,7 @@ export const settingsDict = {
   'assistants.contact.sending': 'Надсилання…',
   'assistants.contact.noProvider': 'Для цього асистента немає підключеної моделі.',
   'assistants.contact.sendFailed': 'Не вдалося надіслати це повідомлення.',
+  'assistants.contact.timedOut': 'Модель не відповіла вчасно.',
   'assistants.contact.loadFailed': 'Не вдалося завантажити розмову.',
   'assistants.contact.card.session.aria': 'Сесія {title}',
   'assistants.contact.card.session.untitled': 'Сесія без назви',
