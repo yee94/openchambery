@@ -640,6 +640,10 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<ChatContainer');
     expect(conversation).not.toContain('chat-content-max-width');
     expect(conversation).not.toContain('inputClassName=');
+    expect(conversation).toContain("bg-[var(--primary-base)] text-[var(--primary-foreground)]");
+    expect(conversation).toContain('border border-dashed border-border bg-[var(--surface-muted)]');
+    expect(conversation).toContain('border border-border/60 bg-[var(--surface-muted)] text-foreground');
+    expect(conversation).not.toContain("'bg-[var(--surface-elevated)] text-foreground'");
     expect(view).toContain('bg-[var(--surface-elevated)]');
     expect(view).toContain('border-border/50');
     expect(view).toContain('border-l border-border/60');

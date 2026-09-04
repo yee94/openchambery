@@ -289,7 +289,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                 ? 'bg-[var(--primary-base)] text-[var(--primary-foreground)]'
                                 : isPeer
                                   ? 'border border-dashed border-border bg-[var(--surface-muted)] text-foreground'
-                                  : 'bg-[var(--surface-elevated)] text-foreground',
+                                  : 'border border-border/60 bg-[var(--surface-muted)] text-foreground',
                             )}
                           >
                             {SETTLE_TEXT[part.text] ? t(SETTLE_TEXT[part.text]) : part.text}
