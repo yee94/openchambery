@@ -92,7 +92,7 @@ import {
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
 import { getDesktopLanAddress, isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getRuntimeApiBaseUrl, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
+import { getRuntimeApiBaseUrl, getRuntimeKey, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import {
   switchDesktopHostInstance,
   useDesktopHostSwitchPending,
@@ -710,7 +710,15 @@ type PairingTransportOptions = {
   lanUrl: string | null;
   relayAvailable: boolean;
   relayUrl: string | null;
+  // Every configured relay endpoint, primary first (multi-relay). Pairing over
+  // a non-primary endpoint yields a candidate that stays distinct on clients
+  // (instance identity is serverId + relayUrl).
+  relayUrls: string[];
   relayUrlLocked: boolean;
+  // True when this page manages a NON-local host (e.g. attached over relay).
+  // The relay endpoint then belongs to the remote host: the dialog always uses
+  // the endpoint the host itself reports and never applies local preferences.
+  remoteHost: boolean;
 };
 
 const isPortInUseError = (error: unknown): boolean => {
@@ -1089,6 +1097,10 @@ export const RemoteInstancesPage: React.FC = () => {
   const [addDeviceFallback, setAddDeviceFallback] = React.useState(true);
   const [addDeviceRelayUrl, setAddDeviceRelayUrl] = React.useState(DEFAULT_PAIRING_RELAY_URL);
   const [addDeviceRelayUrlError, setAddDeviceRelayUrlError] = React.useState<string | null>(null);
+  // Multi-relay: with several configured endpoints the dialog shows a picker;
+  // the local owner may still switch to a custom endpoint (appended on the
+  // host as an additional relay). Remote hosts pick from the reported list.
+  const [addDeviceRelayCustom, setAddDeviceRelayCustom] = React.useState(false);
   const addDeviceRelayUrlInputRef = React.useRef<HTMLInputElement>(null);
   const [transportOptions, setTransportOptions] = React.useState<PairingTransportOptions | null>(null);
   const revokedClientCount = React.useMemo(() => remoteClients.filter((client) => Boolean(client.revokedAt)).length, [remoteClients]);
@@ -1510,15 +1522,27 @@ export const RemoteInstancesPage: React.FC = () => {
   // network" works even when the UI is opened on localhost. Falls back to the
   // client-side guess if the endpoint is unavailable.
   const resolveTransportOptions = React.useCallback(async (): Promise<PairingTransportOptions> => {
+    // Non-local runtime (relay-attached remote host): the transport options and
+    // relay endpoint describe THAT host, so the dialog must not apply this
+    // machine's stored relay preference.
+    const remoteHost = getRuntimeKey() !== 'local';
     if (clientAuth?.getPairingTransports) {
       try {
         const transports = await clientAuth.getPairingTransports();
+        const primary = normalizePairingRelayUrl(transports.relayUrl);
+        const relayUrls = Array.from(new Set(
+          [...(Array.isArray(transports.relayUrls) ? transports.relayUrls : []), ...(primary ? [primary] : [])]
+            .map((url) => normalizePairingRelayUrl(url))
+            .filter((url): url is string => Boolean(url)),
+        ));
         return {
           localUrl: transports.local,
           lanUrl: transports.lan,
           relayAvailable: transports.relayAvailable,
-          relayUrl: normalizePairingRelayUrl(transports.relayUrl),
+          relayUrl: primary,
+          relayUrls: transports.relayAvailable ? relayUrls : [],
           relayUrlLocked: transports.relayUrlLocked === true,
+          remoteHost,
         };
       } catch {
         // fall through to the client-side guess
@@ -1533,7 +1557,7 @@ export const RemoteInstancesPage: React.FC = () => {
     } catch {
       // keep null
     }
-    return { localUrl, lanUrl, relayAvailable: false, relayUrl: null, relayUrlLocked: false };
+    return { localUrl, lanUrl, relayAvailable: false, relayUrl: null, relayUrls: [], relayUrlLocked: false, remoteHost };
   }, [clientAuth]);
 
   const openAddDevice = useEvent(async () => {
@@ -1548,10 +1572,13 @@ export const RemoteInstancesPage: React.FC = () => {
     setAddDeviceOpen(true);
     const opts = await resolveTransportOptions();
     setTransportOptions(opts);
-    const locallySavedRelayUrl = readPairingRelayUrlPreference();
+    setAddDeviceRelayCustom(false);
+    // The stored relay preference belongs to THIS machine's host; managing a
+    // remote host always uses the endpoint that host reports.
+    const locallySavedRelayUrl = opts.remoteHost ? null : readPairingRelayUrlPreference();
     setAddDeviceRelayUrl(
-      (opts.relayUrlLocked ? opts.relayUrl : locallySavedRelayUrl || opts.relayUrl)
-      || DEFAULT_PAIRING_RELAY_URL,
+      (opts.relayUrlLocked || opts.remoteHost ? opts.relayUrl : locallySavedRelayUrl || opts.relayUrl)
+      || DEFAULT_PAIRING_RELAY_URL
     );
     // "Anywhere" (relay, with home-network preference) is the right default for
     // most people; fall back to narrower options only when relay is unavailable.
@@ -1617,7 +1644,11 @@ export const RemoteInstancesPage: React.FC = () => {
       );
       if (actualRelayCandidate) {
         setAddDeviceRelayUrl(actualRelayCandidate.relayUrl);
-        writePairingRelayUrlPreference(actualRelayCandidate.relayUrl);
+        // Remember the endpoint only for THIS machine's host; a remote host's
+        // endpoint must not leak into local pairing defaults.
+        if (transportOptions?.remoteHost !== true) {
+          writePairingRelayUrlPreference(actualRelayCandidate.relayUrl);
+        }
       }
       const encoded = encodePairingConnectionPayload(payload);
       setPairingUrl(encoded);
@@ -2568,33 +2599,73 @@ export const RemoteInstancesPage: React.FC = () => {
                     </label>
                   ) : null}
                   {(addDeviceTransport === 'relay' || (addDeviceTransport === 'lan' && addDeviceFallback)) ? (
+                    (() => {
+                      const relayEndpoints = Array.from(new Set(
+                        [...(transportOptions?.relayUrls ?? []), ...(transportOptions?.relayUrl ? [transportOptions.relayUrl] : [])],
+                      ));
+                      const multiRelay = relayEndpoints.length > 1;
+                      const canCustom = transportOptions?.relayUrlLocked !== true && transportOptions?.remoteHost !== true;
+                      const usePicker = multiRelay && !addDeviceRelayCustom;
+                      return (
                     <label className="block space-y-1.5 pt-2">
                       <span className="typography-ui-label text-foreground">
                         {t('settings.remoteInstances.clientAuth.addDevice.relayUrlLabel')}
                       </span>
-                      <Input
-                        ref={addDeviceRelayUrlInputRef}
-                        className="h-8 font-mono"
-                        value={addDeviceRelayUrl}
-                        onChange={(event) => {
-                          setAddDeviceRelayUrl(event.target.value);
-                          setAddDeviceRelayUrlError(null);
-                        }}
-                        placeholder={DEFAULT_PAIRING_RELAY_URL}
-                        readOnly={transportOptions?.relayUrlLocked === true}
-                        aria-readonly={transportOptions?.relayUrlLocked === true || undefined}
-                        aria-invalid={Boolean(addDeviceRelayUrlError) || undefined}
-                        aria-describedby={addDeviceRelayUrlError
-                          ? 'add-device-relay-url-hint add-device-relay-url-error'
-                          : 'add-device-relay-url-hint'}
-                        spellCheck={false}
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                      />
+                      {usePicker ? (
+                        <Select
+                          value={relayEndpoints.includes(addDeviceRelayUrl) ? addDeviceRelayUrl : relayEndpoints[0]}
+                          onValueChange={(value) => {
+                            if (value === '__custom__') {
+                              setAddDeviceRelayCustom(true);
+                              return;
+                            }
+                            setAddDeviceRelayUrl(value);
+                            setAddDeviceRelayUrlError(null);
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-full font-mono" aria-label={t('settings.remoteInstances.clientAuth.addDevice.relayUrlLabel')}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {relayEndpoints.map((endpoint) => (
+                              <SelectItem key={endpoint} value={endpoint} className="font-mono">
+                                <span className="block max-w-[420px] truncate">{endpoint}</span>
+                              </SelectItem>
+                            ))}
+                            {canCustom ? (
+                              <SelectItem value="__custom__">
+                                {t('settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption')}
+                              </SelectItem>
+                            ) : null}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          ref={addDeviceRelayUrlInputRef}
+                          className="h-8 font-mono"
+                          value={addDeviceRelayUrl}
+                          onChange={(event) => {
+                            setAddDeviceRelayUrl(event.target.value);
+                            setAddDeviceRelayUrlError(null);
+                          }}
+                          placeholder={DEFAULT_PAIRING_RELAY_URL}
+                          readOnly={transportOptions?.relayUrlLocked === true || transportOptions?.remoteHost === true}
+                          aria-readonly={transportOptions?.relayUrlLocked === true || transportOptions?.remoteHost === true || undefined}
+                          aria-invalid={Boolean(addDeviceRelayUrlError) || undefined}
+                          aria-describedby={addDeviceRelayUrlError
+                            ? 'add-device-relay-url-hint add-device-relay-url-error'
+                            : 'add-device-relay-url-hint'}
+                          spellCheck={false}
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                        />
+                      )}
                       <span id="add-device-relay-url-hint" className="block typography-meta text-muted-foreground">
                         {transportOptions?.relayUrlLocked
                           ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint')
-                          : (
+                          : transportOptions?.remoteHost
+                            ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint')
+                            : (
                             <>
                               {t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
                               {' '}
@@ -2624,6 +2695,8 @@ export const RemoteInstancesPage: React.FC = () => {
                         </span>
                       ) : null}
                     </label>
+                      );
+                    })()
                   ) : null}
                 </div>
                 {remoteClientError ? <p className="typography-meta text-[var(--status-error)]">{remoteClientError}</p> : null}

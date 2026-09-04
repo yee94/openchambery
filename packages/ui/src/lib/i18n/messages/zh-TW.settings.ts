@@ -190,6 +190,8 @@
   'settings.remoteInstances.clientAuth.addDevice.relayUrlHint': '使用 OpenChamber 官方 Relay，或輸入你自己的 ws:// 或 wss:// 位址。裝置會儲存 QR Code 中的該位址。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink': '可部署自己的 Relay 服務。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint': '此伺服器已透過 OPENCHAMBER_RELAY_URL 固定 Relay 位址。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint': '由所連主機決定，配對將使用該主機目前的 Relay 位址。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption': '自訂位址…',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid': '請輸入以 ws:// 或 wss:// 開頭的有效 Relay 位址。',
   'settings.remoteInstances.clientAuth.addDevice.create': '建立 QR 代碼',
   'settings.remoteInstances.clientAuth.addDevice.targetLabel': '目標實例',

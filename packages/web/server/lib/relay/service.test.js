@@ -123,7 +123,7 @@ describe('relay service pairing endpoint', () => {
     delete process.env.OPENCHAMBER_RELAY_URL;
   });
 
-  it('switches the Host, persists the endpoint, and embeds it in the pairing candidate', async () => {
+  it('appends a new pairing endpoint (multi-relay) while keeping the primary', async () => {
     const { service, settings } = createTestRelayService();
 
     const initial = await service.ensureEnabledForPairing();
@@ -131,11 +131,18 @@ describe('relay service pairing endpoint', () => {
 
     const custom = await service.ensureEnabledForPairing('wss://relay.example/custom');
     expect(custom.relayUrl).toBe('wss://relay.example/custom');
+    // The primary stays live; the custom endpoint is hosted alongside it so
+    // devices paired over the old endpoint keep working.
     expect(relayMocks.starts).toEqual([DEFAULT_RELAY_URL, 'wss://relay.example/custom']);
-    expect(relayMocks.stops).toEqual([DEFAULT_RELAY_URL]);
+    expect(relayMocks.stops).toEqual([]);
     expect(settings.current()).toMatchObject({
-      privateRelay: { enabled: true, relayUrl: 'wss://relay.example/custom' },
+      privateRelay: { enabled: true, relayUrl: DEFAULT_RELAY_URL, extraRelayUrls: ['wss://relay.example/custom'] },
     });
+
+    // Pairing again over the same endpoint is idempotent (no duplicate host).
+    const again = await service.ensureEnabledForPairing('wss://relay.example/custom');
+    expect(again.relayUrl).toBe('wss://relay.example/custom');
+    expect(relayMocks.starts).toEqual([DEFAULT_RELAY_URL, 'wss://relay.example/custom']);
   });
 
   it('strips query and fragment before persisting a custom endpoint', async () => {
@@ -144,7 +151,7 @@ describe('relay service pairing endpoint', () => {
     const candidate = await service.ensureEnabledForPairing('wss://relay.example/custom?token=secret#frag');
     expect(candidate.relayUrl).toBe('wss://relay.example/custom');
     expect(settings.current()).toMatchObject({
-      privateRelay: { enabled: true, relayUrl: 'wss://relay.example/custom' },
+      privateRelay: { enabled: true, relayUrl: DEFAULT_RELAY_URL, extraRelayUrls: ['wss://relay.example/custom'] },
     });
   });
 
@@ -198,32 +205,35 @@ describe('relay service pairing endpoint', () => {
     expect(relayMocks.starts).toEqual(['wss://relay.example/custom']);
   });
 
-  it('invokes onRelayUrlChanged only when the canonical URL actually changes', async () => {
+  it('invokes onRelayUrlChanged only when the canonical primary URL actually changes', async () => {
     const onRelayUrlChanged = vi.fn(async () => {});
     const { service } = createTestRelayService({ onRelayUrlChanged });
 
     await service.ensureEnabledForPairing();
     expect(onRelayUrlChanged).not.toHaveBeenCalled();
 
+    // Appending an extra endpoint does not touch the primary → the push relay
+    // registration (derived from the primary) stays valid.
     await service.ensureEnabledForPairing('wss://relay.example/custom');
-    expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
+    expect(onRelayUrlChanged).not.toHaveBeenCalled();
 
     await service.ensureEnabledForPairing('wss://relay.example/custom?x=1#frag');
-    expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
+    expect(onRelayUrlChanged).not.toHaveBeenCalled();
 
+    // Changing the primary via /relay/enable does.
     const app = express();
     service.registerRoutes(app);
     await request(app)
       .post('/api/openchamber/relay/enable')
       .send({ relayUrl: 'wss://relay.example/other' })
       .expect(200);
-    expect(onRelayUrlChanged).toHaveBeenCalledTimes(2);
+    expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
 
     await request(app)
       .post('/api/openchamber/relay/enable')
       .send({ relayUrl: 'wss://relay.example/other' })
       .expect(200);
-    expect(onRelayUrlChanged).toHaveBeenCalledTimes(2);
+    expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
   });
 
   it('does not invoke onRelayUrlChanged for an env-pinned relay and still uses the pin', async () => {
@@ -245,19 +255,92 @@ describe('relay service pairing endpoint', () => {
     expect((await service.getStatus()).relayUrl).toBe('wss://pinned.example/ws');
   });
 
-  it('continues the relay switch when onRelayUrlChanged fails', async () => {
+  it('continues the primary switch when onRelayUrlChanged fails', async () => {
     const onRelayUrlChanged = vi.fn(async () => {
       throw new Error('push relay unavailable');
     });
     const logger = { warn: vi.fn() };
     const { service } = createTestRelayService({ onRelayUrlChanged, logger });
+    const app = express();
+    service.registerRoutes(app);
 
-    await expect(service.ensureEnabledForPairing('wss://relay.example/custom')).resolves.toMatchObject({
-      relayUrl: 'wss://relay.example/custom',
-    });
+    await request(app)
+      .post('/api/openchamber/relay/enable')
+      .send({ relayUrl: 'wss://relay.example/custom' })
+      .expect(200);
     expect(onRelayUrlChanged).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('push token re-register failed'));
     expect(relayMocks.starts).toEqual(['wss://relay.example/custom']);
+  });
+
+  it('exposes every configured endpoint in status and pairing candidates', async () => {
+    const { service } = createTestRelayService();
+    await service.ensureEnabledForPairing('wss://relay.example/custom');
+
+    const status = await service.getStatus();
+    expect(status.relayUrl).toBe(DEFAULT_RELAY_URL);
+    expect(status.relayUrls).toEqual([DEFAULT_RELAY_URL, 'wss://relay.example/custom']);
+    expect(status.endpoints.map((entry) => entry.relayUrl)).toEqual([DEFAULT_RELAY_URL, 'wss://relay.example/custom']);
+
+    const candidates = await service.getPairingCandidates();
+    expect(candidates.map((candidate) => candidate.relayUrl)).toEqual([DEFAULT_RELAY_URL, 'wss://relay.example/custom']);
+    expect(candidates.every((candidate) => candidate.serverId === 'server-test')).toBe(true);
+
+    // The single-candidate accessor still yields the primary for legacy callers.
+    const primary = await service.getPairingCandidate();
+    expect(primary.relayUrl).toBe(DEFAULT_RELAY_URL);
+  });
+
+  it('replaces the additional endpoints through the owner-gated endpoints route', async () => {
+    const isOwnerRequest = vi.fn(async () => true);
+    const { service, settings } = createTestRelayService({ isOwnerRequest });
+    const app = express();
+    service.registerRoutes(app);
+
+    // Seed an enabled relay with one extra endpoint.
+    await service.ensureEnabledForPairing('wss://relay.example/custom');
+
+    const response = await request(app)
+      .post('/api/openchamber/relay/endpoints')
+      .send({ relayUrls: ['wss://relay.example/custom?x=1', 'wss://relay2.example/ws'] })
+      .expect(200);
+    expect(response.body.relayUrls).toEqual([DEFAULT_RELAY_URL, 'wss://relay.example/custom', 'wss://relay2.example/ws']);
+    expect(settings.current()).toMatchObject({
+      privateRelay: {
+        enabled: true,
+        relayUrl: DEFAULT_RELAY_URL,
+        extraRelayUrls: ['wss://relay.example/custom', 'wss://relay2.example/ws'],
+      },
+    });
+    // Kept endpoint stays live; only the added endpoint starts.
+    expect(relayMocks.stops).toEqual([]);
+    expect(relayMocks.starts).toEqual([DEFAULT_RELAY_URL, 'wss://relay.example/custom', 'wss://relay2.example/ws']);
+  });
+
+  it('stops removed endpoints and refuses non-owner endpoint management', async () => {
+    const isOwnerRequest = vi.fn(async () => false);
+    const { service, settings } = createTestRelayService({ isOwnerRequest });
+    const app = express();
+    service.registerRoutes(app);
+
+    await request(app)
+      .post('/api/openchamber/relay/endpoints')
+      .send({ relayUrls: ['wss://relay.example/custom'] })
+      .expect(403, { error: 'Only the owner UI session can manage relay endpoints' });
+    expect(settings.current()).toEqual({});
+
+    // Owner flow: removing an extra endpoint stops its host connection.
+    const { service: ownerService } = createTestRelayService({ isOwnerRequest: async () => true });
+    const ownerApp = express();
+    ownerService.registerRoutes(ownerApp);
+    await ownerService.ensureEnabledForPairing('wss://relay.example/custom');
+    relayMocks.stops.length = 0;
+    await request(ownerApp)
+      .post('/api/openchamber/relay/endpoints')
+      .send({ relayUrls: [] })
+      .expect(200);
+    expect(relayMocks.stops).toEqual(['wss://relay.example/custom']);
+    expect((await ownerService.getStatus()).relayUrls).toEqual([DEFAULT_RELAY_URL]);
   });
 });
 
