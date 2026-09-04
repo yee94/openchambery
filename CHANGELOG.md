@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.4] - 2026-09-04
+
+### 会话
+
+- 手动拖过的项目顺序不会再被发消息顶到最前冲掉。
+
 ## [1.19.5-beta.3] - 2026-09-04
 
 ### 会话
