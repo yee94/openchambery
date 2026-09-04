@@ -13,4 +13,10 @@ describe('MobileFilesSurface html preview', () => {
     expect(source).toContain('isHtmlFile(path)');
     expect(source).toContain('!isHtmlFile(filePath)');
   });
+
+  test('loads html through runtimeFetch on relay instead of iframe src', () => {
+    expect(source).toContain('isRelayModeActive()');
+    expect(source).toContain('runtimeFetch(toFsServeRoutePath(path))');
+    expect(source).toContain('srcDoc={relay ? relaySrcDoc : undefined}');
+  });
 });

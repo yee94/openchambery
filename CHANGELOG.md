@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.10] - 2026-09-05
+
+### 会话
+
+- 聊天文件路径划线更稳，高亮后不会闪一下消失。
+- 图片路径点开走全局图片预览。
+- Relay 下打开 HTML 预览不再白屏。
+
 ## [1.19.5-beta.9] - 2026-09-05
 
 ### 移动端

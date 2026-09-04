@@ -87,9 +87,13 @@ const getImageSrc = (path: string): string => {
 
 const isMarkdownFile = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path);
 
-const buildFsServeAssetUrl = (filePath: string): string => {
+const toFsServeRoutePath = (filePath: string): string => {
   const encoded = filePath.split('/').map((segment) => encodeURIComponent(segment)).join('/');
-  return getRuntimeUrlResolver().authenticatedAsset(`/api/fs/serve${encoded.startsWith('/') ? encoded : `/${encoded}`}`);
+  return `/api/fs/serve${encoded.startsWith('/') ? encoded : `/${encoded}`}`;
+};
+
+const buildFsServeAssetUrl = (filePath: string): string => {
+  return getRuntimeUrlResolver().authenticatedAsset(toFsServeRoutePath(filePath));
 };
 type MobileFilesSurfaceProps = {
   /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileResizableSheet / iPad right panel. */
@@ -655,13 +659,43 @@ const MobileFileDetail: React.FC<{
 
 const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
   const { t } = useI18n();
+  const relay = isRelayModeActive();
   const [readyKey, setReadyKey] = React.useState('');
   const [nonce, setNonce] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
+  const [relaySrcDoc, setRelaySrcDoc] = React.useState('');
 
   React.useEffect(() => {
     let cancelled = false;
     setReadyKey('');
+    setError(null);
+    setRelaySrcDoc('');
+
+    // Iframe `src` is browser navigation and cannot cross the relay tunnel.
+    // Fetch the document through runtimeFetch and inline it, same as VS Code.
+    if (relay) {
+      void runtimeFetch(toFsServeRoutePath(path))
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(t('filesView.error.readFileFailed'));
+          }
+          return response.text();
+        })
+        .then((html) => {
+          if (cancelled) return;
+          setRelaySrcDoc(html);
+          setReadyKey(path);
+        })
+        .catch((fetchError: unknown) => {
+          if (cancelled) return;
+          setError(fetchError instanceof Error ? fetchError.message : t('filesView.error.readFileFailed'));
+          setReadyKey(path);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const apiBaseUrl = getRuntimeApiBaseUrl();
     const release = acquireRuntimeUrlAuthToken(apiBaseUrl);
     void refreshRuntimeUrlAuthToken(apiBaseUrl)
@@ -686,7 +720,7 @@ const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
       release();
       unsubscribe();
     };
-  }, [path, t]);
+  }, [path, relay, t]);
 
   if (error) {
     return <MobileFilesState message={error} />;
@@ -698,7 +732,8 @@ const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
   return (
     <iframe
       key={nonce}
-      src={buildFsServeAssetUrl(path)}
+      src={relay ? undefined : buildFsServeAssetUrl(path)}
+      srcDoc={relay ? relaySrcDoc : undefined}
       className="h-full w-full border-none"
       sandbox="allow-scripts allow-same-origin allow-forms"
       title={t('filesView.editor.htmlPreviewTitle')}

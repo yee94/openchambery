@@ -50,6 +50,7 @@ import { getLanguageFromExtension, getImageMimeType, isDrawioFile, isHtmlFile, i
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { acquireRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, subscribeRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
+import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { getOutsideFileGrant } from '@/lib/outsideFileGrants';
 import { DiagramEditor } from '@/components/diagram';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -3052,7 +3053,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     ? `${selectedFile.path}|${selectedFileReadOptions.allowOutsideWorkspace ? 'outside' : 'workspace'}|${selectedFileReadOptions.outsideFileGrant ?? ''}`
     : '';
 
-  const htmlAssetAuthKey = selectedFile?.path && isHtml && htmlViewMode === 'preview' && !runtime.isVSCode
+  // Relay iframes cannot load host `/api/fs/serve` URLs (browser navigation
+  // bypasses the tunnel). Inline the document like VS Code does with srcDoc.
+  const htmlPreviewUsesInlineDocument = runtime.isVSCode || isRelayModeActive();
+  const htmlAssetAuthKey = selectedFile?.path && isHtml && htmlViewMode === 'preview' && !htmlPreviewUsesInlineDocument
     ? selectedFile.path
     : '';
 
@@ -4016,11 +4020,12 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
             <div className="h-full overflow-hidden">
               <iframe
                 key={htmlPreviewNonce}
-                src={!runtime.isVSCode && htmlAssetAuthReadyKey === htmlAssetAuthKey ? (() => {
+                src={!htmlPreviewUsesInlineDocument && htmlAssetAuthReadyKey === htmlAssetAuthKey ? (() => {
                   const encoded = selectedFile.path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
                   return getRuntimeUrlResolver().authenticatedAsset(`/api/fs/serve${encoded.startsWith('/') ? encoded : `/${encoded}`}`);
                 })() : undefined}
-                srcDoc={runtime.isVSCode ? (() => {
+                srcDoc={htmlPreviewUsesInlineDocument ? (() => {
+                  if (!runtime.isVSCode) return fileContent;
                   const basePath = selectedFile.path.substring(0, selectedFile.path.lastIndexOf('/') + 1);
                   if (!basePath) return fileContent;
                   return fileContent.replace(/<head([^>]*)>/i, `<head$1><base href="${basePath}">`);
