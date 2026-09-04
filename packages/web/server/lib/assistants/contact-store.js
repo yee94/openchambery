@@ -201,18 +201,84 @@ export function updateSessionCardStatus(db, { assistantID, sessionID, status }) 
   return updated;
 }
 
+/**
+ * LLM-only contact window. SQLite and the transcript UI may keep older bubbles;
+ * this budget is the only model context. There is no summarizer and no
+ * user-facing compress / continuous / stateless control on this path.
+ *
+ * A turn is a user message plus the assistant replies that follow it until the
+ * next user. Newest turn is always kept, even when it exceeds the char budget.
+ * Char estimate is text length plus CONTACT_LLM_FILE_CHAR_WEIGHT per file part
+ * (CJK counts as one char; no tokenizer).
+ */
+export const CONTACT_LLM_MAX_TURNS = 8;
+export const CONTACT_LLM_MAX_CHARS = 6_000;
+export const CONTACT_LLM_FETCH_LIMIT = 40;
+export const CONTACT_LLM_FILE_CHAR_WEIGHT = 80;
+
+const estimateLlmChars = (item) => {
+  const text = typeof item.content === 'string' ? item.content.length : 0;
+  const files = Array.isArray(item.parts) ? item.parts.length * CONTACT_LLM_FILE_CHAR_WEIGHT : 0;
+  return text + files;
+};
+
+const toLlmHistoryItem = (message) => {
+  const files = message.parts.filter((part) => part.type === 'file');
+  const content = message.text.trim() || (files.length > 0 ? '[attachment]' : '');
+  return files.length > 0 ? { role: message.role, content, parts: files } : { role: message.role, content };
+};
+
+const isLlmEligibleContactMessage = (message) => {
+  if (message.role !== 'user' && message.role !== 'assistant') return false;
+  if (message.status === 'error') return false;
+  // Peer DMs are read-only inbox rows. They must not become harness turns.
+  if (message.role === 'peer' || message.fromAssistantID) return false;
+  const hasText = Boolean(message.text?.trim());
+  const hasFiles = Array.isArray(message.parts) && message.parts.some((part) => part.type === 'file');
+  // Drop pure-card, tool-trace, and thinking-only rows. Process text is not
+  // persisted as contact bubbles; card-only rows have neither text nor files.
+  return hasText || hasFiles;
+};
+
+/** Turn-aware keep of recent user+assistant text pairs for the model only. */
+export function trimContactHistoryForLlm(messages, {
+  maxTurns = CONTACT_LLM_MAX_TURNS,
+  maxChars = CONTACT_LLM_MAX_CHARS,
+} = {}) {
+  const eligible = (Array.isArray(messages) ? messages : [])
+    .filter(isLlmEligibleContactMessage)
+    .map(toLlmHistoryItem)
+    .filter((item) => item.content.trim().length > 0);
+
+  const turns = [];
+  let current = [];
+  for (let index = eligible.length - 1; index >= 0; index -= 1) {
+    const item = eligible[index];
+    if (item.role === 'user') {
+      current.unshift(item);
+      turns.push(current);
+      current = [];
+    } else {
+      current.unshift(item);
+    }
+  }
+  if (current.length > 0) turns.push(current);
+
+  const kept = [];
+  let chars = 0;
+  for (const turn of turns) {
+    const turnChars = turn.reduce((sum, item) => sum + estimateLlmChars(item), 0);
+    if (kept.length >= maxTurns) break;
+    if (kept.length > 0 && chars + turnChars > maxChars) break;
+    kept.push(turn);
+    chars += turnChars;
+  }
+  return kept.reverse().flat();
+}
+
 export function contactHistoryForLlm(db, assistantID) {
-  const page = listContactMessages(db, assistantID, { limit: 80 });
-  return page.messages
-    .filter((message) => message.status !== 'error' && (message.role === 'user' || message.role === 'assistant'))
-    // Peer DMs are read-only inbox rows. They must not become user/assistant
-    // harness turns or trigger tools on the recipient.
-    .map((message) => {
-      const files = message.parts.filter((part) => part.type === 'file');
-      const content = message.text.trim() || (files.length > 0 ? '[attachment]' : '');
-      return files.length > 0 ? { role: message.role, content, parts: files } : { role: message.role, content };
-    })
-    .filter((message) => message.content.trim().length > 0);
+  const page = listContactMessages(db, assistantID, { limit: CONTACT_LLM_FETCH_LIMIT });
+  return trimContactHistoryForLlm(page.messages);
 }
 
 export { parseContactCard };

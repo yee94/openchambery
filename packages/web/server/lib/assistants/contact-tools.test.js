@@ -4,6 +4,8 @@ import {
   ASSIGN_SESSION_TOOL_NAME,
   CREATE_ASSISTANT_TOOL_NAME,
   MESSAGE_ASSISTANT_TOOL_NAME,
+  NEW_CONVERSATION_CONFIRM_BUBBLE,
+  NEW_CONVERSATION_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
   createContactTools,
   detectRequestedContactTools,
@@ -68,7 +70,7 @@ describe('contact tool protocol', () => {
   });
 
   it('detects 建助理 without treating 不要开编码 session as assign_session', () => {
-    const tools = [CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME, MESSAGE_ASSISTANT_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME];
+    const tools = [NEW_CONVERSATION_TOOL_NAME, CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME, MESSAGE_ASSISTANT_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME];
     expect(detectRequestedContactTools('帮我新建一个助理，名叫 FlowNL，不要开编码 session', tools)).toEqual([
       CREATE_ASSISTANT_TOOL_NAME,
     ]);
@@ -77,6 +79,10 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('给 PeerQA 说一声 hello-from-assistant 写好了', tools)).toEqual([
       MESSAGE_ASSISTANT_TOOL_NAME,
     ]);
+    expect(detectRequestedContactTools('开新对话', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
+    expect(detectRequestedContactTools('new conversation please', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
+    expect(detectRequestedContactTools('clear chat', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
+    expect(detectRequestedContactTools('开新对话', tools)).not.toContain(ASSIGN_SESSION_TOOL_NAME);
     expect(detectRequestedContactTools('不要开编码 session', tools)).toEqual([]);
   });
 
@@ -87,13 +93,16 @@ describe('contact tool protocol', () => {
 
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {
     const prompt = formatContactToolsPrompt(createContactTools());
+    expect(prompt).toContain('new_conversation');
     expect(prompt).toContain('create_assistant');
     expect(prompt).toContain('schedule_task');
     expect(prompt).toContain('message_assistant');
     expect(prompt).toContain('assign_session');
+    expect(prompt).toContain('开新对话');
     expect(prompt).toContain('建助理');
     expect(prompt).toContain('排定时任务');
     expect(prompt).toContain('说一声');
+    expect(prompt).toContain('session/new');
     expect(prompt).not.toContain('/card');
     expect(prompt).not.toContain('/dm');
     expect(prompt).toContain('A reply without the tool call does nothing');
@@ -115,7 +124,9 @@ describe('contact tool protocol', () => {
 describe('createContactTools', () => {
   it('exposes create_assistant, schedule_task, and assign_session and returns success cards', async () => {
     const onCard = vi.fn();
+    const resetContact = vi.fn(async () => ({ reset: true }));
     const tools = createContactTools({
+      resetContact,
       createAssistant: async (input) => ({
         id: 'asst_flow',
         name: input.name,
@@ -148,6 +159,7 @@ describe('createContactTools', () => {
       onCard,
     });
     expect(tools.map((tool) => tool.name)).toEqual([
+      NEW_CONVERSATION_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
       MESSAGE_ASSISTANT_TOOL_NAME,
@@ -155,7 +167,13 @@ describe('createContactTools', () => {
     ]);
     expect(tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false);
 
-    const created = await tools[0].execute('call_1', { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' });
+    const reset = await tools.find((tool) => tool.name === NEW_CONVERSATION_TOOL_NAME).execute('call_0', {});
+    expect(resetContact).toHaveBeenCalledTimes(1);
+    expect(reset.details.card).toBeUndefined();
+    expect(reset.details.reset).toBe(true);
+    expect(reset.content[0].text).toBe(NEW_CONVERSATION_CONFIRM_BUBBLE);
+
+    const created = await tools.find((tool) => tool.name === CREATE_ASSISTANT_TOOL_NAME).execute('call_1', { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' });
     expect(created.details.card).toMatchObject({
       type: 'card',
       cardType: 'assistant',
@@ -166,7 +184,7 @@ describe('createContactTools', () => {
     });
     expect(created.terminate).toBe(false);
 
-    const scheduled = await tools[1].execute('call_2', {
+    const scheduled = await tools.find((tool) => tool.name === SCHEDULE_TASK_TOOL_NAME).execute('call_2', {
       name: 'Daily ping',
       prompt: 'ping',
       time: '18:00',

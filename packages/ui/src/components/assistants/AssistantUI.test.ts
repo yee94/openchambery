@@ -103,9 +103,11 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('draft.workspacePath ?? selected?.managedWorkspacePath ?? null');
     expect(settings).toContain('useScopedProvidersQuery(catalogDirectory, { enabled: true })');
     expect(settings).toContain('useScopedAgentsQuery(catalogDirectory, { enabled: true })');
-    expect(settings).toContain('itemId="assistants.mode"');
-    expect(settings).toContain("patchDraft('mode', mode)");
+    expect(settings).not.toContain('itemId="assistants.mode"');
+    expect(settings).not.toContain("patchDraft('mode', mode)");
     expect(settings).not.toContain('activeProjectId');
+    const search = await read('../../lib/settings/search.ts');
+    expect(search).not.toContain("id: 'assistants.mode'");
   });
 
   test('removes skill roots from settings, requests, DTOs, search, and locale keys', async () => {
@@ -178,7 +180,7 @@ describe('Assistant UI product contract', () => {
     expect(avatarStyles).toContain('padding: 1px');
   });
 
-  test('gives mobile Assistant cards room for mode and bounded prompt details', async () => {
+  test('gives mobile Assistant cards room for model and bounded prompt details', async () => {
     const [mobileTab, mobileStyles] = await Promise.all([
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
       read('../../styles/mobile.css'),
@@ -188,7 +190,9 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('oc-mobile-assistant-mode');
     expect(mobileTab).toContain('oc-mobile-assistant-summary');
     expect(mobileTab).not.toContain('name="arrow-right-s"');
-    expect(mobileTab).toContain('{modeLabel}');
+    expect(mobileTab).toContain('{subtitle}');
+    expect(mobileTab).not.toContain("t('assistants.mode.continuous')");
+    expect(mobileTab).not.toContain("t('assistants.mode.stateless')");
     expect(mobileTab).toContain('{summary}');
     const cardStyles = mobileStyles.slice(
       mobileStyles.indexOf('.oc-mobile-assistant-catalog {'),

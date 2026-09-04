@@ -660,12 +660,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['opencode', 'agent'],
   },
   {
-    id: 'assistants.mode',
-    page: 'assistants',
-    titleKey: 'assistants.settings.mode',
-    keywords: ['continuous', 'stateless', 'history', 'new'],
-  },
-  {
     id: 'assistants.workspace',
     page: 'assistants',
     titleKey: 'assistants.settings.workspace',

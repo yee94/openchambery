@@ -86,6 +86,65 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('new_conversation clears contact history without calling OpenCode session/new', async () => {
+    const directory = root();
+    let creates = 0;
+    let lastHistory = null;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+    }, {
+      runContactTurn: async ({ history, userText, tools }) => {
+        lastHistory = history;
+        if (userText === '开新对话') {
+          const tool = tools.find((item) => item.name === 'new_conversation');
+          const result = await tool.execute('reset_1', {});
+          return { text: result.content[0].text, bubbles: [result.content[0].text] };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.ensure(assistant.id);
+    expect(creates).toBe(1);
+    await service.send(assistant.id, { messageID: 'old_1', parts: [{ type: 'text', text: 'remember this secret' }] });
+    await service.send(assistant.id, { messageID: 'old_2', parts: [{ type: 'text', text: 'and this too' }] });
+    expect(lastHistory.some((item) => item.content.includes('remember this secret'))).toBe(true);
+    const reset = await service.send(assistant.id, { messageID: 'reset_1', parts: [{ type: 'text', text: '开新对话' }] });
+    expect(reset).toMatchObject({ admitted: true, messageID: 'reset_1' });
+    expect(creates).toBe(1);
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: '开新对话' },
+      { role: 'assistant', text: 'Started a new conversation. Previous contact messages are cleared.' },
+    ]);
+    await service.send(assistant.id, { messageID: 'fresh_1', parts: [{ type: 'text', text: 'what did I say before?' }] });
+    expect(lastHistory.map((item) => item.content)).toEqual([
+      '开新对话',
+      'Started a new conversation. Previous contact messages are cleared.',
+    ]);
+    expect(lastHistory.some((item) => item.content.includes('remember this secret'))).toBe(false);
+    service.close();
+  });
+
+  it('resetContact empties the transcript for a fresh UI refetch without createNew', async () => {
+    const directory = root();
+    let creates = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.ensure(assistant.id);
+    await service.send(assistant.id, { messageID: 'keep_1', parts: [{ type: 'text', text: 'hello' }] });
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.length).toBeGreaterThan(0);
+    expect(service.resetContact(assistant.id)).toEqual({ assistantID: assistant.id, reset: true });
+    expect(creates).toBe(1);
+    expect(service.contactMessages(assistant.id, { limit: 50 })).toMatchObject({
+      messages: [],
+      complete: true,
+    });
+    service.close();
+  });
+
   it('persists mixed text+image+file parts and forwards them to the contact harness', async () => {
     const directory = root();
     let harness;

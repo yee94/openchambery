@@ -773,6 +773,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       createAssistant: (input) => createAssistant(input),
       scheduleTask: (params) => scheduleWork(row, params),
       deliverPeerMessage: (input) => deliverPeerMessage(row.assistant_id, input),
+      resetContact: () => resetContact(row.assistant_id),
       listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
       currentAssistant: output(row),
       onCard: (card) => assignedCards.push(card),
@@ -814,6 +815,23 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const limit = query.limit == null ? 50 : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail('validation_error');
     return listContactMessages(db, assistantID, { before: query.before, limit });
+  };
+  /**
+   * Clear this assistant's OpenChamber contact transcript (messages, parts,
+   * watches). Does not call OpenCode session/new — that is worker binding.
+   */
+  const resetContact = (assistantID) => {
+    const row = editable(assistantID);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      deleteContactMessages(db, row.assistant_id);
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return { assistantID: row.assistant_id, reset: true };
   };
   const appendContactCard = (assistantID, input) => {
     const row = active(assistantID);
@@ -968,5 +986,5 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, appendContactCard, deliverPeerMessage, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, resetContact, appendContactCard, deliverPeerMessage, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

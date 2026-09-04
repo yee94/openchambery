@@ -125,7 +125,7 @@ type MobileAssistantCardProps = {
   assistantID: string;
   displayName: string;
   avatarEmoji?: string;
-  modeLabel: string;
+  subtitle: string;
   summary: string;
   enabled: boolean;
   editLabel: string;
@@ -141,7 +141,7 @@ function MobileAssistantCard({
   assistantID,
   displayName,
   avatarEmoji,
-  modeLabel,
+  subtitle,
   summary,
   enabled,
   editLabel,
@@ -251,7 +251,7 @@ function MobileAssistantCard({
                 {displayName}
               </span>
               <span className="oc-mobile-entity-meta oc-mobile-assistant-mode shrink-0 text-muted-foreground">
-                {modeLabel}
+                {subtitle}
               </span>
             </span>
             <span className="oc-mobile-assistant-summary text-muted-foreground">
@@ -328,12 +328,8 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
           {snapshot.data.assistants.map((assistant) => {
             const presentation = getAssistantPresentation(assistant.name);
             const displayName = presentation.displayName || assistant.name;
-            const modeLabel = assistant.mode === 'stateless'
-              ? t('assistants.mode.stateless')
-              : t('assistants.mode.continuous');
-            const summary = assistant.defaultPrompt.trim() || (assistant.mode === 'stateless'
-              ? t('assistants.conversation.statelessHint')
-              : t('assistants.conversation.continuousHint'));
+            const subtitle = [assistant.providerID, assistant.modelID].filter(Boolean).join('/');
+            const summary = assistant.defaultPrompt.trim();
 
             return (
               <MobileAssistantCard
@@ -341,7 +337,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
                 assistantID={assistant.id}
                 displayName={displayName}
                 avatarEmoji={presentation.avatarEmoji ?? undefined}
-                modeLabel={modeLabel}
+                subtitle={subtitle}
                 summary={summary}
                 enabled={assistant.enabled}
                 editLabel={editLabel}

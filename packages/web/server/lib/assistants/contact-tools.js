@@ -25,8 +25,10 @@ export const ASSIGN_SESSION_TOOL_NAME = 'assign_session';
 export const CREATE_ASSISTANT_TOOL_NAME = 'create_assistant';
 export const SCHEDULE_TASK_TOOL_NAME = 'schedule_task';
 export const MESSAGE_ASSISTANT_TOOL_NAME = 'message_assistant';
+export const NEW_CONVERSATION_TOOL_NAME = 'new_conversation';
 const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
+export const NEW_CONVERSATION_CONFIRM_BUBBLE = 'Started a new conversation. Previous contact messages are cleared.';
 
 const DENIED_CODING_TOOLS = new Set(['bash', 'edit', 'read', 'write', 'glob', 'grep', 'shell']);
 
@@ -38,7 +40,9 @@ const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^�
 const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|schedule (?:a )?(?:daily )?(?:task|ping)|scheduled task|排个?(?:每日)?(?:任务|ping)/iu;
 const ASSIGN_SESSION_INTENT = /建会话|开会话|开(?:一个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session|write a file|写(?:一个)?文件/giu;
 const MESSAGE_ASSISTANT_INTENT = /给[^。\n]{1,40}说(?:一声)?|跟[^。\n]{1,24}说(?:一声)?|告诉(?!我)[^。\n]{1,40}|说一声|message (?:the )?(?:assistant|peer)|(?:tell|message)\s+[A-Za-z0-9._-]+|send (?:a )?message to/iu;
+const NEW_CONVERSATION_INTENT = /开新对话|新对话|清空(?:聊天|对话)|clear chat|new conversation|start over/iu;
 const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
+const newConversationParameters = typeboxObject({});
 
 const assignParameters = typeboxObject({
   prompt: typeboxString('Coding prompt to kick into the worker OpenCode session.'),
@@ -194,6 +198,9 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
   );
   const text = typeof userText === 'string' ? userText : '';
   const requested = [];
+  if (allowed.has(NEW_CONVERSATION_TOOL_NAME) && NEW_CONVERSATION_INTENT.test(text)) {
+    requested.push(NEW_CONVERSATION_TOOL_NAME);
+  }
   if (allowed.has(CREATE_ASSISTANT_TOOL_NAME) && CREATE_ASSISTANT_INTENT.test(text)) {
     requested.push(CREATE_ASSISTANT_TOOL_NAME);
   }
@@ -282,11 +289,15 @@ export function formatContactToolsPrompt(tools) {
   if (list.length === 0) return '';
   return [
     'The user talks in natural language (including Chinese). Never ask them to type slash commands.',
+    'When they want a fresh contact chat (开新对话 / new conversation / clear chat), call new_conversation. That clears this contact transcript only. It is not OpenCode session/new and does not open a coding session.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
     'When they want coding work or a Chat session (建会话 / open a session / write a file), call assign_session.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
     'When they want to tell another assistant (给 PeerQA 说一声 / message PeerQA), call message_assistant.',
     `Call exactly one tool per reply by emitting one fenced JSON block:`,
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${NEW_CONVERSATION_TOOL_NAME}","arguments":{}}`,
+    '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${CREATE_ASSISTANT_TOOL_NAME}","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}`,
     '```',
@@ -299,7 +310,8 @@ export function formatContactToolsPrompt(tools) {
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"..."}}`,
     '```',
-    'If the user asked for more than one of these, do them in that order across turns: create_assistant, then schedule_task, then message_assistant, then assign_session.',
+    'If the user asked for more than one of these, do them in that order across turns: new_conversation, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
+    'new_conversation deletes this contact\'s stored messages and watches. It never calls session/new or createNew.',
     'assign_session opens a real OpenChamber/OpenCode session on a registered project. You are not the worker.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
@@ -340,6 +352,7 @@ export function createContactTools({
   createAssistant,
   scheduleTask,
   deliverPeerMessage,
+  resetContact,
   listAssistants,
   currentAssistant,
   onCard,
@@ -349,6 +362,31 @@ export function createContactTools({
   };
 
   return [
+    {
+      name: NEW_CONVERSATION_TOOL_NAME,
+      label: 'New conversation',
+      description: [
+        'Clear this assistant contact transcript (messages, parts, and watches).',
+        'Use when the user says 开新对话, new conversation, or clear chat.',
+        'Does not call OpenCode session/new or create a worker session.',
+      ].join(' '),
+      parameters: newConversationParameters,
+      execute: async () => {
+        try {
+          if (typeof resetContact !== 'function') {
+            throw new AssignError('upstream_error', 'Resetting this conversation is unavailable.');
+          }
+          await resetContact();
+          return {
+            content: [{ type: 'text', text: NEW_CONVERSATION_CONFIRM_BUBBLE }],
+            details: { reset: true },
+            terminate: false,
+          };
+        } catch (error) {
+          return toolFailure(error, 'new_conversation_failed', 'Could not start a new conversation.');
+        }
+      },
+    },
     {
       name: CREATE_ASSISTANT_TOOL_NAME,
       label: 'Create assistant',
