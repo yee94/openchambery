@@ -376,3 +376,123 @@ export const getToolNavigationDiffEntries = (
     )) ?? entries[0];
     return selected ? [selected] : [];
 };
+
+export type LineDiffTotals = {
+    added: number;
+    removed: number;
+};
+
+const parseDiffCount = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.trunc(value));
+    }
+    if (typeof value === 'string') {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed)) {
+            return Math.max(0, parsed);
+        }
+    }
+    return null;
+};
+
+const countUnifiedDiffLines = (diffText: string): LineDiffTotals => {
+    let added = 0;
+    let removed = 0;
+    let lineStart = 0;
+
+    for (let index = 0; index <= diffText.length; index += 1) {
+        if (index < diffText.length && diffText.charCodeAt(index) !== 10) {
+            continue;
+        }
+
+        const line = diffText.slice(lineStart, index);
+        if (line.startsWith('+') && !line.startsWith('+++')) added += 1;
+        if (line.startsWith('-') && !line.startsWith('---')) removed += 1;
+        lineStart = index + 1;
+    }
+
+    return { added, removed };
+};
+
+const countWriteContentLines = (input: Record<string, unknown> | undefined): number => {
+    if (!input?.content || typeof input.content !== 'string') {
+        return 0;
+    }
+    let lines = 1;
+    for (let index = 0; index < input.content.length; index += 1) {
+        if (input.content.charCodeAt(index) === 10) {
+            lines += 1;
+        }
+    }
+    return lines;
+};
+
+const readToolPartState = (part: unknown): {
+    metadata?: Record<string, unknown>;
+    input?: Record<string, unknown>;
+} => {
+    if (!isRecord(part)) {
+        return {};
+    }
+    const state = isRecord(part.state) ? part.state : {};
+    const metadata = isRecord(state.metadata)
+        ? state.metadata
+        : isRecord(part.metadata)
+            ? part.metadata
+            : undefined;
+    const input = isRecord(state.input) ? state.input : undefined;
+    return { metadata, input };
+};
+
+/** Line totals for one tool part: metadata, per-file stats, patch body, or write content. */
+export const getToolPartLineDiffTotals = (part: unknown): LineDiffTotals => {
+    const { metadata, input } = readToolPartState(part);
+    const addedFromMeta = parseDiffCount(metadata?.additions);
+    const removedFromMeta = parseDiffCount(metadata?.deletions);
+    if (addedFromMeta !== null || removedFromMeta !== null) {
+        return { added: addedFromMeta ?? 0, removed: removedFromMeta ?? 0 };
+    }
+
+    const files = Array.isArray(metadata?.files) ? metadata.files : [];
+    let fileAdded = 0;
+    let fileRemoved = 0;
+    let fileHasCounts = false;
+    for (const file of files) {
+        if (!isRecord(file)) continue;
+        const added = parseDiffCount(file.additions);
+        const removed = parseDiffCount(file.deletions);
+        if (added === null && removed === null) continue;
+        fileHasCounts = true;
+        fileAdded += added ?? 0;
+        fileRemoved += removed ?? 0;
+    }
+    if (fileHasCounts) {
+        return { added: fileAdded, removed: fileRemoved };
+    }
+
+    const patch = getPatchText(metadata?.patch) ?? getPatchText(metadata?.diff);
+    if (patch) {
+        const counts = countUnifiedDiffLines(patch);
+        if (counts.added > 0 || counts.removed > 0) {
+            return counts;
+        }
+    }
+
+    const writeLines = countWriteContentLines(input);
+    if (writeLines > 0) {
+        return { added: writeLines, removed: 0 };
+    }
+
+    return { added: 0, removed: 0 };
+};
+
+export const aggregateToolPartLineDiffTotals = (parts: readonly unknown[]): LineDiffTotals => {
+    let added = 0;
+    let removed = 0;
+    for (const part of parts) {
+        const totals = getToolPartLineDiffTotals(part);
+        added += totals.added;
+        removed += totals.removed;
+    }
+    return { added, removed };
+};

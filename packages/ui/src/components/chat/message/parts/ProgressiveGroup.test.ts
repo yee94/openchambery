@@ -19,7 +19,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('animateTailText={false}');
     });
 
-    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; context tools collapse into Explored groups', () => {
+    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; context tools collapse into Explored groups; used tools collapse into Used groups', () => {
         // consecutive 2+ skill calls collapse into one SkillToolGroup
         expect(progressiveGroupSource).toContain('if (isSkillGroupTool(toolName))');
         expect(progressiveGroupSource).toContain('collectConsecutiveSkillTools');
@@ -42,6 +42,17 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('<ContextToolGroup');
         expect(progressiveGroupSource).toContain('isTurnLive={isActive}');
         expect(progressiveGroupSource).toContain('hasFollowingOtherType={row.hasFollowingOtherType}');
+        // used tools (edit/write/bash/custom): consecutive collapse via collectConsecutiveUsedTools
+        expect(progressiveGroupSource).toContain('if (isUsedGroupTool(toolName))');
+        expect(progressiveGroupSource).toContain('collectConsecutiveUsedTools');
+        expect(progressiveGroupSource).toContain("type: 'tool-used-group'");
+        expect(progressiveGroupSource).toContain('hasUsedRunSuccessor');
+        expect(progressiveGroupSource).toContain("case 'tool-used-group':");
+        expect(progressiveGroupSource).toContain('<UsedToolGroup');
+        expect(messageBodySource).toContain('isUsedGroupTool');
+        expect(messageBodySource).toContain('UsedToolGroup');
+        expect(messageBodySource).toContain('collectConsecutiveUsedTools');
+        expect(messageBodySource).toContain('hasUsedRunSuccessor');
         // MessageBody flat path mirrors the same grouping
         expect(messageBodySource).toContain('isContextGroupTool');
         expect(messageBodySource).toContain('ContextToolGroup');
@@ -116,6 +127,11 @@ describe('progressive activity presentation', () => {
             expect(dictionarySource).toContain('chat.skillGroup.expandAria');
             expect(dictionarySource).toContain('chat.skillGroup.collapseAria');
             expect(dictionarySource).toContain('chat.skillGroup.summaryOverflow');
+            expect(dictionarySource).toContain('chat.usedGroup.running');
+            expect(dictionarySource).toContain('chat.usedGroup.used');
+            expect(dictionarySource).toContain('chat.usedGroup.editPlural');
+            expect(dictionarySource).toContain('chat.usedGroup.commandPlural');
+            expect(dictionarySource).toContain('chat.usedGroup.otherPlural');
         }
         const simplifiedChinese = readFileSync(join(messageDictionaryDirectory, 'zh-CN.ts'), 'utf-8');
         const traditionalChinese = readFileSync(join(messageDictionaryDirectory, 'zh-TW.ts'), 'utf-8');
@@ -132,6 +148,10 @@ describe('progressive activity presentation', () => {
         expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 Agent 参与'");
         expect(simplifiedChinese).toContain("'chat.contextGroup.explored': '探索'");
         expect(simplifiedChinese).toContain("'chat.contextGroup.listPlural': '{count} 次列举'");
+        expect(simplifiedChinese).toContain("'chat.usedGroup.running': '运行中'");
+        expect(simplifiedChinese).toContain("'chat.usedGroup.used': '运行了'");
+        expect(simplifiedChinese).toContain("'chat.usedGroup.editPlural': '{count} 次编辑'");
+        expect(simplifiedChinese).toContain("'chat.usedGroup.commandPlural': '{count} 次命令'");
         expect(simplifiedChinese).toContain("'chat.skillGroup.summaryOverflow': '{names} 等{count}个'");
         expect(traditionalChinese).toContain("'chat.activity.title': '處理詳情'");
         expect(traditionalChinese).toContain("'chat.activity.compacting': '正在壓縮'");

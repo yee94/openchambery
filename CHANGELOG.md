@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.7] - 2026-09-04
+
+### 会话
+
+- 聊天列表默认改回 TanStack 虚拟化。需要 LegendList 时在控制台执行 `localStorage.setItem('oc:legend-timeline', '1')` 并刷新。
+
 ## [1.19.5-beta.6] - 2026-09-04
 
 ### 会话

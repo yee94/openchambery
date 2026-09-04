@@ -27,7 +27,7 @@ extensions.
 
 ```
 bun run --cwd packages/web build          # web/dist
-  → scripts/prepare-web-assets.mjs         # copy web/dist → mobile/dist, mobile.html → index.html
+  → scripts/prepare-web-assets.mjs         # retry-copy web/dist → mobile/dist until mobile.html exists, then rewrite to index.html
     → cap sync                             # copy dist → native, sync plugins/config
       → xcodebuild / gradle assembleDebug  # native binary
 ```
