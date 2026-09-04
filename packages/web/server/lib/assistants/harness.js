@@ -1,12 +1,15 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { splitContactBubbles } from './bubbles.js';
 import {
+  confirmBubbleAfterContactReset,
+  contactTurnHasSuccessfulReset,
   contactTurnHasToolResult,
   detectRequestedContactTools,
   extractContactCardsFromMessages,
   formatContactToolsPrompt,
   MISSED_FENCE_RETRY_USER_TEXT,
   MISSED_TOOL_FAILURE_BUBBLE,
+  NEW_CONVERSATION_CONFIRM_BUBBLE,
   parseContactToolCalls,
   stripContactToolFences,
 } from './contact-tools.js';
@@ -370,6 +373,17 @@ export async function runContactTurn({
   }
   const outcome = extractContactTurnOutcome(agent.state.messages, retried);
   const text = stripContactToolFences(outcome.text);
+  if (contactTurnHasSuccessfulReset(agent.state.messages)) {
+    const bubbles = confirmBubbleAfterContactReset(splitContactBubbles(text));
+    return {
+      text: bubbles[0] || NEW_CONVERSATION_CONFIRM_BUBBLE,
+      bubbles,
+      cards: [],
+      reset: true,
+      thinkingLevel: agent.state.thinkingLevel,
+      tools: [...agent.state.tools],
+    };
+  }
   if (!text.trim() && outcome.cards.length === 0) {
     const error = new Error('Assistant returned no text');
     error.code = 'upstream_error';

@@ -126,6 +126,45 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('discards leftover pre-reset model text after new_conversation', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText, tools }) => {
+        if (userText === '开新对话') {
+          await tools.find((item) => item.name === 'new_conversation').execute('reset_leftover', {});
+          return {
+            text: 'Started a new conversation. Previous contact messages are cleared.\n\nI still see your dot.png and note.txt.',
+            bubbles: [
+              'Started a new conversation. Previous contact messages are cleared.',
+              'I still see your dot.png and note.txt.',
+              'Those attachments are still in context.',
+            ],
+            cards: [{ type: 'card', cardType: 'session', sessionID: 'ses_stale', directory: '/repo', title: 'Old', status: 'busy' }],
+          };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.send(assistant.id, {
+      messageID: 'attach_1',
+      parts: [
+        { type: 'text', text: 'look at these' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'dot.png' },
+        { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'note.txt' },
+      ],
+    });
+    await service.send(assistant.id, { messageID: 'reset_leftover', parts: [{ type: 'text', text: '开新对话' }] });
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: '开新对话' },
+      { role: 'assistant', text: 'Started a new conversation. Previous contact messages are cleared.' },
+    ]);
+    expect(page.messages.some((message) => message.text.includes('dot.png') || message.text.includes('note.txt'))).toBe(false);
+    expect(page.messages.some((message) => message.cards?.length > 0)).toBe(false);
+    service.close();
+  });
+
   it('resetContact empties the transcript for a fresh UI refetch without createNew', async () => {
     const directory = root();
     let creates = 0;

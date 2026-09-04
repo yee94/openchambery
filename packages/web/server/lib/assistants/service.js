@@ -20,7 +20,7 @@ import {
   updateSessionCardStatus,
   upsertContactWatch,
 } from './contact-store.js';
-import { ASSIGNED_SESSION_FALLBACK_BUBBLE, createContactTools } from './contact-tools.js';
+import { ASSIGNED_SESSION_FALLBACK_BUBBLE, confirmBubbleAfterContactReset, createContactTools } from './contact-tools.js';
 import { AssignError, ASSIGN_CODES, assignSession, resolveAssignDirectory } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
 
@@ -768,12 +768,17 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const history = contactHistoryForLlm(db, assistantID);
     if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
     const assignedCards = [];
+    let contactResetThisTurn = false;
     const tools = createContactTools({
       assignWork: (params) => assignWork(row, params),
       createAssistant: (input) => createAssistant(input),
       scheduleTask: (params) => scheduleWork(row, params),
       deliverPeerMessage: (input) => deliverPeerMessage(row.assistant_id, input),
-      resetContact: () => resetContact(row.assistant_id),
+      resetContact: () => {
+        const result = resetContact(row.assistant_id);
+        contactResetThisTurn = true;
+        return result;
+      },
       listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
       currentAssistant: output(row),
       onCard: (card) => assignedCards.push(card),
@@ -794,11 +799,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       if (error?.code === 'no_provider') fail('no_provider', detail);
       fail('upstream_error', detail);
     }
-    const bubbles = Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : [];
-    const cards = [
-      ...assignedCards,
-      ...(Array.isArray(generated?.cards) ? generated.cards : []),
-    ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
+    const resetThisTurn = contactResetThisTurn || generated?.reset === true;
+    const bubbles = resetThisTurn
+      ? confirmBubbleAfterContactReset(generated?.bubbles)
+      : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
+    const cards = resetThisTurn
+      ? []
+      : [
+        ...assignedCards,
+        ...(Array.isArray(generated?.cards) ? generated.cards : []),
+      ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
     if (bubbles.length === 0 && cards.length === 0) fail('upstream_error');
     persistContactTurn(row.assistant_id, {
       userMessageID: messageID,

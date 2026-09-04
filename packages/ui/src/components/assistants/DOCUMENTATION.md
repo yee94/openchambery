@@ -25,7 +25,7 @@ The Assistant conversation is a Grok-like **contact**, not an OpenCode coding ag
 
 **Contact memory (this PR)**
 
-- Natural language `开新对话` / “new conversation” / “clear chat” calls the `new_conversation` contact tool. That resets this assistant’s OpenChamber transcript only. It does not call OpenCode `session/new`.
+- Natural language `开新对话` / “new conversation” / “clear chat” calls the `new_conversation` contact tool. That resets this assistant’s OpenChamber transcript only. It does not call OpenCode `session/new`. The same turn persists only the short confirm bubble; leftover model text about pre-reset attachments or cards is discarded.
 - Settings does not expose a continuous/stateless memory toggle. List and Settings subtitles show provider/model (or prompt), not a user-managed memory mode. New assistants stay continuous contact history; the server trims the LLM window. The contact surface has no compact / new-session chrome.
 
 `GET /api/openchamber/assistants/capability` still hides navigation when Assistants are disabled.

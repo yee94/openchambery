@@ -7,6 +7,7 @@ import {
   NEW_CONVERSATION_CONFIRM_BUBBLE,
   NEW_CONVERSATION_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
+  confirmBubbleAfterContactReset,
   createContactTools,
   detectRequestedContactTools,
   formatContactToolsPrompt,
@@ -171,6 +172,7 @@ describe('createContactTools', () => {
     expect(resetContact).toHaveBeenCalledTimes(1);
     expect(reset.details.card).toBeUndefined();
     expect(reset.details.reset).toBe(true);
+    expect(reset.terminate).toBe(true);
     expect(reset.content[0].text).toBe(NEW_CONVERSATION_CONFIRM_BUBBLE);
 
     const created = await tools.find((tool) => tool.name === CREATE_ASSISTANT_TOOL_NAME).execute('call_1', { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' });
@@ -233,5 +235,22 @@ describe('createContactTools', () => {
     expect(result.details.error).toBe('project_required');
     expect(result.content[0].text).toContain('Add a project in Settings');
     expect(result.content[0].text).toContain('assistant-workspaces');
+  });
+});
+
+describe('confirmBubbleAfterContactReset', () => {
+  it('keeps the canonical confirm and drops leftover attachment bubbles', () => {
+    expect(confirmBubbleAfterContactReset([
+      NEW_CONVERSATION_CONFIRM_BUBBLE,
+      'I still see your dot.png and note.txt.',
+      'Those attachments are still in context.',
+    ])).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE]);
+  });
+
+  it('falls back to the first confirm bubble when the canonical string is absent', () => {
+    expect(confirmBubbleAfterContactReset([
+      '好，已开新对话。',
+      'dot.png is still here',
+    ])).toEqual(['好，已开新对话。']);
   });
 });

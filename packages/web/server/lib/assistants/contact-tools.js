@@ -325,6 +325,24 @@ export function formatContactToolsPrompt(tools) {
   ].join('\n');
 }
 
+export function contactTurnHasSuccessfulReset(messages) {
+  return (Array.isArray(messages) ? messages : []).some((message) => (
+    message?.role === 'toolResult'
+    && (message.toolName === NEW_CONVERSATION_TOOL_NAME || message.details?.reset === true)
+    && !message.details?.error
+  ));
+}
+
+/** After reset, keep only the short confirm — leftover pre-reset model text is discarded. */
+export function confirmBubbleAfterContactReset(bubbles) {
+  const list = (Array.isArray(bubbles) ? bubbles : [])
+    .filter((item) => typeof item === 'string' && item.trim())
+    .map((item) => item.trim());
+  if (list.includes(NEW_CONVERSATION_CONFIRM_BUBBLE)) return [NEW_CONVERSATION_CONFIRM_BUBBLE];
+  if (list.length > 0) return [list[0]];
+  return [NEW_CONVERSATION_CONFIRM_BUBBLE];
+}
+
 export function extractContactCardsFromMessages(messages) {
   const cards = [];
   for (const message of Array.isArray(messages) ? messages : []) {
@@ -380,7 +398,7 @@ export function createContactTools({
           return {
             content: [{ type: 'text', text: NEW_CONVERSATION_CONFIRM_BUBBLE }],
             details: { reset: true },
-            terminate: false,
+            terminate: true,
           };
         } catch (error) {
           return toolFailure(error, 'new_conversation_failed', 'Could not start a new conversation.');

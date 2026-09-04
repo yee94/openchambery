@@ -4,6 +4,8 @@ import {
   MESSAGE_ASSISTANT_TOOL_NAME,
   MISSED_FENCE_RETRY_USER_TEXT,
   MISSED_TOOL_FAILURE_BUBBLE,
+  NEW_CONVERSATION_CONFIRM_BUBBLE,
+  NEW_CONVERSATION_TOOL_NAME,
   createContactTools,
 } from './contact-tools.js'
 import { createContactStreamFn, runContactTurn } from './harness.js'
@@ -373,5 +375,48 @@ describe('runContactTurn', () => {
     expect(result.cards).toEqual([])
     expect(result.bubbles.join('')).toContain('Sent to PeerQA')
     expect(result.bubbles.join('')).not.toContain('好的，我去说一声')
+  })
+
+  it('keeps only the new_conversation confirm and drops leftover attachment text', async () => {
+    const resetContact = vi.fn(async () => ({ reset: true }))
+    const tools = createContactTools({ resetContact })
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: options.initialState.messages }
+      this.prompt = async () => {
+        const tool = this.state.tools.find((item) => item.name === NEW_CONVERSATION_TOOL_NAME)
+        const result = await tool.execute('call_reset', {})
+        this.state.messages = [
+          ...this.state.messages,
+          {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'I still see your dot.png and note.txt from earlier.' }],
+          },
+          {
+            role: 'toolResult',
+            toolName: NEW_CONVERSATION_TOOL_NAME,
+            content: result.content,
+            details: result.details,
+          },
+        ]
+      }
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash', defaultPrompt: '' },
+      history: [
+        { role: 'user', content: 'look', parts: [{ type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'dot.png' }] },
+        { role: 'assistant', content: 'got the image' },
+      ],
+      userText: '开新对话',
+      createChatCompletion: vi.fn(),
+      tools,
+      AgentImpl,
+    })
+    expect(resetContact).toHaveBeenCalledTimes(1)
+    expect(result.reset).toBe(true)
+    expect(result.cards).toEqual([])
+    expect(result.bubbles).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE])
+    expect(result.bubbles.join('')).not.toContain('dot.png')
+    expect(result.bubbles.join('')).not.toContain('note.txt')
   })
 })
