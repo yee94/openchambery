@@ -264,7 +264,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                           </div>
                         )
                       }
-                      return null}
+                      return null
                     })}
                   </div>
                 </div>

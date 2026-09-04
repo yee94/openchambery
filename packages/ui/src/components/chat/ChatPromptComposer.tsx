@@ -27,7 +27,7 @@ type ChatPromptComposerProps = Omit<React.ComponentProps<typeof ChatComposerSurf
   onRemoveAttachment?: (id: string) => void;
   addFilesLabel?: string;
   removeAttachmentLabel?: string;
-  /** Default `image/*` keeps Chat's stacked picker image-only. Contact passes `*/*`. */
+  /** Default image-only (`image/*`) keeps Chat's stacked picker unchanged. Contact passes all files. */
   fileAccept?: string;
   sendLabel?: string;
   stopLabel?: string;
