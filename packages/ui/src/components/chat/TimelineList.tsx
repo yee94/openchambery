@@ -61,6 +61,7 @@ import {
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
 import { mergeMarkdownPinRevealStyle, resolveMarkdownPinRevealKeys } from './lib/markdownPinReveal';
+import { createSharedElementSizeBatch } from './lib/batchResizeUpdates';
 import { useMarkdownPinReveal } from './hooks/useMarkdownPinReveal';
 import {
     captureTimelineAnchorArm,
@@ -334,7 +335,10 @@ type TimelineRowProps<TEntry extends TimelineRowEntry> = {
     entry: TEntry;
     index: number;
     renderEntryRef: React.RefObject<TimelineListProps<TEntry>['renderEntry']>;
-    onMeasuredSizeRef: React.RefObject<(key: string, size: { height: number; width: number }) => void>;
+    sizeObserverRef: React.RefObject<{
+        observe: (element: Element) => void;
+        unobserve: (element: Element) => void;
+    } | null>;
 };
 
 /**
@@ -347,23 +351,17 @@ const TimelineRow = <TEntry extends TimelineRowEntry>({
     entry,
     index,
     renderEntryRef,
-    onMeasuredSizeRef,
+    sizeObserverRef,
 }: TimelineRowProps<TEntry>) => {
     const hydratedKeys = React.useContext(TimelineHydrationContext);
     const rootRef = React.useRef<HTMLDivElement>(null);
     React.useLayoutEffect(() => {
         const node = rootRef.current;
-        if (!node || typeof ResizeObserver === 'undefined') return;
-        const notify = () => {
-            const height = node.offsetHeight;
-            const width = node.offsetWidth;
-            if (height > 0) onMeasuredSizeRef.current?.(entry.key, { height, width });
-        };
-        const observer = new ResizeObserver(notify);
+        const observer = sizeObserverRef.current;
+        if (!node || !observer) return;
         observer.observe(node);
-        notify();
-        return () => observer.disconnect();
-    }, [entry.key, onMeasuredSizeRef]);
+        return () => observer.unobserve(node);
+    }, [entry.key, sizeObserverRef]);
     return (
         <div
             ref={rootRef}
@@ -1026,6 +1024,19 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     });
     const onMeasuredSizeRef = React.useRef(handleMeasuredSize);
     onMeasuredSizeRef.current = handleMeasuredSize;
+    const sizeObserver = React.useMemo(() => createSharedElementSizeBatch((sizes) => {
+        for (const [element, size] of sizes) {
+            const key = element instanceof HTMLElement ? element.dataset.turnEntry : undefined;
+            if (key && size.height > 0) {
+                onMeasuredSizeRef.current(key, size);
+            }
+        }
+    }), []);
+    const sizeObserverRef = React.useRef(sizeObserver);
+    sizeObserverRef.current = sizeObserver;
+    React.useEffect(() => () => {
+        sizeObserver.disconnect();
+    }, [sizeObserver]);
 
     // A render-phase factory, not an event handler: the list calls this while
     // building rows. Everything dynamic reaches a row through the refs it
@@ -1051,7 +1062,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 entry={item}
                 index={index}
                 renderEntryRef={renderEntryRef}
-                onMeasuredSizeRef={onMeasuredSizeRef}
+                sizeObserverRef={sizeObserverRef}
             />
         );
     }, []);

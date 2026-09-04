@@ -467,6 +467,16 @@ describe('cold-start markdown pin reveal', () => {
     });
 });
 
+describe('batched virtualizer resize writes', () => {
+    test('TanStack resizeItem and LegendList row measure share the microtask batch helper', () => {
+        const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+        const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
+        expect(messageListSource).toContain('installBatchedResizeItem(tanstackVirtualizer)');
+        expect(timelineSource).toContain('createSharedElementSizeBatch');
+        expect(timelineSource).not.toContain('const height = node.offsetHeight');
+    });
+});
+
 describe('column-width virtualizer invalidation', () => {
     test('ignores the first observation and sub-pixel wobble, then invalidates a real column shrink', () => {
         expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(null, 800)).toBe(false);

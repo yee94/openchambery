@@ -57,6 +57,7 @@ import {
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
 import { mergeMarkdownPinRevealStyle, resolveMarkdownPinRevealKeys } from './lib/markdownPinReveal';
+import { installBatchedResizeItem } from './lib/batchResizeUpdates';
 import { useMarkdownPinReveal } from './hooks/useMarkdownPinReveal';
 import {
     USER_SHELL_MARKER,
@@ -1617,6 +1618,10 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         },
         initialMeasurementsCache: measurementSeedRef.current,
     });
+    useIsomorphicLayoutEffect(() => {
+        if (!isTanstack) return;
+        return installBatchedResizeItem(tanstackVirtualizer);
+    }, [isTanstack, tanstackVirtualizer]);
     const columnWidthRef = React.useRef<number | null>(null);
     const columnMeasureTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     if (!isTanstack) {
