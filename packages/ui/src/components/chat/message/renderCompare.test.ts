@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Message } from '@opencode-ai/sdk/v2';
+import type { Message } from '@/lib/opencode/v2-types';
 import type { TurnGroupingContext } from '../lib/turns/types';
 import { areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './renderCompare';
 

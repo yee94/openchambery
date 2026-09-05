@@ -1016,13 +1016,11 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       sessionID: 'ses_1',
     }));
 
-    client.messages.mockImplementation(async () => ({
+    client.messageList.mockImplementation(async () => ({
       data: [{
-        info: {
-          id: 'msg_ok',
-          role: 'assistant',
-          time: { completed: Date.now() },
-        },
+        id: 'msg_ok',
+        type: 'assistant',
+        time: { completed: Date.now() },
       }],
     }));
 
