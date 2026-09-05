@@ -16,6 +16,7 @@ describe('composerAutocompleteChrome', () => {
   test('mobile surface is glass; desktop keeps the bordered panel', () => {
     expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-mobile-overlay-surface');
     expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-mobile-overlay-surface--translucent');
+    expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-composer-autocomplete-surface');
     expect(composerAutocompleteSurfaceClassName(true)).not.toContain('bottom-full');
     expect(composerAutocompleteSurfaceClassName(true)).not.toContain('border-2');
     expect(composerAutocompleteSurfaceClassName(false)).toContain('border-2');
@@ -31,9 +32,10 @@ describe('composerAutocompleteChrome', () => {
 
   test('glass recipe uses shared tokens and momentary press fill', () => {
     const overlay = mobileStyles.match(/\.oc-mobile-overlay-surface \{[\s\S]*?\n\}/)?.[0] ?? '';
-    const translucent = mobileStyles.match(/\.oc-mobile-overlay-surface--translucent \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const catalog = mobileStyles.match(/\.oc-composer-autocomplete-surface \{[\s\S]*?\n\}/)?.[0] ?? '';
     expect(overlay).toContain('backdrop-filter:');
-    expect(translucent).toContain('color-mix(in srgb, var(--surface-elevated) 48%, transparent)');
+    expect(catalog).toContain('color-mix(in srgb, var(--surface-elevated) 22%, transparent)');
+    expect(catalog).not.toContain('var(--oc-mobile-glass-fill)');
     expect(mobileStyles).toContain('.oc-composer-autocomplete-row:active {');
     expect(mobileStyles).toContain('background: var(--oc-mobile-press-fill)');
     expect(mobileStyles).toMatch(

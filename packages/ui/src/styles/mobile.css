@@ -437,20 +437,14 @@
   background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
 }
 
-/* Composer `/` `@` `#` catalogs: milky glass so the transcript reads through.
-   Fill tokens are on :root (not only .oc-mobile-floating-shell). Blur needs
-   the swap layer to use transform:none at rest — translate3d(0,0,0) and
-   will-change:transform both isolate the backdrop from the chat. */
+/* Composer `/` `@` `#` catalogs: keep overlay elevation/blur, but a much
+   thinner fill than --translucent (48%). A heavy wash hides the frost. */
 .oc-composer-autocomplete-surface {
-  border: 0;
-  background: var(--oc-mobile-glass-fill);
-  box-shadow: var(--oc-mobile-glass-shadow);
-  -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur, 20px))
-    saturate(var(--oc-mobile-glass-saturate, 1.25));
-  backdrop-filter:
-    blur(var(--oc-mobile-glass-blur, 20px))
-    saturate(var(--oc-mobile-glass-saturate, 1.25));
+  background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
+}
+
+.dark .oc-composer-autocomplete-surface {
+  background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
 }
 
 .oc-composer-autocomplete-row {
@@ -2924,7 +2918,11 @@ button.oc-mobile-worktree-label-trigger:active,
     pointer-events: none;
   }
 
-  :root.oc-html-file-preview-open body::after {
+  /* HTML file preview paints edge-to-edge; hide the home-indicator overlay for
+     the active (non-inert) sheet preview or fullscreen preview surface. Mode /
+     close / multi-instance restore via structural :has — no root class toggle. */
+  :root:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"]) body::after,
+  :root:has([data-mobile-html-fullscreen="true"]) body::after {
     opacity: 0;
   }
 
@@ -3133,6 +3131,14 @@ button.oc-mobile-worktree-label-trigger:active,
       var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
     )
   ) !important;
+}
+
+/* HTML preview in a sheet must reach the physical bottom. The surface owns the
+   default safe pad; a child negative margin cannot paint through body overflow
+   clip. Zero pad only while an active (non-inert) sheet hosts html preview. */
+[data-mobile-overlay-active="true"]:not([inert]) [data-oc-motion-id]:has([data-mobile-html-preview="true"]),
+:root.oc-capacitor-app [data-mobile-overlay-active="true"]:not([inert]) .pwa-overlay-panel[data-oc-motion-id]:has([data-mobile-html-preview="true"]) {
+  padding-bottom: 0 !important;
 }
 
 :root.oc-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll {

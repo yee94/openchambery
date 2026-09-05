@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'MobileFilesSurface.tsx'), 'utf-8');
 
@@ -21,7 +21,7 @@ describe('MobileFilesSurface html preview', () => {
   });
 
   test('offers source toggle and a fullscreen overlay with back', () => {
-    expect(source).toContain("htmlViewMode === 'source'");
+    expect(source).toContain("htmlViewMode === 'preview'");
     expect(source).toContain('mobile.files.html.fullscreenAria');
     expect(source).toContain('mobile.files.html.exitFullscreenAria');
     expect(source).toContain('mobile.files.html.viewSourceAria');
@@ -30,5 +30,15 @@ describe('MobileFilesSurface html preview', () => {
     expect(source).toContain('name="fullscreen"');
     expect(source).toContain("'file-code'");
     expect(source).toContain('attachIframeSheetOverscroll(iframe)');
+  });
+
+  test('marks sheet/fullscreen html preview for edge-to-edge CSS without negative margin or root class', () => {
+    expect(source).toContain('data-mobile-html-preview');
+    expect(source).toContain('data-mobile-html-fullscreen');
+    expect(source).toContain("htmlViewMode === 'preview' && !htmlFullscreen ? 'true' : undefined");
+    expect(source).toContain("htmlViewMode === 'preview' && htmlFullscreen ? 'true' : undefined");
+    expect(source).not.toContain('oc-html-file-preview-open');
+    expect(source).not.toMatch(/mb-\[calc\(-1\*max\(0\.5rem/);
+    expect(source).toContain("'flex min-h-0 flex-1 flex-col overflow-hidden bg-background'");
   });
 });

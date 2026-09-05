@@ -12,7 +12,7 @@ export function composerAutocompleteSurfaceClassName(isMobile: boolean, classNam
       // Same recipe as the phone context metadata sheet: overlay glass +
       // translucent fill. The catalog is viewport-fixed so iOS can frost the
       // transcript; `absolute` inside the composer cannot.
-      ? 'oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent'
+      ? 'oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface'
       : 'bg-background border-2 border-border/60 shadow-none',
     className,
   );

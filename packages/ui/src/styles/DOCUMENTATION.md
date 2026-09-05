@@ -92,7 +92,7 @@ Then let the component own the real compact size via Tailwind (`h-7 w-3`, etc.).
 
 ## Floating glass (mobile)
 
-Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, `.oc-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile use the same `.oc-mobile-overlay-surface--translucent` recipe as the phone context metadata sheet, inside a `fixed inset-0` host (`ComposerAutocompleteLayer`). iOS WebKit cannot backdrop-filter the transcript from an `absolute` child of the composer card. Rows still use `.oc-composer-autocomplete-row:active` press fill — not a persisted selected slab.
+Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, `.oc-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile reuse overlay glass blur inside a `fixed inset-0` host (`ComposerAutocompleteLayer`), but `.oc-composer-autocomplete-surface` drops the fill to a 22% elevated mix so the frost can read through. iOS WebKit cannot backdrop-filter the transcript from an `absolute` child of the composer card. Rows still use `.oc-composer-autocomplete-row:active` press fill — not a persisted selected slab.
 
 Legitimate glass fallbacks:
 
@@ -184,6 +184,17 @@ turn the overlay on (textarea becomes `text-transparent`); a fixed-px
 overlay against a `--dpt`-scaled field looks like the font suddenly grew
 and puts the caret in the wrong place.
 
+## HTML file preview edge-to-edge
+
+Sheet surfaces reserve bottom safe padding by default (`MobileWindowMotionRecipe` + Capacitor `.pwa-overlay-panel`). HTML preview must paint to the physical bottom without a child negative margin (overflow-hidden body clips it into a light band).
+
+| Marker | Owner | Effect |
+|---|---|---|
+| `data-mobile-html-preview="true"` | `MobileFilesSurface` sheet HTML viewer (preview mode only) | Active non-inert `[data-oc-motion-id]:has(...)` zeros `padding-bottom` |
+| `data-mobile-html-fullscreen="true"` | Fullscreen HTML preview portal | Hides home-indicator `body::after` via `:has` |
+
+`body::after` opacity uses structural `:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"])` and `:has([data-mobile-html-fullscreen="true"])` — not a root class toggle — so mode switches and multi-instance close restore automatically. Source mode keeps the default safe pad.
+
 ## Related owners
 
 - Detection / root classes: `packages/ui/src/lib/device.ts`
@@ -192,3 +203,4 @@ and puts the caret in the wrong place.
 - Design-system components: `packages/ui/src/styles/design-system.css` (`.oc-segmented-selected-pill`)
 - Queued message chip layout: `packages/ui/src/components/chat/QueuedMessageChips.tsx` (root class `oc-composer-queue`)
 - Mobile shell early `isMobile`: `packages/ui/src/apps/renderMobileApp.tsx`
+- HTML preview markers / sheet overscroll: `packages/ui/src/apps/MobileFilesSurface.tsx`, `packages/ui/src/components/ui/iframeSheetOverscroll.ts`

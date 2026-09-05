@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.14] - 2026-09-05
+
+### 移动端
+
+- HTML 预览半浮层贴齐物理底边，源码与默认模式仍保留安全区留白。
+- HTML 页面滚到顶部后，下拉、回拉和松手时半浮层跟手更稳定。
+- 手机斜杠 / @ / # 补全面板底色更通透，保留毛玻璃效果。
+
 ## [1.19.5-beta.13] - 2026-09-05
 
 ### 移动端
