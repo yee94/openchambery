@@ -1028,7 +1028,13 @@ html:not(.dark) .chat-scroll {
    messages don't gain extra space at the bottom. */
 .markdown-content > [data-md-block]:last-child p:last-child,
 .markdown-content > [data-md-block]:last-child ul:last-child,
-.markdown-content > [data-md-block]:last-child ol:last-child {
+.markdown-content > [data-md-block]:last-child ol:last-child,
+/* Markstream wraps blocks in .node-slot, not [data-md-block]. Without this,
+   the last paragraph keeps --markdown-paragraph-spacing and the process fold
+   / thinking row sit in a false extra gap. */
+.markdown-content.oc-markstream-host .markstream-react > .node-slot:last-of-type p,
+.markdown-content.oc-markstream-host .markstream-react > .node-slot:last-of-type ul,
+.markdown-content.oc-markstream-host .markstream-react > .node-slot:last-of-type ol {
   margin-bottom: 0;
 }
 

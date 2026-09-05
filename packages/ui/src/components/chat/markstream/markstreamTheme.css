@@ -45,3 +45,14 @@
 .oc-markstream-host.markdown-reasoning .markstream-react {
   color: var(--surface-muted-foreground);
 }
+
+/* Library .paragraph-node is 1.25em top+bottom (:where, usually beaten by
+   .markdown-content p). Keep OpenChamber paragraph rhythm and drop the last
+   slot's trailing margin so the Running fold / thinking row stay tight. */
+.oc-markstream-host .markstream-react .paragraph-node {
+  margin: 0 0 var(--markdown-paragraph-spacing) 0;
+}
+
+.oc-markstream-host .markstream-react > .node-slot:last-of-type .paragraph-node {
+  margin-bottom: 0;
+}
