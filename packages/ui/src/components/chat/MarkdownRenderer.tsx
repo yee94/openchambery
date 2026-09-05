@@ -1,7 +1,10 @@
 import React from 'react';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { cn } from '@/lib/utils';
+import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { loadMarkdownRendererModule } from './markdownRendererLoader';
+import { loadMarkstreamRendererModule } from './markstreamRendererLoader';
+import { MarkstreamFallbackBoundary } from './MarkstreamFallbackBoundary';
 import { useMarkdownHydrationEnabled } from './markdown/markdownHydrationContext';
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
 import { markdownHeightCacheKey, recallMarkdownHeight } from './markdown/markdownHeightCache';
@@ -13,6 +16,10 @@ import { markdownHeightCacheKey, recallMarkdownHeight } from './markdown/markdow
 
 const MarkdownRendererLazy = lazyWithChunkRecovery(() =>
   loadMarkdownRendererModule().then((m) => ({ default: m.MarkdownRenderer }))
+);
+
+const MarkstreamRendererLazy = lazyWithChunkRecovery(() =>
+  loadMarkstreamRendererModule().then((m) => ({ default: m.MarkstreamRenderer }))
 );
 
 const SimpleMarkdownRendererLazy = lazyWithChunkRecovery(() =>
@@ -35,10 +42,14 @@ const MarkdownSkeletonFallback = (props: {
   // same source and would reserve the wrong box.
   reserveMeasuredHeight?: boolean;
 }) => {
+  const markstreamEnabled = useFeatureFlagsStore((state) => state.markstreamReactEnabled);
   const content = typeof props.content === 'string' ? props.content : '';
   const variant = typeof props.variant === 'string' ? props.variant : 'assistant';
   const reservedHeight = props.reserveMeasuredHeight
-    ? recallMarkdownHeight(markdownHeightCacheKey(content, variant))
+    ? recallMarkdownHeight(markdownHeightCacheKey(
+      content,
+      markstreamEnabled ? `markstream:${variant}` : variant,
+    ))
     : undefined;
   return (
     <div
@@ -62,14 +73,27 @@ const MarkdownSkeletonFallback = (props: {
 
 export const MarkdownRenderer: React.FC<React.ComponentPropsWithoutRef<typeof MarkdownRendererLazy>> = (props) => {
   const hydrationEnabled = useMarkdownHydrationEnabled();
+  const markstreamEnabled = useFeatureFlagsStore((state) => state.markstreamReactEnabled);
   if (!hydrationEnabled && props.isStreaming !== true) {
     return <MarkdownSkeletonFallback {...props} animated={false} reserveMeasuredHeight />;
   }
 
-  return (
+  const currentRenderer = (
     <React.Suspense fallback={<MarkdownSkeletonFallback {...props} reserveMeasuredHeight />}>
       <MarkdownRendererLazy {...props} />
     </React.Suspense>
+  );
+
+  if (!markstreamEnabled) {
+    return currentRenderer;
+  }
+
+  return (
+    <MarkstreamFallbackBoundary fallback={currentRenderer}>
+      <React.Suspense fallback={<MarkdownSkeletonFallback {...props} reserveMeasuredHeight />}>
+        <MarkstreamRendererLazy {...props} />
+      </React.Suspense>
+    </MarkstreamFallbackBoundary>
   );
 };
 
