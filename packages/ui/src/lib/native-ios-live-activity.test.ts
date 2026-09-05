@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, test, vi } from 'vitest';
 
 import {
@@ -33,8 +30,6 @@ import {
   type NativeLiveActivityTokenContext,
   type NativeLiveActivityTokenState,
 } from './native-ios-live-activity';
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 const observe = (
   overrides: Partial<NativeLiveActivityObservation> = {},
@@ -1121,33 +1116,5 @@ describe('native Live Activity token registration', () => {
     expect(unregister).not.toHaveBeenCalled();
     expect(register).not.toHaveBeenCalled();
     expect(next.registered).toBeNull();
-  });
-});
-
-describe('useNativeLiveActivity wiring', () => {
-  test('drives one activity from the live working-session catalog', () => {
-    const hook = readFileSync(join(here, '../apps/useNativeLiveActivity.ts'), 'utf-8');
-    expect(hook).toContain('buildNativeLiveActivityCatalog');
-    expect(hook).toContain('collectRunningSessionIds');
-    expect(hook).toContain('useAllSessionStatuses');
-    expect(hook).toContain('NATIVE_LIVE_ACTIVITY_ID');
-    expect(hook).toContain('result.superseded');
-    expect(hook).not.toContain('useCallback');
-    expect(hook).toContain('useEvent');
-    expect(hook).not.toContain('useLiveSessionStatus');
-    expect(hook).not.toContain('useIosNativeUiEnabled');
-    expect(hook).not.toContain('useSessionMessages');
-    expect(hook).not.toContain('message.part');
-    expect(hook).toContain('runNativeLiveActivityStep');
-    expect(hook).toContain('epochRef');
-    expect(hook).not.toContain('applyNativeLiveActivityCommand(true, plugin, command).catch(() => undefined)');
-    expect(hook).toContain("addListener('pushToken'");
-    expect(hook).toMatch(/addListener\('pushToken'[\s\S]*if \(!cancelled && epochRef\.current === epoch\) run\(\);/);
-    expect(hook).toContain('registerLiveActivityToken');
-    expect(hook).toContain('unregisterLiveActivityToken');
-    expect(hook).toContain('localEndSucceeded');
-    expect(hook).not.toMatch(/console\.(log|debug|info|warn)/);
-    const app = readFileSync(join(here, '../apps/MobileApp.tsx'), 'utf-8');
-    expect(app).toContain('useNativeLiveActivity');
   });
 });

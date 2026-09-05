@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { File as PierreFile } from '@pierre/diffs/react';
 import { useEvent } from '@reactuses/core';
 
@@ -32,6 +33,7 @@ import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery, useFileStatWatcher } from '@/queries/fileQueries';
 import { cn } from '@/lib/utils';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
+import { attachIframeSheetOverscroll } from '@/components/ui/iframeSheetOverscroll';
 import { useUIStore } from '@/stores/useUIStore';
 
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/message/ToolOutputDialog'));
@@ -41,6 +43,8 @@ type MobileFilesRoute =
   | { type: 'file'; path: string; returnDirectory: string };
 
 const MAX_MOBILE_FILE_CHARS = 250_000;
+
+type HtmlViewMode = 'preview' | 'source';
 
 const normalizePath = (value?: string | null): string => (value || '').replace(/\\/g, '/').replace(/\/+$/g, '');
 
@@ -177,6 +181,10 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
   const currentDirectory = route.type === 'browser' ? route.directory : route.returnDirectory;
   const browserDirectory = route.type === 'browser' ? route.directory : '';
   const filePath = route.type === 'file' ? route.path : '';
+  const [htmlViewMode, setHtmlViewMode] = React.useState<HtmlViewMode>('preview');
+  React.useEffect(() => {
+    setHtmlViewMode('preview');
+  }, [filePath]);
   const debouncedQuery = useDebouncedValue(query, 250);
   const normalizedQuery = query.trim();
   const normalizedDebouncedQuery = debouncedQuery.trim();
@@ -200,7 +208,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
   const shouldReadFile = Boolean(
     filePath
     && files.readFile
-    && !isHtmlFile(filePath)
+    && (!isHtmlFile(filePath) || htmlViewMode === 'source')
     && (!isImageFile(filePath) || filePath.toLowerCase().endsWith('.svg')),
   );
   const fileQuery = useFileContentQuery({
@@ -285,13 +293,15 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
 
   if (route.type === 'file') {
     return (
-      <div ref={mobileNavigationSurfaceRef} className="h-full min-h-0">
+      <div ref={mobileNavigationSurfaceRef} className="flex h-full min-h-0 flex-col">
         <MobileFileDetail
           path={route.path}
           content={fileContent}
           error={fileError}
           isLoading={isLoadingFile}
           hideHeader={hideFileHeader}
+          htmlViewMode={htmlViewMode}
+          onHtmlViewModeChange={setHtmlViewMode}
           onBack={closeFileDetail}
           onCopyPath={() => void handleCopyPath(route.path)}
           onCopyContent={() => void handleCopyContent()}
@@ -441,14 +451,51 @@ const MobileSearchResults: React.FC<{
 
 const MobileFileDetailActions: React.FC<{
   path: string;
+  htmlViewMode: HtmlViewMode;
+  htmlFullscreen: boolean;
+  onToggleHtmlViewMode: () => void;
+  onEnterHtmlFullscreen: () => void;
   onCopyPath: () => void;
   onCopyContent: () => void;
-}> = ({ path, onCopyPath, onCopyContent }) => {
+}> = ({
+  path,
+  htmlViewMode,
+  htmlFullscreen,
+  onToggleHtmlViewMode,
+  onEnterHtmlFullscreen,
+  onCopyPath,
+  onCopyContent,
+}) => {
   const { t } = useI18n();
+  const html = isHtmlFile(path);
 
   return (
     <>
-      {!isImageFile(path) && !isHtmlFile(path) ? (
+      {html ? (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onToggleHtmlViewMode}
+            aria-label={htmlViewMode === 'preview' ? t('mobile.files.html.viewSourceAria') : t('mobile.files.html.viewPreviewAria')}
+          >
+            <Icon name={htmlViewMode === 'preview' ? 'file-code' : 'eye'} className="size-4" />
+          </Button>
+          {htmlFullscreen ? null : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onEnterHtmlFullscreen}
+              aria-label={t('mobile.files.html.fullscreenAria')}
+            >
+              <Icon name="fullscreen" className="size-4" />
+            </Button>
+          )}
+        </>
+      ) : null}
+      {!isImageFile(path) && !html ? (
         <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
           <Icon name="file-copy" className="size-4" />
         </Button>
@@ -466,10 +513,23 @@ const MobileFileDetail: React.FC<{
   error: string | null;
   isLoading: boolean;
   hideHeader?: boolean;
+  htmlViewMode: HtmlViewMode;
+  onHtmlViewModeChange: (mode: HtmlViewMode) => void;
   onBack: () => void;
   onCopyPath: () => void;
   onCopyContent: () => void;
-}> = ({ path, content, error, isLoading, hideHeader = false, onBack, onCopyPath, onCopyContent }) => {
+}> = ({
+  path,
+  content,
+  error,
+  isLoading,
+  hideHeader = false,
+  htmlViewMode,
+  onHtmlViewModeChange,
+  onBack,
+  onCopyPath,
+  onCopyContent,
+}) => {
   const { t } = useI18n();
   // Selection actions (add to chat / new session / copy) surface for text
   // selected inside the file preview, including PierreFile's shadow DOM.
@@ -594,8 +654,92 @@ const MobileFileDetail: React.FC<{
     setImagePopup((previous) => (previous.open === open ? previous : { ...previous, open }));
   });
 
+  const html = isHtmlFile(path);
+  const [htmlFullscreen, setHtmlFullscreen] = React.useState(false);
+  const htmlFullscreenSurfaceRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    setHtmlFullscreen(false);
+  }, [path]);
+
+  const toggleHtmlViewMode = useEvent(() => {
+    onHtmlViewModeChange(htmlViewMode === 'preview' ? 'source' : 'preview');
+  });
+  const enterHtmlFullscreen = useEvent(() => {
+    setHtmlFullscreen(true);
+  });
+  const exitHtmlFullscreen = useEvent(() => {
+    setHtmlFullscreen(false);
+    return true;
+  });
+
+  useMobileBackRoute({
+    id: 'mobile-html-fullscreen',
+    active: html && htmlFullscreen,
+    layer: 'overlay',
+    onBack: exitHtmlFullscreen,
+    surfaceRef: htmlFullscreenSurfaceRef,
+  });
+
+  const fileActions = (
+    <MobileFileDetailActions
+      path={path}
+      htmlViewMode={htmlViewMode}
+      htmlFullscreen={htmlFullscreen}
+      onToggleHtmlViewMode={toggleHtmlViewMode}
+      onEnterHtmlFullscreen={enterHtmlFullscreen}
+      onCopyPath={onCopyPath}
+      onCopyContent={onCopyContent}
+    />
+  );
+
+  const htmlBody = htmlViewMode === 'source'
+    ? (isLoading
+      ? <MobileFilesState loading message={t('filesView.state.loading')} />
+      : error
+        ? <MobileFilesState message={error} />
+        : <MobileTextFile path={path} content={content} />)
+    : <MobileHtmlPreview path={path} />;
+
+  const htmlViewer = html ? (
+    <div
+      ref={htmlFullscreenSurfaceRef}
+      className={htmlFullscreen
+        ? 'fixed inset-0 z-[80] flex flex-col bg-background text-foreground'
+        : 'flex min-h-0 flex-1 flex-col overflow-hidden bg-background'}
+    >
+      {htmlFullscreen ? (
+        <header className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={exitHtmlFullscreen}
+            aria-label={t('mobile.files.html.exitFullscreenAria')}
+            className="shrink-0 text-muted-foreground"
+          >
+            <Icon name="arrow-left" className="size-5" />
+          </Button>
+          <h2 className="min-w-0 flex-1 truncate typography-ui-header text-foreground">{imageFilename}</h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={toggleHtmlViewMode}
+            aria-label={htmlViewMode === 'preview' ? t('mobile.files.html.viewSourceAria') : t('mobile.files.html.viewPreviewAria')}
+          >
+            <Icon name={htmlViewMode === 'preview' ? 'file-code' : 'eye'} className="size-4" />
+          </Button>
+        </header>
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-hidden bg-background">
+        {htmlBody}
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
       {!hideHeader ? (
         <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
           <button
@@ -609,20 +753,22 @@ const MobileFileDetail: React.FC<{
           <div className="min-w-0 flex-1">
             <h2 className="truncate typography-ui-header text-foreground">{imageFilename}</h2>
           </div>
-          <MobileFileDetailActions path={path} onCopyPath={onCopyPath} onCopyContent={onCopyContent} />
+          {fileActions}
         </header>
       ) : (
         <MobileSheetHeaderActions>
-          <MobileFileDetailActions path={path} onCopyPath={onCopyPath} onCopyContent={onCopyContent} />
+          {fileActions}
         </MobileSheetHeaderActions>
       )}
-      <div ref={contentContainerRef} className="min-h-0 flex-1 overflow-hidden">
-        {isLoading || imageAuthLoading || isRelayImageLoading ? (
+      <div ref={contentContainerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+        {html ? (
+          htmlFullscreen && typeof document !== 'undefined'
+            ? createPortal(htmlViewer, document.body)
+            : htmlViewer
+        ) : isLoading || imageAuthLoading || isRelayImageLoading ? (
           <MobileFilesState loading message={t('filesView.state.loading')} />
-        ) : imageError && !isHtmlFile(path) ? (
+        ) : imageError ? (
           <MobileFilesState message={imageError} />
-        ) : isHtmlFile(path) ? (
-          <MobileHtmlPreview path={path} />
         ) : isImageFile(path) && previewImageSrc ? (
           <ScrollShadow className="h-full overflow-auto p-4">
             <button
@@ -660,6 +806,7 @@ const MobileFileDetail: React.FC<{
 const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
   const { t } = useI18n();
   const relay = isRelayModeActive();
+  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const [readyKey, setReadyKey] = React.useState('');
   const [nonce, setNonce] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
@@ -722,6 +869,13 @@ const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
     };
   }, [path, relay, t]);
 
+  React.useEffect(() => {
+    if (readyKey !== path) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    return attachIframeSheetOverscroll(iframe);
+  }, [nonce, path, readyKey, relaySrcDoc]);
+
   if (error) {
     return <MobileFilesState message={error} />;
   }
@@ -730,14 +884,18 @@ const MobileHtmlPreview: React.FC<{ path: string }> = ({ path }) => {
   }
 
   return (
-    <iframe
-      key={nonce}
-      src={relay ? undefined : buildFsServeAssetUrl(path)}
-      srcDoc={relay ? relaySrcDoc : undefined}
-      className="h-full w-full border-none"
-      sandbox="allow-scripts allow-same-origin allow-forms"
-      title={t('filesView.editor.htmlPreviewTitle')}
-    />
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      <iframe
+        ref={iframeRef}
+        key={nonce}
+        src={relay ? undefined : buildFsServeAssetUrl(path)}
+        srcDoc={relay ? relaySrcDoc : undefined}
+        className="h-full min-h-0 w-full flex-1 border-none bg-background"
+        style={{ backgroundColor: 'var(--surface-background)' }}
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        title={t('filesView.editor.htmlPreviewTitle')}
+      />
+    </div>
   );
 };
 

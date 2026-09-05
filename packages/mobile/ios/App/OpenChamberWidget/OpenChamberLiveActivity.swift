@@ -212,6 +212,43 @@ private struct LiveActivityElapsedTime: View {
     }
 }
 
+private struct LiveActivitySessionRow: View {
+    let row: LiveActivityRow
+    let compact: Bool
+
+    private var title: String {
+        row.title.isEmpty ? "Session" : row.title
+    }
+
+    private var rowBody: some View {
+        HStack(alignment: .center, spacing: 8) {
+            LiveActivityRowGlyph(status: row.status, size: compact ? 12 : 14)
+
+            Text(title)
+                .font(.system(size: compact ? 13 : 15, weight: .regular))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 8)
+
+            LiveActivityElapsedTime(startedAt: row.startedAt, endedAt: row.endedAt)
+        }
+        .contentShape(Rectangle())
+    }
+
+    var body: some View {
+        if row.sessionID.isEmpty || row.sessionID == "live" {
+            rowBody
+        } else {
+            Link(destination: WidgetDeepLink.session(row.sessionID)) {
+                rowBody
+            }
+            .accessibilityLabel(Text(title))
+        }
+    }
+}
+
 private struct LiveActivitySessionList: View {
     let rows: [LiveActivityRow]
     let workingCount: Int
@@ -226,19 +263,7 @@ private struct LiveActivitySessionList: View {
 
             VStack(spacing: compact ? 7 : 9) {
                 ForEach(rows) { row in
-                    HStack(alignment: .center, spacing: 8) {
-                        LiveActivityRowGlyph(status: row.status, size: compact ? 12 : 14)
-
-                        Text(row.title.isEmpty ? "Session" : row.title)
-                            .font(.system(size: compact ? 13 : 15, weight: .regular))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        Spacer(minLength: 8)
-
-                        LiveActivityElapsedTime(startedAt: row.startedAt, endedAt: row.endedAt)
-                    }
+                    LiveActivitySessionRow(row: row, compact: compact)
                 }
             }
         }
