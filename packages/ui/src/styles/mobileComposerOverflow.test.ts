@@ -74,7 +74,8 @@ describe('mobile composer overflow and swap contract', () => {
 
     test('declares alternating transform layers and snap-only transition', () => {
         expect(mobileCss).toContain('@property --oc-mobile-composer-swap');
-        expect(mobileCss).toMatch(/\.oc-mobile-composer-expanded-layer\s*\{[^}]*min\(1, var\(--oc-mobile-composer-swap\) \* 2\) \* 110%/s);
+        expect(mobileCss).toMatch(/\.oc-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none/s);
+        expect(mobileCss).toMatch(/data-oc-composer-swap-phase="snapping"[\s\S]*?\.oc-mobile-composer-expanded-layer\s*\{[^}]*min\(1, var\(--oc-mobile-composer-swap\) \* 2\) \* 110%/s);
         expect(mobileCss).toMatch(/\.oc-mobile-composer-compact-layer\s*\{[^}]*width:\s*80%;[^}]*--oc-mobile-glass-shadow[^}]*--oc-mobile-glass-blur[^}]*max\(0, var\(--oc-mobile-composer-swap\) \* 2 - 1\)/s);
         expect(mobileCss).toMatch(/\.oc-mobile-composer-compact-layer\s*\{[^}]*background:\s*var\(--oc-mobile-glass-fill\)/s);
         expect(mobileCss).toMatch(/data-oc-composer-swap-phase="snapping"[^}]*transition:\s*--oc-mobile-composer-swap 240ms/s);

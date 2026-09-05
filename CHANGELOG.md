@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.13] - 2026-09-05
+
+### 移动端
+
+- 手机斜杠 / @ / # 补全面板改成和右上角上下文弹层一样的毛玻璃。
+
 ## [1.19.5-beta.12] - 2026-09-05
 
 ### 移动端
