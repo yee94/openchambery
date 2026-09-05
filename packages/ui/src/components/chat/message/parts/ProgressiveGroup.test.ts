@@ -19,7 +19,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('animateTailText={false}');
     });
 
-    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; context tools collapse into Explored groups; used tools collapse into Used groups', () => {
+    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; explore and used tools share one process fold', () => {
         // consecutive 2+ skill calls collapse into one SkillToolGroup
         expect(progressiveGroupSource).toContain('if (isSkillGroupTool(toolName))');
         expect(progressiveGroupSource).toContain('collectConsecutiveSkillTools');
@@ -32,33 +32,34 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('collectConsecutiveSkillTools');
         // other non-context static tools: one call per tool-static-group row
         expect(progressiveGroupSource).toContain("rows.push({ type: 'tool-static-group', toolName, activities: [activity] });");
-        // context tools (read/glob/grep/list): consecutive collapse via collectConsecutiveContextTools
-        expect(progressiveGroupSource).toContain('if (isContextGroupTool(toolName))');
-        expect(progressiveGroupSource).toContain('collectConsecutiveContextTools');
+        // explore + used tools (read/glob/grep/list/edit/bash/custom): one process fold
+        expect(progressiveGroupSource).toContain('if (isProcessGroupTool(toolName))');
+        expect(progressiveGroupSource).toContain('collectConsecutiveProcessTools');
         expect(progressiveGroupSource).toContain("type: 'tool-context-group'");
-        expect(progressiveGroupSource).toContain('hasContextExploreSuccessor');
+        expect(progressiveGroupSource).toContain('hasProcessSuccessor');
         expect(progressiveGroupSource).toContain('hasFollowingOtherType');
         expect(progressiveGroupSource).toContain('case \'tool-context-group\':');
         expect(progressiveGroupSource).toContain('<ContextToolGroup');
         expect(progressiveGroupSource).toContain('isTurnLive={isActive}');
         expect(progressiveGroupSource).toContain('hasFollowingOtherType={row.hasFollowingOtherType}');
-        // used tools (edit/write/bash/custom): consecutive collapse via collectConsecutiveUsedTools
-        expect(progressiveGroupSource).toContain('if (isUsedGroupTool(toolName))');
-        expect(progressiveGroupSource).toContain('collectConsecutiveUsedTools');
-        expect(progressiveGroupSource).toContain("type: 'tool-used-group'");
-        expect(progressiveGroupSource).toContain('hasUsedRunSuccessor');
-        expect(progressiveGroupSource).toContain("case 'tool-used-group':");
-        expect(progressiveGroupSource).toContain('<UsedToolGroup');
-        expect(messageBodySource).toContain('isUsedGroupTool');
-        expect(messageBodySource).toContain('UsedToolGroup');
-        expect(messageBodySource).toContain('collectConsecutiveUsedTools');
-        expect(messageBodySource).toContain('hasUsedRunSuccessor');
+        const contextToolGroupSource = readFileSync(join(__dirname, 'ContextToolGroup.tsx'), 'utf-8');
+        expect(contextToolGroupSource).toContain("t('chat.usedGroup.running')");
+        expect(contextToolGroupSource).toContain("t('chat.usedGroup.used')");
+        expect(contextToolGroupSource).not.toContain("t('chat.contextGroup.exploring')");
+        expect(contextToolGroupSource).not.toContain("t('chat.contextGroup.explored')");
+        expect(progressiveGroupSource).not.toContain('<UsedToolGroup');
+        expect(progressiveGroupSource).not.toContain("type: 'tool-used-group'");
+        expect(messageBodySource).toContain('isProcessGroupTool');
+        expect(messageBodySource).toContain('collectConsecutiveProcessTools');
+        expect(messageBodySource).toContain('hasProcessSuccessor');
+        expect(messageBodySource).not.toContain('UsedToolGroup');
+        expect(messageBodySource).not.toContain('collectConsecutiveUsedTools');
+        expect(messageBodySource).not.toContain('hasUsedRunSuccessor');
         // MessageBody flat path mirrors the same grouping
         expect(messageBodySource).toContain('isContextGroupTool');
         expect(messageBodySource).toContain('ContextToolGroup');
-        expect(messageBodySource).toContain('hasContextExploreSuccessor');
         expect(messageBodySource).toContain('isTurnLive={effectiveStreamPhase !== \'completed\'}');
-        expect(messageBodySource).toContain('hasFollowingOtherType={hasContextExploreSuccessor');
+        expect(messageBodySource).toContain('hasFollowingOtherType={hasProcessSuccessor');
         // Do not revive multi-target chip merge
         expect(progressiveGroupSource).not.toContain('const activities = [activity];');
         expect(progressiveGroupSource).not.toContain('if (nextToolName !== toolName || !isStaticTool(nextToolName))');
