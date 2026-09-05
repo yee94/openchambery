@@ -28,4 +28,12 @@ describe('markstream-react trial path', () => {
     expect(source).toContain('readMarkstreamReactEnabled()');
     expect(source).toContain('preloadMarkstreamRenderer()');
   });
+
+  test('Markstream host keeps markdown-ready and in-document node virtualization', () => {
+    const source = readFileSync(join(here, 'MarkstreamRendererImpl.tsx'), 'utf8');
+    expect(source).toContain('MARKSTREAM_CHAT_STREAM_PERFORMANCE');
+    expect(source).toContain('data-markdown-ready="true"');
+    expect(source).toContain('data-oc-markstream-virtual="nodes"');
+    expect(source).not.toContain('maxLiveNodes={0}');
+  });
 });
