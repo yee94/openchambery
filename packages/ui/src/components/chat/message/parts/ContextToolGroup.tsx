@@ -34,12 +34,12 @@ const ProcessDiffTotals: React.FC<{ added: number; removed: number }> = ({ added
 export const ContextToolGroup: React.FC<{
     activities: TurnActivityPart[];
     isMobile: boolean;
-    /** 本轮仍在进行时，后面没出现正文 / 特殊工具也保持探索中。 */
+    /** 本轮仍在进行时，后面没出现正文 / 特殊工具也保持运行中。 */
     isTurnLive?: boolean;
     /** 本组之后是否已出现正文 / skill / task / question。 */
     hasFollowingOtherType?: boolean;
     /**
-     * 可选：由完整 parts 时间线计算的明确 exploring 状态。
+     * 可选：由完整 parts 时间线计算的明确 running 状态。
      * 传入时优先使用；未传入时按 isTurnLive + hasFollowingOtherType 计算。
      */
     exploring?: boolean;
@@ -91,11 +91,11 @@ export const ContextToolGroup: React.FC<{
     });
 
     const ariaLabel = isExpanded
-        ? t('chat.contextGroup.collapseAria')
-        : t('chat.contextGroup.expandAria');
+        ? t('chat.usedGroup.collapseAria')
+        : t('chat.usedGroup.expandAria');
     const title = isActive
-        ? t('chat.contextGroup.exploring')
-        : t('chat.contextGroup.explored');
+        ? t('chat.usedGroup.running')
+        : t('chat.usedGroup.used');
     // Use isMobile (not sm:) so hosted/Capacitor mobile keeps one line box for icon + text.
     const rowLineClass = isMobile ? 'h-5' : 'h-6';
 
@@ -124,7 +124,7 @@ export const ContextToolGroup: React.FC<{
                     {isActive ? (
                         <LatticeOrb
                             isMobile={isMobile}
-                            label={t('chat.contextGroup.exploring')}
+                            label={t('chat.usedGroup.running')}
                             className="block"
                         />
                     ) : (

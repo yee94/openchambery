@@ -42,6 +42,11 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('<ContextToolGroup');
         expect(progressiveGroupSource).toContain('isTurnLive={isActive}');
         expect(progressiveGroupSource).toContain('hasFollowingOtherType={row.hasFollowingOtherType}');
+        const contextToolGroupSource = readFileSync(join(__dirname, 'ContextToolGroup.tsx'), 'utf-8');
+        expect(contextToolGroupSource).toContain("t('chat.usedGroup.running')");
+        expect(contextToolGroupSource).toContain("t('chat.usedGroup.used')");
+        expect(contextToolGroupSource).not.toContain("t('chat.contextGroup.exploring')");
+        expect(contextToolGroupSource).not.toContain("t('chat.contextGroup.explored')");
         expect(progressiveGroupSource).not.toContain('<UsedToolGroup');
         expect(progressiveGroupSource).not.toContain("type: 'tool-used-group'");
         expect(messageBodySource).toContain('isProcessGroupTool');

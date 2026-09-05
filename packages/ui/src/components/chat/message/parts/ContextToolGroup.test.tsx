@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '@/lib/i18n';
+import { dict as zhCN } from '@/lib/i18n/messages/zh-CN';
+import { useI18nStore } from '@/lib/i18n/store';
 import type { TurnActivityRecord } from '../../lib/turns/types';
 import { ContextToolGroup } from './ContextToolGroup';
 import { LatticeOrb } from './LatticeOrb';
@@ -64,7 +66,7 @@ describe('ContextToolGroup', () => {
 
         expect(markup).toContain('data-component="context-tool-group"');
         expect(markup).toContain('aria-expanded="false"');
-        expect(markup).toContain('Exploring');
+        expect(markup).toContain('Running');
         expect(markup).toContain('1 search, 3 reads');
         expect(markup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
         expect(markup).toContain('width:14px;height:14px');
@@ -107,7 +109,7 @@ describe('ContextToolGroup', () => {
         expect(indexCssSource).toContain('.oc-summary-flip-in {\n    transform: none;\n    opacity: 1;');
     });
 
-    test('keeps exploring after grouped calls settle until a later non-explore part appears', () => {
+    test('keeps running after grouped calls settle until a later non-process part appears', () => {
         const activities = [
             contextActivity('grep-1', 'grep', 'completed'),
             contextActivity('read-1', 'read', 'completed'),
@@ -128,9 +130,9 @@ describe('ContextToolGroup', () => {
             </I18nProvider>,
         );
 
-        expect(liveMarkup).toContain('Exploring');
+        expect(liveMarkup).toContain('Running');
         expect(liveMarkup).toContain('oc-lattice-orb-dot');
-        expect(settledMarkup).toContain('Explored');
+        expect(settledMarkup).toContain('Used');
         expect(settledMarkup).toContain('#oc-search');
         expect(settledMarkup).toContain('inline-flex flex-none items-center justify-center self-center h-6 w-3.5');
         expect(settledMarkup).not.toContain('oc-lattice-orb-dot');
@@ -147,12 +149,12 @@ describe('ContextToolGroup', () => {
             </I18nProvider>,
         );
 
-        expect(markup).toContain('Explored');
+        expect(markup).toContain('Used');
         expect(markup).toContain('#oc-search');
         expect(markup).not.toContain('oc-lattice-orb-dot');
     });
 
-    test('keeps exploring when parent passes explicit exploring after tools settle', () => {
+    test('keeps running when parent passes explicit exploring after tools settle', () => {
         const activities = [
             contextActivity('grep-1', 'grep', 'completed'),
             contextActivity('read-1', 'read', 'completed'),
@@ -168,14 +170,14 @@ describe('ContextToolGroup', () => {
             </I18nProvider>,
         );
 
-        expect(exploringMarkup).toContain('Exploring');
+        expect(exploringMarkup).toContain('Running');
         expect(exploringMarkup).toContain('oc-lattice-orb-dot');
-        expect(exploredMarkup).toContain('Explored');
+        expect(exploredMarkup).toContain('Used');
         expect(exploredMarkup).toContain('#oc-search');
         expect(exploredMarkup).not.toContain('oc-lattice-orb-dot');
     });
 
-    test('folds explore and used tools into one Explored summary with line diffs', () => {
+    test('folds explore and used tools into one Used summary with line diffs', () => {
         const activities = [
             contextActivity('grep-1', 'grep', 'completed'),
             contextActivity('read-1', 'read', 'completed'),
@@ -198,11 +200,11 @@ describe('ContextToolGroup', () => {
         );
 
         expect(markup).toContain('data-component="context-tool-group"');
-        expect(markup).toContain('Explored');
+        expect(markup).toContain('Used');
         expect(markup).toContain('1 search, 1 read, 1 edit, 1 command');
         expect(markup).toContain('+4');
         expect(markup).toContain('-2');
-        expect(markup).not.toContain('Used');
+        expect(markup).not.toContain('Explored');
         expect(markup).not.toContain('data-component="used-tool-group"');
     });
 
@@ -217,7 +219,43 @@ describe('ContextToolGroup', () => {
             </I18nProvider>,
         );
 
-        expect(markup).toContain('Exploring');
+        expect(markup).toContain('Running');
         expect(markup).toContain('oc-lattice-orb-dot');
+    });
+
+    test('uses used-group copy for the unified fold in zh-CN', () => {
+        const previous = useI18nStore.getState();
+        useI18nStore.setState({
+            locale: 'zh-CN',
+            dictionary: zhCN,
+            loadingLocale: null,
+        });
+        try {
+            const settled = [
+                contextActivity('grep-1', 'grep', 'completed'),
+                contextActivity('read-1', 'read', 'completed'),
+            ];
+            const settledMarkup = renderToStaticMarkup(
+                <I18nProvider>
+                    <ContextToolGroup activities={settled} isMobile={false} />
+                </I18nProvider>,
+            );
+            const liveMarkup = renderToStaticMarkup(
+                <I18nProvider>
+                    <ContextToolGroup activities={settled} isMobile={false} isTurnLive />
+                </I18nProvider>,
+            );
+
+            expect(settledMarkup).toContain('运行了');
+            expect(settledMarkup).not.toContain('探索');
+            expect(liveMarkup).toContain('运行中');
+            expect(liveMarkup).not.toContain('探索');
+        } finally {
+            useI18nStore.setState({
+                locale: previous.locale,
+                dictionary: previous.dictionary,
+                loadingLocale: previous.loadingLocale,
+            });
+        }
     });
 });

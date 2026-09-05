@@ -70,7 +70,7 @@ export function hasProcessSuccessor<T>(
 }
 
 /**
- * Stay exploring / working while a grouped call is active, or while the turn
+ * Stay running while a grouped call is active, or while the turn
  * is still live and no later body text / special tool has appeared.
  */
 export function isProcessGroupActive(
