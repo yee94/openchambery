@@ -11,6 +11,19 @@ struct OpenChamberActivityAttributes: ActivityAttributes {
     /// Unix epoch seconds.
     var startedAt: Double
 
+    struct SessionItem: Codable, Hashable, Identifiable {
+        var sessionID: String
+        var title: String
+        /// working / tool / retry / input / permission / stale / complete / error
+        var status: String
+        /// Unix epoch seconds.
+        var startedAt: Double
+        /// Unix epoch seconds. Present after this row has ended.
+        var endedAt: Double?
+
+        var id: String { sessionID }
+    }
+
     struct ContentState: Codable, Hashable {
         /// working / tool / retry / input / permission / stale / complete / error
         var status: String
@@ -20,6 +33,12 @@ struct OpenChamberActivityAttributes: ActivityAttributes {
         var updatedAt: Double
         /// Unix epoch seconds. Present after the activity has ended.
         var endedAt: Double?
+        /// Optional row title when `items` is absent (APNs end payload).
+        var title: String?
+        /// Count of still-working rows. Derived from `items` when omitted.
+        var workingCount: Int?
+        /// Multi-session list. Absent on older APNs end payloads.
+        var items: [SessionItem]?
     }
 }
 #endif

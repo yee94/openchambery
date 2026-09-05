@@ -8,6 +8,8 @@
  * The consumed message id is remembered after the pending count is
  * taken so a React Strict Mode remount can re-latch the same send.
  * Component state and the pending count do not survive that remount.
+ * It is not last-read memory: the primary list delayed-clears this
+ * latch on leave so a later reopen cannot park on that user row.
  */
 
 const pendingCounts = new Map<string, number>();

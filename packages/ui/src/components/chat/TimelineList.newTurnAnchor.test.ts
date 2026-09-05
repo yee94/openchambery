@@ -75,6 +75,17 @@ describe('TimelineList new-turn anchor contracts', () => {
         expect(source).toContain('if (now < parkAnimatingUntilRef.current) return false;');
     });
 
+    test('leaving the primary transcript delayed-clears the remount latch', () => {
+        const lifetime = messageListSource.indexOf('if (!enableSendPark) return;');
+        expect(lifetime).toBeGreaterThan(-1);
+        const body = messageListSource.slice(
+            lifetime,
+            messageListSource.indexOf('const stableGetAnimationHandlers', lifetime),
+        );
+        expect(body).toContain('queueMicrotask(() => {');
+        expect(body).toContain('clearConsumedUserSendAnimation(sessionKey)');
+    });
+
     test('MessageList latches the send onto a reserved turn before paint', () => {
         expect(messageListSource).toContain('resolveConsumedSendMessageId({');
         expect(messageListSource).toContain('resolveNextAnchoredUserMessageId({');

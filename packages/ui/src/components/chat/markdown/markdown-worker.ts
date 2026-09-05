@@ -1,5 +1,6 @@
 import MarkdownShikiWorkerUrl from './markdown-shiki.worker.ts?worker&url';
 import type {
+  MarkdownParsedBlock,
   MarkdownTokenRun,
   MarkdownWorkerJobRequest,
   MarkdownWorkerPriority,
@@ -170,6 +171,64 @@ export const highlightLinesInWorker = (
   },
   options?.signal,
 );
+
+const weighParsedBlocks = (blocks: MarkdownParsedBlock[]): number => (
+  blocks.reduce((total, block) => total + (block.id.length + block.html.length) * 2, 0)
+);
+
+const parseMemo = new HighlightMemo<MarkdownParsedBlock[]>({
+  maxEntries: 64,
+  maxBytes: 8 * 1024 * 1024,
+  weigh: weighParsedBlocks,
+});
+
+const parseCacheKey = (
+  payload: string,
+  streaming: boolean,
+  highlight: boolean,
+  highlightLineLimit: number,
+): string => `${streaming ? 1 : 0}:${highlight ? 1 : 0}:${highlightLineLimit}:${payload}`;
+
+export type ParseMarkdownInWorkerInput = MarkdownWorkerRequestOptions & {
+  streaming: boolean;
+  highlight?: boolean;
+  highlightLineLimit: number;
+  text?: string;
+  blocks?: Array<{ raw: string; src: string; mode: 'full' | 'live'; highlight: boolean }>;
+};
+
+/**
+ * Segment, heal, parse, and highlight closed fences in the worker. Resolves to
+ * unsanitized per-block HTML, or `null` so the caller can fall back on-main.
+ */
+export const parseMarkdownInWorker = (
+  options: ParseMarkdownInWorkerInput,
+): Promise<MarkdownParsedBlock[] | null> => {
+  const payload = options.blocks && options.blocks.length > 0
+    ? options.blocks.map((block) => `${block.mode}:${block.highlight ? 1 : 0}:${block.src}`).join('\u0000')
+    : options.text ?? '';
+  return parseMemo.run(
+    parseCacheKey(payload, options.streaming, options.highlight !== false, options.highlightLineLimit),
+    async (signal) => {
+      const response = await request(
+        (id, priority) => ({
+          type: 'parse',
+          id,
+          streaming: options.streaming,
+          highlight: options.highlight !== false,
+          highlightLineLimit: options.highlightLineLimit,
+          priority,
+          ...(options.blocks && options.blocks.length > 0
+            ? { blocks: options.blocks }
+            : { text: options.text ?? '' }),
+        }),
+        { ...options, signal },
+      );
+      return response?.type === 'parse' ? response.blocks : null;
+    },
+    options.signal,
+  );
+};
 
 /**
  * Tokenize `code` with the given resolved TextMate theme and return per-line

@@ -7,6 +7,9 @@ import type {
 const matchesQuery = (query: string, ...values: Array<string | undefined>): boolean =>
   values.some((value) => value?.toLowerCase().includes(query));
 
+const catalogForSearch = (worktree: MobileWorktreeGroup): MobileSessionTreeNode[] =>
+  worktree.catalogSessions ?? worktree.sessions;
+
 /** Flat match only — mobile home never surfaces nested subagents. */
 const filterSessions = (
   sessions: MobileSessionTreeNode[],
@@ -20,18 +23,19 @@ const filterWorktree = (
   worktree: MobileWorktreeGroup,
   query: string,
 ): MobileWorktreeGroup | null => {
+  const catalog = catalogForSearch(worktree);
   if (matchesQuery(query, worktree.name, worktree.path)) {
     return {
       ...worktree,
-      sessions: worktree.sessions.filter((session) => session.kind !== 'pagination'),
+      sessions: catalog.filter((session) => session.kind !== 'pagination'),
     };
   }
 
-  const sessions = filterSessions(worktree.sessions, query);
+  const sessions = filterSessions(catalog, query);
   return sessions.length > 0 ? { ...worktree, sessions } : null;
 };
 
-/** One bounded tree pass for the visible mobile catalog whenever the query changes. */
+/** One bounded tree pass over the unpaginated mobile catalog whenever the query changes. */
 export const filterMobileProjectsForSearch = (
   projects: MobileProjectHomeItem[],
   rawQuery: string,

@@ -22,6 +22,17 @@ const parsePushUnsubscribeBody = (body) => {
   return { endpoint: endpoint.trim() };
 };
 
+const MAX_LIVE_ACTIVITY_TOKEN_LENGTH = 512;
+const MAX_LIVE_ACTIVITY_ACTIVITY_ID_LENGTH = 128;
+const MAX_LIVE_ACTIVITY_SESSION_ID_LENGTH = 128;
+
+const parseLimitedPushId = (value, maxLength) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > maxLength) return '';
+  return trimmed;
+};
+
 export const NOTIFICATION_SSE_HEARTBEAT_INTERVAL_MS = 20_000;
 
 export const registerNotificationRoutes = (app, dependencies) => {
@@ -37,6 +48,8 @@ export const registerNotificationRoutes = (app, dependencies) => {
     removePushSubscription,
     addOrUpdateApnsToken,
     removeApnsToken,
+    addOrUpdateLiveActivityToken,
+    removeLiveActivityToken,
     updateUiVisibility,
     clearPendingPushBadge,
     isUiVisible,
@@ -184,6 +197,48 @@ export const registerNotificationRoutes = (app, dependencies) => {
 
     if (typeof removeApnsToken === 'function') {
       await removeApnsToken(uiToken, deviceToken);
+    }
+    return res.json({ ok: true });
+  });
+
+  app.post('/api/push/live-activity-token', async (req, res) => {
+    await ensureSessionWatcher();
+
+    const uiToken = uiAuthController?.ensureSessionToken
+      ? await uiAuthController.ensureSessionToken(req, res)
+      : getUiSessionTokenFromRequest(req);
+    if (!uiToken) {
+      return res.status(401).json({ error: 'UI session missing' });
+    }
+
+    const token = parseLimitedPushId(req.body?.token, MAX_LIVE_ACTIVITY_TOKEN_LENGTH);
+    const activityId = parseLimitedPushId(req.body?.activityId, MAX_LIVE_ACTIVITY_ACTIVITY_ID_LENGTH);
+    const sessionId = parseLimitedPushId(req.body?.sessionId, MAX_LIVE_ACTIVITY_SESSION_ID_LENGTH);
+    if (!token || !activityId || !sessionId) {
+      return res.status(400).json({ error: 'Invalid body' });
+    }
+
+    if (typeof addOrUpdateLiveActivityToken === 'function') {
+      await addOrUpdateLiveActivityToken(uiToken, token, activityId, sessionId);
+    }
+    return res.json({ ok: true });
+  });
+
+  app.delete('/api/push/live-activity-token', async (req, res) => {
+    const uiToken = uiAuthController?.ensureSessionToken
+      ? await uiAuthController.ensureSessionToken(req, res)
+      : getUiSessionTokenFromRequest(req);
+    if (!uiToken) {
+      return res.status(401).json({ error: 'UI session missing' });
+    }
+
+    const token = parseLimitedPushId(req.body?.token, MAX_LIVE_ACTIVITY_TOKEN_LENGTH);
+    if (!token) {
+      return res.status(400).json({ error: 'Invalid body' });
+    }
+
+    if (typeof removeLiveActivityToken === 'function') {
+      await removeLiveActivityToken(uiToken, token);
     }
     return res.json({ ok: true });
   });

@@ -71,6 +71,16 @@ export const buildRelayConfig = (parsed = {}, env = process.env) => {
 
 const helpText = 'Usage: openchamber-relay [--host HOST] [--port PORT] [--path PATH] [--public-url WS_URL] [--trust-proxy] [--json] [--quiet]\nEnable --trust-proxy only when public ingress reaches this relay through a trusted reverse proxy.\n';
 const writeJson = (stdout, payload) => stdout.write(`${JSON.stringify(payload)}\n`);
+const hasPushApnsEnv = (env) => {
+  for (const [key, value] of Object.entries(env ?? {})) {
+    if (key.startsWith('OPENCHAMBER_PUSH_RELAY_APNS_') && typeof value === 'string' && value.trim().length > 0) return true;
+  }
+  return false;
+};
+const loadCombinedPushMount = async () => {
+  // Computed specifier keeps bun --compile from bundling Push/SQLite into the Layer 1 binary.
+  return (await import(['.', 'push', 'combined.js'].join('/'))).createCombinedPushMount;
+};
 
 export const runRelayServerCli = async (argv, dependencies = {}) => {
   const processLike = dependencies.process ?? process; const stdout = dependencies.stdout ?? process.stdout; const stderr = dependencies.stderr ?? process.stderr; const version = dependencies.version ?? '0.0.0';
@@ -87,15 +97,24 @@ export const runRelayServerCli = async (argv, dependencies = {}) => {
   let config;
   try { config = buildRelayConfig(parsed, processLike.env ?? {}); } catch (error) { respond({ status: 'error', error: error.message, message: error.message }, true); processLike.exitCode = 1; return 1; }
   try {
+    const env = processLike.env ?? {};
+    const createPushMount = dependencies.createPushMount ?? (
+      hasPushApnsEnv(env) ? await loadCombinedPushMount() : () => null
+    );
+    const mount = createPushMount(env, dependencies.pushMountDeps ?? {});
+    if (mount) config.requestHandler = mount.requestHandler;
     const relay = await (dependencies.start ?? startPrivateRelayServer)(config);
+    if (mount) await mount.start();
     const url = config.publicUrl ?? relay.wsUrl;
-    respond(json ? { status: 'ok', url, host: config.host, port: relay.address?.()?.port ?? config.port, path: config.path } : { message: `Relay listening at ${url}` });
+    respond(json ? { status: 'ok', url, host: config.host, port: relay.address?.()?.port ?? config.port, path: config.path, ...(mount ? { push: true } : {}) } : { message: `Relay listening at ${url}` });
+    if (mount && !json) respond({ message: 'Push relay mounted at /v1/push/*' });
     let stopping = false;
     const stop = async () => {
       if (stopping) return Promise.resolve();
       stopping = true;
       processLike.off?.('SIGINT', stop); processLike.off?.('SIGTERM', stop);
       try {
+        if (mount) await mount.stop();
         await relay.stop();
         processLike.exit?.(0);
       } catch {

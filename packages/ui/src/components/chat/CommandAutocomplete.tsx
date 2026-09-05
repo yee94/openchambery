@@ -19,6 +19,10 @@ import { useUIStore } from '@/stores/useUIStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
 import { shouldSubmitCommandOnSelection } from './commandSelection';
+import {
+  composerAutocompleteRowClassName,
+  composerAutocompleteSurfaceClassName,
+} from './composerAutocompleteChrome';
 
 type CommandSource = 'openchamber' | 'opencode' | 'skill';
 
@@ -449,7 +453,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   return (
     <div
       ref={containerRef}
-      className="absolute z-[100] min-w-0 w-full max-w-[450px] max-h-64 bg-background border-2 border-border/60 rounded-xl shadow-none bottom-full mb-2 left-0 flex flex-col"
+      className={composerAutocompleteSurfaceClassName(isMobile, 'max-w-[450px] max-h-64')}
       style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}
     >
       <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 pb-2">
@@ -469,7 +473,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                   className={cn(
                     "flex gap-2 px-3 py-2 cursor-pointer rounded-lg",
                     isMobile ? "items-center" : "items-start",
-                    index === selectedIndex && "bg-interactive-selection"
+                    composerAutocompleteRowClassName(isMobile, index === selectedIndex),
                   )}
                   // Block the focus transfer the tap would perform: the textarea
                   // must stay focused so selecting a command doesn't dismiss the

@@ -726,7 +726,7 @@ export function ScheduledTaskEditorDialog(props: {
   presentation?: 'dialog' | 'panel' | 'mobile-panel' | 'mobile-tab';
   onDirtyChange?: (dirty: boolean) => void;
   onRun?: (task: ScheduledTask) => Promise<void>;
-  onOpenLatestSession?: (task: ScheduledTask) => Promise<void>;
+  onOpenTaskHistory?: (task: ScheduledTask) => void;
   onDelete?: (task: ScheduledTask) => Promise<void>;
   onToggleEnabled?: (task: ScheduledTask, enabled: boolean) => Promise<void>;
   actionBusy?: boolean;
@@ -742,7 +742,7 @@ export function ScheduledTaskEditorDialog(props: {
     presentation = 'dialog',
     onDirtyChange,
     onRun,
-    onOpenLatestSession,
+    onOpenTaskHistory,
     onDelete,
     onToggleEnabled,
     actionBusy = false,
@@ -1809,16 +1809,7 @@ export function ScheduledTaskEditorDialog(props: {
     </div>
   );
 
-  const canOpenLatestSession = Boolean(
-    task
-    && onOpenLatestSession
-    && (
-      task.state?.lastSessionId
-      || task.state?.lastStatus === 'success'
-      || task.state?.lastStatus === 'error'
-      || task.state?.lastStatus === 'running'
-    )
-  );
+  const canOpenTaskHistory = Boolean(task && onOpenTaskHistory);
   const editorOverflowMenu = task && onDelete && onRun ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1838,10 +1829,10 @@ export function ScheduledTaskEditorDialog(props: {
           <Icon name="play" className="size-4" />
           {t('sessions.scheduledTasks.dialog.actions.runNow')}
         </DropdownMenuItem>
-        {canOpenLatestSession ? (
-          <DropdownMenuItem className={cn(mobileTab && 'min-h-11')} onSelect={() => void onOpenLatestSession?.(task)}>
+        {canOpenTaskHistory ? (
+          <DropdownMenuItem className={cn(mobileTab && 'min-h-11')} onSelect={() => onOpenTaskHistory?.(task)}>
             <Icon name="history" className="size-4" />
-            {t('sessions.scheduledTasks.history.openSession')}
+            {t('sessions.scheduledTasks.workspace.views.history')}
           </DropdownMenuItem>
         ) : null}
         {onToggleEnabled ? (
@@ -1961,7 +1952,7 @@ export function ScheduledTaskEditorDialog(props: {
           backDisabled={saving}
           trailing={editorOverflowMenu}
         />
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-4">
+        <div className="oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pt-4">
           <Input
             value={draft.name}
             onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}

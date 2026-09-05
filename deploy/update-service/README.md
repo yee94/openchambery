@@ -121,8 +121,11 @@ the update. Do not invent a GitHub URL on the client.
 
 Relative `bundle.url` values are resolved to absolute URLs against the request origin.
 When `primaryAction` is `apply_ota`, the handler loads `/CHANGELOG.md` from the same
-origin and attaches filtered `releaseNotes` (same extraction as `/v1/update/check`).
-Missing or empty changelog content omits the field.
+origin as the channel manifest and attaches filtered `releaseNotes` (same extraction
+as `/v1/update/check`). On EdgeOne that origin is the Vercel host — same-origin
+CHANGELOG is either a reverse-proxied fetch loop or a git-time static file that
+stops before the current OTA range, which omits `releaseNotes`. Missing or empty
+changelog content omits the field.
 
 `isChannelRollback` is present (and `true`) only when all of the following hold:
 request `channel` is `stable`, device `currentBundleId` is a prerelease (contains `-`,

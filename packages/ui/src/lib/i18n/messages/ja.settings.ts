@@ -217,6 +217,8 @@ export const settingsDict = {
   'settings.remoteInstances.clientAuth.addDevice.relayUrlHint': 'OpenChamber 公式 Relay を使用するか、独自の ws:// または wss:// エンドポイントを入力します。端末は QR コード内のエンドポイントを保存します。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink': '自分の Relay をデプロイできます。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint': 'このサーバーでは OPENCHAMBER_RELAY_URL により Relay エンドポイントが固定されています。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint': '接続先ホストにより設定されます。ペアリングにはそのホストの現在の Relay エンドポイントを使用します。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption': 'カスタムエンドポイント…',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid': 'ws:// または wss:// で始まる有効な Relay エンドポイントを入力してください。',
   'settings.remoteInstances.clientAuth.addDevice.create': 'QRコードを作成',
   'settings.remoteInstances.clientAuth.addDevice.targetLabel': '対象インスタンス',

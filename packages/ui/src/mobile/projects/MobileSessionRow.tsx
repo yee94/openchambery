@@ -3,6 +3,7 @@ import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
+import { renderHighlightedText } from '@/components/session/sidebar/utils';
 import { Button } from '@/components/ui/button';
 import {
   createMobileLongPressController,
@@ -67,6 +68,8 @@ export type MobileSessionRowProps = {
   onOpenActions: (session: MobileSessionRowModel) => void;
   indicator?: MobileSessionIndicator;
   className?: string;
+  /** Substring to wrap in `<mark>` — same helper as the desktop sidebar. */
+  highlightQuery?: string;
 };
 
 export function MobileSessionRow({
@@ -82,6 +85,7 @@ export function MobileSessionRow({
   onOpenActions,
   indicator,
   className,
+  highlightQuery,
 }: MobileSessionRowProps) {
   const { t } = useI18n();
   const [offset, setOffset] = React.useState(0);
@@ -399,12 +403,14 @@ export function MobileSessionRow({
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex min-w-0 items-center gap-1.5">
               <span className={cn('oc-mobile-session-title truncate', session.unread ? 'font-semibold' : 'font-medium')}>
-                {session.title}
+                {highlightQuery ? renderHighlightedText(session.title, highlightQuery) : session.title}
               </span>
               {session.archived ? <Icon name="archive" className="size-3 shrink-0 text-muted-foreground" aria-hidden /> : null}
             </span>
             {session.subtitle ? (
-              <span className="oc-mobile-session-subtitle truncate text-muted-foreground">{session.subtitle}</span>
+              <span className="oc-mobile-session-subtitle truncate text-muted-foreground">
+                {highlightQuery ? renderHighlightedText(session.subtitle, highlightQuery) : session.subtitle}
+              </span>
             ) : null}
           </span>
 

@@ -473,7 +473,7 @@ node scripts/mobile-ota/rollout.mjs --action promote-channel --from beta --to st
 - 检查端点对加密 bundle 同时返回 `session_key` 与 `sessionKey` 两个键：Android 解析 `sessionKey`，iOS 解析 `session_key`。
 - 回滚加密 bundle 属于已知限制：回滚 zip 只能携带明文摘要，配置了公钥的壳无法校验，会自动回退到上一个成功 bundle。
 - zip **必须 < 24 MiB**；超限失败并提示迁移 COS。CI 只部署 Vercel（权威源）；EdgeOne（`openchamber.xiaobe.top`，国内入口）由 git 自动部署 + 边缘反向代理跟随 Vercel，无需 CI 双发。服务端 bundle 分发支持 HTTP Range 断点续传（EdgeOne 代理已透传 `Range` / `Content-Range`，部分响应不落边缘缓存）。
-- 反向代理路径为**白名单**：`/ota/channels/*.json`、`/ota/bundles/*.zip`、`/CHANGELOG.md`。前两者是 OTA 快照，第三者承载客户端更新日志——CHANGELOG 若不经代理，EdgeOne 就会一直吐自己 git 部署时的旧文件，客户端更新对话框的「更新内容」会整段消失（按分支发版时必现，因为 `main` 上没有那些段落）。代理路径必须精确匹配，不能放宽成通配符。
+- 反向代理路径为**白名单**：`/ota/channels/*.json`、`/ota/bundles/*.zip`、`/CHANGELOG.md`。前两者是 OTA 快照，第三者供直接 GET。EdgeOne 的 `POST /v1/mobile/update/check` 必须从 Vercel 源拉 CHANGELOG（与 channel manifest 同一 `manifestBaseUrl`），不能读本机 `/CHANGELOG.md`：本机文件若仍是 git 部署静态资源，过滤区间对不上当前 OTA，更新对话框的「更新内容」会整段消失。代理路径必须精确匹配，不能放宽成通配符。
 - EdgeOne 构建**不得**输出静态 `CHANGELOG.md`（`OPENCHAMBER_UPDATE_SKIP_CHANGELOG_COPY=1`，已写进 `deploy/update-service/edgeone.json`）：EdgeOne 上静态资源会遮蔽同名 edge function，输出了静态文件代理就永远不生效。Vercel 仍需静态文件，它是权威源。
 
 ### 通道隔离保证

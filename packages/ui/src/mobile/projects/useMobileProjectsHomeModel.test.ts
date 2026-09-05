@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest';
 import type { Session } from '@opencode-ai/sdk/v2';
 
 import {
-  listInProgressHomeSessions,
+  formatHomeSessionSubtitle,
   listProjectAreaRootSessions,
 } from './useMobileProjectsHomeModel';
 
@@ -57,40 +57,6 @@ describe('listProjectAreaRootSessions', () => {
   });
 });
 
-describe('listInProgressHomeSessions', () => {
-  test('keeps pinned sessions out and orders running plus unread by activity', () => {
-    const active = listInProgressHomeSessions(
-      [
-        session('pinned-running', { updated: 50 }),
-        session('running', { updated: 20 }),
-        session('unread', { updated: 40 }),
-        session('idle', { updated: 90 }),
-        session('child-unread', { parentID: 'unread', updated: 80 }),
-        session('archived-unread', { updated: 70, archived: 2 }),
-      ],
-      new Set(['pinned-running']),
-      new Set(['pinned-running', 'running']),
-      { unread: 1, 'child-unread': 1, 'archived-unread': 1 },
-    );
-
-    expect(active.map((entry) => entry.id)).toEqual(['unread', 'running']);
-  });
-
-  test('includes a running child even when the parent is idle', () => {
-    const active = listInProgressHomeSessions(
-      [
-        session('parent', { updated: 10 }),
-        session('child', { parentID: 'parent', updated: 11 }),
-      ],
-      new Set(),
-      new Set(['child']),
-      {},
-    );
-
-    expect(active.map((entry) => entry.id)).toEqual(['child']);
-  });
-});
-
 describe('useMobileProjectsHomeModel shared pin contract', () => {
   test('reuses sidebar ownership, pinned derivation, and omit-pinned tree', () => {
     expect(modelSource).toContain('createSessionOwnershipIndex');
@@ -98,9 +64,20 @@ describe('useMobileProjectsHomeModel shared pin contract', () => {
     expect(modelSource).toContain('listInProgressHomeSessions');
     expect(modelSource).toContain('omitPinnedSessions: true');
     expect(modelSource).toContain('listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds)');
+    expect(modelSource).toContain('catalogSessions: catalogRoots.map(toNode)');
+    expect(modelSource).toContain('omitPinnedSessions: false');
   });
 
-  test('keeps project subtitles on pinned rows and leaves attention rows one-line', () => {
-    expect(modelSource).toContain('subtitle: pinned ? project.label : undefined');
+  test('uses a shared project · branch subtitle for pinned and in-progress rows', () => {
+    expect(modelSource).toContain('formatHomeSessionSubtitle(project.label, worktree?.branch)');
+    expect(modelSource).not.toContain('subtitle: pinned ? project.label : undefined');
+  });
+});
+
+describe('formatHomeSessionSubtitle', () => {
+  test('joins project and branch, and falls back to the project label', () => {
+    expect(formatHomeSessionSubtitle('openchamber', 'feat/home')).toBe('openchamber · feat/home');
+    expect(formatHomeSessionSubtitle('openchamber', '  ')).toBe('openchamber');
+    expect(formatHomeSessionSubtitle('openchamber', null)).toBe('openchamber');
   });
 });

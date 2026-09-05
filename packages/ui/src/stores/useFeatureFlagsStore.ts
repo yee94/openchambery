@@ -1,16 +1,20 @@
 import { create } from 'zustand';
 
 // Timeline engine selection is read from localStorage at boot so a device build
-// can be A/B tested without reinstalling: set `oc:legend-timeline` to `0` to
-// fall back to the TanStack + auto-follow engine.
-const LEGEND_TIMELINE_STORAGE_KEY = 'oc:legend-timeline';
+// can be A/B tested without reinstalling. TanStack is the runtime default.
+// Set `oc:legend-timeline` to `1` to opt into LegendList; any other value
+// (unset, `0`, empty) stays on TanStack + auto-follow.
+export const LEGEND_TIMELINE_STORAGE_KEY = 'oc:legend-timeline';
 
-const readLegendTimelineEnabled = (): boolean => {
+export const readLegendTimelineEnabled = (
+  storage?: Pick<Storage, 'getItem'> | null,
+): boolean => {
   try {
-    if (typeof localStorage === 'undefined') return true;
-    return localStorage.getItem(LEGEND_TIMELINE_STORAGE_KEY) !== '0';
+    const store = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+    if (!store) return false;
+    return store.getItem(LEGEND_TIMELINE_STORAGE_KEY) === '1';
   } catch {
-    return true;
+    return false;
   }
 };
 

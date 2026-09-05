@@ -184,6 +184,8 @@ export const settingsDict = {
   'settings.remoteInstances.clientAuth.addDevice.relayUrlHint': '使用 OpenChamber 官方 Relay，或输入你自己的 ws:// 或 wss:// 地址。设备会保存二维码中的该地址。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink': '可部署自己的 Relay 服务。',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint': '此服务器已通过 OPENCHAMBER_RELAY_URL 固定 Relay 地址。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint': '由所连主机决定，配对将使用该主机当前的 Relay 地址。',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption': '自定义地址…',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid': '请输入以 ws:// 或 wss:// 开头的有效 Relay 地址。',
   'settings.remoteInstances.clientAuth.addDevice.create': '创建二维码',
   'settings.remoteInstances.clientAuth.addDevice.targetLabel': '目标实例',

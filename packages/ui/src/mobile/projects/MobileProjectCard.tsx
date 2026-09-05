@@ -3,6 +3,7 @@ import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
+import { renderHighlightedText } from '@/components/session/sidebar/utils';
 import { Button } from '@/components/ui/button';
 import {
   createMobileLongPressController,
@@ -33,6 +34,7 @@ export type MobileProjectCardProps = {
   onToggle: (project: MobileProjectCardModel) => void;
   onOpenActions?: (project: MobileProjectCardModel) => void;
   className?: string;
+  highlightQuery?: string;
 };
 
 const TONE_STYLES: Record<MobileProjectTone, React.CSSProperties | undefined> = {
@@ -64,6 +66,7 @@ export function MobileProjectCard({
   onToggle,
   onOpenActions,
   className,
+  highlightQuery,
 }: MobileProjectCardProps) {
   const { t } = useI18n();
   const [pressed, setPressed] = React.useState(false);
@@ -156,9 +159,9 @@ export function MobileProjectCard({
 
           <span className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="flex min-w-0 items-center gap-2">
-              <span className="oc-mobile-project-title oc-mobile-entity-title truncate font-semibold text-foreground">
-                {project.name}
-              </span>
+               <span className="oc-mobile-project-title oc-mobile-entity-title truncate font-semibold text-foreground">
+                 {highlightQuery ? renderHighlightedText(project.name, highlightQuery) : project.name}
+               </span>
               {project.active ? (
                 <span
                   className="size-2 shrink-0 rounded-full bg-[var(--status-success)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--status-success)_12%,transparent)]"

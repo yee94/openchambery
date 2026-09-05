@@ -409,6 +409,35 @@ test('manifestBaseUrl override loads manifests from the Vercel origin while bund
   assert.equal(body.ota.bundle.url, 'https://updates.example.com/ota/bundles/34ab092a8e7f6d21.zip');
 });
 
+test('manifestBaseUrl override loads CHANGELOG from the same origin as manifests', async () => {
+  const requests = stubChannel({
+    manifest: channelManifest(),
+    changelog: [
+      '# Changelog',
+      '',
+      '## [1.18.2-beta.23] - 2026-08-20',
+      '',
+      '- OTA bundle fix',
+    ].join('\n'),
+  });
+  const response = await handleMobileUpdateCheck(mobileRequest(validBody), {
+    manifestBaseUrl: 'https://openchamber-update.vercel.app',
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'apply_ota');
+  assert.equal(
+    body.releaseNotes,
+    '## [1.18.2-beta.23] - 2026-08-20\n\n- OTA bundle fix',
+  );
+  assert.ok(requests.includes('https://openchamber-update.vercel.app/CHANGELOG.md'));
+  assert.equal(
+    requests.some((href) => href.includes('updates.example.com/CHANGELOG.md')),
+    false,
+  );
+});
+
 test('answers CORS preflight for mobile update check', async () => {
   const optionsResponse = await handleMobileUpdateCheck(
     new Request('https://updates.example.com/v1/mobile/update/check', { method: 'OPTIONS' }),

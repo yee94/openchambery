@@ -21,16 +21,27 @@ import {
   normalizeApnsLocale,
 } from './apns-titles.js';
 
-const APNS_TOKENS_VERSION = 1;
+const APNS_TOKENS_VERSION = 2;
+const APNS_TOKENS_SUPPORTED_VERSIONS = new Set([1, APNS_TOKENS_VERSION]);
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
 // APNs rejects auth tokens older than 1h; refresh well inside that window.
 const JWT_TTL_MS = 50 * 60 * 1000;
 const DEFAULT_BUNDLE_ID = 'com.yee94.openchamber';
 const MAX_TOKENS_PER_SESSION = 10;
+const MAX_LIVE_ACTIVITY_TOKENS_PER_SESSION = 8;
+const MAX_LIVE_ACTIVITY_TOKEN_CHARS = 512;
+const MAX_LIVE_ACTIVITY_ID_CHARS = 128;
+const LIVE_ACTIVITY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS = 15 * 60;
+const LIVE_ACTIVITY_ERROR_DISMISSAL_SECONDS = 60 * 60;
+const LIVE_ACTIVITY_STALE_SECONDS = 20 * 60;
 const MAX_RELAY_SEND_TOKENS = 100;
 const RELAY_REGISTER_CONCURRENCY = 16;
 const APNS_COLLAPSE_ID_MAX_BYTES = 64;
+const LIVE_ACTIVITY_KIND = 'liveactivity';
+const LIVE_ACTIVITY_PLATFORM = 'ios';
+const LIVE_ACTIVITY_TERMINAL_STATUSES = new Set(['complete', 'error']);
 // APNs reasons that mean the token is permanently invalid → drop it.
 const DEAD_TOKEN_REASONS = new Set(['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic']);
 
@@ -82,6 +93,8 @@ export const createApnsRuntime = (deps) => {
   let warnedUnconfigured = false;
   let registrationSuccessCache = new Map();
   let registrationCacheRegisterUrl = null;
+  let liveActivityRegistrationSuccessCache = new Map();
+  let liveActivityRegistrationCacheRegisterUrl = null;
 
   // ---------------------------------------------------------------------------
   // Per-server relay signing identity (ECDSA P-256). Auto-generated + persisted in settings
@@ -116,6 +129,18 @@ export const createApnsRuntime = (deps) => {
     registrationSuccessCache = new Map();
     registrationCacheRegisterUrl = registerUrl;
   };
+
+  const rememberLiveActivityRelayRegisterUrl = (registerUrl) => {
+    if (liveActivityRegistrationCacheRegisterUrl === registerUrl) return;
+    liveActivityRegistrationSuccessCache = new Map();
+    liveActivityRegistrationCacheRegisterUrl = registerUrl;
+  };
+
+  const liveActivityRegistrationCacheKey = (registerUrl, token) =>
+    `${registerUrl}\0${token}\0${LIVE_ACTIVITY_PLATFORM}\0${LIVE_ACTIVITY_KIND}`;
+
+  const isLimitedId = (value, maxChars) =>
+    typeof value === 'string' && value.length > 0 && value.length <= maxChars;
 
   const boundRegistrationCache = (registerUrl, entries) => {
     rememberRelayRegisterUrl(registerUrl);
@@ -155,22 +180,111 @@ export const createApnsRuntime = (deps) => {
     }
   };
 
+  const registerLiveActivityTokenWithRelay = async (token, relayOverride) => {
+    const relay = relayOverride ?? (await resolveRelayConfig());
+    if (!relay) return true;
+    rememberLiveActivityRelayRegisterUrl(relay.liveActivityRegisterUrl);
+    const cacheKey = liveActivityRegistrationCacheKey(relay.liveActivityRegisterUrl, token);
+    if (liveActivityRegistrationSuccessCache.has(cacheKey)) return true;
+    try {
+      const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
+      const ts = Date.now();
+      const sig = signRelayMessage(
+        privateKey,
+        `${ts}.${token}.${LIVE_ACTIVITY_PLATFORM}.${LIVE_ACTIVITY_KIND}`,
+      );
+      const res = await fetch(relay.liveActivityRegisterUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          platform: LIVE_ACTIVITY_PLATFORM,
+          kind: LIVE_ACTIVITY_KIND,
+          publicKeyJwk: relayPublicJwk(publicJwk),
+          ts,
+          sig,
+        }),
+      });
+      if (!res.ok) {
+        console.warn(`[Push relay] register-live-activity-token failed status=${res.status}`);
+        return false;
+      }
+      liveActivityRegistrationSuccessCache.set(cacheKey, true);
+      return true;
+    } catch (error) {
+      console.warn('[Push relay] register-live-activity-token request failed:', error?.message ?? error);
+      return false;
+    }
+  };
+
+  const unregisterLiveActivityTokenWithRelay = async (token) => {
+    const relay = await resolveRelayConfig();
+    if (!relay || !isLimitedId(token, MAX_LIVE_ACTIVITY_TOKEN_CHARS)) return;
+    rememberLiveActivityRelayRegisterUrl(relay.liveActivityRegisterUrl);
+    liveActivityRegistrationSuccessCache.delete(
+      liveActivityRegistrationCacheKey(relay.liveActivityRegisterUrl, token),
+    );
+    try {
+      const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
+      const ts = Date.now();
+      const sig = signRelayMessage(
+        privateKey,
+        `${ts}.${token}.${LIVE_ACTIVITY_PLATFORM}.${LIVE_ACTIVITY_KIND}`,
+      );
+      const res = await fetch(relay.liveActivityUnregisterUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          platform: LIVE_ACTIVITY_PLATFORM,
+          kind: LIVE_ACTIVITY_KIND,
+          publicKeyJwk: relayPublicJwk(publicJwk),
+          ts,
+          sig,
+        }),
+      });
+      if (!res.ok) {
+        console.warn(`[Push relay] unregister-live-activity-token failed status=${res.status}`);
+      }
+    } catch (error) {
+      console.warn('[Push relay] unregister-live-activity-token request failed:', error?.message ?? error);
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // Token persistence (same shape + write-lock pattern as push-runtime.js)
   // ---------------------------------------------------------------------------
 
-  const emptyStore = () => ({ version: APNS_TOKENS_VERSION, tokensBySession: {} });
+  const emptyStore = () => ({
+    version: APNS_TOKENS_VERSION,
+    tokensBySession: {},
+    liveActivityTokensBySession: {},
+    liveActivityEventVersions: {},
+  });
 
   const readTokensFromDisk = async () => {
     try {
       const raw = await fsPromises.readFile(APNS_TOKENS_FILE_PATH, 'utf8');
       const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object' || parsed.version !== APNS_TOKENS_VERSION) {
+      if (!parsed || typeof parsed !== 'object' || !APNS_TOKENS_SUPPORTED_VERSIONS.has(parsed.version)) {
         return emptyStore();
       }
       const tokensBySession =
         parsed.tokensBySession && typeof parsed.tokensBySession === 'object' ? parsed.tokensBySession : {};
-      return { version: APNS_TOKENS_VERSION, tokensBySession };
+      const liveActivityTokensBySession =
+        parsed.liveActivityTokensBySession && typeof parsed.liveActivityTokensBySession === 'object'
+          ? parsed.liveActivityTokensBySession
+          : {};
+      const liveActivityEventVersions =
+        parsed.liveActivityEventVersions && typeof parsed.liveActivityEventVersions === 'object'
+          ? parsed.liveActivityEventVersions
+          : {};
+      return {
+        version: APNS_TOKENS_VERSION,
+        tokensBySession,
+        liveActivityTokensBySession,
+        liveActivityEventVersions,
+      };
     } catch (error) {
       if (error && typeof error === 'object' && error.code === 'ENOENT') {
         return emptyStore();
@@ -188,9 +302,21 @@ export const createApnsRuntime = (deps) => {
   const persistTokenUpdate = async (mutate) => {
     persistLock = persistLock.then(async () => {
       const current = await readTokensFromDisk();
-      const next = mutate({ version: APNS_TOKENS_VERSION, tokensBySession: current.tokensBySession || {} });
-      await writeTokensToDisk(next);
-      return next;
+      const base = {
+        version: APNS_TOKENS_VERSION,
+        tokensBySession: current.tokensBySession || {},
+        liveActivityTokensBySession: current.liveActivityTokensBySession || {},
+        liveActivityEventVersions: current.liveActivityEventVersions || {},
+      };
+      const next = mutate(base);
+      const written = {
+        version: APNS_TOKENS_VERSION,
+        tokensBySession: next.tokensBySession || {},
+        liveActivityTokensBySession: next.liveActivityTokensBySession ?? base.liveActivityTokensBySession,
+        liveActivityEventVersions: next.liveActivityEventVersions ?? base.liveActivityEventVersions,
+      };
+      await writeTokensToDisk(written);
+      return written;
     });
     return persistLock;
   };
@@ -214,6 +340,44 @@ export const createApnsRuntime = (deps) => {
         };
       })
       .filter(Boolean);
+  };
+
+  const normalizeLiveActivityTokens = (record, now = Date.now()) => {
+    if (!Array.isArray(record)) return [];
+    return record
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const token = typeof entry.token === 'string' ? entry.token.trim() : '';
+        const activityId = typeof entry.activityId === 'string' ? entry.activityId.trim() : '';
+        const sessionId = typeof entry.sessionId === 'string' ? entry.sessionId.trim() : '';
+        if (!isLimitedId(token, MAX_LIVE_ACTIVITY_TOKEN_CHARS)) return null;
+        if (!isLimitedId(activityId, MAX_LIVE_ACTIVITY_ID_CHARS)) return null;
+        if (!isLimitedId(sessionId, MAX_LIVE_ACTIVITY_ID_CHARS)) return null;
+        const createdAt = typeof entry.createdAt === 'number' ? entry.createdAt : null;
+        const lastSeenAt = typeof entry.lastSeenAt === 'number' ? entry.lastSeenAt : createdAt;
+        if (typeof lastSeenAt === 'number' && now - lastSeenAt > LIVE_ACTIVITY_TOKEN_TTL_MS) return null;
+        return { token, activityId, sessionId, createdAt, lastSeenAt };
+      })
+      .filter(Boolean);
+  };
+
+  const pruneLiveActivityTokensBySession = (liveActivityTokensBySession, now = Date.now()) => {
+    const next = {};
+    for (const [uiSessionToken, record] of Object.entries(liveActivityTokensBySession || {})) {
+      const entries = normalizeLiveActivityTokens(record, now);
+      if (entries.length > 0) next[uiSessionToken] = entries;
+    }
+    return next;
+  };
+
+  const countLiveActivityTokenCopies = (liveActivityTokensBySession, token) => {
+    let count = 0;
+    for (const record of Object.values(liveActivityTokensBySession || {})) {
+      for (const entry of record) {
+        if (entry?.token === token) count += 1;
+      }
+    }
+    return count;
   };
 
   // Normalize an incoming platform hint to the two we support; default to APNs/iOS since that
@@ -297,6 +461,89 @@ export const createApnsRuntime = (deps) => {
         else tokensBySession[session] = filtered;
       }
       return { version: APNS_TOKENS_VERSION, tokensBySession };
+    });
+  };
+
+  const addOrUpdateLiveActivityToken = async (uiSessionToken, token, activityId, sessionId) => {
+    if (!uiSessionToken) return;
+    const trimmedToken = typeof token === 'string' ? token.trim() : '';
+    const trimmedActivityId = typeof activityId === 'string' ? activityId.trim() : '';
+    const trimmedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    if (!isLimitedId(trimmedToken, MAX_LIVE_ACTIVITY_TOKEN_CHARS)) return;
+    if (!isLimitedId(trimmedActivityId, MAX_LIVE_ACTIVITY_ID_CHARS)) return;
+    if (!isLimitedId(trimmedSessionId, MAX_LIVE_ACTIVITY_ID_CHARS)) return;
+    const now = Date.now();
+    let replacedToken = null;
+
+    await persistTokenUpdate((current) => {
+      const liveActivityTokensBySession = pruneLiveActivityTokensBySession(
+        current.liveActivityTokensBySession,
+        now,
+      );
+      const existing = liveActivityTokensBySession[uiSessionToken] || [];
+      const replaced = existing.find((entry) => entry.activityId === trimmedActivityId);
+      if (replaced && replaced.token !== trimmedToken) replacedToken = replaced.token;
+      const filtered = existing.filter(
+        (entry) => entry.activityId !== trimmedActivityId && entry.token !== trimmedToken,
+      );
+      filtered.unshift({
+        token: trimmedToken,
+        activityId: trimmedActivityId,
+        sessionId: trimmedSessionId,
+        createdAt: typeof replaced?.createdAt === 'number' ? replaced.createdAt : now,
+        lastSeenAt: now,
+      });
+      liveActivityTokensBySession[uiSessionToken] = filtered.slice(0, MAX_LIVE_ACTIVITY_TOKENS_PER_SESSION);
+      return { ...current, liveActivityTokensBySession };
+    });
+
+    await registerLiveActivityTokenWithRelay(trimmedToken);
+    if (replacedToken) {
+      const store = await readTokensFromDisk();
+      if (countLiveActivityTokenCopies(store.liveActivityTokensBySession, replacedToken) === 0) {
+        await unregisterLiveActivityTokenWithRelay(replacedToken);
+      }
+    }
+  };
+
+  const removeLiveActivityToken = async (uiSessionToken, token) => {
+    if (!uiSessionToken || typeof token !== 'string' || token.length === 0) return;
+    let removed = false;
+    await persistTokenUpdate((current) => {
+      const liveActivityTokensBySession = pruneLiveActivityTokensBySession(
+        current.liveActivityTokensBySession,
+      );
+      const existing = liveActivityTokensBySession[uiSessionToken] || [];
+      const filtered = existing.filter((entry) => {
+        if (entry.token !== token) return true;
+        removed = true;
+        return false;
+      });
+      if (filtered.length === 0) delete liveActivityTokensBySession[uiSessionToken];
+      else liveActivityTokensBySession[uiSessionToken] = filtered;
+      return { ...current, liveActivityTokensBySession };
+    });
+    if (!removed) return;
+    const store = await readTokensFromDisk();
+    if (countLiveActivityTokenCopies(store.liveActivityTokensBySession, token) === 0) {
+      await unregisterLiveActivityTokenWithRelay(token);
+    }
+  };
+
+  const removeLiveActivityTokens = async (tokensToRemove) => {
+    const unique = [...new Set((tokensToRemove || []).filter((token) => typeof token === 'string' && token.length > 0))];
+    if (unique.length === 0) return;
+    const drop = new Set(unique);
+    await persistTokenUpdate((current) => {
+      const liveActivityTokensBySession = pruneLiveActivityTokensBySession(
+        current.liveActivityTokensBySession,
+      );
+      for (const [uiSessionToken, entries] of Object.entries(liveActivityTokensBySession)) {
+        const filtered = entries.filter((entry) => !drop.has(entry.token));
+        if (filtered.length === 0) delete liveActivityTokensBySession[uiSessionToken];
+        else liveActivityTokensBySession[uiSessionToken] = filtered;
+      }
+      return { ...current, liveActivityTokensBySession };
     });
   };
 
@@ -459,6 +706,9 @@ export const createApnsRuntime = (deps) => {
   const buildRelayConfig = (url) => ({
     url,
     registerUrl: url.replace(/\/send$/, '/register-token'),
+    liveActivityRegisterUrl: url.replace(/\/send$/, '/register-live-activity-token'),
+    liveActivityUnregisterUrl: url.replace(/\/send$/, '/unregister-live-activity-token'),
+    liveActivitySendUrl: url.replace(/\/send$/, '/live-activity'),
     environment:
       (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || 'sandbox').toLowerCase() === 'production'
         ? 'production'
@@ -578,6 +828,304 @@ export const createApnsRuntime = (deps) => {
     });
   };
 
+  const toLiveActivityUnixSeconds = (value, fallbackMs) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value > 1e12 ? value / 1000 : value;
+    }
+    return fallbackMs / 1000;
+  };
+
+  const nextLiveActivityEventVersion = (nowMs, previous, provided) => {
+    const prior = typeof previous === 'number' && Number.isFinite(previous) ? previous : 0;
+    let next = Math.max(Math.floor(nowMs), prior + 1);
+    if (typeof provided === 'number' && Number.isFinite(provided) && provided > 0) {
+      next = Math.max(next, Math.floor(provided));
+    }
+    return next;
+  };
+
+  const liveActivityDismissalDate = (status, nowMs) => {
+    const extra = status === 'error'
+      ? LIVE_ACTIVITY_ERROR_DISMISSAL_SECONDS
+      : LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS;
+    return Math.floor(nowMs / 1000) + extra;
+  };
+
+  // End carries dismissalDate only. Update (not sent here) would set staleDate = updatedAt+20min.
+  const liveActivityPushDates = (event, status, updatedAtSeconds, nowMs) => {
+    if (event === 'update') return { staleDate: updatedAtSeconds + LIVE_ACTIVITY_STALE_SECONDS };
+    return { dismissalDate: liveActivityDismissalDate(status, nowMs) };
+  };
+
+  const liveActivityRelaySignMessage = ({ ts, tokens, event, contentState, dismissalDate, staleDate }) => (
+    `${ts}.${[...tokens].sort().join(',')}.${event}.${contentState.status}.${contentState.eventVersion}.${contentState.updatedAt}.${contentState.endedAt ?? ''}.${dismissalDate ?? ''}.${staleDate ?? ''}`
+  );
+
+  const sendLiveActivityViaRelay = async (deviceTokens, payload, relay) => {
+    if (!Array.isArray(deviceTokens) || deviceTokens.length === 0) return [];
+    const accepted = [];
+    const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
+    for (let start = 0; start < deviceTokens.length; start += MAX_RELAY_SEND_TOKENS) {
+      const tokens = deviceTokens.slice(start, start + MAX_RELAY_SEND_TOKENS);
+      const ts = Date.now();
+      const sig = signRelayMessage(
+        privateKey,
+        liveActivityRelaySignMessage({
+          ts,
+          tokens,
+          event: payload.event,
+          contentState: payload.contentState,
+          dismissalDate: payload.dismissalDate,
+          staleDate: payload.staleDate,
+        }),
+      );
+      const requestBody = {
+        tokens,
+        event: payload.event,
+        contentState: payload.contentState,
+        env: relay.environment,
+        publicKeyJwk: relayPublicJwk(publicJwk),
+        ts,
+        sig,
+      };
+      if (payload.dismissalDate != null) requestBody.dismissalDate = payload.dismissalDate;
+      if (payload.staleDate != null) requestBody.staleDate = payload.staleDate;
+      try {
+        const res = await fetch(relay.liveActivitySendUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+        if (!res.ok) {
+          console.warn(`[APNs relay] live-activity send failed status=${res.status}`);
+          continue;
+        }
+        accepted.push(...tokens);
+        const data = await res.json().catch(() => null);
+        const results = Array.isArray(data?.results) ? data.results : [];
+        for (const result of results) {
+          if (result && result.drop === true && typeof result.token === 'string') {
+            await removeLiveActivityTokens([result.token]);
+          }
+        }
+      } catch (error) {
+        console.warn('[APNs relay] live-activity request failed:', error?.message ?? error);
+      }
+    }
+    return accepted;
+  };
+
+  const sendLiveActivityOne = (client, deviceToken, body, jwt, config) =>
+    new Promise((resolve) => {
+      const headers = {
+        ':method': 'POST',
+        ':path': `/3/device/${deviceToken}`,
+        authorization: `bearer ${jwt}`,
+        'apns-topic': `${config.bundleId}.push-type.liveactivity`,
+        'apns-push-type': 'liveactivity',
+        'apns-priority': '10',
+      };
+
+      let req;
+      try {
+        req = client.request(headers);
+      } catch (error) {
+        console.warn('[APNs] live-activity request open failed:', error?.message ?? error);
+        resolve({ token: deviceToken, accepted: false });
+        return;
+      }
+
+      let status = 0;
+      let responseBody = '';
+      req.on('response', (resHeaders) => {
+        status = Number(resHeaders[':status']) || 0;
+      });
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => {
+        responseBody += chunk;
+      });
+      req.on('end', async () => {
+        if (status === 200) {
+          resolve({ token: deviceToken, accepted: true });
+          return;
+        }
+        let reason = '';
+        try {
+          reason = JSON.parse(responseBody)?.reason || '';
+        } catch {
+          // non-JSON error body
+        }
+        if (status === 410 || DEAD_TOKEN_REASONS.has(reason)) {
+          await removeLiveActivityTokens([deviceToken]);
+        } else {
+          console.warn(`[APNs] live-activity push failed status=${status} reason=${reason || 'unknown'}`);
+        }
+        resolve({ token: deviceToken, accepted: false });
+      });
+      req.on('error', (error) => {
+        console.warn('[APNs] live-activity request error:', error?.message ?? error);
+        resolve({ token: deviceToken, accepted: false });
+      });
+      req.end(body);
+    });
+
+  const buildLiveActivityDirectBody = (payload) => {
+    const aps = {
+      timestamp: Math.floor(Date.now() / 1000),
+      event: payload.event,
+      'content-state': {
+        status: payload.contentState.status,
+        eventVersion: payload.contentState.eventVersion,
+        updatedAt: payload.contentState.updatedAt,
+        endedAt: payload.contentState.endedAt,
+      },
+    };
+    if (payload.dismissalDate != null) aps['dismissal-date'] = payload.dismissalDate;
+    if (payload.staleDate != null) aps['stale-date'] = payload.staleDate;
+    return JSON.stringify({ aps });
+  };
+
+  const sendLiveActivityViaDirectApns = async (deviceTokens, payload) => {
+    if (!Array.isArray(deviceTokens) || deviceTokens.length === 0) return [];
+    const config = await resolveApnsConfig();
+    if (!config) {
+      if (!warnedUnconfigured) {
+        warnedUnconfigured = true;
+        console.warn(
+          '[APNs] Relay disabled and no direct config; set OPENCHAMBER_APNS_KEY_ID / OPENCHAMBER_APNS_TEAM_ID / OPENCHAMBER_APNS_P8 for direct send.',
+        );
+      }
+      return [];
+    }
+
+    const host = config.environment === 'production' ? APNS_HOST_PRODUCTION : APNS_HOST_SANDBOX;
+    const jwt = getJwt(config);
+    const body = buildLiveActivityDirectBody(payload);
+
+    let client;
+    try {
+      client = http2.connect(host);
+    } catch (error) {
+      console.warn('[APNs] live-activity connect failed:', error?.message ?? error);
+      return [];
+    }
+
+    const outcomes = await new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        try {
+          client.close();
+        } catch {
+          // ignore close errors
+        }
+        resolve(value);
+      };
+      client.on('error', (error) => {
+        console.warn('[APNs] live-activity session error:', error?.message ?? error);
+        finish([]);
+      });
+      Promise.all(
+        deviceTokens.map((token) => sendLiveActivityOne(client, token, body, jwt, config)),
+      ).then((results) => finish(results), () => finish([]));
+    });
+
+    return (outcomes || []).filter((result) => result?.accepted).map((result) => result.token);
+  };
+
+  const collectLiveActivityEntriesForSession = (store, sessionId, now = Date.now()) => {
+    const entries = [];
+    const seen = new Set();
+    for (const record of Object.values(pruneLiveActivityTokensBySession(store.liveActivityTokensBySession, now))) {
+      for (const entry of record) {
+        if (entry.sessionId !== sessionId || seen.has(entry.token)) continue;
+        seen.add(entry.token);
+        entries.push(entry);
+      }
+    }
+    return entries;
+  };
+
+  const sendLiveActivityEnd = async ({ sessionId, status, eventVersion, endedAt } = {}) => {
+    const trimmedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    if (!isLimitedId(trimmedSessionId, MAX_LIVE_ACTIVITY_ID_CHARS)) return;
+    if (!LIVE_ACTIVITY_TERMINAL_STATUSES.has(status)) return;
+
+    const now = Date.now();
+    let pendingEntries = [];
+    let nextVersion = 0;
+    await persistTokenUpdate((current) => {
+      const liveActivityTokensBySession = pruneLiveActivityTokensBySession(
+        current.liveActivityTokensBySession,
+        now,
+      );
+      pendingEntries = collectLiveActivityEntriesForSession(
+        { liveActivityTokensBySession },
+        trimmedSessionId,
+        now,
+      );
+      if (pendingEntries.length === 0) {
+        return { ...current, liveActivityTokensBySession };
+      }
+      const previous = current.liveActivityEventVersions?.[trimmedSessionId];
+      nextVersion = nextLiveActivityEventVersion(now, previous, eventVersion);
+      return {
+        ...current,
+        liveActivityTokensBySession,
+        liveActivityEventVersions: {
+          ...(current.liveActivityEventVersions || {}),
+          [trimmedSessionId]: nextVersion,
+        },
+      };
+    });
+    if (pendingEntries.length === 0) return;
+
+    const updatedAt = now / 1000;
+    const endedAtSeconds = toLiveActivityUnixSeconds(endedAt, now);
+    const contentState = {
+      status,
+      eventVersion: nextVersion,
+      updatedAt,
+      endedAt: endedAtSeconds,
+    };
+    const payload = {
+      event: 'end',
+      contentState,
+      ...liveActivityPushDates('end', status, updatedAt, now),
+    };
+
+    const tokens = pendingEntries.map((entry) => entry.token);
+    let accepted = [];
+    try {
+      const relay = await resolveRelayConfig();
+      if (relay) {
+        rememberLiveActivityRelayRegisterUrl(relay.liveActivityRegisterUrl);
+        const outcomes = await mapWithBoundedConcurrency(
+          tokens,
+          RELAY_REGISTER_CONCURRENCY,
+          async (token) => {
+            const registered = await registerLiveActivityTokenWithRelay(token, relay);
+            return registered ? token : null;
+          },
+        );
+        const readyTokens = outcomes.filter((token) => typeof token === 'string');
+        if (readyTokens.length > 0) {
+          accepted = await sendLiveActivityViaRelay(readyTokens, payload, relay);
+        }
+      } else {
+        accepted = await sendLiveActivityViaDirectApns(tokens, payload);
+      }
+    } catch (error) {
+      console.warn('[Live Activity] end failed:', error?.message ?? error);
+      return;
+    }
+
+    if (accepted.length > 0) {
+      await removeLiveActivityTokens(accepted);
+    }
+  };
+
   // NOT gated on UI visibility (unlike web push). A backgrounded WKWebView can't reliably
   // report "hidden" before iOS suspends it, so a visibility gate wrongly suppressed
   // background push for short responses. Instead we always send, and rely on iOS to NOT
@@ -662,6 +1210,9 @@ export const createApnsRuntime = (deps) => {
     addOrUpdateApnsToken,
     removeApnsToken,
     removeApnsTokenFromAllSessions,
+    addOrUpdateLiveActivityToken,
+    removeLiveActivityToken,
+    sendLiveActivityEnd,
     sendApnsToAllUiSessions,
     reRegisterAllTokens,
     resolveApnsConfig,

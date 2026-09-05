@@ -390,6 +390,16 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     // hostEncPubJwk, priority }) when the host relay is enabled, else null.
     // Injected lazily because the relay service is constructed after these routes.
     getRelayPairingCandidate = async () => null,
+    // All configured relay endpoints (canonical ws(s)://…), primary first, or
+    // [] when relay status is unavailable. Gates remote-bearer pairing requests
+    // that carry a relayUrl: paired desktops may only use an endpoint the host
+    // already has (echo of any configured endpoint, never a re-point).
+    getEffectiveRelayUrls = async () => [],
+    // Candidates for EVERY configured relay endpoint (multi-relay), or null /
+    // a non-array when only the single-endpoint accessor is available. Feeds
+    // the connection-candidates refresh so paired devices learn the full
+    // reachable endpoint set.
+    getRelayPairingCandidates = async () => null,
     // Re-evaluate the relay lifecycle after pairing/device changes.
     reconcileRelay = async () => {},
     // Returns { local, lan, relayAvailable } — the direct transport URLs the
@@ -423,6 +433,15 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
       next(error);
     }
   };
+
+  // Which paired clients may act as operators of this server's device fleet:
+  // create pairing links, list every device, and revoke other devices. The
+  // desktop shell's local client is the in-process operator; a paired `desktop`
+  // client is granted the same trust at pairing time (parity with the SSH
+  // attach flow, where the connecting desktop authenticates as the operator).
+  // Mobile (and any other) paired clients stay scoped to their own record.
+  const canManageRemoteClients = (client) =>
+    client?.clientKind === 'desktop-local' || client?.clientKind === 'desktop';
 
   const runWithClientManagementAuth = async (req, res, next, handler) => {
     try {
@@ -458,7 +477,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
         }
         if (context?.type === 'client') {
           const client = await clientRecordFromAuthContext(context);
-          if (client?.clientKind === 'desktop-local') {
+          if (canManageRemoteClients(client)) {
             await handler({ ...context, client });
             return;
           }
@@ -779,10 +798,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     await runWithClientManagementAuth(req, res, next, async (authContext) => {
       if (authContext.type === 'client') {
         const client = await clientRecordFromAuthContext(authContext);
-        // The desktop shell's local client is the trusted operator of this
-        // server; it manages devices just like a browser UI session. Every
-        // other client token is scoped to its own record.
-        if (client?.clientKind !== 'desktop-local') {
+        // Operator clients (local desktop shell, paired desktops) manage the
+        // whole device fleet; every other client token is scoped to its own
+        // record.
+        if (!canManageRemoteClients(client)) {
           return res.json({ clients: client ? [client] : [] });
         }
       }
@@ -807,9 +826,9 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     await runWithClientManagementAuth(req, res, next, async (authContext) => {
       if (authContext.type === 'client') {
         const actingClient = await clientRecordFromAuthContext(authContext);
-        // The desktop shell's local client manages every device; other client
-        // tokens may only revoke themselves.
-        if (actingClient?.clientKind !== 'desktop-local') {
+        // Operator clients (local desktop shell, paired desktops) may revoke
+        // any device; other client tokens may only revoke themselves.
+        if (!canManageRemoteClients(actingClient)) {
           const clientId = clientIdFromAuthContext(authContext);
           if (!clientId || clientId !== req.params?.id) {
             return res.status(403).json({ revoked: false, error: 'Client tokens can only revoke themselves' });
@@ -829,9 +848,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     await runWithClientManagementAuth(req, res, next, async (authContext) => {
       if (authContext.type === 'client') {
         const actingClient = await clientRecordFromAuthContext(authContext);
-        // Purging revoked devices is a whole-server management action; only the
-        // trusted desktop shell client (or a UI session) may do it.
-        if (actingClient?.clientKind !== 'desktop-local') {
+        // Purging revoked devices is a whole-server management action; only
+        // operator clients (local desktop shell, paired desktops) or a UI
+        // session may do it.
+        if (!canManageRemoteClients(actingClient)) {
           return res.status(403).json({ purged: 0, error: 'Client tokens cannot purge revoked devices' });
         }
       }
@@ -843,21 +863,24 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/api/client-auth/pairing/sessions', express.json({ limit: '64kb' }), async (req, res, next) => {
     await runWithClientCreateAuth(req, res, next, async (authContext) => {
-      // Changing the Host Relay endpoint is an owner-UI or local desktop-shell
-      // action. Paired remote clients never reach this handler (create-auth only
-      // admits session + desktop-local); keep the kind check so a future auth
-      // widening cannot re-point the Host relay from a remote bearer.
-      if (req.body?.relayUrl !== undefined && authContext?.type === 'client') {
-        const actingClient = authContext.client || await clientRecordFromAuthContext(authContext);
-        if (actingClient?.clientKind !== 'desktop-local') {
-          return res.status(403).json({ error: 'Only the owner UI session can set a custom Relay endpoint' });
-        }
-      }
       const requestedRelayUrl = req.body?.relayUrl === undefined
         ? undefined
         : normalizeRequestedRelayUrl(req.body.relayUrl);
       if (req.body?.relayUrl !== undefined && !requestedRelayUrl) {
         return res.status(400).json({ error: 'Relay URL must use ws:// or wss://' });
+      }
+      // Changing the Host Relay endpoint set is an owner-UI or local
+      // desktop-shell action. Paired desktop operators reach this handler too,
+      // but may only name an endpoint the host already uses — anything else
+      // would re-point (or extend) the Host relay from a remote bearer.
+      if (requestedRelayUrl !== undefined && authContext?.type === 'client') {
+        const actingClient = authContext.client || await clientRecordFromAuthContext(authContext);
+        if (actingClient?.clientKind !== 'desktop-local') {
+          const effectiveRelayUrls = await getEffectiveRelayUrls();
+          if (!Array.isArray(effectiveRelayUrls) || !effectiveRelayUrls.includes(requestedRelayUrl)) {
+            return res.status(403).json({ error: 'Only the owner UI session can set a custom Relay endpoint' });
+          }
+        }
       }
       const candidates = await pairingServerCandidates(req, {
         preferredServerUrl: req.body?.serverUrl,
@@ -906,8 +929,18 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
         if (normalized) candidates.push({ type: 'lan', url: normalized, priority: 10 });
       }
       try {
-        const relayCandidate = await getRelayPairingCandidate({ ensureEnabled: false });
-        if (relayCandidate) candidates.push(relayCandidate);
+        // Multi-relay: a paired device learns EVERY configured endpoint so a
+        // lost/expensive domain can fall back to the other (the client still
+        // keeps its per-connection instance identity — serverId + relayUrl).
+        const relayCandidates = await getRelayPairingCandidates();
+        if (Array.isArray(relayCandidates)) {
+          for (const relayCandidate of relayCandidates) {
+            if (relayCandidate) candidates.push(relayCandidate);
+          }
+        } else {
+          const relayCandidate = await getRelayPairingCandidate({ ensureEnabled: false });
+          if (relayCandidate) candidates.push(relayCandidate);
+        }
       } catch {
         // Relay status failure must not break the direct-candidate refresh.
       }

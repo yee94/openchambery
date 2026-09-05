@@ -184,6 +184,8 @@ export const settingsDict = {
   'settings.remoteInstances.clientAuth.addDevice.relayUrlHint': 'OpenChamber 공식 Relay를 사용하거나 자체 ws:// 또는 wss:// 엔드포인트를 입력하세요. 기기는 QR 코드의 엔드포인트를 저장합니다.',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlDeployLink': '직접 Relay를 배포할 수 있습니다.',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint': '이 서버는 OPENCHAMBER_RELAY_URL로 Relay 엔드포인트를 고정합니다.',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlRemoteHostHint': '연결된 호스트가 설정합니다. 페어링은 해당 호스트의 현재 Relay 엔드포인트를 사용합니다.',
+  'settings.remoteInstances.clientAuth.addDevice.relayUrlCustomOption': '사용자 지정 엔드포인트…',
   'settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid': 'ws:// 또는 wss://로 시작하는 유효한 Relay 엔드포인트를 입력하세요.',
   'settings.remoteInstances.clientAuth.addDevice.create': 'QR 코드 만들기',
   'settings.remoteInstances.clientAuth.addDevice.targetLabel': '대상 인스턴스',

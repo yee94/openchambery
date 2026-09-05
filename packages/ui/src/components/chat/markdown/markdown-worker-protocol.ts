@@ -22,7 +22,27 @@ export type MarkdownWorkerJobRequest =
   // with offsets — for building CodeMirror decorations. `theme` (a resolved
   // TextMate theme object) is sent only the first time a theme name is used;
   // afterwards only `themeName` is sent and the worker reuses the loaded theme.
-  | { type: 'highlightTokens'; id: number; code: string; lang: string; themeName: string; theme?: unknown; priority: MarkdownWorkerPriority };
+  | { type: 'highlightTokens'; id: number; code: string; lang: string; themeName: string; theme?: unknown; priority: MarkdownWorkerPriority }
+  // Segment / heal / marked / math (+ closed-fence highlight) off the main thread.
+  // HTML is unsanitized; the caller runs DOMPurify before morphdom.
+  | {
+      type: 'parse';
+      id: number;
+      text?: string;
+      streaming: boolean;
+      highlight: boolean;
+      highlightLineLimit: number;
+      // Pre-segmented uncached blocks. Streaming sends only the live tail so
+      // leading cache hits never re-parse the whole message.
+      blocks?: Array<{ raw: string; src: string; mode: 'full' | 'live'; highlight: boolean }>;
+      priority: MarkdownWorkerPriority;
+    };
+
+export type MarkdownParsedBlock = {
+  id: string;
+  html: string;
+  highlight: boolean;
+};
 
 export type MarkdownWorkerRequest =
   | { type: 'init' }
@@ -33,4 +53,5 @@ export type MarkdownWorkerResponse =
   | { type: 'highlight'; id: number; html: string }
   | { type: 'highlightLines'; id: number; lines: string[] }
   | { type: 'highlightTokens'; id: number; lines: MarkdownTokenRun[][] }
+  | { type: 'parse'; id: number; blocks: MarkdownParsedBlock[] }
   | { type: 'error'; id: number; message: string };

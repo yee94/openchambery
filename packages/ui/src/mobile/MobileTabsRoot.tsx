@@ -33,7 +33,7 @@ export type MobileTabsRootProps = {
   secondaryPages?: readonly MobileSecondaryPage[];
   /** Controls whether this shell has a root dock at all. Push pages retain it underneath. */
   showTabBar?: boolean;
-  /** Keeps the retained dock non-interactive while an in-tab push page covers it. */
+  /** Hides the native iOS dock while an in-tab editor needs that slot. Web dock stays. */
   tabBarCovered?: boolean;
   className?: string;
 };
@@ -208,8 +208,8 @@ export function MobileTabsRoot({
       {showTabBar ? (
         <div
           data-mobile-navigation-dock-underlay="true"
-          aria-hidden={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}
-          inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}
+          aria-hidden={topSecondaryPage || nativeTabBarAdopted ? true : undefined}
+          inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}
         >
           {showWebTabBar ? (
             <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />

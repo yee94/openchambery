@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getDiffPatchEntries, getRenderablePatchInfo, getToolNavigationDiffEntries } from './toolDiffUtils';
+import { aggregateToolPartLineDiffTotals, getDiffPatchEntries, getRenderablePatchInfo, getToolNavigationDiffEntries, getToolPartLineDiffTotals } from './toolDiffUtils';
 
 const identity = (path: string) => path;
 
@@ -202,5 +202,28 @@ describe('toolDiffUtils', () => {
         );
 
         expect(entries).toEqual([]);
+    });
+
+    test('reads line totals from metadata, files, patch text, and write content', () => {
+        expect(getToolPartLineDiffTotals({
+            state: { metadata: { additions: '4', deletions: 2 } },
+        })).toEqual({ added: 4, removed: 2 });
+
+        expect(getToolPartLineDiffTotals({
+            state: { metadata: { files: [{ additions: 1, deletions: 3 }, { additions: 2 }] } },
+        })).toEqual({ added: 3, removed: 3 });
+
+        expect(getToolPartLineDiffTotals({
+            state: { metadata: { patch: '--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n' } },
+        })).toEqual({ added: 1, removed: 1 });
+
+        expect(getToolPartLineDiffTotals({
+            state: { input: { content: 'alpha\nbeta' } },
+        })).toEqual({ added: 2, removed: 0 });
+
+        expect(aggregateToolPartLineDiffTotals([
+            { state: { metadata: { additions: 1, deletions: 1 } } },
+            { state: { input: { content: 'only' } } },
+        ])).toEqual({ added: 2, removed: 1 });
     });
 });

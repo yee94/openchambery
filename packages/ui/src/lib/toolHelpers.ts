@@ -741,6 +741,11 @@ export function isPdfFile(filePath: string): boolean {
   return ext === 'pdf';
 }
 
+export function isHtmlFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  return ext === 'html' || ext === 'htm';
+}
+
 export function getImageMimeType(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase();
   const mimeMap: Record<string, string> = {

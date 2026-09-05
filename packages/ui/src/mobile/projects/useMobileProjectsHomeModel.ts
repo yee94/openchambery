@@ -26,7 +26,10 @@ import {
   mergeAlwaysVisibleSessionIds,
   useRunningSessionIds,
 } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
-import { derivePinnedSessions } from '@/components/session/sidebar/pinnedSessions';
+import {
+  derivePinnedSessions,
+  listInProgressHomeSessions,
+} from '@/components/session/sidebar/pinnedSessions';
 import { createSessionOwnershipIndex } from '@/components/session/sidebar/sessionOwnership';
 import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 import { buildSessionTree } from '@/components/session/sidebar/sessionTree';
@@ -144,6 +147,15 @@ const findExactWorktreeMatch = (
   project.worktrees.find((worktree) => normalizePath(worktree.path) === normalizedDirectory) ?? null
 );
 
+/** Shared "Project · branch" line for mixed pinned / in-progress home rows. */
+export const formatHomeSessionSubtitle = (
+  projectLabel: string,
+  branch?: string | null,
+): string => {
+  const trimmedBranch = branch?.trim();
+  return trimmedBranch ? `${projectLabel} · ${trimmedBranch}` : projectLabel;
+};
+
 export const listProjectAreaRootSessions = (
   sessions: Session[],
   pinnedSessionIds: ReadonlySet<string>,
@@ -152,28 +164,9 @@ export const listProjectAreaRootSessions = (
   omitPinnedSessions: true,
 }).map((node) => node.session);
 
-/**
- * Non-pinned home-attention rows: live busy/retry sessions, plus top-level
- * unread sessions (the blue completed-unread marker). Pinned ids stay in the
- * pinned group; archived sessions stay out of this ephemeral set.
- */
-export const listInProgressHomeSessions = (
-  sessions: Session[],
-  pinnedSessionIds: ReadonlySet<string>,
-  runningSessionIds: ReadonlySet<string>,
-  unseenBySession: Readonly<Record<string, number>>,
-): Session[] => {
-  const active: Session[] = [];
-  for (const session of sessions) {
-    if (pinnedSessionIds.has(session.id) || isSessionArchived(session)) continue;
-    const running = runningSessionIds.has(session.id);
-    const unread = (unseenBySession[session.id] ?? 0) > 0 && !getParentId(session);
-    if (!running && !unread) continue;
-    active.push(session);
-  }
-  active.sort((a, b) => getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a));
-  return active;
-};
+// Re-exported for existing mobile imports; the shared home/sidebar contract
+// lives next to derivePinnedSessions in the sidebar module.
+export { listInProgressHomeSessions };
 
 export type MobileProjectsHomeModel = {
   projects: MobileProjectHomeItem[];
@@ -350,11 +343,14 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
       const owner = ownership.bySessionId.get(session.id);
       const project = owner ? projectById.get(owner.projectId) : undefined;
       if (!project) return [];
+      const worktree = owner?.kind === 'worktree'
+        ? findExactWorktreeMatch(project, owner.scopeDirectory)
+        : null;
       return [{
         id: session.id,
         directory: getSessionDirectory(session),
         title: session.title?.trim() || untitled,
-        subtitle: pinned ? project.label : undefined,
+        subtitle: formatHomeSessionSubtitle(project.label, worktree?.branch),
         activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
         unread: (unseenBySession[session.id] ?? 0) > 0,
         pinned,
@@ -420,6 +416,12 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         // still walks allSessions. Pinned roots leave the project area the same
         // way the sidebar forest does: omit after parent/child attachment.
         const rootSessions = listProjectAreaRootSessions(bucket.sessions, pinnedSessionIds);
+        // Search must cover pinned roots too — they leave the project-area
+        // display list, and the pinned group is hidden while searching.
+        const catalogRoots = buildSessionTree(bucket.sessions, {
+          pinnedSessionIds,
+          omitPinnedSessions: false,
+        }).map((node) => node.session);
 
         const toNode = (session: Session): MobileSessionTreeNode => {
           const parentId = getParentId(session);
@@ -497,6 +499,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           expanded: isMainWorkspace ? true : worktreeExpanded,
           sessionCount: rootSessions.length,
           sessions: sessionsTree,
+          catalogSessions: catalogRoots.map(toNode),
         };
       });
 

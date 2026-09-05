@@ -38,6 +38,7 @@ export interface PushApnsSendInput {
   env: PushRelayEnv;
   payload: unknown;
   collapseId?: string;
+  pushType?: 'alert' | 'liveactivity';
 }
 
 export interface PushApnsSendResult {

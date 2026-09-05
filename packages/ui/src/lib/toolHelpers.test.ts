@@ -2,7 +2,16 @@ import { describe, expect, test } from 'bun:test';
 
 import { dict as enDict } from './i18n/messages/en';
 import { dict as zhCnDict } from './i18n/messages/zh-CN';
-import { canonicalizeBuiltInToolName, resolveToolDisplayName } from './toolHelpers';
+import { canonicalizeBuiltInToolName, isHtmlFile, resolveToolDisplayName } from './toolHelpers';
+
+describe('isHtmlFile', () => {
+  test('recognizes html and htm paths', () => {
+    expect(isHtmlFile('/tmp/report.html')).toBe(true);
+    expect(isHtmlFile('index.HTM')).toBe(true);
+    expect(isHtmlFile('/tmp/notes.md')).toBe(false);
+    expect(isHtmlFile('/tmp/page.html.bak')).toBe(false);
+  });
+});
 
 describe('resolveToolDisplayName', () => {
   test('canonicalizes indexed, dotted, and aliased built-in names', () => {

@@ -4,6 +4,7 @@ import type { IconName } from '@/components/icon/icons';
 import { parseCodeFenceInfo } from './codeFenceInfo';
 import { getMermaidViewerController } from './mermaidViewer';
 import { needsRuntimeImageStream, resolveImageSource } from '../imageSource';
+import { wrapMarkdownFileReferenceTokens } from '../fileReferenceDecorate';
 
 // ---------------------------------------------------------------------------
 // Shared decoration context
@@ -635,6 +636,7 @@ export const decorateMarkdown = (root: HTMLElement, ctx: DecorateContext): void 
   decorateTables(root);
   decorateLinks(root, ctx);
   decorateMarkdownImages(root, ctx);
+  wrapMarkdownFileReferenceTokens(root);
 };
 
 // ---------------------------------------------------------------------------

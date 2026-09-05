@@ -65,15 +65,16 @@ export const createApnsProvider = (options = {}) => {
     const jwt = getJwt(forceJwt);
     let client;
     try { client = getSession(input.env); } catch { resolve({ ok: false }); return; }
+    const liveActivity = input.pushType === 'liveactivity';
     const headers = {
       ':method': 'POST',
       ':path': `/3/device/${input.token}`,
       authorization: `bearer ${jwt}`,
-      'apns-topic': bundleId,
-      'apns-push-type': 'alert',
+      'apns-topic': liveActivity ? `${bundleId}.push-type.liveactivity` : bundleId,
+      'apns-push-type': liveActivity ? 'liveactivity' : 'alert',
       'apns-priority': '10',
     };
-    if (input.collapseId) headers['apns-collapse-id'] = input.collapseId;
+    if (!liveActivity && input.collapseId) headers['apns-collapse-id'] = input.collapseId;
     let req;
     try { req = client.request(headers); } catch {
       dropSession(input.env, client);

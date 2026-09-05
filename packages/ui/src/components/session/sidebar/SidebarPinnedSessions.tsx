@@ -23,6 +23,8 @@ type PinnedItem = {
 
 type Props = {
   items: PinnedItem[];
+  /** Unlabeled in-progress/unread rows rendered below the pinned rows. */
+  inProgressItems?: PinnedItem[];
   renderSessionNode: (
     node: SessionNode,
     depth?: number,
@@ -42,6 +44,7 @@ type Props = {
 
 export function SidebarPinnedSessions({
   items,
+  inProgressItems = [],
   renderSessionNode,
   currentSessionId,
   editingId,
@@ -56,17 +59,28 @@ export function SidebarPinnedSessions({
   ));
 
   React.useLayoutEffect(() => {
-    onVisibleSessionIdsChange?.(collapsed ? [] : items.map((item) => item.node.session.id));
-  }, [collapsed, items, onVisibleSessionIdsChange]);
+    if (collapsed) {
+      onVisibleSessionIdsChange?.([]);
+      return;
+    }
+    onVisibleSessionIdsChange?.([
+      ...items.map((item) => item.node.session.id),
+      ...inProgressItems.map((item) => item.node.session.id),
+    ]);
+  }, [collapsed, inProgressItems, items, onVisibleSessionIdsChange]);
 
   React.useLayoutEffect(() => {
-    if (pinnedFocusSessionId && items.some((item) => item.node.session.id === pinnedFocusSessionId)) {
+    if (
+      pinnedFocusSessionId
+      && (items.some((item) => item.node.session.id === pinnedFocusSessionId)
+        || inProgressItems.some((item) => item.node.session.id === pinnedFocusSessionId))
+    ) {
       setCollapsed(false);
     }
-  }, [items, pinnedFocusSessionId]);
+  }, [inProgressItems, items, pinnedFocusSessionId]);
 
   const getRenderExtras = React.useMemo(() => {
-    const nodes = items.map((item) => item.node);
+    const nodes = [...items, ...inProgressItems].map((item) => item.node);
     const subtreeContainsActive = new Set<string>();
     collectSubtreeContainingId(nodes, currentSessionId, subtreeContainsActive);
     const subtreeContainsEditing = new Set<string>();
@@ -94,11 +108,27 @@ export function SidebarPinnedSessions({
       nodeStructureKey: nodeStructureKeyByNode.get(node) ?? '',
       childRenderExtrasFor,
     });
-  }, [currentSessionId, editingId, items, openSidebarMenuKey]);
+  }, [currentSessionId, editingId, inProgressItems, items, openSidebarMenuKey]);
 
-  if (items.length === 0) {
+  if (items.length + inProgressItems.length === 0) {
     return null;
   }
+
+  const renderRows = (rows: PinnedItem[]): React.ReactNode =>
+    rows.map((item) => (
+      <React.Fragment key={`${item.projectId ?? ''}:${item.node.session.id}`}>
+        {renderSessionNode(
+          item.node,
+          0,
+          item.groupDirectory,
+          item.projectId,
+          false,
+          item.secondaryMeta,
+          'pinned',
+          getRenderExtras(item.node),
+        )}
+      </React.Fragment>
+    ));
 
   return (
     // Same grouping params as SidebarProjectsList so pinned ↔ project handoff
@@ -106,27 +136,19 @@ export function SidebarPinnedSessions({
     <TooltipProvider delay={0} closeDelay={150} timeout={600}>
     <div className="pb-1">
       <SidebarSectionHeader
-        title={t('directoryTree.section.pinned')}
+        title={
+          inProgressItems.length > 0
+            ? t('directoryTree.section.pinnedInProgress')
+            : t('directoryTree.section.pinned')
+        }
         onToggle={() => setCollapsed((value) => !value)}
         expanded={!collapsed}
         accessory={headerAccessory}
       />
       {!collapsed ? (
         <div className="space-y-0.5">
-          {items.map((item) => (
-            <React.Fragment key={`${item.projectId ?? ''}:${item.node.session.id}`}>
-              {renderSessionNode(
-                item.node,
-                0,
-                item.groupDirectory,
-                item.projectId,
-                false,
-                item.secondaryMeta,
-                'pinned',
-                getRenderExtras(item.node),
-              )}
-            </React.Fragment>
-          ))}
+          {renderRows(items)}
+          {renderRows(inProgressItems)}
         </div>
       ) : null}
     </div>

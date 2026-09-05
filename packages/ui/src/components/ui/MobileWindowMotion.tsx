@@ -384,7 +384,7 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
         onOpenChangeRef.current(false);
       }}
     >
-      <div ref={setSurfaceRef} tabIndex={-1} className={cn('oc-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
+      <div ref={setSurfaceRef} tabIndex={-1} className={cn('oc-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} data-oc-motion-id={id} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
         {children}
       </div>
     </div>

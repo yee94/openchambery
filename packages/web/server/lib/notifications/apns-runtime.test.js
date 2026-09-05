@@ -2,7 +2,10 @@ import crypto from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createApnsRuntime } from './apns-runtime.js';
+import { registerNotificationRoutes } from './routes.js';
 import { resolveEffectiveRelayUrl } from '../relay/service.js';
+import { createPushRelayServer } from '../../../../relay-server/src/push/index.js';
+import { createApnsProvider } from '../../../../relay-server/src/push/apns.js';
 
 // A real P-256 key so the ES256 signing path (direct mode) runs for real.
 const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -76,6 +79,7 @@ afterEach(() => {
   delete process.env.OPENCHAMBER_APNS_TEAM_ID;
   delete process.env.OPENCHAMBER_APNS_P8;
   delete process.env.OPENCHAMBER_APNS_BUNDLE_ID;
+  delete process.env.OPENCHAMBER_APNS_ENVIRONMENT;
 });
 
 describe('apns runtime bundle ID', () => {
@@ -639,5 +643,476 @@ describe('apns runtime push relay derivation and re-register', () => {
     const sent = JSON.parse(fetchMock.mock.calls.find(isSend)[1].body);
     expect(sent.title).toBe('Agent needs permission');
     expect(sent.body).toBe('S');
+  });
+});
+
+const isLiveActivityRegister = ([url]) => String(url).endsWith('/register-live-activity-token');
+const isLiveActivityUnregister = ([url]) => String(url).endsWith('/unregister-live-activity-token');
+const isLiveActivitySend = ([url]) => String(url).endsWith('/live-activity');
+
+const createRouteRegistry = () => {
+  const routes = new Map();
+  return {
+    app: {
+      get(routePath, handler) { routes.set(`GET ${routePath}`, handler); },
+      post(routePath, handler) { routes.set(`POST ${routePath}`, handler); },
+      delete(routePath, handler) { routes.set(`DELETE ${routePath}`, handler); },
+    },
+    getRoute(method, routePath) { return routes.get(`${method} ${routePath}`); },
+  };
+};
+
+const createMockRes = () => {
+  let statusCode = 200;
+  let body;
+  return {
+    status(code) { statusCode = code; return this; },
+    json(payload) { body = payload; return this; },
+    get statusCode() { return statusCode; },
+    get body() { return body; },
+  };
+};
+
+const leakedWarnText = (warn) => warn.mock.calls.map((args) => args.map(String).join(' ')).join('\n');
+
+describe('apns live activity token store', () => {
+  it('migrates v1 alert-token files without dropping existing device tokens', async () => {
+    const fsPromises = createMemoryFs();
+    await fsPromises.writeFile('/tmp/apns-tokens.json', JSON.stringify({
+      version: 1,
+      tokensBySession: {
+        s1: [{ deviceToken: 'alert-token', createdAt: 1, lastSeenAt: 1, platform: 'ios' }],
+      },
+    }));
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const runtime = createApnsRuntime(makeDeps({ fsPromises }));
+
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
+    const store = JSON.parse(await fsPromises.readFile('/tmp/apns-tokens.json'));
+    expect(store.version).toBe(2);
+    expect(store.tokensBySession.s1[0].deviceToken).toBe('alert-token');
+    expect(store.liveActivityTokensBySession.s1).toEqual([
+      expect.objectContaining({ token: 'la-token', activityId: 'act-1', sessionId: 'ses_1' }),
+    ]);
+
+    fetchMock.mockClear();
+    await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
+    expect(JSON.parse(fetchMock.mock.calls.find(isSend)[1].body).tokens).toEqual(['alert-token']);
+  });
+
+  it('registers idempotently and replaces the token for the same activity', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const deps = makeDeps();
+    const runtime = createApnsRuntime(deps);
+
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token-a', 'act-1', 'ses_1');
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token-a', 'act-1', 'ses_1');
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token-b', 'act-1', 'ses_1');
+
+    const store = JSON.parse(await deps.fsPromises.readFile('/tmp/apns-tokens.json'));
+    expect(store.liveActivityTokensBySession.s1).toHaveLength(1);
+    expect(store.liveActivityTokensBySession.s1[0].token).toBe('la-token-b');
+
+    const unregisterCalls = fetchMock.mock.calls.filter(isLiveActivityUnregister);
+    expect(unregisterCalls).toHaveLength(1);
+    const unreg = JSON.parse(unregisterCalls[0][1].body);
+    expect(unreg.token).toBe('la-token-a');
+    expect(unreg.platform).toBe('ios');
+    expect(unreg.kind).toBe('liveactivity');
+    expect(await verifyRelaySignature(
+      unreg.publicKeyJwk,
+      `${unreg.ts}.${unreg.token}.${unreg.platform}.${unreg.kind}`,
+      unreg.sig,
+    )).toBe(true);
+
+    fetchMock.mockClear();
+    await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'complete' });
+    const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(sent.tokens).toEqual(['la-token-b']);
+  });
+
+  it('refuses to unregister a token owned by a different UI session', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateLiveActivityToken('owner', 'la-token', 'act-1', 'ses_1');
+
+    fetchMock.mockClear();
+    await runtime.removeLiveActivityToken('other', 'la-token');
+    expect(fetchMock.mock.calls.filter(isLiveActivityUnregister)).toHaveLength(0);
+
+    await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'complete' });
+    expect(JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body).tokens).toEqual(['la-token']);
+  });
+
+  it('caps live activity tokens per UI session and lazily expires stale entries', async () => {
+    const fsPromises = createMemoryFs();
+    const now = Date.now();
+    await fsPromises.writeFile('/tmp/apns-tokens.json', JSON.stringify({
+      version: 2,
+      tokensBySession: {},
+      liveActivityTokensBySession: {
+        s1: [{
+          token: 'expired-token',
+          activityId: 'act-old',
+          sessionId: 'ses_old',
+          createdAt: now - 48 * 60 * 60 * 1000,
+          lastSeenAt: now - 48 * 60 * 60 * 1000,
+        }],
+      },
+      liveActivityEventVersions: {},
+    }));
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const runtime = createApnsRuntime(makeDeps({ fsPromises }));
+
+    for (let i = 0; i < 9; i += 1) {
+      await runtime.addOrUpdateLiveActivityToken('s1', `la-token-${i}`, `act-${i}`, `ses_${i}`);
+    }
+    const store = JSON.parse(await fsPromises.readFile('/tmp/apns-tokens.json'));
+    expect(store.liveActivityTokensBySession.s1).toHaveLength(8);
+    expect(store.liveActivityTokensBySession.s1.some((entry) => entry.token === 'expired-token')).toBe(false);
+    expect(store.liveActivityTokensBySession.s1.some((entry) => entry.token === 'la-token-0')).toBe(false);
+    expect(store.liveActivityTokensBySession.s1[0].token).toBe('la-token-8');
+  });
+});
+
+describe('apns live activity routes', () => {
+  const register = (overrides = {}) => {
+    const { app, getRoute } = createRouteRegistry();
+    const addOrUpdateLiveActivityToken = vi.fn(async () => {});
+    const removeLiveActivityToken = vi.fn(async () => {});
+    registerNotificationRoutes(app, {
+      getUiSessionTokenFromRequest: () => 'ui-token',
+      addOrUpdateLiveActivityToken,
+      removeLiveActivityToken,
+      ...overrides,
+    });
+    return { getRoute, addOrUpdateLiveActivityToken, removeLiveActivityToken };
+  };
+
+  it('rejects missing UI auth with the apns-token error shape', async () => {
+    const { getRoute, addOrUpdateLiveActivityToken, removeLiveActivityToken } = register({
+      getUiSessionTokenFromRequest: () => null,
+    });
+    const postRes = createMockRes();
+    await getRoute('POST', '/api/push/live-activity-token')({ body: { token: 't', activityId: 'a', sessionId: 's' } }, postRes);
+    expect(postRes.statusCode).toBe(401);
+    expect(postRes.body).toEqual({ error: 'UI session missing' });
+    const delRes = createMockRes();
+    await getRoute('DELETE', '/api/push/live-activity-token')({ body: { token: 't' } }, delRes);
+    expect(delRes.statusCode).toBe(401);
+    expect(delRes.body).toEqual({ error: 'UI session missing' });
+    expect(addOrUpdateLiveActivityToken).not.toHaveBeenCalled();
+    expect(removeLiveActivityToken).not.toHaveBeenCalled();
+  });
+
+  it('rejects overlong or incomplete bodies', async () => {
+    const { getRoute, addOrUpdateLiveActivityToken, removeLiveActivityToken } = register();
+    const postRes = createMockRes();
+    await getRoute('POST', '/api/push/live-activity-token')({ body: { token: 't', activityId: 'a' } }, postRes);
+    expect(postRes.statusCode).toBe(400);
+    expect(postRes.body).toEqual({ error: 'Invalid body' });
+
+    const longRes = createMockRes();
+    await getRoute('POST', '/api/push/live-activity-token')({
+      body: { token: 't'.repeat(513), activityId: 'act', sessionId: 'ses' },
+    }, longRes);
+    expect(longRes.statusCode).toBe(400);
+
+    const delRes = createMockRes();
+    await getRoute('DELETE', '/api/push/live-activity-token')({ body: {} }, delRes);
+    expect(delRes.statusCode).toBe(400);
+    expect(addOrUpdateLiveActivityToken).not.toHaveBeenCalled();
+    expect(removeLiveActivityToken).not.toHaveBeenCalled();
+  });
+
+  it('registers and unregisters through the owning UI session', async () => {
+    const { getRoute, addOrUpdateLiveActivityToken, removeLiveActivityToken } = register();
+    const postRes = createMockRes();
+    await getRoute('POST', '/api/push/live-activity-token')({
+      body: { token: ' la-token ', activityId: ' act-1 ', sessionId: ' ses_1 ' },
+    }, postRes);
+    expect(postRes.body).toEqual({ ok: true });
+    expect(addOrUpdateLiveActivityToken).toHaveBeenCalledWith('ui-token', 'la-token', 'act-1', 'ses_1');
+
+    const delRes = createMockRes();
+    await getRoute('DELETE', '/api/push/live-activity-token')({ body: { token: 'la-token' } }, delRes);
+    expect(delRes.body).toEqual({ ok: true });
+    expect(removeLiveActivityToken).toHaveBeenCalledWith('ui-token', 'la-token');
+  });
+});
+
+describe('apns live activity relay and direct delivery', () => {
+  it('sends a signed end payload without sessionId or user content, then drops local tokens', async () => {
+    const fetchMock = vi.fn(async (url) =>
+      String(url).endsWith('/register-live-activity-token') || String(url).endsWith('/live-activity')
+        ? jsonResponse({ ok: true, results: [] })
+        : jsonResponse({ ok: true, results: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = createApnsRuntime(makeDeps());
+    const sessionId = 'ses_secret_session';
+    const token = 'secret-la-token-xyz';
+    try {
+      await runtime.addOrUpdateLiveActivityToken('s1', token, 'act-1', sessionId);
+      await runtime.addOrUpdateApnsToken('s1', 'alert-token');
+
+      fetchMock.mockClear();
+      const before = Date.now();
+      await runtime.sendLiveActivityEnd({ sessionId, status: 'complete' });
+      const after = Date.now();
+
+      expect(fetchMock.mock.calls.filter(isSend)).toHaveLength(0);
+      const sendCall = fetchMock.mock.calls.find(isLiveActivitySend);
+      expect(sendCall[0]).toBe('https://relay.test/v1/push/live-activity');
+      const sent = JSON.parse(sendCall[1].body);
+      expect(sent.tokens).toEqual([token]);
+      expect(sent.event).toBe('end');
+      expect(Object.keys(sent.contentState).sort()).toEqual(['endedAt', 'eventVersion', 'status', 'updatedAt']);
+      expect(sent.contentState.status).toBe('complete');
+      expect(sent.contentState.eventVersion).toBeGreaterThanOrEqual(Math.floor(before));
+      expect(sent.contentState.eventVersion).toBeLessThanOrEqual(after);
+      expect(sent.dismissalDate).toBeGreaterThanOrEqual(Math.floor(before / 1000) + 15 * 60);
+      expect(sent.dismissalDate).toBeLessThanOrEqual(Math.floor(after / 1000) + 15 * 60);
+      expect(sent.staleDate).toBeUndefined();
+      expect(sent).not.toHaveProperty('title');
+      expect(sent).not.toHaveProperty('body');
+      expect(sent).not.toHaveProperty('data');
+      expect(JSON.stringify(sent)).not.toContain(sessionId);
+      expect(JSON.stringify(sent)).not.toContain('alert');
+      expect(await verifyRelaySignature(
+        sent.publicKeyJwk,
+        `${sent.ts}.${[...sent.tokens].sort().join(',')}.${sent.event}.${sent.contentState.status}.${sent.contentState.eventVersion}.${sent.contentState.updatedAt}.${sent.contentState.endedAt ?? ''}.${sent.dismissalDate ?? ''}.${sent.staleDate ?? ''}`,
+        sent.sig,
+      )).toBe(true);
+
+      expect(leakedWarnText(warn)).not.toContain(token);
+      expect(leakedWarnText(warn)).not.toContain(sessionId);
+
+      fetchMock.mockClear();
+      await runtime.sendLiveActivityEnd({ sessionId, status: 'complete' });
+      expect(fetchMock.mock.calls.filter(isLiveActivitySend)).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('uses a 60-minute dismissal for error ends', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
+    const before = Date.now();
+    await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'error' });
+    const after = Date.now();
+    const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(sent.contentState.status).toBe('error');
+    expect(sent.dismissalDate).toBeGreaterThanOrEqual(Math.floor(before / 1000) + 60 * 60);
+    expect(sent.dismissalDate).toBeLessThanOrEqual(Math.floor(after / 1000) + 60 * 60);
+  });
+
+  it('forwards OPENCHAMBER_APNS_ENVIRONMENT=production as env on live-activity relay send', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.OPENCHAMBER_APNS_ENVIRONMENT = 'production';
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
+    fetchMock.mockClear();
+    await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'complete' });
+    const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(sent.env).toBe('production');
+  });
+
+  it('keeps tokens after a failed relay end so a later attempt can retry', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).endsWith('/live-activity')) return jsonResponse({ error: true }, 500);
+      return jsonResponse({ ok: true, results: [] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = createApnsRuntime(makeDeps());
+    try {
+      await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
+      await runtime.addOrUpdateApnsToken('s1', 'alert-token');
+      fetchMock.mockClear();
+      await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'complete' });
+      expect(fetchMock.mock.calls.filter(isLiveActivitySend)).toHaveLength(1);
+
+      fetchMock.mockClear();
+      await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b' });
+      expect(JSON.parse(fetchMock.mock.calls.find(isSend)[1].body).tokens).toEqual(['alert-token']);
+
+      fetchMock.mockImplementation(async () => jsonResponse({ ok: true, results: [] }));
+      fetchMock.mockClear();
+      await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'complete' });
+      expect(JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body).tokens).toEqual(['la-token']);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('sends direct live-activity headers without mixing alert tokens', async () => {
+    process.env.OPENCHAMBER_PUSH_RELAY_DISABLED = 'true';
+    const captured = [];
+    const http2 = {
+      connect: () => ({
+        on: () => {},
+        close: () => {},
+        request: (headers) => {
+          const listeners = {};
+          const req = {
+            on: (event, cb) => { listeners[event] = cb; return req; },
+            setEncoding: () => req,
+            end: (body) => {
+              captured.push({ headers, body });
+              queueMicrotask(() => {
+                listeners.response?.({ ':status': '200' });
+                listeners.end?.();
+              });
+            },
+          };
+          return req;
+        },
+      }),
+    };
+    const runtime = createApnsRuntime(
+      makeDeps({ http2, readSettingsFromDiskMigrated: vi.fn(async () => ({ apnsConfig: APNS_CONFIG })) }),
+    );
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_secret');
+    await runtime.addOrUpdateApnsToken('s1', 'alert-token');
+
+    captured.length = 0;
+    await runtime.sendLiveActivityEnd({ sessionId: 'ses_secret', status: 'complete' });
+    expect(captured).toHaveLength(1);
+    expect(captured[0].headers[':path']).toBe('/3/device/la-token');
+    expect(captured[0].headers['apns-topic']).toBe('com.openchamber.app.push-type.liveactivity');
+    expect(captured[0].headers['apns-push-type']).toBe('liveactivity');
+    expect(captured[0].headers.authorization).toMatch(/^bearer /);
+    const body = JSON.parse(captured[0].body);
+    expect(body.aps.event).toBe('end');
+    expect(body.aps.alert).toBeUndefined();
+    expect(body.aps['content-state'].status).toBe('complete');
+    expect(JSON.stringify(body)).not.toContain('ses_secret');
+    expect(JSON.stringify(body)).not.toContain('alert-token');
+
+    captured.length = 0;
+    await runtime.sendApnsToAllUiSessions({ title: 't', body: 'b', tag: 'ready-x' });
+    expect(captured).toHaveLength(1);
+    expect(captured[0].headers[':path']).toBe('/3/device/alert-token');
+    expect(captured[0].headers['apns-push-type']).toBe('alert');
+    expect(captured[0].headers['apns-topic']).toBe('com.openchamber.app');
+  });
+});
+
+describe('apns live activity host-relay compatibility', () => {
+  const LIVE_ACTIVITY_BUNDLE_ID = 'com.yee94.openchamber';
+  let pushServer;
+
+  afterEach(async () => {
+    await pushServer?.stop();
+    pushServer = undefined;
+  });
+
+  it('registers through an injected-provider push relay, ends with liveactivity topic, and clears the token', async () => {
+    const sessionId = 'ses_secret_session_id';
+    const token = crypto.createHash('sha256').update('host-relay-live-activity-e2e').digest('hex');
+    const apnsCalls = [];
+    const sent = [];
+    const http2 = {
+      connect() {
+        return {
+          closed: false,
+          on() { return this; },
+          close() { this.closed = true; },
+          request(headers) {
+            const listeners = {};
+            const req = {
+              on(event, cb) { listeners[event] = cb; return req; },
+              close() {},
+              end(body) {
+                apnsCalls.push({ headers, body });
+                queueMicrotask(() => {
+                  listeners.response?.({ ':status': '200' });
+                  listeners.end?.();
+                });
+              },
+            };
+            return req;
+          },
+        };
+      },
+    };
+    const innerProvider = createApnsProvider({
+      keyId: 'KEYID12345',
+      teamId: 'TEAMID1234',
+      p8: P8,
+      bundleId: LIVE_ACTIVITY_BUNDLE_ID,
+      http2,
+    });
+    const apnsProvider = {
+      async send(input) {
+        sent.push(input);
+        return innerProvider.send(input);
+      },
+      close() { innerProvider.close(); },
+    };
+    pushServer = createPushRelayServer({
+      host: '127.0.0.1',
+      port: 0,
+      databasePath: ':memory:',
+      apnsProvider,
+    });
+    await pushServer.start();
+    const relayUrl = `${pushServer.url}/v1/push/send`;
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = relayUrl;
+    delete process.env.OPENCHAMBER_PUSH_RELAY_DISABLED;
+    delete process.env.OPENCHAMBER_APNS_KEY_ID;
+    delete process.env.OPENCHAMBER_APNS_TEAM_ID;
+    delete process.env.OPENCHAMBER_APNS_P8;
+    process.env.OPENCHAMBER_APNS_BUNDLE_ID = LIVE_ACTIVITY_BUNDLE_ID;
+
+    const deps = makeDeps();
+    const runtime = createApnsRuntime(deps);
+    await runtime.addOrUpdateLiveActivityToken('s1', token, 'act-1', sessionId);
+    expect(pushServer.getSnapshot()).toMatchObject({
+      state: 'running',
+      tokenCount: 1,
+      reasons: expect.objectContaining({ authRejected: 0, policyRejected: 0 }),
+    });
+
+    await runtime.sendLiveActivityEnd({ sessionId, status: 'complete' });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].pushType).toBe('liveactivity');
+    expect(sent[0].token).toBe(token);
+    expect(apnsCalls).toHaveLength(1);
+    expect(apnsCalls[0].headers['apns-topic']).toBe(`${LIVE_ACTIVITY_BUNDLE_ID}.push-type.liveactivity`);
+    expect(apnsCalls[0].headers['apns-push-type']).toBe('liveactivity');
+    const payload = JSON.parse(apnsCalls[0].body);
+    expect(payload.aps.event).toBe('end');
+    expect(payload.aps.alert).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain(sessionId);
+    expect(JSON.stringify(sent[0].payload)).not.toContain(sessionId);
+    expect(pushServer.getSnapshot().tokenCount).toBe(0);
+    const store = JSON.parse(await deps.fsPromises.readFile('/tmp/apns-tokens.json'));
+    expect(store.liveActivityTokensBySession.s1).toBeUndefined();
+
+    sent.length = 0;
+    apnsCalls.length = 0;
+    await runtime.sendLiveActivityEnd({ sessionId, status: 'complete' });
+    expect(sent).toHaveLength(0);
+    expect(apnsCalls).toHaveLength(0);
   });
 });
