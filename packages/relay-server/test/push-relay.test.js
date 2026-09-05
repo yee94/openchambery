@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 
 import { canonicalPublicJwkString, createPushRelayServer, deriveServerId, resolvePushRelayClientIp } from '../src/push/index.js';
+import { validateLiveActivityBody } from '../src/push/schema.js';
 
 const servers = [];
 const hexToken = (seed) => crypto.createHash('sha256').update(String(seed)).digest('hex');
@@ -56,6 +57,33 @@ const sendBody = (id, tokens, extra = {}) => {
   const ts = extra.ts ?? Date.now();
   const sig = extra.sig ?? id.sign(`${ts}.${[...tokens].sort().join(',')}.${title}`);
   return { tokens, title, body: extra.body ?? 'session', badge: extra.badge, collapseId: extra.collapseId, env: extra.env, data: extra.data, publicKeyJwk: extra.publicKeyJwk ?? id.publicJwk, ts, sig };
+};
+const liveRegisterBody = (id, token, extra = {}) => {
+  const ts = extra.ts ?? Date.now();
+  const platform = extra.platform ?? 'ios';
+  const kind = extra.kind ?? 'liveactivity';
+  const publicKeyJwk = extra.publicKeyJwk ?? id.publicJwk;
+  const sig = extra.sig ?? id.sign(`${ts}.${token}.${platform}.${kind}`);
+  return { token, platform, kind, publicKeyJwk, ts, sig, ...extra.rest };
+};
+const liveActivityBody = (id, tokens, extra = {}) => {
+  const event = extra.event ?? 'update';
+  const contentState = extra.contentState ?? {
+    status: extra.status ?? 'working',
+    eventVersion: extra.eventVersion ?? 1,
+    updatedAt: extra.updatedAt ?? 1_700_000_000_000,
+    ...(extra.endedAt !== undefined || event === 'end' ? { endedAt: extra.endedAt ?? 1_700_000_000_001 } : {}),
+  };
+  const ts = extra.ts ?? Date.now();
+  const dismissalDate = extra.dismissalDate;
+  const staleDate = extra.staleDate;
+  const sig = extra.sig ?? id.sign(`${ts}.${[...tokens].sort().join(',')}.${event}.${contentState.status}.${contentState.eventVersion}.${contentState.updatedAt}.${contentState.endedAt ?? ''}.${dismissalDate ?? ''}.${staleDate ?? ''}`);
+  return {
+    tokens, event, contentState,
+    ...(dismissalDate !== undefined ? { dismissalDate } : {}),
+    ...(staleDate !== undefined ? { staleDate } : {}),
+    env: extra.env, publicKeyJwk: extra.publicKeyJwk ?? id.publicJwk, ts, sig,
+  };
 };
 
 afterEach(async () => { await Promise.all(servers.splice(0).map((server) => server.stop())); });
@@ -416,4 +444,190 @@ it('force-closes remaining connections after the stop deadline', async () => {
   expect(server.getSnapshot().state).toBe('stopped');
   releaseSend();
   await pending.catch(() => {});
+});
+
+it('registers and unregisters Live Activity tokens with kind-covered signatures', async () => {
+  const { port, apnsProvider } = await startPush();
+  const id = identity();
+  const other = identity();
+  const token = hexToken('live-register');
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token, { kind: 'alert' }) })).toMatchObject({ status: 400, json: { error: 'invalid_request' } });
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: registerBody(id, token) })).toMatchObject({ status: 400, json: { error: 'invalid_request' } });
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token, { platform: 'android' }) })).toMatchObject({ status: 400, json: { error: 'unsupported_platform' } });
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token, { sig: id.sign(`${Date.now()}.${token}.ios`) }) })).toMatchObject({ status: 401, json: { error: 'invalid_signature' } });
+  const register = liveRegisterBody(id, token);
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: register })).toMatchObject({ status: 200, json: { ok: true } });
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: register })).toMatchObject({ status: 200, json: { ok: true } });
+  expect(await request(port, '/v1/push/unregister-live-activity-token', { method: 'POST', body: liveRegisterBody(id, hexToken('unknown-live')) })).toMatchObject({ status: 200, json: { ok: true } });
+  expect(await request(port, '/v1/push/unregister-live-activity-token', { method: 'POST', body: liveRegisterBody(other, token) })).toMatchObject({ status: 401, json: { error: 'invalid_signature' } });
+  expect((await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token]) })).json.results).toEqual([{ token, ok: true }]);
+  expect(await request(port, '/v1/push/unregister-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token) })).toMatchObject({ status: 200, json: { ok: true } });
+  apnsProvider.sent.length = 0;
+  expect((await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token]) })).json.results).toEqual([{ token, ok: false }]);
+  expect(apnsProvider.sent).toHaveLength(0);
+});
+
+it('validates Live Activity payloads and keeps APNs payloads private', async () => {
+  const { port, apnsProvider } = await startPush();
+  const id = identity();
+  const token = hexToken('live-payload');
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token) })).toMatchObject({ status: 200 });
+  expect(await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { event: 'start' }) })).toMatchObject({ status: 400, json: { error: 'invalid_request' } });
+  expect(await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { status: 'busy' }) })).toMatchObject({ status: 400 });
+  expect(await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { contentState: { status: 'working', eventVersion: 1, updatedAt: 1, sessionId: 'sess-1' } }) })).toMatchObject({ status: 400 });
+  expect(await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { event: 'end', contentState: { status: 'complete', eventVersion: 1, updatedAt: 1 } }) })).toMatchObject({ status: 400 });
+  expect(await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, Array.from({ length: 101 }, (_, index) => hexToken('live-' + index))) })).toMatchObject({ status: 400 });
+  const sent = await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { staleDate: 1_700_000_100 }) });
+  expect(sent.status).toBe(200);
+  expect(sent.json.results).toEqual([{ token, ok: true }]);
+  expect(apnsProvider.sent).toHaveLength(1);
+  expect(apnsProvider.sent[0].pushType).toBe('liveactivity');
+  expect(apnsProvider.sent[0].collapseId).toBeUndefined();
+  expect(apnsProvider.sent[0].payload).toEqual({
+    aps: {
+      timestamp: expect.any(Number),
+      event: 'update',
+      'content-state': { status: 'working', eventVersion: 1, updatedAt: 1_700_000_000_000 },
+      'stale-date': 1_700_000_100,
+    },
+  });
+  expect(apnsProvider.sent[0].payload.aps.alert).toBeUndefined();
+  expect(JSON.stringify(apnsProvider.sent[0].payload)).not.toMatch(/sessionId|"alert"|title|collapse/i);
+});
+
+it('accepts fractional Unix-second Live Activity timestamps and rejects non-finite values', async () => {
+  const { port, apnsProvider } = await startPush();
+  const id = identity();
+  const token = hexToken('live-fractional');
+  const updatedAt = 1_736_400_000.123;
+  const endedAt = 1_736_400_001.456;
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token) })).toMatchObject({ status: 200 });
+  const update = await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { updatedAt }) });
+  expect(update.status).toBe(200);
+  expect(update.json.results).toEqual([{ token, ok: true }]);
+  expect(apnsProvider.sent[0].payload.aps['content-state'].updatedAt).toBe(updatedAt);
+  apnsProvider.sent.length = 0;
+  const ended = await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { event: 'end', updatedAt, endedAt }) });
+  expect(ended.status).toBe(200);
+  expect(ended.json.results).toEqual([{ token, ok: true }]);
+  expect(apnsProvider.sent[0].payload.aps['content-state']).toEqual({
+    status: 'working', eventVersion: 1, updatedAt, endedAt,
+  });
+  const base = { tokens: [token], contentState: { status: 'working', eventVersion: 1, updatedAt: Number.NaN } };
+  expect(validateLiveActivityBody({ ...base, event: 'update' })).toMatchObject({ error: 'invalid_request' });
+  expect(validateLiveActivityBody({ ...base, event: 'update', contentState: { status: 'working', eventVersion: 1, updatedAt: Number.POSITIVE_INFINITY } })).toMatchObject({ error: 'invalid_request' });
+  expect(validateLiveActivityBody({
+    ...base, event: 'end',
+    contentState: { status: 'complete', eventVersion: 1, updatedAt, endedAt: Number.NEGATIVE_INFINITY },
+  })).toMatchObject({ error: 'invalid_request' });
+});
+
+it('uses liveactivity APNs topic and headers without alert or collapse id', async () => {
+  const calls = [];
+  const p8 = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const http2 = {
+    connect() {
+      return {
+        closed: false,
+        on() { return this; },
+        close() { this.closed = true; },
+        request(headers) {
+          const listeners = {};
+          const req = {
+            on(event, cb) { listeners[event] = cb; return req; },
+            close() {},
+            end(body) {
+              calls.push({ headers, body });
+              queueMicrotask(() => {
+                listeners.response?.({ ':status': '200' });
+                listeners.end?.();
+              });
+            },
+          };
+          return req;
+        },
+      };
+    },
+  };
+  const server = createPushRelayServer({
+    host: '127.0.0.1', port: 0, databasePath: ':memory:',
+    apns: { keyId: 'KEYID12345', teamId: 'TEAMID1234', p8, bundleId: 'com.openchamber.app' },
+    http2,
+  });
+  servers.push(server);
+  await server.start();
+  const id = identity();
+  const token = hexToken('live-topic');
+  const port = server.address().port;
+  expect(await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token) })).toMatchObject({ status: 200 });
+  expect(await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [token], { event: 'end', dismissalDate: 1_700_000_200 }) })).toMatchObject({ status: 200 });
+  expect(calls).toHaveLength(1);
+  expect(calls[0].headers['apns-topic']).toBe('com.openchamber.app.push-type.liveactivity');
+  expect(calls[0].headers['apns-push-type']).toBe('liveactivity');
+  expect(calls[0].headers['apns-priority']).toBe('10');
+  expect(calls[0].headers['apns-collapse-id']).toBeUndefined();
+  const payload = JSON.parse(calls[0].body);
+  expect(payload).toEqual({
+    aps: {
+      timestamp: expect.any(Number),
+      event: 'end',
+      'content-state': { status: 'working', eventVersion: 1, updatedAt: 1_700_000_000_000, endedAt: 1_700_000_000_001 },
+      'dismissal-date': 1_700_000_200,
+    },
+  });
+  expect(payload.aps.alert).toBeUndefined();
+  expect(payload.aps['stale-date']).toBeUndefined();
+  expect(JSON.stringify(payload)).not.toMatch(/sessionId|"alert"|title/i);
+});
+
+it('isolates Live Activity delivery, drops dead tokens, and clears bindings after end', async () => {
+  const { port, apnsProvider } = await startPush({
+    apnsProvider: {
+      sent: [],
+      async send(input) {
+        this.sent.push(input);
+        if (input.token.endsWith('aa')) return { ok: false, drop: true };
+        if (input.token.endsWith('bb')) throw new Error('transport');
+        return { ok: true };
+      },
+      close() {},
+    },
+  });
+  const id = identity();
+  const other = identity();
+  const drop = `${'a'.repeat(62)}aa`;
+  const fail = `${'b'.repeat(62)}bb`;
+  const ok = `${'c'.repeat(62)}cc`;
+  for (const token of [drop, fail, ok]) {
+    expect((await request(port, '/v1/push/register-live-activity-token', { method: 'POST', body: liveRegisterBody(id, token) })).status).toBe(200);
+  }
+  expect((await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(other, [ok]) })).json.results).toEqual([{ token: ok, ok: false }]);
+  expect(JSON.stringify((await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(other, [ok]) })).json)).not.toContain(id.serverId);
+  const sent = await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [drop, fail, ok]) });
+  expect(sent.json.results).toEqual([
+    { token: drop, ok: false, drop: true },
+    { token: fail, ok: false },
+    { token: ok, ok: true },
+  ]);
+  apnsProvider.sent.length = 0;
+  const again = await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [drop, fail, ok]) });
+  expect(again.json.results).toEqual([
+    { token: drop, ok: false },
+    { token: fail, ok: false },
+    { token: ok, ok: true },
+  ]);
+  expect(apnsProvider.sent.map((row) => row.token)).toEqual([fail, ok]);
+  apnsProvider.sent.length = 0;
+  const ended = await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [ok, fail], { event: 'end' }) });
+  expect(ended.json.results).toEqual([
+    { token: ok, ok: true },
+    { token: fail, ok: false },
+  ]);
+  apnsProvider.sent.length = 0;
+  const afterEnd = await request(port, '/v1/push/live-activity', { method: 'POST', body: liveActivityBody(id, [ok, fail], { event: 'end' }) });
+  expect(afterEnd.json.results).toEqual([
+    { token: ok, ok: false },
+    { token: fail, ok: false },
+  ]);
+  expect(apnsProvider.sent.map((row) => row.token)).toEqual([fail]);
 });

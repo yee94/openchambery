@@ -11,6 +11,10 @@ import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { useUIStore } from '@/stores/useUIStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
+import {
+  composerAutocompleteRowClassName,
+  composerAutocompleteSurfaceClassName,
+} from './composerAutocompleteChrome';
 
 export interface SkillInfo {
   name: string;
@@ -147,7 +151,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
           className={cn(
             'flex gap-2 px-3 py-1.5 cursor-pointer rounded-lg typography-ui-label',
             isMobile ? 'items-center' : 'items-start',
-          index === selectedIndex && 'bg-interactive-selection'
+            composerAutocompleteRowClassName(isMobile, index === selectedIndex),
         )}
         onClick={() => onSkillSelect(skill)}
         onMouseMove={() => {
@@ -183,7 +187,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   return (
     <div
       ref={containerRef}
-      className="absolute z-[100] min-w-0 w-full max-w-[450px] max-h-60 bg-background border-2 border-border/60 rounded-xl shadow-none bottom-full mb-2 left-0 flex flex-col"
+      className={composerAutocompleteSurfaceClassName(isMobile, 'max-w-[450px] max-h-60')}
       style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}
     >
       <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 pb-2">

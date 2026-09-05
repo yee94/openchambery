@@ -14,11 +14,13 @@ import { getToolIcon } from './toolPresentation';
 import { resolveToolDisplayName } from '@/lib/toolHelpers';
 import { ContextToolGroup } from './ContextToolGroup';
 import { SkillToolGroup } from './SkillToolGroup';
+import { UsedToolGroup } from './UsedToolGroup';
 import { collectConsecutiveContextTools, hasContextExploreSuccessor } from './contextToolGrouping';
 import { collectConsecutiveSkillTools, getSkillNameFromToolPart } from './skillToolGrouping';
+import { collectConsecutiveUsedTools, hasUsedRunSuccessor } from './usedToolGrouping';
 import { LatticeOrb } from './LatticeOrb';
 import { extractTextContent } from '../partUtils';
-import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isStandaloneTool, isStaticTool, isToolPartActive } from './toolRenderUtils';
+import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isStandaloneTool, isStaticTool, isToolPartActive, isUsedGroupTool } from './toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -417,6 +419,7 @@ type AggregatedRow =
     | { type: 'tool-static-group'; toolName: string; activities: TurnActivityPart[] }
     | { type: 'tool-context-group'; activities: TurnActivityPart[]; hasFollowingOtherType: boolean }
     | { type: 'tool-skill-group'; activities: TurnActivityPart[] }
+    | { type: 'tool-used-group'; activities: TurnActivityPart[]; hasFollowingOtherType: boolean }
     | { type: 'reasoning'; activity: TurnActivityPart }
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
@@ -529,9 +532,11 @@ const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) =
 /**
  * Aggregate sorted activity parts into display rows.
  * Consecutive skill calls collapse into one SkillToolGroup.
+ * Consecutive used tools (edit/write/bash/custom, not explore/skill/task/question)
+ * collapse into one UsedToolGroup.
  * Other static tools render one row per call (no consecutive merge).
  * Reasoning/justification become inline text.
- * Expandable tools (edit, bash, write, question) stay as individual rows.
+ * Task and question stay as individual expandable rows.
  * Unknown tools stay as individual expandable rows (fallback).
  */
 const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
@@ -587,6 +592,25 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
                 rows.push({
                     type: 'tool-skill-group',
                     activities: grouped.items,
+                });
+                i = grouped.end;
+                continue;
+            }
+        }
+
+        if (isUsedGroupTool(toolName)) {
+            const grouped = collectConsecutiveUsedTools(parts, i, (item) => {
+                const tool = item.part as ToolPartType;
+                return tool.tool;
+            });
+            if (grouped.items.length > 0) {
+                rows.push({
+                    type: 'tool-used-group',
+                    activities: grouped.items,
+                    hasFollowingOtherType: hasUsedRunSuccessor(parts, grouped.end, (item) => ({
+                        kind: item.kind,
+                        toolName: (item.part as ToolPartType).tool,
+                    })),
                 });
                 i = grouped.end;
                 continue;
@@ -1297,6 +1321,31 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             );
                         })}
                     </SkillToolGroup>
+                );
+
+            case 'tool-used-group':
+                return (
+                    <UsedToolGroup
+                        key={row.activities[0]?.id ?? `used-${index}`}
+                        activities={row.activities}
+                        isMobile={isMobile}
+                        isTurnLive={isActive}
+                        hasFollowingOtherType={row.hasFollowingOtherType}
+                    >
+                        {row.activities.map((activity) => (
+                            <ToolPart
+                                key={activity.id}
+                                part={activity.part as ToolPartType}
+                                messageId={activity.messageId}
+                                isExpanded={expandedTools.has(activity.id)}
+                                onToggle={onToggleTool}
+                                isMobile={isMobile}
+                                onContentChange={onContentChange}
+                                onShowPopup={onShowPopup}
+                                animateTailText={false}
+                            />
+                        ))}
+                    </UsedToolGroup>
                 );
 
             case 'tool-fallback':

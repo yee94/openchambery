@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -456,5 +459,16 @@ describe('MobileSessionsSheet visible roots fold boundary', () => {
     ]);
     expect(roots.length - visibleRoots.length).toBe(1);
     expect(visibleCount).toBe(3);
+  });
+});
+
+describe('MobileSessionsSheet keyword highlight', () => {
+  test('reuses the desktop sidebar mark helper on search hits', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionsSheet.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('renderHighlightedText');
+    expect(source).toContain('highlightQuery={normalizedQuery}');
   });
 });

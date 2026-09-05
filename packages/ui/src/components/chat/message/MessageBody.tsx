@@ -44,11 +44,13 @@ import { formatTimestampForDisplay } from './timeFormat';
 import { computeAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { SkillToolGroup } from './parts/SkillToolGroup';
+import { UsedToolGroup } from './parts/UsedToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
 import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
 import { hasContextExploreSuccessor } from './parts/contextToolGrouping';
 import { collectConsecutiveSkillTools } from './parts/skillToolGrouping';
-import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isToolPartActive, isToolPartSettled } from './parts/toolRenderUtils';
+import { collectConsecutiveUsedTools, hasUsedRunSuccessor } from './parts/usedToolGrouping';
+import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isToolPartActive, isToolPartSettled, isUsedGroupTool } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
@@ -2198,7 +2200,57 @@ const AssistantMessageBody = React.memo(({
                     }
                 }
 
-                // Expandable tools: bash, edit, write, task, question — individual rows
+                if (isUsedGroupTool(toolName)) {
+                    const grouped = collectConsecutiveUsedTools(visibleParts, i, (item) => {
+                        if (item.type !== 'tool') return '';
+                        if (activityByPart.get(item)?.kind === 'tool') return '';
+                        return (item as ToolPartType).tool;
+                    });
+                    if (grouped.items.length > 0) {
+                        const usedRun = grouped.items.map((item, offset) => {
+                            const nextTool = item as ToolPartType;
+                            return {
+                                id: nextTool.id,
+                                turnId: '',
+                                messageId,
+                                partIndex: i + offset,
+                                part: nextTool,
+                                kind: 'tool' as const,
+                            };
+                        });
+                        rendered.push(
+                            <UsedToolGroup
+                                key={`used-tools-${usedRun[0].id}`}
+                                activities={usedRun}
+                                isMobile={isMobile}
+                                isTurnLive={effectiveStreamPhase !== 'completed'}
+                                hasFollowingOtherType={hasUsedRunSuccessor(visibleParts, grouped.end, (item) => ({
+                                    type: item.type,
+                                    toolName: item.type === 'tool' ? (item as ToolPartType).tool : undefined,
+                                }))}
+                            >
+                                {usedRun.map((activity) => (
+                                    <ToolPart
+                                        key={activity.id}
+                                        part={activity.part}
+                                        messageId={messageId}
+                                        isExpanded={expandedTools.has(activity.part.id)}
+                                        onToggle={onToggleTool}
+                                        isMobile={isMobile}
+                                        alwaysShowActions={alwaysShowMessageActions}
+                                        onContentChange={onContentChange}
+                                        onShowPopup={onShowPopup}
+                                        animateTailText={false}
+                                    />
+                                ))}
+                            </UsedToolGroup>
+                        );
+                        i = grouped.end;
+                        continue;
+                    }
+                }
+
+                // Expandable leftovers: task, question — individual rows
                 if (isExpandableTool(toolName)) {
                     rendered.push(
                         <div key={`tool-${toolPart.id}`} className={getToolRowBlockClass(isMobile)}>

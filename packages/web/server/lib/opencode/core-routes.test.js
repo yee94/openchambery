@@ -915,13 +915,95 @@ describe('core-routes', () => {
     ]);
   });
 
-  it('forbids non-desktop client tokens from setting a custom Relay endpoint', async () => {
-    const getRelayPairingCandidate = vi.fn();
+  it('lets paired desktop clients create pairing sessions like the local owner (relay-attached parity)', async () => {
+    const getRelayPairingCandidate = vi.fn(async () => ({
+      type: 'relay',
+      relayUrl: 'wss://relay.example/ws',
+      serverId: 'srv_desktop',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'aaa', y: 'bbb' },
+      priority: 30,
+    }));
     const { app, dependencies } = createPairingRouteApp({
       getRelayPairingCandidate,
       uiAuthController: {
-        // Force a remote desktop client past create-auth so the relayUrl gate is
-        // exercised independently of the desktop-local create-auth admission rule.
+        resolveAuthContext: vi.fn(async () => ({
+          type: 'client',
+          clientId: 'remote-desktop-1',
+          client: { id: 'remote-desktop-1', clientKind: 'desktop' },
+        })),
+        requireAuth: vi.fn((_req, _res, next) => next()),
+        requireSessionAuth: vi.fn((_req, _res, next) => next()),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handleUrlAuthToken: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+    });
+
+    const response = await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .set('Host', 'runtime.example')
+      .send({ label: 'Pair phone', includeRelay: true })
+      .expect(201);
+
+    expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalledWith({
+      label: 'Pair phone',
+      allowedClientKinds: undefined,
+      createdByClientId: 'remote-desktop-1',
+      usesRelay: true,
+    });
+    expect(response.body.server.candidates).toEqual([
+      { type: 'lan', url: 'http://runtime.example', priority: 10 },
+      expect.objectContaining({ type: 'relay', relayUrl: 'wss://relay.example/ws' }),
+    ]);
+  });
+
+  it('rejects pairing-session creation from mobile client tokens', async () => {
+    const { app, dependencies } = createPairingRouteApp({
+      uiAuthController: {
+        resolveAuthContext: vi.fn(async () => ({
+          type: 'client',
+          clientId: 'phone-1',
+          client: { id: 'phone-1', clientKind: 'mobile' },
+        })),
+        requireAuth: vi.fn((_req, _res, next) => next()),
+        requireSessionAuth: vi.fn((_req, _res, next) => next()),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handleUrlAuthToken: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+    });
+
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ label: 'Pair phone' })
+      .expect(403, { error: 'Client tokens cannot create remote clients' });
+
+    expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
+  });
+
+  it('forbids paired desktop clients from re-pointing the Relay endpoint when pairing', async () => {
+    const getRelayPairingCandidate = vi.fn();
+    const getEffectiveRelayUrls = vi.fn(async () => ['wss://relay.example/ws']);
+    const { app, dependencies } = createPairingRouteApp({
+      getRelayPairingCandidate,
+      getEffectiveRelayUrls,
+      uiAuthController: {
         resolveAuthContext: vi.fn(async () => ({
           type: 'client',
           clientId: 'remote-desktop-1',
@@ -945,11 +1027,70 @@ describe('core-routes', () => {
 
     await request(app)
       .post('/api/client-auth/pairing/sessions')
-      .send({ includeRelay: true, relayUrl: 'wss://relay.example/custom' })
-      .expect(403, { error: 'Client tokens cannot create remote clients' });
+      .send({ includeRelay: true, relayUrl: 'wss://attacker.example/ws' })
+      .expect(403, { error: 'Only the owner UI session can set a custom Relay endpoint' });
 
     expect(getRelayPairingCandidate).not.toHaveBeenCalled();
     expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
+  });
+
+  it('lets paired desktop clients echo the current Relay endpoint when pairing', async () => {
+    const getRelayPairingCandidate = vi.fn(async ({ relayUrl }) => ({
+      type: 'relay',
+      relayUrl,
+      serverId: 'srv_desktop',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'aaa', y: 'bbb' },
+      priority: 30,
+    }));
+    const getEffectiveRelayUrls = vi.fn(async () => ['wss://relay.example/ws', 'wss://relay2.example/ws']);
+    const { app } = createPairingRouteApp({
+      getRelayPairingCandidate,
+      getEffectiveRelayUrls,
+      uiAuthController: {
+        resolveAuthContext: vi.fn(async () => ({
+          type: 'client',
+          clientId: 'remote-desktop-1',
+          client: { id: 'remote-desktop-1', clientKind: 'desktop' },
+        })),
+        requireAuth: vi.fn((_req, _res, next) => next()),
+        requireSessionAuth: vi.fn((_req, _res, next) => next()),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handleUrlAuthToken: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+    });
+
+    const response = await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ includeRelay: true, includeDirect: false, relayUrl: 'wss://relay.example/ws' })
+      .expect(201);
+
+    expect(getRelayPairingCandidate).toHaveBeenCalledWith({
+      ensureEnabled: true,
+      relayUrl: 'wss://relay.example/ws',
+    });
+    expect(response.body.server.candidates).toEqual([
+      expect.objectContaining({ type: 'relay', relayUrl: 'wss://relay.example/ws' }),
+    ]);
+
+    // Multi-relay: any CONFIGURED endpoint is fair game for a paired desktop
+    // (choosing between the host's endpoints is not a re-point).
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ includeRelay: true, includeDirect: false, relayUrl: 'wss://relay2.example/ws' })
+      .expect(201);
+    expect(getRelayPairingCandidate).toHaveBeenLastCalledWith({
+      ensureEnabled: true,
+      relayUrl: 'wss://relay2.example/ws',
+    });
   });
 
   it('still lets desktop-local create pairing sessions without a custom Relay endpoint', async () => {
@@ -1287,6 +1428,25 @@ describe('client auth routes', () => {
     expect(response.body.candidates).toEqual([]);
   });
 
+  it('returns every configured relay endpoint in the candidates refresh (multi-relay)', async () => {
+    const app = express();
+    const relayCandidates = [
+      { type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'server-abc', hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' }, priority: 30 },
+      { type: 'relay', relayUrl: 'wss://relay2.example/ws', serverId: 'server-abc', hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' }, priority: 30 },
+    ];
+    const dependencies = {
+      ...createDependencies({ resolveAuthContext: async () => ({ type: 'client', clientId: 'client-1' }) }),
+      getDirectCandidateUrls: () => [],
+      getRelayPairingCandidates: async () => relayCandidates,
+      getServerId: async () => 'server-abc',
+    };
+    registerAuthAndAccessRoutes(app, dependencies);
+
+    const response = await request(app).get('/api/client-auth/connection/candidates');
+    expect(response.status).toBe(200);
+    expect(response.body.candidates).toEqual(relayCandidates);
+  });
+
   it('scopes non-desktop client credentials to list and revoke only themselves', async () => {
     const app = express();
     let authContext = { type: 'session' };
@@ -1355,7 +1515,47 @@ describe('client auth routes', () => {
     expect(purged.body.purged).toBe(1);
   });
 
-  it('allows only the local desktop client token to create remote client tokens', async () => {
+  it('lets paired desktop clients list and revoke every device (relay-attached parity)', async () => {
+    const app = express();
+    let authContext = { type: 'session' };
+    const dependencies = createDependencies({
+      resolveAuthContext: async () => authContext,
+    });
+    registerAuthAndAccessRoutes(app, dependencies);
+
+    const localDesktop = await request(app)
+      .post('/api/client-auth/clients')
+      .send({ label: 'OpenChamber Desktop', clientKind: 'desktop-local' });
+    const pairedDesktop = await request(app)
+      .post('/api/client-auth/clients')
+      .send({ label: 'Study desktop', clientKind: 'desktop' });
+    const phone = await request(app)
+      .post('/api/client-auth/clients')
+      .send({ label: 'Phone', clientKind: 'mobile' });
+
+    // A paired desktop (connected over relay) manages all devices like the
+    // local desktop shell — SSH-attach parity for relay-attached hosts.
+    authContext = { type: 'client', clientId: pairedDesktop.body.client.id, client: pairedDesktop.body.client };
+
+    const listed = await request(app).get('/api/client-auth/clients');
+    expect(listed.status).toBe(200);
+    const listedIds = listed.body.clients.map((client) => client.id).sort();
+    expect(listedIds).toEqual([
+      localDesktop.body.client.id,
+      pairedDesktop.body.client.id,
+      phone.body.client.id,
+    ].sort());
+
+    const revoked = await request(app).delete(`/api/client-auth/clients/${phone.body.client.id}`);
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.revoked).toBe(true);
+
+    const purged = await request(app).delete('/api/client-auth/clients');
+    expect(purged.status).toBe(200);
+    expect(purged.body.purged).toBeGreaterThanOrEqual(1);
+  });
+
+  it('restricts direct client-token creation to operator clients', async () => {
     const app = express();
     let authContext = { type: 'session' };
     const dependencies = createDependencies({
