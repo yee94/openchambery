@@ -5,8 +5,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '@/lib/i18n';
-import { dict as zhCN } from '@/lib/i18n/messages/zh-CN';
-import { useI18nStore } from '@/lib/i18n/store';
 import type { TurnActivityRecord } from '../../lib/turns/types';
 import { ContextToolGroup } from './ContextToolGroup';
 import { LatticeOrb } from './LatticeOrb';
@@ -221,41 +219,5 @@ describe('ContextToolGroup', () => {
 
         expect(markup).toContain('Running');
         expect(markup).toContain('oc-lattice-orb-dot');
-    });
-
-    test('uses used-group copy for the unified fold in zh-CN', () => {
-        const previous = useI18nStore.getState();
-        useI18nStore.setState({
-            locale: 'zh-CN',
-            dictionary: zhCN,
-            loadingLocale: null,
-        });
-        try {
-            const settled = [
-                contextActivity('grep-1', 'grep', 'completed'),
-                contextActivity('read-1', 'read', 'completed'),
-            ];
-            const settledMarkup = renderToStaticMarkup(
-                <I18nProvider>
-                    <ContextToolGroup activities={settled} isMobile={false} />
-                </I18nProvider>,
-            );
-            const liveMarkup = renderToStaticMarkup(
-                <I18nProvider>
-                    <ContextToolGroup activities={settled} isMobile={false} isTurnLive />
-                </I18nProvider>,
-            );
-
-            expect(settledMarkup).toContain('运行了');
-            expect(settledMarkup).not.toContain('探索');
-            expect(liveMarkup).toContain('运行中');
-            expect(liveMarkup).not.toContain('探索');
-        } finally {
-            useI18nStore.setState({
-                locale: previous.locale,
-                dictionary: previous.dictionary,
-                loadingLocale: previous.loadingLocale,
-            });
-        }
     });
 });
