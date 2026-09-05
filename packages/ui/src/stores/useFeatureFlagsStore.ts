@@ -13,6 +13,19 @@ const readExactOneFlag = (
   }
 };
 
+const readUnlessZeroFlag = (
+  key: string,
+  storage?: Pick<Storage, 'getItem'> | null,
+): boolean => {
+  try {
+    const store = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+    if (!store) return true;
+    return store.getItem(key) !== '0';
+  } catch {
+    return true;
+  }
+};
+
 const persistExactOneFlag = (key: string, enabled: boolean): void => {
   try {
     if (typeof localStorage !== 'undefined') {
@@ -33,14 +46,14 @@ export const readLegendTimelineEnabled = (
   storage?: Pick<Storage, 'getItem'> | null,
 ): boolean => readExactOneFlag(LEGEND_TIMELINE_STORAGE_KEY, storage);
 
-// Assistant Markdown engine. The current marked + Shiki + morphdom renderer
-// stays the default. Set `oc:markstream-react` to `1` to route streaming and
-// settled assistant text bodies through markstream-react.
+// Assistant Markdown engine on this experiment branch. Markstream React is
+// the default for streaming and settled assistant text. Set
+// `oc:markstream-react` to `0` to fall back to marked + Shiki + morphdom.
 export const MARKSTREAM_REACT_STORAGE_KEY = 'oc:markstream-react';
 
 export const readMarkstreamReactEnabled = (
   storage?: Pick<Storage, 'getItem'> | null,
-): boolean => readExactOneFlag(MARKSTREAM_REACT_STORAGE_KEY, storage);
+): boolean => readUnlessZeroFlag(MARKSTREAM_REACT_STORAGE_KEY, storage);
 
 type FeatureFlagsStore = {
   legendTimelineEnabled: boolean;

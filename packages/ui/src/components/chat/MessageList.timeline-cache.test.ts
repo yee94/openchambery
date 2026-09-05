@@ -457,8 +457,13 @@ describe('MessageList history virtualization handle state', () => {
 describe('runtime default list engine', () => {
     test('TanStack is the default; LegendList is opt-in via oc:legend-timeline=1', () => {
         const storeSource = readFileSync(join(here, '..', '..', 'stores', 'useFeatureFlagsStore.ts'), 'utf8');
-        expect(storeSource).toContain("=== '1'");
-        expect(storeSource).not.toContain("!== '0'");
+        const legendStart = storeSource.indexOf('export const readLegendTimelineEnabled');
+        const markstreamStart = storeSource.indexOf('export const readMarkstreamReactEnabled');
+        expect(legendStart).toBeGreaterThan(-1);
+        expect(markstreamStart).toBeGreaterThan(legendStart);
+        const legendSlice = storeSource.slice(legendStart, markstreamStart);
+        expect(legendSlice).toContain('readExactOneFlag');
+        expect(legendSlice).not.toContain("!== '0'");
     });
 });
 

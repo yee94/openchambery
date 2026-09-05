@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 
 - 展开「运行了」折叠后的工具列表不再挤在一起，手机行距按原来的工具行比例收一档。
 - 电脑端侧栏聚焦当前会话时平滑滚到视口大约三分之一处，不再贴在边缘。
-- 实验：在控制台执行 `localStorage.setItem('oc:markstream-react','1')` 后刷新，助手正文（含流式）可切到 Markstream React 渲染；默认仍是现有 marked + Shiki 路径。用户/工具 Markdown、Used 折叠和列表引擎不受影响。
+- 助手正文（含流式）默认改用 Markstream React 渲染；要回到现有 marked + Shiki 路径：`localStorage.setItem('oc:markstream-react','0')` 后刷新。用户/工具 Markdown、Used 折叠和列表引擎不受影响。
 
 ## [1.19.6] - 2026-09-05
 
