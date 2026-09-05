@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.6-beta.1] - 2026-09-05
+
+### 会话
+
+- 探索和运行类中间过程收成同一组「探索」折叠。搜索、读取、编辑、命令连在一起就全部收起，只有正文、技能、任务或提问会拆开；摘要合并次数，编辑仍显示绿增红删行数。
+
 ## [1.19.5] - 2026-09-05
 
 汇总 1.19.5-beta.1 ~ 1.19.5-beta.14。
