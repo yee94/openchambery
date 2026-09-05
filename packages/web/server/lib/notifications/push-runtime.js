@@ -221,8 +221,7 @@ export const createPushRuntime = (deps) => {
     }
   };
 
-  const sendPushToAllUiSessions = async (payload, options = {}) => {
-    const requireNoSse = options.requireNoSse === true;
+  const sendPushToAllUiSessions = async (payload) => {
     const store = await readPushSubscriptionsFromDisk();
     const sessions = store.subscriptionsBySession || {};
     const subscriptionsByEndpoint = new Map();
@@ -239,14 +238,6 @@ export const createPushRuntime = (deps) => {
     }
 
     await Promise.all(Array.from(subscriptionsByEndpoint.values()).map(async (sub) => {
-      if (requireNoSse) {
-        // Mobile PWA subscriptions follow the same presence model as native push: suppress only
-        // when an interactive (desktop/web) client is visible. The phone PWA's own foreground is
-        // handled in the service worker (focused-client check), so it won't double-notify.
-        // Non-mobile (desktop/web) subscriptions keep the existing any-visible gate.
-        const suppressed = isMobilePlatform(sub.platform) ? isAnyInteractiveClientVisible() : isAnyUiVisible();
-        if (suppressed) return;
-      }
       await sendPushToSubscription(sub, payload);
     }));
   };
@@ -278,10 +269,9 @@ export const createPushRuntime = (deps) => {
     return false;
   };
 
-  // True when at least one NON-mobile client (desktop/web/vscode) is currently visible. Used to
-  // suppress native push to the phone: an active desktop already shows the notification, so the
-  // phone doesn't need it. Deliberately based on the desktop's visibility (reliable), never the
-  // phone's own (a backgrounded WKWebView can't report "hidden" before iOS suspends it).
+  // True when at least one NON-mobile client (desktop/web/vscode) is currently visible.
+  // Not a push gate — delivery always fans out. Kept as a visibility query for tests and
+  // diagnostics. Deliberately based on the desktop's visibility, never the phone's own.
   const isAnyInteractiveClientVisible = () => {
     const now = Date.now();
     pruneUiVisibility(now);

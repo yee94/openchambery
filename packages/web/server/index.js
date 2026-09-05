@@ -342,8 +342,6 @@ const updateUiVisibility = (token, visible, platform) => {
   if (visible === true) clearPendingPushBadge();
   return pushRuntime.updateUiVisibility(token, visible, platform);
 };
-const isAnyUiVisible = (...args) => pushRuntime.isAnyUiVisible(...args);
-const isAnyInteractiveClientVisible = (...args) => pushRuntime.isAnyInteractiveClientVisible(...args);
 const isUiVisible = (...args) => pushRuntime.isUiVisible(...args);
 const ensurePushInitialized = (...args) => pushRuntime.ensurePushInitialized(...args);
 const setPushInitialized = (...args) => pushRuntime.setPushInitialized(...args);
@@ -664,7 +662,6 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
   sendPushToAllUiSessions,
   sendApnsToAllUiSessions,
   sendLiveActivityEnd,
-  isAnyInteractiveClientVisible,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
 });

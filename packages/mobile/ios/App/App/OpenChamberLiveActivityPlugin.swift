@@ -114,10 +114,48 @@ class OpenChamberLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             eventVersion: eventVersion,
             updatedAt: updatedAt,
             endedAt: Self.doubleValue(call, "endedAt"),
-            dismissalSeconds: Self.doubleValue(call, "dismissalSeconds")
+            dismissalSeconds: Self.doubleValue(call, "dismissalSeconds"),
+            title: call.getString("title"),
+            workingCount: Self.intValue(call, "workingCount"),
+            items: Self.parseItems(call)
         )
         try request.validate(requireStartedAt: requireStartedAt)
         return request
+    }
+
+    private static func parseItems(_ call: CAPPluginCall) -> [OpenChamberLiveActivityItem]? {
+        guard let raw = call.getArray("items") else { return nil }
+        var items: [OpenChamberLiveActivityItem] = []
+        for value in raw {
+            guard let object = value as? JSObject else { continue }
+            guard let sessionId = stringValue(object["sessionId"]), !sessionId.isEmpty else { continue }
+            guard let status = stringValue(object["status"]),
+                  OpenChamberLiveActivityRequest.allowedStatuses.contains(status) else { continue }
+            guard let startedAt = doubleValue(object["startedAt"]), startedAt.isFinite else { continue }
+            let endedAt = doubleValue(object["endedAt"])
+            if let endedAt, !endedAt.isFinite { continue }
+            items.append(OpenChamberLiveActivityItem(
+                sessionId: sessionId,
+                title: stringValue(object["title"]) ?? "",
+                status: status,
+                startedAt: startedAt,
+                endedAt: endedAt
+            ))
+        }
+        return items
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        if let value = value as? Double, value.isFinite { return value }
+        if let value = value as? Int { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return nil
     }
 
     private static func intValue(_ call: CAPPluginCall, _ key: String) -> Int? {

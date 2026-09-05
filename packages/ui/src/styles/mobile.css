@@ -18,6 +18,30 @@
     var(--surface-background) 85%,
     transparent
   );
+  /* Glass tokens live on :root so slash catalogs and other overlays still
+     resolve a fill when they are not under .oc-mobile-floating-shell.
+     An undefined --oc-mobile-glass-fill paints a hole. */
+  --oc-mobile-glass-fill: rgb(255 255 255 / 0.68);
+  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.6);
+  --oc-mobile-glass-blur: 20px;
+  --oc-mobile-glass-saturate: 1.25;
+  --oc-mobile-glass-shadow:
+    0 0 2px rgb(0 0 0 / 0.05),
+    0 0 12px rgb(0 0 0 / 0.06),
+    0 8px 20px -6px rgb(0 0 0 / 0.12),
+    inset 0 1px 0 var(--oc-mobile-glass-highlight);
+}
+
+.dark {
+  --oc-mobile-glass-fill: rgb(38 38 44 / 0.66);
+  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.18);
+  --oc-mobile-glass-blur: 20px;
+  --oc-mobile-glass-saturate: 1.2;
+  --oc-mobile-glass-shadow:
+    0 0 2px rgb(0 0 0 / 0.3),
+    0 0 12px rgb(0 0 0 / 0.28),
+    0 8px 20px -6px rgb(0 0 0 / 0.4),
+    inset 0 1px 0 var(--oc-mobile-glass-highlight);
 }
 
 /* Projects home floating material. Project capsule, session container, and
@@ -413,19 +437,14 @@
   background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
 }
 
-/* Composer `/` `@` `#` catalogs: glass panel, hairline elevation, no border-2
-   slab. Rows use momentary press only — a persisted selected fill reads as a
-   stuck tap highlight on touch. */
+/* Composer `/` `@` `#` catalogs: keep overlay elevation/blur, but a much
+   thinner fill than --translucent (48%). A heavy wash hides the frost. */
 .oc-composer-autocomplete-surface {
-  border: 0;
-  background: var(--oc-mobile-glass-fill);
-  box-shadow: var(--oc-mobile-glass-shadow);
-  -webkit-backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
-  backdrop-filter:
-    blur(var(--oc-mobile-glass-blur))
-    saturate(var(--oc-mobile-glass-saturate));
+  background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
+}
+
+.dark .oc-composer-autocomplete-surface {
+  background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
 }
 
 .oc-composer-autocomplete-row {
@@ -2057,7 +2076,8 @@ button.oc-mobile-worktree-label-trigger:active,
   .oc-mobile-floating-surface,
   .oc-mobile-floating-action,
   .oc-mobile-glass-control,
-  .oc-composer-autocomplete-surface {
+  .oc-composer-autocomplete-surface,
+  .oc-mobile-overlay-surface {
     background: var(--surface-elevated);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -2898,6 +2918,14 @@ button.oc-mobile-worktree-label-trigger:active,
     pointer-events: none;
   }
 
+  /* HTML file preview paints edge-to-edge; hide the home-indicator overlay for
+     the active (non-inert) sheet preview or fullscreen preview surface. Mode /
+     close / multi-instance restore via structural :has — no root class toggle. */
+  :root:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"]) body::after,
+  :root:has([data-mobile-html-fullscreen="true"]) body::after {
+    opacity: 0;
+  }
+
   /* Fallback for browsers without rgba(from ...) support */
   @supports not (color: rgba(from white r g b / 0.5)) {
     :root.device-mobile:not(.desktop-runtime) body::after,
@@ -3103,6 +3131,14 @@ button.oc-mobile-worktree-label-trigger:active,
       var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
     )
   ) !important;
+}
+
+/* HTML preview in a sheet must reach the physical bottom. The surface owns the
+   default safe pad; a child negative margin cannot paint through body overflow
+   clip. Zero pad only while an active (non-inert) sheet hosts html preview. */
+[data-mobile-overlay-active="true"]:not([inert]) [data-oc-motion-id]:has([data-mobile-html-preview="true"]),
+:root.oc-capacitor-app [data-mobile-overlay-active="true"]:not([inert]) .pwa-overlay-panel[data-oc-motion-id]:has([data-mobile-html-preview="true"]) {
+  padding-bottom: 0 !important;
 }
 
 :root.oc-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll {
@@ -3416,21 +3452,37 @@ button.oc-mobile-worktree-label-trigger:active,
   margin-inline: auto;
   align-items: flex-end;
   overflow: visible;
-  contain: layout;
 }
 
 /* Stagger the exchange so progress 0.5 never shows both layers at once:
-   0→0.5 only exits the expanded card; 0.5→1 only rises the compact pill. */
+   0→0.5 only exits the expanded card; 0.5→1 only rises the compact pill.
+   Rest must stay transform:none / no will-change: identity translate3d and
+   will-change:transform create a containing block that stops slash-catalog
+   backdrop-filter from frosting the transcript. */
 .oc-mobile-composer-expanded-layer {
   position: relative;
   z-index: 20;
+  transform: none;
+  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+}
+
+.oc-chat-composer-swap-scope:is(
+  [data-oc-composer-swap-phase="tracking"],
+  [data-oc-composer-swap-phase="snapping"]
+) .oc-mobile-composer-motion-viewport {
+  contain: layout;
+}
+
+.oc-chat-composer-swap-scope:is(
+  [data-oc-composer-swap-phase="tracking"],
+  [data-oc-composer-swap-phase="snapping"]
+) .oc-mobile-composer-expanded-layer {
+  will-change: transform, opacity;
   transform: translate3d(
     0,
     calc(min(1, var(--oc-mobile-composer-swap) * 2) * 110%),
     0
   );
-  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
-  will-change: transform, opacity;
 }
 
 .oc-mobile-composer-compact-layer {

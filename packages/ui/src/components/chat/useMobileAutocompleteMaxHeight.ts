@@ -8,7 +8,39 @@ import React from 'react';
 export const MOBILE_AUTOCOMPLETE_VIEWPORT_HEIGHT_RATIO = 0.4;
 /** Soft floor used only when the chat-header budget already has room for it. */
 export const MOBILE_AUTOCOMPLETE_MIN_HEIGHT = 120;
-const MOBILE_AUTOCOMPLETE_GAP_PX = 8;
+export const MOBILE_AUTOCOMPLETE_GAP_PX = 8;
+
+export type MobileAutocompleteFixedBox = {
+  left: number;
+  width: number;
+  bottom: number;
+  maxHeight: number;
+};
+
+/** Viewport-fixed box for the slash catalog, anchored above the composer. */
+export const computeMobileAutocompleteFixedBox = (args: {
+  composerTop: number;
+  composerLeft: number;
+  composerWidth: number;
+  visibleBottom: number;
+  boundaryTop: number;
+  viewportHeight: number;
+  gap?: number;
+}): MobileAutocompleteFixedBox => {
+  const gap = args.gap ?? MOBILE_AUTOCOMPLETE_GAP_PX;
+  const popupBottom = args.composerTop - gap;
+  return {
+    left: args.composerLeft,
+    width: args.composerWidth,
+    bottom: Math.max(0, args.visibleBottom - popupBottom),
+    maxHeight: computeMobileAutocompleteMaxHeight({
+      popupBottom,
+      boundaryTop: args.boundaryTop,
+      viewportHeight: args.viewportHeight,
+      gap,
+    }),
+  };
+};
 
 /**
  * Pure height clamp for mobile autocomplete popups anchored above the
@@ -118,4 +150,63 @@ export const useMobileAutocompleteMaxHeight = (
     });
 
     return enabled ? maxHeight : undefined;
+};
+
+/**
+ * Phone slash catalogs must be `position: fixed` (same stacking as the
+ * context metadata sheet). `absolute` inside the composer cannot backdrop-
+ * filter the transcript on iOS — WebKit only frosts within that ancestor.
+ * `probeRef` stays in the composer; its parent is the composer card.
+ */
+export const useMobileAutocompleteFixedBox = (
+    probeRef: React.RefObject<HTMLElement | null>,
+    enabled: boolean,
+): MobileAutocompleteFixedBox | undefined => {
+    const [box, setBox] = React.useState<MobileAutocompleteFixedBox | undefined>(undefined);
+
+    React.useLayoutEffect(() => {
+        if (!enabled) {
+            setBox(undefined);
+            return;
+        }
+        const measure = () => {
+            const origin = probeRef.current?.parentElement;
+            if (!origin) return;
+            const rect = origin.getBoundingClientRect();
+            const visualViewport = window.visualViewport;
+            const visualTop = visualViewport?.offsetTop ?? 0;
+            const viewportHeight = visualViewport?.height ?? window.innerHeight;
+            const boundaryTop = resolveMobileAutocompleteBoundaryTop(origin, visualTop) ?? visualTop;
+            const next = computeMobileAutocompleteFixedBox({
+                composerTop: rect.top,
+                composerLeft: rect.left,
+                composerWidth: rect.width,
+                visibleBottom: visualTop + viewportHeight,
+                boundaryTop,
+                viewportHeight,
+            });
+            setBox((prev) => (
+                prev
+                && prev.left === next.left
+                && prev.width === next.width
+                && prev.bottom === next.bottom
+                && prev.maxHeight === next.maxHeight
+                    ? prev
+                    : next
+            ));
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        window.addEventListener('oc:keyboard-settled', measure);
+        window.visualViewport?.addEventListener('resize', measure);
+        window.visualViewport?.addEventListener('scroll', measure);
+        return () => {
+            window.removeEventListener('resize', measure);
+            window.removeEventListener('oc:keyboard-settled', measure);
+            window.visualViewport?.removeEventListener('resize', measure);
+            window.visualViewport?.removeEventListener('scroll', measure);
+        };
+    }, [enabled]);
+
+    return enabled ? box : undefined;
 };

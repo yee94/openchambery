@@ -93,18 +93,18 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 - **Secure storage** — `@aparajita/capacitor-secure-storage` for connection tokens.
 - **Deep links** — `openchamber://` URL scheme; a reusable intent vocabulary (`apps/deepLinks.ts`)
   used by notification taps, widgets, and Control Center. Cold-launch intents are stashed.
-- **Push notifications** — iOS APNs + Android FCM (see below). Presence-aware routing suppresses a
-  device's push when an interactive (desktop/web) client is visible.
+- **Push notifications** — iOS APNs + Android FCM (see below). Every subscribed device receives
+  the push; another client's visibility does not suppress delivery.
 - **iOS widgets + Control Center + Notification Service Extension** — WidgetKit extension
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
   that refreshes widgets from push. All share the App Group `group.com.yee94.openchamber`.
-- **iOS Live Activity (local MVP)** — `OpenChamberLiveActivity` Capacitor plugin. Runtime is
+- **iOS Live Activity** — `OpenChamberLiveActivity` Capacitor plugin. Runtime is
   iOS 17.0+ (`OpenChamberWidget` deployment) with `areActivitiesEnabled`; the App target stays
-  15.5. One Activity for the currently selected top-level session; JS starts after 5 seconds
-  busy. No `pushType` / token / server; semantic updates only while the App is alive; ActivityKit
+  15.5. One Activity lists every live working session (`{n} working` plus title/elapsed rows);
+  JS starts after 5 seconds busy. `Activity.request` uses `pushType: .token`. ActivityKit
   owns timing (`staleDate` = 20 min; success dismissal 15 min, error 60 min). App restart can
   recover a matching Activity and a millisecond `eventVersion` overwrites a recovered small
-  counter. User-dismissed Activities are not rebuilt for the same task. Remote update is later.
+  counter. User-dismissed Activities are not rebuilt for the same task.
   See `packages/mobile/README.md`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
   keyboard handling (iOS immediate shell shrink via --oc-kb-layout; Android pre-focus cached-height FLIP), edge-swipe session switch,
@@ -118,9 +118,8 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   sends it to the connected server tagged with `platform` (`ios`/`android`).
 - The server forwards notification-worthy events to a signed **relay**; the relay routes each token
   to APNs or FCM by its bound platform. The app itself only needs to obtain and register the token.
-- **Presence-aware suppression**: each client reports foreground visibility + its platform; a
-  mobile push is skipped while an interactive (desktop/web/vscode) client is visible (it already
-  shows the in-app notification). Gated on the desktop's visibility, never the phone's own.
+- Each client still reports foreground visibility + its platform, but that heartbeat is not a
+  push gate: native and web-push always fan out. iOS still suppresses the foreground banner.
 - Foreground behavior: iOS suppresses the banner via `presentationOptions: []`; the web/PWA service
   worker suppresses when a window is focused.
 

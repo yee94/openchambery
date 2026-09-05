@@ -10,13 +10,17 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mobileStyles = readFileSync(join(here, '../../styles/mobile.css'), 'utf8');
+const layerSource = readFileSync(join(here, './ComposerAutocompleteLayer.tsx'), 'utf8');
 
 describe('composerAutocompleteChrome', () => {
   test('mobile surface is glass; desktop keeps the bordered panel', () => {
+    expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-mobile-overlay-surface');
+    expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-mobile-overlay-surface--translucent');
     expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-composer-autocomplete-surface');
+    expect(composerAutocompleteSurfaceClassName(true)).not.toContain('bottom-full');
     expect(composerAutocompleteSurfaceClassName(true)).not.toContain('border-2');
     expect(composerAutocompleteSurfaceClassName(false)).toContain('border-2');
-    expect(composerAutocompleteSurfaceClassName(false)).not.toContain('oc-composer-autocomplete-surface');
+    expect(composerAutocompleteSurfaceClassName(false)).not.toContain('oc-mobile-overlay-surface');
   });
 
   test('mobile rows drop the persisted selected slab', () => {
@@ -27,13 +31,18 @@ describe('composerAutocompleteChrome', () => {
   });
 
   test('glass recipe uses shared tokens and momentary press fill', () => {
-    expect(mobileStyles).toContain('.oc-composer-autocomplete-surface {');
-    expect(mobileStyles).toContain('background: var(--oc-mobile-glass-fill)');
-    expect(mobileStyles).toContain('box-shadow: var(--oc-mobile-glass-shadow)');
+    const overlay = mobileStyles.match(/\.oc-mobile-overlay-surface \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const catalog = mobileStyles.match(/\.oc-composer-autocomplete-surface \{[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(overlay).toContain('backdrop-filter:');
+    expect(catalog).toContain('color-mix(in srgb, var(--surface-elevated) 22%, transparent)');
+    expect(catalog).not.toContain('var(--oc-mobile-glass-fill)');
     expect(mobileStyles).toContain('.oc-composer-autocomplete-row:active {');
     expect(mobileStyles).toContain('background: var(--oc-mobile-press-fill)');
     expect(mobileStyles).toMatch(
-      /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*\.oc-composer-autocomplete-surface/,
+      /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*\.oc-mobile-overlay-surface/,
     );
+    expect(layerSource).toContain('createPortal');
+    expect(layerSource).toContain('oc-chat-composer-swap-scope');
+    expect(layerSource).toContain('fixed inset-0');
   });
 });

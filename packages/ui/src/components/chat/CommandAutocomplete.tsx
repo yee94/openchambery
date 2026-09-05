@@ -17,11 +17,10 @@ import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
-import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
 import { shouldSubmitCommandOnSelection } from './commandSelection';
+import { ComposerAutocompleteLayer } from './ComposerAutocompleteLayer';
 import {
   composerAutocompleteRowClassName,
-  composerAutocompleteSurfaceClassName,
 } from './composerAutocompleteChrome';
 
 type CommandSource = 'openchamber' | 'opencode' | 'skill';
@@ -162,7 +161,6 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const keyboardNavigationRef = React.useRef(false);
   const itemRefs = React.useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const mobileMaxHeight = useMobileAutocompleteMaxHeight(containerRef, isMobile);
   const ignoreClickRef = React.useRef(false);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const pointerMovedRef = React.useRef(false);
@@ -451,10 +449,11 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   };
 
   return (
-    <div
+    <ComposerAutocompleteLayer
       ref={containerRef}
-      className={composerAutocompleteSurfaceClassName(isMobile, 'max-w-[450px] max-h-64')}
-      style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}
+      isMobile={isMobile}
+      className="max-w-[450px] max-h-64"
+      style={style}
     >
       <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 pb-2">
         {loading ? (
@@ -584,7 +583,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           {t('chat.autocomplete.keyboardHint')}
         </div>
       )}
-    </div>
+    </ComposerAutocompleteLayer>
   );
 });
 

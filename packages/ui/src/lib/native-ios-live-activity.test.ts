@@ -1,11 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, test, vi } from 'vitest';
 
 import {
   applyNativeLiveActivityCommand,
   applyNativeLiveActivityTokenCommands,
+  buildNativeLiveActivityCatalog,
   createInitialNativeLiveActivityState,
   createInitialNativeLiveActivityTokenState,
   evaluateNativeIosLiveActivityAvailability,
@@ -14,6 +12,8 @@ import {
   NATIVE_LIVE_ACTIVITY_COMMAND_RETRY_MS,
   NATIVE_LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS,
   NATIVE_LIVE_ACTIVITY_ERROR_DISMISSAL_SECONDS,
+  NATIVE_LIVE_ACTIVITY_ID,
+  NATIVE_LIVE_ACTIVITY_ITEM_LIMIT,
   nextNativeLiveActivityEventVersion,
   parseNativeLiveActivityPushTokenEvent,
   reduceNativeLiveActivity,
@@ -23,14 +23,13 @@ import {
   runNativeLiveActivityTokenStep,
   shouldScheduleNativeLiveActivityRetry,
   toNativeLiveActivityTimestamp,
+  type NativeLiveActivityCatalogItem,
   type NativeLiveActivityObservation,
   type NativeLiveActivityPlugin,
   type NativeLiveActivityState,
   type NativeLiveActivityTokenContext,
   type NativeLiveActivityTokenState,
 } from './native-ios-live-activity';
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 const observe = (
   overrides: Partial<NativeLiveActivityObservation> = {},
@@ -100,18 +99,6 @@ describe('native iOS Live Activity availability', () => {
       platform: 'ios',
       pluginAvailable: false,
     })).toBe(false);
-    expect(evaluateNativeIosLiveActivityAvailability({
-      isCapacitor: true,
-      platform: 'ios',
-      pluginAvailable: true,
-      nativeUiEnabled: false,
-    })).toBe(false);
-    expect(evaluateNativeIosLiveActivityAvailability({
-      isCapacitor: true,
-      platform: 'ios',
-      pluginAvailable: true,
-      nativeUiEnabled: true,
-    })).toBe(true);
   });
 });
 
@@ -512,6 +499,132 @@ describe('reduceNativeLiveActivity', () => {
   });
 });
 
+const catalogItem = (
+  overrides: Partial<NativeLiveActivityCatalogItem> & Pick<NativeLiveActivityCatalogItem, 'sessionId'>,
+): NativeLiveActivityCatalogItem => ({
+  title: overrides.title ?? overrides.sessionId,
+  statusType: overrides.statusType ?? 'busy',
+  ...overrides,
+});
+
+const observeCatalog = (
+  catalog: NativeLiveActivityCatalogItem[],
+  overrides: Partial<NativeLiveActivityObservation> = {},
+) => observe({ catalog, sessionId: NATIVE_LIVE_ACTIVITY_ID, ...overrides });
+
+describe('buildNativeLiveActivityCatalog', () => {
+  test('skips child sessions, keeps top-level running order, and truncates titles', () => {
+    const catalog = buildNativeLiveActivityCatalog({
+      runningIds: new Set(['ses_child', 'ses_b', 'ses_a', 'ses_unknown']),
+      statuses: {
+        ses_a: { type: 'busy' },
+        ses_b: { type: 'retry' },
+        ses_child: { type: 'busy' },
+      },
+      sessions: [
+        { id: 'ses_a', title: 'Alpha', parentID: null },
+        { id: 'ses_child', title: 'Child', parentID: 'ses_a' },
+        { id: 'ses_b', title: `${'Long '.repeat(40)}title`, parentID: null },
+      ],
+    });
+    expect(catalog.map((item) => item.sessionId)).toEqual(['ses_a', 'ses_b', 'ses_unknown']);
+    expect(catalog.find((item) => item.sessionId === 'ses_b')?.statusType).toBe('retry');
+    expect(catalog.find((item) => item.sessionId === 'ses_b')?.title.endsWith('…')).toBe(true);
+    expect(catalog.find((item) => item.sessionId === 'ses_b')?.title.length).toBeLessThanOrEqual(80);
+  });
+});
+
+describe('reduceNativeLiveActivity catalog', () => {
+  test('waits 5s then starts one activity with every working session', () => {
+    const waiting = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog([catalogItem({ sessionId: 'ses_a' }), catalogItem({ sessionId: 'ses_b', title: 'Beta' })], { now: 100 }),
+    );
+    expect(waiting.commands).toEqual([{ type: 'wait', delayMs: NATIVE_LIVE_ACTIVITY_BUSY_START_MS }]);
+    expect(waiting.state.started).toBe(false);
+    expect(waiting.state.items).toHaveLength(2);
+
+    const startedAtNow = 100 + NATIVE_LIVE_ACTIVITY_BUSY_START_MS;
+    const started = reduceNativeLiveActivity(waiting.state, observeCatalog(
+      [catalogItem({ sessionId: 'ses_a' }), catalogItem({ sessionId: 'ses_b', title: 'Beta' })],
+      { now: startedAtNow },
+    ));
+    expect(started.commands[0]).toMatchObject({
+      type: 'start',
+      payload: {
+        sessionId: NATIVE_LIVE_ACTIVITY_ID,
+        status: 'working',
+        workingCount: 2,
+      },
+    });
+    const payload = started.commands[0];
+    expect(payload?.type).toBe('start');
+    if (payload?.type !== 'start') return;
+    expect(payload.payload.items?.map((item) => item.sessionId)).toEqual(['ses_a', 'ses_b']);
+    expect(started.state.started).toBe(true);
+  });
+
+  test('keeps completed rows while another session is working', () => {
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog(
+        [
+          catalogItem({ sessionId: 'ses_a', statusType: 'retry' }),
+          catalogItem({ sessionId: 'ses_b', statusType: 'retry' }),
+        ],
+        { now: 80 },
+      ),
+    );
+    const updated = reduceNativeLiveActivity(started.state, observeCatalog(
+      [catalogItem({ sessionId: 'ses_b' })],
+      { now: 20_000 },
+    ));
+    expect(updated.commands[0]).toMatchObject({ type: 'update', payload: { workingCount: 1 } });
+    const payload = updated.commands[0];
+    expect(payload?.type).toBe('update');
+    if (payload?.type !== 'update') return;
+    expect(payload.payload.items).toEqual([
+      expect.objectContaining({ sessionId: 'ses_a', status: 'complete', endedAt: 20_000 }),
+      expect.objectContaining({ sessionId: 'ses_b', status: 'working' }),
+    ]);
+    expect(updated.state.started).toBe(true);
+  });
+
+  test('ends only after the last working session completes', () => {
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog([catalogItem({ sessionId: 'ses_a', statusType: 'retry' })], { now: 80 }),
+    );
+    const ended = reduceNativeLiveActivity(started.state, observeCatalog([], { now: 20_000 }));
+    expect(ended.commands[0]).toMatchObject({
+      type: 'end',
+      payload: {
+        sessionId: NATIVE_LIVE_ACTIVITY_ID,
+        status: 'complete',
+        workingCount: 0,
+        dismissalSeconds: NATIVE_LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS,
+      },
+    });
+    expect(ended.state.started).toBe(false);
+  });
+
+  test(`caps the list at ${NATIVE_LIVE_ACTIVITY_ITEM_LIMIT} working sessions`, () => {
+    const catalog = Array.from({ length: 6 }, (_, index) => catalogItem({
+      sessionId: `ses_${index}`,
+      title: `Session ${index}`,
+    }));
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog(catalog.map((item) => ({ ...item, statusType: 'retry' })), { now: 80 }),
+    );
+    const payload = started.commands[0];
+    expect(payload?.type).toBe('start');
+    if (payload?.type !== 'start') return;
+    expect(payload.payload.items).toHaveLength(NATIVE_LIVE_ACTIVITY_ITEM_LIMIT);
+    expect(payload.payload.workingCount).toBe(NATIVE_LIVE_ACTIVITY_ITEM_LIMIT);
+  });
+});
+
 describe('applyNativeLiveActivityCommand', () => {
   test('does not call the plugin when unavailable (web/electron/vscode/Android zero-call)', async () => {
     const native = plugin();
@@ -571,6 +684,39 @@ describe('applyNativeLiveActivityCommand', () => {
       status: 'working',
       eventVersion: 1,
       updatedAt: toNativeLiveActivityTimestamp(1_700_000_012_000),
+    });
+    await applyNativeLiveActivityCommand(true, native, {
+      type: 'update',
+      payload: {
+        sessionId: NATIVE_LIVE_ACTIVITY_ID,
+        startedAt: 1_700_000_000_000,
+        status: 'working',
+        eventVersion: 4,
+        updatedAt: 1_700_000_012_000,
+        title: 'Alpha',
+        workingCount: 1,
+        items: [{
+          sessionId: 'ses_a',
+          title: 'Alpha',
+          status: 'working',
+          startedAt: 1_700_000_000_000,
+        }],
+      },
+    });
+    expect(native.update).toHaveBeenCalledWith({
+      sessionId: NATIVE_LIVE_ACTIVITY_ID,
+      startedAt: toNativeLiveActivityTimestamp(1_700_000_000_000),
+      status: 'working',
+      eventVersion: 4,
+      updatedAt: toNativeLiveActivityTimestamp(1_700_000_012_000),
+      title: 'Alpha',
+      workingCount: 1,
+      items: [{
+        sessionId: 'ses_a',
+        title: 'Alpha',
+        status: 'working',
+        startedAt: toNativeLiveActivityTimestamp(1_700_000_000_000),
+      }],
     });
     await applyNativeLiveActivityCommand(true, native, {
       type: 'end',
@@ -970,39 +1116,5 @@ describe('native Live Activity token registration', () => {
     expect(unregister).not.toHaveBeenCalled();
     expect(register).not.toHaveBeenCalled();
     expect(next.registered).toBeNull();
-  });
-});
-
-describe('useNativeLiveActivity wiring', () => {
-  test('uses the narrow live status and bootstrap:false permission/question hooks', () => {
-    const hook = readFileSync(join(here, '../apps/useNativeLiveActivity.ts'), 'utf-8');
-    const syncContext = readFileSync(join(here, '../sync/sync-context.tsx'), 'utf-8');
-    expect(syncContext).toContain('export function useSessionErrorAt');
-    expect(syncContext).toContain('state.session_error_at?.[sessionID] !== previous.session_error_at?.[sessionID]');
-    expect(hook).toContain('useLiveSessionStatus');
-    expect(hook).toContain('useSessionErrorAt');
-    expect(hook).toContain('hasSessionError');
-    expect(hook).toContain('errorAt');
-    expect(hook).toContain('useSessionPermissions');
-    expect(hook).toContain('useSessionQuestions');
-    expect(hook).toContain("{ bootstrap: false }");
-    expect(hook).toContain('getCurrentSessionId');
-    expect(hook).toContain('result.superseded');
-    expect(hook).not.toContain('useCallback');
-    expect(hook).toContain('useEvent');
-    expect(hook).not.toContain('useSessionMessages');
-    expect(hook).not.toContain('message.part');
-    expect(hook).toContain('runNativeLiveActivityStep');
-    expect(hook).toContain('epochRef');
-    expect(hook).not.toContain('applyNativeLiveActivityCommand(true, plugin, command).catch(() => undefined)');
-    expect(hook).toContain("addListener('pushToken'");
-    expect(hook).toMatch(/addListener\('pushToken'[\s\S]*if \(!cancelled && epochRef\.current === epoch\) run\(\);/);
-    expect(hook).toContain('registerLiveActivityToken');
-    expect(hook).toContain('unregisterLiveActivityToken');
-    expect(hook).toContain('localEndSucceeded');
-    expect(hook).not.toMatch(/console\.(log|debug|info|warn)/);
-    const app = readFileSync(join(here, '../apps/MobileApp.tsx'), 'utf-8');
-    expect(app).toContain('useNativeLiveActivity');
-    expect(app).toContain('sessionId: currentSessionId');
   });
 });

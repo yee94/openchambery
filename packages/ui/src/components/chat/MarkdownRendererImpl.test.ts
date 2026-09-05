@@ -127,6 +127,8 @@ describe('isLikelyFileReferencePath', () => {
     test('keeps extension-bearing source paths and known extensionless files', () => {
         expect(isLikelyFileReferencePath('src/consumer.ts')).toBe(true);
         expect(isLikelyFileReferencePath('.omo/notepads/run/learnings.md')).toBe(true);
+        expect(isLikelyFileReferencePath('/Users/dev/Downloads/report.html')).toBe(true);
+        expect(isLikelyFileReferencePath('preview.htm')).toBe(true);
         expect(isLikelyFileReferencePath('Dockerfile')).toBe(true);
         expect(isLikelyFileReferencePath('.gitignore')).toBe(true);
     });
@@ -274,6 +276,36 @@ describe('forced layout while scrolling', () => {
     });
 });
 
+describe('file reference annotation', () => {
+    test('wraps path tokens during decorate so morphdom owns the underline structure', () => {
+        expect(decorateSource).toContain('wrapMarkdownFileReferenceTokens(root)');
+        expect(markdownRendererSource).toContain('copyPreservedFileLinkAttributes(fromEl, toEl)');
+
+        const annotateStart = markdownRendererSource.indexOf('const annotateFileLinks = () => {');
+        const annotateEnd = markdownRendererSource.indexOf('const openFileReference', annotateStart);
+        const annotate = markdownRendererSource.slice(annotateStart, annotateEnd);
+
+        expect(annotateStart).toBeGreaterThan(-1);
+        expect(annotate).not.toContain('unwrapBlockCodePathTokens');
+        expect(annotate).not.toContain('wrapBlockCodePathTokens');
+        expect(annotate).not.toContain('wrapParagraphPathTokens');
+    });
+
+    test('opens image file paths in the shared image preview', () => {
+        expect(markdownRendererSource).toContain('isImageFile(resolved.resolvedPath) && onShowPopup');
+        expect(markdownRendererSource).toContain("tool: 'image-preview'");
+        expect(markdownRendererSource).toContain('url: resolved.resolvedPath');
+    });
+});
+
+describe('html file references', () => {
+    test('opens html paths in preview instead of the runtime editor', () => {
+        expect(markdownRendererSource).toContain('isHtmlFile(resolved.resolvedPath)');
+        expect(markdownRendererSource).toContain("viewerMode: 'preview'");
+        expect(markdownRendererSource).toContain('preferRuntimeEditor && editor && !htmlPreview');
+    });
+});
+
 describe('binary file references', () => {
     test('routes binary links through the desktop path opener before the context preview', () => {
         const binaryHandlingStart = markdownRendererSource.indexOf("sourceElement.getAttribute('data-openchamber-file-binary') === 'true'");
@@ -282,7 +314,8 @@ describe('binary file references', () => {
         expect(binaryHandlingStart).toBeGreaterThan(-1);
         const binaryHandling = markdownRendererSource.slice(binaryHandlingStart, contextPreviewStart);
         expect(binaryHandling).toContain('!isImageFile(resolved.resolvedPath)');
+        expect(binaryHandling).toContain('!isHtmlFile(resolved.resolvedPath)');
         expect(binaryHandling).toContain('await openDesktopPath(resolved.resolvedPath)');
-        expect(markdownRendererSource).toContain('isMobileSurface && info.isBinary && !isImageFile(latestResolved.resolvedPath)');
+        expect(markdownRendererSource).toContain('!isHtmlFile(latestResolved.resolvedPath)');
     });
 });

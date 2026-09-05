@@ -52,7 +52,7 @@ This module provides notification message preparation utilities for the web serv
   - session meta cache for child-session and small-model suppression
   - template resolution and fallback behavior
   - native notification fanout and web push payload fanout
-  - push suppression while any fresh UI visibility heartbeat reports a focused client
+  - push always fans out to every subscribed surface; another client's visibility never suppresses delivery
 
 ### Push runtime API (push-runtime.js)
 - `createPushRuntime(dependencies)`: creates runtime for web push and UI visibility state.
@@ -62,7 +62,7 @@ This module provides notification message preparation utilities for the web serv
   - `setPushInitialized(value)`
   - `addOrUpdatePushSubscription(uiSessionToken, subscription, userAgent)`
   - `removePushSubscription(uiSessionToken, endpoint)`
-  - `sendPushToAllUiSessions(payload, options?)`
+  - `sendPushToAllUiSessions(payload)`
   - `updateUiVisibility(token, visible)`
   - `isAnyUiVisible()`
   - `isUiVisible(token)`

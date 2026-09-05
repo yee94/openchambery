@@ -19,7 +19,7 @@ import type { EditorAPI } from '@/lib/api/types';
 import { isDesktopBinaryPath, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, openDesktopPath } from '@/lib/desktop';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
-import { isImageFile } from '@/lib/toolHelpers';
+import { getImageMimeType, isHtmlFile, isImageFile } from '@/lib/toolHelpers';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { getClientPlatform } from '@/lib/platform';
 import { renderMarkdownBlocks, renderMarkdownSyncBlocks } from './markdown/markdownCore';
@@ -52,14 +52,18 @@ import { openImageSaveActions } from './imageSaveActionsBus';
 import { fetchRuntimeImageObjectUrl, needsRuntimeImageStream, releaseRuntimeImageObjectUrl, resolveImageSource } from './imageSource';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import {
-  BLOCK_PATH_TOKEN_RE,
-  PARAGRAPH_PATH_TOKEN_RE,
   isAbsoluteReferencePath,
   isLikelyFileReferencePath,
   normalizeReferencePath,
   parseFileReference,
   type ParsedFileReference,
 } from './fileReferenceParser';
+import {
+  BLOCK_PATH_TOKEN_SELECTOR,
+  FILE_LINK_SELECTOR,
+  copyPreservedFileLinkAttributes,
+  isLikelyFilePath,
+} from './fileReferenceDecorate';
 
 const useCurrentMermaidTheme = () => {
   const themeSystem = useOptionalThemeSystem();
@@ -454,15 +458,6 @@ interface MarkdownRendererProps {
   enableFileReferences?: boolean;
 }
 
-const FILE_LINK_SELECTOR = '[data-openchamber-file-link="true"]';
-const BLOCK_PATH_TOKEN_ATTR = 'data-openchamber-block-path-token';
-const BLOCK_PATH_TOKEN_SELECTOR = `[${BLOCK_PATH_TOKEN_ATTR}]`;
-const CODE_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-block-paths-scanned';
-const PARAGRAPH_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-paragraph-paths-scanned';
-// Matches `path[:line[:col]]` or `path:start-end` inside shell/grep-style
-// output. The regex is defined in `./fileReferenceParser`; the inline-code
-// pipeline reads full text content rather than using this regex.
-const MAX_BLOCK_CODE_SCAN_LENGTH = 200_000;
 const FILE_REFERENCE_STAT_CONCURRENCY = 4;
 const FILE_REFERENCE_STAT_CACHE_MAX = 1000;
 const VSCODE_FILE_REFERENCE_STAT_CACHE_MAX = 200;
@@ -499,48 +494,6 @@ const isLikelyFilePathValue = (path: string): boolean => {
   return isLikelyFileReferencePath(path);
 };
 
-const isLikelyFilePath = (value: string): boolean => {
-  const parsed = parseFileReference(value);
-  if (!parsed) {
-    return false;
-  }
-  return isLikelyFilePathValue(parsed.path);
-};
-
-const findTextPosition = (textNodes: Text[], targetOffset: number): { node: Text; offset: number } | null => {
-  let currentOffset = 0;
-
-  for (const node of textNodes) {
-    const nextOffset = currentOffset + node.data.length;
-    if (targetOffset <= nextOffset) {
-      return { node, offset: Math.max(0, targetOffset - currentOffset) };
-    }
-    currentOffset = nextOffset;
-  }
-
-  const lastNode = textNodes.at(-1);
-  return lastNode ? { node: lastNode, offset: lastNode.data.length } : null;
-};
-
-const unwrapBlockCodePathTokens = (container: HTMLElement): void => {
-  const tokenSpans = container.querySelectorAll<HTMLElement>(BLOCK_PATH_TOKEN_SELECTOR);
-  for (const span of Array.from(tokenSpans)) {
-    span.replaceWith(container.ownerDocument.createTextNode(span.textContent ?? ''));
-  }
-
-  const scannedBlocks = container.querySelectorAll<HTMLElement>(`code[${CODE_BLOCK_PATH_SCANNED_ATTR}]`);
-  for (const codeBlock of Array.from(scannedBlocks)) {
-    codeBlock.removeAttribute(CODE_BLOCK_PATH_SCANNED_ATTR);
-    codeBlock.normalize();
-  }
-
-  const scannedParagraphs = container.querySelectorAll<HTMLElement>(`[${PARAGRAPH_BLOCK_PATH_SCANNED_ATTR}]`);
-  for (const paragraph of Array.from(scannedParagraphs)) {
-    paragraph.removeAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR);
-    paragraph.normalize();
-  }
-};
-
 const extractPathCandidateFromElement = (element: HTMLElement): string => {
   if (element.tagName.toLowerCase() === 'a') {
     const href = element.getAttribute('href')?.trim();
@@ -550,214 +503,6 @@ const extractPathCandidateFromElement = (element: HTMLElement): string => {
   }
 
   return (element.textContent || '').trim();
-};
-
-// Walks text nodes inside `<pre><code>` subtrees and wraps any substring that
-// looks like a `path[:line[:col]]` reference in a span carrying
-// `data-openchamber-block-path-token`. `annotateFileLinks` then promotes those
-// spans into clickable file links via the same existing pipeline used for
-// inline code (parseFileReference → fileReferenceExists → openFileReference).
-//
-// Idempotent: each `<code>` node is marked with
-// `data-openchamber-block-paths-scanned` once processed so the walk is not
-// repeated on the same element. When the renderer replaces the `<code>` subtree
-// (e.g. on content change during streaming), the new element lacks the marker and
-// will be rescanned on the next mutation-observer callback.
-const wrapBlockCodePathTokens = (container: HTMLElement): void => {
-  const codeBlocks = container.querySelectorAll<HTMLElement>('pre code');
-  if (codeBlocks.length === 0) {
-    return;
-  }
-
-  const doc = container.ownerDocument;
-  if (!doc) {
-    return;
-  }
-
-  for (const codeBlock of Array.from(codeBlocks)) {
-    if (codeBlock.getAttribute(CODE_BLOCK_PATH_SCANNED_ATTR) === 'true') {
-      continue;
-    }
-
-    // Skip absurdly large code blocks to keep DOM work bounded.
-    if ((codeBlock.textContent ?? '').length > MAX_BLOCK_CODE_SCAN_LENGTH) {
-      codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
-      continue;
-    }
-
-    const walker = doc.createTreeWalker(codeBlock, NodeFilter.SHOW_TEXT);
-    const textNodes: Text[] = [];
-    let currentNode = walker.nextNode();
-    while (currentNode) {
-      textNodes.push(currentNode as Text);
-      currentNode = walker.nextNode();
-    }
-
-    const fullText = codeBlock.textContent ?? '';
-    if (!fullText.includes('.')) {
-      codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
-      continue;
-    }
-
-    BLOCK_PATH_TOKEN_RE.lastIndex = 0;
-    const matches: Array<{ start: number; end: number; raw: string }> = [];
-    let match: RegExpExecArray | null = BLOCK_PATH_TOKEN_RE.exec(fullText);
-    while (match) {
-      const raw = match[0];
-      if (raw && isLikelyFilePath(raw)) {
-        matches.push({ start: match.index, end: match.index + raw.length, raw });
-      }
-      match = BLOCK_PATH_TOKEN_RE.exec(fullText);
-    }
-
-    for (const { start, end, raw } of matches.reverse()) {
-      const startPosition = findTextPosition(textNodes, start);
-      const endPosition = findTextPosition(textNodes, end);
-      if (!startPosition || !endPosition) {
-        continue;
-      }
-
-      const range = doc.createRange();
-      range.setStart(startPosition.node, startPosition.offset);
-      range.setEnd(endPosition.node, endPosition.offset);
-
-      const span = doc.createElement('span');
-      span.setAttribute(BLOCK_PATH_TOKEN_ATTR, 'true');
-      span.textContent = raw;
-
-      range.deleteContents();
-      range.insertNode(span);
-    }
-
-    codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
-  }
-};
-
-const PARAGRAPH_SCAN_EXCLUDE_SELECTOR = 'pre, code, a, script, style, button, [data-openchamber-file-link], [data-openchamber-block-path-token]';
-
-// Walks ordinary paragraph / heading / list-item / blockquote / table-cell
-// subtrees and wraps any substring that looks like a `path[:line[:col]]`
-// reference in a span carrying `data-openchamber-block-path-token`. This
-// covers the common case where the assistant emits a bare path as regular
-// prose (no backticks, no markdown link), e.g.
-// `完整规格已更新至：domains/venture/.../最终方案.md`.
-//
-// The pass is intentionally conservative:
-// - Skips any text node inside an excluded subtree (code, existing links,
-//   previously-annotated tokens).
-// - Only matches tokens that contain a `/` separator and an extension-bearing
-//   final segment (see PARAGRAPH_PATH_TOKEN_RE).
-// - Each candidate is then filtered through `isLikelyFilePath` and, later,
-//   `fileReferenceExists` — so a false positive never becomes a clickable
-//   link, it just produces a bounded stat probe.
-//
-// Idempotent per element: each block-level container is marked with
-// `data-openchamber-paragraph-paths-scanned` once processed. The mutation
-// observer clears the marker via `unwrapBlockCodePathTokens` (which also
-// unwraps paragraph tokens, since they share the same attribute).
-const wrapParagraphPathTokens = (container: HTMLElement): void => {
-  const doc = container.ownerDocument;
-  if (!doc) {
-    return;
-  }
-
-  const blockContainers = container.querySelectorAll<HTMLElement>(
-    'p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th',
-  );
-  if (blockContainers.length === 0) {
-    return;
-  }
-
-  for (const block of Array.from(blockContainers)) {
-    if (block.getAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR) === 'true') {
-      continue;
-    }
-    if (block.closest(PARAGRAPH_SCAN_EXCLUDE_SELECTOR)) {
-      block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
-      continue;
-    }
-
-    const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) => {
-        const parent = node.parentElement;
-        if (!parent) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        if (parent.closest(PARAGRAPH_SCAN_EXCLUDE_SELECTOR)) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-
-    const textNodes: Text[] = [];
-    let currentNode = walker.nextNode();
-    while (currentNode) {
-      textNodes.push(currentNode as Text);
-      currentNode = walker.nextNode();
-    }
-
-    if (textNodes.length === 0) {
-      block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
-      continue;
-    }
-
-    const fullText = textNodes.map((node) => node.data).join('');
-    if (!fullText.includes('/') || !fullText.includes('.')) {
-      block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
-      continue;
-    }
-
-    PARAGRAPH_PATH_TOKEN_RE.lastIndex = 0;
-    const matches: Array<{ start: number; end: number; raw: string }> = [];
-    let match: RegExpExecArray | null = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
-    while (match) {
-      const raw = match[0];
-      if (!raw) {
-        match = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
-        continue;
-      }
-
-      // Reject candidates that are actually the tail of a URL scheme
-      // (`https://example.com/path/file.md` → `/example.com/path/file.md`).
-      // A real URL has `scheme://` before the candidate, so the two
-      // characters before the match are `:/` (when the candidate itself
-      // starts with `/`) or the single character before is `:` (when the
-      // candidate does not start with `/`).
-      const prevTwo = match.index >= 2 ? fullText.slice(match.index - 2, match.index) : '';
-      const prevChar = match.index >= 1 ? fullText.charAt(match.index - 1) : '';
-      if (prevChar === ':' || prevTwo === ':/') {
-        match = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
-        continue;
-      }
-
-      if (isLikelyFilePath(raw)) {
-        matches.push({ start: match.index, end: match.index + raw.length, raw });
-      }
-      match = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
-    }
-
-    for (const { start, end, raw } of matches.reverse()) {
-      const startPosition = findTextPosition(textNodes, start);
-      const endPosition = findTextPosition(textNodes, end);
-      if (!startPosition || !endPosition) {
-        continue;
-      }
-
-      const range = doc.createRange();
-      range.setStart(startPosition.node, startPosition.offset);
-      range.setEnd(endPosition.node, endPosition.offset);
-
-      const span = doc.createElement('span');
-      span.setAttribute(BLOCK_PATH_TOKEN_ATTR, 'true');
-      span.textContent = raw;
-
-      range.deleteContents();
-      range.insertNode(span);
-    }
-
-    block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
-  }
 };
 
 const getResolvedReference = (rawValue: string, effectiveDirectory: string): (ParsedFileReference & { resolvedPath: string }) | null => {
@@ -843,12 +588,14 @@ const useFileReferenceInteractions = ({
   effectiveDirectory,
   editor,
   preferRuntimeEditor,
+  onShowPopup,
   enabled,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
+  onShowPopup?: (content: ToolPopupContent) => void;
   enabled: boolean;
 }) => {
   const annotationDebounceRef = React.useRef<number | null>(null);
@@ -887,7 +634,6 @@ const useFileReferenceInteractions = ({
       for (const candidate of Array.from(annotated)) {
         clearFileLinkAttributes(candidate);
       }
-      unwrapBlockCodePathTokens(container);
     };
 
     if (!fileReferencesEnabled) {
@@ -914,10 +660,6 @@ const useFileReferenceInteractions = ({
     };
 
     const annotateFileLinks = () => {
-      if (fileReferencesEnabled) {
-        wrapBlockCodePathTokens(container);
-        wrapParagraphPathTokens(container);
-      }
       const candidates = container.querySelectorAll<HTMLElement>(
         `[data-markdown="inline-code"], a, ${BLOCK_PATH_TOKEN_SELECTOR}`,
       );
@@ -926,17 +668,25 @@ const useFileReferenceInteractions = ({
       for (const candidate of Array.from(candidates)) {
         const rawCandidate = extractPathCandidateFromElement(candidate);
         const resolved = getResolvedReference(rawCandidate, effectiveDirectory);
-        clearFileLinkAttributes(candidate);
 
         if (!resolved) {
+          clearFileLinkAttributes(candidate);
           continue;
         }
 
         if (linkedCount >= fileReferenceLinkLimit) {
+          clearFileLinkAttributes(candidate);
           continue;
         }
 
         linkedCount += 1;
+
+        if (
+          candidate.getAttribute('data-openchamber-file-link') === 'true'
+          && candidate.getAttribute('data-openchamber-file-path') === resolved.resolvedPath
+        ) {
+          continue;
+        }
 
         const canGrantOutsideFile = isDesktopShell()
           && isDesktopLocalOriginActive()
@@ -946,7 +696,7 @@ const useFileReferenceInteractions = ({
           : getFileReferenceInfo(resolved.resolvedPath);
 
         void infoPromise.then((info) => {
-          if (cancelled || !info.exists || !container.contains(candidate)) {
+          if (cancelled || !container.contains(candidate)) {
             return;
           }
 
@@ -955,7 +705,16 @@ const useFileReferenceInteractions = ({
           if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
             return;
           }
-          if (isMobileSurface && info.isBinary && !isImageFile(latestResolved.resolvedPath)) {
+          if (
+            !info.exists
+            || (
+              isMobileSurface
+              && info.isBinary
+              && !isImageFile(latestResolved.resolvedPath)
+              && !isHtmlFile(latestResolved.resolvedPath)
+            )
+          ) {
+            clearFileLinkAttributes(candidate);
             return;
           }
 
@@ -981,14 +740,39 @@ const useFileReferenceInteractions = ({
 
       const isBinary = sourceElement.getAttribute('data-openchamber-file-binary') === 'true';
       const isApplicationBundle = resolved.resolvedPath.toLowerCase().endsWith('.app');
-      if ((isBinary || isApplicationBundle) && !isImageFile(resolved.resolvedPath)) {
+      if (
+        (isBinary || isApplicationBundle)
+        && !isImageFile(resolved.resolvedPath)
+        && !isHtmlFile(resolved.resolvedPath)
+      ) {
         if (await openDesktopPath(resolved.resolvedPath)) {
           return;
         }
       }
 
+      if (isImageFile(resolved.resolvedPath) && onShowPopup) {
+        const filename = resolved.resolvedPath.split('/').filter(Boolean).pop() ?? resolved.resolvedPath;
+        onShowPopup({
+          open: true,
+          title: filename,
+          content: '',
+          metadata: {
+            tool: 'image-preview',
+            filename,
+            mime: getImageMimeType(resolved.resolvedPath),
+          },
+          image: {
+            url: resolved.resolvedPath,
+            filename,
+            mimeType: getImageMimeType(resolved.resolvedPath),
+          },
+        });
+        return;
+      }
+
       const contextDirectory = getContextDirectory(effectiveDirectory, resolved.resolvedPath);
-      if (preferRuntimeEditor && editor) {
+      const htmlPreview = isHtmlFile(resolved.resolvedPath);
+      if (preferRuntimeEditor && editor && !htmlPreview) {
         void editor.openFile(
           resolved.resolvedPath,
           Number.isFinite(resolved.line ?? Number.NaN)
@@ -1006,6 +790,10 @@ const useFileReferenceInteractions = ({
       }
 
       const uiStore = useUIStore.getState();
+      if (htmlPreview) {
+        uiStore.openContextFile(contextDirectory, resolved.resolvedPath, { viewerMode: 'preview' });
+        return;
+      }
       if (Number.isFinite(resolved.line ?? Number.NaN)) {
         uiStore.openContextFileAtLine(
           contextDirectory,
@@ -1080,7 +868,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, enabled]);
+  }, [containerRef, editor, effectiveDirectory, onShowPopup, preferRuntimeEditor, enabled]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1520,6 +1308,7 @@ const useMorphdomMarkdown = ({
             if (shouldPreserveStreamingFence(fromEl, toEl)) {
               return false;
             }
+            copyPreservedFileLinkAttributes(fromEl, toEl);
             if (fromEl instanceof HTMLImageElement && toEl instanceof HTMLImageElement) {
               const source = fromEl.getAttribute('data-md-image-source');
               if (source && source === toEl.getAttribute('data-md-image-source')) {
@@ -1747,6 +1536,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
+    onShowPopup,
     enabled: enableFileReferences && !isStreaming,
   });
   useExternalLinkInteractions({ containerRef });
@@ -1881,6 +1671,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
+    onShowPopup,
     enabled: enableFileReferences,
   });
   useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });
