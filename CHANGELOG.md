@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.11] - 2026-09-05
+
+### 移动端
+
+- iOS Live Activity 每一行可以点进对应会话。
+- 手机文件里的 HTML 预览支持全屏和查看源码。
+
 ## [1.19.5-beta.10] - 2026-09-05
 
 ### 会话
