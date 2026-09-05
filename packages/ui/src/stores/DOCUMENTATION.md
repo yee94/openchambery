@@ -98,10 +98,11 @@ These stores coordinate visible app state, navigation, selected tabs, dialogs, a
 `useFeatureFlagsStore` owns lightweight localStorage A/B flags. TanStack Virtual
 is the chat list runtime default (`legendTimelineEnabled` is true only when
 `localStorage.oc:legend-timeline === '1'`). LegendList / TimelineList stay
-opt-in. Assistant Markdown stays on the current marked + Shiki + morphdom
-renderer unless `localStorage.oc:markstream-react === '1'`, which routes
-streaming and settled assistant text bodies through `markstream-react`. User,
-tool, and other `SimpleMarkdownRenderer` surfaces stay on the current path.
+opt-in. On this experiment branch, assistant Markdown defaults to
+`markstream-react` (`markstreamReactEnabled` is false only when
+`localStorage.oc:markstream-react === '0'`). Set that key to `0` to fall back
+to marked + Shiki + morphdom. User, tool, and other `SimpleMarkdownRenderer`
+surfaces stay on the current path.
 
 `useSidebarBrandStore` persists the sidebar wordmark. Packaged Electron multi-window
 shares one UI origin while each window may bind a different API host, so the store

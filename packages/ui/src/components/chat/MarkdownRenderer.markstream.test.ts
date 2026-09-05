@@ -23,7 +23,7 @@ describe('markstream-react trial path', () => {
     expect(source.slice(simpleStart)).not.toContain('MarkstreamRendererLazy');
   });
 
-  test('preload also warms Markstream only when the opt-in flag is already set', () => {
+  test('preload also warms Markstream when the experiment default is on', () => {
     const source = readFileSync(join(here, 'markdownRendererLoader.ts'), 'utf8');
     expect(source).toContain('readMarkstreamReactEnabled()');
     expect(source).toContain('preloadMarkstreamRenderer()');

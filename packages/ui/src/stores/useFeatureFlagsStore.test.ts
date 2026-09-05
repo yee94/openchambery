@@ -34,20 +34,20 @@ describe('readLegendTimelineEnabled', () => {
 });
 
 describe('readMarkstreamReactEnabled', () => {
-    test('the current Markdown renderer stays default unless oc:markstream-react is exactly 1', () => {
-        expect(readMarkstreamReactEnabled(null)).toBe(false);
-        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, null))).toBe(false);
-        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, ''))).toBe(false);
-        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, '0'))).toBe(false);
-        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, 'true'))).toBe(false);
+    test('Markstream is the default unless oc:markstream-react is exactly 0', () => {
+        expect(readMarkstreamReactEnabled(null)).toBe(true);
+        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, null))).toBe(true);
+        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, ''))).toBe(true);
         expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, '1'))).toBe(true);
+        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, 'true'))).toBe(true);
+        expect(readMarkstreamReactEnabled(memoryStorage(MARKSTREAM_REACT_STORAGE_KEY, '0'))).toBe(false);
     });
 
-    test('a throwing storage reader stays on the current Markdown renderer', () => {
+    test('a throwing storage reader stays on Markstream', () => {
         expect(readMarkstreamReactEnabled({
             getItem: () => {
                 throw new Error('blocked');
             },
-        })).toBe(false);
+        })).toBe(true);
     });
 });
