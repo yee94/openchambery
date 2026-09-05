@@ -77,7 +77,6 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
   return (
     <div
       ref={containerRef}
-      aria-busy={undefined}
       className={cn('relative break-words w-full min-w-0', markdownContentClassName(variant), className)}
       data-markdown-ready="true"
       data-markdown-hydration="ready"
