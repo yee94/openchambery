@@ -175,6 +175,37 @@ describe('ContextToolGroup', () => {
         expect(exploredMarkup).not.toContain('oc-lattice-orb-dot');
     });
 
+    test('folds explore and used tools into one Explored summary with line diffs', () => {
+        const activities = [
+            contextActivity('grep-1', 'grep', 'completed'),
+            contextActivity('read-1', 'read', 'completed'),
+            {
+                ...contextActivity('edit-1', 'edit', 'completed'),
+                part: {
+                    id: 'edit-1',
+                    type: 'tool',
+                    callID: 'call-edit-1',
+                    tool: 'edit',
+                    state: { status: 'completed', metadata: { additions: 4, deletions: 2 } },
+                },
+            } as unknown as TurnActivityRecord,
+            contextActivity('bash-1', 'bash', 'completed'),
+        ];
+        const markup = renderToStaticMarkup(
+            <I18nProvider>
+                <ContextToolGroup activities={activities} isMobile={false} />
+            </I18nProvider>,
+        );
+
+        expect(markup).toContain('data-component="context-tool-group"');
+        expect(markup).toContain('Explored');
+        expect(markup).toContain('1 search, 1 read, 1 edit, 1 command');
+        expect(markup).toContain('+4');
+        expect(markup).toContain('-2');
+        expect(markup).not.toContain('Used');
+        expect(markup).not.toContain('data-component="used-tool-group"');
+    });
+
     test('keeps the group active while any member lacks settlement evidence', () => {
         const activities = [
             contextActivity('grep-1', 'grep', 'completed'),

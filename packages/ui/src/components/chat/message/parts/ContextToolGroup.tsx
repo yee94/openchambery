@@ -8,20 +8,35 @@ import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/typ
 import { LatticeOrb } from './LatticeOrb';
 import { FlipUpText } from './FlipUpText';
 import {
-    CONTEXT_TOOL_COUNT_ORDER,
-    isContextGroupExploring,
-    summarizeContextTools,
-} from './contextToolGrouping';
+    PROCESS_TOOL_COUNT_ORDER,
+    isProcessGroupActive,
+    summarizeProcessTools,
+    summarizeUsedToolDiffs,
+} from './processToolGrouping';
 import { getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 
+const ProcessDiffTotals: React.FC<{ added: number; removed: number }> = ({ added, removed }) => {
+    if (added <= 0 && removed <= 0) {
+        return null;
+    }
+
+    return (
+        <span className={cn('inline-flex flex-none items-center gap-0.5 tabular-nums', TOOL_ROW_TEXT_CLASS)}>
+            {added > 0 ? <span style={{ color: 'var(--status-success)' }}>+{added}</span> : null}
+            {added > 0 && removed > 0 ? <span style={{ color: 'var(--tools-description)' }}>/</span> : null}
+            {removed > 0 ? <span style={{ color: 'var(--status-error)' }}>-{removed}</span> : null}
+        </span>
+    );
+};
+
 export const ContextToolGroup: React.FC<{
     activities: TurnActivityPart[];
     isMobile: boolean;
-    /** 本轮仍在进行时，后面没出现其他类型内容也保持探索中。 */
+    /** 本轮仍在进行时，后面没出现正文 / 特殊工具也保持探索中。 */
     isTurnLive?: boolean;
-    /** 本组之后是否已出现正文 / 非 context 工具。 */
+    /** 本组之后是否已出现正文 / skill / task / question。 */
     hasFollowingOtherType?: boolean;
     /**
      * 可选：由完整 parts 时间线计算的明确 exploring 状态。
@@ -34,13 +49,14 @@ export const ContextToolGroup: React.FC<{
     const [isExpanded, setIsExpanded] = React.useState(false);
     const contentId = React.useId();
     const toolParts = activities.map((activity) => activity.part as ToolPartType);
-    const isActive = exploring ?? isContextGroupExploring({
+    const isActive = exploring ?? isProcessGroupActive({
         parts: toolParts,
         hasFollowingOtherType,
         isTurnLive,
     });
-    const counts = summarizeContextTools(toolParts.map((part) => part.tool));
-    const summary = CONTEXT_TOOL_COUNT_ORDER
+    const counts = summarizeProcessTools(toolParts.map((part) => part.tool));
+    const diffs = summarizeUsedToolDiffs(toolParts);
+    const summary = PROCESS_TOOL_COUNT_ORDER
         .filter((key) => counts[key] > 0)
         .map((key) => {
             const count = counts[key];
@@ -50,7 +66,16 @@ export const ContextToolGroup: React.FC<{
             if (key === 'read') {
                 return t(count === 1 ? 'chat.contextGroup.readSingle' : 'chat.contextGroup.readPlural', { count });
             }
-            return t(count === 1 ? 'chat.contextGroup.listSingle' : 'chat.contextGroup.listPlural', { count });
+            if (key === 'list') {
+                return t(count === 1 ? 'chat.contextGroup.listSingle' : 'chat.contextGroup.listPlural', { count });
+            }
+            if (key === 'edit') {
+                return t(count === 1 ? 'chat.usedGroup.editSingle' : 'chat.usedGroup.editPlural', { count });
+            }
+            if (key === 'command') {
+                return t(count === 1 ? 'chat.usedGroup.commandSingle' : 'chat.usedGroup.commandPlural', { count });
+            }
+            return t(count === 1 ? 'chat.usedGroup.otherSingle' : 'chat.usedGroup.otherPlural', { count });
         })
         .join(', ');
 
@@ -136,6 +161,7 @@ export const ContextToolGroup: React.FC<{
                         />
                     </span>
                 ) : null}
+                <ProcessDiffTotals added={diffs.added} removed={diffs.removed} />
                 <Icon
                     name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
                     className="ml-auto size-3.5 flex-none self-center text-muted-foreground opacity-70"

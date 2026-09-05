@@ -44,13 +44,11 @@ import { formatTimestampForDisplay } from './timeFormat';
 import { computeAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { SkillToolGroup } from './parts/SkillToolGroup';
-import { UsedToolGroup } from './parts/UsedToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
 import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
-import { hasContextExploreSuccessor } from './parts/contextToolGrouping';
+import { collectConsecutiveProcessTools, hasProcessSuccessor } from './parts/processToolGrouping';
 import { collectConsecutiveSkillTools } from './parts/skillToolGrouping';
-import { collectConsecutiveUsedTools, hasUsedRunSuccessor } from './parts/usedToolGrouping';
-import { isContextGroupTool, isExpandableTool, isSkillGroupTool, isToolPartActive, isToolPartSettled, isUsedGroupTool } from './parts/toolRenderUtils';
+import { isContextGroupTool, isExpandableTool, isProcessGroupTool, isSkillGroupTool, isToolPartActive, isToolPartSettled } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
@@ -2105,57 +2103,66 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
 
-                if (isContextGroupTool(toolName)) {
-                    const run: Array<{
-                        id: string;
-                        turnId: string;
-                        messageId: string;
-                        partIndex: number;
-                        part: ToolPartType;
-                        kind: 'tool';
-                    }> = [];
-                    let j = i;
-                    while (j < visibleParts.length) {
-                        const next = visibleParts[j];
-                        if (next.type !== 'tool') break;
-                        const nextTool = next as ToolPartType;
-                        const nextName = nextTool.tool?.toLowerCase() ?? '';
-                        if (!isContextGroupTool(nextName)) break;
-                        if (activityByPart.get(next)?.kind === 'tool') break;
-                        run.push({
-                            id: nextTool.id,
-                            turnId: '',
-                            messageId,
-                            partIndex: j,
-                            part: nextTool,
-                            kind: 'tool' as const,
+                if (isProcessGroupTool(toolName)) {
+                    const grouped = collectConsecutiveProcessTools(visibleParts, i, (item) => {
+                        if (item.type !== 'tool') return '';
+                        if (activityByPart.get(item)?.kind === 'tool') return '';
+                        return (item as ToolPartType).tool;
+                    });
+                    if (grouped.items.length > 0) {
+                        const processRun = grouped.items.map((item, offset) => {
+                            const nextTool = item as ToolPartType;
+                            return {
+                                id: nextTool.id,
+                                turnId: '',
+                                messageId,
+                                partIndex: i + offset,
+                                part: nextTool,
+                                kind: 'tool' as const,
+                            };
                         });
-                        j += 1;
-                    }
-                    if (run.length > 0) {
                         rendered.push(
                             <ContextToolGroup
-                                key={`context-tools-${run[0].id}`}
-                                activities={run}
+                                key={`context-tools-${processRun[0].id}`}
+                                activities={processRun}
                                 isMobile={isMobile}
                                 isTurnLive={effectiveStreamPhase !== 'completed'}
-                                hasFollowingOtherType={hasContextExploreSuccessor(visibleParts, j, (item) => ({
+                                hasFollowingOtherType={hasProcessSuccessor(visibleParts, grouped.end, (item) => ({
                                     type: item.type,
                                     toolName: item.type === 'tool' ? (item as ToolPartType).tool : undefined,
                                 }))}
                             >
-                                {run.map((activity) => (
-                                    <StaticToolRow
-                                        key={activity.id}
-                                        toolName={activity.part.tool?.toLowerCase() ?? ''}
-                                        activities={[activity]}
-                                        isMobile={isMobile}
-                                        animateTailText={false}
-                                    />
-                                ))}
+                                {processRun.map((activity) => {
+                                    const groupedToolName = activity.part.tool?.toLowerCase() ?? '';
+                                    if (isContextGroupTool(groupedToolName)) {
+                                        return (
+                                            <StaticToolRow
+                                                key={activity.id}
+                                                toolName={groupedToolName}
+                                                activities={[activity]}
+                                                isMobile={isMobile}
+                                                animateTailText={false}
+                                            />
+                                        );
+                                    }
+                                    return (
+                                        <ToolPart
+                                            key={activity.id}
+                                            part={activity.part}
+                                            messageId={messageId}
+                                            isExpanded={expandedTools.has(activity.part.id)}
+                                            onToggle={onToggleTool}
+                                            isMobile={isMobile}
+                                            alwaysShowActions={alwaysShowMessageActions}
+                                            onContentChange={onContentChange}
+                                            onShowPopup={onShowPopup}
+                                            animateTailText={false}
+                                        />
+                                    );
+                                })}
                             </ContextToolGroup>
                         );
-                        i = j;
+                        i = grouped.end;
                         continue;
                     }
                 }
@@ -2194,56 +2201,6 @@ const AssistantMessageBody = React.memo(({
                                     />
                                 ))}
                             </SkillToolGroup>
-                        );
-                        i = grouped.end;
-                        continue;
-                    }
-                }
-
-                if (isUsedGroupTool(toolName)) {
-                    const grouped = collectConsecutiveUsedTools(visibleParts, i, (item) => {
-                        if (item.type !== 'tool') return '';
-                        if (activityByPart.get(item)?.kind === 'tool') return '';
-                        return (item as ToolPartType).tool;
-                    });
-                    if (grouped.items.length > 0) {
-                        const usedRun = grouped.items.map((item, offset) => {
-                            const nextTool = item as ToolPartType;
-                            return {
-                                id: nextTool.id,
-                                turnId: '',
-                                messageId,
-                                partIndex: i + offset,
-                                part: nextTool,
-                                kind: 'tool' as const,
-                            };
-                        });
-                        rendered.push(
-                            <UsedToolGroup
-                                key={`used-tools-${usedRun[0].id}`}
-                                activities={usedRun}
-                                isMobile={isMobile}
-                                isTurnLive={effectiveStreamPhase !== 'completed'}
-                                hasFollowingOtherType={hasUsedRunSuccessor(visibleParts, grouped.end, (item) => ({
-                                    type: item.type,
-                                    toolName: item.type === 'tool' ? (item as ToolPartType).tool : undefined,
-                                }))}
-                            >
-                                {usedRun.map((activity) => (
-                                    <ToolPart
-                                        key={activity.id}
-                                        part={activity.part}
-                                        messageId={messageId}
-                                        isExpanded={expandedTools.has(activity.part.id)}
-                                        onToggle={onToggleTool}
-                                        isMobile={isMobile}
-                                        alwaysShowActions={alwaysShowMessageActions}
-                                        onContentChange={onContentChange}
-                                        onShowPopup={onShowPopup}
-                                        animateTailText={false}
-                                    />
-                                ))}
-                            </UsedToolGroup>
                         );
                         i = grouped.end;
                         continue;
