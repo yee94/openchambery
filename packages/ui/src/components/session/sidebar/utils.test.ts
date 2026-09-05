@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { Session } from '@opencode-ai/sdk/v2';
+import type { Session } from '@/lib/opencode/v2-types';
 import { compareSessionsByPinnedAndTime, isPathWithinProject } from './utils';
 
 const session = (id: string, created: number, updated: number): Session => ({

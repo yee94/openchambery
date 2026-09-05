@@ -15,7 +15,7 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - Next-run computation (daily/weekly/cron compatibility)
   - Timer scheduling and queueing
   - Concurrency controls
-  - Session create → archive → goal/prompt/command execution
+  - Session create → goal/prompt/command execution
   - Emits OpenChamber task-run events
   - Isolates project sync failures, retries each failed project up to three times,
     and clears pending retries during shutdown
@@ -176,23 +176,20 @@ Every actual run (timer or manual):
 4. Create an OpenCode session with:
    - title: `[Scheduled] ${taskName} yyyy-LL-dd HH:mm` (total length ≤ 120)
    - metadata: `openchamber.scheduledTask = { projectID, taskID, runID, name }`
-   - SDK/HTTP calls receive `{ signal }` as the second request-options argument
-     (`client.session.create(params, { signal })`, same for `update` /
-     `command` / `command.list`; raw `fetch` for goal PATCH and `prompt_async`
-     pass `signal` in `RequestInit`).
-5. `attachSession(runID, sessionID)` immediately after create.
-6. Archive the session via SDK `client.session.update({ sessionID, directory, time: { archived } })`.
-   - 404 receives one short bounded retry (also signal-aware); other failures
-     abort without prompt.
-   - If attach fails, the runtime still attempts archive, then fails the run.
- 7. Only after a successful archive: goal metadata PATCH (preserving the
-    `scheduledTask` marker together with `goal`), then command or `prompt_async`.
+    - SDK/HTTP calls receive `{ signal }` as the second request-options argument
+      (`client.session.create(params, { signal })`, same for `prompt` /
+      `command` / `command.list`; raw `fetch` for goal PATCH
+      pass `signal` in `RequestInit`).
+ 5. `attachSession(runID, sessionID)` immediately after create.
+    - If attach fails, the runtime fails the run without prompting.
+ 6. Goal metadata PATCH (preserving the
+     `scheduledTask` marker together with `goal`), then command or `session.prompt`.
     Non-cancellable async gaps (small-model distill, objective file write) check
     `signal.throwIfAborted()` before continuing so a timed-out run never prompts.
-    **Admission is not completion:** `prompt_async` / command return when the
+    **Admission is not completion:** `session.prompt` / command return when the
     turn is accepted, not when the agent finishes.
- 8. Wait for the real session outcome (bounded by the same watchdog):
-    - Poll `session.status` + `session.messages` until the session is idle and
+ 7. Wait for the real session outcome (bounded by the same watchdog):
+    - Poll `session.active` + `message.list` until the session is idle and
       the tail is a settled assistant turn (completed, or incomplete-but-stable
       while idle). Assistant `error` (including abort) finalizes as `error`.
     - Goal-enabled runs poll `session.get` for terminal goal status
@@ -200,20 +197,20 @@ Every actual run (timer or manual):
       finish on the first idle between goal turns.
     - `durationMs` / `finishedAt` are wall-clock from run start through this
       settlement — not the prompt admission latency.
- 9. On watchdog timeout after a session exists: immediately throw the canonical
+ 8. On watchdog timeout after a session exists: immediately throw the canonical
     `schedule run timed out` without awaiting non-cancellable helper work. A
     once-only abort listener registered after session create starts best-effort
-    `client.session.abort({ sessionID, directory })` as soon as the watchdog
-    aborts the signal (or right after create if the signal already aborted).
-    Abort failures must not replace the timeout error. Successful runs and
-    ordinary non-timeout failures never call session abort.
- 10. Finalize history with the ultimate run status (timeout → `error` with
+     `client.session.interrupt({ sessionID, continue: false })` as soon as the watchdog
+     aborts the signal (or right after create if the signal already aborted).
+     Interrupt failures must not replace the timeout error. Successful runs and
+     ordinary non-timeout failures never call session interrupt.
+ 9. Finalize history with the ultimate run status (timeout → `error` with
     `schedule run timed out`; assistant/goal failure → `error` with the
     recorded reason). An already-attached `session_id` remains on the history
     row so the session stays openable from history. Task state persistence
     failures also finalize history as `error`. A failed history finalize
     returns error and may leave a `running` row for next-start convergence.
-  11. `lastSessionId` is written on the task state whenever the run has a
+ 10. `lastSessionId` is written on the task state whenever the run has a
      session (success or error). If the run has no session, omit
      `lastSessionId` from the patch so a previous value is preserved. Full
      association still lives in the history table; history rows are not
@@ -229,8 +226,8 @@ that same history session. `observeSessionEvent` corrects **only task state**
 
 - `session.status` busy/retry while `lastStatus` is `error` or `success` →
   `lastStatus` `running`, clear `lastError`, keep/set `lastSessionId`
-- later `session.idle` (or idle `session.status`) with a success snapshot →
-  `lastStatus` `success`
+- later `session.idle` (or idle `session.status`) with a success snapshot from
+  `session.active` + `message.list` → `lastStatus` `success`
 - do not change `lastRunAt` / `lastDurationMs` / `nextRunAt`
 
 A live run (`runningTaskKeys`) owns settlement; the observer is a no-op while
@@ -245,21 +242,21 @@ the session is attached.
 ## Watchdog cancel / upstream abort
 
 - Timeout path: abort the per-run signal → cancel in-flight cancellable
-  SDK/HTTP → start best-effort OpenCode `session.abort` via the create-time
+  SDK/HTTP → start best-effort OpenCode `session.interrupt` via the create-time
   abort listener (independent of whether the current await is cancellable) →
   **do not wait** for non-cancellable helpers (small-model distill /
   `writeObjective`) to finish → history and task state finalize as `error`
   with `schedule run timed out` within the watchdog bound. The detached
   `runPromise` is settled with a catch so late rejections are not unhandled.
 - When uncancellable helper work eventually finishes, post-await
-  `throwIfAborted` gates stop goal PATCH / command / `prompt_async`.
-- Non-timeout failures: no timeout abort; no forced `session.abort` from the
+  `throwIfAborted` gates stop goal PATCH / command / `session.prompt`.
+- Non-timeout failures: no timeout abort; no forced `session.interrupt` from the
   watchdog.
 - Runtime `stop()` clears timers, project-sync retries, and the queue only; it
   does not abort in-flight run controllers.
 - Remaining non-cancellable edges: work already fully admitted and completed
   HTTP-wise before timeout cannot be rolled back by aborting the HTTP request
-  alone; `session.abort` is the upstream stop for admitted command/prompt
+  alone; `session.interrupt` is the upstream stop for admitted command/prompt
   execution. Small-model distillation and objective file writes are not passed
   a signal; the watchdog does not await them, and abort gates block later
   stages after they complete.
