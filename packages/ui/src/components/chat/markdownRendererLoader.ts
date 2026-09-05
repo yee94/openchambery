@@ -1,3 +1,6 @@
+import { readMarkstreamReactEnabled } from '@/stores/useFeatureFlagsStore';
+import { preloadMarkstreamRenderer } from './markstreamRendererLoader';
+
 let markdownRendererModulePromise: Promise<typeof import('./MarkdownRendererImpl')> | null = null;
 
 export const loadMarkdownRendererModule = () => {
@@ -10,4 +13,7 @@ export const loadMarkdownRendererModule = () => {
 
 export const preloadMarkdownRenderer = () => {
   void loadMarkdownRendererModule().catch(() => undefined);
+  if (readMarkstreamReactEnabled()) {
+    preloadMarkstreamRenderer();
+  }
 };

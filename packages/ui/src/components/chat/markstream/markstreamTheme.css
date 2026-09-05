@@ -1,0 +1,47 @@
+/* Theme Markstream to OpenChamber tokens. Markstream CSS is scoped under
+   `.markstream-react`; these overrides only apply on the experimental path. */
+
+.oc-markstream-host {
+  color: var(--surface-foreground);
+}
+
+.oc-markstream-host .markstream-react {
+  color: inherit;
+  font-family: var(--font-sans);
+  font-size: inherit;
+  line-height: var(--markdown-body-line-height, 1.625);
+  --foreground: inherit;
+  --muted-foreground: var(--surface-muted-foreground);
+  --link-color: var(--markdown-link, var(--primary));
+  --blockquote-border-color: var(--interactive-border);
+  --hr-border-color: var(--surface-subtle);
+  --table-border: var(--interactive-border);
+  --footnote-border: var(--surface-subtle);
+  --code-bg: var(--syntax-background, var(--surface-muted));
+  --code-fg: var(--syntax-foreground, var(--surface-foreground));
+  --code-border: var(--interactive-border);
+  --code-header-bg: var(--surface-muted);
+  --code-action-fg: var(--surface-muted-foreground);
+  --code-action-hover-bg: var(--interactive-hover);
+  --code-action-hover-fg: var(--surface-foreground);
+  --code-line-number: var(--surface-muted-foreground);
+}
+
+.oc-markstream-host .markstream-react a,
+.oc-markstream-host .markstream-react .link-node {
+  color: var(--markdown-link, var(--primary));
+}
+
+.oc-markstream-host .markstream-react a:hover,
+.oc-markstream-host .markstream-react .link-node:hover {
+  color: var(--markdown-link-hover, var(--primary));
+}
+
+.oc-markstream-host .markstream-react .inline-code {
+  background: var(--syntax-background, var(--surface-muted));
+  color: var(--syntax-foreground, var(--surface-foreground));
+}
+
+.oc-markstream-host.markdown-reasoning .markstream-react {
+  color: var(--surface-muted-foreground);
+}
