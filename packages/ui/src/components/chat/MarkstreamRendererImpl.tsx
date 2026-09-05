@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { markdownHeightCacheKey, rememberMarkdownHeight } from './markdown/markdownHeightCache';
 import { handleMarkstreamPointerEvent } from './markstream/markstreamInteractions';
+import { MARKSTREAM_CHAT_STREAM_PERFORMANCE } from './markstream/markstreamPerformance';
 import type { ToolPopupContent } from './message/types';
 import 'markstream-react/index.css';
 import './markstream/markstreamTheme.css';
@@ -81,15 +82,16 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
       data-markdown-ready="true"
       data-markdown-hydration="ready"
       data-oc-markdown-engine="markstream"
+      data-oc-markstream-virtual="nodes"
     >
       <MarkdownRender
         content={content}
         customId={customId}
         final={!isStreaming}
-        fade={false}
         isDark={isDark}
         codeBlockOptions={MARKSTREAM_CODE_BLOCK_OPTIONS}
         codeBlockStream={isStreaming}
+        {...MARKSTREAM_CHAT_STREAM_PERFORMANCE}
       />
     </div>
   );
