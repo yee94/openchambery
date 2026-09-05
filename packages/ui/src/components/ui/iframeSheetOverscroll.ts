@@ -28,6 +28,15 @@ export const shouldHandIframePanToSheet = (scrollTop: number, deltaY: number): b
   Number.isFinite(scrollTop) && Number.isFinite(deltaY) && scrollTop <= 1 && deltaY > 0
 );
 
+export const shouldKeepIframeSheetDismiss = (
+  active: boolean,
+  scrollTop: number,
+  deltaY: number,
+): boolean => {
+  if (active) return deltaY > 0;
+  return shouldHandIframePanToSheet(scrollTop, deltaY);
+};
+
 type OverscrollGesture = {
   startX: number;
   startY: number;
@@ -52,6 +61,13 @@ export const attachIframeSheetOverscroll = (iframe: HTMLIFrameElement): (() => v
       }
     })();
     if (!doc) return;
+
+    if (!doc.querySelector('style[data-oc-sheet-overscroll]')) {
+      const style = doc.createElement('style');
+      style.setAttribute('data-oc-sheet-overscroll', 'true');
+      style.textContent = 'html, body { overscroll-behavior-y: none; min-height: 100%; }';
+      (doc.head ?? doc.documentElement).appendChild(style);
+    }
 
     const motionId = findOwningMotionId(iframe);
     if (!motionId) return;
@@ -102,11 +118,13 @@ export const attachIframeSheetOverscroll = (iframe: HTMLIFrameElement): (() => v
       gesture.lastY = touch.clientY;
       gesture.lastTime = event.timeStamp;
 
-      if (!shouldHandIframePanToSheet(top, deltaY)) {
+      if (!shouldKeepIframeSheetDismiss(gesture.active, top, deltaY)) {
         if (gesture.active) cancel();
         else gesture = null;
         return;
       }
+
+      event.preventDefault();
 
       if (!gesture.active) {
         if (!isMobileWindowMotionDismissIntent('bottom', deltaX, deltaY, 8, 1)) return;
@@ -118,7 +136,6 @@ export const attachIframeSheetOverscroll = (iframe: HTMLIFrameElement): (() => v
         gesture.active = true;
       }
 
-      event.preventDefault();
       const surface = iframe.closest(`[${MOBILE_WINDOW_MOTION_ID_ATTR}]`);
       const motionDistance = surface instanceof HTMLElement
         ? surface.getBoundingClientRect().height || window.innerHeight

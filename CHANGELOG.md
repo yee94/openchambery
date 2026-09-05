@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.5-beta.12] - 2026-09-05
+
+### 移动端
+
+- HTML 预览底部大白边去掉。
+- 滚到顶再下拉半浮层时不再抖动。
+
 ## [1.19.5-beta.11] - 2026-09-05
 
 ### 移动端

@@ -4,6 +4,7 @@ import {
   MOBILE_WINDOW_MOTION_ID_ATTR,
   findOwningMotionId,
   shouldHandIframePanToSheet,
+  shouldKeepIframeSheetDismiss,
 } from './iframeSheetOverscroll';
 
 describe('iframeSheetOverscroll', () => {
@@ -13,6 +14,12 @@ describe('iframeSheetOverscroll', () => {
     expect(shouldHandIframePanToSheet(2, 12)).toBe(false);
     expect(shouldHandIframePanToSheet(0, -8)).toBe(false);
     expect(shouldHandIframePanToSheet(0, 0)).toBe(false);
+  });
+
+  test('keeps an active dismiss even if rubber-banding moves scrollTop', () => {
+    expect(shouldKeepIframeSheetDismiss(true, 8, 16)).toBe(true);
+    expect(shouldKeepIframeSheetDismiss(true, 8, -4)).toBe(false);
+    expect(shouldKeepIframeSheetDismiss(false, 8, 16)).toBe(false);
   });
 
   test('finds the owning sheet motion id from a nested iframe', () => {

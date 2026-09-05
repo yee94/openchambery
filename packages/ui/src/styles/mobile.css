@@ -2923,6 +2923,10 @@ button.oc-mobile-worktree-label-trigger:active,
     pointer-events: none;
   }
 
+  :root.oc-html-file-preview-open body::after {
+    opacity: 0;
+  }
+
   /* Fallback for browsers without rgba(from ...) support */
   @supports not (color: rgba(from white r g b / 0.5)) {
     :root.device-mobile:not(.desktop-runtime) body::after,
