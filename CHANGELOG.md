@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.6-beta.2] - 2026-09-05
+
+### 会话
+
+- 统一过程折叠标题改成「运行了」（进行中「运行中」），英文 Used / Running，不再用「探索 / Explored」。
+
 ## [1.19.6-beta.1] - 2026-09-05
 
 ### 会话
