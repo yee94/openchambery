@@ -36,4 +36,15 @@ describe('markstream-react trial path', () => {
     expect(source).toContain('data-oc-markstream-virtual="nodes"');
     expect(source).not.toContain('maxLiveNodes={0}');
   });
+
+  test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {
+    const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
+    const indexCss = readFileSync(join(here, '../../index.css'), 'utf8');
+    const fold = readFileSync(join(here, 'message/parts/ContextToolGroup.tsx'), 'utf8');
+    expect(theme).toContain('.node-slot:last-of-type .paragraph-node');
+    expect(theme).toContain('margin-bottom: 0');
+    expect(indexCss).toContain('.oc-markstream-host .markstream-react > .node-slot:last-of-type p');
+    expect(fold).toContain('getToolRowBlockClass(isMobile)');
+    expect(fold).not.toMatch(/className=\{getToolRowBlockClass[\s\S]*\bmt-/);
+  });
 });
