@@ -37,13 +37,13 @@ export const AssistantScheduleCard: React.FC<AssistantScheduleCardProps> = ({ ca
       onClick={openSchedule}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <span className="relative inline-block size-6 shrink-0 leading-none">
-          <span className="flex size-6 items-center justify-center rounded-md bg-[var(--surface-muted)] text-foreground">
+          <span className="flex size-6 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-muted-foreground">
             <Icon name="calendar" className="size-3" />
           </span>
         </span>
-        <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="min-w-0 flex-1 space-y-1">
           <h3 className="min-w-0 truncate typography-ui-label font-medium text-foreground">{title}</h3>
           {metadata ? (
             <p className="truncate typography-micro text-muted-foreground">{metadata}</p>

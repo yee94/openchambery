@@ -1,13 +1,20 @@
 import { describe, expect, test } from 'vitest'
 import { AssistantAPIError, type AssistantContactMessage } from '@/queries/assistantDTO'
 import {
+  admitContactTurnPreview,
+  applyContactBubbleDelta,
   beginContactComposerSubmit,
+  contactOptimisticSending,
+  contactTurnPreviewWorking,
   contactSendErrorMessage,
   createContactOptimisticTurn,
   createContactSendGate,
+  endContactTurnPreview,
+  markContactOptimisticAdmitted,
   markContactOptimisticFailed,
   mergeContactTranscript,
   reconcileContactOptimisticTurns,
+  reconcileContactTurnPreviews,
   scopeContactOptimisticTurns,
 } from './contactOptimisticTurns'
 
@@ -50,6 +57,75 @@ describe('contactOptimisticTurns', () => {
     expect(scopeContactOptimisticTurns([turn], 'asst_2')).toEqual([])
   })
 
+  test('shows the sending marker only before admission and keeps processing separate from the user row', () => {
+    const sendingTurn = createContactOptimisticTurn('asst_1', 'oc_contact_local', [{ type: 'text', text: 'hello' }], 42)
+    const admittedTurn = markContactOptimisticAdmitted([sendingTurn], sendingTurn.messageID)
+    const processing = admitContactTurnPreview([], 'asst_1', sendingTurn.messageID, 43)
+
+    expect(contactOptimisticSending([sendingTurn])).toBe(true)
+    expect(contactOptimisticSending(admittedTurn)).toBe(false)
+    expect(contactTurnPreviewWorking(processing)).toBe(true)
+
+    const authoritativeUser = [serverMessage(sendingTurn.messageID, 'hello')]
+    expect(reconcileContactOptimisticTurns(admittedTurn, authoritativeUser)).toEqual([])
+    expect(reconcileContactTurnPreviews(processing, authoritativeUser)).toBe(processing)
+
+    const merged = mergeContactTranscript(authoritativeUser, admittedTurn, 'asst_1', processing)
+    expect(merged).toHaveLength(2)
+    expect(merged[1]).toMatchObject({
+      role: 'assistant',
+      turnID: sendingTurn.messageID,
+      status: 'admitted',
+      parts: [],
+    })
+  })
+
+  test('appends real deltas by bubble index, freezes done bubbles, and reconciles after turn end plus authority', () => {
+    let previews = admitContactTurnPreview([], 'asst_1', 'oc_contact_local', 42)
+    previews = applyContactBubbleDelta(previews, {
+      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 0, delta: 'Hel', done: false, occurredAt: 43,
+    })
+    previews = applyContactBubbleDelta(previews, {
+      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 0, delta: 'lo', done: true, occurredAt: 44,
+    })
+    previews = applyContactBubbleDelta(previews, {
+      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 0, delta: ' ignored', done: true, occurredAt: 45,
+    })
+    previews = applyContactBubbleDelta(previews, {
+      assistantID: 'asst_1', turnID: 'oc_contact_local', bubbleIndex: 1, delta: 'Next', done: false, occurredAt: 46,
+    })
+    expect(previews[0]).toMatchObject({
+      status: 'streaming',
+      bubbles: [
+        { bubbleIndex: 0, text: 'Hello', done: true },
+        { bubbleIndex: 1, text: 'Next', done: false },
+      ],
+    })
+    const merged = mergeContactTranscript([serverMessage('oc_contact_local', 'hello')], [], 'asst_1', previews)
+    expect(merged.slice(1).map((message) => message.text)).toEqual(['Hello', 'Next'])
+
+    const authoritativeAssistant: AssistantContactMessage = {
+      ...serverMessage('assistant_bubble_1', 'Hello'),
+      role: 'assistant',
+      turnID: 'oc_contact_local',
+    }
+    expect(reconcileContactTurnPreviews(previews, [authoritativeAssistant])).toBe(previews)
+    const complete = endContactTurnPreview(previews, {
+      assistantID: 'asst_1', turnID: 'oc_contact_local', status: 'complete', occurredAt: 47,
+    })
+    expect(contactTurnPreviewWorking(complete)).toBe(false)
+    expect(reconcileContactTurnPreviews(complete, [authoritativeAssistant])).toEqual([])
+  })
+
+  test('marks a turn-end error as failed and stops processing', () => {
+    const failed = endContactTurnPreview([], {
+      assistantID: 'asst_1', turnID: 'oc_contact_local', status: 'error', error: 'upstream failed', occurredAt: 50,
+    })
+    expect(failed[0]).toMatchObject({ status: 'failed', error: 'upstream failed' })
+    expect(contactTurnPreviewWorking(failed)).toBe(false)
+    expect(mergeContactTranscript([], [], 'asst_1', failed)[0]).toMatchObject({ role: 'assistant', status: 'failed' })
+  })
+
   test('keeps a failed turn and prefers the server error.message', () => {
     const turn = createContactOptimisticTurn('asst_1', 'oc_contact_local', [
       { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
@@ -77,7 +153,7 @@ describe('contactOptimisticTurns', () => {
       { noProvider: 'no provider', sendFailed: 'Could not send that message.', timedOut: 'The model did not reply in time.' },
     )).toBe('no provider')
     expect(contactSendErrorMessage(
-      new AssistantAPIError('generate_timeout', 408),
+      new AssistantAPIError('admission_timeout', 408),
       { noProvider: 'no provider', sendFailed: 'Could not send that message.', timedOut: 'The model did not reply in time.' },
     )).toBe('The model did not reply in time.')
     expect(contactSendErrorMessage(

@@ -127,6 +127,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       broadcastGlobalUiEvent,
       globalMessageStreamHub,
       getServerId,
+      sessionIndexService,
     } = routeDependencies;
 
     registerSettingsUtilityRoutes(app, {
@@ -216,6 +217,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenChamberEventClients,
       writeSseEvent,
     });
+    // Contact turn lifecycle / bubble deltas — same SSE bus, not revision watermark.
+    const broadcastContactTurnEvent = createOpenChamberEventBroadcaster({
+      getOpenChamberEventClients,
+      writeSseEvent,
+    });
     registerLlmRoutes(app, {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
@@ -231,8 +237,16 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         const settings = await readSettingsFromDiskMigrated();
         return sanitizeProjects(settings?.projects ?? [])
           .filter((project) => project && typeof project.id === 'string' && typeof project.path === 'string')
-          .map((project) => ({ id: project.id, path: project.path }));
+          .map((project) => ({
+            id: project.id,
+            path: project.path,
+            ...(typeof project.label === 'string' && project.label.trim()
+              ? { label: project.label.trim() }
+              : {}),
+          }));
       },
+      listScheduledTasks: (projectID) => projectConfigRuntime.listScheduledTasks(projectID),
+      sessionIndexService,
       upsertScheduledTask: (projectID, task) => projectConfigRuntime.upsertScheduledTask(projectID, task),
       syncScheduledTaskProject: (projectID) => scheduledTasksRuntime.syncProject(projectID),
       refreshAllowedRoots: refreshAssistantAllowedRoots,
@@ -241,6 +255,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         type: 'openchamber:assistants-changed',
         properties: tip,
       }),
+      onContactTurnEvent: (event) => broadcastContactTurnEvent(event),
     });
     messageQueueRuntime?.setAssistantDeliveryService?.(assistantRoutesRuntime.service);
 

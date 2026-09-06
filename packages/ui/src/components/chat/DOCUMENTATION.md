@@ -1,5 +1,7 @@
 # Chat components
 
+`ChatPromptComposer` inline layout keeps a 48px single-line rail and always measures the textarea `scrollHeight`, including soft wrapping with no authored newline. Wrapped or explicit multiline content grows with 24px line-height and 12px vertical padding up to `max-h-32`; overflow then scrolls inside the textarea. A measured height above 48px bottom-aligns the fixed 48px attach/send rails, while compact inline consumers retain centered controls at the idle height.
+
 Turn Changes rows that point outside the current project open a file preview instead of an empty turn-diff panel (`openTurnChangedFile.ts`). The ContextPanel shows a short notice only for that degraded open path.
 
 Optimistic send paints only the user row. Before SSE materializes the first assistant, the last working default turn shows the same `MessageHeader` (model logo + name + agent badge) from the user-row identity (`pendingAssistantHeader.ts` / `shouldShowPendingAssistantHeader`). Compaction already owns that gap; a live `activeStreamingMessageId` means another assistant still owns the header, so the placeholder stays off. The first real assistant row then replaces it.

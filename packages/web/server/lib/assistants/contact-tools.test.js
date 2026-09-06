@@ -3,6 +3,8 @@ import { AssignError, ASSIGN_CODES, PROJECT_REQUIRED_MESSAGE } from './assign.js
 import {
   ASSIGN_SESSION_TOOL_NAME,
   CREATE_ASSISTANT_TOOL_NAME,
+  LIST_PROJECTS_TOOL_NAME,
+  LIST_SESSIONS_TOOL_NAME,
   MESSAGE_ASSISTANT_TOOL_NAME,
   NEW_CONVERSATION_CONFIRM_BUBBLE,
   NEW_CONVERSATION_TOOL_NAME,
@@ -10,7 +12,10 @@ import {
   confirmBubbleAfterContactReset,
   createContactTools,
   detectRequestedContactTools,
+  filterRegisteredProjects,
   formatContactToolsPrompt,
+  formatRegisteredProjectsPrompt,
+  matchesProjectQuery,
   parseContactToolCalls,
   resolveContactProviderModel,
   resolvePeerAssistant,
@@ -71,7 +76,15 @@ describe('contact tool protocol', () => {
   });
 
   it('detects 建助理 without treating 不要开编码 session as assign_session', () => {
-    const tools = [NEW_CONVERSATION_TOOL_NAME, CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME, MESSAGE_ASSISTANT_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME];
+    const tools = [
+      NEW_CONVERSATION_TOOL_NAME,
+      LIST_PROJECTS_TOOL_NAME,
+      LIST_SESSIONS_TOOL_NAME,
+      CREATE_ASSISTANT_TOOL_NAME,
+      SCHEDULE_TASK_TOOL_NAME,
+      MESSAGE_ASSISTANT_TOOL_NAME,
+      ASSIGN_SESSION_TOOL_NAME,
+    ];
     expect(detectRequestedContactTools('帮我新建一个助理，名叫 FlowNL，不要开编码 session', tools)).toEqual([
       CREATE_ASSISTANT_TOOL_NAME,
     ]);
@@ -83,6 +96,9 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('开新对话', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
     expect(detectRequestedContactTools('new conversation please', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
     expect(detectRequestedContactTools('clear chat', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
+    expect(detectRequestedContactTools('找项目 openchamber yee', tools)).toEqual([LIST_PROJECTS_TOOL_NAME]);
+    expect(detectRequestedContactTools('看看现有对话', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
+    expect(detectRequestedContactTools('list sessions in that project', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(ASSIGN_SESSION_TOOL_NAME);
     expect(detectRequestedContactTools('不要开编码 session', tools)).toEqual([]);
   });
@@ -95,11 +111,15 @@ describe('contact tool protocol', () => {
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {
     const prompt = formatContactToolsPrompt(createContactTools());
     expect(prompt).toContain('new_conversation');
+    expect(prompt).toContain('list_projects');
+    expect(prompt).toContain('list_sessions');
     expect(prompt).toContain('create_assistant');
     expect(prompt).toContain('schedule_task');
     expect(prompt).toContain('message_assistant');
     expect(prompt).toContain('assign_session');
     expect(prompt).toContain('开新对话');
+    expect(prompt).toContain('找项目');
+    expect(prompt).toContain('现有对话');
     expect(prompt).toContain('建助理');
     expect(prompt).toContain('排定时任务');
     expect(prompt).toContain('说一声');
@@ -108,6 +128,20 @@ describe('contact tool protocol', () => {
     expect(prompt).not.toContain('/dm');
     expect(prompt).toContain('A reply without the tool call does nothing');
     expect(prompt).toContain('已创建');
+    expect(prompt).toContain('Never claim you cannot see projects');
+  });
+
+  it('fuzzy-matches project labels like openchamber yee / openchamer yee', () => {
+    const project = { id: 'p1', path: '/Users/me/Code/openchamber-yee', label: 'OpenChamber Yee' };
+    expect(matchesProjectQuery(project, 'openchamber yee')).toBe(true);
+    expect(matchesProjectQuery(project, 'openchamer yee')).toBe(true);
+    expect(matchesProjectQuery(project, 'missing')).toBe(false);
+    expect(filterRegisteredProjects([project, { id: 'p2', path: '/other' }], 'openchamber')).toEqual([
+      { id: 'p1', path: '/Users/me/Code/openchamber-yee', label: 'OpenChamber Yee' },
+    ]);
+    expect(formatRegisteredProjectsPrompt([project])).toContain('OpenChamber Yee');
+    expect(formatRegisteredProjectsPrompt([project])).toContain('never say you cannot see registered projects');
+    expect(formatRegisteredProjectsPrompt([])).toContain('none');
   });
 
   it('resolves provider/model from a combined OpenCode id', () => {
@@ -161,6 +195,8 @@ describe('createContactTools', () => {
     });
     expect(tools.map((tool) => tool.name)).toEqual([
       NEW_CONVERSATION_TOOL_NAME,
+      LIST_PROJECTS_TOOL_NAME,
+      LIST_SESSIONS_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
       MESSAGE_ASSISTANT_TOOL_NAME,
@@ -235,6 +271,43 @@ describe('createContactTools', () => {
     expect(result.details.error).toBe('project_required');
     expect(result.content[0].text).toContain('Add a project in Settings');
     expect(result.content[0].text).toContain('assistant-workspaces');
+  });
+
+  it('lists projects and sessions and surfaces list_sessions failure', async () => {
+    const tools = createContactTools({
+      listProjects: async () => [
+        { id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' },
+        { id: 'proj_other', path: '/repo/other', label: 'Other' },
+      ],
+      listSessions: async () => ({
+        sessions: [
+          { sessionID: 'ses_1', title: 'Login fix', directory: '/repo/openchamber-yee', updatedAt: 2 },
+        ],
+        truncated: false,
+      }),
+    });
+    const listed = await tools.find((tool) => tool.name === LIST_PROJECTS_TOOL_NAME).execute('call_p', {
+      query: 'openchamer yee',
+    });
+    expect(listed.details.projects).toEqual([
+      { id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' },
+    ]);
+    const sessions = await tools.find((tool) => tool.name === LIST_SESSIONS_TOOL_NAME).execute('call_s', {
+      projectPath: '/repo/openchamber-yee',
+    });
+    expect(sessions.details.sessions).toEqual([
+      expect.objectContaining({ sessionID: 'ses_1', title: 'Login fix' }),
+    ]);
+
+    const failing = createContactTools({
+      listSessions: async () => {
+        throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session index is unavailable.');
+      },
+    });
+    const failed = await failing.find((tool) => tool.name === LIST_SESSIONS_TOOL_NAME).execute('call_fail', {});
+    expect(failed.details.error).toBe('upstream_error');
+    expect(failed.content[0].text).toContain('Session index is unavailable');
+    expect(failed.details.sessions).toBeUndefined();
   });
 });
 

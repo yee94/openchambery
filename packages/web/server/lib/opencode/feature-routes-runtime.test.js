@@ -8,6 +8,18 @@ describe('feature routes runtime composition', () => {
     expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*upsertScheduledTask:[\s\S]*projectConfigRuntime\.upsertScheduledTask/);
     expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*syncScheduledTaskProject:[\s\S]*scheduledTasksRuntime\.syncProject/);
     expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*listProjects:/);
+    expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*listScheduledTasks:[\s\S]*projectConfigRuntime\.listScheduledTasks/);
+    expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*sessionIndexService/);
+    expect(source).toMatch(/label: project\.label\.trim\(\)/);
+  });
+
+  it('fans contact turn events out on the OpenChamber SSE bus separately from revision tips', async () => {
+    const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    expect(source).toMatch(/const broadcastContactTurnEvent = createOpenChamberEventBroadcaster\(/);
+    expect(source).toMatch(/onContactTurnEvent: \(event\) => broadcastContactTurnEvent\(event\)/);
+    expect(source).toMatch(/onRevisionTip: \(tip\) => broadcastAssistantRevisionTip\(\{\s*type: 'openchamber:assistants-changed'/);
+    // Contact turn envelopes stay off the assistants-changed revision watermark path.
+    expect(source).not.toMatch(/onRevisionTip:[\s\S]*contact-turn/);
   });
 
   it('registers the managed scheduled-task tool route with its required dependencies', async () => {

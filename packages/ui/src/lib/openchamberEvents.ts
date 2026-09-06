@@ -44,14 +44,41 @@ type AssistantsChangedEvent = {
   revision: number;
   occurredAt: number;
 };
-type OpenChamberEvent =
+export type ContactTurnStartEvent = {
+  type: 'contact-turn-start';
+  assistantID: string;
+  turnID: string;
+  messageID: string;
+  occurredAt: number;
+};
+export type ContactBubbleDeltaEvent = {
+  type: 'contact-bubble-delta';
+  assistantID: string;
+  turnID: string;
+  bubbleIndex: number;
+  delta: string;
+  done: boolean;
+  occurredAt: number;
+};
+export type ContactTurnEndEvent = {
+  type: 'contact-turn-end';
+  assistantID: string;
+  turnID: string;
+  status: 'complete' | 'error';
+  error?: string;
+  occurredAt: number;
+};
+export type OpenChamberEvent =
   | ScheduledTaskRanEvent
   | EventStreamReadyEvent
   | WorktreeTopologyChangedEvent
   | WorktreeBootstrapStatusEvent
   | SessionIndexChangedEvent
   | MessageQueueChangedEvent
-  | AssistantsChangedEvent;
+  | AssistantsChangedEvent
+  | ContactTurnStartEvent
+  | ContactBubbleDeltaEvent
+  | ContactTurnEndEvent;
 /** Domains that carry a monotonic server revision tip. */
 type OpenchamberRevisionEventType =
   | 'session-index-changed'
@@ -219,6 +246,41 @@ export const parseOpenchamberEventEnvelope = (envelope: { type: string; properti
     if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) return null;
     if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
     return { type: 'assistants-changed', revision, occurredAt };
+  }
+
+  if (envelope.type === 'openchamber:contact-turn-start') {
+    const assistantID = typeof parsed?.assistantID === 'string' ? parsed.assistantID.trim() : '';
+    const turnID = typeof parsed?.turnID === 'string' ? parsed.turnID.trim() : '';
+    const messageID = typeof parsed?.messageID === 'string' ? parsed.messageID.trim() : '';
+    const occurredAt = parsed?.occurredAt;
+    if (!assistantID || !turnID || !messageID || turnID !== messageID) return null;
+    if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
+    return { type: 'contact-turn-start', assistantID, turnID, messageID, occurredAt };
+  }
+
+  if (envelope.type === 'openchamber:contact-bubble-delta') {
+    const assistantID = typeof parsed?.assistantID === 'string' ? parsed.assistantID.trim() : '';
+    const turnID = typeof parsed?.turnID === 'string' ? parsed.turnID.trim() : '';
+    const bubbleIndex = parsed?.bubbleIndex;
+    const delta = parsed?.delta;
+    const done = parsed?.done;
+    const occurredAt = parsed?.occurredAt;
+    if (!assistantID || !turnID) return null;
+    if (typeof bubbleIndex !== 'number' || !Number.isSafeInteger(bubbleIndex) || bubbleIndex < 0) return null;
+    if (typeof delta !== 'string' || typeof done !== 'boolean') return null;
+    if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
+    return { type: 'contact-bubble-delta', assistantID, turnID, bubbleIndex, delta, done, occurredAt };
+  }
+
+  if (envelope.type === 'openchamber:contact-turn-end') {
+    const assistantID = typeof parsed?.assistantID === 'string' ? parsed.assistantID.trim() : '';
+    const turnID = typeof parsed?.turnID === 'string' ? parsed.turnID.trim() : '';
+    const status = parsed?.status;
+    const occurredAt = parsed?.occurredAt;
+    if (!assistantID || !turnID || (status !== 'complete' && status !== 'error')) return null;
+    if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
+    const error = typeof parsed?.error === 'string' && parsed.error.trim() ? parsed.error.trim() : undefined;
+    return { type: 'contact-turn-end', assistantID, turnID, status, ...(error ? { error } : {}), occurredAt };
   }
 
   if (envelope.type !== 'openchamber:scheduled-task-ran') {

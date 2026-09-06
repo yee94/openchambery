@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent, useResizeObserver } from '@reactuses/core';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/icon/Icon';
@@ -121,25 +122,32 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   ...surfaceProps
 }) => {
   const inline = layout === 'inline';
-  const inlineAlignEnd = attachments.length > 0 || value.includes('\n');
+  const [inlineGrown, setInlineGrown] = React.useState(false);
+  const inlineAlignEnd = attachments.length > 0 || inlineGrown;
   const localInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  React.useLayoutEffect(() => {
-    if (!autoResize || expanded || textareaProps?.fillContainer) return;
-    const textarea = localInputRef.current;
-    if (!textarea) return;
-    if (inline && !inlineAlignEnd) {
-      textarea.style.height = '';
-      textarea.style.overflowY = 'hidden';
+  const resizeTextarea = useEvent(() => {
+    if (!autoResize || expanded || textareaProps?.fillContainer) {
+      if (inline) setInlineGrown(false);
       return;
     }
+    const textarea = localInputRef.current;
+    if (!textarea) return;
     textarea.style.height = 'auto';
     const maxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight);
-    const nextHeight = Number.isFinite(maxHeight) ? Math.min(textarea.scrollHeight, maxHeight) : textarea.scrollHeight;
+    const contentHeight = inline ? Math.max(textarea.scrollHeight, 48) : textarea.scrollHeight;
+    const nextHeight = Number.isFinite(maxHeight) ? Math.min(contentHeight, maxHeight) : contentHeight;
     textarea.style.height = `${nextHeight}px`;
-    textarea.style.overflowY = Number.isFinite(maxHeight) && textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [autoResize, expanded, inline, inlineAlignEnd, textareaProps?.fillContainer, value]);
+    textarea.style.overflowY = Number.isFinite(maxHeight) && contentHeight > maxHeight ? 'auto' : 'hidden';
+    const nextInlineGrown = nextHeight > 48;
+    if (inline) setInlineGrown((current) => current === nextInlineGrown ? current : nextInlineGrown);
+  });
+
+  React.useLayoutEffect(() => {
+    resizeTextarea();
+  }, [autoResize, expanded, inline, textareaProps?.fillContainer, value]);
+  useResizeObserver(inline && autoResize && !expanded && !textareaProps?.fillContainer ? localInputRef : null, resizeTextarea);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     textareaProps?.onKeyDown?.(event);
@@ -314,7 +322,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           <div
             className={cn(
               'relative overflow-hidden',
-              inline && !inlineAlignEnd && 'flex h-12 items-center',
+              inline && 'flex min-h-12 items-end',
               expanded && 'flex min-h-0 flex-1 flex-col',
             )}
             data-composer-input-shell="true"
@@ -353,10 +361,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               className={cn(
                 'relative z-10 resize-none overflow-y-hidden appearance-none border-0 bg-transparent typography-markdown hover:border-transparent md:typography-ui-label',
                 inline
-                  ? cn(
-                      'max-h-32 px-3 py-[14px] leading-5',
-                      inlineAlignEnd ? 'min-h-12' : 'h-12 min-h-12',
-                    )
+                  ? 'min-h-12 max-h-32 px-3 py-3 leading-6'
                   : 'min-h-[52px] max-h-40 rounded-b-none px-3 pb-2 pt-4',
                 textLayoutClassName,
                 inputClassName,

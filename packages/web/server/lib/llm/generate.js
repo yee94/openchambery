@@ -335,6 +335,62 @@ async function generateViaSessionless({ fetchImpl, url, headers, providerID, mod
   return { text: text.trim(), source: 'generate' };
 }
 
+const eventPayload = (event) => event?.payload?.payload ?? event?.payload ?? event;
+
+const eventDeltaProperties = (payload) => {
+  if (!payload || typeof payload !== 'object') return null;
+  if (payload.properties && typeof payload.properties === 'object') return payload.properties;
+  if (payload.data && typeof payload.data === 'object') return payload.data;
+  return null;
+};
+
+/**
+ * Forward real OpenCode `message.part.delta` text tokens for one throwaway
+ * session. Returns an unsubscribe fn, or null when deltas cannot be observed
+ * (no callback, no hub, or hub without subscribeEvent). Never fabricates
+ * typewriter chunks from a completed string.
+ *
+ * @param {{ globalEventHub?: { subscribeEvent?: Function } | null, sessionID: string, onTextDelta?: ((text: string) => void) | null }} args
+ * @returns {(() => void) | null}
+ */
+export function subscribeThrowawayTextDeltas({ globalEventHub, sessionID, onTextDelta }) {
+  if (typeof onTextDelta !== 'function') return null;
+  if (typeof sessionID !== 'string' || !sessionID) return null;
+  if (typeof globalEventHub?.subscribeEvent !== 'function') return null;
+
+  // Lock to the first assistant messageID seen for this throwaway session so
+  // concurrent sessions on the shared hub cannot leak tokens into this generate.
+  let assistantMessageID = null;
+
+  const unsubscribe = globalEventHub.subscribeEvent((event) => {
+    const payload = eventPayload(event);
+    if (payload?.type !== 'message.part.delta') return;
+    const props = eventDeltaProperties(payload);
+    if (!props) return;
+    if (props.sessionID !== sessionID) return;
+    // Text field only — reasoning/other fields stay out of completion tokens.
+    if (typeof props.field === 'string' && props.field !== 'text') return;
+    if (typeof props.delta !== 'string' || props.delta.length === 0) return;
+
+    const messageID = typeof props.messageID === 'string' && props.messageID
+      ? props.messageID
+      : null;
+    if (assistantMessageID) {
+      if (messageID && messageID !== assistantMessageID) return;
+    } else if (messageID) {
+      assistantMessageID = messageID;
+    }
+
+    try {
+      onTextDelta(props.delta);
+    } catch {
+      // Caller callback failures must not abort generate or leave the hub broken.
+    }
+  });
+
+  return typeof unsubscribe === 'function' ? unsubscribe : null;
+}
+
 /**
  * Generate assistant text through OpenCode's connected providers.
  * Sessionless generate if the binary exposes it; otherwise a throwaway
@@ -343,6 +399,12 @@ async function generateViaSessionless({ fetchImpl, url, headers, providerID, mod
  * V2 session.prompt only forwards { id, prompt, delivery, resume } and drops
  * model/parts/tools. Use promptAsync (body still has model, parts, tools,
  * system, agent) then wait for idle and read session.messages.
+ *
+ * Optional internal streaming: pass `onTextDelta(text)` plus a live
+ * `globalEventHub` (same hub as UI SSE). On the throwaway path only, real
+ * `message.part.delta` tokens for this session are forwarded. Sessionless
+ * `/generate` JSON cannot emit deltas — onTextDelta is skipped (no fake
+ * typewriter). Public HTTP completions stay non-streaming.
  */
 export async function generateOpenCodeText({
   buildOpenCodeUrl,
@@ -355,6 +417,8 @@ export async function generateOpenCodeText({
   ensureTempDirectory,
   detect = detectSessionlessGenerate,
   forwardImageParts = false,
+  onTextDelta = null,
+  globalEventHub = null,
 }) {
   if (!providerID || !modelID) {
     const error = new Error('providerID and modelID are required');
@@ -416,6 +480,7 @@ export async function generateOpenCodeText({
       failGenerate(`OpenCode LLM session create failed: ${sdkErrorMessage(created, 'create failed')}`);
     }
 
+    let unsubscribeDeltas = null;
     try {
       const archiveAt = Date.now();
       let archived = await client.session.update({
@@ -433,6 +498,13 @@ export async function generateOpenCodeText({
       if (archived?.error) {
         failGenerate(`OpenCode LLM session archive failed: ${sdkErrorMessage(archived, 'archive failed')}`);
       }
+
+      // Subscribe before promptAsync so early message.part.delta tokens are not missed.
+      unsubscribeDeltas = subscribeThrowawayTextDeltas({
+        globalEventHub,
+        sessionID,
+        onTextDelta,
+      });
 
       // promptAsync still forwards model/parts/tools. v2 session.prompt does not.
       const prompted = await client.session.promptAsync({
@@ -467,6 +539,12 @@ export async function generateOpenCodeText({
       return { text: text.trim(), source: 'throwaway-session' };
     } finally {
       try {
+        unsubscribeDeltas?.();
+      } catch {
+        // Unsubscribe must not mask generate errors or block session delete.
+      }
+      unsubscribeDeltas = null;
+      try {
         await client.session.delete({ sessionID, directory: workingDirectory });
       } catch (error) {
         console.warn('[llm] failed to delete throwaway OpenCode session:', error?.message || error);
@@ -484,6 +562,9 @@ export const _test = {
   deniedTools,
   assistantTextFromPrompt,
   assistantTextFromMessages,
+  eventPayload,
+  eventDeltaProperties,
+  subscribeThrowawayTextDeltas,
   LLM_AGENT_NAME,
   AGENT_MARKDOWN,
 };
