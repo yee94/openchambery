@@ -16,12 +16,16 @@ import {
   type LynxAutoConnectPhase,
 } from './connect/autoConnectPhase';
 import { createHostGlobalProps, type LynxHostGlobalProps } from './host/embedding';
-import { LynxPage } from './lynx-elements';
+import { LynxView } from './lynx-elements';
 import { createSessionIndexHomeBindings, createLynxSessionIndexStore } from './session-index/store';
 import { LynxShellApp } from './shell/ShellApp';
 
-/** Root `<page>` styles — Lynx first-screen without page often paints blank cream. */
-const ROOT_PAGE_STYLE = {
+/**
+ * Full-bleed root styles under ReactLynx's implicit page (from root.render).
+ * Do NOT emit an explicit `<page>` element — Android BehaviorRegistry has no
+ * BehaviorController for tag `page` (createUI fails → cream void + host error).
+ */
+const ROOT_VIEW_STYLE = {
   width: '100%',
   height: '100%',
   flexGrow: 1,
@@ -123,7 +127,7 @@ export function App({
 
   if (gate.kind === 'splash' || gate.kind === 'welcome') {
     return (
-      <LynxPage style={ROOT_PAGE_STYLE} accessibility-label="OpenChamber Lynx">
+      <LynxView style={ROOT_VIEW_STYLE} accessibility-label="OpenChamber Lynx">
         <ConnectWelcome
           locale={resolved.locale}
           phase={phase}
@@ -137,12 +141,12 @@ export function App({
           onPendingChange={setPending}
           onError={setError}
         />
-      </LynxPage>
+      </LynxView>
     );
   }
 
   return (
-    <LynxPage style={ROOT_PAGE_STYLE} auto-height accessibility-label="OpenChamber Lynx">
+    <LynxView style={ROOT_VIEW_STYLE} accessibility-label="OpenChamber Lynx">
       <LynxShellApp
         host={resolved}
         runtimeFetch={client.runtimeFetch}
@@ -153,6 +157,6 @@ export function App({
         onConnected={() => setConnected(true)}
         lynxClientVersion={lynxClientVersion}
       />
-    </LynxPage>
+    </LynxView>
   );
 }

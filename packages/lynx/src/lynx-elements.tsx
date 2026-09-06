@@ -64,6 +64,11 @@ function lynxElement(type: string, props: object): ReactNode {
   return createElement(type, props);
 }
 
+/**
+ * Prefer ReactLynx `root.render` (implicit page) + `<LynxView>` roots.
+ * Emitting an explicit `<page>` tag crashes Android hosts that only register
+ * XElementBehaviors — BehaviorRegistry has no controller for `page`.
+ */
 export function LynxPage(props: LynxPageProps) {
   return lynxElement('page', props);
 }

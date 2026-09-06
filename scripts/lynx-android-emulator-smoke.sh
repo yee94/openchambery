@@ -71,6 +71,14 @@ for i in $(seq 1 60); do
     exit 1
   fi
 
+  # Explicit <page> JSX is fatal on this Android host (no BehaviorController for tag page).
+  if grep -Eqi 'No BehaviorController defined for class page|createUI catch error while createUI for tag: page' emulator-smoke/logcat-snapshot.txt; then
+    echo "::error::Lynx explicit <page> tag failed — use ReactLynx root.render implicit page + <view> roots"
+    grep -Ei 'BehaviorController defined for class page|createUI for tag: page|OpenChamberLynx: Lynx error' emulator-smoke/logcat-snapshot.txt | tail -20 || true
+    kill "$LOGCAT_PID" >/dev/null 2>&1 || true
+    exit 1
+  fi
+
   if grep -Eq "Process: ${PKG}" emulator-smoke/logcat-snapshot.txt && grep -Eq 'FATAL EXCEPTION|JavascriptException' emulator-smoke/logcat-snapshot.txt; then
     echo "::error::FATAL / JavascriptException for $PKG"
     grep -E "OpenChamberLynx|LynxView|FATAL EXCEPTION|JavascriptException|AndroidRuntime" emulator-smoke/logcat-snapshot.txt | tail -60 || true
@@ -172,6 +180,11 @@ fi
 
 if grep -Fq 'OpenChamberLynx: Lynx JS error' emulator-smoke/logcat-full.txt; then
   echo "::error::OpenChamberLynx Lynx JS error present in full logcat"
+  exit 1
+fi
+
+if grep -Eqi 'No BehaviorController defined for class page|createUI catch error while createUI for tag: page' emulator-smoke/logcat-full.txt; then
+  echo "::error::explicit <page> BehaviorController failure present in full logcat"
   exit 1
 fi
 
