@@ -302,4 +302,17 @@ describe('ChatContainer source contracts', () => {
         expect(timelineSource).toContain('useResizeObserver(');
         expect(timelineSource).not.toContain('[messages, sessionId, isLoadingOlder, scrollRef]');
     });
+
+    test('inactive surfaces freeze message records and gate the stall watchdog', () => {
+        // Phone predecessor keeps DOM/snapshot but must not poll or stream-subscribe.
+        expect(source).toContain('enabled: active,');
+        expect(source).toContain('shouldArmTranscriptStallWatchdog');
+        expect(source).toContain('resetTranscriptStallStateForInactive');
+        const stallEffect = source.slice(
+            source.indexOf('shouldArmTranscriptStallWatchdog({'),
+            source.indexOf('TRANSCRIPT_STALL_POLL_MS);') + 'TRANSCRIPT_STALL_POLL_MS);'.length,
+        );
+        expect(stallEffect).toContain('active,');
+        expect(stallEffect).toContain('sessionIsWorking');
+    });
 });

@@ -138,6 +138,13 @@ export function getTranscriptDiagnosticsRecorder(): TranscriptDiagnosticsRecorde
   return recorder
 }
 
+/** Test-only: replace or clear the process singleton recorder. */
+export function setTranscriptDiagnosticsRecorderForTests(
+  next: TranscriptDiagnosticsRecorder | undefined,
+): void {
+  recorder = next
+}
+
 export function recordTranscriptDiagnostics(event: TranscriptDiagnosticsEvent): void {
   getTranscriptDiagnosticsRecorder().record(event)
 }
@@ -197,35 +204,60 @@ export function recordTaskClickDiagnostics(input: TaskDiagnosticsFacts & {
   }
 }
 
+type LazyDiagnosticsValue<T> = T | (() => T)
+
+function resolveLazyDiagnosticsValue<T>(value: LazyDiagnosticsValue<T> | undefined): T | undefined {
+  if (value === undefined) return undefined
+  return typeof value === "function" ? (value as () => T)() : value
+}
+
+/**
+ * Cheap eligibility for command diagnostics. Callers must use this (or the
+ * lazy suppliers on `recordTranscriptCommandDiagnostics`) so expensive
+ * transcript projection / request / hydration snapshots stay off the hot path
+ * when diagnostics are disabled, SSE noise, or unchanged SSE batches.
+ */
+export function shouldRecordTranscriptCommandDiagnostics(input: {
+  command: TranscriptCommand
+  changed?: boolean
+  isEnabled?: () => boolean
+}): boolean {
+  if (!diagnosticsKindForCommand(input.command)) return false
+  if (
+    input.changed === false
+    && (input.command.type === "sse-event" || input.command.type === "sse-event-batch")
+  ) {
+    return false
+  }
+  const enabled = input.isEnabled ?? (() => getTranscriptDiagnosticsRecorder().isEnabled())
+  return enabled()
+}
+
 export function recordTranscriptCommandDiagnostics(input: {
   directory: string
   sessionID: string
   transport?: string
   generation?: number
   command: TranscriptCommand
-  transcript?: TranscriptData
-  request?: TranscriptRequestState
-  hydration?: TranscriptDiagnosticsHydration
+  transcript?: LazyDiagnosticsValue<TranscriptData | undefined>
+  request?: LazyDiagnosticsValue<TranscriptRequestState | undefined>
+  hydration?: LazyDiagnosticsValue<TranscriptDiagnosticsHydration | undefined>
   error?: unknown
   changed?: boolean
+  isEnabled?: () => boolean
 }): void {
+  if (!shouldRecordTranscriptCommandDiagnostics(input)) return
   const kind = diagnosticsKindForCommand(input.command)
   if (!kind) return
-  if (
-    input.changed === false
-    && (input.command.type === "sse-event" || input.command.type === "sse-event-batch")
-  ) {
-    return
-  }
   recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
     kind,
     sessionID: input.sessionID,
     directory: input.directory,
     transport: input.transport,
     generation: input.generation,
-    transcript: input.transcript,
-    request: input.request,
-    hydration: input.hydration,
+    transcript: resolveLazyDiagnosticsValue(input.transcript),
+    request: resolveLazyDiagnosticsValue(input.request),
+    hydration: resolveLazyDiagnosticsValue(input.hydration),
     command: input.command.type,
     purpose: commandPurpose(input.command),
     sseType: commandSseType(input.command),

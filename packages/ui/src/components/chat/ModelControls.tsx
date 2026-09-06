@@ -45,7 +45,12 @@ import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import { formatEffortLabel, getCycledPrimaryAgentName, isPrimaryMode, resolveAgentModelSelection, type ControlledModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
 import { shouldCancelSearchableSelectorHoverDismiss } from './searchableSelectorDismiss';
-import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n';
+import {
+    formatCompactNumber as formatCompactNumberCached,
+    formatReleaseDate as formatReleaseDateCached,
+    formatUsdCurrency as formatUsdCurrencyCached,
+} from '@/lib/intlFormatters';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
 import { markStartupTrace } from '@/lib/startupTrace';
@@ -183,25 +188,11 @@ const getModalityIcons = (metadata: ModelMetadata | undefined, direction: 'input
     return result;
 };
 
-const formatCompactNumber = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
-    notation: 'compact',
-    compactDisplay: 'short',
-    maximumFractionDigits: 1,
-    minimumFractionDigits: 0,
-}).format(value);
+const formatCompactNumber = (value: number) => formatCompactNumberCached(value);
 
-const formatUsdCurrency = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 4,
-    minimumFractionDigits: 2,
-}).format(value);
+const formatUsdCurrency = (value: number) => formatUsdCurrencyCached(value);
 
-const formatReleaseDate = (value: Date) => new Intl.DateTimeFormat(getCurrentIntlLocale(), {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-}).format(value);
+const formatReleaseDate = (value: Date) => formatReleaseDateCached(value);
 
 const ADD_PROVIDER_ID = '__add_provider__';
 
