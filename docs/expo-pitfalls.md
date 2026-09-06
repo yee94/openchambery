@@ -51,6 +51,10 @@ Yee’s walk is often **relay-only** (no home LAN). A 1.5s stall here is a produ
 
 Pairing v2 (`connectionPayload.ts`) carries `lan` + `relayUrl` + `hostEncPubJwk` + optional grant + `serverId`. Reload must not drop relay. Home ↔ away is a **reprobe**, not a re-pair. Never log the pairing secret, grant, or client token.
 
+### Auth-disabled must not look like “password required”
+
+OpenChamber with **no UI password** returns `GET /auth/session` → `{ authenticated: true, disabled: true }`. Cap and Expo probes must adopt that host **without** a client token (URL connect and saved reconnect). Pairing redeem failures (expired QR, HTTP error, empty token) historically reused `mobile.connect.error.authRequired` — the same string as a real password gate — so Yee saw「该服务器需要密码或客户端令牌」on an open LAN box after QR scan. Prefer: (1) Cap-parity redeem body including `devicePlatform` + robust `clientToken` parse; (2) after redeem failure, re-check `/auth/session` and tokenless-adopt when `disabled:true`; (3) otherwise surface `pairingFailed`, not `authRequired`.
+
 ### Do not send the bearer to an unverified LAN host
 
 `/health` is unauthenticated. When the device knows `serverId` from relay pairing, a direct candidate must report the same id before `Authorization: Bearer` is sent. A DHCP-reassigned printer is not the OpenChamber box.

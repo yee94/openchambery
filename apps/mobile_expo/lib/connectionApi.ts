@@ -10,7 +10,7 @@ import {
   type MobileRelayConfig,
   type MobileTransportCandidate,
 } from '@/lib/connectionCandidates';
-import { mobileClientDedupeKey } from '@/lib/deviceId';
+import { mobileClientDedupeKey, mobileDevicePlatform } from '@/lib/deviceId';
 import { createRelayTunnelClient, type RelayTunnelClient } from '@/lib/relay/tunnel-client';
 
 export const MOBILE_CONNECT_TIMEOUT_MS = 8_000;
@@ -21,6 +21,41 @@ export type SessionStatus = {
   disabled?: boolean;
   scope?: string;
 };
+
+export type PairingRedeemResponse = {
+  ok?: boolean;
+  clientToken?: unknown;
+  token?: unknown;
+  client?: { label?: unknown; token?: unknown } | null;
+  server?: { label?: unknown; url?: unknown } | null;
+};
+
+export type RedeemPairingResult =
+  | { ok: true; clientToken: string; serverLabel?: string }
+  | { ok: false; reason: 'http' | 'no-token' | 'unreachable' };
+
+/** Cap-parity: pull clientToken from redeem JSON even if nested oddly. */
+export const parsePairingRedeemToken = (body: unknown): string => {
+  if (!body || typeof body !== 'object') return '';
+  const record = body as Record<string, unknown>;
+  const nested =
+    record.client && typeof record.client === 'object'
+      ? (record.client as Record<string, unknown>).token
+      : undefined;
+  for (const candidate of [record.clientToken, record.token, nested]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
+};
+
+export const parsePairingRedeemServerLabel = (body: unknown): string | undefined => {
+  if (!body || typeof body !== 'object') return undefined;
+  const server = (body as PairingRedeemResponse).server;
+  return typeof server?.label === 'string' && server.label.trim() ? server.label.trim() : undefined;
+};
+
+export const isAuthDisabledSession = (status: SessionStatus | null | undefined): boolean =>
+  status?.disabled === true;
 
 export type LiveTransport =
   | { kind: 'direct'; url: string }
@@ -139,8 +174,9 @@ const probeDirectChain = async (
     if (!session || (!session.ok && session.status !== 404)) continue;
     const status = await readSessionStatus(session);
     if (status && status.disabled !== true && status.authenticated === false) return probeNeedsLogin();
-    // Native always needs a bearer token for the runtime transport.
-    if (!token && status?.disabled !== true && status?.scope !== 'client') return probeNeedsLogin();
+    // Native runtime needs a bearer token unless auth is disabled or scope is already client.
+    const authDisabled = isAuthDisabledSession(status);
+    if (!token && !authDisabled && status?.scope !== 'client') return probeNeedsLogin();
     return probeOk({ kind: 'direct', url });
   }
   return probeUnreachable();
@@ -242,7 +278,7 @@ export const postAuthSession = async (
     issueClientToken: true,
     clientLabel: 'OpenChamber Expo',
     clientKind: 'mobile',
-    devicePlatform: undefined,
+    devicePlatform: mobileDevicePlatform(),
     dedupeKey,
   });
   const init: RequestInit = {
@@ -266,7 +302,7 @@ export const postAuthSession = async (
 export const redeemPairing = async (
   transport: LiveTransport,
   input: { pairingId: string; secret: string },
-): Promise<{ ok: boolean; clientToken?: string; serverLabel?: string }> => {
+): Promise<RedeemPairingResult> => {
   const dedupeKey = await mobileClientDedupeKey();
   const body = JSON.stringify({
     pairingId: input.pairingId,
@@ -274,6 +310,8 @@ export const redeemPairing = async (
     clientLabel: 'OpenChamber Expo',
     clientKind: 'mobile',
     deviceName: 'OpenChamber Expo',
+    // Cap parity — server stores this on the device row.
+    devicePlatform: mobileDevicePlatform(),
     dedupeKey,
   });
   const init: RequestInit = {
@@ -291,12 +329,30 @@ export const redeemPairing = async (
             .catch(() => null),
         )
       : await httpBackend.request(`${transport.url}/api/client-auth/pairing/redeem`, init);
-  if (!response?.ok) return { ok: false };
-  const json = (await response.json().catch(() => null)) as {
-    clientToken?: unknown;
-    server?: { label?: unknown } | null;
-  } | null;
-  const issued = typeof json?.clientToken === 'string' ? json.clientToken.trim() : '';
-  const serverLabel = typeof json?.server?.label === 'string' ? json.server.label : undefined;
-  return { ok: Boolean(issued), clientToken: issued || undefined, serverLabel };
+  if (!response) return { ok: false, reason: 'unreachable' };
+  if (!response.ok) return { ok: false, reason: 'http' };
+  const json = await response.json().catch(() => null);
+  const issued = parsePairingRedeemToken(json);
+  if (!issued) return { ok: false, reason: 'no-token' };
+  return { ok: true, clientToken: issued, serverLabel: parsePairingRedeemServerLabel(json) };
+};
+
+/** GET /auth/session on an already-live transport (pairing fallback / auth-disabled check). */
+export const fetchSessionOnTransport = async (
+  transport: LiveTransport,
+  token?: string,
+): Promise<SessionStatus | null> => {
+  const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+  const response =
+    transport.kind === 'relay'
+      ? await raceWithTimeout(
+          RELAY_CONNECT_TIMEOUT_MS,
+          transport.tunnel.fetch('/auth/session', { headers }).then((r) => r as FetchLikeResponse).catch(() => null),
+        )
+      : await httpBackend.request(`${transport.url}/auth/session`, {
+          method: 'GET',
+          headers,
+        });
+  if (!response || (!response.ok && response.status !== 404)) return null;
+  return readSessionStatus(response);
 };

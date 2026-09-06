@@ -42,3 +42,16 @@ export const resetDeviceIdCacheForTests = (): void => {
 };
 
 export { createUuid };
+
+/** Cap-parity display platform for server device list ("ios" / "android"). */
+export const mobileDevicePlatform = (): string | undefined => {
+  try {
+    // Lazy require so node unit tests never load the native module.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Platform } = require('react-native') as { Platform?: { OS?: string } };
+    const os = Platform?.OS;
+    return os === 'ios' || os === 'android' ? os : undefined;
+  } catch {
+    return undefined;
+  }
+};

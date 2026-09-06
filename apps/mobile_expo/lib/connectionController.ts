@@ -11,6 +11,8 @@ import {
 } from '@/lib/connectionCandidates';
 import {
   establishLiveTransport,
+  fetchSessionOnTransport,
+  isAuthDisabledSession,
   postAuthSession,
   probeSavedCandidates,
   redeemPairing,
@@ -156,14 +158,7 @@ export class ConnectionController {
 
   private autoConnect = async (target: MobileSavedConnection): Promise<boolean> => {
     const token = await readConnectionToken(target);
-    if (!token) {
-      this.setState({
-        phase: 'password',
-        pendingPassword: { id: target.id, label: target.label, candidates: target.candidates },
-        busy: false,
-      });
-      return false;
-    }
+    // Always probe — auth-disabled hosts connect without a token (Cap parity).
     const result = await probeSavedCandidates(target.candidates, token, {
       headstartMs: this.options.headstartMs,
       wait: this.options.relayRaceWait,
@@ -173,7 +168,7 @@ export class ConnectionController {
         id: target.id,
         label: target.label,
         candidates: target.candidates,
-        token,
+        token: token ?? null,
         transport: result.value,
       });
       return true;
@@ -273,27 +268,50 @@ export class ConnectionController {
         pairingId: payload.pairingId,
         secret: payload.secret,
       });
-      if (!redeemed.ok || !redeemed.clientToken) {
-        this.setState({ error: t('mobile.connect.error.authRequired'), busy: false });
-        return false;
+      const transport =
+        chosen.kind === 'relay'
+          ? { kind: 'relay' as const, relay: chosen.relay, tunnel: chosen.tunnel }
+          : { kind: 'direct' as const, url: chosen.url };
+
+      if (redeemed.ok && redeemed.clientToken) {
+        const label =
+          payload.label ||
+          redeemed.serverLabel ||
+          getConnectionLabel(connectionDisplayUrl(candidates));
+        await this.adoptTransport({
+          label,
+          candidates,
+          token: redeemed.clientToken,
+          transport,
+        });
+        adopted = true;
+        return true;
       }
-      const label =
-        payload.label ||
-        redeemed.serverLabel ||
-        getConnectionLabel(connectionDisplayUrl(candidates));
-      await this.adoptTransport({
-        label,
-        candidates,
-        token: redeemed.clientToken,
-        transport:
-          chosen.kind === 'relay'
-            ? { kind: 'relay', relay: chosen.relay, tunnel: chosen.tunnel }
-            : { kind: 'direct', url: chosen.url },
-      });
-      adopted = true;
-      return true;
+
+      // Redeem failed (expired QR, HTTP error, empty token). Do NOT claim
+      // "password required" when the host has auth disabled — connect tokenless.
+      const session = await fetchSessionOnTransport(chosen);
+      if (isAuthDisabledSession(session)) {
+        const label =
+          payload.label || getConnectionLabel(connectionDisplayUrl(candidates));
+        await this.adoptTransport({
+          label,
+          candidates,
+          token: null,
+          transport,
+        });
+        adopted = true;
+        return true;
+      }
+
+      const errorKey =
+        redeemed.ok === false && redeemed.reason === 'unreachable'
+          ? 'mobile.connect.error.unreachable'
+          : 'mobile.connect.error.pairingFailed';
+      this.setState({ error: t(errorKey), busy: false });
+      return false;
     } catch {
-      this.setState({ error: t('mobile.connect.error.authRequired'), busy: false });
+      this.setState({ error: t('mobile.connect.error.pairingFailed'), busy: false });
       return false;
     } finally {
       if (!adopted && chosen?.kind === 'relay') chosen.tunnel.close();
@@ -324,11 +342,40 @@ export class ConnectionController {
         return false;
       }
       const result = await postAuthSession(chosen, password.trim());
+      const transport =
+        chosen.kind === 'relay'
+          ? { kind: 'relay' as const, relay: chosen.relay, tunnel: chosen.tunnel }
+          : { kind: 'direct' as const, url: chosen.url };
       if (!result.ok) {
+        // Password endpoint may reject when auth is disabled — still allow connect.
+        const session = await fetchSessionOnTransport(chosen);
+        if (isAuthDisabledSession(session)) {
+          await this.adoptTransport({
+            id: pending.id,
+            label: pending.label,
+            candidates: pending.candidates,
+            token: null,
+            transport,
+          });
+          adopted = true;
+          return true;
+        }
         this.setState({ error: t('mobile.connect.error.passwordFailed'), busy: false });
         return false;
       }
       if (!result.clientToken) {
+        const session = await fetchSessionOnTransport(chosen);
+        if (isAuthDisabledSession(session)) {
+          await this.adoptTransport({
+            id: pending.id,
+            label: pending.label,
+            candidates: pending.candidates,
+            token: null,
+            transport,
+          });
+          adopted = true;
+          return true;
+        }
         this.setState({ error: t('mobile.connect.error.authRequired'), busy: false });
         return false;
       }
@@ -337,10 +384,7 @@ export class ConnectionController {
         label: pending.label,
         candidates: pending.candidates,
         token: result.clientToken,
-        transport:
-          chosen.kind === 'relay'
-            ? { kind: 'relay', relay: chosen.relay, tunnel: chosen.tunnel }
-            : { kind: 'direct', url: chosen.url },
+        transport,
       });
       adopted = true;
       return true;
