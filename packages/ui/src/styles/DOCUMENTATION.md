@@ -160,6 +160,7 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 | `[data-user-message-bubble="true"]` | Mobile-only radius clip; desktop inline actions use `translate-x-5` and must not be clipped |
 | `[data-user-message-clamp="true"]` | Truncated long user text wrapper; hides sibling file thumbs so they cannot sit under the clamp |
 | `[data-user-message-collapse="true"]` | `line-clamp-10` box with a 10-line max-height so WebKit cannot grow past the clamp |
+| `[data-agent-avatar]` / `[data-assistant-working-avatar] .overflow-hidden` / `.oc-mobile-assistant-avatar .overflow-hidden` | Assistant/agent faces stay clippers; the generic rewrite painted a scrollbar thumb on the 40px circle |
 
 If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` uses `min-height: min-content`. Its motion viewport and reveal keep popup overflow available.
 

@@ -33,7 +33,7 @@ export const AssistantWorkingAvatar: React.FC<AssistantWorkingAvatarProps> = ({
       style={{ width: box, height: box }}
       data-assistant-working-avatar=""
     >
-      <AgentAvatar name={name} emoji={emoji} size={size} label={label} />
+      <AgentAvatar name={name} emoji={emoji} size={size} label={label} shape="circle" />
       {working ? (
         <span
           className="pointer-events-none absolute right-0 bottom-0 size-2 translate-x-1/4 translate-y-1/4 rounded-full bg-[var(--status-success)] ring-2 ring-background"

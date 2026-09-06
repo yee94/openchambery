@@ -192,6 +192,10 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).not.toContain('oc-mobile-assistant-avatar oc-mobile-glass-control');
     // Working avatar must not force `block` — that strips AgentAvatar flex and off-centers emoji.
     expect(workingAvatar).not.toContain('className="block"');
+    expect(workingAvatar).toContain('shape="circle"');
+    expect(agentAvatar).toContain("shape = 'rounded'");
+    expect(agentAvatar).toContain("shape === 'circle' ? 'rounded-full' : 'rounded-sm'");
+    expect(agentAvatar).toContain('data-agent-avatar=""');
     expect(agentAvatar).toContain("display: 'inline-flex'");
     expect(agentAvatar).toContain("alignItems: 'center'");
     expect(agentAvatar).toContain("justifyContent: 'center'");
@@ -204,13 +208,11 @@ describe('Assistant UI product contract', () => {
     expect(avatarStyles).toContain('border-radius: 999px');
     expect(avatarStyles).toContain(':is(img, svg)');
     expect(avatarStyles).toContain('object-fit: cover');
-    const sharedInnerStyles = avatarStyles.slice(
-      avatarStyles.indexOf('.oc-mobile-assistant-avatar > [role="img"] {'),
-      avatarStyles.indexOf('.oc-mobile-assistant-avatar--emoji {'),
-    );
-    expect(sharedInnerStyles).toContain('width: 100% !important');
-    expect(sharedInnerStyles).toContain('height: 100% !important');
-    expect(sharedInnerStyles).toContain('border-radius: inherit');
+    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar > [data-agent-avatar]');
+    expect(avatarStyles).toContain('overflow: hidden !important');
+    expect(avatarStyles).toContain('overflow-y: hidden !important');
+    expect(avatarStyles).toContain('border-radius: 999px !important');
+    expect(avatarStyles).toContain('scrollbar-width: none');
     expect(avatarStyles).toContain('.oc-mobile-assistant-avatar--emoji');
     expect(avatarStyles).toContain('padding: 0');
     expect(avatarStyles).toContain('font-size: 1.75rem !important');
@@ -223,6 +225,10 @@ describe('Assistant UI product contract', () => {
     );
     expect(visualStyles).toContain('padding: 0');
     expect(visualStyles).not.toContain('background: var(--surface-muted)');
+    // mobile-pointer rewrite must not reopen the face as a scrollport.
+    expect(mobileStyles).toContain('[data-agent-avatar]');
+    expect(mobileStyles).toContain('[data-assistant-working-avatar] .overflow-hidden');
+    expect(mobileStyles).toContain('.oc-mobile-assistant-avatar .overflow-hidden');
   });
 
   test('shows bounded prompt details without a model badge on Assistant cards', async () => {

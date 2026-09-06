@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.17] - 2026-09-06
+
+### 助手
+
+- 列表头像统一圆形（emoji 与 identicon 一致）。
+- 去掉头像上误出的原生滚动条（mobile overflow 改写）。
+
 ## [1.19.7-beta.16] - 2026-09-06
 
 ### 助手

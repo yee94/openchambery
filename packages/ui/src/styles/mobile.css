@@ -1243,6 +1243,10 @@ button.oc-mobile-worktree-label-trigger:active,
   background: transparent;
 }
 
+/* Face is always a circle (emoji + identicon). Keep it a clipper — the
+   mobile-pointer `.overflow-hidden → overflow-y: auto` rewrite would paint a
+   native scrollbar thumb beside the 40px glyph. */
+.oc-mobile-assistant-avatar > [data-agent-avatar],
 .oc-mobile-assistant-avatar > [role="img"] {
   width: 100% !important;
   min-width: 100% !important;
@@ -1250,8 +1254,19 @@ button.oc-mobile-worktree-label-trigger:active,
   height: 100% !important;
   min-height: 100% !important;
   max-height: 100% !important;
-  overflow: hidden;
-  border-radius: inherit;
+  overflow: hidden !important;
+  overflow-x: hidden !important;
+  overflow-y: hidden !important;
+  border-radius: 999px !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.oc-mobile-assistant-avatar > [data-agent-avatar]::-webkit-scrollbar,
+.oc-mobile-assistant-avatar > [role="img"]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .oc-mobile-assistant-avatar--emoji {
@@ -1259,14 +1274,15 @@ button.oc-mobile-worktree-label-trigger:active,
   background: var(--interactive-selection);
 }
 
+.oc-mobile-assistant-avatar--emoji > [data-agent-avatar],
 .oc-mobile-assistant-avatar--emoji > [role="img"] {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
   background: var(--interactive-selection);
 }
 
+.oc-mobile-assistant-avatar--emoji [data-agent-avatar] > span,
 .oc-mobile-assistant-avatar--emoji [role="img"] > span {
   display: flex !important;
   width: 100%;
@@ -2733,7 +2749,11 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) [data-message-image-slot="true"].overflow-hidden,
   :root.mobile-pointer:not(.desktop-runtime) [data-user-message-bubble="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-user-message-clamp="true"],
-  :root.mobile-pointer:not(.desktop-runtime) [data-user-message-collapse="true"] {
+  :root.mobile-pointer:not(.desktop-runtime) [data-user-message-collapse="true"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-agent-avatar],
+  :root.mobile-pointer:not(.desktop-runtime) [data-agent-avatar].overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) [data-assistant-working-avatar] .overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-avatar .overflow-hidden {
     overflow: hidden !important;
     overflow-x: hidden !important;
     overflow-y: hidden !important;
