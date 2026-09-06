@@ -48,7 +48,7 @@ describe('markstream-react trial path', () => {
     expect(theme).toContain('max-width: 100%');
     expect(theme).toContain('height: auto');
     expect(theme).toContain('object-fit: contain');
-    expect(theme).not.toContain('max-width: none');
+    expect(theme).toMatch(/\.image-node__img \{[\s\S]*max-width: 100%/);
   });
 
   test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {
