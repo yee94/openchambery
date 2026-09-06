@@ -10,8 +10,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Lynx Android SDK maven — not resolved on Linux agent.
-        // maven { url "https://…" }
     }
 }
 rootProject.name = "OpenChamberLynx"

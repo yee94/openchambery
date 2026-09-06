@@ -147,11 +147,15 @@ Facts (`packages/mobile/HANDOFF.md`, `useNativePushRegistration.ts`):
 
 | Install id | Role |
 |---|---|
-| `com.yee94.openchamber` | Release / Play / CI APK |
-| `com.yee94.openchamber.debug` | Local debug, can sit beside release |
-| `com.openchamber.app` | **Java/R namespace only** — old upstream id. Same icon ≠ same app |
+| `com.yee94.openchamber` | Cap / Flutter / Expo release / Play / CI APK |
+| `com.yee94.openchamber.debug` | Cap / Flutter / Expo local/sideload debug — sits beside release |
+| `com.yee94.openchamber.lynx` | Lynx host base id (not shipped without suffix today) |
+| `com.yee94.openchamber.lynx.debug` | **Lynx sideload APK** — intentional unique id for side-by-side install beside Cap/Flutter/Expo |
+| `com.openchamber.app` | **Java/R namespace only** (Cap) — old upstream id. Same icon ≠ same app |
 
-`google-services.json` lists both `com.yee94.openchamber` and `.debug`. A new Lynx `applicationId` without a matching Firebase Android app **will not receive FCM**.
+`google-services.json` lists Cap/Flutter/Expo `com.yee94.openchamber` and `.debug` only. The Lynx sideload APK intentionally uses `com.yee94.openchamber.lynx(.debug)` so it installs beside Cap/Flutter/Expo without package conflict. **FCM will NOT work on Lynx until a matching Firebase Android app is added** to `google-services.json`. Cap/Flutter/Expo keep sharing `com.yee94.openchamber(.debug)`.
+
+Lynx deep-link scheme is `openchamber-lynx://` (not `openchamber://`) so it does not fight Cap.
 
 Other package-name landmines:
 

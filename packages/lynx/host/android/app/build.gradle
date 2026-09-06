@@ -8,21 +8,36 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     defaultConfig {
-        // Keep Cap / FCM identity — do not invent a new applicationId.
-        applicationId 'com.yee94.openchamber'
+        // Side-by-side with Cap/Flutter/Expo — unique Lynx applicationId.
+        // Final sideload id is com.yee94.openchamber.lynx.debug (suffix below).
+        applicationId 'com.yee94.openchamber.lynx'
         minSdk rootProject.ext.minSdkVersion
         targetSdk rootProject.ext.targetSdkVersion
         versionCode 1
         versionName '1.19.7-beta.7'
         buildConfigField 'String', 'LYNX_BUNDLE', '"main.lynx.bundle"'
+        resValue 'string', 'app_name', 'OpenChamber Lynx'
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     buildTypes {
+        // Cap/Expo pattern: both variants get .debug so sideload never
+        // collides with Cap/Flutter/Expo com.yee94.openchamber(.debug).
         debug {
             applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
         }
         release {
+            // Sideload APK: assembleRelease + debug keystore (Expo Track 9).
+            // Avoids assembleDebug Metro/dev-support hang modes.
+            signingConfig signingConfigs.debug
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
             minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -36,6 +51,28 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.activity:activity-ktx:1.9.3'
-    // Official Lynx Android SDK — unresolved on Linux; uncomment on Mac/CI with artifact.
-    // implementation 'com.lynx:lynx:<version>'
+
+    // Lynx Android SDK 4.0.0 (Maven Central) — see
+    // https://lynxjs.org/guide/start/integrate-with-existing-apps.html
+    implementation 'org.lynxsdk.lynx:lynx:4.0.0'
+    implementation 'org.lynxsdk.lynx:lynx-jssdk:4.0.0'
+    implementation 'org.lynxsdk.lynx:lynx-trace:4.0.0'
+    implementation 'org.lynxsdk.lynx:primjs:4.0.0'
+
+    implementation 'org.lynxsdk.lynx:lynx-service-image:4.0.0'
+    implementation 'org.lynxsdk.lynx:lynx-service-log:4.0.0'
+    implementation 'org.lynxsdk.lynx:lynx-service-http:4.0.0'
+
+    implementation 'com.facebook.fresco:fresco:2.3.0'
+    implementation 'com.facebook.fresco:animated-gif:2.3.0'
+    implementation 'com.facebook.fresco:animated-webp:2.3.0'
+    implementation 'com.facebook.fresco:webpsupport:2.3.0'
+    implementation 'com.facebook.fresco:animated-base:2.3.0'
+
+    implementation 'com.squareup.okhttp3:okhttp:4.9.0'
+
+    // Composer uses <input>; XElement provides input/overlay behaviors.
+    implementation 'org.lynxsdk.lynx:xelement:4.0.0'
+    implementation 'org.lynxsdk.lynx:xelement-input:4.0.0'
+    implementation 'org.lynxsdk.lynx:xelement-overlay:4.0.0'
 }

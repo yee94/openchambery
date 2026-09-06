@@ -83,3 +83,6 @@ test-results/
 
 # Electron icon release backups (never ship build artifacts)
 packages/electron/resources/icons/*.release-backup
+
+# Lynx Android host embeds rspeedy output at CI time — do not commit the binary.
+packages/lynx/host/android/app/src/main/assets/main.lynx.bundle
