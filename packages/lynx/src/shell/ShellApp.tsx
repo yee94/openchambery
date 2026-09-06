@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ensureAssistantSession } from '../assistants/api';
 import type { LynxAssistantDTO } from '../assistants/types';
 import { LynxChatScreen } from '../chat/ChatScreen';
+import { LynxDraftComposer } from '../chat/DraftComposer';
 import { LynxChatSheet } from '../chat/ChatSheets';
 import type { LynxChatSheetKind } from '../chat/overflowMenu';
 import {
@@ -85,6 +86,7 @@ function RootTab({
           host={host}
           fullPageAutoGlassSkin={fullPageAutoGlassSkin}
           bindings={sessionIndexBindings}
+          runtimeFetch={runtimeFetch}
           onOpenSession={onOpenSession}
           onOpenDraft={onOpenDraft}
         />
@@ -341,10 +343,18 @@ export function LynxShellApp({
             onSheetClosed={() => setChatSheet(null)}
           />
         ) : secondary?.kind === 'draft' ? (
-          <SecondaryStubPage
+          <LynxDraftComposer
             locale={host.locale}
-            kind="draft"
             onBack={closeSecondary}
+            runtimeFetch={runtimeFetch}
+            directory={secondary.directory ?? null}
+            onMaterialized={({ sessionId, directory }) => {
+              setNavigation((state) => reduceLynxNavigation(state, {
+                type: 'openChat',
+                sessionId,
+                directory,
+              }));
+            }}
           />
         ) : assistantRoute ? (
           <LynxView style={{ flexGrow: 1, backgroundColor: cssVar('surface.background') }}>

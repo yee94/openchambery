@@ -4,6 +4,7 @@
  * Never treat transport/HTTP failure as empty success.
  */
 import type { LynxRuntimeFetch } from '../runtime/fetch';
+import { parseLynxMessageParts, textFromLynxParts } from './messageParts';
 import type { LynxTimelineEntry, LynxTimelinePage, LynxTimelineRole } from './timelineModel';
 
 export type LynxSessionApiDeps = {
@@ -60,19 +61,6 @@ const roleOf = (value: unknown): LynxTimelineRole => {
   return 'unknown';
 };
 
-const textFromParts = (parts: unknown): string => {
-  if (!Array.isArray(parts)) return '';
-  const chunks: string[] = [];
-  for (const part of parts) {
-    if (!part || typeof part !== 'object') continue;
-    const record = part as { type?: unknown; text?: unknown };
-    if (record.type === 'text' && typeof record.text === 'string') {
-      chunks.push(record.text);
-    }
-  }
-  return chunks.join('');
-};
-
 const entryFromMessage = (raw: unknown, index: number): LynxTimelineEntry | null => {
   if (!raw || typeof raw !== 'object') return null;
   const record = raw as {
@@ -92,12 +80,14 @@ const entryFromMessage = (raw: unknown, index: number): LynxTimelineEntry | null
     ? (info.time as { created?: unknown }).created
     : undefined;
   const createdAt = typeof createdRaw === 'number' ? createdRaw : undefined;
+  const parts = parseLynxMessageParts(record.parts);
   return {
     key: messageId,
     messageId,
     role,
-    text: textFromParts(record.parts),
+    text: textFromLynxParts(parts),
     createdAt: createdAt ?? index,
+    parts,
   };
 };
 

@@ -29,14 +29,15 @@ Product behavior copied from Capacitor + shared UI (`packages/ui/src/apps/mobile
 | Session by id | `GET /api/openchamber/session-index/session/:id` | `lookupSessionIndexById` |
 | Pin / unpin | `POST` / `DELETE` `…/session/:id/pin` | `pinSession` / `unpinSession` |
 | Official OpenCode session prompt/abort/messages | `@opencode-ai/sdk/v2` `/session/:id/{prompt_async,abort,message}` | `src/chat/sessionApi.ts` |
+| Session create / archive / delete | `POST/PATCH/DELETE /session` | `src/projects/sessionActions.ts` |
+| Question / permission pending | `GET/POST /question`, `/permission` | `src/chat/pendingCards.ts` |
 
 Do not invent `/api/nearby/redeem` or Bonjour browse.
 
 ## Does not own
 
-- Rich chat turn cards / SSE live tail / Files / Changes / MCP sheets / native IME
-- Settings **editors** (home + labeled stub bodies only in this slice)
-- Push / FCM / Live Activity / share / Capgo
+- SSE live tail / native IME / HTML iframe Files preview / PierreDiff polish
+- Push token mint (host) / Live Activity / Capgo / QR camera / Keychain wiring
 - Capacitor `packages/mobile` and shared React `packages/ui` runtimes
 - Nearby / Bonjour browse
 - Native ASR / voice product

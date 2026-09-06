@@ -57,3 +57,21 @@ export {
   type LynxChatOverflowItemId,
   type LynxChatSheetKind,
 } from './overflowMenu';
+
+export {
+  parseLynxMessageParts,
+  buildLynxTurnCard,
+  projectLynxActivity,
+  parseLynxQuestionRequest,
+  parseLynxPermissionRequest,
+  type LynxMessagePart,
+  type LynxTurnCardModel,
+} from './messageParts';
+export {
+  fetchLynxPendingCards,
+  replyLynxQuestion,
+  rejectLynxQuestion,
+  replyLynxPermission,
+} from './pendingCards';
+export { LynxTurnCard, LynxQuestionCard, LynxPermissionCard } from './TurnCards';
+export { LynxDraftComposer, materializeLynxDraftSession } from './DraftComposer';

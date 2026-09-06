@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { loadAssistantSnapshot } from '../../assistants/api';
+import { LynxShareWelcome } from '../../assistants/ShareWelcome';
 import type { LynxAssistantDTO, LynxAssistantLoadResult } from '../../assistants/types';
 import { lynxT, tabLabel } from '../../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
@@ -15,6 +16,8 @@ export type AssistantTabProps = {
   /** Labeled stub when snapshot has no session yet — do not invent ASR / fake session. */
   onOpenNeedsSession?: (assistant: LynxAssistantDTO) => void;
   resultOverride?: LynxAssistantLoadResult | null;
+  /** Show Cap AssistantShareWelcome education chrome once. */
+  shareWelcomeEnabled?: boolean;
 };
 
 function modeLabel(locale: string, mode: LynxAssistantDTO['mode']): string {
@@ -81,6 +84,7 @@ export function AssistantTab({
   onOpenConversation,
   onOpenNeedsSession,
   resultOverride = null,
+  shareWelcomeEnabled = true,
 }: AssistantTabProps) {
   const [result, setResult] = useState<LynxAssistantLoadResult | null>(resultOverride);
 
@@ -118,6 +122,8 @@ export function AssistantTab({
       >
         {tabLabel(locale, 'assistant')}
       </LynxText>
+
+      <LynxShareWelcome locale={locale} enabled={shareWelcomeEnabled} />
 
       {!result ? (
         <LynxText style={{ color: cssVar('surface.mutedForeground') }}>

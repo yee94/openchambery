@@ -16,8 +16,17 @@ import {
   type LynxChatOverflowItemId,
   type LynxChatSheetKind,
 } from './overflowMenu';
+import type { LynxPermissionRequest, LynxQuestionRequest } from './messageParts';
+import {
+  fetchLynxPendingCards,
+  rejectLynxQuestion,
+  replyLynxPermission,
+  replyLynxQuestion,
+  type LynxPermissionReply,
+} from './pendingCards';
 import { fetchSessionMessages } from './sessionApi';
 import { LynxTimelineList } from './TimelineList';
+import { LynxPermissionCard, LynxQuestionCard } from './TurnCards';
 import {
   applyInitialFailure,
   applyInitialPage,
@@ -72,6 +81,10 @@ export function LynxChatScreen({
   const [queueCount, setQueueCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheet, setSheet] = useState<LynxChatSheetKind | null>(initialSheet);
+  const [questions, setQuestions] = useState<LynxQuestionRequest[]>([]);
+  const [permissions, setPermissions] = useState<LynxPermissionRequest[]>([]);
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
 
   const sessionApi = useMemo(
     () => (runtimeFetch ? { runtimeFetch } : null),
@@ -111,12 +124,34 @@ export function LynxChatScreen({
     })();
   }, [runtimeFetch, sessionId, directory]);
 
+  const reloadPendingCards = useCallback(() => {
+    if (!runtimeFetch) {
+      setQuestions([]);
+      setPermissions([]);
+      return;
+    }
+    void (async () => {
+      const result = await fetchLynxPendingCards(runtimeFetch, { directory, sessionId });
+      if (result.status === 'ok') {
+        setQuestions(result.questions);
+        setPermissions(result.permissions);
+        setCardError(null);
+      } else if (result.status === 'failed') {
+        setCardError(result.error);
+      }
+    })();
+  }, [runtimeFetch, directory, sessionId]);
+
   useEffect(() => {
     let cancelled = false;
     setTimeline(createEmptyTimelineState(sessionId, directory));
     setActionError(null);
     setMenuOpen(false);
     setSheet(initialSheet);
+    setQuestions([]);
+    setPermissions([]);
+    setCardError(null);
+    reloadPendingCards();
 
     if (!runtimeFetch) {
       setTimeline((state) => applyInitialFailure(
@@ -142,7 +177,7 @@ export function LynxChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, directory, runtimeFetch, initialSheet]);
+  }, [sessionId, directory, runtimeFetch, initialSheet, reloadPendingCards]);
 
   const onLoadOlder = useCallback(() => {
     if (!runtimeFetch) {
@@ -208,6 +243,43 @@ export function LynxChatScreen({
     setDraft('');
     setQueueCount(composer.getQueue().length);
   }, [composer, draft]);
+
+
+  const onQuestionReply = useCallback(async (requestId: string, answers: string[][]) => {
+    setCardBusy(true);
+    setCardError(null);
+    const result = await replyLynxQuestion(runtimeFetch, { requestId, answers, directory });
+    setCardBusy(false);
+    if (result.status !== 'ok') {
+      setCardError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+      return;
+    }
+    reloadPendingCards();
+  }, [runtimeFetch, directory, reloadPendingCards]);
+
+  const onQuestionReject = useCallback(async (requestId: string) => {
+    setCardBusy(true);
+    setCardError(null);
+    const result = await rejectLynxQuestion(runtimeFetch, { requestId, directory });
+    setCardBusy(false);
+    if (result.status !== 'ok') {
+      setCardError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+      return;
+    }
+    reloadPendingCards();
+  }, [runtimeFetch, directory, reloadPendingCards]);
+
+  const onPermissionReply = useCallback(async (requestId: string, reply: LynxPermissionReply) => {
+    setCardBusy(true);
+    setCardError(null);
+    const result = await replyLynxPermission(runtimeFetch, { requestId, reply, directory });
+    setCardBusy(false);
+    if (result.status !== 'ok') {
+      setCardError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+      return;
+    }
+    reloadPendingCards();
+  }, [runtimeFetch, directory, reloadPendingCards]);
 
   const onOverflowSelect = (id: LynxChatOverflowItemId) => {
     setMenuOpen(false);
@@ -307,6 +379,30 @@ export function LynxChatScreen({
         onLoadOlder={onLoadOlder}
         footer={(
           <LynxView style={{ padding: '12px 16px' }}>
+            {questions.map((question) => (
+              <LynxQuestionCard
+                key={question.id}
+                locale={locale}
+                question={question}
+                busy={cardBusy}
+                onReply={(answers) => { void onQuestionReply(question.id, answers); }}
+                onReject={() => { void onQuestionReject(question.id); }}
+              />
+            ))}
+            {permissions.map((permission) => (
+              <LynxPermissionCard
+                key={permission.id}
+                locale={locale}
+                permission={permission}
+                busy={cardBusy}
+                onReply={(reply) => { void onPermissionReply(permission.id, reply); }}
+              />
+            ))}
+            {cardError ? (
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+                {cardError}
+              </LynxText>
+            ) : null}
             <LynxView
               style={{
                 padding: '10px 12px',

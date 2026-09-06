@@ -10,6 +10,7 @@ export type LynxViewProps = {
   style?: LynxStyle;
   children?: ReactNode;
   bindtap?: () => void;
+  bindlongpress?: () => void;
   'accessibility-label'?: string;
   'accessibility-element'?: boolean;
   'accessibility-role'?: string;

@@ -3,7 +3,17 @@ import { useEffect, useMemo, useState } from 'react';
 import type { LynxHostGlobalProps } from '../../host/embedding';
 import { lynxT, tabLabel } from '../../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
+import {
+  buildLynxSessionMenuItems,
+  type LynxMenuItem,
+} from '../../projects/sessionMenuModel';
+import {
+  archiveLynxSession,
+  deleteLynxSession,
+  toggleLynxSessionPin,
+} from '../../projects/sessionActions';
 import { filterLynxProjectsHomeForSearch } from '../../projects/search';
+import type { LynxRuntimeFetch } from '../../runtime/fetch';
 import {
   projectSessionIndexHome,
   type LynxHomeProject,
@@ -38,6 +48,10 @@ export type ProjectsHomeProps = {
   onOpenSession?: (session: LynxHomeSessionRow) => void;
   onOpenDraft?: () => void;
   onTogglePin?: (session: LynxHomeSessionRow) => void;
+  /** Connect runtime for pin/archive/delete. Null → actions report no-runtime. */
+  runtimeFetch?: LynxRuntimeFetch | null;
+  /** After a mutating menu action succeeds, refresh session-index. */
+  onSessionMutated?: () => void;
   /** Test / story inject: skip store and render this model. */
   modelOverride?: LynxProjectsHomeModel | null;
   indexStateOverride?: SessionIndexState | null;
@@ -77,15 +91,18 @@ function useSessionIndexState(
 function SessionRow({
   session,
   onOpen,
+  onLongPress,
   cue,
 }: {
   session: LynxHomeSessionRow;
   onOpen?: (session: LynxHomeSessionRow) => void;
+  onLongPress?: (session: LynxHomeSessionRow) => void;
   cue?: 'pin' | 'busy' | null;
 }) {
   return (
     <LynxView
       bindtap={() => onOpen?.(session)}
+      bindlongpress={() => onLongPress?.(session)}
       accessibility-role="button"
       accessibility-label={session.title}
       style={{
@@ -127,11 +144,13 @@ function WorktreeGroup({
   expanded,
   onToggle,
   onOpenSession,
+  onSessionLongPress,
 }: {
   worktree: LynxHomeWorktreeGroup;
   expanded: boolean;
   onToggle: () => void;
   onOpenSession?: (session: LynxHomeSessionRow) => void;
+  onSessionLongPress?: (session: LynxHomeSessionRow) => void;
 }) {
   return (
     <LynxView style={{ marginTop: '8px' }}>
@@ -159,6 +178,7 @@ function WorktreeGroup({
             key={session.id}
             session={session}
             onOpen={onOpenSession}
+            onLongPress={onSessionLongPress}
             cue={session.inProgress ? 'busy' : null}
           />
         ))
@@ -174,6 +194,7 @@ function ProjectCard({
   worktreeExpanded,
   onToggleWorktree,
   onOpenSession,
+  onSessionLongPress,
 }: {
   project: LynxHomeProject;
   expanded: boolean;
@@ -181,6 +202,7 @@ function ProjectCard({
   worktreeExpanded: Record<string, boolean>;
   onToggleWorktree: (worktreeId: string) => void;
   onOpenSession?: (session: LynxHomeSessionRow) => void;
+  onSessionLongPress?: (session: LynxHomeSessionRow) => void;
 }) {
   return (
     <LynxView
@@ -217,6 +239,7 @@ function ProjectCard({
             expanded={worktreeExpanded[worktree.id] ?? worktree.kind === 'main'}
             onToggle={() => onToggleWorktree(worktree.id)}
             onOpenSession={onOpenSession}
+            onSessionLongPress={onSessionLongPress}
           />
         ))
         : null}
@@ -239,6 +262,9 @@ export function ProjectsHome({
   onSearchQueryChange,
   onOpenSession,
   onOpenDraft,
+  onTogglePin,
+  runtimeFetch = null,
+  onSessionMutated,
   modelOverride = null,
   indexStateOverride = null,
 }: ProjectsHomeProps) {
@@ -248,6 +274,9 @@ export function ProjectsHome({
   const [headerProgress, setHeaderProgress] = useState(0);
   const [projectExpanded, setProjectExpanded] = useState<Record<string, boolean>>({});
   const [worktreeExpanded, setWorktreeExpanded] = useState<Record<string, boolean>>({});
+  const [actionSession, setActionSession] = useState<LynxHomeSessionRow | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const searchQuery = searchQueryProp ?? internalQuery;
   const setSearchQuery = onSearchQueryChange ?? setInternalQuery;
 
@@ -275,6 +304,75 @@ export function ProjectsHome({
   const noRuntime = !bindings && !modelOverride && !indexStateOverride;
 
   const progress = collapseProgress ?? headerProgress;
+
+  const sessionMenuItems: LynxMenuItem[] = actionSession
+    ? buildLynxSessionMenuItems({
+      pinned: actionSession.pinned,
+      shared: false,
+      onTogglePin: () => {
+        setActionBusy(true);
+        setActionError(null);
+        void (async () => {
+          if (onTogglePin) {
+            onTogglePin(actionSession);
+            setActionBusy(false);
+            setActionSession(null);
+            onSessionMutated?.();
+            return;
+          }
+          const result = await toggleLynxSessionPin(runtimeFetch, {
+            sessionId: actionSession.id,
+            pinned: actionSession.pinned,
+          });
+          setActionBusy(false);
+          if (result.status !== 'ok') {
+            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+            return;
+          }
+          setActionSession(null);
+          onSessionMutated?.();
+          void bindings?.refresh?.();
+        })();
+      },
+      onArchive: () => {
+        setActionBusy(true);
+        setActionError(null);
+        void (async () => {
+          const result = await archiveLynxSession(runtimeFetch, {
+            sessionId: actionSession.id,
+            directory: actionSession.directory,
+          });
+          setActionBusy(false);
+          if (result.status !== 'ok') {
+            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+            return;
+          }
+          setActionSession(null);
+          onSessionMutated?.();
+          void bindings?.refresh?.();
+        })();
+      },
+      onDelete: () => {
+        setActionBusy(true);
+        setActionError(null);
+        void (async () => {
+          const result = await deleteLynxSession(runtimeFetch, {
+            sessionId: actionSession.id,
+            directory: actionSession.directory,
+          });
+          setActionBusy(false);
+          if (result.status !== 'ok') {
+            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+            return;
+          }
+          setActionSession(null);
+          onSessionMutated?.();
+          void bindings?.refresh?.();
+        })();
+      },
+    })
+    : [];
+
 
   return (
     <LynxView
@@ -360,7 +458,13 @@ export function ProjectsHome({
             {lynxT(locale, 'lynx.projects.pinned')}
           </LynxText>
           {model.pinnedSessions.map((session) => (
-            <SessionRow key={session.id} session={session} onOpen={onOpenSession} cue="pin" />
+            <SessionRow
+              key={session.id}
+              session={session}
+              onOpen={onOpenSession}
+              onLongPress={setActionSession}
+              cue="pin"
+            />
           ))}
         </LynxView>
       ) : null}
@@ -371,7 +475,13 @@ export function ProjectsHome({
             {lynxT(locale, 'lynx.projects.inProgress')}
           </LynxText>
           {model.inProgressSessions.map((session) => (
-            <SessionRow key={session.id} session={session} onOpen={onOpenSession} cue="busy" />
+            <SessionRow
+              key={session.id}
+              session={session}
+              onOpen={onOpenSession}
+              onLongPress={setActionSession}
+              cue="busy"
+            />
           ))}
         </LynxView>
       ) : null}
@@ -404,9 +514,64 @@ export function ProjectsHome({
             [worktreeId]: !(map[worktreeId] ?? true),
           }))}
           onOpenSession={onOpenSession}
+          onSessionLongPress={setActionSession}
         />
       ))}
       </LynxScrollView>
+
+      {actionSession ? (
+        <LynxView
+          style={{
+            padding: '16px',
+            backgroundColor: cssVar('surface.elevated'),
+            borderTopLeftRadius: '16px',
+            borderTopRightRadius: '16px',
+          }}
+          accessibility-label={lynxT(locale, 'lynx.projects.menu.title')}
+        >
+          <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', marginBottom: '8px' }}>
+            {actionSession.title}
+          </LynxText>
+          {actionError ? (
+            <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+              {actionError}
+            </LynxText>
+          ) : null}
+          {sessionMenuItems.map((item) => (
+            <LynxView
+              key={item.id}
+              bindtap={() => {
+                if (actionBusy || item.disabled) return;
+                item.onClick();
+              }}
+              style={{
+                padding: '12px 0',
+                opacity: actionBusy || item.disabled ? 0.6 : 1,
+                marginTop: item.separated ? '8px' : '0px',
+              }}
+            >
+              <LynxText style={{
+                color: item.destructive ? cssVar('surface.mutedForeground') : cssVar('primary.base'),
+                fontSize: '15px',
+              }}
+              >
+                {lynxT(locale, item.labelKey as 'lynx.projects.menu.pin')}
+              </LynxText>
+            </LynxView>
+          ))}
+          <LynxView
+            bindtap={() => {
+              setActionSession(null);
+              setActionError(null);
+            }}
+            style={{ padding: '12px 0', marginTop: '4px' }}
+          >
+            <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+              {lynxT(locale, 'lynx.projects.menu.cancel')}
+            </LynxText>
+          </LynxView>
+        </LynxView>
+      ) : null}
     </LynxView>
   );
 }

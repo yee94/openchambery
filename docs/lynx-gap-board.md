@@ -153,6 +153,23 @@ Slice on `cursor/lynx-diff-push-share-local` (PR into `work/lynx-native`). Packa
 **真机过:** not executed.
 
 ---
+
+## 代码接上 (rich turn cards + swipe menu + share welcome + draft + list harness — not landed under 三关)
+
+Slice on `cursor/lynx-cards-swipe-harness-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Chat rich turn cards | message parts, ProgressiveGroup, QuestionCard, PermissionCard | Wire Cap part types (`text`/`reasoning`/`tool`/`file`/`agent`); Activity collapsed/expanded; pending `/question`+`/permission` reply. No invented types. |
+| Projects swipe / long-press | `sessionMenuModel.ts` | Long-press sheet: pin (session-index), archive/delete (`PATCH`/`DELETE /session/:id`). Share/rename gated when callbacks exist. |
+| Share welcome chrome | `AssistantShareWelcome` | Education cards + Cap storage key on Assistant tab above share inbox. |
+| Draft composer body | mobile `kind: 'draft'` | `LynxDraftComposer` materializes `POST /session` → `prompt_async` then opens chat. |
+| List perf harness | Cap `streamingRenderCadence.ts` + acceptance harness | Unit harness measures synthetic scroll/update cadence + prepend anchor; documents Cap 20/64 & Android 100/128 — **no fake device numbers**. |
+
+**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -167,7 +184,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
 | ~~`openchamber://` parse + apply~~ | `deepLinks.ts` | Parse/build + **apply → navigation** 代码接上 (stash until connect ready) |
 | Secure store (Keychain / Keystore) | Capacitor secure storage | Injected adapter only — **native Keychain/Keystore wiring** still missing |
-| Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA + Projects/Assistant/Scheduled tab bodies **代码接上**; rich pixel polish / swipe menus still missing |
+| Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA + tab bodies + **swipe/long-press menus** **代码接上**; rich pixel polish still missing |
 | Host Tab/Nav **binary** (linked Lynx SDK) | `packages/lynx/host/*` | Strategy + sources landed; not an Xcode/Gradle project yet |
 
 ### Projects (chat list)
@@ -178,8 +195,8 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Session rows, search, pin / in-progress~~ | `useMobileProjectsHomeModel.ts` | **代码接上** search + pin/busy cues |
 | ~~`项目 · 分支` subtitle~~ | `formatHomeSessionSubtitle` | **代码接上** |
 | ~~Collapsing MobileTabPageHeader~~ | `MobileTabPageHeader.tsx` | **代码接上** glass search + primary + |
-| Swipe / long-press actions | `sessionMenuModel.ts` | |
-| New-session draft page | `kind: 'draft'` | Draft secondary push landed; composer body still stub |
+| ~~Swipe / long-press actions~~ | `sessionMenuModel.ts` | **代码接上** long-press sheet → pin/archive/delete real APIs |
+| ~~New-session draft page~~ | `kind: 'draft'` | **代码接上** draft composer body materializes POST /session |
 | Add project directory explorer | `DirectoryExplorerDialog` | |
 | Header 扫一扫 / 切换实例 | `MobileProjectsHome` | |
 | ~~Session index as data source~~ | `GET /api/openchamber/session-index` (server) | Client + home projection + **Projects UI** 代码接上 |
@@ -188,11 +205,11 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| ~~**LegendList-semantics timeline**~~ | `TimelineList.tsx` | **代码接上** in `packages/lynx/src/chat` (list semantics + LynxTimelineList). Rich turn cards still missing |
+| ~~**LegendList-semantics timeline**~~ | `TimelineList.tsx` | **代码接上** list semantics + LynxTimelineList + **rich turn cards** (Activity / Q&P) |
 | Chat header / overflow | `MobileChatScreen.tsx` | Header + Files/Changes/MCP overflow **代码接上**; rich actions still thin |
 | ~~Send / Stop / queue / abort~~ | ChatInput + queue | **代码接上** hooks + official routes; composer text input host binding still thin |
-| Questions / permissions | chat cards | |
-| Activity / sorted / collapsed | chat DOCUMENTATION | |
+| ~~Questions / permissions~~ | chat cards | **代码接上** pending `/question`+`/permission` cards + reply |
+| ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid tests |
 | Nested child session stack + predecessor | `mobileNavigation.ts` | |
 | ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML iframe / PierreDiff polish still thin. |
@@ -208,7 +225,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 |---|---|---|
 | ~~Assistant catalog + conversation page~~ | `MobileAssistantTab.tsx`, `AssistantView.tsx` | **代码接上** catalog + LynxChatScreen; ensure path calls Cap `session/ensure` (no invented ids) |
 | Continuous / stateless admission | assistants DOCUMENTATION | Mode labels shown; admission APIs not fully ported |
-| ~~Share welcome + inbox~~ | `AssistantShareWelcome`, `MobileShareBridge` | **代码接上** share inbox intake + Cap assistants `/share` dispatch (host injects envelopes). Welcome chrome still thin. |
+| ~~Share welcome + inbox~~ | `AssistantShareWelcome`, `MobileShareBridge` | **代码接上** share inbox + **welcome chrome** (Cap storage key + examples) |
 | ~~Scheduled list / history / editor~~ | `MobileScheduledTab.tsx` | **代码接上** list + history + editor upsert UI |
 | ~~Settings search + **all 21 mobile slugs**~~ | `MOBILE_SETTINGS_PAGE_SLUGS` | **代码接上** home search + grouped rows + push stubs |
 | ~~Settings split collection → entity editor~~ | `SettingsView.tsx` | **代码接上** detail push + Cap save/delete for list-backed slugs (providers save = auth-unsupported) |
@@ -262,17 +279,18 @@ First implementation slice after this doc gate (order is deliberate: connect →
 
 1. ~~Host app skeleton + embedding decision~~ — scaffold in `packages/lynx`. Remaining: link Lynx SDK, rspeedy bundle, device host; wire HTTP/Keychain/relay adapters.
 2. ~~Connect + instance persistence client~~ — 代码接上 in `packages/lynx`. Remaining: welcome/instances UI, native secure store, and a real server 真机 pass (LAN then relay). No demo hosts. No Bonjour.
-3. ~~Four-tab shell IA~~ — navigation + Projects/Assistant/Scheduled tab bodies 代码接上. Remaining: swipe menus, draft composer body, share welcome.
+3. ~~Four-tab shell IA~~ — navigation + Projects/Assistant/Scheduled tab bodies 代码接上. Remaining: pixel polish / SSE / IME.
 4. ~~Projects home data path + UI~~ — session-index bindings + ProjectsHome UI in `packages/lynx` (failure ≠ empty). Remaining: directory explorer / 扫一扫 / instance switch chrome.
-5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. Remaining: rich turn cards, SSE live tail, Files/Changes, native IME.
+5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. Remaining: SSE live tail, native IME.
 6. ~~**Settings home + slug map**~~ — 代码接上 search + 21 rows. Bodies: wired/list/stub in settings-ci slice. Remaining: rich entity editors.
-7. ~~**Assistant catalog + Scheduled list/history**~~ — 代码接上 snapshot/list/history hooks. Remaining: editor chrome, share welcome, admission flows.
+7. ~~**Assistant catalog + Scheduled list/history**~~ — 代码接上 snapshot/list/history hooks. Remaining: admission flows.
 8. ~~**Connect welcome + instances UI**~~ — 代码接上 splash/list/paste. Remaining: host QR camera + Keychain wiring + 真机.
 9. ~~**Projects MobileTabPageHeader**~~ — 代码接上 collapsing header + glass search + primary +. Remaining: pixel polish / menu.
 10. ~~**CI skeleton (Linux)**~~ — `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) type-check + vitest + rspeedy. Remaining: Android APK + iOS sim runners (do not claim 真机过).
 11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`.
 12. ~~**editors + Files/Changes/MCP lists + deep-link apply**~~ — 代码接上 in `cursor/lynx-editors-sheets-local`.
-13. ~~**diff/preview + commit/sync + provider auth + push/share hooks**~~ — 代码接上 in `cursor/lynx-diff-push-share-local`. Remaining: host Keychain/QR/browser OAuth open, share welcome chrome, 真机.
+13. ~~**diff/preview + commit/sync + provider auth + push/share hooks**~~ — 代码接上 in `cursor/lynx-diff-push-share-local`. Remaining: host Keychain/QR/browser OAuth open, 真机.
+14. ~~**rich turn cards + swipe menu + share welcome + draft + list harness**~~ — 代码接上 in `cursor/lynx-cards-swipe-harness-local`. Remaining: SSE live tail, native IME, host Keychain/QR, 真机.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 

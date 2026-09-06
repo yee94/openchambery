@@ -209,3 +209,27 @@ export {
 } from './host/pushRegistration';
 export { createLynxShareInbox } from './assistants/shareInbox';
 export type { LynxShareEnvelope, LynxShareInbox } from './assistants/shareInbox';
+
+export {
+  buildLynxSessionMenuItems,
+  archiveLynxSession,
+  deleteLynxSession,
+  createLynxSession,
+  toggleLynxSessionPin,
+} from './projects';
+export {
+  createLynxShareWelcomeStore,
+  LYNX_ASSISTANT_SHARE_WELCOME_STORAGE_KEY,
+  LYNX_SHARE_WELCOME_EXAMPLES,
+} from './assistants/shareWelcome';
+export {
+  runLynxListPerfHarness,
+  resolveLynxStreamingCadenceNotes,
+  CAP_STREAMING_RENDER_CADENCE,
+} from './harness/listPerfHarness';
+export {
+  parseLynxMessageParts,
+  buildLynxTurnCard,
+  projectLynxActivity,
+} from './chat/messageParts';
+export { materializeLynxDraftSession } from './chat/DraftComposer';

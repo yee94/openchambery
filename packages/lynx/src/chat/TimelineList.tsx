@@ -14,6 +14,7 @@ import {
   shouldIgnoreScrollLoadOlder,
 } from './loadOlder';
 import type { LynxTimelineEntry, LynxTimelineState } from './timelineModel';
+import { LynxTurnCard } from './TurnCards';
 
 export type LynxTimelineListProps = {
   locale: string;
@@ -24,22 +25,15 @@ export type LynxTimelineListProps = {
   footer?: ReactNode;
 };
 
-function DefaultEntry({ entry }: { entry: LynxTimelineEntry }) {
+function DefaultEntry({ locale, entry }: { locale: string; entry: LynxTimelineEntry }) {
   return (
-    <LynxView style={{ padding: '10px 16px' }}>
-      <LynxText
-        style={{
-          fontSize: '12px',
-          color: cssVar('surface.mutedForeground'),
-          marginBottom: '4px',
-        }}
-      >
-        {entry.role}
-      </LynxText>
-      <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '15px' }}>
-        {entry.text || '…'}
-      </LynxText>
-    </LynxView>
+    <LynxTurnCard
+      locale={locale}
+      messageId={entry.messageId}
+      role={entry.role}
+      parts={entry.parts ?? []}
+      textFallback={entry.text}
+    />
   );
 }
 
@@ -124,7 +118,7 @@ export function LynxTimelineList({
 
       {state.entries.map((entry) => (
         <LynxView key={entry.key} id={`lynx-timeline-row-${entry.key}`}>
-          {renderEntry ? renderEntry(entry) : <DefaultEntry entry={entry} />}
+          {renderEntry ? renderEntry(entry) : <DefaultEntry locale={locale} entry={entry} />}
         </LynxView>
       ))}
 

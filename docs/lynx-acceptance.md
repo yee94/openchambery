@@ -229,3 +229,11 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Projects header: Cap `MobileTabPageHeader` collapse contract (`--oc-mobile-title-collapse` spirit) with Lynx glass search chip + primary +.
 - CI: `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) is Linux type-check + vitest + rspeedy only. APK/iOS simulator jobs need Mac/Android runners — **do not claim 真机过** from this workflow.
 
+## Notes — cards / swipe / share welcome / draft / list harness (2026-09-06)
+
+- **Rich turn cards:** Cap message parts (`text` / `reasoning` / `tool` / `file` / `agent` + other rawType). Activity disclosure collapses detail rows (`collapsedPreviewCount = 0` spirit). Question/permission cards load Cap `/question` + `/permission` and reply on official paths — not invented part types.
+- **Projects session menu:** `sessionMenuModel` order (pin / share / archive / delete). Long-press sheet calls real pin (session-index) + archive/delete (`PATCH`/`DELETE /session/:id`).
+- **Share welcome:** Cap `AssistantShareWelcome` storage key + example cards on Assistant tab above share inbox.
+- **Draft composer:** secondary `kind: 'draft'` body materializes via `POST /session` then `prompt_async` — never a fake chat id.
+- **List perf harness:** `src/harness/listPerfHarness.ts` records synthetic streaming cadence and prepend-anchor retention. Cap cadence notes (`20/64` default, `100/128` Android from `streamingRenderCadence.ts`) are documented anchors — **`deviceMeasured: false`**; no invented 真机 p95.
+- 真机过: **not executed** (Linux cloud agent).

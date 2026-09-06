@@ -1,3 +1,5 @@
+import type { LynxMessagePart } from './messageParts';
+
 /**
  * Pure timeline model: one list owns history + live tail.
  * Prepend older pages without inventing a second scroller / split list.
@@ -11,6 +13,8 @@ export type LynxTimelineEntry = {
   role: LynxTimelineRole;
   text: string;
   createdAt?: number;
+  /** Cap/OpenCode parts for rich turn cards. Absent → text-only fallback. */
+  parts?: LynxMessagePart[];
 };
 
 export type LynxTimelinePage = {
