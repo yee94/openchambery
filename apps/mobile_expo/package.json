@@ -33,7 +33,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node -e \"require('fs').writeFileSync('expo-env.d.ts', '/// <reference types=\\\"expo/types\\\" />\\n')\" && tsc --noEmit"
   },
   "private": true
 }
