@@ -40,6 +40,17 @@ describe('markstream-react trial path', () => {
     expect(knobs).toContain('smoothStreaming: false');
   });
 
+  test('Markstream host CSS contains images to the OpenChamber max-width contract', () => {
+    const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
+    const decorate = readFileSync(join(here, 'markdown/decorate.ts'), 'utf8');
+    expect(decorate).toContain("'max-w-full'");
+    expect(theme).toContain('.image-node__img');
+    expect(theme).toContain('max-width: 100%');
+    expect(theme).toContain('height: auto');
+    expect(theme).toContain('object-fit: contain');
+    expect(theme).not.toContain('max-width: none');
+  });
+
   test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {
     const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
     const indexCss = readFileSync(join(here, '../../index.css'), 'utf8');
