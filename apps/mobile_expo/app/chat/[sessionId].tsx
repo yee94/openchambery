@@ -17,7 +17,7 @@ export default function ChatRoute() {
       <Stack.Screen
         options={{
           title: draft ? t('mobile.chat.draftTitle') : t('mobile.chat.title'),
-          headerBackTitle: 'Projects',
+          headerBackTitle: t('mobile.tabs.projects'),
         }}
       />
       <ChatScreen routeSessionId={typeof routeId === 'string' ? routeId : undefined} />

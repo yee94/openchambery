@@ -9,6 +9,7 @@ import { ConnectionProvider, useConnection } from '@/context/ConnectionContext';
 import { useDeepLinkNavigation } from '@/hooks/useDeepLinkNavigation';
 import { usePushRegistration } from '@/hooks/usePushRegistration';
 import { useShareInbox } from '@/hooks/useShareInbox';
+import { t } from '@/lib/i18n';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -91,8 +92,8 @@ function RootLayoutNav() {
         <Stack.Screen
           name="chat/[sessionId]"
           options={{
-            title: 'Chat',
-            headerBackTitle: 'Projects',
+            title: t('mobile.chat.title'),
+            headerBackTitle: t('mobile.tabs.projects'),
           }}
         />
         <Stack.Screen

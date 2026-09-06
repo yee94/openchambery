@@ -26,7 +26,7 @@ export type ChatComposerProps = {
 /**
  * Text + Send/Stop only. No mic / TTS (will-not-port).
  * iOS glass via expo-glass-effect UIGlassEffect; Android solid capsule (honest degrade).
- * Occupancy = collapsed pill only (Cap contract).
+ * Occupancy = collapsed pill only (Cap contract) — no opaque banner behind the pill.
  */
 export function ChatComposer({
   value,
@@ -40,17 +40,15 @@ export function ChatComposer({
   const colorScheme = useColorScheme();
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
-  const background = useThemeColor({}, 'background');
   const canSend = value.trim().length > 0 && !disabled;
 
   return (
     <RNView
+      pointerEvents="box-none"
       style={[
         styles.shell,
         {
           paddingBottom: Math.max(insets.bottom, 8),
-          backgroundColor: background,
-          borderTopColor: 'rgba(127,127,127,0.25)',
         },
       ]}
     >
@@ -105,7 +103,7 @@ const styles = StyleSheet.create({
   shell: {
     paddingHorizontal: 12,
     paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    backgroundColor: 'transparent',
   },
   pill: {
     minHeight: 48,

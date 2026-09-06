@@ -28,6 +28,7 @@ import {
   removeWorktreeAction,
   type ProjectOverflowTarget,
 } from '@/components/projects/ProjectsActionSheets';
+import { GlassDisc, GLASS_DISC_SIZE } from '@/components/chrome/GlassDisc';
 import { Text, View, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -49,7 +50,7 @@ const EXPAND_SHIFT = 10;
 const SHELL_ICON = 38;
 const SHELL_GLYPH = 32;
 const OVERFLOW_HIT = 36;
-const GLASS_DISC = 40;
+const GLASS_DISC = GLASS_DISC_SIZE;
 
 function formatRelativeShort(timestamp: number): string {
   if (timestamp <= 0) return '';
@@ -81,7 +82,8 @@ function sessionCountLabel(count: number): string {
     : t('mobile.sessions.project.sessionsPlural', { count });
 }
 
-function glassFill(dark: boolean): string {
+/** Project shell icon wash — solid fill, not claimed as UIGlassEffect. */
+function shellIconFill(dark: boolean): string {
   return dark ? 'rgba(38,38,44,0.66)' : 'rgba(255,255,255,0.68)';
 }
 
@@ -245,7 +247,7 @@ function ProjectCardShell({
         onPress={onToggle}
         style={styles.projectHeader}
       >
-        <RNView style={[styles.shellIcon, { backgroundColor: glassFill(dark) }]}>
+        <RNView style={[styles.shellIcon, { backgroundColor: shellIconFill(dark) }]}>
           <Text style={[styles.shellGlyph, { color: muted }]}>{iconGlyph}</Text>
         </RNView>
         <RNView style={styles.projectHeaderMain}>
@@ -539,7 +541,6 @@ export function ProjectsHome() {
   const attentionSessions = model
     ? [...model.pinnedSessions, ...model.inProgressSessions]
     : [];
-  const glass = glassFill(dark);
   const fadeColor = dark ? 'rgba(10,10,10,0.92)' : 'rgba(250,250,250,0.92)';
   const editEntry = editProject
     ? projects.find((entry) => entry.id === editProject.id) ?? null
@@ -594,8 +595,8 @@ export function ProjectsHome() {
             ) : null}
           </Animated.View>
           <RNView style={styles.headerActions}>
-            <Pressable
-              accessibilityRole="button"
+            <GlassDisc
+              colorScheme={dark ? 'dark' : 'light'}
               accessibilityLabel={
                 searchOpen ? t('mobile.sessions.clearSearchAria') : t('mobile.sessions.searchAria')
               }
@@ -607,12 +608,11 @@ export function ProjectsHome() {
                   setSearchOpen(true);
                 }
               }}
-              style={[styles.glassDisc, { backgroundColor: glass }]}
             >
               <Text style={{ color: colors.text, fontWeight: '600', fontSize: 18 }}>
                 {searchOpen ? '×' : '⌕'}
               </Text>
-            </Pressable>
+            </GlassDisc>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('mobile.projects.menu.label')}
@@ -948,18 +948,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     alignItems: 'center',
-  },
-  glassDisc: {
-    width: GLASS_DISC,
-    height: GLASS_DISC,
-    borderRadius: GLASS_DISC / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
   },
   primaryDisc: {
     width: GLASS_DISC,

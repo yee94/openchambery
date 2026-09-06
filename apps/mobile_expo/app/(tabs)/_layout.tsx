@@ -12,6 +12,9 @@ import { impactLight } from '@/lib/systemShell/haptics';
  * iOS: expo-router NativeTabs → real UITabBar (iOS 26 liquid glass when OS paints it).
  * Android: Material bottom navigation — honest degrade, not fake iOS glass.
  * No openchamber.iosNativeUi toggle; native chrome is always on.
+ *
+ * Selected glyph/label = theme --primary (orange/sand); unselected = secondary.
+ * Icon optical size is system (~23pt under UITabBar); selected wash is system full-slot.
  */
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -21,9 +24,21 @@ export default function TabLayout() {
   return (
     <NativeTabs
       tintColor={colors.tint}
+      iconColor={{
+        default: colors.tabIconDefault,
+        selected: colors.tint,
+      }}
       labelStyle={{
-        fontSize: 11,
-        fontWeight: '600',
+        default: {
+          fontSize: 11,
+          fontWeight: '600',
+          color: colors.tabIconDefault,
+        },
+        selected: {
+          fontSize: 11,
+          fontWeight: '600',
+          color: colors.tint,
+        },
       }}
       blurEffect={isAndroid ? undefined : 'systemDefault'}
       backgroundColor={isAndroid ? (colorScheme === 'dark' ? '#18181b' : '#ffffff') : undefined}
