@@ -165,7 +165,12 @@ const isLegacyDefaultTemplates = (value: unknown): boolean => {
     return false;
   }
   const candidate = value as Record<string, { title: string; message: string } | undefined>;
-  const matches = (stock: typeof LEGACY_DEFAULT_NOTIFICATION_TEMPLATES) => (
+  const matches = (stock: {
+    completion: { title: string; message: string };
+    error: { title: string; message: string };
+    question: { title: string; message: string };
+    subtask: { title: string; message: string };
+  }) => (
     isSameTemplateValue(candidate.completion, stock.completion)
     && isSameTemplateValue(candidate.error, stock.error)
     && isSameTemplateValue(candidate.question, stock.question)
