@@ -1,0 +1,17 @@
+{
+  "name": "@openchamber/lynx",
+  "version": "1.19.7-beta.7",
+  "private": true,
+  "type": "module",
+  "description": "Lynx-track connect, pairing, and instance modules. No host app yet — the shell imports this kernel.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./connect": "./src/connect/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint \"./src/**/*.ts\" --config ../../eslint.config.js",
+    "build": "tsc --noEmit"
+  }
+}

@@ -19,10 +19,17 @@ Lynx app skeleton **does not exist**. This board is seeded honestly from `docs/l
 
 | Item | Notes |
 |---|---|
-| Branch `work/lynx-native` from `b444b0316` | Docs gate only |
+| Branch `work/lynx-native` from `b444b0316` | Docs gate + connect kernel |
 | This documentation set | `docs/lynx-feature-inventory.md`, `docs/lynx-pitfalls.md`, `docs/lynx-gap-board.md`, `docs/lynx-acceptance.md`, `docs/lynx-ia-ui.md` |
+| Connect kernel (`@openchamber/lynx`) | `packages/lynx` — host-agnostic. Official `GET /health`, `GET/POST /auth/session`, `POST /api/client-auth/pairing/redeem`, `GET /api/client-auth/connection/candidates`. No demo hosts. |
+| Instance persist (full LAN+relay v2 set) | Metadata JSON + secure-store adapter. `relayUrl` + `hostEncPubJwk` round-trip. Tokens never written to metadata and never logged. |
+| Pairing-link / QR **parse** + redeem v2 | Same `p=` payload as Cap. Redeem only on a reachable transport. No invented `/api/nearby/redeem`. |
+| `openchamber://` parse + apply inbox | Same intent union as `packages/ui/src/apps/deepLinks.ts`. Pairing can run on welcome; other intents stash until `setReady`. |
+| Connect race harness | Relay-only skips the 1.5s LAN headstart. Unit tests in `@openchamber/lynx`. |
 
-Nothing else is landed. There is no Lynx package, no host app, no CI workflow, no list, no connect screen.
+**Host still missing.** The Lynx iOS/Android app package, splash/welcome **view**, Keychain/Keystore plugin, and camera scanner are not in tree. The kernel is the integration point: `createLynxConnectionController(hostAdapters)`.
+
+CI绿 for this slice is the Lynx unit project only. There is still no Lynx APK / iOS-simulator job. 真机过: not executed (environment: Linux cloud agent; no Xcode/adb).
 
 ---
 
@@ -35,11 +42,9 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | Lynx app package (iOS + Android) | `packages/mobile` | New tree; do not wrap WKWebView |
-| Connect / splash while auto-connect resolves | `MobileApp.tsx` welcome | Real `GET /health` + session |
-| Instance list, add, delete, password unlock | `mobileConnections.ts` | Persist **full** LAN+relay candidate set |
-| QR + pairing-link redeem v2 | `mobileQrScan.ts` | No invented redeem API |
-| `openchamber://` parse + apply | `deepLinks.ts` | Same intent union |
-| Secure store (Keychain / Keystore) | Capacitor secure storage | Never log tokens |
+| Connect / splash **view** | `MobileApp.tsx` welcome | Kernel `phase: resolving \| welcome` is landed. **Stub:** no Lynx page draws the splash yet. |
+| QR **camera** | `mobileQrScan.ts` | Parse + redeem landed. **Stub:** `scanQr` host adapter (no camera plugin). |
+| Secure store **native plugin** | Capacitor secure storage | Adapter + tests landed. **Stub:** Keychain/Keystore binding is host work. |
 | Four-tab dock | `mobileTabs.ts` | Chat is **pushed**, not a tab |
 | Host Tab/Nav embedding decision | README § tab bar | See `docs/lynx-ia-ui.md` — do not auto-skin twice |
 
@@ -132,8 +137,8 @@ Glass-container fusion (`spacing`, `glass-interactive`, `glass-tint-color`) is *
 
 First implementation slice after this doc gate (order is deliberate: connect → shell → list engine → one real transcript).
 
-1. **Host app skeleton** (iOS + Android) that can load a Lynx page. Decide embedding (`docs/lynx-ia-ui.md`) **before** drawing a dock.
-2. **Connect + instance persistence** against a real server (LAN candidate, then relay). No demo hosts.
+1. **Host app skeleton** (iOS + Android) that can load a Lynx page. Decide embedding (`docs/lynx-ia-ui.md`) **before** drawing a dock. Bind `packages/lynx` connect adapters (HTTP, Keychain/Keystore, optional QR camera, official relay tunnel).
+2. **Connect + instance persistence** — kernel landed in `@openchamber/lynx` (official health/session/redeem). Remaining: host splash/welcome view + native secure store + camera + 真机.
 3. **Four-tab shell** with chat as a pushed page. System Tab/Nav if host-owned; Lynx dock only if Lynx owns chrome.
 4. **Projects home** from session-index (failure ≠ empty).
 5. **LegendList-semantics chat list** + send/stop on official APIs. This is the quality gate; do not prototype TanStack-style split lists “just to see pixels”.
@@ -146,7 +151,11 @@ Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 
 
 ## 真机残差
 
-Empty until something is claimed landed. Seed the **kinds** of residual this track must expect (from Cap + Flutter history):
+| Item | Notes |
+|---|---|
+| Connect 真机过 | **not executed** (environment: Linux cloud agent; no Xcode, no adb, no physical device). Kernel is unit-tested only. |
+
+Seed the **kinds** of residual this track must expect (from Cap + Flutter history):
 
 | Residual class | Why it will show up |
 |---|---|
@@ -192,7 +201,7 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 
 | Slug | Status | First honest body |
 |---|---|---|
-| `instances` | missing | List + add + QR; persist v2 `relayUrl` |
+| `instances` | missing | Persist contract is in `@openchamber/lynx` (list/add/delete/QR redeem). Settings **page** not drawn. |
 | `appearance` | missing | Language + theme (`flexoki-*` ids). No `iosNativeUi` toggle |
 | `chat` | missing | Real GET/PUT `/api/config/settings` chat fields |
 | `notifications` | missing | Toggles + APNs/FCM register |
