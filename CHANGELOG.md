@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.19] - 2026-09-06
+
+### 移动端
+
+- 顶部通知改用和 Dock 一样的半透明毛玻璃，页面内容会透出来被霜化。
+- 修了 iOS 上 Sonner 居中 `transform` 导致毛玻璃完全看不见的问题。
+
 ## [1.19.7-beta.18] - 2026-09-06
 
 ### 会话

@@ -136,24 +136,24 @@ const Toaster = ({ ...props }: ToasterProps) => {
         },
         style: {
           borderRadius: "var(--radius-xl)",
-          backgroundColor: "var(--surface-elevated)",
+          backgroundColor: "var(--oc-toast-background, var(--surface-elevated))",
         },
       }}
       style={
         {
-          "--normal-bg": "var(--surface-elevated)",
+          "--normal-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--normal-text": "var(--foreground)",
           "--normal-border": "transparent",
-          "--error-bg": "var(--surface-elevated)",
+          "--error-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--error-text": "var(--foreground)",
           "--error-border": "transparent",
-          "--success-bg": "var(--surface-elevated)",
+          "--success-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--success-text": "var(--foreground)",
           "--success-border": "transparent",
-          "--warning-bg": "var(--surface-elevated)",
+          "--warning-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--warning-text": "var(--foreground)",
           "--warning-border": "transparent",
-          "--info-bg": "var(--surface-elevated)",
+          "--info-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--info-text": "var(--foreground)",
           "--info-border": "transparent",
         } as React.CSSProperties
