@@ -277,9 +277,10 @@ describe('Assistant UI product contract', () => {
   });
 
   test('hosts a contact transcript with session cards and peer DMs, not ChatContainer', async () => {
-    const [view, conversation, card, assistantCard, scheduleCard, chatContainer, chatInput, promptComposer, host, english] = await Promise.all([
+    const [view, conversation, transcriptList, card, assistantCard, scheduleCard, chatContainer, chatInput, promptComposer, host, english] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
+      read('AssistantContactTranscriptList.tsx'),
       read('AssistantSessionCard.tsx'),
       read('AssistantAssistantCard.tsx'),
       read('AssistantScheduleCard.tsx'),
@@ -289,6 +290,7 @@ describe('Assistant UI product contract', () => {
       read('../chat/chatContainerHost.ts'),
       read('../../lib/i18n/messages/en.settings.ts'),
     ]);
+    const contactTranscript = `${conversation}\n${transcriptList}`;
     expect(view).not.toContain('SimpleMarkdownRenderer');
     expect(view).not.toContain('assistants.topics');
     expect(view).toContain('<AssistantConversationSurface');
@@ -315,7 +317,7 @@ describe('Assistant UI product contract', () => {
     expect(conversation.indexOf("setDraft('')")).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
     expect(conversation.indexOf('begun.turn')).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
     expect(conversation).toContain('sendGate.release()');
-    expect(conversation).toContain('data-assistant-contact-turn-status');
+    expect(contactTranscript).toContain('data-assistant-contact-turn-status');
     expect(conversation).toContain('isMobile={isMobile}');
     expect(conversation).toContain('oc-mobile-composer-surface');
     expect(conversation).toContain('chat-input-column');
@@ -327,21 +329,21 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('fileAccept="*/*"');
     expect(conversation).toContain('onPaste={handlePaste}');
     expect(conversation).toContain('onDrop={handleDrop}');
-    expect(conversation).toContain('data-assistant-contact-image');
-    expect(conversation).toContain('data-assistant-contact-file');
+    expect(contactTranscript).toContain('data-assistant-contact-image');
+    expect(contactTranscript).toContain('data-assistant-contact-file');
     expect(conversation).not.toContain('leftControls');
     expect(conversation).not.toContain('footerContent');
     expect(conversation).not.toContain('<MemoModelControls');
     expect(conversation).not.toContain('<CommandAutocomplete');
     expect(conversation).not.toContain('<Button');
     expect(conversation).not.toContain('<Textarea');
-    expect(conversation).toContain('<AssistantSessionCard');
-    expect(conversation).toContain('<AssistantAssistantCard');
-    expect(conversation).toContain('<AssistantScheduleCard');
+    expect(contactTranscript).toContain('<AssistantSessionCard');
+    expect(contactTranscript).toContain('<AssistantAssistantCard');
+    expect(contactTranscript).toContain('<AssistantScheduleCard');
     expect(conversation).not.toContain('<Activity');
     expect(conversation).not.toContain('thinkingLevel');
-    expect(conversation).toContain("data-assistant-contact-role={message.role}");
-    expect(conversation).toContain("message.role === 'peer'");
+    expect(contactTranscript).toContain("data-assistant-contact-role={message.role}");
+    expect(contactTranscript).toContain("message.role === 'peer'");
     expect(conversation).not.toContain('deliverAssistantContactDm');
     expect(conversation).not.toContain('appendAssistantContactCard');
     expect(conversation).not.toContain('parseContactComposerInput');
@@ -537,6 +539,42 @@ describe('Assistant UI product contract', () => {
     expect(queries).toContain("type: 'file'");
     expect(queries).toContain('/contact/cards');
     expect(queries).toContain('/contact/dm');
+    expect(queries).toContain('useInfiniteQuery');
+    expect(queries).toContain('assistantContactInfiniteQueryOptions');
+    expect(queries).toContain('flattenAssistantContactPages');
+    expect(queries).toContain('getNextAssistantContactPageParam');
+    expect(queries).toContain("query.set('before', pageParam)");
+  });
+
+  test('virtualizes contact bubbles on main LegendList + MarkdownRenderer, not TanStack Virtual', async () => {
+    const [conversation, transcriptList, queries] = await Promise.all([
+      read('AssistantConversationSurface.tsx'),
+      read('AssistantContactTranscriptList.tsx'),
+      read('../../queries/assistantQueries.ts'),
+    ]);
+    const contact = `${conversation}\n${transcriptList}`;
+    expect(conversation).toContain('<AssistantContactTranscriptList');
+    expect(conversation).toContain('fetchNextPage');
+    expect(conversation).toContain('hasNextPage');
+    expect(transcriptList).toContain("from '@legendapp/list/react'");
+    expect(transcriptList).toContain('<LegendList');
+    expect(transcriptList).toContain('onStartReached');
+    expect(transcriptList).toContain('maintainVisibleContentPosition');
+    expect(transcriptList).toContain('initialScrollAtEnd');
+    expect(transcriptList).toContain('<MarkdownRenderer');
+    expect(transcriptList).toContain('variant="assistant"');
+    expect(transcriptList).toContain('enableFileReferences={false}');
+    expect(transcriptList).toContain('<MarkdownHydrationProvider enabled');
+    expect(transcriptList).toContain("t('chat.history.loadOlder')");
+    expect(contact).not.toContain('StickToBottom');
+    expect(contact).not.toContain('virtua');
+    expect(contact).not.toContain('@tanstack/react-virtual');
+    expect(contact).not.toContain('useTanstackVirtualizer');
+    expect(contact).not.toContain('<TimelineList');
+    expect(contact).not.toContain('<MessageList');
+    expect(contact).not.toContain('<ChatContainer');
+    expect(queries).toContain('/contact/messages?${query}');
+    expect(queries).toContain('ASSISTANT_CONTACT_PAGE_SIZE = 50');
   });
 
   test('keeps Settings selection backend and contact send routes separate from OpenCode promptAsync', async () => {
@@ -562,14 +600,15 @@ describe('Assistant UI product contract', () => {
   });
 
   test('keeps assistant delivery on the contact transcript and session-card click-through', async () => {
-    const [view, conversation, card] = await Promise.all([
+    const [view, conversation, transcriptList, card] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
+      read('AssistantContactTranscriptList.tsx'),
       read('AssistantSessionCard.tsx'),
     ]);
     expect(conversation).toContain('sendAssistantContactMessage');
     expect(conversation).not.toContain('appendAssistantContactCard');
-    expect(conversation).toContain('<AssistantSessionCard');
+    expect(`${conversation}\n${transcriptList}`).toContain('<AssistantSessionCard');
     expect(card).toContain('openSessionWithFeedback');
     expect(card).toContain('useMobileAppActions');
     expect(view).not.toContain('<ContextPanel');
@@ -648,17 +687,19 @@ describe('Assistant UI product contract', () => {
   });
 
   test('uses standard chat columns and semantic theme states', async () => {
-    const [view, conversation] = await Promise.all([
+    const [view, conversation, transcriptList] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
+      read('AssistantContactTranscriptList.tsx'),
     ]);
+    const contactTranscript = `${conversation}\n${transcriptList}`;
     expect(conversation).not.toContain('<ChatContainer');
     expect(conversation).not.toContain('chat-content-max-width');
     expect(conversation).not.toContain('inputClassName=');
-    expect(conversation).toContain("bg-[var(--primary-base)] text-[var(--primary-foreground)]");
-    expect(conversation).toContain('border border-dashed border-border bg-[var(--surface-muted)]');
-    expect(conversation).toContain('border border-border/60 bg-[var(--surface-muted)] text-foreground');
-    expect(conversation).not.toContain("'bg-[var(--surface-elevated)] text-foreground'");
+    expect(contactTranscript).toContain("bg-[var(--primary-base)] text-[var(--primary-foreground)]");
+    expect(contactTranscript).toContain('border border-dashed border-border bg-[var(--surface-muted)]');
+    expect(contactTranscript).toContain('border border-border/60 bg-[var(--surface-muted)] text-foreground');
+    expect(contactTranscript).not.toContain("'bg-[var(--surface-elevated)] text-foreground'");
     expect(view).toContain('bg-[var(--surface-elevated)]');
     expect(view).toContain('border-border/50');
     expect(view).toContain('border-l border-border/60');
@@ -666,8 +707,8 @@ describe('Assistant UI product contract', () => {
     expect(view).toContain('border-border');
     expect(view).not.toContain('bg-sidebar');
     expect(view).not.toContain('w-56');
-    expect(/\b(?:bg|text|border)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/.test(`${view}\n${conversation}`)).toBe(false);
-    expect(/#[\da-fA-F]{3,8}\b/.test(`${view}\n${conversation}`)).toBe(false);
+    expect(/\b(?:bg|text|border)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/.test(`${view}\n${contactTranscript}`)).toBe(false);
+    expect(/#[\da-fA-F]{3,8}\b/.test(`${view}\n${contactTranscript}`)).toBe(false);
   });
 
   test('keeps Assistant mobile chrome in the shared safe-area header', async () => {
@@ -755,22 +796,24 @@ describe('Assistant UI product contract', () => {
   });
 
   test('persists contact history, session cards, and peer DMs outside ChatContainer', async () => {
-    const [surface, host, chat] = await Promise.all([
+    const [surface, transcriptList, host, chat] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
+      read('AssistantContactTranscriptList.tsx'),
       read('../chat/chatContainerHost.ts'),
       read('../chat/ChatContainer.tsx'),
     ]);
     expect(surface).toContain('useAssistantContactMessagesQuery');
-    expect(surface).toContain('<AssistantSessionCard');
-    expect(surface).toContain("message.role === 'peer'");
+    expect(`${surface}\n${transcriptList}`).toContain('<AssistantSessionCard');
+    expect(`${surface}\n${transcriptList}`).toContain("message.role === 'peer'");
     expect(surface).not.toContain('useAssistantHistoryInfiniteQuery');
     expect(host).toContain('assistantHistory?: {');
     expect(chat).toContain('stitchHostedSessionHistory');
   });
 
   test('scopes historical message actions to their source workspace', async () => {
-    const [surface, list, history] = await Promise.all([
+    const [surface, transcriptList, list, history] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
+      read('AssistantContactTranscriptList.tsx'),
       read('../chat/MessageList.tsx'),
       read('../chat/hostedSessionHistory.ts'),
     ]);
@@ -781,7 +824,7 @@ describe('Assistant UI product contract', () => {
     expect(list).toContain('mutateSession: false');
     expect(list).toContain('forkSession: false');
     expect(list).toContain('SessionSurfaceContext.Provider');
-    expect(surface).toContain('<AssistantSessionCard');
+    expect(`${surface}\n${transcriptList}`).toContain('<AssistantSessionCard');
     expect(surface).not.toContain('historyDirectories.get(targetSessionID)');
   });
 
@@ -815,9 +858,10 @@ describe('Assistant UI product contract', () => {
   });
 
   test('shows a Grok-Bot working dot on list and conversation avatars, not an Activity banner', async () => {
-    const [view, conversation, avatar, working, card, mobileTab, generate] = await Promise.all([
+    const [view, conversation, transcriptList, avatar, working, card, mobileTab, generate] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
+      read('AssistantContactTranscriptList.tsx'),
       read('AssistantWorkingAvatar.tsx'),
       read('assistantWorking.ts'),
       read('AssistantSessionCard.tsx'),
@@ -833,8 +877,8 @@ describe('Assistant UI product contract', () => {
     expect(working).toContain('serverWorking');
     expect(view).toContain('<AssistantWorkingAvatar');
     expect(view).toContain('useAssistantWorking');
-    expect(conversation).toContain('<AssistantWorkingAvatar');
-    expect(conversation).toContain('oc.settle.complete');
+    expect(`${conversation}\n${transcriptList}`).toContain('<AssistantWorkingAvatar');
+    expect(`${conversation}\n${transcriptList}`).toContain('oc.settle.complete');
     expect(conversation).not.toContain('<Activity');
     expect(mobileTab).toContain('<AssistantWorkingAvatar');
     expect(card).toContain("persisted === 'error' || persisted === 'question' || persisted === 'complete'");

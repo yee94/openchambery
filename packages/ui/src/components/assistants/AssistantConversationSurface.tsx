@@ -27,10 +27,10 @@ import {
   scopeContactOptimisticTurns,
   type ContactOptimisticTurn,
 } from './contactOptimisticTurns'
-import { AssistantAssistantCard } from './AssistantAssistantCard'
-import { AssistantScheduleCard } from './AssistantScheduleCard'
-import { AssistantSessionCard } from './AssistantSessionCard'
-import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
+import {
+  AssistantContactTranscriptList,
+  resolveContactSender,
+} from './AssistantContactTranscriptList'
 import { useAssistantContactWorkingStore, useAssistantWorking } from './assistantWorking'
 import {
   filesFromClipboard,
@@ -38,12 +38,6 @@ import {
   mergeContactComposerAttachments,
   readContactComposerFiles,
 } from './contactComposerAttachments'
-
-const SETTLE_TEXT: Record<string, 'assistants.contact.settle.complete' | 'assistants.contact.settle.error' | 'assistants.contact.settle.question'> = {
-  'oc.settle.complete': 'assistants.contact.settle.complete',
-  'oc.settle.error': 'assistants.contact.settle.error',
-  'oc.settle.question': 'assistants.contact.settle.question',
-}
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO
@@ -53,7 +47,8 @@ type AssistantConversationSurfaceProps = {
 
 /**
  * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
- * first-class session cards — not ChatContainer, Activity, or markdown links.
+ * first-class session cards on main's LegendList + MarkdownRenderer path —
+ * not ChatContainer, Activity, thinking, StickToBottom, Virtua, or TanStack Virtual.
  *
  * Cards are assistant-emitted UI (assign_session, create_assistant,
  * schedule_task; later watch/PR). The composer is a message box — not slash
@@ -90,10 +85,16 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const sendGate = React.useMemo(() => createContactSendGate(), [])
   const setContactSending = useAssistantContactWorkingStore((state) => state.setSending)
   const working = useAssistantWorking(assistant.id, assistant.assignedSessionIDs ?? [], Boolean(assistant.working))
-  const scrollerRef = React.useRef<HTMLDivElement | null>(null)
-  const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
+  const messages = contactQuery.messages.length > 0 ? contactQuery.messages : EMPTY_CONTACT_MESSAGES
   const transcript = mergeContactTranscript(messages, optimisticTurns, assistant.id)
   const sending = contactOptimisticSending(optimisticTurns)
+  const loadOlder = useEvent(() => {
+    if (!contactQuery.hasNextPage || contactQuery.isFetchingNextPage) return
+    void contactQuery.fetchNextPage()
+  })
+  const resolveSender = useEvent((message: (typeof transcript)[number]) => (
+    resolveContactSender(message, assistant, snapshotQuery.data?.assistants)
+  ))
 
   React.useEffect(() => {
     setSendError(null)
@@ -113,12 +114,6 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       setContactSending(id, false)
     }
   }, [assistant.id, setContactSending])
-
-  React.useEffect(() => {
-    const node = scrollerRef.current
-    if (!node) return
-    node.scrollTop = node.scrollHeight
-  }, [transcript.length, sending])
 
   const addFiles = useEvent(async (files: ArrayLike<File> | null) => {
     const result = await readContactComposerFiles(files)
@@ -188,129 +183,43 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const loadFailed = contactQuery.isError && transcript.length === 0
   const empty = contactQuery.isSuccess && transcript.length === 0
   const optimisticByID = new Map(optimisticTurns.map((turn) => [turn.messageID, turn]))
+  const statusBanner = warning ? (
+    <p className="mb-3 px-4 typography-micro text-[var(--status-warning)] sm:px-6">{warning}</p>
+  ) : null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
-      <div
-        ref={scrollerRef}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
-        data-assistant-contact-transcript=""
-      >
-        {warning ? (
-          <p className="mb-3 typography-micro text-[var(--status-warning)]">{warning}</p>
-        ) : null}
-        {loadFailed ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
+      {loadFailed ? (
+        <div className="flex min-h-0 flex-1 flex-col justify-center px-4 py-4 sm:px-6">
+          {statusBanner}
+          <div className="flex min-h-40 flex-col items-center justify-center text-center">
             <Icon name="error-warning" className="size-6 text-muted-foreground" />
             <p className="mt-3 typography-ui text-muted-foreground">{t('assistants.contact.loadFailed')}</p>
           </div>
-        ) : empty ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
+        </div>
+      ) : empty ? (
+        <div className="flex min-h-0 flex-1 flex-col justify-center px-4 py-4 sm:px-6">
+          {statusBanner}
+          <div className="flex min-h-40 flex-col items-center justify-center text-center">
             <p className="typography-ui-header font-semibold">{t('assistants.conversation.emptyTitle', { name: displayName })}</p>
             <p className="mt-2 max-w-md typography-ui text-muted-foreground">{t('assistants.contact.empty')}</p>
           </div>
-        ) : (
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
-            {transcript.map((message) => {
-              const isUser = message.role === 'user'
-              const isPeer = message.role === 'peer'
-              const senderName = isPeer ? peerName(message.fromAssistantID, message.fromAssistantName) : displayName
-              const sender = isPeer && message.fromAssistantID
-                ? snapshotQuery.data?.assistants.find((item) => item.id === message.fromAssistantID)
-                : assistant
-              const senderPresentation = sender ? getAssistantPresentation(sender.name) : null
-              const optimistic = optimisticByID.get(message.messageID)
-              return (
-                <div
-                  key={message.messageID}
-                  className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
-                  data-assistant-contact-role={message.role}
-                  data-assistant-contact-turn-status={optimistic?.status}
-                >
-                  {!isUser ? (
-                    <AssistantWorkingAvatar
-                      name={sender?.id || message.fromAssistantID || assistant.id}
-                      emoji={senderPresentation?.avatarEmoji}
-                      size={24}
-                      label={senderName}
-                      working={!isPeer && working}
-                      className="mt-1 mr-2"
-                    />
-                  ) : null}
-                  <div className={cn('flex min-w-0 max-w-[min(100%,28rem)] flex-col gap-2', isUser && 'items-end')}>
-                    {isPeer ? (
-                      <span className="typography-micro text-muted-foreground">
-                        {t('assistants.contact.peer.from', { name: senderName })}
-                      </span>
-                    ) : null}
-                    {message.parts.map((part, index) => {
-                      if (part.type === 'card' && part.cardType === 'session') {
-                        return <AssistantSessionCard key={`${message.messageID}:card:${index}`} card={part} />
-                      }
-                      if (part.type === 'card' && part.cardType === 'assistant') {
-                        return <AssistantAssistantCard key={`${message.messageID}:card:${index}`} card={part} />
-                      }
-                      if (part.type === 'card' && part.cardType === 'schedule') {
-                        return <AssistantScheduleCard key={`${message.messageID}:card:${index}`} card={part} />
-                      }
-                      if (part.type === 'file' && part.mime.startsWith('image/') && part.url) {
-                        return (
-                          <img
-                            key={`${message.messageID}:file:${index}`}
-                            src={part.url}
-                            alt={part.filename || t('assistants.contact.attachment.image')}
-                            className="max-h-64 max-w-full rounded-2xl border border-border object-contain"
-                            data-assistant-contact-image=""
-                          />
-                        )
-                      }
-                      if (part.type === 'file') {
-                        return (
-                          <div
-                            key={`${message.messageID}:file:${index}`}
-                            className="flex max-w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-elevated)] px-3 py-2"
-                            data-assistant-contact-file=""
-                          >
-                            <Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 truncate typography-ui">
-                              {part.filename || t('assistants.contact.attachment.file')}
-                            </span>
-                          </div>
-                        )
-                      }
-                      if (part.type === 'text' && part.text.trim()) {
-                        return (
-                          <div
-                            key={`${message.messageID}:text:${index}`}
-                            aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
-                            className={cn(
-                              'rounded-2xl px-3 py-2 typography-ui',
-                              isUser
-                                ? 'bg-[var(--primary-base)] text-[var(--primary-foreground)]'
-                                : isPeer
-                                  ? 'border border-dashed border-border bg-[var(--surface-muted)] text-foreground'
-                                  : 'border border-border/60 bg-[var(--surface-muted)] text-foreground',
-                            )}
-                          >
-                            {SETTLE_TEXT[part.text] ? t(SETTLE_TEXT[part.text]) : part.text}
-                          </div>
-                        )
-                      }
-                      return null
-                    })}
-                    {optimistic?.status === 'sending' ? (
-                      <p className="typography-micro text-muted-foreground">{t('assistants.contact.sending')}</p>
-                    ) : null}
-                    {optimistic?.status === 'failed' ? (
-                      <p className="typography-micro text-[var(--status-error)]">{optimistic.error || t('assistants.contact.sendFailed')}</p>
-                    ) : null}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <AssistantContactTranscriptList
+          messages={transcript}
+          assistant={assistant}
+          peerName={peerName}
+          resolveSender={resolveSender}
+          working={working}
+          warning={warning}
+          optimisticByID={optimisticByID}
+          hasNextPage={Boolean(contactQuery.hasNextPage)}
+          isFetchingNextPage={contactQuery.isFetchingNextPage}
+          catalogRevision={snapshotQuery.data?.revision}
+          onLoadOlder={loadOlder}
+        />
+      )}
       <footer
         className="relative z-10 shrink-0 bg-background"
         data-assistant-contact-composer=""

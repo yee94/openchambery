@@ -66,6 +66,8 @@ const {
   assistantHistoryInfiniteQueryOptions,
   CONTACT_SEND_TIMEOUT_MS,
   ensureAssistantSession,
+  flattenAssistantContactPages,
+  getNextAssistantContactPageParam,
   mapContactSendFailure,
   retainAssistantHistoryPlaceholder,
   sendAssistantContactMessage,
@@ -242,6 +244,62 @@ describe('Assistant query contract', () => {
     expect(source).toContain("event.type === 'event-stream-ready'");
     expect(source).toContain('event.revision > snapshot.revision');
     expect(source).toContain('assistant.sessionGeneration > binding.sessionGeneration');
+  });
+
+  test('pages contact messages oldest-first and follows the contact cursor', () => {
+    expect(getNextAssistantContactPageParam({
+      messages: [],
+      nextCursor: 'cursor-older',
+      complete: false,
+    })).toBe('cursor-older');
+    expect(getNextAssistantContactPageParam({
+      messages: [],
+      nextCursor: null,
+      complete: true,
+    })).toBeUndefined();
+    expect(flattenAssistantContactPages(undefined)).toEqual([]);
+    expect(flattenAssistantContactPages({
+      pages: [
+        {
+          messages: [
+            { messageID: 'newer-a' },
+            { messageID: 'newer-b' },
+          ] as never,
+          nextCursor: 'cursor-older',
+          complete: false,
+        },
+        {
+          messages: [
+            { messageID: 'older-a' },
+            { messageID: 'newer-a' },
+          ] as never,
+          nextCursor: null,
+          complete: true,
+        },
+      ],
+      pageParams: [null, 'cursor-older'],
+    }).map((message) => message.messageID)).toEqual(['older-a', 'newer-a', 'newer-b']);
+  });
+
+  test('keys paged contact messages by transport and Assistant and uses before cursors', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
+    const contact = source.slice(
+      source.indexOf('export const assistantContactInfiniteQueryOptions'),
+      source.indexOf('export const useAssistantContactMessagesQuery'),
+    );
+    expect(source).toContain("[transport, runtimeGeneration, 'assistants', 'contact', assistantID]");
+    expect(source).toContain('flattenAssistantContactPages(query.data)');
+    expect(contact).toContain('initialPageParam: null as string | null');
+    expect(contact).toContain('getNextPageParam: getNextAssistantContactPageParam');
+    expect(contact).toContain('/contact/messages?${query}');
+    expect(contact).toContain("query.set('before', pageParam)");
+    expect(contact).toContain('parseAssistantContactPage');
+    expect(contact).not.toContain('StickToBottom');
+    expect(contact).not.toContain('@tanstack/react-virtual');
   });
 
   test('uses one initial history request and follows only server cursors', async () => {

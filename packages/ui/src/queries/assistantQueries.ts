@@ -5,7 +5,7 @@ import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
-import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
+import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactMessage, type AssistantContactPage, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
 export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
@@ -13,6 +13,7 @@ export interface AssistantDraft { enabled: boolean; name: string; defaultPrompt:
 export { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseShareOperation } from './assistantDTO';
 
 const ASSISTANT_HISTORY_PAGE_SIZE = 30;
+const ASSISTANT_CONTACT_PAGE_SIZE = 50;
 const key = {
   snapshot: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'snapshot'] as const,
   capability: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'capability'] as const,
@@ -122,6 +123,23 @@ export const assistantHistoryInfiniteQueryOptions = (
   retry: 2,
 });
 export const getNextAssistantHistoryPageParam = (page: AssistantHistoryPage): string | undefined => page.complete ? undefined : page.nextCursor ?? undefined;
+export const getNextAssistantContactPageParam = (page: AssistantContactPage): string | undefined => page.complete ? undefined : page.nextCursor ?? undefined;
+/** Oldest page last in `pages`; flatten to chronological contact rows. */
+export const flattenAssistantContactPages = (
+  data?: InfiniteData<AssistantContactPage, string | null>,
+): AssistantContactMessage[] => {
+  const pages = data?.pages ?? [];
+  const seen = new Set<string>();
+  const messages: AssistantContactMessage[] = [];
+  for (const page of [...pages].reverse()) {
+    for (const message of page.messages) {
+      if (seen.has(message.messageID)) continue;
+      seen.add(message.messageID);
+      messages.push(message);
+    }
+  }
+  return messages;
+};
 export const useAssistantHistoryInfiniteQuery = (
   assistantID: string,
   binding: Pick<SessionBinding, 'sessionID' | 'sessionGeneration'>,
@@ -136,27 +154,37 @@ export const useAssistantHistoryInfiniteQuery = (
   ...assistantHistoryInfiniteQueryOptions(assistantID, binding.sessionID ?? '', binding.sessionGeneration),
   enabled: enabled && Boolean(assistantID && binding.sessionID),
 });
-export const assistantContactQueryOptions = (
+export const assistantContactInfiniteQueryOptions = (
   assistantID: string,
   transport = getRuntimeTransportIdentity(),
   runtimeGeneration = getRuntimeGeneration(),
 ) => ({
   queryKey: key.contact(assistantID, transport, runtimeGeneration),
-  queryFn: async ({ signal }: { signal: AbortSignal }) => {
+  queryFn: async ({ signal, pageParam }: { signal: AbortSignal; pageParam: string | null }) => {
     assertCurrent(transport, runtimeGeneration);
     await waitForSessionStartupBarrier();
     assertCurrent(transport, runtimeGeneration);
-    const page = parseAssistantContactPage(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/messages?limit=100`, { signal }));
+    const query = new URLSearchParams({ limit: String(ASSISTANT_CONTACT_PAGE_SIZE) });
+    if (pageParam) query.set('before', pageParam);
+    const page = parseAssistantContactPage(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/messages?${query}`, { signal }));
     assertCurrent(transport, runtimeGeneration);
     return page;
   },
+  initialPageParam: null as string | null,
+  getNextPageParam: getNextAssistantContactPageParam,
   retry: 2,
 });
 export const useAssistantContactMessagesQuery = (assistantID: string, enabled = true) => {
   const transport = getRuntimeTransportIdentity();
   const runtimeGeneration = getRuntimeGeneration();
-  const query = useQuery({
-    ...assistantContactQueryOptions(assistantID, transport, runtimeGeneration),
+  const query = useInfiniteQuery<
+    AssistantContactPage,
+    Error,
+    InfiniteData<AssistantContactPage, string | null>,
+    ReturnType<typeof key.contact>,
+    string | null
+  >({
+    ...assistantContactInfiniteQueryOptions(assistantID, transport, runtimeGeneration),
     enabled: enabled && Boolean(assistantID),
   });
   React.useEffect(() => subscribeOpenchamberEvents((event) => {
@@ -164,7 +192,8 @@ export const useAssistantContactMessagesQuery = (assistantID: string, enabled = 
     if (event.type !== 'assistants-changed' && event.type !== 'event-stream-ready') return;
     void queryClient.invalidateQueries({ queryKey: key.contact(assistantID, transport, runtimeGeneration), exact: true });
   }), [assistantID, runtimeGeneration, transport]);
-  return query;
+  const messages = flattenAssistantContactPages(query.data);
+  return { ...query, messages };
 };
 const invalidateContact = (assistantID: string, transport = getRuntimeTransportIdentity()) => {
   void queryClient.invalidateQueries({
