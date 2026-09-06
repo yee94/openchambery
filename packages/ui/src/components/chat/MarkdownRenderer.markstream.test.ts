@@ -65,6 +65,17 @@ describe('markstream-react trial path', () => {
     expect(fileRefs).not.toContain('wrapMarkdownFileReferenceTokens');
   });
 
+  test('Markstream lists and code match the previous OpenChamber markdown rhythm', () => {
+    const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
+    expect(theme).toContain('padding-left: 18px');
+    expect(theme).toContain('padding-left: 19px');
+    expect(theme).toContain('padding-left: 1px');
+    expect(theme).toContain('.list-item > .paragraph-node');
+    expect(theme).toContain('font-size: var(--text-code)');
+    expect(theme).toContain('.code-block-content');
+    expect(theme).toContain('.oc-markstream-host.markdown-tool');
+  });
+
   test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {
     const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
     const indexCss = readFileSync(join(here, '../../index.css'), 'utf8');
