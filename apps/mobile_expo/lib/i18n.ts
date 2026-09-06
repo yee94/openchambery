@@ -41,6 +41,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'mobile.connect.delete': '删除',
     'mobile.connect.label.optional': '显示名称（可选）',
     'mobile.sessions.section.projects': '项目',
+    'mobile.tabs.projects': '项目',
+    'mobile.tabs.assistant': '助理',
+    'mobile.tabs.scheduled': '计划',
+    'mobile.tabs.settings': '设置',
+    'mobile.sessions.project.sessionsSingle': '1 个会话',
+    'mobile.sessions.project.sessionsPlural': '{count} 个会话',
+    'mobile.sessions.sidebar.group.showMore': '更多',
+    'mobile.sessions.activeProjectAria': '活跃项目',
     'mobile.sessions.section.pinned': '已固定',
     'mobile.sessions.section.inProgress': '进行中',
     'mobile.sessions.untitled': '未命名会话',
@@ -108,6 +116,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'mobile.connect.delete': 'Delete',
     'mobile.connect.label.optional': 'Display name (optional)',
     'mobile.sessions.section.projects': 'Projects',
+    'mobile.tabs.projects': 'Projects',
+    'mobile.tabs.assistant': 'Agent',
+    'mobile.tabs.scheduled': 'Schedule',
+    'mobile.tabs.settings': 'Settings',
+    'mobile.sessions.project.sessionsSingle': '1 session',
+    'mobile.sessions.project.sessionsPlural': '{count} sessions',
+    'mobile.sessions.sidebar.group.showMore': 'More',
+    'mobile.sessions.activeProjectAria': 'Active project',
     'mobile.sessions.section.pinned': 'Pinned',
     'mobile.sessions.section.inProgress': 'In progress',
     'mobile.sessions.untitled': 'Untitled session',
@@ -145,7 +161,15 @@ export const setLocale = (next: Locale): void => {
 
 export const getLocale = (): Locale => locale;
 
-export const t = (key: string): string => messages[locale][key] ?? messages.en[key] ?? key;
+export const t = (key: string, params?: Record<string, string | number>): string => {
+  let value = messages[locale][key] ?? messages.en[key] ?? key;
+  if (params) {
+    for (const [name, raw] of Object.entries(params)) {
+      value = value.replaceAll(`{${name}}`, String(raw));
+    }
+  }
+  return value;
+};
 
 export const connectionStatusLabel = (kind: 'direct' | 'relay'): string =>
   t(kind === 'relay' ? 'mobile.instances.status.connectedRelay' : 'mobile.instances.status.connectedDirect');
