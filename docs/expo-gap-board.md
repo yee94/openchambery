@@ -105,13 +105,13 @@ Push, share inbox, Live Activity, WidgetKit/NSE, external browser, HEIC / picker
 
 ### 9. CI + side-by-side debug prerelease
 
-Lint/typecheck, later device jobs, `applicationIdSuffix .debug`, label **OpenChamber Expo**, direct-link prerelease off `/releases/latest`.
+Lint/typecheck/vitest, Android debug APK job, `applicationIdSuffix .debug`, label **OpenChamber Expo**, prerelease tag `expo-v2-debug-<sha7>` (not `/releases/latest`).
 
 | Row | Status | Notes |
 |---|---|---|
-| Lint / typecheck workflow | **code landed** | `.github/workflows/expo-mobile-ci.yml`. Local `npm run lint` + `typecheck` passed. GitHub **CI green** not claimed here |
-| Device binary jobs | **missing** | Do not add until they actually run |
-| Debug APK + prerelease link | **missing** | |
+| Lint / typecheck / unit tests workflow | **code landed** | `.github/workflows/expo-mobile-ci.yml` jobs: lint + typecheck + vitest. Lockfile fixed for `file:./modules/openchamber-system-shell`. Local static checks green. GitHub **CI green** not claimed until Actions tip passes |
+| Device binary jobs | **code landed** (Android); iOS residual | Android: `expo prebuild` + `assembleDebug` on `ubuntu-latest` + artifact. iOS simulator **not** wired (macos + CocoaPods + Track 8 native modules residual) |
+| Debug APK + prerelease link | **code landed** (workflow); Actions result pending | Plugin `withAndroidDebugSideBySide` → `com.yee94.openchamber.debug`, label **OpenChamber Expo**; Cap `google-services.json` reused. Prerelease tag `expo-v2-debug-<sha7>` (`--prerelease`). Claim URLs only after green Actions |
 | 真机过 | missing | |
 
 ## Bootstrap / process rows
@@ -138,10 +138,11 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity) | **code landed** | NativeTabs + expo-glass-effect + local Live Activity module; WidgetKit UI / Share Extension target still 真机过 |
 | Android honest degrade | **code landed** | Material NativeTabs + solid composer; Live Activity no-op |
 | Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); CI Actions not claimed |
-| Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | not started | Side-by-side vs release Cap. Direct-link prerelease later |
-| Signed release workflow | not started | Existing secret names only |
-| CI lint / typecheck on `work/expo-native` | landed | `.github/workflows/expo-mobile-ci.yml`. Does **not** claim device builds |
-| iOS Simulator / Android debug CI binaries | not started | Do not add jobs until they actually run |
+| Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | **code landed** (workflow) | Side-by-side vs Cap release. Tag `expo-v2-debug-<sha7>` prerelease; Actions result pending |
+| Signed release workflow | not started | Existing secret names only; debug keystore for Track 9 |
+| CI lint / typecheck / vitest on `work/expo-native` | **code landed** | Lockfile includes local `openchamber-system-shell`. **CI green** only after Actions tip passes |
+| Android debug CI binary | **code landed** (workflow) | prebuild + gradle assembleDebug + artifact; claim green only after Actions |
+| iOS Simulator CI binary | residual | Not wired — macos runner + pods + Track 8 native modules |
 | Capgo / EAS-as-ship-path | will-not-port | |
 | `openchamber.iosNativeUi` toggle | will-not-port | |
 | Chat dock tab | will-not-port | |

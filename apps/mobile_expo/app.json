@@ -43,7 +43,8 @@
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE"
       ],
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "googleServicesFile": "../../packages/mobile/android/app/google-services.json"
     },
     "web": {
       "bundler": "metro",
@@ -83,7 +84,8 @@
           "photosPermission": "Allow OpenChamber to attach photos to chats and share inbox."
         }
       ],
-      "./plugins/withOpenChamberSystemShell.js"
+      "./plugins/withOpenChamberSystemShell.js",
+      "./plugins/withAndroidDebugSideBySide.js"
     ],
     "experiments": {
       "typedRoutes": true
