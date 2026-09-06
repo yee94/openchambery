@@ -117,6 +117,17 @@ class OpenChamberLynxHostActivity : AppCompatActivity() {
 
                 override fun onFirstScreen() {
                     Log.i(TAG, "first_screen")
+                    // Force a second layout pass — some hosts paint cream void until requestLayout.
+                    lynxView.post {
+                        lynxView.requestLayout()
+                        lynxView.invalidate()
+                        val w = lynxView.width
+                        val h = lynxView.height
+                        Log.i(TAG, "first_screen_measured width=$w height=$h")
+                        if (w <= 0 || h <= 0) {
+                            showHostError("LynxView measured ${w}x${h} after first_screen (expected non-zero)")
+                        }
+                    }
                 }
 
                 override fun onLoadFailed(message: String?) {

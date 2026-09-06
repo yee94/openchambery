@@ -14,7 +14,7 @@ import {
 import { isLynxMobileSettingsSlug, type LynxMobileSettingsSlug } from '../settings/slugs';
 import { shouldPaintLynxDock, type LynxHostGlobalProps } from '../host/embedding';
 import { lynxT } from '../i18n/catalog';
-import { LynxPage, LynxText, LynxView } from '../lynx-elements';
+import { LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import type { LynxConnectionClient } from '../connection/client';
 import type { LynxSavedConnection } from '../connection/types';
@@ -313,11 +313,13 @@ export function LynxShellApp({
     ?? null;
   const showDetachedSheet = Boolean(chatSheet) && !chatRoute && !assistantRoute?.sessionId;
 
+  // Outer root <page> lives in App — keep shell content as <view> to avoid nested pages.
   return (
-    <LynxPage
-      auto-height
+    <LynxView
       style={{
         flexGrow: 1,
+        width: '100%',
+        height: '100%',
         position: 'relative',
         backgroundColor: cssVar('surface.background'),
       }}
@@ -441,6 +443,6 @@ export function LynxShellApp({
         onTabSelected={selectTab}
       />
       </LynxShellDialogPortalProvider>
-    </LynxPage>
+    </LynxView>
   );
 }
