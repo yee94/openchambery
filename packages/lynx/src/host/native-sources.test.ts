@@ -19,11 +19,23 @@ describe('native host sources', () => {
   });
 
   test('Android host is Mode A with blur downgrade and no Material twin dock', async () => {
-    const activity = await readFile(join(hostRoot, 'android/OpenChamberLynxHostActivity.kt'), 'utf8');
+    const activityMirror = await readFile(join(hostRoot, 'android/OpenChamberLynxHostActivity.kt'), 'utf8');
+    const activity = await readFile(
+      join(hostRoot, 'android/app/src/main/java/com/yee94/openchamber/lynx/OpenChamberLynxHostActivity.kt'),
+      'utf8',
+    );
     const embedding = await readFile(join(hostRoot, 'android/OpenChamberLynxEmbedding.kt'), 'utf8');
+    const app = await readFile(
+      join(hostRoot, 'android/app/src/main/java/com/yee94/openchamber/lynx/OpenChamberLynxApp.kt'),
+      'utf8',
+    );
     expect(embedding).toContain('androidGlassDowngrade = true');
+    expect(activityMirror).toContain('Do not add a fifth Chat destination');
+    expect(activityMirror).toContain('com.yee94.openchamber.lynx.debug');
     expect(activity).toContain('Do not add a fifth Chat destination');
-    expect(activity).toContain('com.yee94.openchamber');
+    expect(activity).toContain('com.yee94.openchamber.lynx.debug');
+    expect(activity).toContain('renderTemplateUrl');
+    expect(app).toContain('LynxEnv.inst()');
   });
 
   test('host scaffold includes deepened bridge protocols', async () => {
@@ -69,8 +81,13 @@ describe('native host sources', () => {
     expect(androidSecure).toContain('EncryptedSharedPreferences');
     expect(androidOauth).toContain('CustomTabsIntent');
     expect(podfile).toContain("platform :ios");
-    expect(gradle).toContain("applicationId 'com.yee94.openchamber'");
+    expect(gradle).toContain("applicationId 'com.yee94.openchamber.lynx'");
+    expect(gradle).toContain("applicationIdSuffix '.debug'");
+    expect(gradle).toContain('org.lynxsdk.lynx:lynx:4.0.0');
+    expect(gradle).toContain('signingConfig signingConfigs.debug');
     expect(manifest).toContain('enableOnBackInvokedCallback');
+    expect(manifest).toContain('openchamber-lynx');
+    expect(manifest).toContain('.OpenChamberLynxApp');
     expect(readme).toContain('Mac / device run steps');
     expect(readme).toContain('ASWebAuthenticationSession');
   });
