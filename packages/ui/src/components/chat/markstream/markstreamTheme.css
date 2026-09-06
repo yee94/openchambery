@@ -57,10 +57,9 @@
   margin-bottom: 0;
 }
 
-/* Library `:where(.markstream-react) .image-node__img` sets `max-width: none`
-   so intrinsic pixel width can grow the assistant bubble. Match decorate.ts
-   MARKDOWN_IMAGE_CLASS (`max-w-full`) plus placeholder containment
-   (`h-auto`, `object-contain`). */
+/* Library image nodes leave intrinsic pixel width unconstrained, which can
+   grow the assistant bubble. Match decorate.ts MARKDOWN_IMAGE_CLASS
+   (`max-w-full`) plus placeholder containment (`h-auto`, `object-contain`). */
 .oc-markstream-host .markstream-react,
 .oc-markstream-host .markstream-react .node-slot,
 .oc-markstream-host .markstream-react .image-node {
