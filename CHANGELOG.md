@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.10] - 2026-09-06
+
+### 会话
+
+- 关掉 Markstream 气泡内 node 虚拟化，避免和列表测高抢高度。
+- 正文图片限制在气泡宽度内，不再把气泡撑开。
+
 ## [1.19.7-beta.9] - 2026-09-06
 
 ### 移动端
