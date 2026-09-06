@@ -175,6 +175,58 @@ describe('notification trigger runtime smallModel suppression', () => {
     expect(emitDesktopNotification).toHaveBeenCalledTimes(1);
     expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
   });
+
+  it('skips ready notifications for child sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_child',
+      parentID: 'ses_parent',
+      title: 'Fixer',
+      metadata: {},
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_child'));
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('skips ready notifications for Assistant binding sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_binding',
+      parentID: null,
+      title: '大小白',
+      metadata: { openchamber: { assistant: { assistantID: 'asst_1', name: '大小白' } } },
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_binding'));
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('skips ready notifications for scheduled-task sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_sched',
+      parentID: null,
+      title: 'Nightly',
+      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_sched'));
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('still notifies contact-assigned worker sessions that appear in the sidebar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_worker',
+      parentID: null,
+      title: 'Assigned work',
+      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'asst_1', name: '大小白' } } },
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_worker'));
+    expect(emitDesktopNotification).toHaveBeenCalledTimes(1);
+    expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
+  });
 });
 
 const rootSessionResponse = () => jsonResponse({
@@ -201,7 +253,7 @@ const completionPayload = (sessionId = 'ses_root', finish = 'stop') => ({
 
 describe('contact turn notifications', () => {
   it('sends an SMS-style title and body when a contact turn completes', async () => {
-    const { runtime, emitDesktopNotification, broadcastUiNotification, sendPushToAllUiSessions } = createRuntime();
+    const { runtime, emitDesktopNotification, broadcastUiNotification, sendPushToAllUiSessions, sendApnsToAllUiSessions } = createRuntime();
     await runtime.sendContactTurnNotification({
       assistantID: 'asst_1',
       name: '大小白',
@@ -212,15 +264,24 @@ describe('contact turn notifications', () => {
       title: '大小白',
       body: '我去找一下',
       tag: 'contact-asst_1',
-      kind: 'ready',
+      kind: 'contact',
       assistantID: 'asst_1',
     }));
     expect(broadcastUiNotification).toHaveBeenCalled();
     expect(sendPushToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
       title: '大小白',
       body: '我去找一下',
-      data: expect.objectContaining({ assistantID: 'asst_1', type: 'ready' }),
-    }), { requireNoSse: true });
+      data: expect.objectContaining({ assistantID: 'asst_1', type: 'contact', url: '/assistant/asst_1' }),
+    }), expect.objectContaining({ requireNoSse: true, preserveAlert: true }));
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      title: '大小白',
+      body: '我去找一下',
+      data: expect.objectContaining({
+        assistantID: 'asst_1',
+        url: 'openchamber://assistant/asst_1',
+      }),
+    }), expect.objectContaining({ preserveAlert: true }));
+    expect(sendApnsToAllUiSessions.mock.calls[0][0].type).toBeUndefined();
   });
 
   it('skips contact notifications when completion notices are disabled', async () => {

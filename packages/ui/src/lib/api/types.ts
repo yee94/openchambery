@@ -743,6 +743,7 @@ export interface NotificationPayload {
   tag?: string;
   kind?: string;
   sessionId?: string;
+  assistantID?: string;
   directory?: string;
   requireHidden?: boolean;
 }

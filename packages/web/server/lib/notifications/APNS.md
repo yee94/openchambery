@@ -16,18 +16,22 @@ registered them — so a leaked device token alone can't be used to push.
  3. On a trigger (ready/error/question/permission/goal_*), the server composes **generic,
     content-free** text — a **locale-specific** scenario title (from `apns-titles.js`, keyed off
     the locale stored with each device token at `POST /api/push/apns-token`) + the **session name**
-    as the body, no model/project/message content — plus a **`badge`** count (see below). Tokens
-    are grouped by locale (relay signatures cover `title`, so mixed locales cannot share one
-    batch) and each group POSTs `{ tokens, title, body, badge, env, data:{sessionId},
-    publicKeyJwk, ts, sig }` to `POST /v1/push/send` (`apns-runtime.js` → `sendViaRelay`). It does
-    **not** gate on UI visibility (see below). Legacy tokens without a locale fall back to English.
+    as the body, no model/project/message content — plus a **`badge`** count (see below).
+    **Contact turns are the exception:** APNs keeps the assistant nickname as the title and the
+    spoken message as the body (`preserveAlert`), and forwards `assistantID` so a tap opens that
+    conversation. Tokens are grouped by locale (relay signatures cover `title`, so mixed locales
+    cannot share one batch) and each group POSTs `{ tokens, title, body, badge, env,
+    data:{sessionId|assistantID}, publicKeyJwk, ts, sig }` to `POST /v1/push/send`
+    (`apns-runtime.js` → `sendViaRelay`). It does **not** gate on UI visibility (see below).
+    Legacy tokens without a locale fall back to English.
 4. The **Push Relay** (`packages/relay-server/src/push/`, process `openchamber-push-relay`)
    verifies the signature + `ts` freshness, derives `serverId`, and only delivers to tokens bound
    to that server. It holds the project APNs `.p8` key, signs an ES256 JWT with Node crypto, and
    sends each token to APNs over HTTP/2, returning per-token results; the server drops tokens
    flagged `drop` (410 / BadDeviceToken). The Push database stores `token → serverId` bindings,
    not application plaintext. Layer 1 (`openchamber-relay`) never sees these secrets.
-5. Tapping a push deep-links to its session via the forwarded `sessionId`.
+5. Tapping a session push deep-links via the forwarded `sessionId`. Tapping a contact push
+   opens that assistant via `assistantID` / `openchamber://assistant/<id>`.
 
 ## Live Activity (update / end)
 
@@ -167,13 +171,15 @@ Who can read the alert text:
 - **Apple APNs:** the alert text too — APNs always reads the alert payload of an `alert` push.
 - **The device:** displays it.
 
-This is acceptable **because the text is deliberately content-free**: a fixed scenario title
-(localized per device) + the session name only — no model, project, or message content
-(`runtime.js` → `toApnsGenericPayload` → `localizeApnsPayload`). The session name is the single
-semi-personal field that crosses the relay/Apple. To hide even that from Apple would require an
-end-to-end **encrypted payload** (`mutable-content` + a Notification Service Extension that
-decrypts on-device with a key never sent to the relay) — not implemented, and unnecessary for
-generic text.
+Ordinary session triggers stay **content-free**: a fixed scenario title (localized per device) +
+the session name only — no model, project, or message content (`runtime.js` →
+`toApnsGenericPayload` → `localizeApnsPayload`). The session name is the single semi-personal
+field that crosses the relay/Apple on that path.
+
+Contact-turn alerts are an intentional exception: nickname + spoken message cross the relay so
+the banner reads like a normal contact. To hide even that from Apple would require an end-to-end
+**encrypted payload** (`mutable-content` + a Notification Service Extension that decrypts
+on-device with a key never sent to the relay) — not implemented.
 
 ## Android (FCM) note
 

@@ -126,6 +126,13 @@ describe('deepLinkToNavigationIntent (Ticket 06)', () => {
     expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://sessions')!)).toBeNull();
   });
 
+  test('assistant deep link maps to assistant intent', () => {
+    expect(deepLinkToNavigationIntent(parseDeepLink('openchamber://assistant/asst_1')!)).toEqual({
+      type: 'assistant',
+      assistantId: 'asst_1',
+    });
+  });
+
   test('apply mapped intent produces path location', async () => {
     installWindow();
     try {

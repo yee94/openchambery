@@ -47,9 +47,20 @@ export const createNotificationTriggerRuntime = (deps) => {
     return pendingPushTags.size;
   };
 
+  const stringifyApnsData = (data) => {
+    if (!data || typeof data !== 'object') return undefined;
+    const next = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value !== 'string' || value.length === 0) continue;
+      next[key] = value;
+    }
+    return Object.keys(next).length > 0 ? next : undefined;
+  };
+
   // Generic notification for native push (per the mobile design): a fixed, scenario-based
   // title + the session name as the body. No model/project/message content crosses the relay.
   // Title strings are localized per device token locale inside sendApnsToAllUiSessions.
+  // Contact turns opt out via preserveAlert — those keep nickname + spoken text.
   const toApnsGenericPayload = (payload) => {
     const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
     const sessionName = typeof data.sessionName === 'string' && data.sessionName.trim().length > 0
@@ -66,15 +77,39 @@ export const createNotificationTriggerRuntime = (deps) => {
     };
   };
 
+  const toApnsContactPayload = (payload) => {
+    const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+    const title = typeof payload?.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : 'Assistant';
+    const body = typeof payload?.body === 'string' ? payload.body : '';
+    return {
+      title,
+      body,
+      badge: trackPushAndCountBadge(typeof payload?.tag === 'string' ? payload.tag : undefined),
+      tag: payload?.tag,
+      data: stringifyApnsData({
+        assistantID: data.assistantID,
+        url: typeof data.assistantID === 'string' && data.assistantID.trim()
+          ? `openchamber://assistant/${encodeURIComponent(data.assistantID.trim())}`
+          : (typeof data.url === 'string' ? data.url : undefined),
+      }),
+    };
+  };
+
   // Fan a notification out to every delivery channel: browser web-push (full templated
-  // payload) and native iOS APNs (generic model-based text). Both share the dedup tag;
-  // a failure in one channel must not block the other. Visibility on any other client
-  // never suppresses delivery — every subscribed surface gets the push.
-  const fanoutPush = (payload, options) => Promise.all([
+  // payload) and native iOS APNs (generic model-based text, unless preserveAlert).
+  // Both share the dedup tag; a failure in one channel must not block the other.
+  // Visibility on any other client never suppresses delivery — every subscribed
+  // surface gets the push.
+  const fanoutPush = (payload, options = {}) => Promise.all([
     Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
       console.warn('[Push] web-push fanout failed:', error?.message ?? error);
     }),
-    Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error) => {
+    Promise.resolve(sendApnsToAllUiSessions?.(
+      options.preserveAlert === true ? toApnsContactPayload(payload) : toApnsGenericPayload(payload),
+      options,
+    )).catch((error) => {
       console.warn('[APNs] fanout failed:', error?.message ?? error);
     }),
   ]);
@@ -97,6 +132,8 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   const sessionMetaCache = new Map();
   const SESSION_META_CACHE_TTL_MS = 60 * 1000;
+  const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
+  const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
 
   // Sessions where the client has enabled Permission Auto-Accept. Mirrored
   // from the client-side permissionStore via POST /api/notifications/auto-accept
@@ -148,32 +185,47 @@ export const createNotificationTriggerRuntime = (deps) => {
       smallModelPurpose: meta.smallModelPurpose !== undefined
         ? meta.smallModelPurpose
         : (previous?.smallModelPurpose ?? null),
+      assistantID: meta.assistantID !== undefined ? meta.assistantID : (previous?.assistantID ?? null),
+      assignedFrom: meta.assignedFrom !== undefined ? meta.assignedFrom : (previous?.assignedFrom ?? null),
+      scheduledTaskID: meta.scheduledTaskID !== undefined
+        ? meta.scheduledTaskID
+        : (previous?.scheduledTaskID ?? null),
+      title: meta.title !== undefined ? meta.title : (previous?.title ?? null),
+      complete: meta.complete === true || previous?.complete === true,
       at: Date.now(),
     });
   };
 
-  const getParentIdFromPayload = (payload) => {
-    if (!payload || typeof payload !== 'object') return undefined;
-    if (payload.type !== 'session.created' && payload.type !== 'session.updated') return undefined;
-    return normalizeParentID(payload.properties?.info?.parentID);
-  };
-
-  const getSmallModelPurposeFromPayload = (payload) => {
-    if (!payload || typeof payload !== 'object') return undefined;
-    if (payload.type !== 'session.created' && payload.type !== 'session.updated') return undefined;
-    return normalizeSmallModelPurpose(payload.properties?.info?.metadata?.openchamber?.smallModel?.purpose);
+  const metaFromOpenchamber = (openchamber, extras = {}) => {
+    const assignedFrom = typeof openchamber?.assigned?.from === 'string'
+      ? openchamber.assigned.from
+      : null;
+    return {
+      smallModelPurpose: normalizeSmallModelPurpose(openchamber?.smallModel?.purpose),
+      assistantID: nonEmptySystemID(openchamber?.assistant?.assistantID)
+        ? openchamber.assistant.assistantID
+        : null,
+      assignedFrom,
+      scheduledTaskID: nonEmptySystemID(openchamber?.scheduledTask?.taskID)
+        ? openchamber.scheduledTask.taskID
+        : null,
+      ...extras,
+    };
   };
 
   const maybeCacheSessionMetaFromPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.type !== 'session.created' && payload.type !== 'session.updated') return;
+    const info = payload.properties?.info;
+    if (!info || typeof info !== 'object') return;
     const sessionId = extractSessionIdFromPayload(payload);
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     const directory = extractDirectoryFromPayload(payload);
-    const parentID = getParentIdFromPayload(payload);
-    const smallModelPurpose = getSmallModelPurposeFromPayload(payload);
-    if (parentID === undefined && smallModelPurpose === undefined) return;
     setCachedSessionMeta(sessionId, directory, {
-      ...(parentID !== undefined ? { parentID } : {}),
-      ...(smallModelPurpose !== undefined ? { smallModelPurpose } : {}),
+      parentID: normalizeParentID(info.parentID),
+      title: typeof info.title === 'string' ? info.title : null,
+      complete: true,
+      ...metaFromOpenchamber(info.metadata?.openchamber),
     });
   };
 
@@ -181,7 +233,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (!sessionId) return undefined;
 
     const cached = getCachedSessionMeta(sessionId, directory);
-    if (cached !== undefined) return cached;
+    if (cached?.complete) return cached;
 
     try {
       const base = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, '');
@@ -195,21 +247,23 @@ export const createNotificationTriggerRuntime = (deps) => {
         signal: AbortSignal.timeout(2000),
       });
       if (!response.ok) {
-        return undefined;
+        return cached;
       }
       const session = await response.json().catch(() => null);
       if (!session || typeof session !== 'object') {
-        return undefined;
+        return cached;
       }
 
       const meta = {
         parentID: normalizeParentID(session.parentID),
-        smallModelPurpose: normalizeSmallModelPurpose(session.metadata?.openchamber?.smallModel?.purpose),
+        title: typeof session.title === 'string' ? session.title : null,
+        complete: true,
+        ...metaFromOpenchamber(session.metadata?.openchamber),
       };
       setCachedSessionMeta(sessionId, directory, meta);
-      return meta;
+      return getCachedSessionMeta(sessionId, directory) ?? meta;
     } catch {
-      return undefined;
+      return cached;
     }
   };
 
@@ -234,20 +288,25 @@ export const createNotificationTriggerRuntime = (deps) => {
     return false;
   };
 
-  const isSubtaskSession = async (sessionId, directory) => {
-    const parentID = await fetchSessionParentId(sessionId, directory);
-    return typeof parentID === 'string' && parentID.length > 0;
-  };
-
-  const isSmallModelSession = async (sessionId, directory) => {
-    const meta = await fetchSessionMeta(sessionId, directory);
-    return typeof meta?.smallModelPurpose === 'string' && meta.smallModelPurpose.length > 0;
-  };
-
-  const shouldSkipSystemSessionNotification = async (sessionId, directory) => {
-    if (await isSubtaskSession(sessionId, directory)) return true;
-    if (await isSmallModelSession(sessionId, directory)) return true;
+  const isHiddenFromNavSession = (meta) => {
+    if (!meta) return false;
+    if (typeof meta.parentID === 'string' && meta.parentID.length > 0) return true;
+    if (typeof meta.smallModelPurpose === 'string' && meta.smallModelPurpose.length > 0) return true;
+    if (typeof meta.assistantID === 'string' && meta.assistantID.length > 0 && meta.assignedFrom !== 'contact') {
+      return true;
+    }
+    if (typeof meta.scheduledTaskID === 'string' && meta.scheduledTaskID.length > 0) return true;
+    if (typeof meta.title === 'string' && HIDDEN_SESSION_TITLES.has(meta.title)) return true;
     return false;
+  };
+
+  // Only sessions that can appear as sidebar roots get ordinary push. Child /
+  // subagent sessions, archived Assistant bindings, scheduled-task sessions,
+  // small-model system sessions, and SmartFetch secondaries are excluded.
+  // Contact-assigned worker sessions stay visible and still notify.
+  const shouldSkipSystemSessionNotification = async (sessionId, directory) => {
+    const meta = await fetchSessionMeta(sessionId, directory);
+    return isHiddenFromNavSession(meta);
   };
 
   const extractSessionIdFromPayload = (payload) => {
@@ -720,7 +779,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         title,
         body: text,
         tag,
-        kind: 'ready',
+        kind: 'contact',
         assistantID: assistantID.trim(),
         requireHidden: false,
       };
@@ -728,19 +787,19 @@ export const createNotificationTriggerRuntime = (deps) => {
       broadcastUiNotification(notificationPayload, { desktopNotificationDelivered });
     }
 
+    const assistantPath = `/assistant/${encodeURIComponent(assistantID.trim())}`;
     await fanoutPush(
       {
         title,
         body: text,
         tag,
         data: {
-          url: `/?assistant=${encodeURIComponent(assistantID.trim())}`,
+          url: assistantPath,
           assistantID: assistantID.trim(),
-          sessionName: title,
-          type: 'ready',
+          type: 'contact',
         },
       },
-      { requireNoSse: true },
+      { requireNoSse: true, preserveAlert: true },
     );
   };
 

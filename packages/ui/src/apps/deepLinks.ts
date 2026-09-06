@@ -35,6 +35,7 @@ export type ViewTarget = 'files' | 'mcp' | 'instances' | 'update';
 export type DeepLinkIntent =
   | { type: 'connect'; pairing: PairingConnectionPayload }
   | { type: 'session'; sessionId: string; directory?: string }
+  | { type: 'assistant'; assistantId: string }
   | { type: 'new-session'; directory?: string; projectId?: string; agent?: string; model?: string; prompt?: string }
   | { type: 'open-project'; directory: string }
   | { type: 'sessions'; filter?: SessionsFilter }
@@ -102,6 +103,14 @@ export function parseDeepLink(raw: string | null | undefined): DeepLinkIntent | 
         return null;
       }
       return { type: 'session', sessionId, directory: readDirectoryParam(query) };
+    }
+
+    case 'assistant': {
+      const assistantId = rest[0] || query.get('id') || '';
+      if (!assistantId) {
+        return null;
+      }
+      return { type: 'assistant', assistantId };
     }
 
     case 'new':
@@ -198,6 +207,8 @@ export function buildDeepLink(intent: DeepLinkIntent): string {
     case 'session':
       // Emit OpenCode-aligned `directory=` (parse still accepts legacy `dir` / `path`).
       return withQuery(`session/${encodeURIComponent(intent.sessionId)}`, { directory: intent.directory });
+    case 'assistant':
+      return `${base}assistant/${encodeURIComponent(intent.assistantId)}`;
     case 'new-session':
       return withQuery('new-session', {
         directory: intent.directory,
@@ -220,5 +231,10 @@ export function buildDeepLink(intent: DeepLinkIntent): string {
       });
     case 'view':
       return `${base}view/${intent.target}`;
+    default: {
+      const _exhaustive: never = intent;
+      void _exhaustive;
+      return base;
+    }
   }
 }

@@ -36,6 +36,7 @@ import {
   openSessionFromNotification,
 } from '@/sync/openSessionFromNotification';
 import { markSessionViewed } from '@/sync/notification-store';
+import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -657,11 +658,19 @@ function App({ apis }: AppProps) {
       const detail = (event as CustomEvent<{ sessionId?: string; directory?: string }>).detail;
       openSessionFromNotification(detail ?? {});
     };
+    const openAssistantHandler = (event: Event) => {
+      const assistantID = (event as CustomEvent<{ assistantID?: string }>).detail?.assistantID;
+      if (typeof assistantID === 'string' && assistantID.trim()) {
+        openAssistant(assistantID.trim());
+      }
+    };
 
     window.addEventListener('openchamber:open-session', handler as EventListener);
+    window.addEventListener('openchamber:open-assistant', openAssistantHandler as EventListener);
     return () => {
       disposePendingNotificationOpen();
       window.removeEventListener('openchamber:open-session', handler as EventListener);
+      window.removeEventListener('openchamber:open-assistant', openAssistantHandler as EventListener);
     };
   }, []);
 

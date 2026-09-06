@@ -1326,6 +1326,9 @@ const maybeShowNativeNotification = (rawInput) => {
   const sessionId = typeof payload.sessionId === 'string' && payload.sessionId.trim()
     ? payload.sessionId.trim()
     : null;
+  const assistantID = typeof payload.assistantID === 'string' && payload.assistantID.trim()
+    ? payload.assistantID.trim()
+    : null;
   const directory = typeof payload.directory === 'string' && payload.directory.trim()
     ? payload.directory.trim()
     : null;
@@ -1342,7 +1345,9 @@ const maybeShowNativeNotification = (rawInput) => {
 
   notification.on('click', () => {
     focusForegroundWindow();
-    if (sessionId) {
+    if (assistantID) {
+      emitToAllWindows('openchamber:open-assistant', { assistantID });
+    } else if (sessionId) {
       emitToAllWindows('openchamber:open-session', { sessionId, directory });
     }
     release();

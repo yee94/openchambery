@@ -47,9 +47,10 @@ This module provides notification message preparation utilities for the web serv
 - Returned API:
   - `maybeSendPushForTrigger(payload)`
 - Owns:
-  - top-level completion/question/permission trigger routing; completion is the sole task-status notification and child sessions plus small-model system sessions (`metadata.openchamber.smallModel.purpose`) are suppressed
-  - top-level completion/error Live Activity `end` (`sendLiveActivityEnd`), independent of ordinary push settings and UI visibility, with the same child/small-model suppression; duplicate terminal events are idempotent at the token store
-  - session meta cache for child-session and small-model suppression
+  - top-level completion/question/permission trigger routing; completion is the sole task-status notification. Ordinary push is limited to sidebar-visible root sessions. Child/subagent sessions, Assistant bindings (`openchamber.assistant.assistantID` unless `assigned.from === 'contact'`), scheduled-task sessions, small-model system sessions (`metadata.openchamber.smallModel.purpose`), and `smartfetch-secondary` titles are suppressed. Contact-assigned workers stay visible and still notify.
+  - contact-turn notifications (`sendContactTurnNotification`) are a separate SMS-style path: title is the assistant nickname, body is the spoken message text, on desktop / UI SSE / web-push / APNs. APNs does **not** rewrite these into the generic "Task completed" scenario title.
+  - top-level completion/error Live Activity `end` (`sendLiveActivityEnd`), independent of ordinary push settings and UI visibility, with the same hidden-session suppression; duplicate terminal events are idempotent at the token store
+  - session meta cache for sidebar-visibility suppression
   - template resolution and fallback behavior
   - native notification fanout and web push payload fanout
   - push always fans out to every subscribed surface; another client's visibility never suppresses delivery

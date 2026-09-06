@@ -350,6 +350,11 @@ describe('Assistant UI product contract', () => {
       read('../../lib/i18n/messages/en.settings.ts'),
     ]);
     expect(view).not.toContain('SimpleMarkdownRenderer');
+    expect(conversation).not.toContain('SimpleMarkdownRenderer');
+    expect(conversation).toContain('<MarkdownRenderer');
+    expect(conversation).toContain("from '@/components/chat/MarkdownRenderer'");
+    expect(conversation).toContain('enableFileReferences={false}');
+    expect(conversation).toContain('variant="assistant"');
     expect(view).not.toContain('assistants.topics');
     expect(view).toContain('<AssistantConversationSurface');
     expect(view).not.toContain('ensureAssistantSession');
