@@ -118,6 +118,23 @@ Slice on `cursor/lynx-gap-close-local` (PR into `work/lynx-native`). Package Vit
 **真机过:** not executed.
 
 ---
+
+## 代码接上 (editors + Files/Changes/MCP sheets + deep-link apply — not landed under 三关)
+
+Slice on `cursor/lynx-editors-sheets-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Settings entity editors (list-backed) | SettingsView split → entity CRUD stores | Detail push + save/delete for providers (auth delete only; save unsupported), agents, assistants, mcp, plugins, commands, snippets, magic-prompts, skills.installed, projects. Real Cap routes; failure ≠ empty / fake-success. |
+| Chat Files sheet | `MobileFilesSurface` → `/api/fs/list` | Real directory listing; no-directory / HTTP failure labeled. Preview/HTML iframe not ported. |
+| Chat Changes sheet | `MobileChangesSurface` → `/api/git/status` | Real status list (branch + staged/unstaged/untracked). Diff viewer / commit / sync not ported. |
+| Chat MCP sheet | mobile MCP surface / `/api/config/mcp` | Overflow entry + catalog list. |
+| `openchamber://` apply | `deepLinkNavigation.ts` | Parse already existed; apply maps intents → shell navigation (session/draft/tab/settings/sheets/instances). Stash until connect ready + handlers. |
+
+**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -130,7 +147,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Connect / splash while auto-connect resolves~~ | `MobileApp.tsx` welcome | **代码接上** ConnectWelcome splash + welcome; host LynxView chrome still thin |
 | ~~Instance list, add, delete, password unlock~~ | `mobileConnections.ts` | **代码接上** instances UI on welcome + settings/instances |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
-| `openchamber://` parse + apply | `deepLinks.ts` | Parse/build exist; **apply / navigation** still missing |
+| ~~`openchamber://` parse + apply~~ | `deepLinks.ts` | Parse/build + **apply → navigation** 代码接上 (stash until connect ready) |
 | Secure store (Keychain / Keystore) | Capacitor secure storage | Injected adapter only — **native Keychain/Keystore wiring** still missing |
 | Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA + Projects/Assistant/Scheduled tab bodies **代码接上**; rich pixel polish / swipe menus still missing |
 | Host Tab/Nav **binary** (linked Lynx SDK) | `packages/lynx/host/*` | Strategy + sources landed; not an Xcode/Gradle project yet |
@@ -154,14 +171,14 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | ~~**LegendList-semantics timeline**~~ | `TimelineList.tsx` | **代码接上** in `packages/lynx/src/chat` (list semantics + LynxTimelineList). Rich turn cards still missing |
-| Chat header / overflow | `MobileChatScreen.tsx` | Header + overflow menu hooks **代码接上**; rich actions still thin |
+| Chat header / overflow | `MobileChatScreen.tsx` | Header + Files/Changes/MCP overflow **代码接上**; rich actions still thin |
 | ~~Send / Stop / queue / abort~~ | ChatInput + queue | **代码接上** hooks + official routes; composer text input host binding still thin |
 | Questions / permissions | chat cards | |
 | Activity / sorted / collapsed | chat DOCUMENTATION | |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid tests |
 | Nested child session stack + predecessor | `mobileNavigation.ts` | |
-| Files / Changes / turn-diff sheets | `MobileFilesSurface`, `MobileChangesSurface` | Entry stubs navigate correctly; Cap sheet bodies still missing |
-| MCP sheet | `mobile-mcp` | |
+| Files / Changes / turn-diff sheets | `MobileFilesSurface`, `MobileChangesSurface` | Files/Changes **list** 代码接上 (`/api/fs/list`, `/api/git/status`); rich preview/diff/commit still missing |
+| ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | Context usage | `mobileContextUsage.ts` | |
 | Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | |
 | Native-quality IME (not WebView FLIP) | pitfalls §3 | |
@@ -176,7 +193,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Share welcome + inbox | `AssistantShareWelcome`, `MobileShareBridge` | |
 | ~~Scheduled list / history / editor~~ | `MobileScheduledTab.tsx` | **代码接上** list + history + editor upsert UI |
 | ~~Settings search + **all 21 mobile slugs**~~ | `MOBILE_SETTINGS_PAGE_SLUGS` | **代码接上** home search + grouped rows + push stubs |
-| Settings split collection → entity editor | `SettingsView.tsx` | |
+| ~~Settings split collection → entity editor~~ | `SettingsView.tsx` | **代码接上** detail push + Cap save/delete for list-backed slugs (providers save = auth-unsupported) |
 
 ### Native platform
 
@@ -235,7 +252,8 @@ First implementation slice after this doc gate (order is deliberate: connect →
 8. ~~**Connect welcome + instances UI**~~ — 代码接上 splash/list/paste. Remaining: host QR camera + Keychain wiring + 真机.
 9. ~~**Projects MobileTabPageHeader**~~ — 代码接上 collapsing header + glass search + primary +. Remaining: pixel polish / menu.
 10. ~~**CI skeleton (Linux)**~~ — `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) type-check + vitest + rspeedy. Remaining: Android APK + iOS sim runners (do not claim 真机过).
-11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`. Remaining: rich Files/Changes bodies, entity editors, host Keychain, 真机.
+11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`.
+12. ~~**editors + Files/Changes/MCP lists + deep-link apply**~~ — 代码接上 in `cursor/lynx-editors-sheets-local`. Remaining: rich diff/preview/commit, provider auth UI, host Keychain/QR, 真机.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 
@@ -295,18 +313,18 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 | `notifications` | 代码接上 (wired hooks) | Toggles via settings blob; APNs/FCM register host-owned |
 | `sessions` | 代码接上 (wired GET/PUT) | Auto-delete + retention from settings blob |
 | `summary-ai` | 代码接上 (wired GET/PUT + small-model) | Settings blob + `/api/small-model`; failure ≠ empty |
-| `projects` | 代码接上 (list) | `projects[]` from settings blob; editor stub |
+| `projects` | 代码接上 (list + editor) | settings blob list; detail save/delete via settings PUT |
 | `git` | 代码接上 (wired gitmoji + stub editor) | gitmoji toggle; identities editor stub |
-| `providers` | 代码接上 (list) | `/api/config/catalog/providers` (failure ≠ empty); editor stub |
-| `agents` | 代码接上 (list) | `GET /api/agent` (failure ≠ empty); editor stub |
-| `assistants` | 代码接上 (list) | assistants snapshot list; editor stub |
+| `providers` | 代码接上 (list + editor) | catalog list; detail + **auth DELETE**; generic save unsupported |
+| `agents` | 代码接上 (list + editor) | list + `/api/config/agents/:name` PATCH/DELETE |
+| `assistants` | 代码接上 (list + editor) | snapshot list + PATCH/DELETE `/api/openchamber/assistants/:id` |
 | `behavior` | 代码接上 (wired agents.md + response style) | `/api/behavior/agents-md` + settings blob response style |
-| `commands` | 代码接上 (list) | commands metadata catalog; editor stub |
-| `mcp` | 代码接上 (list) | `GET /api/config/mcp`; editor stub |
-| `plugins` | 代码接上 (list) | `GET /api/config/plugins`; editor stub |
-| `magic-prompts` | 代码接上 (list) | `/api/magic-prompts`; editor stub |
-| `snippets` | 代码接上 (list) | `/api/config/snippets`; editor stub |
-| `skills.installed` | 代码接上 (list) | `/api/config/skills?summary=true`; editor stub |
+| `commands` | 代码接上 (list + editor) | catalog + PATCH/DELETE `/api/config/commands/:name` |
+| `mcp` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/mcp/:name` |
+| `plugins` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/plugins/entry/:id` |
+| `magic-prompts` | 代码接上 (list + editor) | list + PUT/DELETE `/api/magic-prompts/:id` |
+| `snippets` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/snippets/:name` |
+| `skills.installed` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/skills/:name` |
 | `usage` | 代码接上 (list) | per-provider `/api/quota/:id`; one failure stays on that row |
 | `voice` | 代码接上 (row; body list-only-until-routes) | Do not stub a fake mic; port existing /api/dictation or keep list-only |
 | `about` | 代码接上 (wired) | Lynx client version **separate** from `/api/system/info` instance version |

@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ensureAssistantSession } from '../assistants/api';
 import type { LynxAssistantDTO } from '../assistants/types';
 import { LynxChatScreen } from '../chat/ChatScreen';
+import { LynxChatSheet } from '../chat/ChatSheets';
+import type { LynxChatSheetKind } from '../chat/overflowMenu';
+import {
+  registerLynxDeepLinkHandlers,
+  setLynxDeepLinkConnectReady,
+  type LynxDeepLinkNavCommand,
+} from '../deep-links/apply';
+import { isLynxMobileSettingsSlug, type LynxMobileSettingsSlug } from '../settings/slugs';
 import { shouldPaintLynxDock, type LynxHostGlobalProps } from '../host/embedding';
 import { lynxT } from '../i18n/catalog';
 import { LynxPage, LynxText, LynxView } from '../lynx-elements';
@@ -53,6 +61,7 @@ function RootTab({
   onOpenAssistantConversation,
   onOpenAssistantNeedsSession,
   onOpenScheduledRun,
+  settingsInitialSlug,
 }: {
   tab: LynxTabId;
   locale: string;
@@ -66,6 +75,7 @@ function RootTab({
   onOpenAssistantConversation: (assistant: LynxAssistantDTO) => void;
   onOpenAssistantNeedsSession: (assistant: LynxAssistantDTO) => void;
   onOpenScheduledRun: (sessionId: string, directory: string | null) => void;
+  settingsInitialSlug: LynxMobileSettingsSlug | null;
 }) {
   switch (tab) {
     case 'projects':
@@ -99,7 +109,7 @@ function RootTab({
         />
       );
     case 'settings':
-      return <SettingsTab locale={locale} bodyContext={settingsBodyContext} />;
+      return <SettingsTab locale={locale} bodyContext={settingsBodyContext} initialSlug={settingsInitialSlug} />;
   }
 }
 
@@ -116,6 +126,8 @@ export function LynxShellApp({
 }: LynxShellAppProps) {
   const [navigation, setNavigation] = useState(initialState);
   const [assistantNeedsSessionNote, setAssistantNeedsSessionNote] = useState<string | null>(null);
+  const [settingsInitialSlug, setSettingsInitialSlug] = useState<LynxMobileSettingsSlug | null>(null);
+  const [chatSheet, setChatSheet] = useState<LynxChatSheetKind | null>(null);
   const fullPageAutoGlassSkin = host.chromeOwner === 'lynx';
   const dockVisible = shouldPaintLynxDock({
     embedding: {
@@ -130,6 +142,8 @@ export function LynxShellApp({
 
   const selectTab = (tab: LynxTabId) => {
     setAssistantNeedsSessionNote(null);
+    setChatSheet(null);
+    if (tab !== 'settings') setSettingsInitialSlug(null);
     setNavigation((state) => reduceLynxNavigation(state, { type: 'setActiveTab', tab }));
   };
 
@@ -205,6 +219,65 @@ export function LynxShellApp({
     })();
   };
 
+  useEffect(() => {
+    setLynxDeepLinkConnectReady(Boolean(runtimeFetch));
+    const applyNav = (command: LynxDeepLinkNavCommand): boolean => {
+      switch (command.type) {
+        case 'openChat':
+          setChatSheet(null);
+          setNavigation((state) => reduceLynxNavigation(state, {
+            type: 'openChat',
+            sessionId: command.sessionId,
+            directory: command.directory ?? null,
+          }));
+          return true;
+        case 'openDraft':
+          setChatSheet(null);
+          setNavigation((state) => reduceLynxNavigation(state, { type: 'openDraft' }));
+          return true;
+        case 'setTab':
+          setChatSheet(null);
+          setSettingsInitialSlug(null);
+          setNavigation((state) => reduceLynxNavigation(state, {
+            type: 'setActiveTab',
+            tab: command.tab,
+          }));
+          return true;
+        case 'openSettings': {
+          const section = command.section;
+          setChatSheet(null);
+          setSettingsInitialSlug(isLynxMobileSettingsSlug(section) ? section : null);
+          setNavigation((state) => reduceLynxNavigation(state, {
+            type: 'setActiveTab',
+            tab: 'settings',
+          }));
+          return true;
+        }
+        case 'openInstances':
+          setChatSheet(null);
+          setNavigation((state) => reduceLynxNavigation(state, { type: 'openInstances' }));
+          return true;
+        case 'openSheet':
+          setChatSheet(command.sheet);
+          // Sheets need an active chat; if none, open draft so navigation still resolves.
+          setNavigation((state) => {
+            if (state.secondary?.kind === 'chat' || state.secondary?.kind === 'assistant') {
+              return state;
+            }
+            return reduceLynxNavigation(state, { type: 'openDraft' });
+          });
+          return true;
+        case 'connect':
+          return false;
+      }
+    };
+    registerLynxDeepLinkHandlers({ applyNav });
+    return () => {
+      registerLynxDeepLinkHandlers(null);
+      setLynxDeepLinkConnectReady(false);
+    };
+  }, [runtimeFetch]);
+
   const settingsBodyContext: SettingsBodyContext = {
     locale: host.locale,
     runtimeFetch,
@@ -218,6 +291,10 @@ export function LynxShellApp({
   const secondary = navigation.secondary;
   const chatRoute = secondary?.kind === 'chat' ? secondary.routes.at(-1) : null;
   const assistantRoute = secondary?.kind === 'assistant' ? secondary : null;
+  const sheetDirectory = chatRoute?.directory
+    ?? (assistantRoute?.sessionId ? assistantRoute.directory : null)
+    ?? null;
+  const showDetachedSheet = Boolean(chatSheet) && !chatRoute && !assistantRoute?.sessionId;
 
   return (
     <LynxPage
@@ -228,22 +305,40 @@ export function LynxShellApp({
       }}
     >
       <LynxView style={{ flexGrow: 1 }}>
-        {chatRoute ? (
+        {showDetachedSheet && chatSheet ? (
+          <LynxChatSheet
+            locale={host.locale}
+            kind={chatSheet}
+            directory={sheetDirectory}
+            runtimeFetch={runtimeFetch}
+            onBack={() => setChatSheet(null)}
+          />
+        ) : chatRoute ? (
           <LynxChatScreen
             locale={host.locale}
             sessionId={chatRoute.sessionId}
             directory={chatRoute.directory}
-            onBack={closeSecondary}
+            onBack={() => {
+              setChatSheet(null);
+              closeSecondary();
+            }}
             runtimeFetch={runtimeFetch}
+            initialSheet={chatSheet}
+            onSheetClosed={() => setChatSheet(null)}
           />
         ) : assistantRoute?.sessionId ? (
           <LynxChatScreen
             locale={host.locale}
             sessionId={assistantRoute.sessionId}
             directory={assistantRoute.directory}
-            onBack={closeSecondary}
+            onBack={() => {
+              setChatSheet(null);
+              closeSecondary();
+            }}
             runtimeFetch={runtimeFetch}
             title={assistantRoute.title ?? undefined}
+            initialSheet={chatSheet}
+            onSheetClosed={() => setChatSheet(null)}
           />
         ) : secondary?.kind === 'draft' ? (
           <SecondaryStubPage
@@ -299,6 +394,7 @@ export function LynxShellApp({
                 directory,
               }));
             }}
+            settingsInitialSlug={settingsInitialSlug}
           />
         )}
       </LynxView>

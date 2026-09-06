@@ -9,6 +9,7 @@ import {
   type LynxComposerActions,
   type LynxComposerModel,
 } from './composerActions';
+import { LynxChatSheet } from './ChatSheets';
 import {
   LYNX_CHAT_OVERFLOW_ITEMS,
   chatSheetFromOverflowId,
@@ -38,6 +39,9 @@ export type LynxChatScreenProps = {
   runtimeFetch?: LynxRuntimeFetch | null;
   model?: LynxComposerModel;
   title?: string;
+  /** Deep-link / host can open a sheet immediately. */
+  initialSheet?: LynxChatSheetKind | null;
+  onSheetClosed?: () => void;
 };
 
 const DEFAULT_MODEL: LynxComposerModel = {
@@ -47,7 +51,7 @@ const DEFAULT_MODEL: LynxComposerModel = {
 
 /**
  * Pushed chat page: header + LegendList timeline + composer send/stop/queue.
- * Overflow menu hooks Files/Changes as labeled stub sheets that navigate correctly.
+ * Overflow menu opens Files/Changes/MCP sheets backed by Cap list endpoints.
  */
 export function LynxChatScreen({
   locale,
@@ -57,6 +61,8 @@ export function LynxChatScreen({
   runtimeFetch = null,
   model = DEFAULT_MODEL,
   title,
+  initialSheet = null,
+  onSheetClosed,
 }: LynxChatScreenProps) {
   const [timeline, setTimeline] = useState<LynxTimelineState>(() =>
     createEmptyTimelineState(sessionId, directory),
@@ -65,7 +71,7 @@ export function LynxChatScreen({
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueCount, setQueueCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sheet, setSheet] = useState<LynxChatSheetKind | null>(null);
+  const [sheet, setSheet] = useState<LynxChatSheetKind | null>(initialSheet);
 
   const sessionApi = useMemo(
     () => (runtimeFetch ? { runtimeFetch } : null),
@@ -110,7 +116,7 @@ export function LynxChatScreen({
     setTimeline(createEmptyTimelineState(sessionId, directory));
     setActionError(null);
     setMenuOpen(false);
-    setSheet(null);
+    setSheet(initialSheet);
 
     if (!runtimeFetch) {
       setTimeline((state) => applyInitialFailure(
@@ -136,7 +142,7 @@ export function LynxChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, directory, runtimeFetch]);
+  }, [sessionId, directory, runtimeFetch, initialSheet]);
 
   const onLoadOlder = useCallback(() => {
     if (!runtimeFetch) {
@@ -219,40 +225,16 @@ export function LynxChatScreen({
 
   if (sheet) {
     return (
-      <LynxView
-        style={{
-          flexGrow: 1,
-          backgroundColor: cssVar('surface.background'),
+      <LynxChatSheet
+        locale={locale}
+        kind={sheet}
+        directory={directory}
+        runtimeFetch={runtimeFetch}
+        onBack={() => {
+          setSheet(null);
+          onSheetClosed?.();
         }}
-        accessibility-label={lynxT(locale, sheet === 'files' ? 'lynx.chat.menu.files' : 'lynx.chat.menu.changes')}
-      >
-        <LynxView style={{ flexDirection: 'row', padding: '12px 16px', alignItems: 'center' }}>
-          <LynxView
-            bindtap={() => setSheet(null)}
-            accessibility-label={lynxT(locale, 'lynx.shell.back')}
-          >
-            <LynxText style={{ color: cssVar('primary.base') }}>
-              {lynxT(locale, 'lynx.shell.back')}
-            </LynxText>
-          </LynxView>
-          <LynxText
-            style={{
-              marginLeft: '12px',
-              color: cssVar('surface.foreground'),
-              fontWeight: '600',
-              flexGrow: 1,
-            }}
-          >
-            {lynxT(locale, sheet === 'files' ? 'lynx.chat.menu.files' : 'lynx.chat.menu.changes')}
-          </LynxText>
-        </LynxView>
-        <LynxText style={{ padding: '16px', color: cssVar('surface.mutedForeground') }}>
-          {lynxT(
-            locale,
-            sheet === 'files' ? 'lynx.chat.sheet.files.stub' : 'lynx.chat.sheet.changes.stub',
-          )}
-        </LynxText>
-      </LynxView>
+      />
     );
   }
 

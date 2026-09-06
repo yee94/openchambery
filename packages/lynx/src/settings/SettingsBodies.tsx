@@ -31,6 +31,8 @@ import {
   type LynxCatalogItem,
   type LynxUsageRow,
 } from './catalogs';
+import { LynxEntityEditor } from './EntityEditor';
+import { isLynxEntityKind, type LynxEntityKind } from './entityApi';
 import type { LynxMobileSettingsSlug } from './slugs';
 import type { LynxSettingsBodyKind } from './metadata';
 
@@ -112,6 +114,7 @@ function useSettingsBlob(runtimeFetch: LynxRuntimeFetch | null) {
   const [settings, setSettings] = useState<LynxSettingsBlob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime'>('loading');
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +139,7 @@ function useSettingsBlob(runtimeFetch: LynxRuntimeFetch | null) {
     return () => {
       cancelled = true;
     };
-  }, [runtimeFetch]);
+  }, [runtimeFetch, reloadToken]);
 
   const patch = async (changes: Partial<LynxSettingsBlob>) => {
     const result = await saveLynxSettings(runtimeFetch, changes);
@@ -150,7 +153,15 @@ function useSettingsBlob(runtimeFetch: LynxRuntimeFetch | null) {
     return false;
   };
 
-  return { settings, error, status, patch, setSettings };
+  const reload = async () => {
+    setReloadToken((value) => value + 1);
+  };
+
+  return { settings, error, status, patch, reload };
+}
+
+function useSettingsBlobWithReload(runtimeFetch: LynxRuntimeFetch | null) {
+  return useSettingsBlob(runtimeFetch);
 }
 
 function AppearanceBody({ ctx }: { ctx: SettingsBodyContext }) {
@@ -284,7 +295,22 @@ function SessionsBody({ ctx }: { ctx: SettingsBodyContext }) {
 }
 
 function ProjectsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
-  const { settings, error, status } = useSettingsBlob(ctx.runtimeFetch);
+  const { settings, error, status, reload } = useSettingsBlobWithReload(ctx.runtimeFetch);
+  const [selected, setSelected] = useState<LynxCatalogItem | null>(null);
+
+  if (selected) {
+    return (
+      <LynxEntityEditor
+        locale={ctx.locale}
+        runtimeFetch={ctx.runtimeFetch}
+        kind="projects"
+        item={selected}
+        onBack={() => setSelected(null)}
+        onMutated={() => { void reload(); }}
+      />
+    );
+  }
+
   if (status === 'no-runtime') return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
   if (status === 'failed') return <Banner text={error || lynxT(ctx.locale, 'lynx.settings.loadFailed')} />;
   if (status === 'loading' || !settings) return <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted />;
@@ -295,14 +321,22 @@ function ProjectsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
   }
   return (
     <LynxView>
-      {projects.map((project, index) => (
-        <Row
-          key={typeof project.id === 'string' ? project.id : `project-${index}`}
-          title={typeof project.name === 'string' ? project.name : (typeof project.path === 'string' ? project.path : `project-${index}`)}
-          subtitle={typeof project.path === 'string' ? project.path : undefined}
-        />
-      ))}
-      <Banner text={lynxT(ctx.locale, 'lynx.settings.editor.stub')} muted />
+      {projects.map((project, index) => {
+        const id = typeof project.id === 'string' && project.id.trim()
+          ? project.id.trim()
+          : (typeof project.path === 'string' ? project.path : `project-${index}`);
+        const title = typeof project.name === 'string' ? project.name : (typeof project.path === 'string' ? project.path : id);
+        const subtitle = typeof project.path === 'string' ? project.path : undefined;
+        const item = { id, title, subtitle };
+        return (
+          <Row
+            key={id}
+            title={title}
+            subtitle={subtitle}
+            onTap={() => setSelected(item)}
+          />
+        );
+      })}
     </LynxView>
   );
 }
@@ -317,6 +351,8 @@ function CatalogBody({
   const [items, setItems] = useState<LynxCatalogItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'unsupported'>('loading');
+  const [selected, setSelected] = useState<LynxCatalogItem | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,7 +377,23 @@ function CatalogBody({
     return () => {
       cancelled = true;
     };
-  }, [ctx.runtimeFetch, slug]);
+  }, [ctx.runtimeFetch, slug, reloadToken]);
+
+  if (selected && isLynxEntityKind(slug)) {
+    return (
+      <LynxEntityEditor
+        locale={ctx.locale}
+        runtimeFetch={ctx.runtimeFetch}
+        kind={slug as LynxEntityKind}
+        item={selected}
+        onBack={() => setSelected(null)}
+        onMutated={() => {
+          setSelected(null);
+          setReloadToken((value) => value + 1);
+        }}
+      />
+    );
+  }
 
   if (status === 'no-runtime') return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
   if (status === 'unsupported') return <Banner text={lynxT(ctx.locale, 'lynx.settings.unsupported')} muted />;
@@ -351,16 +403,19 @@ function CatalogBody({
     return (
       <LynxView>
         <Banner text={lynxT(ctx.locale, 'lynx.settings.catalog.empty')} muted />
-        <Banner text={lynxT(ctx.locale, 'lynx.settings.editor.stub')} muted />
       </LynxView>
     );
   }
   return (
     <LynxView>
       {items.map((item) => (
-        <Row key={item.id} title={item.title} subtitle={item.subtitle} />
+        <Row
+          key={item.id}
+          title={item.title}
+          subtitle={item.subtitle}
+          onTap={() => setSelected(item)}
+        />
       ))}
-      <Banner text={lynxT(ctx.locale, 'lynx.settings.editor.stub')} muted />
     </LynxView>
   );
 }
@@ -369,6 +424,8 @@ function AssistantsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
   const [items, setItems] = useState<LynxCatalogItem[] | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'unsupported' | 'disabled'>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<LynxCatalogItem | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -396,20 +453,41 @@ function AssistantsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
     return () => {
       cancelled = true;
     };
-  }, [ctx.runtimeFetch]);
+  }, [ctx.runtimeFetch, reloadToken]);
+
+  if (selected) {
+    return (
+      <LynxEntityEditor
+        locale={ctx.locale}
+        runtimeFetch={ctx.runtimeFetch}
+        kind="assistants"
+        item={selected}
+        onBack={() => setSelected(null)}
+        onMutated={() => {
+          setSelected(null);
+          setReloadToken((value) => value + 1);
+        }}
+      />
+    );
+  }
 
   if (status === 'no-runtime') return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
   if (status === 'unsupported') return <Banner text={lynxT(ctx.locale, 'lynx.settings.unsupported')} muted />;
   if (status === 'disabled') return <Banner text={lynxT(ctx.locale, 'lynx.assistant.disabled')} muted />;
   if (status === 'failed') return <Banner text={error || lynxT(ctx.locale, 'lynx.settings.loadFailed')} />;
   if (status === 'loading' || !items) return <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted />;
+
   return (
     <LynxView>
       {items.length === 0 ? <Banner text={lynxT(ctx.locale, 'lynx.settings.catalog.empty')} muted /> : null}
       {items.map((item) => (
-        <Row key={item.id} title={item.title} subtitle={item.subtitle} />
+        <Row
+          key={item.id}
+          title={item.title}
+          subtitle={item.subtitle}
+          onTap={() => setSelected(item)}
+        />
       ))}
-      <Banner text={lynxT(ctx.locale, 'lynx.settings.editor.stub')} muted />
     </LynxView>
   );
 }

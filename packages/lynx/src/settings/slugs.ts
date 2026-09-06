@@ -42,3 +42,7 @@ export const LYNX_SETTINGS_SLUGS_NOT_ON_MOBILE = [
  * a mic / ASR body. Port existing `/api/dictation/*` or omit the page later.
  */
 export const LYNX_VOICE_SLUG_POLICY = 'list-only-until-routes' as const;
+
+export function isLynxMobileSettingsSlug(value: string | null | undefined): value is LynxMobileSettingsSlug {
+  return typeof value === 'string' && (LYNX_MOBILE_SETTINGS_PAGE_SLUGS as readonly string[]).includes(value);
+}

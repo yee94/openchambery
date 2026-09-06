@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { lynxT, tabLabel } from '../../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
@@ -90,15 +90,21 @@ export function SettingsTab({
   bodyContext,
   searchQuery: searchQueryProp,
   onSearchQueryChange,
+  initialSlug = null,
 }: {
   locale: string;
   bodyContext: SettingsBodyContext;
   searchQuery?: string;
   onSearchQueryChange?: (value: string) => void;
+  initialSlug?: LynxMobileSettingsSlug | null;
 }) {
   const [internalQuery, setInternalQuery] = useState('');
-  const [activeSlug, setActiveSlug] = useState<LynxMobileSettingsSlug | null>(null);
+  const [activeSlug, setActiveSlug] = useState<LynxMobileSettingsSlug | null>(initialSlug);
   const searchQuery = searchQueryProp ?? internalQuery;
+
+  useEffect(() => {
+    if (initialSlug) setActiveSlug(initialSlug);
+  }, [initialSlug]);
   const setSearchQuery = onSearchQueryChange ?? setInternalQuery;
 
   const filtered = useMemo(

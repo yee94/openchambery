@@ -6,17 +6,20 @@ import {
 } from './overflowMenu';
 
 describe('Lynx chat overflow menu', () => {
-  test('exposes Files and Changes as labeled stub sheet entry points', () => {
+  test('exposes Files, Changes, and MCP sheet entry points with real data paths', () => {
     const ids = LYNX_CHAT_OVERFLOW_ITEMS.map((item) => item.id);
     expect(ids).toContain('files');
     expect(ids).toContain('changes');
-    expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'files')?.stubSheet).toBe(true);
-    expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'changes')?.stubSheet).toBe(true);
+    expect(ids).toContain('mcp');
+    expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'files')?.stubSheet).toBeUndefined();
+    expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'changes')?.stubSheet).toBeUndefined();
+    expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'mcp')?.stubSheet).toBeUndefined();
   });
 
   test('maps overflow ids to sheet kinds without inventing routes', () => {
     expect(chatSheetFromOverflowId('files')).toBe('files');
     expect(chatSheetFromOverflowId('changes')).toBe('changes');
+    expect(chatSheetFromOverflowId('mcp')).toBe('mcp');
     expect(chatSheetFromOverflowId('refreshTranscript')).toBeNull();
   });
 });

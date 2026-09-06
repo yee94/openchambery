@@ -22,6 +22,15 @@ export {
   type ViewTarget,
 } from './deep-links/intents';
 export {
+  applyLynxDeepLinkIntent,
+  applyLynxDeepLinkUrl,
+  registerLynxDeepLinkHandlers,
+  setLynxDeepLinkConnectReady,
+  peekLynxPendingDeepLink,
+  type LynxDeepLinkHandlers,
+  type LynxDeepLinkNavCommand,
+} from './deep-links/apply';
+export {
   normalizeConnectionUrl,
   getConnectionLabel,
   connectionDisplayUrl,

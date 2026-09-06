@@ -160,6 +160,19 @@ export type LynxMessageKey =
   | 'lynx.chat.menu.stubHint'
   | 'lynx.chat.sheet.files.stub'
   | 'lynx.chat.sheet.changes.stub'
+  | 'lynx.settings.editor.save'
+  | 'lynx.settings.editor.saving'
+  | 'lynx.settings.editor.delete'
+  | 'lynx.settings.editor.saved'
+  | 'lynx.settings.editor.notFound'
+  | 'lynx.chat.menu.mcp'
+  | 'lynx.chat.sheet.noDirectory'
+  | 'lynx.chat.sheet.files.failed'
+  | 'lynx.chat.sheet.files.empty'
+  | 'lynx.chat.sheet.changes.failed'
+  | 'lynx.chat.sheet.changes.empty'
+  | 'lynx.chat.sheet.mcp.failed'
+  | 'lynx.chat.sheet.mcp.empty'
 
 type LynxDictionary = Record<LynxMessageKey, string>;
 
@@ -304,6 +317,19 @@ const en: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': 'Labeled stub: Files sheet entry navigates here; Cap MobileFilesSurface body not ported yet.',
   'lynx.chat.sheet.changes.stub': 'Labeled stub: Changes sheet entry navigates here; Cap MobileChangesSurface body not ported yet.',
+  'lynx.settings.editor.save': 'Save',
+  'lynx.settings.editor.saving': 'Saving…',
+  'lynx.settings.editor.delete': 'Delete',
+  'lynx.settings.editor.saved': 'Saved',
+  'lynx.settings.editor.notFound': 'Entity not found on server.',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': 'No session directory — open a project session to browse files/changes.',
+  'lynx.chat.sheet.files.failed': 'Failed to list files.',
+  'lynx.chat.sheet.files.empty': 'Directory is empty.',
+  'lynx.chat.sheet.changes.failed': 'Failed to load git status.',
+  'lynx.chat.sheet.changes.empty': 'No changes.',
+  'lynx.chat.sheet.mcp.failed': 'Failed to load MCP servers.',
+  'lynx.chat.sheet.mcp.empty': 'No MCP servers configured.',
 
 };
 
@@ -448,6 +474,19 @@ const es: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': 'Stub etiquetado: la entrada Files navega aquí; cuerpo Cap MobileFilesSurface aún no portado.',
   'lynx.chat.sheet.changes.stub': 'Stub etiquetado: la entrada Changes navega aquí; cuerpo Cap MobileChangesSurface aún no portado.',
+  'lynx.settings.editor.save': 'Guardar',
+  'lynx.settings.editor.saving': 'Guardando…',
+  'lynx.settings.editor.delete': 'Eliminar',
+  'lynx.settings.editor.saved': 'Guardado',
+  'lynx.settings.editor.notFound': 'Entidad no encontrada en el servidor.',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': 'Sin directorio de sesión — abre una sesión de proyecto para ver archivos/cambios.',
+  'lynx.chat.sheet.files.failed': 'Error al listar archivos.',
+  'lynx.chat.sheet.files.empty': 'El directorio está vacío.',
+  'lynx.chat.sheet.changes.failed': 'Error al cargar el estado de git.',
+  'lynx.chat.sheet.changes.empty': 'Sin cambios.',
+  'lynx.chat.sheet.mcp.failed': 'Error al cargar servidores MCP.',
+  'lynx.chat.sheet.mcp.empty': 'No hay servidores MCP configurados.',
 
 };
 
@@ -592,6 +631,19 @@ const fr: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': 'Gabarit étiqueté : l’entrée Files navigue ici ; corps Cap MobileFilesSurface pas encore porté.',
   'lynx.chat.sheet.changes.stub': 'Gabarit étiqueté : l’entrée Changes navigue ici ; corps Cap MobileChangesSurface pas encore porté.',
+  'lynx.settings.editor.save': 'Enregistrer',
+  'lynx.settings.editor.saving': 'Enregistrement…',
+  'lynx.settings.editor.delete': 'Supprimer',
+  'lynx.settings.editor.saved': 'Enregistré',
+  'lynx.settings.editor.notFound': 'Entité introuvable sur le serveur.',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': 'Pas de répertoire de session — ouvrez une session projet pour fichiers/changements.',
+  'lynx.chat.sheet.files.failed': 'Échec de la liste des fichiers.',
+  'lynx.chat.sheet.files.empty': 'Le répertoire est vide.',
+  'lynx.chat.sheet.changes.failed': 'Échec du chargement du statut git.',
+  'lynx.chat.sheet.changes.empty': 'Aucun changement.',
+  'lynx.chat.sheet.mcp.failed': 'Échec du chargement des serveurs MCP.',
+  'lynx.chat.sheet.mcp.empty': 'Aucun serveur MCP configuré.',
 
 };
 
@@ -736,6 +788,19 @@ const ja: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': '明示スタブ: Files 入口は正しく遷移。Cap MobileFilesSurface 本体は未移植。',
   'lynx.chat.sheet.changes.stub': '明示スタブ: Changes 入口は正しく遷移。Cap MobileChangesSurface 本体は未移植。',
+  'lynx.settings.editor.save': '保存',
+  'lynx.settings.editor.saving': '保存中…',
+  'lynx.settings.editor.delete': '削除',
+  'lynx.settings.editor.saved': '保存しました',
+  'lynx.settings.editor.notFound': 'サーバー上にエンティティが見つかりません。',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': 'セッションディレクトリなし — プロジェクトセッションを開いてください。',
+  'lynx.chat.sheet.files.failed': 'ファイル一覧の取得に失敗しました。',
+  'lynx.chat.sheet.files.empty': 'ディレクトリは空です。',
+  'lynx.chat.sheet.changes.failed': 'git ステータスの取得に失敗しました。',
+  'lynx.chat.sheet.changes.empty': '変更なし。',
+  'lynx.chat.sheet.mcp.failed': 'MCP サーバーの取得に失敗しました。',
+  'lynx.chat.sheet.mcp.empty': 'MCP サーバーは未設定です。',
 
 };
 
@@ -880,6 +945,19 @@ const ko: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': '표시된 스텁: Files 진입이 올바르게 이동합니다. Cap MobileFilesSurface 본문은 아직 이식되지 않음.',
   'lynx.chat.sheet.changes.stub': '표시된 스텁: Changes 진입이 올바르게 이동합니다. Cap MobileChangesSurface 본문은 아직 이식되지 않음.',
+  'lynx.settings.editor.save': '저장',
+  'lynx.settings.editor.saving': '저장 중…',
+  'lynx.settings.editor.delete': '삭제',
+  'lynx.settings.editor.saved': '저장됨',
+  'lynx.settings.editor.notFound': '서버에서 엔터티를 찾을 수 없습니다.',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': '세션 디렉터리 없음 — 프로젝트 세션을 여세요.',
+  'lynx.chat.sheet.files.failed': '파일 목록을 불러오지 못했습니다.',
+  'lynx.chat.sheet.files.empty': '디렉터리가 비어 있습니다.',
+  'lynx.chat.sheet.changes.failed': 'git 상태를 불러오지 못했습니다.',
+  'lynx.chat.sheet.changes.empty': '변경 사항 없음.',
+  'lynx.chat.sheet.mcp.failed': 'MCP 서버를 불러오지 못했습니다.',
+  'lynx.chat.sheet.mcp.empty': '구성된 MCP 서버가 없습니다.',
 
 };
 
@@ -1024,6 +1102,19 @@ const pl: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': 'Oznaczony stub: wejście Files nawiguje tutaj; ciało Cap MobileFilesSurface jeszcze nieprzeniesione.',
   'lynx.chat.sheet.changes.stub': 'Oznaczony stub: wejście Changes nawiguje tutaj; ciało Cap MobileChangesSurface jeszcze nieprzeniesione.',
+  'lynx.settings.editor.save': 'Zapisz',
+  'lynx.settings.editor.saving': 'Zapisywanie…',
+  'lynx.settings.editor.delete': 'Usuń',
+  'lynx.settings.editor.saved': 'Zapisano',
+  'lynx.settings.editor.notFound': 'Nie znaleziono encji na serwerze.',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': 'Brak katalogu sesji — otwórz sesję projektu, by przeglądać pliki/zmiany.',
+  'lynx.chat.sheet.files.failed': 'Nie udało się wczytać listy plików.',
+  'lynx.chat.sheet.files.empty': 'Katalog jest pusty.',
+  'lynx.chat.sheet.changes.failed': 'Nie udało się wczytać statusu git.',
+  'lynx.chat.sheet.changes.empty': 'Brak zmian.',
+  'lynx.chat.sheet.mcp.failed': 'Nie udało się wczytać serwerów MCP.',
+  'lynx.chat.sheet.mcp.empty': 'Brak skonfigurowanych serwerów MCP.',
 
 };
 
@@ -1168,6 +1259,19 @@ const ptBR: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': 'Stub rotulado: entrada Files navega aqui; corpo Cap MobileFilesSurface ainda não portado.',
   'lynx.chat.sheet.changes.stub': 'Stub rotulado: entrada Changes navega aqui; corpo Cap MobileChangesSurface ainda não portado.',
+  'lynx.settings.editor.save': 'Salvar',
+  'lynx.settings.editor.saving': 'Salvando…',
+  'lynx.settings.editor.delete': 'Excluir',
+  'lynx.settings.editor.saved': 'Salvo',
+  'lynx.settings.editor.notFound': 'Entidade não encontrada no servidor.',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': 'Sem diretório de sessão — abra uma sessão de projeto para arquivos/alterações.',
+  'lynx.chat.sheet.files.failed': 'Falha ao listar arquivos.',
+  'lynx.chat.sheet.files.empty': 'O diretório está vazio.',
+  'lynx.chat.sheet.changes.failed': 'Falha ao carregar status do git.',
+  'lynx.chat.sheet.changes.empty': 'Sem alterações.',
+  'lynx.chat.sheet.mcp.failed': 'Falha ao carregar servidores MCP.',
+  'lynx.chat.sheet.mcp.empty': 'Nenhum servidor MCP configurado.',
 
 };
 
@@ -1312,6 +1416,19 @@ const uk: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': 'Позначений stub: вхід Files веде сюди; тіло Cap MobileFilesSurface ще не портовано.',
   'lynx.chat.sheet.changes.stub': 'Позначений stub: вхід Changes веде сюди; тіло Cap MobileChangesSurface ще не портовано.',
+  'lynx.settings.editor.save': 'Зберегти',
+  'lynx.settings.editor.saving': 'Збереження…',
+  'lynx.settings.editor.delete': 'Видалити',
+  'lynx.settings.editor.saved': 'Збережено',
+  'lynx.settings.editor.notFound': 'Суть не знайдено на сервері.',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': 'Немає каталогу сесії — відкрийте сесію проєкту для файлів/змін.',
+  'lynx.chat.sheet.files.failed': 'Не вдалося отримати список файлів.',
+  'lynx.chat.sheet.files.empty': 'Каталог порожній.',
+  'lynx.chat.sheet.changes.failed': 'Не вдалося завантажити статус git.',
+  'lynx.chat.sheet.changes.empty': 'Немає змін.',
+  'lynx.chat.sheet.mcp.failed': 'Не вдалося завантажити MCP сервери.',
+  'lynx.chat.sheet.mcp.empty': 'Немає налаштованих MCP серверів.',
 
 };
 
@@ -1456,6 +1573,19 @@ const zhCN: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': '已标注占位：Files 入口已正确跳转；Cap MobileFilesSurface 主体尚未移植。',
   'lynx.chat.sheet.changes.stub': '已标注占位：Changes 入口已正确跳转；Cap MobileChangesSurface 主体尚未移植。',
+  'lynx.settings.editor.save': '保存',
+  'lynx.settings.editor.saving': '保存中…',
+  'lynx.settings.editor.delete': '删除',
+  'lynx.settings.editor.saved': '已保存',
+  'lynx.settings.editor.notFound': '服务器上未找到该实体。',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': '无会话目录 — 请打开项目会话以浏览文件/变更。',
+  'lynx.chat.sheet.files.failed': '列出文件失败。',
+  'lynx.chat.sheet.files.empty': '目录为空。',
+  'lynx.chat.sheet.changes.failed': '加载 git 状态失败。',
+  'lynx.chat.sheet.changes.empty': '无变更。',
+  'lynx.chat.sheet.mcp.failed': '加载 MCP 服务器失败。',
+  'lynx.chat.sheet.mcp.empty': '未配置 MCP 服务器。',
 
 };
 
@@ -1600,6 +1730,19 @@ const zhTW: LynxDictionary = {
   'lynx.chat.menu.stubHint': 'stub',
   'lynx.chat.sheet.files.stub': '已標示占位：Files 入口已正確導向；Cap MobileFilesSurface 主體尚未移植。',
   'lynx.chat.sheet.changes.stub': '已標示占位：Changes 入口已正確導向；Cap MobileChangesSurface 主體尚未移植。',
+  'lynx.settings.editor.save': '儲存',
+  'lynx.settings.editor.saving': '儲存中…',
+  'lynx.settings.editor.delete': '刪除',
+  'lynx.settings.editor.saved': '已儲存',
+  'lynx.settings.editor.notFound': '伺服器上找不到該實體。',
+  'lynx.chat.menu.mcp': 'MCP',
+  'lynx.chat.sheet.noDirectory': '無會話目錄 — 請開啟專案會話以瀏覽檔案/變更。',
+  'lynx.chat.sheet.files.failed': '列出檔案失敗。',
+  'lynx.chat.sheet.files.empty': '目錄為空。',
+  'lynx.chat.sheet.changes.failed': '載入 git 狀態失敗。',
+  'lynx.chat.sheet.changes.empty': '無變更。',
+  'lynx.chat.sheet.mcp.failed': '載入 MCP 伺服器失敗。',
+  'lynx.chat.sheet.mcp.empty': '未設定 MCP 伺服器。',
 
 };
 
