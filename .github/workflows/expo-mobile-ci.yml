@@ -1,0 +1,46 @@
+name: Expo Mobile CI
+
+# Automatic static checks on the independent Expo track. Does not replace
+# Capacitor `.github/workflows/mobile-ci.yml` on main.
+#
+# Lint + typecheck only. This workflow does not build an iOS Simulator app
+# or an Android APK and must not be cited as a green device build.
+on:
+  push:
+    branches:
+      - work/expo-native
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Optional note for this on-demand Expo lint/typecheck
+        required: false
+        type: string
+
+concurrency:
+  group: expo-mobile-ci-work-expo-native
+  cancel-in-progress: true
+
+jobs:
+  lint-typecheck:
+    name: Lint and typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile_expo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile_expo/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
