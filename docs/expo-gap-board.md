@@ -109,9 +109,9 @@ Lint/typecheck/vitest, Android debug APK job, `applicationIdSuffix .debug`, labe
 
 | Row | Status | Notes |
 |---|---|---|
-| Lint / typecheck / unit tests workflow | **code landed** | `.github/workflows/expo-mobile-ci.yml` jobs: lint + typecheck + vitest. Lockfile fixed for `file:./modules/openchamber-system-shell`. Local static checks green. GitHub **CI green** not claimed until Actions tip passes |
-| Device binary jobs | **code landed** (Android); iOS residual | Android: `expo prebuild` + `assembleDebug` on `ubuntu-latest` + artifact. iOS simulator **not** wired (macos + CocoaPods + Track 8 native modules residual) |
-| Debug APK + prerelease link | **code landed** (workflow); Actions result pending | Plugin `withAndroidDebugSideBySide` → `com.yee94.openchamber.debug`, label **OpenChamber Expo**; Cap `google-services.json` reused. Prerelease tag `expo-v2-debug-<sha7>` (`--prerelease`). Claim URLs only after green Actions |
+| Lint / typecheck / unit tests workflow | **CI green** (lint+typecheck @ `bd88c4f5`) | Actions https://github.com/yee94/openchambery/actions/runs/34019497519 green for install/lint/typecheck after lockfile fix. Expanded workflow (vitest + Android APK + prerelease) is committed locally as `5ebe4bb2` but **blocked** from push: OAuth app lacks `workflow` scope. Vitest green locally (100). |
+| Device binary jobs | **in progress** (workflow not on remote yet) | Expanded job exists locally (`5ebe4bb2`); remote still old lint/typecheck-only workflow until `workflow` scope push. iOS simulator residual. |
+| Debug APK + prerelease link | **code landed** (plugin + app.json on tip); CI publish pending | `withAndroidDebugSideBySide` + Cap `googleServicesFile` on `bd88c4f5`. APK/prerelease Actions jobs await workflow file push (`workflow` scope). |
 | 真机过 | missing | |
 
 ## Bootstrap / process rows
@@ -140,8 +140,8 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); CI Actions not claimed |
 | Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | **code landed** (workflow) | Side-by-side vs Cap release. Tag `expo-v2-debug-<sha7>` prerelease; Actions result pending |
 | Signed release workflow | not started | Existing secret names only; debug keystore for Track 9 |
-| CI lint / typecheck / vitest on `work/expo-native` | **code landed** | Lockfile includes local `openchamber-system-shell`. **CI green** only after Actions tip passes |
-| Android debug CI binary | **code landed** (workflow) | prebuild + gradle assembleDebug + artifact; claim green only after Actions |
+| CI lint / typecheck on `work/expo-native` | **CI green** @ `bd88c4f5` | https://github.com/yee94/openchambery/actions/runs/34019497519. Vitest job awaits workflow push. |
+| Android debug CI binary | **in progress** | Workflow YAML ready locally; push blocked without GitHub `workflow` OAuth scope |
 | iOS Simulator CI binary | residual | Not wired — macos runner + pods + Track 8 native modules |
 | Capgo / EAS-as-ship-path | will-not-port | |
 | `openchamber.iosNativeUi` toggle | will-not-port | |
