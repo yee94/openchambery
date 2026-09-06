@@ -301,6 +301,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
           assistant={assistant}
           warning={warning}
           active={active}
+          overlayHeader={isMobileSurface}
         />
       </div>
     </div>

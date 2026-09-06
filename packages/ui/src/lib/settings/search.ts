@@ -654,12 +654,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['provider', 'model'],
   },
   {
-    id: 'assistants.agent',
-    page: 'assistants',
-    titleKey: 'assistants.settings.agent',
-    keywords: ['opencode', 'agent'],
-  },
-  {
     id: 'assistants.workspace',
     page: 'assistants',
     titleKey: 'assistants.settings.workspace',

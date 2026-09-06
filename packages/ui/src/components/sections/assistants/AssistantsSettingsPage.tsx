@@ -8,7 +8,6 @@ import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
-import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
 import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
 import { SettingsField, SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
@@ -39,7 +38,7 @@ import {
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
-import { useScopedAgentsQuery, useScopedProvidersQuery } from '@/queries/agentQueries';
+import { useScopedProvidersQuery } from '@/queries/agentQueries';
 
 const MANAGED_WORKSPACE_VALUE = '__managed_workspace__';
 const LEGACY_WORKSPACE_VALUE = '__current_workspace__';
@@ -408,9 +407,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   const draftPresentation = getAssistantPresentation(draft.name);
   const catalogDirectory = draft.workspacePath ?? selected?.managedWorkspacePath ?? null;
   const providersQuery = useScopedProvidersQuery(catalogDirectory, { enabled: true });
-  const agentsQuery = useScopedAgentsQuery(catalogDirectory, { enabled: true });
   const catalogProviders = providersQuery.data ?? [];
-  const catalogAgents = agentsQuery.data ?? [];
 
   React.useEffect(() => {
     if (selected) setDraft(draftFromAssistant(selected));
@@ -580,9 +577,6 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
             >
                 <SettingsRow itemId="assistants.model" label={t('assistants.settings.model')}>
                   <ModelSelector providerId={draft.providerID} modelId={draft.modelID} providers={catalogProviders} onChange={(providerID, modelID) => setDraft((current) => ({ ...current, providerID, modelID }))} className="oc-settings-inline-value" />
-                </SettingsRow>
-                <SettingsRow itemId="assistants.agent" label={t('assistants.settings.agent')}>
-                  <AgentSelector agentName={draft.agent ?? ''} agents={catalogAgents} onChange={(agent) => patchDraft('agent', agent || null)} className="oc-settings-inline-value" />
                 </SettingsRow>
             </SettingsGroup>
 
