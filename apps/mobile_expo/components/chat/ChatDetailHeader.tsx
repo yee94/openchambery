@@ -108,16 +108,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
+  // Cap --oc-mobile-detail-title-size 0.9375rem / 1.4 (RN closest weight 600; Cap CSS 650)
   title: {
+    alignSelf: 'stretch',
     fontSize: 15,
     lineHeight: 21,
     fontWeight: '600',
     textAlign: 'center',
   },
+  // Cap --oc-mobile-detail-subtitle-size 0.625rem / 1.4 — whisper / 项目·分支, not a 2nd title
   subtitle: {
-    marginTop: 1,
-    fontSize: 11,
+    alignSelf: 'stretch',
+    marginTop: 2,
+    fontSize: 10,
     lineHeight: 14,
+    fontWeight: '400',
     textAlign: 'center',
   },
   leading: {
