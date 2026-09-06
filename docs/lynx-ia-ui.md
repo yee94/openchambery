@@ -192,6 +192,8 @@ Cap iOS (when native UI is on):
 
 Lynx must keep that **behavior** (order, occupancy, IME). The WebView FLIP path is forbidden (`docs/lynx-pitfalls.md`).
 
+Lynx wiring (**代码接上**, not 真机过): Attach / Send / Stop / Queue live **inside** `LynxComposerGlassCard` (`LynxComposerActionsInGlass` + `composerActionsLayout.ts`). Cap order: collapsed pill `+`·input·Send/Stop; expanded card `+`·spacer·Agent·model·Send/Stop (± Queue while working). Draft pill keeps Send (+ Attach stub) inside glass — no action row below the card.
+
 Autocomplete / `/` `@` command list: sit **ABOVE** glass composer (sibling), never inside glass `contentView`. See `packages/lynx/src/chat/composerAutocompleteLayout.ts` + Cap `OpenChamberComposerAutocomplete.swift`. Composer surface: `LynxComposerGlassCard` (Chat + Draft) — Linux JS wiring only; host Mode B overlay / 真机 glass paint still residual.
 
 Android: native/Lynx textarea + host IME inset. No `39dvh` guess.

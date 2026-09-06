@@ -228,7 +228,26 @@ export function LynxDraftComposer({
           fullPageAutoGlassSkin={fullPageAutoGlassSkin}
           variant="pill"
         >
-          <LynxView style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* Cap collapsed pill order inside glass: + · input · Send (no actions outside). */}
+          <LynxView
+            data-lynx-composer-actions-in-glass="true"
+            data-lynx-composer-actions-variant="pill"
+            data-lynx-composer-actions-order="attach,input,sendOrStop"
+            style={{ flexDirection: 'row', alignItems: 'center' }}
+          >
+            <LynxView
+              bindtap={() => {
+                setError('no-host: media pick unavailable');
+              }}
+              accessibility-role="button"
+              accessibility-label={lynxT(locale, 'lynx.chat.composer.attach')}
+              data-lynx-composer-action="attach"
+              style={{ padding: '6px 8px' }}
+            >
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontWeight: '600' }}>
+                +
+              </LynxText>
+            </LynxView>
             <LynxInput
               value={draft}
               placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
@@ -239,8 +258,9 @@ export function LynxDraftComposer({
               bindtap={send}
               accessibility-role="button"
               accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
+              data-lynx-composer-action="sendOrStop"
               style={{
-                marginLeft: '12px',
+                marginLeft: '8px',
                 padding: '8px 12px',
                 borderRadius: '10px',
                 backgroundColor: cssVar('primary.base'),

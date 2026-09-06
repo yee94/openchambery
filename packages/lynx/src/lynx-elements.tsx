@@ -18,8 +18,13 @@ export type LynxViewProps = {
   /** Cap composer swipe surface / host layout markers */
   'data-session-swipe-surface'?: string;
   'data-lynx-glass-composer'?: string;
+  'data-lynx-composer-glass-variant'?: string;
   'data-lynx-autocomplete-placement'?: string;
   'data-lynx-autocomplete-forbid-glass-content'?: string;
+  'data-lynx-composer-actions-in-glass'?: string;
+  'data-lynx-composer-actions-variant'?: string;
+  'data-lynx-composer-actions-order'?: string;
+  'data-lynx-composer-action'?: string;
   'data-mobile-html-preview'?: string;
 };
 

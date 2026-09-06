@@ -4,8 +4,10 @@
  * Replaces elevated solid fill where Cap uses UIGlassEffect / Lynx `<blur-view>`.
  * iOS 26: glass + glass-interactive; older iOS: theme blur; Android: blur-radius only.
  *
- * Autocomplete must remain a **sibling ABOVE** this card (never a GlassChrome child).
- * See composerAutocompleteLayout.ts + docs/lynx-ia-ui.md.
+ * Cap Attach / Send / Stop / Queue (+ Agent · model on expanded card) live **inside**
+ * this card (GlassChrome contentView). Autocomplete must remain a **sibling ABOVE**
+ * (never a GlassChrome child). See composerActionsLayout.ts,
+ * composerAutocompleteLayout.ts + docs/lynx-ia-ui.md.
  */
 import type { ReactNode } from 'react';
 

@@ -153,3 +153,12 @@ export {
   composerGlassSurfaceForVariant,
   type LynxComposerGlassVariant,
 } from './ComposerGlassCard';
+
+export {
+  LYNX_COMPOSER_ACTIONS_IN_GLASS,
+  LYNX_COMPOSER_ACTIONS_IN_GLASS_WIRING_NOTES,
+  resolveLynxComposerInGlassActionOrder,
+  type LynxComposerActionsChromeVariant,
+  type LynxComposerInGlassActionToken,
+} from './composerActionsLayout';
+export { LynxComposerActionsInGlass } from './ComposerActionsInGlass';

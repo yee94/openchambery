@@ -7,6 +7,7 @@ import {
   resolveBlurViewAttributes,
 } from '../glass/blurView';
 import { createHostGlobalProps } from '../host/embedding';
+import { LYNX_COMPOSER_ACTIONS_IN_GLASS } from './composerActionsLayout';
 import { LYNX_COMPOSER_AUTOCOMPLETE_LAYOUT } from './composerAutocompleteLayout';
 import { composerGlassSurfaceForVariant } from './ComposerGlassCard';
 
@@ -61,5 +62,11 @@ describe('LynxComposerGlassCard / blur-view wiring', () => {
     // Host props exist for optional row chips — chips live in the sibling list tree.
     const host = createHostGlobalProps({ platform: 'ios', iosMajorVersion: 26 });
     expect(host.platform).toBe('ios');
+  });
+
+  test('Attach/Send/Stop/Queue belong inside glass; autocomplete stays above', () => {
+    expect(LYNX_COMPOSER_ACTIONS_IN_GLASS.actionsInsideGlassContentView).toBe(true);
+    expect(LYNX_COMPOSER_ACTIONS_IN_GLASS.autocompleteInsideGlassContentView).toBe(false);
+    expect(LYNX_COMPOSER_AUTOCOMPLETE_LAYOUT.forbidInsideGlassContentView).toBe(true);
   });
 });

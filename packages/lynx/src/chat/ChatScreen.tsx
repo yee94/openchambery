@@ -12,6 +12,7 @@ import {
   type LynxComposerSuggestion,
 } from './composerCatalog';
 import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
+import { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
 import { LynxComposerGlassCard } from './ComposerGlassCard';
 import type { LynxHostGlobalProps } from '../host/embedding';
 import {
@@ -754,45 +755,98 @@ export function LynxChatScreen({
             <LynxComposerGlassCard
               host={host}
               fullPageAutoGlassSkin={fullPageAutoGlassSkin}
-              variant="card"
+              variant={draft.trim().length > 0 || timeline.sessionIsWorking ? 'card' : 'pill'}
               sessionSwipeSurface
               accessibilityLabel={lynxT(locale, 'lynx.chat.edgeSwipe.surface')}
               style={{ marginBottom: '8px' }}
             >
-              <LynxInput
-                value={draft}
-                placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
-                bindinput={(event) => setDraft(event.detail?.value ?? '')}
-                accessibility-label={lynxT(locale, 'lynx.chat.composer.placeholder')}
-                style={{ color: cssVar('surface.foreground'), fontSize: '14px' }}
-              />
-            </LynxComposerGlassCard>
-            <LynxView style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-              <LynxView bindtap={() => { void onAttach(); }} style={{ padding: '8px 12px' }}>
-                <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
-                  {lynxT(locale, 'lynx.chat.composer.attach')}
-                </LynxText>
-              </LynxView>
-              {timeline.sessionIsWorking ? (
-                <LynxView bindtap={() => { void onStop(); }} style={{ padding: '8px 12px' }}>
-                  <LynxText style={{ color: cssVar('primary.base') }}>
-                    {lynxT(locale, 'lynx.chat.composer.stop')}
-                  </LynxText>
-                </LynxView>
+              {draft.trim().length > 0 || timeline.sessionIsWorking ? (
+                <>
+                  <LynxInput
+                    value={draft}
+                    placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
+                    bindinput={(event) => setDraft(event.detail?.value ?? '')}
+                    accessibility-label={lynxT(locale, 'lynx.chat.composer.placeholder')}
+                    style={{ color: cssVar('surface.foreground'), fontSize: '14px' }}
+                  />
+                  {/* Cap expanded footer: + · spacer · Agent · model · Send/Stop (± Queue) — inside glass */}
+                  <LynxComposerActionsInGlass
+                    locale={locale}
+                    variant="card"
+                    sessionIsWorking={timeline.sessionIsWorking}
+                    queueCount={queueCount}
+                    agentLabel={lynxT(locale, 'lynx.chat.composer.mentionHint')}
+                    modelLabel={model.modelID}
+                    onAttach={() => { void onAttach(); }}
+                    onSend={() => { void onSend(); }}
+                    onStop={() => { void onStop(); }}
+                    onQueue={() => { void onQueue(); }}
+                    onAgent={() => {
+                      setDraft((prev) => (prev.includes('@') ? prev : `${prev}@`));
+                    }}
+                    onModel={() => {
+                      setComposerCatalogHint(lynxT(locale, 'lynx.chat.composer.modelHint'));
+                    }}
+                  />
+                </>
               ) : (
-                <LynxView bindtap={() => { void onSend(); }} style={{ padding: '8px 12px' }}>
-                  <LynxText style={{ color: cssVar('primary.base') }}>
-                    {lynxT(locale, 'lynx.chat.composer.send')}
-                  </LynxText>
+                <LynxView
+                  data-lynx-composer-actions-in-glass="true"
+                  data-lynx-composer-actions-variant="pill"
+                  data-lynx-composer-actions-order="attach,input,sendOrStop"
+                  style={{ flexDirection: 'row', alignItems: 'center' }}
+                >
+                  {/* Cap collapsed pill: + · input · Send/Stop — all inside glass */}
+                  <LynxView
+                    bindtap={() => { void onAttach(); }}
+                    accessibility-role="button"
+                    accessibility-label={lynxT(locale, 'lynx.chat.composer.attach')}
+                    data-lynx-composer-action="attach"
+                    style={{ padding: '6px 8px' }}
+                  >
+                    <LynxText style={{ color: cssVar('surface.mutedForeground'), fontWeight: '600' }}>
+                      +
+                    </LynxText>
+                  </LynxView>
+                  <LynxInput
+                    value={draft}
+                    placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
+                    bindinput={(event) => setDraft(event.detail?.value ?? '')}
+                    accessibility-label={lynxT(locale, 'lynx.chat.composer.placeholder')}
+                    style={{
+                      flexGrow: 1,
+                      color: cssVar('surface.foreground'),
+                      fontSize: '14px',
+                    }}
+                  />
+                  {timeline.sessionIsWorking ? (
+                    <LynxView
+                      bindtap={() => { void onStop(); }}
+                      accessibility-role="button"
+                      accessibility-label={lynxT(locale, 'lynx.chat.composer.stop')}
+                      data-lynx-composer-action="sendOrStop"
+                      style={{ padding: '6px 8px' }}
+                    >
+                      <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+                        {lynxT(locale, 'lynx.chat.composer.stop')}
+                      </LynxText>
+                    </LynxView>
+                  ) : (
+                    <LynxView
+                      bindtap={() => { void onSend(); }}
+                      accessibility-role="button"
+                      accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
+                      data-lynx-composer-action="sendOrStop"
+                      style={{ padding: '6px 8px' }}
+                    >
+                      <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+                        {lynxT(locale, 'lynx.chat.composer.send')}
+                      </LynxText>
+                    </LynxView>
+                  )}
                 </LynxView>
               )}
-              <LynxView bindtap={() => { void onQueue(); }} style={{ padding: '8px 12px' }}>
-                <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
-                  {lynxT(locale, 'lynx.chat.composer.queue')}
-                  {queueCount > 0 ? ` (${queueCount})` : ''}
-                </LynxText>
-              </LynxView>
-            </LynxView>
+            </LynxComposerGlassCard>
             {actionError ? (
               <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '6px' }}>
                 {actionError}
