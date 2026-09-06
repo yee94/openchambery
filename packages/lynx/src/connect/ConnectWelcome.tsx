@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { LynxConnectionClient } from '../connection/client';
 import type { LynxPendingConnection, LynxSavedConnection } from '../connection/types';
 import { connectionDisplayUrl } from '../connection/urls';
 import { lynxT } from '../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../lynx-elements';
-import { cssVar } from '../theme/tokens';
+import { LYNX_LIGHT_FALLBACKS, cssVar } from '../theme/tokens';
 import type { LynxAutoConnectPhase } from './autoConnectPhase';
 import type { LynxCameraAdapter } from '../host/camera';
 import { parsePastedPairingLink } from './pairingPaste';
@@ -50,23 +50,39 @@ export function ConnectWelcome({
   const [addLabel, setAddLabel] = useState('');
   const [addUrl, setAddUrl] = useState('');
 
+  // First-paint must never depend solely on unresolved Cap CSS vars — cream + dark
+  // text stay visible even when the host has not injected theme styles.
+  const splashBg = LYNX_LIGHT_FALLBACKS['surface.background'];
+  const splashFg = LYNX_LIGHT_FALLBACKS['surface.foreground'];
+  const splashMuted = LYNX_LIGHT_FALLBACKS['surface.mutedForeground'];
+
+  useEffect(() => {
+    if (phase === 'done') return;
+    // Emulator smoke greps this line (logcat / Lynx console) as proof splash mounted.
+    console.log('[OpenChamberLynx] ConnectWelcome splash');
+  }, [phase]);
+
+
   if (phase !== 'done') {
     return (
       <LynxView
         style={{
           flexGrow: 1,
+          width: '100%',
+          minHeight: '100%',
           alignItems: 'center',
           justifyContent: 'center',
           padding: '24px',
-          backgroundColor: cssVar('surface.background'),
+          // Hardcoded Flexoki-light cream — never transparent on black windowBackground.
+          backgroundColor: splashBg,
         }}
         accessibility-label={lynxT(locale, 'lynx.connect.splash')}
       >
-        <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '20px', fontWeight: '600' }}>
+        <LynxText style={{ color: splashFg, fontSize: '20px', fontWeight: '600' }}>
           {lynxT(locale, 'lynx.connect.splash')}
         </LynxText>
         {autoConnectLabel ? (
-          <LynxText style={{ color: cssVar('surface.mutedForeground'), marginTop: '8px' }}>
+          <LynxText style={{ color: splashMuted, marginTop: '8px' }}>
             {autoConnectLabel}
           </LynxText>
         ) : null}
@@ -199,7 +215,7 @@ export function ConnectWelcome({
       style={{
         flexGrow: 1,
         padding: '24px 16px',
-        backgroundColor: cssVar('surface.background'),
+        backgroundColor: cssVar('surface.background'), // var(--surface-background, #fffdf4)
       }}
     >
       <LynxText

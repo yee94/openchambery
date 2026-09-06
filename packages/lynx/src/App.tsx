@@ -28,6 +28,26 @@ export type AppProps = {
   lynxClientVersion?: string;
 };
 
+
+function readLynxGlobalProps(): Partial<LynxHostGlobalProps> | undefined {
+  try {
+    const gp = (globalThis as { lynx?: { __globalProps?: Partial<LynxHostGlobalProps> } }).lynx
+      ?.__globalProps;
+    return gp && typeof gp === 'object' ? gp : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveHostFromGlobalProps(): LynxHostGlobalProps {
+  const gp = readLynxGlobalProps();
+  return createHostGlobalProps({
+    platform: gp?.platform === 'ios' ? 'ios' : 'android',
+    themeId: gp?.themeId,
+    locale: gp?.locale,
+  });
+}
+
 /**
  * Full-page Lynx entry. Hosts that own Tab/Nav (Mode B) pass
  * `chromeOwner: 'host'` so this tree does not paint a second dock.
@@ -39,7 +59,7 @@ export function App({
   skipAutoConnect = false,
   lynxClientVersion = '1.19.7-beta.7',
 }: AppProps) {
-  const resolved = host ?? createHostGlobalProps({ platform: 'android' });
+  const resolved = host ?? resolveHostFromGlobalProps();
 
   const client = useMemo(() => {
     if (injectedClient) return injectedClient;

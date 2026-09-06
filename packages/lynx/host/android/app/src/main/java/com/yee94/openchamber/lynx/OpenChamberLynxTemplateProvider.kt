@@ -1,6 +1,7 @@
 package com.yee94.openchamber.lynx
 
 import android.content.Context
+import android.util.Log
 import com.lynx.tasm.provider.AbsTemplateProvider
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -23,11 +24,19 @@ class OpenChamberLynxTemplateProvider(
                     while (input.read(buffer).also { length = it } != -1) {
                         out.write(buffer, 0, length)
                     }
-                    callback.onSuccess(out.toByteArray())
+                    val bytes = out.toByteArray()
+                    Log.i(TAG, "assets_open_ok uri=$uri bytes=${bytes.size}")
+                    callback.onSuccess(bytes)
                 }
             } catch (e: IOException) {
-                callback.onFailed(e.message ?: "failed to load template: $uri")
+                val msg = e.message ?: "failed to load template: $uri"
+                Log.e(TAG, "assets_open_failure uri=$uri err=$msg", e)
+                callback.onFailed(msg)
             }
         }.start()
+    }
+
+    companion object {
+        private const val TAG = "OpenChamberLynx"
     }
 }
