@@ -215,7 +215,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'system',
     kind: 'single',
     keywords: ['tts', 'speech', 'voice', 'dictation'],
-    body: 'list-only-until-routes',
+    body: 'wired',
   },
   {
     slug: 'about',

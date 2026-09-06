@@ -277,3 +277,42 @@ export {
   resolveLynxMarkdownPinRevealKeys,
 } from './chat/markdownPinReveal';
 export { canAcceptLynxLoadOlderTap } from './chat/loadOlder';
+
+export { createLynxCameraAdapter } from './host/camera';
+export type { LynxCameraAdapter, LynxQrScanResult } from './host/camera';
+export {
+  createLynxVirtualAssetAdapter,
+  lynxVirtualAssetUrl,
+  normalizeLynxVirtualAssetMime,
+  LYNX_VIRTUAL_ASSET_SCHEME,
+} from './host/virtualAsset';
+export {
+  resolveLynxPredictiveBackPolicy,
+  clampLynxBackProgress,
+  LYNX_PREDICTIVE_BACK_WIRING_NOTES,
+} from './host/predictiveBack';
+export {
+  admitLynxAssistantMessage,
+  parseLynxMessageAdmission,
+} from './assistants/admission';
+export {
+  loadLynxDictationStatus,
+  requestLynxDictationModelDownload,
+  deleteLynxDictationModel,
+  LYNX_DICTATION_VOICE_POLICY,
+} from './settings/dictation';
+export {
+  createLynxDiagnosticsRecorder,
+  exportLynxDiagnostics,
+  LYNX_CLIENT_DIAGNOSTICS_SCHEMA,
+} from './settings/diagnostics';
+export {
+  loadLynxFsHome,
+  addLynxProjectFromPath,
+  buildLynxBrowseRows,
+} from './projects/directoryExplorer';
+export {
+  detectLynxComposerTrigger,
+  loadLynxComposerCatalogs,
+  suggestionsForTrigger,
+} from './chat/composerCatalog';

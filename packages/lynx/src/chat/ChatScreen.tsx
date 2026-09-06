@@ -5,6 +5,13 @@ import { LynxInput, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { cssVar } from '../theme/tokens';
 import {
+  applyLynxComposerSuggestion,
+  detectLynxComposerTrigger,
+  loadLynxComposerCatalogs,
+  suggestionsForTrigger,
+  type LynxComposerSuggestion,
+} from './composerCatalog';
+import {
   createLynxComposerActions,
   type LynxComposerActions,
   type LynxComposerModel,
@@ -136,6 +143,8 @@ export function LynxChatScreen({
     createEmptyTimelineState(sessionId, directory),
   );
   const [draft, setDraft] = useState('');
+  const [composerSuggestions, setComposerSuggestions] = useState<LynxComposerSuggestion[]>([]);
+  const [composerCatalogHint, setComposerCatalogHint] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueCount, setQueueCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -179,6 +188,30 @@ export function LynxChatScreen({
   );
   const composerRef = useRef(composer);
   composerRef.current = composer;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const bundle = await loadLynxComposerCatalogs(runtimeFetch, { directory });
+      if (cancelled) return;
+      const { trigger, query } = detectLynxComposerTrigger(draft);
+      if (trigger === 'none') {
+        setComposerSuggestions([]);
+        setComposerCatalogHint(null);
+        return;
+      }
+      setComposerCatalogHint(
+        trigger === 'slash'
+          ? lynxT(locale, 'lynx.chat.composer.slashHint')
+          : trigger === 'mention'
+            ? lynxT(locale, 'lynx.chat.composer.mentionHint')
+            : lynxT(locale, 'lynx.chat.composer.modelHint'),
+      );
+      setComposerSuggestions(suggestionsForTrigger(bundle, trigger, query));
+    })();
+    return () => { cancelled = true; };
+  }, [draft, runtimeFetch, directory, locale]);
+
 
   const occupancyInset = resolveLynxComposerOccupancyInset();
 
@@ -699,6 +732,28 @@ export function LynxChatScreen({
               <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
                 {cardError}
               </LynxText>
+            ) : null}
+            {composerCatalogHint ? (
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '4px' }}>
+                {composerCatalogHint}
+              </LynxText>
+            ) : null}
+            {composerSuggestions.length > 0 ? (
+              <LynxView style={{ marginBottom: '8px' }}>
+                {composerSuggestions.slice(0, 6).map((suggestion) => (
+                  <LynxView
+                    key={suggestion.id}
+                    bindtap={() => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
+                    style={{ padding: '6px 0' }}
+                    accessibility-role="button"
+                  >
+                    <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px' }}>
+                      {suggestion.insertText}
+                      {suggestion.subtitle ? ` · ${suggestion.subtitle}` : ''}
+                    </LynxText>
+                  </LynxView>
+                ))}
+              </LynxView>
             ) : null}
             <LynxView
               // Cap: composer-only session swipe surface. Host binds pan → onComposerEdgeSwipeEvent.

@@ -22,7 +22,7 @@ describe('Lynx settings metadata', () => {
       ...LYNX_MOBILE_SETTINGS_PAGE_SLUGS,
     ]);
     expect(LYNX_SETTINGS_PAGE_GROUP_ORDER[0]).toBe('connection');
-    expect(getLynxSettingsPageMeta('voice')?.body).toBe('list-only-until-routes');
+    expect(getLynxSettingsPageMeta('voice')?.body).toBe('wired');
     expect(getLynxSettingsPageMeta('appearance')?.body).toBe('wired');
     expect(getLynxSettingsPageMeta('providers')?.body).toBe('list');
     expect(getLynxSettingsPageMeta('about')?.body).toBe('wired');

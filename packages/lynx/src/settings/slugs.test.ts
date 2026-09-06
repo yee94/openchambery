@@ -19,7 +19,7 @@ describe('Lynx mobile settings slugs', () => {
       expect(source).toContain(`'${slug}'`);
     }
     expect(LYNX_MOBILE_SETTINGS_PAGE_SLUGS).toContain('voice');
-    expect(LYNX_VOICE_SLUG_POLICY).toBe('list-only-until-routes');
+    expect(LYNX_VOICE_SLUG_POLICY).toBe('status-and-models-only-no-invented-asr');
   });
 
   test('does not add desktop-only slugs to the phone list', () => {

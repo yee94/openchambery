@@ -130,3 +130,10 @@ export {
 export {
   canAcceptLynxLoadOlderTap,
 } from './loadOlder';
+
+export {
+  detectLynxComposerTrigger,
+  loadLynxComposerCatalogs,
+  suggestionsForTrigger,
+  applyLynxComposerSuggestion,
+} from './composerCatalog';

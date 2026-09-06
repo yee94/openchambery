@@ -13,3 +13,14 @@ export {
   toggleLynxSessionPin,
   createLynxSession,
 } from './sessionActions';
+
+export {
+  loadLynxFsHome,
+  browseLynxDirectory,
+  addLynxProjectFromPath,
+  buildLynxBrowseRows,
+  collectLynxAddedProjectPaths,
+  ensureLynxBrowseDirectoryPath,
+  getLynxBrowseParentPath,
+  appendLynxBrowsePathSegment,
+} from './directoryExplorer';

@@ -35,6 +35,12 @@ import { LynxEntityEditor } from './EntityEditor';
 import { isLynxEntityKind, type LynxEntityKind } from './entityApi';
 import type { LynxMobileSettingsSlug } from './slugs';
 import type { LynxSettingsBodyKind } from './metadata';
+import { loadLynxDictationStatus } from './dictation';
+import {
+  createLynxDiagnosticsRecorder,
+  exportLynxDiagnostics,
+  type LynxDiagnosticsRecorder,
+} from './diagnostics';
 
 export type SettingsBodyContext = {
   locale: string;
@@ -45,6 +51,8 @@ export type SettingsBodyContext = {
   connections?: LynxSavedConnection[];
   onConnectionsChange?: (connections: LynxSavedConnection[]) => void;
   onConnected?: () => void;
+  /** Shared About diagnostics recorder (optional inject). */
+  diagnosticsRecorder?: LynxDiagnosticsRecorder | null;
 };
 
 function Banner({ text, muted }: { text: string; muted?: boolean }) {
@@ -537,6 +545,9 @@ function UsageBody({ ctx }: { ctx: SettingsBodyContext }) {
 function AboutBody({ ctx }: { ctx: SettingsBodyContext }) {
   const [instanceVersion, setInstanceVersion] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime'>('loading');
+  const [recorder] = useState(() => ctx.diagnosticsRecorder ?? createLynxDiagnosticsRecorder({ enabled: false }));
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(() => recorder.isEnabled());
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -574,6 +585,79 @@ function AboutBody({ ctx }: { ctx: SettingsBodyContext }) {
           subtitle={instanceVersion || '—'}
         />
       )}
+      <LynxView
+        bindtap={() => {
+          const next = !diagnosticsEnabled;
+          recorder.setEnabled(next);
+          setDiagnosticsEnabled(next);
+          if (next) recorder.record({ feat: 'shell', kind: 'diagnostics-enabled' });
+        }}
+        style={{ padding: '10px 0' }}
+        accessibility-role="button"
+      >
+        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600' }}>
+          {lynxT(ctx.locale, 'lynx.settings.about.diagnosticsEnabled')}: {diagnosticsEnabled ? 'on' : 'off'}
+        </LynxText>
+      </LynxView>
+      {diagnosticsEnabled ? (
+        <LynxView
+          bindtap={() => {
+            void (async () => {
+              const result = await exportLynxDiagnostics(recorder, ctx.lynxClientVersion);
+              if (result.status === 'json') {
+                setExportNote(`${lynxT(ctx.locale, 'lynx.settings.about.diagnostics')} (${result.json.length} bytes)`);
+                return;
+              }
+              setExportNote(result.status);
+            })();
+          }}
+          style={{ padding: '8px 0' }}
+          accessibility-role="button"
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+            {lynxT(ctx.locale, 'lynx.settings.about.diagnostics')}
+          </LynxText>
+        </LynxView>
+      ) : null}
+      {exportNote ? <Banner text={exportNote} muted /> : null}
+    </LynxView>
+  );
+}
+
+function VoiceBody({ ctx }: { ctx: SettingsBodyContext }) {
+  const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'unsupported'>('loading');
+  const [detail, setDetail] = useState<string>('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await loadLynxDictationStatus(ctx.runtimeFetch);
+      if (cancelled) return;
+      if (result.status === 'ok') {
+        setStatus('ok');
+        const ready = result.payload.ready;
+        const models = result.payload.models;
+        setDetail(typeof ready === 'boolean'
+          ? `ready=${ready}${Array.isArray(models) ? ` models=${models.length}` : ''}`
+          : JSON.stringify(result.payload).slice(0, 160));
+        return;
+      }
+      setDetail('');
+      setStatus(result.status === 'failed' ? 'failed' : result.status);
+    })();
+    return () => { cancelled = true; };
+  }, [ctx.runtimeFetch]);
+
+  return (
+    <LynxView>
+      <Banner text={lynxT(ctx.locale, 'lynx.settings.voice.noAsr')} muted />
+      {status === 'no-runtime' ? <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted /> : null}
+      {status === 'unsupported' ? <Banner text={lynxT(ctx.locale, 'lynx.settings.unsupported')} muted /> : null}
+      {status === 'failed' ? <Banner text={lynxT(ctx.locale, 'lynx.settings.loadFailed')} /> : null}
+      {status === 'loading' ? <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted /> : null}
+      {status === 'ok' ? (
+        <Row title={lynxT(ctx.locale, 'lynx.settings.voice.status')} subtitle={detail || 'ok'} />
+      ) : null}
     </LynxView>
   );
 }
@@ -991,7 +1075,7 @@ export function renderLynxSettingsBody(
   ctx: SettingsBodyContext,
 ) {
   if (body === 'list-only-until-routes') {
-    return <Banner text={lynxT(ctx.locale, 'lynx.settings.voice.listOnly')} muted />;
+    return <VoiceBody ctx={ctx} />;
   }
   if (body === 'stub') {
     return <Banner text={lynxT(ctx.locale, 'lynx.settings.page.stub')} muted />;
@@ -1025,6 +1109,8 @@ export function renderLynxSettingsBody(
       return <AssistantsSettingsBody ctx={ctx} />;
     case 'usage':
       return <UsageBody ctx={ctx} />;
+    case 'voice':
+      return <VoiceBody ctx={ctx} />;
     case 'about':
       return <AboutBody ctx={ctx} />;
     case 'summary-ai':

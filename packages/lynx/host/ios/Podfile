@@ -1,0 +1,18 @@
+# OpenChamber Lynx iOS host — Mac-only resolve.
+# Lynx / XElement pod versions track Lynx 3.8+ / 4.x engine used by rspeedy.
+platform :ios, '16.0'
+use_frameworks!
+
+target 'OpenChamberLynx' do
+  # Official Lynx pods — not resolved on Linux CI.
+  # pod 'Lynx', '~> 3.8'
+  # pod 'XElement', '~> 3.8'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+    end
+  end
+end

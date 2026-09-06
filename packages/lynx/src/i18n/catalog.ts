@@ -241,6 +241,23 @@ export type LynxMessageKey =
   | 'lynx.chat.context.aria'
   | 'lynx.chat.composer.attach'
   | 'lynx.chat.edgeSwipe.surface'
+  | 'lynx.projects.explorer.title'
+  | 'lynx.projects.explorer.add'
+  | 'lynx.projects.explorer.up'
+  | 'lynx.projects.explorer.added'
+  | 'lynx.projects.explorer.alreadyAdded'
+  | 'lynx.projects.chrome.scan'
+  | 'lynx.projects.chrome.switchInstance'
+  | 'lynx.projects.chrome.addProject'
+  | 'lynx.connect.qr.scan'
+  | 'lynx.connect.qr.unavailable'
+  | 'lynx.chat.composer.slashHint'
+  | 'lynx.chat.composer.mentionHint'
+  | 'lynx.chat.composer.modelHint'
+  | 'lynx.settings.voice.status'
+  | 'lynx.settings.voice.noAsr'
+  | 'lynx.settings.about.diagnostics'
+  | 'lynx.settings.about.diagnosticsEnabled'
 
 type LynxDictionary = Record<LynxMessageKey, string>;
 
@@ -466,6 +483,23 @@ const en: LynxDictionary = {
   'lynx.chat.context.aria': 'Context usage',
   'lynx.chat.composer.attach': 'Attach',
   'lynx.chat.edgeSwipe.surface': 'Session swipe surface',
+  'lynx.settings.about.diagnosticsEnabled': 'Client diagnostics',
+  'lynx.settings.about.diagnostics': 'Export diagnostics',
+  'lynx.settings.voice.noAsr': 'Mic / ASR stays host-bound. This page only lists /api/dictation status and models.',
+  'lynx.settings.voice.status': 'Dictation status',
+  'lynx.chat.composer.modelHint': 'Models',
+  'lynx.chat.composer.mentionHint': 'Agents',
+  'lynx.chat.composer.slashHint': 'Commands',
+  'lynx.connect.qr.unavailable': 'Camera unavailable on this host',
+  'lynx.connect.qr.scan': 'Scan QR',
+  'lynx.projects.chrome.addProject': 'Browse folders',
+  'lynx.projects.chrome.switchInstance': 'Switch instance',
+  'lynx.projects.chrome.scan': 'Scan',
+  'lynx.projects.explorer.alreadyAdded': 'Already in projects',
+  'lynx.projects.explorer.added': 'Project added',
+  'lynx.projects.explorer.up': 'Up',
+  'lynx.projects.explorer.add': 'Add this folder',
+  'lynx.projects.explorer.title': 'Add project',
 
 };
 
@@ -691,6 +725,23 @@ const es: LynxDictionary = {
   'lynx.chat.context.aria': 'Uso del contexto',
   'lynx.chat.composer.attach': 'Adjuntar',
   'lynx.chat.edgeSwipe.surface': 'Superficie de cambio de sesión',
+  'lynx.settings.about.diagnosticsEnabled': 'Diagnósticos del cliente',
+  'lynx.settings.about.diagnostics': 'Exportar diagnósticos',
+  'lynx.settings.voice.noAsr': 'Mic/ASR queda en el host. Esta página solo lista estado y modelos de /api/dictation.',
+  'lynx.settings.voice.status': 'Estado de dictado',
+  'lynx.chat.composer.modelHint': 'Modelos',
+  'lynx.chat.composer.mentionHint': 'Agentes',
+  'lynx.chat.composer.slashHint': 'Comandos',
+  'lynx.connect.qr.unavailable': 'Cámara no disponible en este host',
+  'lynx.connect.qr.scan': 'Escanear QR',
+  'lynx.projects.chrome.addProject': 'Explorar carpetas',
+  'lynx.projects.chrome.switchInstance': 'Cambiar instancia',
+  'lynx.projects.chrome.scan': 'Escanear',
+  'lynx.projects.explorer.alreadyAdded': 'Ya está en proyectos',
+  'lynx.projects.explorer.added': 'Proyecto añadido',
+  'lynx.projects.explorer.up': 'Arriba',
+  'lynx.projects.explorer.add': 'Añadir esta carpeta',
+  'lynx.projects.explorer.title': 'Añadir proyecto',
 
 };
 
@@ -916,6 +967,23 @@ const fr: LynxDictionary = {
   'lynx.chat.context.aria': 'Utilisation du contexte',
   'lynx.chat.composer.attach': 'Joindre',
   'lynx.chat.edgeSwipe.surface': 'Surface de changement de session',
+  'lynx.settings.about.diagnosticsEnabled': 'Diagnostics client',
+  'lynx.settings.about.diagnostics': 'Exporter les diagnostics',
+  'lynx.settings.voice.noAsr': 'Micro/ASR restent côté hôte. Cette page liste seulement statut et modèles /api/dictation.',
+  'lynx.settings.voice.status': 'État de la dictée',
+  'lynx.chat.composer.modelHint': 'Modèles',
+  'lynx.chat.composer.mentionHint': 'Agents',
+  'lynx.chat.composer.slashHint': 'Commandes',
+  'lynx.connect.qr.unavailable': 'Caméra indisponible sur cet hôte',
+  'lynx.connect.qr.scan': 'Scanner le QR',
+  'lynx.projects.chrome.addProject': 'Parcourir les dossiers',
+  'lynx.projects.chrome.switchInstance': 'Changer d’instance',
+  'lynx.projects.chrome.scan': 'Scanner',
+  'lynx.projects.explorer.alreadyAdded': 'Déjà dans les projets',
+  'lynx.projects.explorer.added': 'Projet ajouté',
+  'lynx.projects.explorer.up': 'Haut',
+  'lynx.projects.explorer.add': 'Ajouter ce dossier',
+  'lynx.projects.explorer.title': 'Ajouter un projet',
 
 };
 
@@ -1141,6 +1209,23 @@ const ja: LynxDictionary = {
   'lynx.chat.context.aria': 'コンテキスト使用量',
   'lynx.chat.composer.attach': '添付',
   'lynx.chat.edgeSwipe.surface': 'セッション切り替え面',
+  'lynx.settings.about.diagnosticsEnabled': 'クライアント診断',
+  'lynx.settings.about.diagnostics': '診断を書き出す',
+  'lynx.settings.voice.noAsr': 'マイク/ASRはホスト側。このページは /api/dictation の状態とモデルのみ。',
+  'lynx.settings.voice.status': 'ディクテーション状態',
+  'lynx.chat.composer.modelHint': 'モデル',
+  'lynx.chat.composer.mentionHint': 'エージェント',
+  'lynx.chat.composer.slashHint': 'コマンド',
+  'lynx.connect.qr.unavailable': 'このホストではカメラ利用不可',
+  'lynx.connect.qr.scan': 'QRをスキャン',
+  'lynx.projects.chrome.addProject': 'フォルダを参照',
+  'lynx.projects.chrome.switchInstance': 'インスタンス切替',
+  'lynx.projects.chrome.scan': 'スキャン',
+  'lynx.projects.explorer.alreadyAdded': 'すでに追加済み',
+  'lynx.projects.explorer.added': 'プロジェクトを追加しました',
+  'lynx.projects.explorer.up': '上へ',
+  'lynx.projects.explorer.add': 'このフォルダを追加',
+  'lynx.projects.explorer.title': 'プロジェクトを追加',
 
 };
 
@@ -1366,6 +1451,23 @@ const ko: LynxDictionary = {
   'lynx.chat.context.aria': '컨텍스트 사용량',
   'lynx.chat.composer.attach': '첨부',
   'lynx.chat.edgeSwipe.surface': '세션 전환 표면',
+  'lynx.settings.about.diagnosticsEnabled': '클라이언트 진단',
+  'lynx.settings.about.diagnostics': '진단 내보내기',
+  'lynx.settings.voice.noAsr': '마이크/ASR은 호스트. 이 페이지는 /api/dictation 상태·모델만.',
+  'lynx.settings.voice.status': '받아쓰기 상태',
+  'lynx.chat.composer.modelHint': '모델',
+  'lynx.chat.composer.mentionHint': '에이전트',
+  'lynx.chat.composer.slashHint': '명령',
+  'lynx.connect.qr.unavailable': '이 호스트에서 카메라 사용 불가',
+  'lynx.connect.qr.scan': 'QR 스캔',
+  'lynx.projects.chrome.addProject': '폴더 찾아보기',
+  'lynx.projects.chrome.switchInstance': '인스턴스 전환',
+  'lynx.projects.chrome.scan': '스캔',
+  'lynx.projects.explorer.alreadyAdded': '이미 추가됨',
+  'lynx.projects.explorer.added': '프로젝트 추가됨',
+  'lynx.projects.explorer.up': '위로',
+  'lynx.projects.explorer.add': '이 폴더 추가',
+  'lynx.projects.explorer.title': '프로젝트 추가',
 
 };
 
@@ -1591,6 +1693,23 @@ const pl: LynxDictionary = {
   'lynx.chat.context.aria': 'Użycie kontekstu',
   'lynx.chat.composer.attach': 'Dołącz',
   'lynx.chat.edgeSwipe.surface': 'Powierzchnia zmiany sesji',
+  'lynx.settings.about.diagnosticsEnabled': 'Diagnostyka klienta',
+  'lynx.settings.about.diagnostics': 'Eksportuj diagnostykę',
+  'lynx.settings.voice.noAsr': 'Mikrofon/ASR zostaje u hosta. Ta strona tylko status i modele /api/dictation.',
+  'lynx.settings.voice.status': 'Status dyktowania',
+  'lynx.chat.composer.modelHint': 'Modele',
+  'lynx.chat.composer.mentionHint': 'Agenci',
+  'lynx.chat.composer.slashHint': 'Polecenia',
+  'lynx.connect.qr.unavailable': 'Aparat niedostępny na tym hoście',
+  'lynx.connect.qr.scan': 'Skanuj QR',
+  'lynx.projects.chrome.addProject': 'Przeglądaj foldery',
+  'lynx.projects.chrome.switchInstance': 'Przełącz instancję',
+  'lynx.projects.chrome.scan': 'Skanuj',
+  'lynx.projects.explorer.alreadyAdded': 'Już na liście',
+  'lynx.projects.explorer.added': 'Dodano projekt',
+  'lynx.projects.explorer.up': 'W górę',
+  'lynx.projects.explorer.add': 'Dodaj ten folder',
+  'lynx.projects.explorer.title': 'Dodaj projekt',
 
 };
 
@@ -1816,6 +1935,23 @@ const ptBR: LynxDictionary = {
   'lynx.chat.context.aria': 'Uso do contexto',
   'lynx.chat.composer.attach': 'Anexar',
   'lynx.chat.edgeSwipe.surface': 'Superfície de troca de sessão',
+  'lynx.settings.about.diagnosticsEnabled': 'Diagnósticos do cliente',
+  'lynx.settings.about.diagnostics': 'Exportar diagnósticos',
+  'lynx.settings.voice.noAsr': 'Mic/ASR ficam no host. Esta página só lista status e modelos /api/dictation.',
+  'lynx.settings.voice.status': 'Status da ditadura',
+  'lynx.chat.composer.modelHint': 'Modelos',
+  'lynx.chat.composer.mentionHint': 'Agentes',
+  'lynx.chat.composer.slashHint': 'Comandos',
+  'lynx.connect.qr.unavailable': 'Câmera indisponível neste host',
+  'lynx.connect.qr.scan': 'Escanear QR',
+  'lynx.projects.chrome.addProject': 'Procurar pastas',
+  'lynx.projects.chrome.switchInstance': 'Trocar instância',
+  'lynx.projects.chrome.scan': 'Escanear',
+  'lynx.projects.explorer.alreadyAdded': 'Já nos projetos',
+  'lynx.projects.explorer.added': 'Projeto adicionado',
+  'lynx.projects.explorer.up': 'Acima',
+  'lynx.projects.explorer.add': 'Adicionar esta pasta',
+  'lynx.projects.explorer.title': 'Adicionar projeto',
 
 };
 
@@ -2041,6 +2177,23 @@ const uk: LynxDictionary = {
   'lynx.chat.context.aria': 'Використання контексту',
   'lynx.chat.composer.attach': 'Додати',
   'lynx.chat.edgeSwipe.surface': 'Поверхня зміни сесії',
+  'lynx.settings.about.diagnosticsEnabled': 'Клієнтська діагностика',
+  'lynx.settings.about.diagnostics': 'Експорт діагностики',
+  'lynx.settings.voice.noAsr': 'Мік/ASR лишаються на хості. Тут лише статус і моделі /api/dictation.',
+  'lynx.settings.voice.status': 'Статус диктування',
+  'lynx.chat.composer.modelHint': 'Моделі',
+  'lynx.chat.composer.mentionHint': 'Агенти',
+  'lynx.chat.composer.slashHint': 'Команди',
+  'lynx.connect.qr.unavailable': 'Камера недоступна на цьому хості',
+  'lynx.connect.qr.scan': 'Сканувати QR',
+  'lynx.projects.chrome.addProject': 'Огляд тек',
+  'lynx.projects.chrome.switchInstance': 'Змінити інстанс',
+  'lynx.projects.chrome.scan': 'Сканувати',
+  'lynx.projects.explorer.alreadyAdded': 'Уже в проєктах',
+  'lynx.projects.explorer.added': 'Проєкт додано',
+  'lynx.projects.explorer.up': 'Вгору',
+  'lynx.projects.explorer.add': 'Додати цю теку',
+  'lynx.projects.explorer.title': 'Додати проєкт',
 
 };
 
@@ -2266,6 +2419,23 @@ const zhCN: LynxDictionary = {
   'lynx.chat.context.aria': '上下文用量',
   'lynx.chat.composer.attach': '附件',
   'lynx.chat.edgeSwipe.surface': '会话滑动切换区',
+  'lynx.settings.about.diagnosticsEnabled': '客户端诊断',
+  'lynx.settings.about.diagnostics': '导出诊断',
+  'lynx.settings.voice.noAsr': '麦克风/ASR 仍由宿主负责。本页仅列出 /api/dictation 状态与模型。',
+  'lynx.settings.voice.status': '听写状态',
+  'lynx.chat.composer.modelHint': '模型',
+  'lynx.chat.composer.mentionHint': '代理',
+  'lynx.chat.composer.slashHint': '命令',
+  'lynx.connect.qr.unavailable': '当前宿主无可用相机',
+  'lynx.connect.qr.scan': '扫一扫',
+  'lynx.projects.chrome.addProject': '浏览文件夹',
+  'lynx.projects.chrome.switchInstance': '切换实例',
+  'lynx.projects.chrome.scan': '扫一扫',
+  'lynx.projects.explorer.alreadyAdded': '已在项目中',
+  'lynx.projects.explorer.added': '已添加项目',
+  'lynx.projects.explorer.up': '上级',
+  'lynx.projects.explorer.add': '添加此文件夹',
+  'lynx.projects.explorer.title': '添加项目',
 
 };
 
@@ -2491,6 +2661,23 @@ const zhTW: LynxDictionary = {
   'lynx.chat.context.aria': '上下文用量',
   'lynx.chat.composer.attach': '附件',
   'lynx.chat.edgeSwipe.surface': '工作階段滑動切換區',
+  'lynx.settings.about.diagnosticsEnabled': '用戶端診斷',
+  'lynx.settings.about.diagnostics': '匯出診斷',
+  'lynx.settings.voice.noAsr': '麥克風/ASR 仍由宿主負責。本頁僅列出 /api/dictation 狀態與模型。',
+  'lynx.settings.voice.status': '聽寫狀態',
+  'lynx.chat.composer.modelHint': '模型',
+  'lynx.chat.composer.mentionHint': '代理',
+  'lynx.chat.composer.slashHint': '命令',
+  'lynx.connect.qr.unavailable': '目前宿主無可用相機',
+  'lynx.connect.qr.scan': '掃一掃',
+  'lynx.projects.chrome.addProject': '瀏覽資料夾',
+  'lynx.projects.chrome.switchInstance': '切換實例',
+  'lynx.projects.chrome.scan': '掃一掃',
+  'lynx.projects.explorer.alreadyAdded': '已在專案中',
+  'lynx.projects.explorer.added': '已新增專案',
+  'lynx.projects.explorer.up': '上一層',
+  'lynx.projects.explorer.add': '新增此資料夾',
+  'lynx.projects.explorer.title': '新增專案',
 
 };
 

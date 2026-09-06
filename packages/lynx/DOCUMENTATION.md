@@ -89,6 +89,17 @@ Projects home consumes `projectSessionIndexHome(snapshot)` — cards + pinned / 
 
 QR / paste: `parseConnectionPayload` accepts v2 pairing links or a bare `http(s)` URL. Camera scanning is a host plugin, not this package.
 
+## Host bridge stubs (closable-missing slice)
+
+- Camera / 扫一扫: `src/host/camera.ts` + `host/ios|android` camera adapters (unavailable without binder)
+- Virtual asset: `src/host/virtualAsset.ts` — `openchamber-asset://v/{id}`
+- Predictive / edge back: `src/host/predictiveBack.ts` + host stubs; shell must not double-own the edge (see `host/README.md`)
+- DirectoryExplorer: `src/projects/directoryExplorer.ts` against `/api/fs/home` + `/api/fs/list` + settings projects
+- Composer `/` `@`: `src/chat/composerCatalog.ts`
+- Assistant admission: `src/assistants/admission.ts` → `POST /api/openchamber/assistants/:id/messages`
+- Voice: `src/settings/dictation.ts` — `/api/dictation/*` only (no invented ASR)
+- About diagnostics: `src/settings/diagnostics.ts`
+
 ## Tests
 
 Vitest project `@openchamber/lynx` (`src/**/*.test.ts`). Navigation harness: `src/harness/navigationScenario.ts`.

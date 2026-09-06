@@ -313,21 +313,22 @@ First implementation slice after this doc gate (order is deliberate: connect →
 1. ~~Host app skeleton + embedding decision~~ — scaffold in `packages/lynx`. Remaining: link Lynx SDK, rspeedy bundle, device host; wire HTTP/Keychain/relay adapters.
 2. ~~Connect + instance persistence client~~ — 代码接上 in `packages/lynx`. Remaining: welcome/instances UI, native secure store, and a real server 真机 pass (LAN then relay). No demo hosts. No Bonjour.
 3. ~~Four-tab shell IA~~ — navigation + Projects/Assistant/Scheduled tab bodies 代码接上. Remaining: pixel polish / host IME.
-4. ~~Projects home data path + UI~~ — session-index bindings + ProjectsHome UI in `packages/lynx` (failure ≠ empty). Remaining: directory explorer / 扫一扫 / instance switch chrome.
+4. ~~Projects home data path + UI~~ — session-index bindings + ProjectsHome UI + DirectoryExplorer + 扫一扫/切换实例 chrome 代码接上. Remaining: pixel polish / host camera binder 真机.
 5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. SSE live tail 代码接上; native IME host binding still missing.
 6. ~~**Settings home + slug map**~~ — 代码接上 search + 21 rows. Bodies: wired/list/stub in settings-ci slice. Remaining: rich entity editors.
 7. ~~**Assistant catalog + Scheduled list/history**~~ — 代码接上 snapshot/list/history hooks. Remaining: admission flows.
 8. ~~**Connect welcome + instances UI**~~ — 代码接上 splash/list/paste. Remaining: host QR camera + Keychain wiring + 真机.
 9. ~~**Projects MobileTabPageHeader**~~ — 代码接上 collapsing header + glass search + primary +. Remaining: pixel polish / menu.
-10. ~~**CI skeleton (Linux)**~~ — `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) type-check + vitest + rspeedy. Remaining: Android APK + iOS sim runners (do not claim 真机过).
+10. ~~**CI skeleton (Linux)**~~ — template at `packages/lynx/ci/lynx-ci.yml`; copy to `.github/workflows/lynx-ci.yml` still needs `workflow` token scope. Remaining: install workflow + Android APK + iOS sim runners (do not claim 真机过).
 11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`.
 12. ~~**editors + Files/Changes/MCP lists + deep-link apply**~~ — 代码接上 in `cursor/lynx-editors-sheets-local`.
 13. ~~**diff/preview + commit/sync + provider auth + push/share hooks**~~ — 代码接上 in `cursor/lynx-diff-push-share-local`. Remaining: host Keychain/QR/browser OAuth open, 真机.
 14. ~~**rich turn cards + swipe menu + share welcome + draft + list harness**~~ — 代码接上 in `cursor/lynx-cards-swipe-harness-local`.
 15. ~~**SSE live tail + IME occupancy contract + nested chat predecessor**~~ — 代码接上 in `cursor/lynx-sse-live-local`. Remaining: host IME binding / Keychain/QR, relay streaming body, 真机.
-16. ~~**context usage + edge swipe + haptics/HEIC/media + pin reveal**~~ — 代码接上 in `cursor/lynx-context-edge-media-local`. Remaining: host pan/haptics/media binders, Keychain/QR/OAuth browser, Live Activity/Widgets, 真机.
+16. ~~**context usage + edge swipe + haptics/HEIC/media + pin reveal**~~ — 代码接上 in `cursor/lynx-context-edge-media-local`. Remaining: host pan/haptics/media binders, Keychain/OAuth browser, Live Activity/Widgets, 真机.
+17. ~~**closable missing: host scaffold + lynx-ci workflow + DirectoryExplorer + 扫一扫/切换实例 + composer `/` `@` + admission + voice dictation status + About diagnostics + openchamber-asset hooks + predictive-back contract**~~ — 代码接上 in `cursor/lynx-closable-missing-local`. Remaining: real camera/SDK link / Keychain / IME 真机; not product-EXHAUSTED.
 
-Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
+Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
 ---
 
@@ -398,31 +399,48 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 | `snippets` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/snippets/:name` |
 | `skills.installed` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/skills/:name` |
 | `usage` | 代码接上 (list) | per-provider `/api/quota/:id`; one failure stays on that row |
-| `voice` | 代码接上 (row; body list-only-until-routes) | Do not stub a fake mic; port existing /api/dictation or keep list-only |
-| `about` | 代码接上 (wired) | Lynx client version **separate** from `/api/system/info` instance version |
+| `voice` | 代码接上 (wired status/models via `/api/dictation/*`) | Status + model download/delete only; mic/WS ASR host-bound — no invented ASR |
+| `about` | 代码接上 (wired + diagnostics export) | Lynx client version **separate** from `/api/system/info`; `openchamber.client-diagnostics.v1` export |
 
 ---
 
 
-## Lynx JS feature surface — EXHAUSTED pending host (honest)
+## Remaining (honest — not EXHAUSTED)
 
-As of `cursor/lynx-context-edge-media-local`, **Linux-doable Cap product rows that are in-scope for Lynx JS** are 代码接上 against real APIs or honest host-inject contracts. Remaining work is **host-only / 真机 / out-of-scope**:
+Linux-doable Cap product rows continue to close. **Do not** mark the Lynx JS surface EXHAUSTED while DirectoryExplorer / composer chrome / host scaffolds / dictation status / diagnostics / asset hooks still have open polish or binder work.
 
-| Remaining | Why host / out of scope |
+### 代码接上 this slice (`cursor/lynx-closable-missing-local`)
+
+| Item | Notes |
+|---|---|
+| Host Xcode/Gradle scaffold + bridge stubs | `packages/lynx/host/**` + README run steps; SDK pods/AAR still unresolved on Linux |
+| `packages/lynx/ci/lynx-ci.yml` template | Ready to copy into `.github/workflows/` when `workflow` scope available |
+| Projects DirectoryExplorer | `/api/fs/home` + `/api/fs/list` + settings `projects[]` add |
+| 扫一扫 / 切换实例 chrome | Camera adapter honest `unavailable`; instances → secondary nav |
+| Composer `/` `@` agent/model | Cap commands/agents/magic-prompts + `/api/config/providers` models |
+| Assistant continuous/stateless admission | `POST …/assistants/:id/messages` — no invented ASR |
+| Settings Voice | `/api/dictation/status` (+ model download/delete helpers); mic/WS host-bound |
+| About diagnostics export | `openchamber.client-diagnostics.v1` local ring buffer |
+| `openchamber-asset://` hooks | TS + iOS/Android stub resolvers |
+| Predictive / edge-back contract | JS policy + host stubs + wiring notes |
+
+### Still missing / host-only / 真机
+
+| Remaining | Why |
 |---|---|
 | Native Keychain / Keystore wiring | Injected secure-store adapter exists; OS keychain still host |
-| QR camera scan | Pairing parse/redeem 代码接上; camera plugin host-owned |
-| OAuth system browser open | Cap routes 代码接上; opening ASWebAuthenticationSession / Custom Tabs is host |
+| Real QR camera / AVCapture / CameraX | Adapter + chrome 代码接上; binder returns unavailable until host |
+| OAuth system browser open | Cap routes 代码接上; ASWebAuthenticationSession / Custom Tabs host |
 | IME keyboard binding + occupancy 真机 | Contract 代码接上; LynxView IME must be host-bound |
-| Edge-swipe / back / Predictive Back pan arena | State machines 代码接上; native gesture ownership is host |
+| Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |
 | Share extension / Android share receiver | Inbox accepts payloads; extensions are native |
-| Live Activity / Widgets / Control Center | iOS-only host — 故意不在本切片 |
-| Linked Lynx SDK Xcode/Gradle + APK/IPA CI | Linux CI template only |
+| Live Activity / Widgets / Control Center | iOS-only host — later |
+| Linked Lynx SDK (CocoaPods/Gradle resolve) + APK/IPA CI | Scaffold files exist; artifacts not on Linux agent |
 | Bonjour / Nearby, invented ASR, TanStack 1.18, Capgo OTA | 故意不移植 |
-| Workflows / 真机过 | Out of scope for Linux cloud agent |
+| 真机过 | Empty 真机残差 until a written device log |
 
-Do **not** mark product rows **landed** under 三关 until CI绿 (track workflow) + 真机过.
+Do **not** mark product rows **landed** under 三关 until CI绿 (track workflow running on GH) + 真机过.
 
 ## How to move a row
 

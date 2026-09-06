@@ -24,6 +24,8 @@ import {
 } from '../../session-index/homeModel';
 import type { SessionIndexState } from '../../session-index/types';
 import { cssVar } from '../../theme/tokens';
+import { DirectoryExplorerSheet } from '../../projects/DirectoryExplorerSheet';
+import type { LynxCameraAdapter } from '../../host/camera';
 import { LynxTabPageHeader } from '../TabPageHeader';
 import { computeLynxTitleCollapseProgress } from '../tabPageHeader';
 
@@ -55,6 +57,11 @@ export type ProjectsHomeProps = {
   /** Test / story inject: skip store and render this model. */
   modelOverride?: LynxProjectsHomeModel | null;
   indexStateOverride?: SessionIndexState | null;
+  /** Cap 扫一扫 — host camera adapter (honest unavailable). */
+  cameraAdapter?: LynxCameraAdapter | null;
+  /** Cap 切换实例 — navigate to instances secondary. */
+  onOpenInstances?: () => void;
+  onScanResult?: (message: string) => void;
 };
 
 function useSessionIndexState(
@@ -267,6 +274,9 @@ export function ProjectsHome({
   onSessionMutated,
   modelOverride = null,
   indexStateOverride = null,
+  cameraAdapter = null,
+  onOpenInstances,
+  onScanResult,
 }: ProjectsHomeProps) {
   const indexState = useSessionIndexState(bindings, indexStateOverride);
   const [internalQuery, setInternalQuery] = useState('');
@@ -277,6 +287,8 @@ export function ProjectsHome({
   const [actionSession, setActionSession] = useState<LynxHomeSessionRow | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [explorerOpen, setExplorerOpen] = useState(false);
+  const [chromeNote, setChromeNote] = useState<string | null>(null);
   const searchQuery = searchQueryProp ?? internalQuery;
   const setSearchQuery = onSearchQueryChange ?? setInternalQuery;
 
@@ -401,6 +413,76 @@ export function ProjectsHome({
         primaryAccessibilityLabel={lynxT(locale, 'lynx.projects.newDraft')}
         searchAccessibilityLabel={lynxT(locale, 'lynx.projects.searchAria')}
         searchClearAccessibilityLabel={lynxT(locale, 'lynx.projects.clearSearchAria')}
+      />
+
+      <LynxView style={{ flexDirection: 'row', padding: '0 16px 8px', gap: '12px' }}>
+        <LynxView
+          bindtap={() => setExplorerOpen(true)}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.projects.chrome.addProject')}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600', fontSize: '13px' }}>
+            {lynxT(locale, 'lynx.projects.chrome.addProject')}
+          </LynxText>
+        </LynxView>
+        <LynxView
+          bindtap={() => {
+            void (async () => {
+              if (!cameraAdapter) {
+                const msg = lynxT(locale, 'lynx.connect.qr.unavailable');
+                setChromeNote(msg);
+                onScanResult?.(msg);
+                return;
+              }
+              const result = await cameraAdapter.scanPairingQr();
+              if (result.status === 'unavailable' || result.status === 'unsupported') {
+                const msg = lynxT(locale, 'lynx.connect.qr.unavailable');
+                setChromeNote(msg);
+                onScanResult?.(msg);
+                return;
+              }
+              if (result.status === 'ok' || result.status === 'pairing') {
+                setChromeNote(lynxT(locale, 'lynx.projects.chrome.scan'));
+                onScanResult?.(result.status);
+                return;
+              }
+              setChromeNote(result.status);
+              onScanResult?.(result.status);
+            })();
+          }}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.projects.chrome.scan')}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600', fontSize: '13px' }}>
+            {lynxT(locale, 'lynx.projects.chrome.scan')}
+          </LynxText>
+        </LynxView>
+        <LynxView
+          bindtap={() => onOpenInstances?.()}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.projects.chrome.switchInstance')}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600', fontSize: '13px' }}>
+            {lynxT(locale, 'lynx.projects.chrome.switchInstance')}
+          </LynxText>
+        </LynxView>
+      </LynxView>
+      {chromeNote ? (
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', padding: '0 16px 8px' }}>
+          {chromeNote}
+        </LynxText>
+      ) : null}
+
+      <DirectoryExplorerSheet
+        locale={locale}
+        runtimeFetch={runtimeFetch ?? null}
+        open={explorerOpen}
+        onClose={() => setExplorerOpen(false)}
+        onAdded={() => {
+          setExplorerOpen(false);
+          void bindings?.refresh?.();
+          onSessionMutated?.();
+        }}
       />
 
       <LynxScrollView

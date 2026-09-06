@@ -10,13 +10,17 @@ export type LynxHostBridgeEvent =
   | { type: 'backProgress'; progress: number }
   | { type: 'backCommit' }
   | { type: 'backCancel' }
-  | { type: 'keyboardInset'; height: number };
+  | { type: 'keyboardInset'; height: number }
+  | { type: 'predictiveBackProgress'; progress: number }
+  | { type: 'predictiveBackCommit' }
+  | { type: 'predictiveBackCancel' };
 
 export type LynxPageToHostCommand =
   | { type: 'setActiveTab'; tab: LynxTabId }
   | { type: 'hideHostTabChrome' }
   | { type: 'showHostTabChrome' }
-  | { type: 'reportOccupancy'; collapsedComposerHeight: number };
+  | { type: 'reportOccupancy'; collapsedComposerHeight: number }
+  | { type: 'openInstances' };
 
 export type LynxHostBridgeSnapshot = {
   platform: LynxHostPlatform;

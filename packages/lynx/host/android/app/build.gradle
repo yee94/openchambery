@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.yee94.openchamber.lynx'
+    compileSdk rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        // Keep Cap / FCM identity — do not invent a new applicationId.
+        applicationId 'com.yee94.openchamber'
+        minSdk rootProject.ext.minSdkVersion
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName '1.19.7-beta.7'
+        buildConfigField 'String', 'LYNX_BUNDLE', '"main.lynx.bundle"'
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+    // Official Lynx Android SDK — unresolved on Linux; uncomment on Mac/CI with artifact.
+    // implementation 'com.lynx:lynx:<version>'
+}

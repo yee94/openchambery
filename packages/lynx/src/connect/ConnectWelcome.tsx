@@ -7,6 +7,7 @@ import { lynxT } from '../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import { cssVar } from '../theme/tokens';
 import type { LynxAutoConnectPhase } from './autoConnectPhase';
+import type { LynxCameraAdapter } from '../host/camera';
 import { parsePastedPairingLink } from './pairingPaste';
 
 export type ConnectWelcomeProps = {
@@ -21,6 +22,8 @@ export type ConnectWelcomeProps = {
   onConnectionsChange: (connections: LynxSavedConnection[]) => void;
   onPendingChange: (pending: LynxPendingConnection | null) => void;
   onError: (message: string | null) => void;
+  /** Cap 扫一扫 — host camera; honest unavailable without binder. */
+  cameraAdapter?: LynxCameraAdapter | null;
 };
 
 /**
@@ -39,6 +42,7 @@ export function ConnectWelcome({
   onConnectionsChange,
   onPendingChange,
   onError,
+  cameraAdapter = null,
 }: ConnectWelcomeProps) {
   const [pasteValue, setPasteValue] = useState('');
   const [password, setPassword] = useState('');
@@ -347,9 +351,79 @@ export function ConnectWelcome({
         </LynxView>
       </LynxView>
 
-      <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
-        {lynxT(locale, 'lynx.connect.qr.stub')}
-      </LynxText>
+      <LynxView
+        bindtap={() => {
+          void (async () => {
+            if (!cameraAdapter) {
+              onError(lynxT(locale, 'lynx.connect.qr.unavailable'));
+              return;
+            }
+            setBusy(true);
+            onError(null);
+            try {
+              const result = await cameraAdapter.scanPairingQr();
+              if (result.status === 'pairing' && client) {
+                const redeemed = await client.redeemPairingConnection(result.pairing);
+                if (redeemed.status === 'connected') {
+                  onConnectionsChange(client.loadConnections());
+                  onPendingChange(null);
+                  onConnected();
+                  return;
+                }
+                if (redeemed.status === 'needs-login') {
+                  onPendingChange(redeemed.pending);
+                  return;
+                }
+                onError(redeemed.error);
+                return;
+              }
+              if (result.status === 'ok' && client) {
+                const connected = await client.connect({
+                  url: result.url,
+                  clientToken: result.clientToken,
+                  label: result.label,
+                });
+                if (connected.status === 'connected') {
+                  onConnectionsChange(client.loadConnections());
+                  onConnected();
+                  return;
+                }
+                if (connected.status === 'needs-login') {
+                  onPendingChange(connected.pending);
+                  return;
+                }
+                onError(typeof connected.error === 'string' ? connected.error : String(connected.error));
+                return;
+              }
+              if (result.status === 'cancelled') return;
+              if (result.status === 'unavailable' || result.status === 'unsupported') {
+                onError(lynxT(locale, 'lynx.connect.qr.unavailable'));
+                return;
+              }
+              onError(lynxT(locale, 'lynx.connect.qr.unavailable'));
+            } finally {
+              setBusy(false);
+            }
+          })();
+        }}
+        style={{
+          marginBottom: '16px',
+          padding: '12px',
+          borderRadius: '12px',
+          backgroundColor: cssVar('surface.elevated'),
+        }}
+        accessibility-role="button"
+        accessibility-label={lynxT(locale, 'lynx.connect.qr.scan')}
+      >
+        <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          {lynxT(locale, 'lynx.connect.qr.scan')}
+        </LynxText>
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '4px' }}>
+          {cameraAdapter?.isAvailable()
+            ? lynxT(locale, 'lynx.connect.qr.scan')
+            : lynxT(locale, 'lynx.connect.qr.unavailable')}
+        </LynxText>
+      </LynxView>
     </LynxScrollView>
   );
 }
