@@ -39,14 +39,15 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         && typeof abortPromptExpiresAt === 'number'
         && abortPromptExpiresAt > Date.now(),
     );
-    // Busy with no concrete part (tool / reasoning / text / editing) is the same
-    // unstable empty chrome as a zero-row live ProgressiveGroup header — hide the
-    // orphan "thinking / working" label until activity actually has a row.
+    // Keep the WorkingPlaceholder mounted through generic busy (no tool /
+    // reasoning / text part yet). First-prompt claim otherwise blanks the slot
+    // under the model header while Stop is still armed. Concrete parts replace
+    // the generic phrase in place; settled turns drop the row via isWorking.
     const showAssistantStatus = working.isWaitingForPermission
         || Boolean(working.retryInfo)
         || wasAborted
         || working.wasAborted
-        || !working.isGenericStatus;
+        || working.isWorking;
 
     return (
         <StatusRow

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.18] - 2026-09-06
+
+### 会话
+
+- 新建对话还在工作、还没有具体工具或正文时，模型头下方继续显示思考/工作中动画，不再留空。
+
 ## [1.19.7-beta.17] - 2026-09-06
 
 ### 助手
