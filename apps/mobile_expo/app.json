@@ -85,7 +85,8 @@
         }
       ],
       "./plugins/withOpenChamberSystemShell.js",
-      "./plugins/withAndroidDebugSideBySide.js"
+      "./plugins/withAndroidDebugSideBySide.js",
+      "react-native-quick-crypto"
     ],
     "experiments": {
       "typedRoutes": true

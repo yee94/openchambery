@@ -11,7 +11,16 @@ import {
   RELAY_HKDF_INFO,
 } from './protocol';
 
-const subtle = globalThis.crypto.subtle;
+/** Hermes has no WebCrypto; index.js installs react-native-quick-crypto first. */
+const subtle: SubtleCrypto = (() => {
+  const s = globalThis.crypto?.subtle;
+  if (!s) {
+    throw new Error(
+      'WebCrypto subtle unavailable — ensure index.js calls react-native-quick-crypto install() before app code',
+    );
+  }
+  return s;
+})();
 
 const ECDH_PARAMS: EcKeyGenParams = { name: 'ECDH', namedCurve: 'P-256' };
 const HANDSHAKE_NONCE_BYTES = 16;

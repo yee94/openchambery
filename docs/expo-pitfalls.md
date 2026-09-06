@@ -119,6 +119,12 @@ Two separate traps:
 
 Do not ship Metro-dependent debug APKs as "installable" prereleases.
 
+### Hermes has no `crypto.subtle` (relay E2EE)
+
+`lib/relay/crypto.ts` uses WebCrypto ECDH / AES-GCM / HKDF. Cap/WebView has `crypto.subtle`; **Hermes does not**. Top-level `globalThis.crypto.subtle` at module load crashes cold start with `TypeError: Cannot read property 'subtle' of undefined` — looks like a splash hang if you only glance at the launcher, but logcat shows `ReactNativeJS: Running "main"` then `JavascriptException`.
+
+**Fix:** `apps/mobile_expo/index.js` calls `react-native-quick-crypto`'s `install()` before `expo-router/entry`. Emulator smoke must fail on FATAL / dead pid, not only missing `ReactNativeJS`.
+
 ### Secrets: reuse existing GitHub Actions names only
 
 Do not create `EXPO_*` / `EAS_*` secret aliases. When a signed workflow is added later, reuse:
