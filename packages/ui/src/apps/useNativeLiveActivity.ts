@@ -71,6 +71,16 @@ export function useNativeLiveActivity(): void {
     }
     return titles;
   }, [available, sessions]);
+  const rootSessionIds = useMemo(() => {
+    if (!available) return new Set<string>();
+    const ids = new Set<string>();
+    for (const session of sessions) {
+      const parentID = (session as { parentID?: string | null }).parentID;
+      if (typeof parentID === 'string' && parentID.length > 0) continue;
+      ids.add(session.id);
+    }
+    return ids;
+  }, [available, sessions]);
   const catalogSignature = useMemo(
     () => [
       catalog.map((item) => `${item.sessionId}\0${item.title}\0${item.statusType ?? ''}`).join('\n'),
@@ -94,9 +104,10 @@ export function useNativeLiveActivity(): void {
     hasSessionError: false,
     now: Date.now(),
     connected,
-    catalog,
-    sessionTitles,
-  }));
+      catalog,
+      sessionTitles,
+      rootSessionIds,
+    }));
 
   const dispatchTokenAction = useEvent((action: NativeLiveActivityTokenAction): void => {
     tokenChainRef.current = tokenChainRef.current.then(async () => {

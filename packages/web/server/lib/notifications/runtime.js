@@ -306,7 +306,11 @@ export const createNotificationTriggerRuntime = (deps) => {
     const notificationDirectory = extractDirectoryFromPayload(payload);
     if ((payload.type === 'session.updated' || payload.type === 'session.created') && sessionId) {
       const title = payload.properties?.info?.title;
-      if (typeof title === 'string' && title.trim()) {
+      if (
+        typeof title === 'string'
+        && title.trim()
+        && !(await shouldSkipSystemSessionNotification(sessionId, notificationDirectory))
+      ) {
         try {
           await sendLiveActivityEnd?.({ sessionId, title: title.trim() });
         } catch (error) {
