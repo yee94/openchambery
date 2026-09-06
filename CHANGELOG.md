@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.8] - 2026-09-06
+
+### 会话
+
+- 并入最新 main（Live Activity / 推送标题 / 工具行距 / 侧栏滚动）。试验分支仍默认用 Markstream 渲染助手正文，并保持关掉文档内节点虚拟化（`max-live-nodes=0`，同时关闭 batch / smooth / defer），只留 TanStack 管会话列表高度。
+- Markstream 图片按现有 Markdown 约束限制最大宽度（`max-width: 100%` / `object-contain`），大图不再撑破气泡。关闭 Markstream：`localStorage.setItem('oc:markstream-react','0')` 后刷新。
+
 ## [1.19.7-beta.7] - 2026-09-06
 
 ### 移动端
@@ -11,13 +18,47 @@ All notable changes to this project will be documented in this file.
 - 后台完成任务时，iOS Live Activity 会把对应会话改成完成并停表，不再一直显示进行中。
 - 推送标题改成短句（任务已完成 / 需要你回答等），正文用会话名；全渠道、全语言一致。
 
-## [1.19.7-beta.5] - 2026-09-06
-
 ### 会话
 
 - 展开「运行了」折叠后的工具列表不再挤在一起，手机行距按原来的工具行比例收一档。
 - 电脑端侧栏聚焦当前会话时平滑滚到视口大约三分之一处，不再贴在边缘。
-- 助手正文（含流式）默认改用 Markstream React 渲染；要回到现有 marked + Shiki 路径：`localStorage.setItem('oc:markstream-react','0')` 后刷新。用户/工具 Markdown、Used 折叠和列表引擎不受影响。
+
+## [1.19.7-beta.6] - 2026-09-06
+
+### 会话
+
+- Markstream 仍默认渲染助手正文，但关掉文档内节点虚拟化（`max-live-nodes=0`，同时关闭 batch / smooth / defer），只留 TanStack 管会话列表高度。关闭 Markstream：`localStorage.setItem('oc:markstream-react','0')` 后刷新。
+
+## [1.19.7-beta.5] - 2026-09-05
+
+### 会话
+
+- 修 Markstream 正文最后一段残留段距，避免「运行中」过程折叠上方多出一块空白。列表仍是 TanStack。关闭 Markstream：`localStorage.setItem('oc:markstream-react','0')` 后刷新。
+
+## [1.19.7-beta.4] - 2026-09-05
+
+### 会话
+
+- 实验默认打开 Markstream **文档内**节点虚拟化（`max-live-nodes=320` / live-node buffer），不是会话列表虚拟化。列表仍是 TanStack（Legend 仍需 `oc:legend-timeline=1`）。关闭 Markstream：`localStorage.setItem('oc:markstream-react','0')` 后刷新。
+
+## [1.19.7-beta.3] - 2026-09-05
+
+### 会话
+
+- 实验分支默认用 Markstream React 渲染助手正文（含流式）。要回到现有 marked + Shiki 路径：`localStorage.setItem('oc:markstream-react','0')` 后刷新。用户/工具 Markdown、Used 折叠和列表引擎不受影响。
+- 重发默认开启实验（1.19.7-beta.2 因 macOS 签名失败停留在 Draft）。
+
+## [1.19.7-beta.2] - 2026-09-05
+
+### 会话
+
+- 实验分支默认用 Markstream React 渲染助手正文（含流式）。要回到现有 marked + Shiki 路径：`localStorage.setItem('oc:markstream-react','0')` 后刷新。用户/工具 Markdown、Used 折叠和列表引擎不受影响。
+
+## [1.19.7-beta.1] - 2026-09-05
+
+### 会话
+
+- 实验：在控制台执行 `localStorage.setItem('oc:markstream-react','1')` 后刷新，助手正文（含流式）可切到 Markstream React 渲染；默认仍是现有 marked + Shiki 路径。用户/工具 Markdown、Used 折叠和列表引擎不受影响。
 
 ## [1.19.6] - 2026-09-05
 

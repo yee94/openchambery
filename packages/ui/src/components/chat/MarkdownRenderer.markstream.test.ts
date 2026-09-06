@@ -29,12 +29,26 @@ describe('markstream-react trial path', () => {
     expect(source).toContain('preloadMarkstreamRenderer()');
   });
 
-  test('Markstream host keeps markdown-ready and in-document node virtualization', () => {
+  test('Markstream host keeps markdown-ready and turns off in-bubble node virtualization', () => {
     const source = readFileSync(join(here, 'MarkstreamRendererImpl.tsx'), 'utf8');
+    const knobs = readFileSync(join(here, 'markstream/markstreamPerformance.ts'), 'utf8');
     expect(source).toContain('MARKSTREAM_CHAT_STREAM_PERFORMANCE');
     expect(source).toContain('data-markdown-ready="true"');
-    expect(source).toContain('data-oc-markstream-virtual="nodes"');
-    expect(source).not.toContain('maxLiveNodes={0}');
+    expect(source).toContain('data-oc-markstream-virtual="off"');
+    expect(knobs).toContain('maxLiveNodes: 0');
+    expect(knobs).toContain('batchRendering: false');
+    expect(knobs).toContain('smoothStreaming: false');
+  });
+
+  test('Markstream host CSS contains images to the OpenChamber max-width contract', () => {
+    const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
+    const decorate = readFileSync(join(here, 'markdown/decorate.ts'), 'utf8');
+    expect(decorate).toContain("'max-w-full'");
+    expect(theme).toContain('.image-node__img');
+    expect(theme).toContain('max-width: 100%');
+    expect(theme).toContain('height: auto');
+    expect(theme).toContain('object-fit: contain');
+    expect(theme).toMatch(/\.image-node__img \{[\s\S]*max-width: 100%/);
   });
 
   test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {

@@ -82,7 +82,7 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
       data-markdown-ready="true"
       data-markdown-hydration="ready"
       data-oc-markdown-engine="markstream"
-      data-oc-markstream-virtual="nodes"
+      data-oc-markstream-virtual="off"
     >
       <MarkdownRender
         content={content}
