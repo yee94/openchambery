@@ -23,6 +23,12 @@ export type LynxGitStatusResult =
       entries: LynxGitChangeEntry[];
       /** Cap `GitStatus.diffStats` — path → +/- counts for ChangeRow chips. */
       diffStats: Record<string, LynxGitDiffStat>;
+      /** Cap `GitStatus.ahead` — commits ahead of tracking (for pull-if-behind / push). */
+      ahead: number;
+      /** Cap `GitStatus.behind` — commits behind tracking (triggers Cap pull before push). */
+      behind: number;
+      /** Cap `GitStatus.tracking` e.g. `origin/main`. */
+      tracking: string | null;
     }
   | { status: 'no-runtime' }
   | { status: 'no-directory' }
@@ -79,6 +85,32 @@ const parseDiffStats = (raw: unknown): Record<string, LynxGitDiffStat> => {
   return out;
 };
 
+
+const parseNonNegInt = (value: unknown): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+  if (typeof value === 'string' && value.trim()) {
+    const n = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(n)) return Math.max(0, n);
+  }
+  return 0;
+};
+
+/** Cap status ahead/behind/tracking — used by commit→push pull-if-behind. */
+export const parseLynxGitSyncCounts = (payload: Record<string, unknown>): {
+  ahead: number;
+  behind: number;
+  tracking: string | null;
+} => {
+  const tracking = typeof payload.tracking === 'string' && payload.tracking.trim()
+    ? payload.tracking.trim()
+    : null;
+  return {
+    ahead: parseNonNegInt(payload.ahead),
+    behind: parseNonNegInt(payload.behind),
+    tracking,
+  };
+};
+
 /** Cap `GET /api/git/status?directory=` (gitApiHttp). */
 export const loadLynxGitStatus = async (
   runtimeFetch: LynxRuntimeFetch | null | undefined,
@@ -129,7 +161,17 @@ export const loadLynxGitStatus = async (
       }
     }
     const diffStats = parseDiffStats(payload.diffStats);
-    return { status: 'ok', directory: trimmed, branch, entries, diffStats };
+    const syncCounts = parseLynxGitSyncCounts(payload);
+    return {
+      status: 'ok',
+      directory: trimmed,
+      branch,
+      entries,
+      diffStats,
+      ahead: syncCounts.ahead,
+      behind: syncCounts.behind,
+      tracking: syncCounts.tracking,
+    };
   } catch (error) {
     return {
       status: 'failed',
@@ -315,7 +357,7 @@ export const syncLynxGit = async (
   runtimeFetch: LynxRuntimeFetch | null | undefined,
   directory: string | null | undefined,
   action: LynxGitSyncAction,
-  options?: { remote?: string; branch?: string; signal?: AbortSignal },
+  options?: { remote?: string; branch?: string; rebase?: boolean; signal?: AbortSignal },
 ): Promise<LynxGitMutationResult> => {
   if (!runtimeFetch) return { status: 'no-runtime' };
   const trimmedDir = directory?.trim();
@@ -323,6 +365,8 @@ export const syncLynxGit = async (
   const body: Record<string, unknown> = {};
   if (options?.remote) body.remote = options.remote;
   if (options?.branch) body.branch = options.branch;
+  // Cap MobileChangesSurface pull-if-behind passes rebase: true on gitPull.
+  if (action === 'pull' && options?.rebase === true) body.rebase = true;
   return postGitJson(runtimeFetch, `/api/git/${action}`, trimmedDir, body, options);
 };
 
@@ -604,9 +648,9 @@ export const generateLynxCommitMessage = async (
 };
 
 /**
- * Cap MobileChangesSurface `handleCommit({ pushAfter: true })` spirit —
- * commit then push. Cap's fetch/pull-if-behind dance needs ahead/behind from
- * status (not yet parsed on Lynx); this combined path is commit → push only.
+ * Cap MobileChangesSurface `handleCommit({ pushAfter: true })` —
+ * commit → fetch → pull-if-behind (rebase) → push-if-ahead.
+ * Uses Cap `GET /api/git/status` ahead/behind (no silent skip of pull).
  * Failure ≠ fake-success (stops after first failed step).
  */
 export const commitAndPushLynxGitChanges = async (
@@ -617,9 +661,63 @@ export const commitAndPushLynxGitChanges = async (
 ): Promise<LynxGitMutationResult> => {
   const committed = await commitLynxGitChanges(runtimeFetch, directory, message, options);
   if (committed.status !== 'ok') return committed;
-  return syncLynxGit(runtimeFetch, directory, 'push', {
-    remote: options?.remote,
-    branch: options?.branch,
+
+  let remote = options?.remote?.trim() || undefined;
+  let branch = options?.branch?.trim() || undefined;
+
+  const fetched = await syncLynxGit(runtimeFetch, directory, 'fetch', {
+    remote,
+    branch,
     signal: options?.signal,
   });
+  if (fetched.status !== 'ok') return fetched;
+
+  const afterFetch = await loadLynxGitStatus(runtimeFetch, directory, {
+    signal: options?.signal,
+  });
+  if (afterFetch.status === 'no-runtime' || afterFetch.status === 'no-directory') {
+    return afterFetch;
+  }
+  if (afterFetch.status !== 'ok') {
+    return { status: 'failed', error: afterFetch.error, httpStatus: afterFetch.httpStatus };
+  }
+
+  // Cap: trackingRemoteName from status.tracking, else caller remote.
+  if (!remote && afterFetch.tracking) {
+    remote = afterFetch.tracking.split('/')[0] || undefined;
+  }
+  if (!branch && remote && afterFetch.tracking?.startsWith(`${remote}/`)) {
+    branch = afterFetch.tracking.slice(remote.length + 1) || undefined;
+  }
+
+  if (afterFetch.behind > 0) {
+    const pulled = await syncLynxGit(runtimeFetch, directory, 'pull', {
+      remote,
+      branch,
+      rebase: true,
+      signal: options?.signal,
+    });
+    if (pulled.status !== 'ok') return pulled;
+  }
+
+  const afterPull = await loadLynxGitStatus(runtimeFetch, directory, {
+    signal: options?.signal,
+  });
+  if (afterPull.status === 'no-runtime' || afterPull.status === 'no-directory') {
+    return afterPull;
+  }
+  if (afterPull.status !== 'ok') {
+    return { status: 'failed', error: afterPull.error, httpStatus: afterPull.httpStatus };
+  }
+
+  if (afterPull.ahead > 0) {
+    return syncLynxGit(runtimeFetch, directory, 'push', {
+      remote,
+      branch,
+      signal: options?.signal,
+    });
+  }
+
+  // Cap: nothing to push after pull (already up to date).
+  return { status: 'ok' };
 };

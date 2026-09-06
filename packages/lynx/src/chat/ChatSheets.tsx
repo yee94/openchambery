@@ -21,6 +21,11 @@ import {
   type LynxGitDiffStat,
   type LynxGitSyncAction,
 } from './changesSurface';
+import {
+  requestLynxRevertConfirm,
+  resolveLynxRevertConfirm,
+  type LynxRevertConfirmRequest,
+} from './revertConfirm';
 import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
 import { isLynxHtmlPath, planLynxHtmlPreview } from './htmlPreview';
 import {
@@ -39,7 +44,7 @@ export type ChatSheetProps = {
   directory: string | null;
   runtimeFetch: LynxRuntimeFetch | null;
   onBack: () => void;
-  /** Optional host for Changes stage/unstage GlassChrome searchChip (outside transcript). */
+  /** Optional host for Changes stage/unstage/revert GlassChrome searchChip (outside transcript). */
   host?: LynxHostGlobalProps | null;
   fullPageAutoGlassSkin?: boolean;
 };
@@ -277,6 +282,8 @@ function ChangesSheetBody({
   const [actionNote, setActionNote] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
+  /** Cap ChangesPanel Dialog spirit — confirm before destructive revert. */
+  const [pendingRevert, setPendingRevert] = useState<LynxRevertConfirmRequest | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -428,14 +435,24 @@ function ChangesSheetBody({
     setActionNote(result.error.message);
   };
 
-  const runRevert = async (entry: LynxGitChangeEntry) => {
+  const askRevert = (entry: LynxGitChangeEntry) => {
+    if (actionBusy) return;
+    const next = requestLynxRevertConfirm(entry.path);
+    if (next) setPendingRevert(next);
+  };
+
+  const dismissRevertConfirm = () => {
+    setPendingRevert(resolveLynxRevertConfirm(pendingRevert, 'cancel').pending);
+  };
+
+  const runRevert = async (path: string) => {
     setActionBusy(true);
     setActionNote(null);
-    const result = await revertLynxGitFile(runtimeFetch, directory, entry.path);
+    const result = await revertLynxGitFile(runtimeFetch, directory, path);
     setActionBusy(false);
     if (result.status === 'ok') {
       setActionNote(lynxT(locale, 'lynx.chat.sheet.changes.revertOk'));
-      if (diffEntry?.path === entry.path) {
+      if (diffEntry?.path === path) {
         setDiffEntry(null);
         setDiffPlan(null);
         setDiffNote(null);
@@ -452,6 +469,14 @@ function ChangesSheetBody({
       return;
     }
     setActionNote(result.error.message);
+  };
+
+  const confirmRevert = () => {
+    const resolved = resolveLynxRevertConfirm(pendingRevert, 'confirm');
+    setPendingRevert(resolved.pending);
+    if (resolved.shouldRevert && resolved.path) {
+      void runRevert(resolved.path);
+    }
   };
 
   const runSync = async (action: LynxGitSyncAction) => {
@@ -671,9 +696,11 @@ function ChangesSheetBody({
                 </LynxView>
               ) : null}
             </LynxView>
-            <ActionChip
+            <RevertGlassChip
               label={lynxT(locale, 'lynx.chat.sheet.changes.revert')}
-              onTap={() => { if (!actionBusy) void runRevert(entry); }}
+              host={host}
+              fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+              onTap={() => { askRevert(entry); }}
             />
             <StageGlassChip
               symbol={entry.staged ? '-' : '+'}
@@ -688,6 +715,59 @@ function ChangesSheetBody({
           );
         })
       )}
+      {pendingRevert ? (
+        <LynxView
+          style={{
+            marginTop: '16px',
+            padding: '16px',
+            borderRadius: '12px',
+            backgroundColor: cssVar('surface.elevated'),
+          }}
+          accessibility-label={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
+        >
+          <LynxText
+            style={{
+              color: cssVar('surface.foreground'),
+              fontSize: '15px',
+              fontWeight: '700',
+              marginBottom: '8px',
+            }}
+          >
+            {lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
+          </LynxText>
+          <LynxText
+            style={{
+              color: cssVar('surface.mutedForeground'),
+              fontSize: '13px',
+              marginBottom: '4px',
+            }}
+          >
+            {lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmDescription')}
+          </LynxText>
+          <LynxText
+            style={{
+              color: cssVar('surface.foreground'),
+              fontSize: '12px',
+              marginBottom: '12px',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            }}
+          >
+            {pendingRevert.path}
+          </LynxText>
+          <LynxView style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            <ActionChip
+              label={lynxT(locale, 'lynx.chat.sheet.changes.cancel')}
+              onTap={() => { if (!actionBusy) dismissRevertConfirm(); }}
+            />
+            <ActionChip
+              label={actionBusy
+                ? lynxT(locale, 'lynx.chat.sheet.changes.reverting')
+                : lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmAction')}
+              onTap={() => { if (!actionBusy) confirmRevert(); }}
+            />
+          </LynxView>
+        </LynxView>
+      ) : null}
     </LynxScrollView>
   );
 }
@@ -754,6 +834,77 @@ function StageGlassChip({
     width: `${size}px`,
     height: `${size}px`,
     borderRadius: '4px', // Cap action is rounded (not full pill)
+    marginLeft: `${LYNX_CHANGE_ROW_SPACING.chipMarginLeftPx}px`,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+
+  if (!host) {
+    return (
+      <LynxView style={{ ...chipStyle, backgroundColor: cssVar('surface.elevated') }}>
+        {inner}
+      </LynxView>
+    );
+  }
+
+  return (
+    <GlassChrome
+      surface="searchChip"
+      host={host}
+      fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+      style={chipStyle}
+      accessibilityLabel={label}
+    >
+      {inner}
+    </GlassChrome>
+  );
+}
+
+/**
+ * Cap ChangeRow revert control — GlassChrome `searchChip` size-6 like stage +/−
+ * (arrow-go-back spirit via ↩), not plain ActionChip text.
+ */
+function RevertGlassChip({
+  label,
+  host,
+  fullPageAutoGlassSkin,
+  onTap,
+}: {
+  label: string;
+  host: LynxHostGlobalProps | null;
+  fullPageAutoGlassSkin: boolean;
+  onTap: () => void;
+}) {
+  const size = LYNX_CHANGE_ROW_SPACING.actionSizePx;
+  const inner = (
+    <LynxView
+      bindtap={onTap}
+      accessibility-role="button"
+      accessibility-label={label}
+      style={{
+        width: '100%',
+        height: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <LynxText
+        style={{
+          color: cssVar('surface.mutedForeground'),
+          fontWeight: '700',
+          fontSize: '14px',
+        }}
+      >
+        ↩
+      </LynxText>
+    </LynxView>
+  );
+
+  const chipStyle: Record<string, string | number | undefined> = {
+    width: `${size}px`,
+    height: `${size}px`,
+    borderRadius: '4px',
     marginLeft: `${LYNX_CHANGE_ROW_SPACING.chipMarginLeftPx}px`,
     flexShrink: 0,
     alignItems: 'center',

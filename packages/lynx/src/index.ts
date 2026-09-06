@@ -193,12 +193,18 @@ export {
   commitLynxGitChanges,
   commitAndPushLynxGitChanges,
   generateLynxCommitMessage,
+  parseLynxGitSyncCounts,
   revertLynxGitFile,
   revertLynxGitFiles,
   syncLynxGit,
   stageLynxGitFiles,
   unstageLynxGitFiles,
 } from './chat/changesSurface';
+export {
+  requestLynxRevertConfirm,
+  resolveLynxRevertConfirm,
+} from './chat/revertConfirm';
+export type { LynxRevertConfirmDecision, LynxRevertConfirmRequest } from './chat/revertConfirm';
 export { listLynxDirectory, readLynxFile } from './chat/filesSurface';
 export {
   loadLynxProviderAuthMethods,

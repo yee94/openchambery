@@ -40,6 +40,29 @@ describe('loadLynxGitStatus', () => {
       { path: 'c.ts', status: 'untracked', staged: false },
     ]);
     expect(result.diffStats).toEqual({});
+    expect(result.ahead).toBe(0);
+    expect(result.behind).toBe(0);
+    expect(result.tracking).toBeNull();
+  });
+
+  test('parses Cap ahead/behind/tracking for pull-if-behind', async () => {
+    const runtimeFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        branch: 'main',
+        tracking: 'origin/main',
+        ahead: 2,
+        behind: 1,
+        stagedFiles: [],
+      }),
+    });
+    const result = await loadLynxGitStatus(runtimeFetch, '/repo');
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.ahead).toBe(2);
+    expect(result.behind).toBe(1);
+    expect(result.tracking).toBe('origin/main');
   });
 
   test('parses Cap diffStats for ChangeRow +/- chips', async () => {
@@ -187,6 +210,7 @@ describe('stageLynxGitFiles / unstageLynxGitFiles', () => {
 import {
   commitAndPushLynxGitChanges,
   generateLynxCommitMessage,
+  parseLynxGitSyncCounts,
   revertLynxGitFile,
   revertLynxGitFiles,
 } from './changesSurface';
@@ -283,12 +307,38 @@ describe('generateLynxCommitMessage', () => {
   });
 });
 
+describe('parseLynxGitSyncCounts', () => {
+  test('reads Cap ahead/behind/tracking; invalid → 0 / null', () => {
+    expect(parseLynxGitSyncCounts({
+      ahead: 3,
+      behind: '2',
+      tracking: 'origin/feat',
+    })).toEqual({ ahead: 3, behind: 2, tracking: 'origin/feat' });
+    expect(parseLynxGitSyncCounts({})).toEqual({ ahead: 0, behind: 0, tracking: null });
+  });
+});
+
 describe('commitAndPushLynxGitChanges', () => {
-  test('commits then pushes; stops on commit failure', async () => {
-    const paths: string[] = [];
-    const runtimeFetch = async (path: string) => {
-      paths.push(path);
+  test('Cap pull-if-behind: commit → fetch → pull(rebase) → push when behind', async () => {
+    const calls: Array<{ path: string; body?: string }> = [];
+    let statusRound = 0;
+    const runtimeFetch = async (path: string, init?: { body?: string }) => {
+      calls.push({ path, body: init?.body });
       if (path.includes('/api/git/commit')) {
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      }
+      if (path.includes('/api/git/fetch')) {
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      }
+      if (path.includes('/api/git/status')) {
+        statusRound += 1;
+        // after fetch: behind; after pull: ahead only
+        const payload = statusRound === 1
+          ? { branch: 'main', tracking: 'origin/main', ahead: 1, behind: 2, stagedFiles: [] }
+          : { branch: 'main', tracking: 'origin/main', ahead: 1, behind: 0, stagedFiles: [] };
+        return { ok: true, status: 200, json: async () => payload };
+      }
+      if (path.includes('/api/git/pull')) {
         return { ok: true, status: 200, json: async () => ({ success: true }) };
       }
       if (path.includes('/api/git/push')) {
@@ -297,16 +347,84 @@ describe('commitAndPushLynxGitChanges', () => {
       return { ok: false, status: 500, json: async () => ({}) };
     };
     expect(await commitAndPushLynxGitChanges(runtimeFetch, '/repo', 'feat: x')).toEqual({ status: 'ok' });
-    expect(paths.some((p) => p.includes('/api/git/commit'))).toBe(true);
-    expect(paths.some((p) => p.includes('/api/git/push'))).toBe(true);
+    const kinds = calls.map((c) => {
+      if (c.path.includes('/commit')) return 'commit';
+      if (c.path.includes('/fetch')) return 'fetch';
+      if (c.path.includes('/status')) return 'status';
+      if (c.path.includes('/pull')) return 'pull';
+      if (c.path.includes('/push')) return 'push';
+      return c.path;
+    });
+    expect(kinds).toEqual(['commit', 'fetch', 'status', 'pull', 'status', 'push']);
+    const pull = calls.find((c) => c.path.includes('/api/git/pull'));
+    expect(JSON.parse(pull!.body!)).toMatchObject({
+      remote: 'origin',
+      branch: 'main',
+      rebase: true,
+    });
+  });
 
-    const failCommit = async (path: string) => {
+  test('skips pull when not behind; still pushes when ahead', async () => {
+    const kinds: string[] = [];
+    const runtimeFetch = async (path: string) => {
+      if (path.includes('/api/git/commit')) { kinds.push('commit'); return { ok: true, status: 200, json: async () => ({}) }; }
+      if (path.includes('/api/git/fetch')) { kinds.push('fetch'); return { ok: true, status: 200, json: async () => ({}) }; }
+      if (path.includes('/api/git/status')) {
+        kinds.push('status');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ branch: 'main', tracking: 'origin/main', ahead: 1, behind: 0, stagedFiles: [] }),
+        };
+      }
+      if (path.includes('/api/git/pull')) { kinds.push('pull'); return { ok: true, status: 200, json: async () => ({}) }; }
+      if (path.includes('/api/git/push')) { kinds.push('push'); return { ok: true, status: 200, json: async () => ({}) }; }
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    expect(await commitAndPushLynxGitChanges(runtimeFetch, '/repo', 'feat: x')).toEqual({ status: 'ok' });
+    // Cap always re-reads status before the ahead check (even when pull skipped).
+    expect(kinds).toEqual(['commit', 'fetch', 'status', 'status', 'push']);
+  });
+
+  test('stops on commit failure; does not fetch/pull/push', async () => {
+    const kinds: string[] = [];
+    const runtimeFetch = async (path: string) => {
       if (path.includes('/api/git/commit')) {
+        kinds.push('commit');
         return { ok: false, status: 500, json: async () => ({ error: 'no' }) };
       }
+      kinds.push(path);
       return { ok: true, status: 200, json: async () => ({}) };
     };
-    const failed = await commitAndPushLynxGitChanges(failCommit, '/repo', 'feat: x');
+    const failed = await commitAndPushLynxGitChanges(runtimeFetch, '/repo', 'feat: x');
     expect(failed.status).toBe('failed');
+    expect(kinds).toEqual(['commit']);
+  });
+
+  test('pull failure stops before push (no silent skip)', async () => {
+    const kinds: string[] = [];
+    let statusRound = 0;
+    const runtimeFetch = async (path: string) => {
+      if (path.includes('/api/git/commit')) { kinds.push('commit'); return { ok: true, status: 200, json: async () => ({}) }; }
+      if (path.includes('/api/git/fetch')) { kinds.push('fetch'); return { ok: true, status: 200, json: async () => ({}) }; }
+      if (path.includes('/api/git/status')) {
+        kinds.push('status');
+        statusRound += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ branch: 'main', tracking: 'origin/main', ahead: 1, behind: 1, stagedFiles: [] }),
+        };
+      }
+      if (path.includes('/api/git/pull')) {
+        kinds.push('pull');
+        return { ok: false, status: 500, json: async () => ({ error: 'conflict' }) };
+      }
+      if (path.includes('/api/git/push')) { kinds.push('push'); return { ok: true, status: 200, json: async () => ({}) }; }
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    const failed = await commitAndPushLynxGitChanges(runtimeFetch, '/repo', 'feat: x');
+    expect(failed.status).toBe('failed');
+    expect(kinds).toEqual(['commit', 'fetch', 'status', 'pull']);
   });
 });
