@@ -1,4 +1,5 @@
 import { lynxT, tabLabel } from '../../i18n/catalog';
+import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import { cssVar } from '../../theme/tokens';
 
 export function ProjectsHome({
@@ -9,14 +10,14 @@ export function ProjectsHome({
   onOpenStubChat?: () => void;
 }) {
   return (
-    <scroll-view
+    <LynxScrollView
       style={{
         flexGrow: 1,
         padding: '24px 16px',
         backgroundColor: cssVar('surface.background'),
       }}
     >
-      <text
+      <LynxText
         style={{
           fontSize: '28px',
           fontWeight: '700',
@@ -25,21 +26,21 @@ export function ProjectsHome({
         }}
       >
         {tabLabel(locale, 'projects')}
-      </text>
-      <text style={{ color: cssVar('surface.mutedForeground'), lineHeight: '22px' }}>
+      </LynxText>
+      <LynxText style={{ color: cssVar('surface.mutedForeground'), lineHeight: '22px' }}>
         {lynxT(locale, 'lynx.shell.stub.body')}
-      </text>
+      </LynxText>
       {onOpenStubChat ? (
-        <view
+        <LynxView
           bindtap={onOpenStubChat}
           accessibility-label={lynxT(locale, 'lynx.shell.stub.openChat')}
           style={{ marginTop: '24px' }}
         >
-          <text style={{ color: cssVar('primary.base') }}>
+          <LynxText style={{ color: cssVar('primary.base') }}>
             {lynxT(locale, 'lynx.shell.stub.openChat')}
-          </text>
-        </view>
+          </LynxText>
+        </LynxView>
       ) : null}
-    </scroll-view>
+    </LynxScrollView>
   );
 }

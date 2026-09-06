@@ -1,5 +1,6 @@
 import type { LynxMessageKey } from '../../i18n/catalog';
 import { lynxT } from '../../i18n/catalog';
+import { LynxScrollView, LynxText } from '../../lynx-elements';
 import { cssVar } from '../../theme/tokens';
 
 export type StubPageProps = {
@@ -11,14 +12,14 @@ export type StubPageProps = {
 
 export function StubPage({ locale, title, bodyKey, extra }: StubPageProps) {
   return (
-    <scroll-view
+    <LynxScrollView
       style={{
         flexGrow: 1,
         padding: '24px 16px',
         backgroundColor: cssVar('surface.background'),
       }}
     >
-      <text
+      <LynxText
         style={{
           fontSize: '28px',
           fontWeight: '700',
@@ -27,15 +28,15 @@ export function StubPage({ locale, title, bodyKey, extra }: StubPageProps) {
         }}
       >
         {title}
-      </text>
-      <text style={{ color: cssVar('surface.mutedForeground'), lineHeight: '22px' }}>
+      </LynxText>
+      <LynxText style={{ color: cssVar('surface.mutedForeground'), lineHeight: '22px' }}>
         {lynxT(locale, bodyKey)}
-      </text>
+      </LynxText>
       {extra ? (
-        <text style={{ color: cssVar('surface.mutedForeground'), marginTop: '16px' }}>
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), marginTop: '16px' }}>
           {extra}
-        </text>
+        </LynxText>
       ) : null}
-    </scroll-view>
+    </LynxScrollView>
   );
 }

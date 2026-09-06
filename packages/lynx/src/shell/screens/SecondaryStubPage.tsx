@@ -1,4 +1,5 @@
 import { lynxT } from '../../i18n/catalog';
+import { LynxText, LynxView } from '../../lynx-elements';
 import { cssVar } from '../../theme/tokens';
 import type { LynxSecondaryKind } from '../navigation';
 
@@ -26,18 +27,18 @@ export function SecondaryStubPage({
   onBack: () => void;
 }) {
   return (
-    <view
+    <LynxView
       style={{
         flexGrow: 1,
         backgroundColor: cssVar('surface.background'),
       }}
       accessibility-label={lynxT(locale, 'mobile.nav.secondaryPageAria')}
     >
-      <view style={{ flexDirection: 'row', padding: '12px 16px', alignItems: 'center' }}>
-        <view bindtap={onBack} accessibility-label={lynxT(locale, 'lynx.shell.back')}>
-          <text style={{ color: cssVar('primary.base') }}>{lynxT(locale, 'lynx.shell.back')}</text>
-        </view>
-        <text
+      <LynxView style={{ flexDirection: 'row', padding: '12px 16px', alignItems: 'center' }}>
+        <LynxView bindtap={onBack} accessibility-label={lynxT(locale, 'lynx.shell.back')}>
+          <LynxText style={{ color: cssVar('primary.base') }}>{lynxT(locale, 'lynx.shell.back')}</LynxText>
+        </LynxView>
+        <LynxText
           style={{
             marginLeft: '12px',
             color: cssVar('surface.foreground'),
@@ -45,11 +46,11 @@ export function SecondaryStubPage({
           }}
         >
           {lynxT(locale, TITLE_KEY[kind])}
-        </text>
-      </view>
-      <text style={{ padding: '16px', color: cssVar('surface.mutedForeground') }}>
+        </LynxText>
+      </LynxView>
+      <LynxText style={{ padding: '16px', color: cssVar('surface.mutedForeground') }}>
         {lynxT(locale, BODY_KEY[kind])}
-      </text>
-    </view>
+      </LynxText>
+    </LynxView>
   );
 }

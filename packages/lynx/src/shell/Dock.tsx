@@ -1,6 +1,7 @@
 import { GlassChrome } from '../glass/GlassChrome';
 import type { LynxHostGlobalProps } from '../host/embedding';
 import { lynxT, tabLabel } from '../i18n/catalog';
+import { LynxText, LynxView } from '../lynx-elements';
 import { cssVar } from '../theme/tokens';
 import { LYNX_TABS, type LynxTabId } from './tabs';
 
@@ -38,7 +39,7 @@ export function LynxDock({ host, activeTab, visible, onTabSelected }: LynxDockPr
         const selected = tab.id === activeTab;
         const label = tabLabel(host.locale, tab.id);
         return (
-          <view
+          <LynxView
             key={tab.id}
             id={`lynx-tab-${tab.id}`}
             bindtap={() => onTabSelected(tab.id)}
@@ -51,8 +52,8 @@ export function LynxDock({ host, activeTab, visible, onTabSelected }: LynxDockPr
               color: selected ? cssVar('primary.base') : cssVar('surface.mutedForeground'),
             }}
           >
-            <text>{label}</text>
-          </view>
+            <LynxText>{label}</LynxText>
+          </LynxView>
         );
       })}
     </GlassChrome>

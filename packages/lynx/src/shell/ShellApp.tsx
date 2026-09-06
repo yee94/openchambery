@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { shouldPaintLynxDock, type LynxHostGlobalProps } from '../host/embedding';
+import { LynxPage, LynxView } from '../lynx-elements';
 import { cssVar } from '../theme/tokens';
 import { LynxDock } from './Dock';
 import {
@@ -72,14 +73,14 @@ export function LynxShellApp({ host, initialState = INITIAL_LYNX_NAVIGATION_STAT
   };
 
   return (
-    <page
+    <LynxPage
       auto-height
       style={{
         flexGrow: 1,
         backgroundColor: cssVar('surface.background'),
       }}
     >
-      <view style={{ flexGrow: 1 }}>
+      <LynxView style={{ flexGrow: 1 }}>
         {navigation.secondary ? (
           <SecondaryStubPage
             locale={host.locale}
@@ -93,13 +94,13 @@ export function LynxShellApp({ host, initialState = INITIAL_LYNX_NAVIGATION_STAT
             onOpenStubChat={openStubChat}
           />
         )}
-      </view>
+      </LynxView>
       <LynxDock
         host={host}
         activeTab={navigation.activeTab}
         visible={dockVisible}
         onTabSelected={selectTab}
       />
-    </page>
+    </LynxPage>
   );
 }

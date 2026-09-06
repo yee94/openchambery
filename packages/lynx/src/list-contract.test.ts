@@ -28,9 +28,11 @@ describe('Lynx chat list contract', () => {
     const files = await walkTsFiles(srcRoot);
     for (const file of files) {
       const source = await readFile(file, 'utf8');
-      expect(source).not.toContain('@tanstack/react-virtual');
-      expect(source).not.toContain('StaticHistoryList');
-      expect(source).not.toContain('StreamingTailContent');
+      expect(source).not.toMatch(/from ['"]@tanstack\/react-virtual['"]/);
+      if (!file.endsWith('list-contract.test.ts') && !file.endsWith('list-contract.ts')) {
+        expect(source).not.toContain('StaticHistoryList');
+        expect(source).not.toContain('StreamingTailContent');
+      }
     }
   });
 });

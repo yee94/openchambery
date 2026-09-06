@@ -1,17 +1,18 @@
 import { lynxT, tabLabel } from '../../i18n/catalog';
+import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import { LYNX_MOBILE_SETTINGS_PAGE_SLUGS } from '../../settings/slugs';
 import { cssVar } from '../../theme/tokens';
 
 export function SettingsTab({ locale }: { locale: string }) {
   return (
-    <scroll-view
+    <LynxScrollView
       style={{
         flexGrow: 1,
         padding: '24px 16px',
         backgroundColor: cssVar('surface.background'),
       }}
     >
-      <text
+      <LynxText
         style={{
           fontSize: '28px',
           fontWeight: '700',
@@ -20,20 +21,20 @@ export function SettingsTab({ locale }: { locale: string }) {
         }}
       >
         {tabLabel(locale, 'settings')}
-      </text>
-      <text style={{ color: cssVar('surface.mutedForeground'), marginBottom: '16px' }}>
+      </LynxText>
+      <LynxText style={{ color: cssVar('surface.mutedForeground'), marginBottom: '16px' }}>
         {lynxT(locale, 'lynx.shell.settings.stub')}
-      </text>
+      </LynxText>
       {LYNX_MOBILE_SETTINGS_PAGE_SLUGS.map((slug) => (
-        <view
+        <LynxView
           key={slug}
           style={{
             padding: '12px 0',
           }}
         >
-          <text style={{ color: cssVar('surface.foreground') }}>{slug}</text>
-        </view>
+          <LynxText style={{ color: cssVar('surface.foreground') }}>{slug}</LynxText>
+        </LynxView>
       ))}
-    </scroll-view>
+    </LynxScrollView>
   );
 }

@@ -5,6 +5,7 @@ import {
   type GlassSurfaceKind,
 } from './blurView';
 import type { LynxHostGlobalProps } from '../host/embedding';
+import { LynxBlurView, LynxView } from '../lynx-elements';
 import { themeVariantForId } from '../theme/tokens';
 
 export type GlassChromeProps = {
@@ -34,14 +35,14 @@ export function GlassChrome({
 
   if (!attrs) {
     return (
-      <view style={style} accessibility-label={accessibilityLabel}>
+      <LynxView style={style} accessibility-label={accessibilityLabel}>
         {children}
-      </view>
+      </LynxView>
     );
   }
 
   return (
-    <blur-view
+    <LynxBlurView
       blur-effect={attrs['blur-effect']}
       glass-style={attrs['glass-style']}
       glass-interactive={attrs['glass-interactive']}
@@ -54,6 +55,6 @@ export function GlassChrome({
       accessibility-label={accessibilityLabel}
     >
       {children}
-    </blur-view>
+    </LynxBlurView>
   );
 }

@@ -84,7 +84,7 @@ export function isGlassChromeSurface(surface: string): surface is GlassSurfaceKi
     || surface === 'composerCard';
 }
 
-export function mustNotWrapWithGlass(surface: ForbiddenGlassSurface): true {
+export function mustNotWrapWithGlass(surface: ForbiddenGlassSurface): boolean {
   return surface === 'transcript' || surface === 'settingsRow';
 }
 
