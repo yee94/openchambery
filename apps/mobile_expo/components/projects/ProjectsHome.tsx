@@ -20,26 +20,32 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HighlightedText } from '@/components/projects/HighlightedText';
+import {
+  NewProjectSheet,
+  NewWorktreeSheet,
+  ProjectEditSheet,
+  ProjectOverflowSheet,
+  removeWorktreeAction,
+  type ProjectOverflowTarget,
+} from '@/components/projects/ProjectsActionSheets';
 import { Text, View, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useConnection } from '@/context/ConnectionContext';
-import { useSessionHome } from '@/hooks/useSessionHome';
+import { useProjectsHome } from '@/hooks/useProjectsHome';
 import { t } from '@/lib/i18n';
 import {
-  DRAFT_ROUTE_ID,
-  filterHomeCatalogForSearch,
-  type HomeDirectoryGroup,
-  type HomeSessionRow,
-  projectLabelFromDirectory,
-} from '@/lib/sessionHomeModel';
+  filterProjectsHomeForSearch,
+  toHomeSessionRow,
+  type ProjectsHomeProjectItem,
+  type ProjectsHomeWorktreeGroup,
+} from '@/lib/projectsHomeModel';
+import { DRAFT_ROUTE_ID, type HomeSessionRow } from '@/lib/sessionHomeModel';
 
 /** Cap MobileTabPageHeader collapse distance — layout height stays fixed. */
 const TITLE_COLLAPSE_DISTANCE = 48;
 /** Expanded title sits slightly below sticky chrome; spacer scrolls away natively. */
 const EXPAND_SHIFT = 10;
-const DEFAULT_VISIBLE_SESSIONS = 3;
-const SHOW_MORE_STEP = 7;
 const SHELL_ICON = 38;
 const SHELL_GLYPH = 32;
 const OVERFLOW_HIT = 36;
@@ -73,45 +79,6 @@ function sessionCountLabel(count: number): string {
   return count === 1
     ? t('mobile.sessions.project.sessionsSingle')
     : t('mobile.sessions.project.sessionsPlural', { count });
-}
-
-type BranchBucket = {
-  key: string;
-  label: string;
-  sessions: HomeSessionRow[];
-};
-
-/** Same-dir branches become rows inside one directory card — never separate cards. */
-function partitionDirectoryBranches(sessions: HomeSessionRow[]): {
-  main: HomeSessionRow[];
-  branches: BranchBucket[];
-} {
-  const byBranch = new Map<string, HomeSessionRow[]>();
-  for (const session of sessions) {
-    const key = session.branch?.trim() || '';
-    const list = byBranch.get(key);
-    if (list) list.push(session);
-    else byBranch.set(key, [session]);
-  }
-  if (byBranch.size <= 1) {
-    return { main: sessions, branches: [] };
-  }
-  let mainKey = '';
-  let mainSize = -1;
-  for (const [key, list] of byBranch) {
-    if (list.length > mainSize || (list.length === mainSize && key === '')) {
-      mainKey = key;
-      mainSize = list.length;
-    }
-  }
-  const main = byBranch.get(mainKey) ?? [];
-  const branches: BranchBucket[] = [];
-  for (const [key, list] of byBranch) {
-    if (key === mainKey) continue;
-    branches.push({ key: key || '__default__', label: key || 'main', sessions: list });
-  }
-  branches.sort((a, b) => b.sessions[0]!.activityMs - a.sessions[0]!.activityMs);
-  return { main, branches };
 }
 
 function glassFill(dark: boolean): string {
@@ -198,6 +165,7 @@ function BranchRow({
   onToggle,
   muted,
   text,
+  onOpenActions,
 }: {
   label: string;
   count: number;
@@ -205,6 +173,7 @@ function BranchRow({
   onToggle: () => void;
   muted: string;
   text: string;
+  onOpenActions?: () => void;
 }) {
   return (
     <Pressable
@@ -221,9 +190,24 @@ function BranchRow({
         <Text style={[styles.branchMeta, { color: muted }]}>{sessionCountLabel(count)}</Text>
       </RNView>
       <Text style={[styles.chevron, { color: muted }]}>{expanded ? '▾' : '▸'}</Text>
-      <RNView style={styles.overflowHit}>
-        <Text style={[styles.overflowGlyph, { color: muted }]}>···</Text>
-      </RNView>
+      {onOpenActions ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.projects.menu.label')}
+          hitSlop={8}
+          onPress={(event) => {
+            event.stopPropagation?.();
+            onOpenActions();
+          }}
+          style={styles.overflowHit}
+        >
+          <Text style={[styles.overflowGlyph, { color: muted }]}>···</Text>
+        </Pressable>
+      ) : (
+        <RNView style={styles.overflowHit}>
+          <Text style={[styles.overflowGlyph, { color: muted }]}>···</Text>
+        </RNView>
+      )}
     </Pressable>
   );
 }
@@ -297,140 +281,116 @@ function ProjectCardShell({
   );
 }
 
-function DirectoryCard({
-  group,
+function ProjectCard({
+  project,
   query,
   onOpenSession,
+  onOpenActions,
+  onOpenWorktreeActions,
+  onToggle,
+  onToggleWorktree,
+  onShowMore,
+  onShowFewer,
   dark,
   muted,
   text,
   tint,
-  visibleByKey,
-  onShowMore,
-  expandedBranches,
-  onToggleBranch,
-  expanded,
-  onToggle,
 }: {
-  group: HomeDirectoryGroup;
+  project: ProjectsHomeProjectItem;
   query?: string;
   onOpenSession: (session: HomeSessionRow) => void;
+  onOpenActions: () => void;
+  onOpenWorktreeActions: (worktree: ProjectsHomeWorktreeGroup) => void;
+  onToggle: () => void;
+  onToggleWorktree: (bucketKey: string) => void;
+  onShowMore: (bucketKey: string) => void;
+  onShowFewer: (bucketKey: string) => void;
   dark: boolean;
   muted: string;
   text: string;
   tint: string;
-  visibleByKey: Record<string, number>;
-  onShowMore: (key: string) => void;
-  expandedBranches: Record<string, boolean>;
-  onToggleBranch: (key: string) => void;
-  expanded: boolean;
-  onToggle: () => void;
 }) {
-  const { main, branches } = useMemo(
-    () => partitionDirectoryBranches(group.sessions),
-    [group.sessions],
-  );
-  const latest = group.sessions[0]?.activityMs ?? 0;
-  const pathHint = formatPathHint(group.directory);
-  const activity = formatRelativeShort(latest);
-  const metaParts = [sessionCountLabel(group.sessions.length)];
-  if (activity) metaParts.push(activity);
+  const pathHint = formatPathHint(project.path);
+  const metaParts = [sessionCountLabel(project.sessionCount)];
+  if (project.activityLabel) metaParts.push(project.activityLabel);
   if (pathHint) metaParts.push(pathHint);
-
-  const mainKey = `${group.directory}::main`;
-  const visibleMain = visibleByKey[mainKey] ?? DEFAULT_VISIBLE_SESSIONS;
-  const shownMain = main.slice(0, visibleMain);
-  const hasMoreMain = main.length > visibleMain;
 
   return (
     <ProjectCardShell
-      title={group.label || projectLabelFromDirectory(group.directory)}
+      title={project.name}
       meta={metaParts.join(' · ')}
       iconGlyph="</>"
-      expanded={expanded}
+      expanded={project.expanded}
       onToggle={onToggle}
+      onOpenActions={onOpenActions}
       dark={dark}
       muted={muted}
       text={text}
       query={query}
     >
-      {group.sessions.length === 0 ? (
+      {project.worktrees.every((group) => group.sessionCount === 0) ? (
         <Text style={[styles.empty, { color: muted }]}>{t('mobile.sessions.emptyDirectory')}</Text>
       ) : (
-        <>
-          {shownMain.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              query={query}
-              onPress={onOpenSession}
-              tint={tint}
-              muted={muted}
-              text={text}
-              inset
-            />
-          ))}
-          {hasMoreMain ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => onShowMore(mainKey)}
-              style={styles.moreRow}
-            >
-              <Text style={[styles.moreLabel, { color: muted }]}>
-                {t('mobile.sessions.sidebar.group.showMore')}
-              </Text>
-              <Text style={[styles.chevron, { color: muted }]}>▸</Text>
-            </Pressable>
-          ) : null}
-
-          {branches.map((branch) => {
-            const branchKey = `${group.directory}::${branch.key}`;
-            const branchExpanded = expandedBranches[branchKey] ?? true;
-            const visible = visibleByKey[branchKey] ?? DEFAULT_VISIBLE_SESSIONS;
-            const shown = branch.sessions.slice(0, visible);
-            const hasMore = branch.sessions.length > visible;
-            return (
-              <RNView key={branchKey}>
-                <BranchRow
-                  label={branch.label}
-                  count={branch.sessions.length}
-                  expanded={branchExpanded}
-                  onToggle={() => onToggleBranch(branchKey)}
+        project.worktrees.map((group) => {
+          const body = (
+            <>
+              {group.sessions.map((session) => (
+                <SessionRow
+                  key={session.id}
+                  session={toHomeSessionRow(session)}
+                  query={query}
+                  onPress={onOpenSession}
+                  tint={tint}
                   muted={muted}
                   text={text}
+                  inset
                 />
-                {branchExpanded ? (
-                  <>
-                    {shown.map((session) => (
-                      <SessionRow
-                        key={session.id}
-                        session={session}
-                        query={query}
-                        onPress={onOpenSession}
-                        tint={tint}
-                        muted={muted}
-                        text={text}
-                        inset
-                      />
-                    ))}
-                    {hasMore ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => onShowMore(branchKey)}
-                        style={styles.moreRow}
-                      >
-                        <Text style={[styles.moreLabel, { color: muted }]}>
-                          {t('mobile.sessions.sidebar.group.showMore')}
-                        </Text>
-                        <Text style={[styles.chevron, { color: muted }]}>▸</Text>
-                      </Pressable>
-                    ) : null}
-                  </>
-                ) : null}
-              </RNView>
-            );
-          })}
-        </>
+              ))}
+              {group.hasMore ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => onShowMore(group.id)}
+                  style={styles.moreRow}
+                >
+                  <Text style={[styles.moreLabel, { color: muted }]}>
+                    {t('mobile.sessions.sidebar.group.showMore')}
+                  </Text>
+                  <Text style={[styles.chevron, { color: muted }]}>▸</Text>
+                </Pressable>
+              ) : null}
+              {group.canShowFewer ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => onShowFewer(group.id)}
+                  style={styles.moreRow}
+                >
+                  <Text style={[styles.moreLabel, { color: muted }]}>
+                    {t('mobile.sessions.sidebar.group.showFewer')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </>
+          );
+
+          if (group.kind === 'main') {
+            return <RNView key={group.id}>{body}</RNView>;
+          }
+
+          return (
+            <RNView key={group.id}>
+              <BranchRow
+                label={group.name}
+                count={group.sessionCount}
+                expanded={group.expanded}
+                onToggle={() => onToggleWorktree(group.id)}
+                muted={muted}
+                text={text}
+                onOpenActions={() => onOpenWorktreeActions(group)}
+              />
+              {group.expanded ? body : null}
+            </RNView>
+          );
+        })
       )}
     </ProjectCardShell>
   );
@@ -444,8 +404,22 @@ export function ProjectsHome() {
   const text = useThemeColor({}, 'text');
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { controller, statusLabel } = useConnection();
-  const { status, model, error, refresh } = useSessionHome({
+  const { controller, statusLabel, state } = useConnection();
+  const active = state.active;
+  const {
+    status,
+    model,
+    projects,
+    error,
+    refresh,
+    setProjectExpanded,
+    setWorktreeExpanded,
+    showMoreBucket,
+    showFewerBucket,
+    saveProjects,
+    refreshProjectWorktrees,
+    probeGitRepo,
+  } = useProjectsHome({
     untitledLabel: t('mobile.sessions.untitled'),
   });
 
@@ -454,9 +428,10 @@ export function ProjectsHome() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [pinnedExpanded, setPinnedExpanded] = useState(true);
-  const [expandedDirs, setExpandedDirs] = useState<Record<string, boolean>>({});
-  const [expandedBranches, setExpandedBranches] = useState<Record<string, boolean>>({});
-  const [visibleByKey, setVisibleByKey] = useState<Record<string, number>>({});
+  const [overflowTarget, setOverflowTarget] = useState<ProjectOverflowTarget>(null);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newWorktreeProject, setNewWorktreeProject] = useState<ProjectsHomeProjectItem | null>(null);
+  const [editProject, setEditProject] = useState<ProjectsHomeProjectItem | null>(null);
 
   const scrollY = useSharedValue(0);
   const headerChrome = Math.max(insets.top, 12) + 12 + GLASS_DISC;
@@ -464,7 +439,7 @@ export function ProjectsHome() {
 
   const searching = searchQuery.trim().length > 0;
   const filtered = useMemo(
-    () => (model ? filterHomeCatalogForSearch(model, searchQuery) : { sessions: [], directories: [] }),
+    () => (model ? filterProjectsHomeForSearch(model, searchQuery) : { sessions: [], projects: [] }),
     [model, searchQuery],
   );
 
@@ -479,8 +454,20 @@ export function ProjectsHome() {
 
   const openDraft = useCallback(() => {
     setMenuOpen(false);
+    setOverflowTarget(null);
     router.push(`/chat/${DRAFT_ROUTE_ID}`);
   }, [router]);
+
+  const openDraftForDirectory = useCallback(
+    (directory: string) => {
+      setOverflowTarget(null);
+      router.push({
+        pathname: `/chat/${DRAFT_ROUTE_ID}`,
+        params: { directory },
+      } as never);
+    },
+    [router],
+  );
 
   const openScan = useCallback(() => {
     setMenuOpen(false);
@@ -491,6 +478,11 @@ export function ProjectsHome() {
     setMenuOpen(false);
     controller.disconnectToOnboarding();
   }, [controller]);
+
+  const openNewProject = useCallback(() => {
+    setMenuOpen(false);
+    setNewProjectOpen(true);
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -544,35 +536,44 @@ export function ProjectsHome() {
   });
 
   const highlight = searching ? searchQuery.trim() : undefined;
-
-  const showMore = useCallback((key: string) => {
-    setVisibleByKey((prev) => ({
-      ...prev,
-      [key]: (prev[key] ?? DEFAULT_VISIBLE_SESSIONS) + SHOW_MORE_STEP,
-    }));
-  }, []);
-
-  const toggleDir = useCallback((directory: string) => {
-    setExpandedDirs((prev) => ({
-      ...prev,
-      [directory]: !(prev[directory] ?? true),
-    }));
-  }, []);
-
-  const toggleBranch = useCallback((key: string) => {
-    setExpandedBranches((prev) => ({
-      ...prev,
-      [key]: !(prev[key] ?? true),
-    }));
-  }, []);
-
-  const attentionSessions = model ? [...model.pinned, ...model.inProgress] : [];
+  const attentionSessions = model
+    ? [...model.pinnedSessions, ...model.inProgressSessions]
+    : [];
   const glass = glassFill(dark);
   const fadeColor = dark ? 'rgba(10,10,10,0.92)' : 'rgba(250,250,250,0.92)';
+  const editEntry = editProject
+    ? projects.find((entry) => entry.id === editProject.id) ?? null
+    : null;
+
+  const renderProjectCard = (project: ProjectsHomeProjectItem, query?: string) => (
+    <ProjectCard
+      key={project.id}
+      project={project}
+      query={query}
+      onOpenSession={openSession}
+      onOpenActions={() => {
+        setOverflowTarget({ kind: 'project', project });
+        void probeGitRepo(project.id, project.path);
+      }}
+      onOpenWorktreeActions={(worktree) =>
+        setOverflowTarget({ kind: 'worktree', project, worktree })
+      }
+      onToggle={() => setProjectExpanded(project.id, !project.expanded)}
+      onToggleWorktree={(bucketKey) => {
+        const group = project.worktrees.find((entry) => entry.id === bucketKey);
+        setWorktreeExpanded(project.id, bucketKey, !(group?.expanded ?? false));
+      }}
+      onShowMore={(bucketKey) => showMoreBucket(project.id, bucketKey)}
+      onShowFewer={(bucketKey) => showFewerBucket(project.id, bucketKey)}
+      dark={dark}
+      muted={muted}
+      text={text}
+      tint={colors.tint}
+    />
+  );
 
   return (
     <View style={styles.screen}>
-      {/* Sticky chrome: fixed layout height; scroll only drives transform/opacity. */}
       <RNView
         pointerEvents="box-none"
         style={[styles.stickyHeader, { height: headerChrome, paddingTop: Math.max(insets.top, 12) }]}
@@ -689,8 +690,7 @@ export function ProjectsHome() {
 
           {searching ? (
             <>
-              {filtered.sessions.length === 0 &&
-              filtered.directories.every((d) => d.sessions.length === 0) ? (
+              {filtered.sessions.length === 0 && filtered.projects.length === 0 ? (
                 <Text style={[styles.empty, { color: muted }]}>
                   {t('mobile.sessions.search.empty')}
                 </Text>
@@ -698,7 +698,7 @@ export function ProjectsHome() {
               {filtered.sessions.map((session) => (
                 <SessionRow
                   key={`search-${session.id}`}
-                  session={session}
+                  session={toHomeSessionRow(session)}
                   query={highlight}
                   onPress={openSession}
                   tint={colors.tint}
@@ -706,24 +706,7 @@ export function ProjectsHome() {
                   text={text}
                 />
               ))}
-              {filtered.directories.map((group) => (
-                <DirectoryCard
-                  key={`search-dir-${group.directory}`}
-                  group={group}
-                  query={highlight}
-                  onOpenSession={openSession}
-                  dark={dark}
-                  muted={muted}
-                  text={text}
-                  tint={colors.tint}
-                  visibleByKey={visibleByKey}
-                  onShowMore={showMore}
-                  expandedBranches={expandedBranches}
-                  onToggleBranch={toggleBranch}
-                  expanded={expandedDirs[group.directory] ?? true}
-                  onToggle={() => toggleDir(group.directory)}
-                />
-              ))}
+              {filtered.projects.map((project) => renderProjectCard(project, highlight))}
             </>
           ) : (
             <>
@@ -738,15 +721,15 @@ export function ProjectsHome() {
                   muted={muted}
                   text={text}
                 >
-                  {model.pinned.length > 0 ? (
+                  {model.pinnedSessions.length > 0 ? (
                     <Text style={[styles.bucketLabel, { color: muted }]}>
                       {t('mobile.sessions.section.pinned')}
                     </Text>
                   ) : null}
-                  {model.pinned.map((session) => (
+                  {model.pinnedSessions.map((session) => (
                     <SessionRow
                       key={`pin-${session.id}`}
-                      session={session}
+                      session={toHomeSessionRow(session)}
                       onPress={openSession}
                       tint={colors.tint}
                       muted={muted}
@@ -754,15 +737,15 @@ export function ProjectsHome() {
                       inset
                     />
                   ))}
-                  {model.inProgress.length > 0 ? (
+                  {model.inProgressSessions.length > 0 ? (
                     <Text style={[styles.bucketLabel, { color: muted }]}>
                       {t('mobile.sessions.section.inProgress')}
                     </Text>
                   ) : null}
-                  {model.inProgress.map((session) => (
+                  {model.inProgressSessions.map((session) => (
                     <SessionRow
                       key={`prog-${session.id}`}
-                      session={session}
+                      session={toHomeSessionRow(session)}
                       onPress={openSession}
                       tint={colors.tint}
                       muted={muted}
@@ -773,25 +756,9 @@ export function ProjectsHome() {
                 </ProjectCardShell>
               ) : null}
 
-              {model.directories.map((group) => (
-                <DirectoryCard
-                  key={group.directory}
-                  group={group}
-                  onOpenSession={openSession}
-                  dark={dark}
-                  muted={muted}
-                  text={text}
-                  tint={colors.tint}
-                  visibleByKey={visibleByKey}
-                  onShowMore={showMore}
-                  expandedBranches={expandedBranches}
-                  onToggleBranch={toggleBranch}
-                  expanded={expandedDirs[group.directory] ?? true}
-                  onToggle={() => toggleDir(group.directory)}
-                />
-              ))}
+              {model.projects.map((project) => renderProjectCard(project))}
 
-              {model.directories.length === 0 && model.pinned.length === 0 ? (
+              {model.projects.length === 0 && model.pinnedSessions.length === 0 ? (
                 <Text style={[styles.empty, { color: muted }]}>
                   {t('mobile.sessions.emptyHome')}
                 </Text>
@@ -815,6 +782,9 @@ export function ProjectsHome() {
             <Pressable accessibilityRole="button" style={styles.menuItem} onPress={openDraft}>
               <Text style={styles.menuItemLabel}>{t('mobile.projects.menu.newChat')}</Text>
             </Pressable>
+            <Pressable accessibilityRole="button" style={styles.menuItem} onPress={openNewProject}>
+              <Text style={styles.menuItemLabel}>{t('mobile.projects.menu.newProject')}</Text>
+            </Pressable>
             <Pressable accessibilityRole="button" style={styles.menuItem} onPress={openScan}>
               <Text style={styles.menuItemLabel}>{t('mobile.projects.menu.scanQr')}</Text>
             </Pressable>
@@ -824,6 +794,110 @@ export function ProjectsHome() {
           </RNView>
         </Pressable>
       </Modal>
+
+      <ProjectOverflowSheet
+        target={overflowTarget}
+        dark={dark}
+        tint={colors.tint}
+        onClose={() => setOverflowTarget(null)}
+        onNewSession={() => {
+          if (!overflowTarget) return;
+          if (overflowTarget.kind === 'project') {
+            openDraftForDirectory(overflowTarget.project.path);
+          } else {
+            openDraftForDirectory(overflowTarget.worktree.path);
+          }
+        }}
+        onNewWorktree={() => {
+          if (overflowTarget?.kind === 'project') {
+            setNewWorktreeProject(overflowTarget.project);
+          }
+        }}
+        onEditProject={() => {
+          if (overflowTarget?.kind === 'project') {
+            setEditProject(overflowTarget.project);
+          }
+        }}
+        onCloseProject={() => {
+          if (overflowTarget?.kind !== 'project') return;
+          const id = overflowTarget.project.id;
+          void saveProjects(projects.filter((entry) => entry.id !== id));
+        }}
+        onDeleteWorktree={() => {
+          if (overflowTarget?.kind !== 'worktree' || !active) return;
+          const { project, worktree } = overflowTarget;
+          void (async () => {
+            await removeWorktreeAction(active, project.path, worktree.path);
+            await refreshProjectWorktrees(project.path);
+            await refresh();
+          })();
+        }}
+      />
+
+      <NewProjectSheet
+        visible={newProjectOpen}
+        dark={dark}
+        tint={colors.tint}
+        existing={projects}
+        onClose={() => setNewProjectOpen(false)}
+        onCreated={async (next) => {
+          await saveProjects(next);
+          await refresh();
+        }}
+      />
+
+      <NewWorktreeSheet
+        visible={!!newWorktreeProject}
+        dark={dark}
+        tint={colors.tint}
+        project={newWorktreeProject}
+        onClose={() => setNewWorktreeProject(null)}
+        onCreated={async (worktreePath) => {
+          if (newWorktreeProject) {
+            await refreshProjectWorktrees(newWorktreeProject.path);
+          }
+          await refresh();
+          openDraftForDirectory(worktreePath);
+        }}
+      />
+
+      <ProjectEditSheet
+        visible={!!editProject}
+        dark={dark}
+        tint={colors.tint}
+        project={editProject}
+        entry={editEntry}
+        onClose={() => setEditProject(null)}
+        onSave={async (patch) => {
+          if (!editProject) return;
+          const next = projects.map((entry) =>
+            entry.id === editProject.id
+              ? {
+                  ...entry,
+                  label: patch.label,
+                  icon: patch.icon,
+                  color: patch.color,
+                }
+              : entry,
+          );
+          // If settings lacked this synthetic project, append it.
+          const exists = next.some((entry) => entry.id === editProject.id);
+          const payload = exists
+            ? next
+            : [
+                ...projects,
+                {
+                  id: editProject.id,
+                  path: editProject.path,
+                  label: patch.label,
+                  icon: patch.icon,
+                  color: patch.color,
+                },
+              ];
+          await saveProjects(payload);
+          await refresh();
+        }}
+      />
     </View>
   );
 }

@@ -59,9 +59,9 @@ Project cards, worktrees, overflow menus, new/edit/close, plus-menu 扫一扫 / 
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | Dock label only |
-| CI green | missing | |
-| 真机过 | missing | |
+| Track (CODE) | **code landed** | Cap MobileProjectCard data model (project shell + inset worktree groups + flat session rows) on Expo pixel UI; plus/overflow: draft session, new project (fs/list+mkdir), new worktree essentials, edit (name/color/icon/discover), worktree remove; APIs: session-index + fs/list|mkdir|clone + git/worktrees + PUT /api/config/settings + icon/discover + message-queue worktree order. No plan/notes/Todo / Finder. Unit tests green locally. |
+| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| 真机过 | missing | Do not mark from Linux VM |
 
 ### 5. Assistant
 

@@ -132,19 +132,19 @@ export const gitWorktreesToMetadata = (
   worktrees: GitWorktreeInfo[],
 ): WorktreeMetadataLite[] => {
   const root = normalizePath(projectDirectory);
-  return worktrees
-    .map((wt) => {
-      const path = normalizePath(wt.path);
-      if (!path || path === root) return null;
-      return {
-        path,
-        branch: wt.branch || '',
-        label: wt.branch || wt.name || path.split('/').filter(Boolean).pop() || path,
-        name: wt.name || undefined,
-        projectDirectory: root,
-      };
-    })
-    .filter((entry): entry is WorktreeMetadataLite => entry != null);
+  const result: WorktreeMetadataLite[] = [];
+  for (const wt of worktrees) {
+    const path = normalizePath(wt.path);
+    if (!path || path === root) continue;
+    result.push({
+      path,
+      branch: wt.branch || '',
+      label: wt.branch || wt.name || path.split('/').filter(Boolean).pop() || path,
+      ...(wt.name ? { name: wt.name } : {}),
+      projectDirectory: root,
+    });
+  }
+  return result;
 };
 
 type DirectoryOwner = {
@@ -171,7 +171,7 @@ const getParentDirectory = (directory: string): string | null => {
  */
 export const createSessionOwnershipIndex = (
   sessions: FlatSession[],
-  projects: Array<{ id: string; path: string }>,
+  projects: { id: string; path: string }[],
   worktreesByProjectPath: ReadonlyMap<string, WorktreeMetadataLite[]>,
 ): Map<string, DirectoryOwner> => {
   const ownerByDirectory = new Map<string, DirectoryOwner>();
@@ -380,7 +380,7 @@ export const buildProjectsHomeModel = (
   const homeProjects: ProjectsHomeProjectItem[] = allProjects.map((project) => {
     const projectPath = normalizePath(project.path);
     const label = projectLabelFromPath(projectPath, project.label);
-    const ordered = orderWorktrees(
+    const ordered: WorktreeMetadataLite[] = orderWorktrees(
       worktreeOrderByProjectId[project.id],
       worktreesByProjectPath.get(projectPath) ?? [],
     );
@@ -511,7 +511,7 @@ export const buildProjectsHomeModel = (
     const worktrees = project ? worktreesByProjectPath.get(normalizePath(project.path)) ?? [] : [];
     const wt =
       owner?.kind === 'worktree'
-        ? worktrees.find((entry) => entry.path === owner.scopeDirectory)
+        ? worktrees.find((entry: WorktreeMetadataLite) => entry.path === owner.scopeDirectory)
         : null;
     pinnedSessions.push(
       toNode(session, {
@@ -542,7 +542,7 @@ export const buildProjectsHomeModel = (
     const worktrees = project ? worktreesByProjectPath.get(normalizePath(project.path)) ?? [] : [];
     const wt =
       owner?.kind === 'worktree'
-        ? worktrees.find((entry) => entry.path === owner.scopeDirectory)
+        ? worktrees.find((entry: WorktreeMetadataLite) => entry.path === owner.scopeDirectory)
         : null;
     return toNode(session, {
       untitled,
