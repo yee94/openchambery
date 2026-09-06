@@ -9,6 +9,9 @@ import com.lynx.service.http.LynxHttpService
 import com.lynx.service.image.LynxImageService
 import com.lynx.service.log.LynxLogService
 import com.lynx.tasm.LynxEnv
+import com.lynx.tasm.service.ILynxHttpService
+import com.lynx.tasm.service.ILynxImageService
+import com.lynx.tasm.service.ILynxLogService
 import com.lynx.tasm.service.LynxServiceCenter
 
 /**
@@ -32,9 +35,11 @@ class OpenChamberLynxApp : Application() {
             ImagePipelineConfig.newBuilder(applicationContext).setPoolFactory(factory)
         Fresco.initialize(applicationContext, builder.build())
 
-        LynxServiceCenter.inst().registerService(LynxImageService.getInstance())
-        LynxServiceCenter.inst().registerService(LynxLogService.INSTANCE)
-        LynxServiceCenter.inst().registerService(LynxHttpService.INSTANCE)
+        // LynxLogService / LynxHttpService are Kotlin objects — use them
+        // directly from Kotlin (Java callers see .INSTANCE).
+        LynxServiceCenter.inst().registerService(LynxImageService.getInstance() as ILynxImageService)
+        LynxServiceCenter.inst().registerService(LynxLogService as ILynxLogService)
+        LynxServiceCenter.inst().registerService(LynxHttpService as ILynxHttpService)
     }
 
     private fun initLynxEnv() {
