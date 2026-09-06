@@ -18,7 +18,8 @@ class OpenChamberSystemShellModule : Module() {
         "liveActivity" to false,
         "shareAppGroup" to true,
         "uiGlassEffect" to false,
-        "uiTabBar" to false
+        "uiTabBar" to false,
+        "nativeComposerTextView" to false
       )
     }
 
@@ -128,6 +129,13 @@ class OpenChamberSystemShellModule : Module() {
   private fun shareInboxDir(): File {
     val base = appContext.reactContext?.filesDir ?: throw Exception("share store unavailable")
     val dir = File(base, "share-inbox")
+    if (!dir.exists()) dir.mkdirs()
+    return dir
+  }
+
+  private fun shareDraftsDir(): File {
+    val base = appContext.reactContext?.filesDir ?: throw Exception("share store unavailable")
+    val dir = File(base, "share-drafts")
     if (!dir.exists()) dir.mkdirs()
     return dir
   }

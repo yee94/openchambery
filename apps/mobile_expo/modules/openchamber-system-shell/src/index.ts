@@ -96,6 +96,7 @@ type SystemShellNativeModule = NativeModule & {
     shareAppGroup: boolean;
     uiGlassEffect: boolean;
     uiTabBar: boolean;
+    nativeComposerTextView?: boolean;
   }>;
 };
 
@@ -121,6 +122,7 @@ export const getSystemShellCapabilities = async () => {
       shareAppGroup: false,
       uiGlassEffect: false,
       uiTabBar: false,
+      nativeComposerTextView: false,
       nativeModuleLoaded: false,
     };
   }
@@ -195,3 +197,13 @@ export const virtualAssetNative = {
     return mod.cancelVirtualAsset(assetId);
   },
 };
+
+export { NativeComposerTextView } from './NativeComposerTextView';
+export type {
+  NativeComposerChangeTextEvent,
+  NativeComposerCollapsedHeightEvent,
+  NativeComposerContentSizeEvent,
+  NativeComposerSelectionEvent,
+  NativeComposerSubmitEvent,
+  NativeComposerTextViewProps,
+} from './NativeComposerTextView.types';

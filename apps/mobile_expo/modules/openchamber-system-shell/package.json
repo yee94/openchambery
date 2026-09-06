@@ -1,7 +1,7 @@
 {
   "name": "openchamber-system-shell",
   "version": "1.19.7-beta.7",
-  "description": "OpenChamber Expo Track 8 native shell: Live Activity, App Group share inbox, virtual assets",
+  "description": "OpenChamber Expo Track 8 native shell: Live Activity, App Group share inbox, virtual assets, NativeComposerTextView (UITextView IME)",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {},

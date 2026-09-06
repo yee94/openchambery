@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import { NativeComposerTextView } from 'openchamber-system-shell';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ComposerAutocompleteList } from '@/components/chat/ComposerAutocompleteList';
@@ -23,6 +24,11 @@ import {
   type ComposerAutocompleteRow,
   type ComposerAutocompleteTrigger,
 } from '@/lib/composerAutocomplete';
+import {
+  composeCollapsedPillHeight,
+  nextRestOccupancyHeight,
+  resolveComposerOccupancyHeight,
+} from '@/lib/composerOccupancy';
 import { t } from '@/lib/i18n';
 import {
   isHeicLike,
@@ -42,6 +48,8 @@ export type ChatComposerProps = {
   onAutocompleteTriggerChange?: (trigger: ComposerAutocompleteTrigger | null) => void;
   attachments?: StagedPromptAttachment[];
   onAttachmentsChange?: (next: StagedPromptAttachment[]) => void;
+  /** Collapsed-pill occupancy only — expand/autocomplete must not raise accessories. */
+  onOccupancyHeightChange?: (height: number) => void;
 };
 
 let localAttachSeq = 0;
@@ -52,8 +60,14 @@ const nextAttachId = () => {
 
 /**
  * Text + Send/Stop + attach + slash/@/# autocomplete list.
- * No mic / TTS (will-not-port). Glass shell left to Track 8 — do not restyle.
+ * No mic / TTS (will-not-port).
+ * iOS: UITextView owns IME via NativeComposerTextView; GlassComposerShell keeps chrome.
+ * Android: RN TextInput in solid/Material pill (honest degrade, not fake glass).
+ * Autocomplete stays above the card in RN — never inside UIGlassEffect contentView.
  */
+const COLLAPSED_LINE_HEIGHT = 40;
+const PILL_VERTICAL_PADDING = 12;
+
 export function ChatComposer({
   value,
   onChangeText,
@@ -66,6 +80,7 @@ export function ChatComposer({
   onAutocompleteTriggerChange,
   attachments = [],
   onAttachmentsChange,
+  onOccupancyHeightChange,
 }: ChatComposerProps) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -76,6 +91,9 @@ export function ChatComposer({
     end: value.length,
   });
   const [openTrigger, setOpenTrigger] = useState<ComposerAutocompleteTrigger | null>(null);
+  const [focused, setFocused] = useState(false);
+  const [inputHeight, setInputHeight] = useState(COLLAPSED_LINE_HEIGHT);
+  const [lastRestOccupancy, setLastRestOccupancy] = useState<number | null>(null);
 
   const canSend =
     (value.trim().length > 0 || attachments.length > 0) && !disabled;
@@ -87,6 +105,28 @@ export function ChatComposer({
       onAutocompleteTriggerChange?.(trigger);
     },
     [onAutocompleteTriggerChange],
+  );
+
+  const publishOccupancy = useCallback(
+    (collapsedLineHeight: number, expanded: boolean) => {
+      const pill = composeCollapsedPillHeight({
+        collapsedLineHeight,
+        pillVerticalPadding: PILL_VERTICAL_PADDING,
+      });
+      const nextRest = nextRestOccupancyHeight(pill, expanded, lastRestOccupancy);
+      if (!expanded) {
+        setLastRestOccupancy(nextRest);
+      }
+      const published = resolveComposerOccupancyHeight({
+        collapsedPillHeight: pill,
+        contentHeight: inputHeight,
+        expanded,
+        lastRestHeight: nextRest,
+        autocompleteOpen: openTrigger != null,
+      });
+      onOccupancyHeightChange?.(published);
+    },
+    [inputHeight, lastRestOccupancy, onOccupancyHeightChange, openTrigger],
   );
 
   const handleChangeText = useCallback(
@@ -281,22 +321,78 @@ export function ChatComposer({
             <Text style={[styles.attachButtonLabel, { color: muted }]}>+</Text>
           </Pressable>
         ) : null}
-        <TextInput
-          value={value}
-          onChangeText={handleChangeText}
-          onSelectionChange={(event) => {
-            const next = event.nativeEvent.selection;
-            setSelection(next);
-            publishTrigger(value, next.end);
-          }}
-          selection={selection}
-          placeholder={t('mobile.chat.composer.placeholder')}
-          placeholderTextColor={muted}
-          style={[styles.input, { color: text }]}
-          multiline
-          editable={!disabled}
-          accessibilityLabel={t('mobile.chat.composer.placeholder')}
-        />
+        {Platform.OS === 'ios' ? (
+          <NativeComposerTextView
+            value={value}
+            placeholder={t('mobile.chat.composer.placeholder')}
+            placeholderTextColor={muted}
+            textColor={text}
+            editable={!disabled}
+            collapsedLineHeight={COLLAPSED_LINE_HEIGHT}
+            maxContentHeight={120}
+            fontSize={16}
+            style={[styles.nativeInput, { height: inputHeight }]}
+            onChangeText={(event) => {
+              const { text: next, selectionStart, selectionEnd } = event.nativeEvent;
+              setSelection({ start: selectionStart, end: selectionEnd });
+              handleChangeText(next);
+            }}
+            onSelectionChange={(event) => {
+              const next = event.nativeEvent;
+              setSelection({ start: next.start, end: next.end });
+              publishTrigger(value, next.end);
+            }}
+            onFocus={() => {
+              setFocused(true);
+              publishOccupancy(COLLAPSED_LINE_HEIGHT, true);
+            }}
+            onBlur={() => {
+              setFocused(false);
+              publishOccupancy(COLLAPSED_LINE_HEIGHT, false);
+            }}
+            onCollapsedHeightChange={(event) => {
+              publishOccupancy(event.nativeEvent.height, focused);
+            }}
+            onContentSizeChange={(event) => {
+              setInputHeight(event.nativeEvent.height);
+              // Occupancy stays collapsed even when content grows.
+              publishOccupancy(COLLAPSED_LINE_HEIGHT, focused);
+            }}
+          />
+        ) : (
+          <TextInput
+            value={value}
+            onChangeText={handleChangeText}
+            onSelectionChange={(event) => {
+              const next = event.nativeEvent.selection;
+              setSelection(next);
+              publishTrigger(value, next.end);
+            }}
+            onFocus={() => {
+              setFocused(true);
+              publishOccupancy(COLLAPSED_LINE_HEIGHT, true);
+            }}
+            onBlur={() => {
+              setFocused(false);
+              publishOccupancy(COLLAPSED_LINE_HEIGHT, false);
+            }}
+            onContentSizeChange={(event) => {
+              const next = Math.min(
+                Math.max(event.nativeEvent.contentSize.height, COLLAPSED_LINE_HEIGHT),
+                120,
+              );
+              setInputHeight(next);
+              publishOccupancy(COLLAPSED_LINE_HEIGHT, focused);
+            }}
+            selection={selection}
+            placeholder={t('mobile.chat.composer.placeholder')}
+            placeholderTextColor={muted}
+            style={[styles.input, { color: text, height: Math.max(inputHeight, COLLAPSED_LINE_HEIGHT) }]}
+            multiline
+            editable={!disabled}
+            accessibilityLabel={t('mobile.chat.composer.placeholder')}
+          />
+        )}
         {busy ? (
           <Pressable
             accessibilityRole="button"
@@ -356,6 +452,11 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     paddingTop: 8,
     paddingBottom: 8,
+  },
+  nativeInput: {
+    flex: 1,
+    maxHeight: 120,
+    minHeight: COLLAPSED_LINE_HEIGHT,
   },
   action: {
     minWidth: 64,
