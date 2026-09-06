@@ -210,7 +210,7 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - [ ] 代码接上: listed slugs hit real routes; failure preserved
 - [ ] CI绿: slug map test equals `MOBILE_SETTINGS_PAGE_SLUGS`
 - [ ] 真机过: search → page → mutate → reopen
-- [ ] Voice either real or omitted
+- [x] Voice status + model download/delete (no invented ASR); mic/WS host-bound
 
 ---
 
@@ -224,10 +224,10 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 
 ## Notes — settings / connect / header / CI (2026-09-06)
 
-- Settings slug DoD: wired pages use real `/api/config/settings` or list endpoints; catalog editors stay labeled stubs (never fake-success). Voice remains list-only-until-routes. No `iosNativeUi`.
+- Settings slug DoD: wired pages use real `/api/config/settings` or list endpoints; catalog editors stay labeled stubs (never fake-success). Voice = status + model download/delete UI (no invented ASR). No `iosNativeUi`.
 - Connect welcome: splash while `autoConnectLastInstance` resolves; paste pairing v2; QR camera host stub.
 - Projects header: Cap `MobileTabPageHeader` collapse contract (`--oc-mobile-title-collapse` spirit) with Lynx glass search chip + primary +.
-- CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (`work/lynx-native`). lynx-ci = Linux type-check + vitest + rspeedy (green). lynx-mobile-ci = Android sideload APK (`assembleRelease` + `.debug` applicationId) + prerelease `lynx-v2-debug-*` (e.g. `lynx-v2-debug-30b1c12`). Android first-paint cream/globalProps mitigation is 代码接上 — **not** 真机过. iOS IPA / simulator still missing. **Do not claim 真机过** from CI alone. Product NOT DONE / 三关未齐.
+- CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (`work/lynx-native`). lynx-ci = Linux type-check + vitest + rspeedy (green). lynx-mobile-ci = Android sideload APK (`assembleRelease` + `.debug` applicationId) + prerelease `lynx-v2-debug-*` (e.g. `lynx-v2-debug-1a5c899`). Android first-paint cream/globalProps mitigation is 代码接上 — **not** 真机过. iOS IPA / simulator still missing. **Do not claim 真机过** from CI alone. Product NOT DONE / 三关未齐.
 
 ## Notes — cards / swipe / share welcome / draft / list harness (2026-09-06)
 

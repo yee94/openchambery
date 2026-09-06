@@ -35,7 +35,13 @@ import { LynxEntityEditor } from './EntityEditor';
 import { isLynxEntityKind, type LynxEntityKind } from './entityApi';
 import type { LynxMobileSettingsSlug } from './slugs';
 import type { LynxSettingsBodyKind } from './metadata';
-import { loadLynxDictationStatus } from './dictation';
+import {
+  loadLynxDictationStatus,
+  mutateLynxDictationModelThenRefresh,
+  parseLynxDictationModels,
+  type LynxDictationModelState,
+  type LynxDictationStatusResult,
+} from './dictation';
 import {
   createLynxDiagnosticsRecorder,
   exportLynxDiagnostics,
@@ -631,29 +637,153 @@ function AboutBody({ ctx }: { ctx: SettingsBodyContext }) {
   );
 }
 
+function modelSubtitle(locale: string, model: LynxDictationModelState): string | undefined {
+  if (model.downloadError) return model.downloadError;
+  if (model.downloading) {
+    const base = lynxT(locale, 'lynx.settings.voice.downloading');
+    return typeof model.downloadProgress === 'number'
+      ? `${base} ${model.downloadProgress}%`
+      : base;
+  }
+  if (model.installed) return lynxT(locale, 'lynx.settings.voice.installed');
+  return undefined;
+}
+
+function VoiceModelRow({
+  locale,
+  model,
+  busy,
+  onDownload,
+  onDelete,
+}: {
+  locale: string;
+  model: LynxDictationModelState;
+  busy: boolean;
+  onDownload: () => void;
+  onDelete: () => void;
+}) {
+  const title = model.kind === 'tts' ? 'Kokoro' : model.id;
+  const subtitle = modelSubtitle(locale, model);
+  return (
+    <LynxView
+      style={{
+        padding: '12px 0',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+      }}
+    >
+      <LynxView style={{ flexGrow: 1, minWidth: '0px' }}>
+        <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '15px' }}>{title}</LynxText>
+        {subtitle ? (
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>{subtitle}</LynxText>
+        ) : null}
+      </LynxView>
+      {model.installed ? (
+        <LynxView
+          bindtap={() => { if (!busy) onDelete(); }}
+          style={{ padding: '4px 0', opacity: busy ? 0.5 : 1 }}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.settings.voice.delete')}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600', fontSize: '13px' }}>
+            {lynxT(locale, 'lynx.settings.voice.delete')}
+          </LynxText>
+        </LynxView>
+      ) : model.downloading ? null : (
+        <LynxView
+          bindtap={() => { if (!busy) onDownload(); }}
+          style={{ padding: '4px 0', opacity: busy ? 0.5 : 1 }}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.settings.voice.download')}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600', fontSize: '13px' }}>
+            {lynxT(locale, 'lynx.settings.voice.download')}
+          </LynxText>
+        </LynxView>
+      )}
+    </LynxView>
+  );
+}
+
 function VoiceBody({ ctx }: { ctx: SettingsBodyContext }) {
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'unsupported'>('loading');
   const [detail, setDetail] = useState<string>('');
+  const [models, setModels] = useState<LynxDictationModelState[]>([]);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const applyStatus = (result: LynxDictationStatusResult) => {
+    if (result.status === 'ok') {
+      setStatus('ok');
+      const parsed = parseLynxDictationModels(result.payload);
+      setModels(parsed);
+      const ready = result.payload.ready;
+      const sttCount = parsed.filter((m) => m.kind === 'stt').length;
+      setDetail(typeof ready === 'boolean'
+        ? `ready=${ready} models=${sttCount}`
+        : JSON.stringify(result.payload).slice(0, 160));
+      return;
+    }
+    setModels([]);
+    setDetail('');
+    setStatus(result.status === 'failed' ? 'failed' : result.status);
+  };
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const result = await loadLynxDictationStatus(ctx.runtimeFetch);
+      const result = await loadLynxDictationStatus(ctx.runtimeFetch, { provider: 'local' });
       if (cancelled) return;
-      if (result.status === 'ok') {
-        setStatus('ok');
-        const ready = result.payload.ready;
-        const models = result.payload.models;
-        setDetail(typeof ready === 'boolean'
-          ? `ready=${ready}${Array.isArray(models) ? ` models=${models.length}` : ''}`
-          : JSON.stringify(result.payload).slice(0, 160));
-        return;
-      }
-      setDetail('');
-      setStatus(result.status === 'failed' ? 'failed' : result.status);
+      applyStatus(result);
     })();
     return () => { cancelled = true; };
   }, [ctx.runtimeFetch]);
+
+  const anyDownloading = models.some((m) => m.downloading);
+  useEffect(() => {
+    if (!anyDownloading) return;
+    let cancelled = false;
+    const tick = () => {
+      void (async () => {
+        const result = await loadLynxDictationStatus(ctx.runtimeFetch, { provider: 'local' });
+        if (cancelled) return;
+        applyStatus(result);
+      })();
+    };
+    const interval = setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [anyDownloading, ctx.runtimeFetch]);
+
+  const runAction = (modelId: string, action: 'download' | 'delete') => {
+    if (requestingId) return;
+    setRequestingId(modelId);
+    setActionError(null);
+    void (async () => {
+      const { mutation, status: next } = await mutateLynxDictationModelThenRefresh(
+        ctx.runtimeFetch,
+        modelId,
+        action,
+      );
+      setRequestingId(null);
+      if (mutation.status !== 'ok') {
+        if (mutation.status === 'failed') {
+          setActionError(mutation.error.message);
+        } else if (mutation.status === 'no-runtime') {
+          setActionError(lynxT(ctx.locale, 'lynx.settings.noRuntime'));
+        } else {
+          setActionError(lynxT(ctx.locale, 'lynx.settings.unsupported'));
+        }
+      }
+      applyStatus(next);
+    })();
+  };
+
+  const sttModels = models.filter((m) => m.kind === 'stt');
+  const ttsModels = models.filter((m) => m.kind === 'tts');
 
   return (
     <LynxView>
@@ -662,9 +792,43 @@ function VoiceBody({ ctx }: { ctx: SettingsBodyContext }) {
       {status === 'unsupported' ? <Banner text={lynxT(ctx.locale, 'lynx.settings.unsupported')} muted /> : null}
       {status === 'failed' ? <Banner text={lynxT(ctx.locale, 'lynx.settings.loadFailed')} /> : null}
       {status === 'loading' ? <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted /> : null}
+      {actionError ? <Banner text={actionError} /> : null}
       {status === 'ok' ? (
         <Row title={lynxT(ctx.locale, 'lynx.settings.voice.status')} subtitle={detail || 'ok'} />
       ) : null}
+      {status === 'ok' ? (
+        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', margin: '12px 0 4px' }}>
+          {lynxT(ctx.locale, 'lynx.settings.voice.models')}
+        </LynxText>
+      ) : null}
+      {status === 'ok' && sttModels.length === 0 ? (
+        <Banner text={lynxT(ctx.locale, 'lynx.settings.voice.emptyModels')} muted />
+      ) : null}
+      {sttModels.map((model) => (
+        <VoiceModelRow
+          key={`stt-${model.id}`}
+          locale={ctx.locale}
+          model={model}
+          busy={requestingId === model.id}
+          onDownload={() => runAction(model.id, 'download')}
+          onDelete={() => runAction(model.id, 'delete')}
+        />
+      ))}
+      {status === 'ok' && ttsModels.length > 0 ? (
+        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', margin: '12px 0 4px' }}>
+          {lynxT(ctx.locale, 'lynx.settings.voice.tts')}
+        </LynxText>
+      ) : null}
+      {ttsModels.map((model) => (
+        <VoiceModelRow
+          key={`tts-${model.id}`}
+          locale={ctx.locale}
+          model={model}
+          busy={requestingId === model.id}
+          onDownload={() => runAction(model.id, 'download')}
+          onDelete={() => runAction(model.id, 'delete')}
+        />
+      ))}
     </LynxView>
   );
 }

@@ -311,7 +311,10 @@ export {
   loadLynxDictationStatus,
   requestLynxDictationModelDownload,
   deleteLynxDictationModel,
+  parseLynxDictationModels,
+  mutateLynxDictationModelThenRefresh,
   LYNX_DICTATION_VOICE_POLICY,
+  LYNX_LOCAL_TTS_MODEL_ID,
 } from './settings/dictation';
 export {
   createLynxDiagnosticsRecorder,
