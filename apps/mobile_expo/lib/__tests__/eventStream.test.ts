@@ -151,3 +151,63 @@ describe('applyChatEventToTranscript', () => {
     expect(controller.getStats().liveOnlyUpdates).toBeGreaterThan(0);
   });
 });
+
+describe('applyChatEventToTranscript tool/reasoning', () => {
+  it('routes tool parts to upsertLivePart, not text bubble', () => {
+    const calls: string[] = [];
+    const ok = applyChatEventToTranscript(
+      {
+        type: 'message.part.updated',
+        properties: {
+          sessionID: 'ses_1',
+          messageID: 'm1',
+          part: {
+            id: 'p1',
+            type: 'tool',
+            tool: 'read',
+            state: { status: 'running', input: { path: 'a.ts' } },
+          },
+        },
+      },
+      'ses_1',
+      {
+        upsertLiveTail: () => {
+          calls.push('tail');
+        },
+        finalizeLiveTail: () => {
+          calls.push('final');
+        },
+        upsertLivePart: () => {
+          calls.push('part');
+        },
+        setBusy: () => {
+          calls.push('busy');
+        },
+      },
+    );
+    expect(ok).toBe(true);
+    expect(calls).toEqual(['part']);
+  });
+
+  it('routes reasoning parts away from primary live text', () => {
+    const calls: string[] = [];
+    applyChatEventToTranscript(
+      {
+        type: 'message.part.updated',
+        properties: {
+          sessionID: 'ses_1',
+          messageID: 'm1',
+          part: { id: 'r1', type: 'reasoning', text: 'thinking' },
+        },
+      },
+      'ses_1',
+      {
+        upsertLiveTail: () => calls.push('tail'),
+        finalizeLiveTail: () => calls.push('final'),
+        upsertLivePart: () => calls.push('part'),
+        setBusy: () => calls.push('busy'),
+      },
+    );
+    expect(calls).toEqual(['part']);
+  });
+});

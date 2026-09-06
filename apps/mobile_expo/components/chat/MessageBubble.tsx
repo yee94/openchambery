@@ -1,9 +1,12 @@
 import React, { memo, useMemo } from 'react';
 import { StyleSheet, View as RNView } from 'react-native';
 
+import { ReasoningDisclosure } from '@/components/chat/ReasoningDisclosure';
+import { ToolCard } from '@/components/chat/ToolCard';
 import { Text, useThemeColor } from '@/components/Themed';
 import type { TranscriptRow } from '@/lib/chatTranscript';
 import { safeStreamingMarkdownText } from '@/lib/streamingMarkdown';
+import { partsSignature, segmentsFromParts } from '@/lib/toolCards';
 
 export type MessageBubbleProps = {
   row: TranscriptRow;
@@ -13,29 +16,65 @@ function MessageBubbleImpl({ row }: MessageBubbleProps) {
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const isUser = row.role === 'user';
-  const display = useMemo(
+
+  const segments = useMemo(() => segmentsFromParts(row.parts), [row.parts]);
+  const hasStructured = segments.some((s) => s.kind === 'tool' || s.kind === 'reasoning');
+
+  const fallbackText = useMemo(
     () => safeStreamingMarkdownText(row.text, row.streaming),
     [row.text, row.streaming],
   );
 
-  return (
-    <RNView
-      style={[styles.wrap, isUser ? styles.userWrap : styles.assistantWrap]}
-      accessibilityRole="text"
-    >
+  if (isUser || !hasStructured) {
+    return (
       <RNView
-        style={[
-          styles.bubble,
-          isUser ? styles.userBubble : styles.assistantBubble,
-        ]}
+        style={[styles.wrap, isUser ? styles.userWrap : styles.assistantWrap]}
+        accessibilityRole="text"
       >
-        <Text style={[styles.body, { color: isUser ? '#fff' : textColor }]}>
-          {display || (row.streaming ? '…' : '')}
-        </Text>
-        {row.streaming ? (
-          <Text style={[styles.streaming, { color: isUser ? 'rgba(255,255,255,0.7)' : muted }]}>
-            streaming
+        <RNView
+          style={[
+            styles.bubble,
+            isUser ? styles.userBubble : styles.assistantBubble,
+          ]}
+        >
+          <Text style={[styles.body, { color: isUser ? '#fff' : textColor }]}>
+            {fallbackText || (row.streaming ? '…' : '')}
           </Text>
+          {row.streaming ? (
+            <Text style={[styles.streaming, { color: isUser ? 'rgba(255,255,255,0.7)' : muted }]}>
+              streaming
+            </Text>
+          ) : null}
+        </RNView>
+      </RNView>
+    );
+  }
+
+  return (
+    <RNView style={[styles.wrap, styles.assistantWrap]} accessibilityRole="text">
+      <RNView style={styles.assistantColumn}>
+        {segments.map((segment) => {
+          if (segment.kind === 'reasoning') {
+            return <ReasoningDisclosure key={segment.id} reasoning={segment.reasoning} />;
+          }
+          if (segment.kind === 'tool') {
+            return <ToolCard key={segment.id} card={segment.card} />;
+          }
+          const display = safeStreamingMarkdownText(
+            segment.text,
+            row.streaming && segments[segments.length - 1] === segment,
+          );
+          if (!display && !row.streaming) return null;
+          return (
+            <RNView key={segment.id} style={[styles.bubble, styles.assistantBubble]}>
+              <Text style={[styles.body, { color: textColor }]}>
+                {display || (row.streaming ? '…' : '')}
+              </Text>
+            </RNView>
+          );
+        })}
+        {row.streaming ? (
+          <Text style={[styles.streaming, { color: muted }]}>streaming</Text>
         ) : null}
       </RNView>
     </RNView>
@@ -43,12 +82,12 @@ function MessageBubbleImpl({ row }: MessageBubbleProps) {
 }
 
 export const MessageBubble = memo(MessageBubbleImpl, (prev, next) => {
-  // Only re-render when this row's visible fields change — neighbors stay cold.
   return (
     prev.row.id === next.row.id &&
     prev.row.text === next.row.text &&
     prev.row.streaming === next.row.streaming &&
-    prev.row.role === next.row.role
+    prev.row.role === next.row.role &&
+    partsSignature(prev.row.parts) === partsSignature(next.row.parts)
   );
 });
 
@@ -64,6 +103,11 @@ const styles = StyleSheet.create({
   assistantWrap: {
     alignItems: 'flex-start',
   },
+  assistantColumn: {
+    maxWidth: '96%',
+    width: '100%',
+    gap: 4,
+  },
   bubble: {
     maxWidth: '92%',
     borderRadius: 16,
@@ -75,6 +119,7 @@ const styles = StyleSheet.create({
   },
   assistantBubble: {
     backgroundColor: 'rgba(127,127,127,0.18)',
+    maxWidth: '100%',
   },
   body: {
     fontSize: 16,

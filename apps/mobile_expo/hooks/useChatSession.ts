@@ -24,6 +24,13 @@ import {
   SessionPromptError,
 } from '@/lib/sessionPrompt';
 import {
+  admitTextQueueItem,
+  loadSessionQueueChips,
+  removeQueueItem,
+  type MessageQueueChipItem,
+  MessageQueueApiError,
+} from '@/lib/messageQueueApi';
+import {
   resolveStreamingRenderCadence,
   StreamingMarkdownPacer,
   type StreamingPlatform,
@@ -46,6 +53,10 @@ export type ChatSessionView = {
   send: () => Promise<void>;
   stop: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** Server message-queue chips for this session (Cap QueuedMessageChips subset). */
+  queueItems: MessageQueueChipItem[];
+  queueRevision: number;
+  removeQueued: (item: MessageQueueChipItem) => Promise<void>;
 };
 
 const platformCadence = (): StreamingPlatform => {
@@ -74,6 +85,9 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
   const [structureEpoch, setStructureEpoch] = useState(0);
   const [busy, setBusy] = useState(false);
   const [transport, setTransport] = useState<EventTransportKind | null>(null);
+  const [queueItems, setQueueItems] = useState<MessageQueueChipItem[]>([]);
+  const [queueRevision, setQueueRevision] = useState(0);
+  const queueRevisionRef = useRef(0);
 
   const transcriptRef = useRef(createTranscriptController());
   const requestId = useRef(0);
@@ -141,6 +155,37 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     void refresh();
   }, [refresh]);
 
+  const refreshQueue = useCallback(async () => {
+    if (!active || !sessionId) {
+      setQueueItems([]);
+      setQueueRevision(0);
+      queueRevisionRef.current = 0;
+      return;
+    }
+    try {
+      const scope = await loadSessionQueueChips(active, sessionId);
+      if (!scope) {
+        setQueueItems([]);
+        return;
+      }
+      setQueueItems(scope.items);
+      setQueueRevision(scope.revision);
+      queueRevisionRef.current = scope.revision;
+      if (scope.directory) directoryRef.current = scope.directory;
+    } catch {
+      // Queue is additive chrome — do not fail the chat surface.
+    }
+  }, [active, sessionId]);
+
+  useEffect(() => {
+    void refreshQueue();
+    if (!active || !sessionId) return;
+    const timer = setInterval(() => {
+      void refreshQueue();
+    }, busy ? 1500 : 5000);
+    return () => clearInterval(timer);
+  }, [active, sessionId, busy, refreshQueue]);
+
   // Events: prefer WS, SSE fallback, poll only reconnect fallback.
   useEffect(() => {
     if (!active || !sessionId) return;
@@ -171,6 +216,9 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
             pacersRef.current.delete(messageId);
             controller.finalizeLiveTail(messageId, text || controller.getState().texts[messageId] || '');
           },
+          upsertLivePart: (messageId, part, role) => {
+            controller.upsertLivePart(messageId, part, role);
+          },
           setBusy: (next) => controller.setBusy(next),
         });
       },
@@ -185,6 +233,37 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     }
     const text = draft.trim();
     if (!text) return;
+
+    // Cap: when session is busy and we know directory, admit to server message-queue.
+    // Without directory, fall through to prompt_async (server may reject; do not invent path).
+    if (sessionId && busy && directoryRef.current) {
+      const directory = directoryRef.current;
+      setDraft('');
+      try {
+        const stamp = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        await admitTextQueueItem(active, {
+          sessionID: sessionId,
+          directory,
+          content: text,
+          requestID: `req_${stamp}`,
+          queueItemID: `qi_${stamp}`,
+          operationID: `op_${stamp}`,
+          messageID: `msg_${stamp}`,
+          expectedRevision: queueRevisionRef.current || undefined,
+        });
+        await refreshQueue();
+      } catch (err) {
+        const message =
+          err instanceof MessageQueueApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'queue admit failed';
+        setError(message);
+        setDraft(text);
+      }
+      return;
+    }
 
     const localUserId = nextLocalId('local_user');
     transcriptRef.current.appendLocalUser(localUserId, text);
@@ -220,7 +299,32 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       transcriptRef.current.setBusy(false);
       syncFromController();
     }
-  }, [active, draft, router, sessionId, syncFromController]);
+  }, [active, busy, draft, refreshQueue, router, sessionId, syncFromController]);
+
+  const removeQueued = useCallback(
+    async (item: MessageQueueChipItem) => {
+      if (!active || !sessionId) return;
+      try {
+        const stamp = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        await removeQueueItem(active, {
+          queueItemID: item.queueItemID,
+          requestID: `rm_${stamp}`,
+          expectedRevision: queueRevisionRef.current,
+          expectedRowVersion: item.rowVersion,
+        });
+        await refreshQueue();
+      } catch (err) {
+        const message =
+          err instanceof MessageQueueApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'queue remove failed';
+        setError(message);
+      }
+    },
+    [active, refreshQueue, sessionId],
+  );
 
   const stop = useCallback(async () => {
     if (!active || !sessionId) return;
@@ -257,12 +361,18 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       send,
       stop,
       refresh,
+      queueItems,
+      queueRevision,
+      removeQueued,
     }),
     [
       busy,
       draft,
       error,
+      queueItems,
+      queueRevision,
       refresh,
+      removeQueued,
       rows,
       send,
       sessionId,

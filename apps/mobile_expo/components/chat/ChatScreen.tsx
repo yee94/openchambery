@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, View as RNView } from 'react-native';
 
 import { ChatComposer } from '@/components/chat/ChatComposer';
+import { QueuedMessageChips } from '@/components/chat/QueuedMessageChips';
 import { TranscriptList } from '@/components/chat/TranscriptList';
 import { Text, View, useThemeColor } from '@/components/Themed';
 import { useChatSession } from '@/hooks/useChatSession';
@@ -37,6 +38,13 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
           <Text style={styles.errorText}>{chat.error}</Text>
         </RNView>
       ) : null}
+
+      <QueuedMessageChips
+        items={chat.queueItems}
+        onRemove={(item) => {
+          void chat.removeQueued(item);
+        }}
+      />
 
       <ChatComposer
         value={chat.draft}

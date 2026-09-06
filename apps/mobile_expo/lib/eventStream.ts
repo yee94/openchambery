@@ -408,6 +408,7 @@ export const applyChatEventToTranscript = (
   actions: {
     upsertLiveTail: (messageId: string, text: string, role?: 'assistant' | 'user') => void;
     finalizeLiveTail: (messageId: string, text: string) => void;
+    upsertLivePart?: (messageId: string, part: Record<string, unknown>, role?: 'assistant' | 'user') => void;
     setBusy: (busy: boolean) => void;
   },
 ): boolean => {
@@ -422,11 +423,24 @@ export const applyChatEventToTranscript = (
     const messageID = typeof props.messageID === 'string' ? props.messageID : null;
     const delta = typeof props.delta === 'string' ? props.delta : null;
     const part = props.part && typeof props.part === 'object' ? (props.part as Record<string, unknown>) : null;
+    const partType = typeof part?.type === 'string' ? part.type : null;
+
+    // Tool / reasoning parts never paint into the primary text bubble.
+    if (messageID && part && (partType === 'tool' || partType === 'reasoning')) {
+      if (partType === 'reasoning' && typeof delta === 'string' && delta.length > 0) {
+        const prior = typeof part.text === 'string' ? part.text : '';
+        actions.upsertLivePart?.(messageID, { ...part, text: prior + delta }, 'assistant');
+      } else {
+        actions.upsertLivePart?.(messageID, part, 'assistant');
+      }
+      return true;
+    }
+
     const text =
       delta ??
       (typeof part?.text === 'string' ? part.text : null) ??
       (typeof props.text === 'string' ? props.text : null);
-    if (messageID && text != null) {
+    if (messageID && text != null && (partType == null || partType === 'text')) {
       actions.upsertLiveTail(messageID, text, 'assistant');
       return true;
     }

@@ -13,6 +13,8 @@ export type TranscriptRow = {
   /** True while this row is the live streaming tail. */
   streaming: boolean;
   createdAt: number;
+  /** Raw parts for tool cards / reasoning disclosure (Cap MessageBody subset). */
+  parts: ChatMessagePart[];
 };
 
 export type TranscriptStructure = {
@@ -28,6 +30,8 @@ export type TranscriptState = {
   texts: Record<string, string>;
   roles: Record<string, TranscriptRow['role']>;
   createdAt: Record<string, number>;
+  /** Parts by message id — tools/reasoning update without structure rebuild when ids stable. */
+  parts: Record<string, ChatMessagePart[]>;
   /** Live streaming tail — updated independently of structure. */
   live: { messageId: string; text: string } | null;
   busy: boolean;
@@ -63,6 +67,7 @@ export const createEmptyTranscript = (): TranscriptState => ({
   texts: {},
   roles: {},
   createdAt: {},
+  parts: {},
   live: null,
   busy: false,
 });
@@ -75,6 +80,8 @@ export type TranscriptController = {
   applyIdentical: (records: ChatMessageRecord[]) => void;
   upsertLiveTail: (messageId: string, text: string, role?: TranscriptRow['role']) => void;
   finalizeLiveTail: (messageId: string, text: string) => void;
+  /** Merge a tool/reasoning part without touching primary live text. */
+  upsertLivePart: (messageId: string, part: ChatMessagePart, role?: TranscriptRow['role']) => void;
   appendLocalUser: (messageId: string, text: string) => void;
   setBusy: (busy: boolean) => void;
   /** Rows for the list — live text substituted without changing structure ids. */
@@ -105,6 +112,7 @@ export const createTranscriptController = (): TranscriptController => {
     const texts: Record<string, string> = {};
     const roles: Record<string, TranscriptRow['role']> = {};
     const createdAt: Record<string, number> = {};
+    const parts: Record<string, ChatMessagePart[]> = {};
     for (const record of records) {
       const id = record.info.id;
       ids.push(id);
@@ -112,8 +120,9 @@ export const createTranscriptController = (): TranscriptController => {
       roles[id] = roleOf(typeof record.info.role === 'string' ? record.info.role : undefined);
       const created = record.info.time?.created;
       createdAt[id] = typeof created === 'number' ? created : 0;
+      parts[id] = record.parts ?? [];
     }
-    return { ids, texts, roles, createdAt };
+    return { ids, texts, roles, createdAt, parts };
   };
 
   const sameIds = (a: string[], b: string[]) =>
@@ -141,6 +150,7 @@ export const createTranscriptController = (): TranscriptController => {
         texts: mapped.texts,
         roles: mapped.roles,
         createdAt: mapped.createdAt,
+        parts: mapped.parts,
         live: null,
         busy: state.busy,
       });
@@ -154,6 +164,7 @@ export const createTranscriptController = (): TranscriptController => {
           texts: mapped.texts,
           roles: { ...state.roles, ...mapped.roles },
           createdAt: { ...state.createdAt, ...mapped.createdAt },
+          parts: mapped.parts,
         });
         return;
       }
@@ -166,6 +177,7 @@ export const createTranscriptController = (): TranscriptController => {
         texts: mapped.texts,
         roles: mapped.roles,
         createdAt: mapped.createdAt,
+        parts: mapped.parts,
         live: state.live,
         busy: state.busy,
       });
@@ -183,6 +195,10 @@ export const createTranscriptController = (): TranscriptController => {
           texts: { ...state.texts, [messageId]: '' },
           roles: { ...state.roles, [messageId]: role },
           createdAt: { ...state.createdAt, [messageId]: Date.now() },
+          parts: {
+            ...state.parts,
+            [messageId]: state.parts[messageId] ?? [{ type: 'text', text: '' }],
+          },
           live: { messageId, text },
           busy: true,
         });
@@ -200,11 +216,57 @@ export const createTranscriptController = (): TranscriptController => {
     },
     finalizeLiveTail: (messageId, text) => {
       stats.liveOnlyUpdates += 1;
+      const existingParts = state.parts[messageId] ?? [];
+      const withoutText = existingParts.filter((p) => p.type !== 'text');
+      const nextParts = text
+        ? [...withoutText, { type: 'text', text }]
+        : withoutText;
       setState({
         ...state,
         texts: { ...state.texts, [messageId]: text },
+        parts: { ...state.parts, [messageId]: nextParts },
         live: state.live?.messageId === messageId ? null : state.live,
         busy: false,
+      });
+    },
+    upsertLivePart: (messageId, part, role = 'assistant') => {
+      const hasId = state.structure.ids.includes(messageId);
+      const existing = state.parts[messageId] ?? [];
+      const id = typeof part.id === 'string' ? part.id : null;
+      let nextParts: ChatMessagePart[];
+      if (id) {
+        const idx = existing.findIndex((p) => p.id === id);
+        if (idx >= 0) {
+          nextParts = existing.slice();
+          nextParts[idx] = { ...existing[idx], ...part };
+        } else {
+          nextParts = [...existing, part];
+        }
+      } else {
+        nextParts = [...existing, part];
+      }
+      stats.liveOnlyUpdates += 1;
+      if (!hasId) {
+        stats.structureRebuilds += 1;
+        setState({
+          structure: {
+            ids: [...state.structure.ids, messageId],
+            structureEpoch: state.structure.structureEpoch + 1,
+          },
+          texts: { ...state.texts, [messageId]: state.texts[messageId] ?? '' },
+          roles: { ...state.roles, [messageId]: role },
+          createdAt: { ...state.createdAt, [messageId]: Date.now() },
+          parts: { ...state.parts, [messageId]: nextParts },
+          live: state.live,
+          busy: true,
+        });
+        return;
+      }
+      setState({
+        ...state,
+        roles: state.roles[messageId] ? state.roles : { ...state.roles, [messageId]: role },
+        parts: { ...state.parts, [messageId]: nextParts },
+        busy: true,
       });
     },
     appendLocalUser: (messageId, text) => {
@@ -218,6 +280,7 @@ export const createTranscriptController = (): TranscriptController => {
         texts: { ...state.texts, [messageId]: text },
         roles: { ...state.roles, [messageId]: 'user' },
         createdAt: { ...state.createdAt, [messageId]: Date.now() },
+        parts: { ...state.parts, [messageId]: [{ type: 'text', text }] },
         live: state.live,
         busy: true,
       });
@@ -227,15 +290,23 @@ export const createTranscriptController = (): TranscriptController => {
       setState({ ...state, busy });
     },
     getRows: () => {
-      const { structure, texts, roles, createdAt, live } = state;
+      const { structure, texts, roles, createdAt, parts, live } = state;
       return structure.ids.map((id) => {
         const streaming = live?.messageId === id;
+        const baseParts = parts[id] ?? [];
+        // While streaming text, keep tool/reasoning parts and replace/append primary text.
+        let rowParts = baseParts;
+        if (streaming) {
+          const nonText = baseParts.filter((p) => p.type !== 'text');
+          rowParts = [...nonText, { type: 'text', text: live!.text }];
+        }
         return {
           id,
           role: roles[id] ?? 'other',
           text: streaming ? live!.text : (texts[id] ?? ''),
           streaming,
           createdAt: createdAt[id] ?? 0,
+          parts: rowParts,
         };
       });
     },
