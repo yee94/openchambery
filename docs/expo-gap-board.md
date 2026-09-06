@@ -30,7 +30,7 @@ Onboarding, QR pairing v2, LAN + relay race, relay-only skip 1.5s, SecureStore, 
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | Expo Connect landed (see apps/mobile_expo lib+connect UI); unit-tested relay-only + persist |
-| CI green | missing | Local vitest+lint+typecheck green; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | |
 
 ### 2. Session / Home
@@ -40,7 +40,7 @@ Session-index, search + highlight, pin/in-progress, `项目 · 分支` subtitle,
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | Live `GET /api/openchamber/session-index` home (failure ≠ empty); search + highlight; pinned/in-progress + `项目 · 分支`; unread dot UI; draft `/chat/draft` (`sessionId == ''`); plus 扫一扫 / 切换实例 → Connect QR / onboarding. Unit tests green locally. Chat body landed in Track 3. Live unread/running still need broader home event wiring (not rebuilt plan/notes/Todo). |
-| CI green | missing | Local vitest+lint+typecheck green; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
 ### 3. Chat
@@ -50,7 +50,7 @@ LegendList semantics (not 1.18 TanStack), transcript, Send/Stop, events WS/SSE, 
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | LegendList transcript (`initialScrollAtEnd` / `maintainScrollAtEnd` / MVCP); load `GET .../messages?turns=6`; Send `prompt_async` / Stop `abort`; draft materialize `POST /api/session` then prompt; events prefer `/api/global/event/ws` → SSE → poll-only reconnect fallback; streaming markdown paced 64ms (Android 128ms) with incomplete-fence isolation; composer text+send/stop only (no mic/TTS). Unit + 关3 perf harness green locally. Still missing: tool cards, queue chips, slash/@/#, attachments, reasoning disclosure UI, context ring, native composer glass. |
-| CI green | missing | Local vitest+lint+typecheck green; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
 ### 4. Projects
@@ -60,7 +60,7 @@ Project cards, worktrees, overflow menus, new/edit/close, plus-menu 扫一扫 / 
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | Cap MobileProjectCard data model (project shell + inset worktree groups + flat session rows) on Expo pixel UI; plus/overflow: draft session, new project (fs/list+mkdir), new worktree essentials, edit (name/color/icon/discover), worktree remove; APIs: session-index + fs/list|mkdir|clone + git/worktrees + PUT /api/config/settings + icon/discover + message-queue worktree order. No plan/notes/Todo / Finder. Unit tests green locally. |
-| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
 ### 5. Assistant
@@ -70,7 +70,7 @@ Catalog, enable guide, pushed conversation, share-in (exact instance+assistant).
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | Live `GET /api/openchamber/assistants/snapshot` + capability; enable via `PUT .../assistants/settings`; tap opens bound `sessionID` or `POST .../session/new` into Chat; empty → onboarding → Settings `slug=assistants` create; long-press edit/delete (delete confirm + official DELETE). Unit tests green locally. Share-in inbox / recipient picker still open (Track 8 native share). Full Settings assistants CRUD is Track 7. |
-| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
 ### 6. Scheduled
@@ -80,7 +80,7 @@ Catalog, enable guide, pushed conversation, share-in (exact instance+assistant).
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | Cap MobileScheduledTab parity on Expo: cards show status+schedule+next-run (never name-only); segments 任务/历史记录 + filters 全部/已启用/已暂停; Run now POST .../scheduled-tasks/{id}/run with optimistic running; full editor daily/weekly/cron create/edit/toggle/delete via PUT/DELETE; history opens /chat/{sessionId}. Unit tests green locally. |
-| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
 ### 7. Settings
@@ -90,7 +90,7 @@ All writable `MOBILE_SETTINGS_PAGE_SLUGS` except Voice (omitted). No `iosNativeU
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | Settings home search + Cap groups; real editors for all Expo slugs (instances, appearance language+theme only, chat, notifications, sessions, summary-ai, projects, git, providers+OAuth browser, agents, assistants CRUD, behavior, commands, mcp+OAuth pending, plugins file APIs, magic-prompts, snippets, skills.installed, usage, about). Official GET/PUT settings merge + catalog APIs; failure != empty; tokens not logged; Voice/iosNativeUi/Capgo omitted. Unit tests green locally. |
-| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
 ### 8. System shell
@@ -100,7 +100,7 @@ Push, share inbox, Live Activity, WidgetKit/NSE, external browser, HEIC / picker
 | Row | Status | Notes |
 |---|---|---|
 | Track (CODE) | **code landed** | iOS: Expo `NativeTabs` (real `UITabBar`) + `expo-glass-effect` (`UIGlassEffect`) composer; local `openchamber-system-shell` module for Live Activity / App Group share inbox / virtual assets + config plugin (`group.com.yee94.openchamber`, Live Activities, Android SEND intents). Push: `expo-notifications` → `POST /api/push/apns-token` + visibility heartbeat; tap/deep link `openchamber://session/{id}`. Haptics via `expo-haptics`; OAuth external browser http(s) only. Android: Material dock + solid composer (honest degrade, not fake glass); Live Activity no-op. Unit tests for deep links / share parsers / http(s) guard / Live Activity validators. |
-| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Device residuals: iOS Share Extension target UI (inbox/App Group store landed), WidgetKit Live Activity UI surface (ActivityKit API landed), APNs/FCM on physical device, HEIC pick on device. Do not mark from Linux VM |
 
 ### 9. CI + side-by-side debug prerelease
