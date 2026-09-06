@@ -26,23 +26,53 @@ describe('native host sources', () => {
     expect(activity).toContain('com.yee94.openchamber');
   });
 
-  test('host scaffold includes bridge/camera/virtual-asset/predictive-back stubs', async () => {
+  test('host scaffold includes deepened bridge protocols', async () => {
     const iosBridge = await readFile(join(hostRoot, 'ios/OpenChamberLynxBridge.swift'), 'utf8');
     const iosCamera = await readFile(join(hostRoot, 'ios/OpenChamberLynxCameraAdapter.swift'), 'utf8');
     const iosAsset = await readFile(join(hostRoot, 'ios/OpenChamberLynxVirtualAsset.swift'), 'utf8');
     const iosBack = await readFile(join(hostRoot, 'ios/OpenChamberLynxPredictiveBack.swift'), 'utf8');
+    const iosHttp = await readFile(join(hostRoot, 'ios/OpenChamberLynxHttpClient.swift'), 'utf8');
+    const iosSecure = await readFile(join(hostRoot, 'ios/OpenChamberLynxSecureStore.swift'), 'utf8');
+    const iosOauth = await readFile(join(hostRoot, 'ios/OpenChamberLynxOAuthBrowser.swift'), 'utf8');
+    const iosIme = await readFile(join(hostRoot, 'ios/OpenChamberLynxImeInset.swift'), 'utf8');
+    const androidBridge = await readFile(
+      join(hostRoot, 'android/app/src/main/java/com/yee94/openchamber/lynx/OpenChamberLynxBridge.kt'),
+      'utf8',
+    );
+    const androidSecure = await readFile(
+      join(hostRoot, 'android/app/src/main/java/com/yee94/openchamber/lynx/OpenChamberLynxSecureStore.kt'),
+      'utf8',
+    );
+    const androidOauth = await readFile(
+      join(hostRoot, 'android/app/src/main/java/com/yee94/openchamber/lynx/OpenChamberLynxOAuthBrowser.kt'),
+      'utf8',
+    );
     const podfile = await readFile(join(hostRoot, 'ios/Podfile'), 'utf8');
     const gradle = await readFile(join(hostRoot, 'android/app/build.gradle'), 'utf8');
     const manifest = await readFile(join(hostRoot, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
     const readme = await readFile(join(hostRoot, 'README.md'), 'utf8');
-    expect(iosBridge).toContain('OpenChamberLynxBridge');
+    expect(iosBridge).toContain('scanPairingQr');
+    expect(iosBridge).toContain('openOAuthAuthorize');
+    expect(iosBridge).toContain('qrScanResult');
     expect(iosCamera).toContain('.unavailable');
     expect(iosAsset).toContain('openchamber-asset');
+    expect(iosAsset).toContain('registerSchemeHandler');
     expect(iosBack).toContain('PredictiveBack');
+    expect(iosHttp).toContain('URLSession');
+    expect(iosSecure).toContain('SecItemCopyMatching');
+    expect(iosSecure).toContain('kSecAttrAccessibleWhenUnlocked');
+    expect(iosOauth).toContain('ASWebAuthenticationSession');
+    expect(iosIme).toContain('keyboardWillChangeFrameNotification');
+    expect(iosIme).toContain('ABOVE glass');
+    expect(androidBridge).toContain('ScanPairingQr');
+    expect(androidBridge).toContain('OpenOAuthAuthorize');
+    expect(androidSecure).toContain('EncryptedSharedPreferences');
+    expect(androidOauth).toContain('CustomTabsIntent');
     expect(podfile).toContain("platform :ios");
     expect(gradle).toContain("applicationId 'com.yee94.openchamber'");
     expect(manifest).toContain('enableOnBackInvokedCallback');
     expect(readme).toContain('Mac / device run steps');
+    expect(readme).toContain('ASWebAuthenticationSession');
   });
 
   test('lynx-ci workflow template is ready under packages/lynx/ci', async () => {

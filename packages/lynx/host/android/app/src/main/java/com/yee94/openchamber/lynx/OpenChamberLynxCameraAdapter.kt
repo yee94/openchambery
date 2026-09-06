@@ -13,6 +13,16 @@ interface LynxCameraScanning {
     suspend fun scanPairingQr(): LynxCameraScanResult
 }
 
-class OpenChamberLynxCameraAdapter : LynxCameraScanning {
-    override suspend fun scanPairingQr(): LynxCameraScanResult = LynxCameraScanResult.Unavailable
+/**
+ * Stub binder. Host replaces with CameraX / ML Kit barcode when shipping a device binary.
+ * Callback path: scanPairingQr → Bridge.QrScanResult → Lynx parseConnectionPayload.
+ */
+class OpenChamberLynxCameraAdapter(
+    private val implementation: (suspend () -> LynxCameraScanResult)? = null,
+) : LynxCameraScanning {
+    override suspend fun scanPairingQr(): LynxCameraScanResult {
+        if (implementation != null) return implementation.invoke()
+        // Inject point: CameraX analyzer → return Ok(rawValue = payload)
+        return LynxCameraScanResult.Unavailable
+    }
 }

@@ -126,7 +126,7 @@ Slice on `cursor/lynx-editors-sheets-local` (PR into `work/lynx-native`). Packag
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | Settings entity editors (list-backed) | SettingsView split → entity CRUD stores | Detail push + save/delete for providers (auth delete only; save unsupported), agents, assistants, mcp, plugins, commands, snippets, magic-prompts, skills.installed, projects. Real Cap routes; failure ≠ empty / fake-success. |
-| Chat Files sheet | `MobileFilesSurface` → `/api/fs/list` | Real directory listing; no-directory / HTTP failure labeled. Preview/HTML iframe not ported. |
+| Chat Files sheet | `MobileFilesSurface` → `/api/fs/list` | Real directory listing; no-directory / HTTP failure labeled. Text preview 代码接上; HTML Cap-like toggle + host stub in host-bridge deepen. |
 | Chat Changes sheet | `MobileChangesSurface` → `/api/git/status` | Real status list (branch + staged/unstaged/untracked). Diff viewer / commit / sync not ported. |
 | Chat MCP sheet | mobile MCP surface / `/api/config/mcp` | Overflow entry + catalog list. |
 | `openchamber://` apply | `deepLinkNavigation.ts` | Parse already existed; apply maps intents → shell navigation (session/draft/tab/settings/sheets/instances). Stash until connect ready + handlers. |
@@ -144,7 +144,7 @@ Slice on `cursor/lynx-diff-push-share-local` (PR into `work/lynx-native`). Packa
 |---|---|---|
 | Changes turn/file diff | `MobileChangesSurface` → `/api/git/file-diff`, `/api/git/diff` | Tap file → preview unified/original+modified. Binary labeled. |
 | Changes commit / sync | `CommitSection`, `SyncActions` → `POST /api/git/commit\|fetch\|pull\|push` | **Real** Cap endpoints (not stubs). Failure ≠ fake-success. |
-| Files text preview | `MobileFilesSurface` / FilesView → `/api/fs/read` | List stays real; tap file → text preview (truncated). HTML iframe not ported. |
+| Files text preview | `MobileFilesSurface` / FilesView → `/api/fs/read` | List stays real; tap file → text preview (truncated). HTML Cap-like source/preview stub in host-bridge deepen (no invent iframe). |
 | Provider auth UI | `ProvidersPage` auth | API key `PUT /api/auth/:id`; OAuth authorize/callback Cap routes; **host-only** browser open documented (no invented OAuth/Capgo). Clear-auth delete unchanged. |
 | Push registration hooks | `useNativePushRegistration` → `/api/push/apns-token` | Host injects APNs/FCM tokens; Lynx stores + registers/unregisters. FCM `applicationId` must be `com.yee94.openchamber[.debug]` (pitfalls §6). |
 | Share inbox intake | `MobileShareBridge` → assistants `/share` | Accept host share envelope / openchamber share intents; dispatch to Assistant session. No Capgo. |
@@ -215,9 +215,9 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Instance list, add, delete, password unlock~~ | `mobileConnections.ts` | **代码接上** instances UI on welcome + settings/instances |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
 | ~~`openchamber://` parse + apply~~ | `deepLinks.ts` | Parse/build + **apply → navigation** 代码接上 (stash until connect ready) |
-| Secure store (Keychain / Keystore) | Capacitor secure storage | Injected adapter only — **native Keychain/Keystore wiring** still missing |
+| Secure store (Keychain / Keystore) | Capacitor secure storage | JS adapter + host Keychain/EncryptedSharedPreferences **stubs** 代码接上; live OS wiring still 真机 |
 | Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA + tab bodies + **swipe/long-press menus** **代码接上**; rich pixel polish still missing |
-| Host Tab/Nav **binary** (linked Lynx SDK) | `packages/lynx/host/*` | Strategy + sources landed; not an Xcode/Gradle project yet |
+| Host Tab/Nav **binary** (linked Lynx SDK) | `packages/lynx/host/*` | Strategy + Xcode/Gradle **scaffold** 代码接上 (PR#48); CocoaPods/AAR resolve still missing on Linux |
 
 ### Projects (chat list)
 
@@ -229,8 +229,8 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Collapsing MobileTabPageHeader~~ | `MobileTabPageHeader.tsx` | **代码接上** glass search + primary + |
 | ~~Swipe / long-press actions~~ | `sessionMenuModel.ts` | **代码接上** long-press sheet → pin/archive/delete real APIs |
 | ~~New-session draft page~~ | `kind: 'draft'` | **代码接上** draft composer body materializes POST /session |
-| Add project directory explorer | `DirectoryExplorerDialog` | |
-| Header 扫一扫 / 切换实例 | `MobileProjectsHome` | |
+| ~~Add project directory explorer~~ | `DirectoryExplorerDialog` | **代码接上** in PR#48 (`DirectoryExplorer` + settings projects add) |
+| ~~Header 扫一扫 / 切换实例~~ | `MobileProjectsHome` | **代码接上** chrome; camera host still unavailable until binder |
 | ~~Session index as data source~~ | `GET /api/openchamber/session-index` (server) | Client + home projection + **Projects UI** 代码接上 |
 
 ### Chat
@@ -245,10 +245,10 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid + prepend-settle gate + pin-reveal polish |
 | ~~Nested child session stack + predecessor~~ | `mobileNavigation.ts` | **代码接上** reconcile + predecessor chrome; host underlay pixel polish still thin |
-| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML iframe / PierreDiff polish still thin. |
+| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML preview = labeled text stub until host WKWebView; PierreDiff = text stub. |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | ~~Context usage~~ | `mobileContextUsage.ts` | **代码接上** header chip + Cap `/api/config/providers` limit |
-| Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | Attach + host media inject 代码接上; `/` `@` / agent·model chrome still thin |
+| ~~Composer attachments, `/` `@`, agent/model~~ | composer DOCUMENTATION | Attach + `/` `@` catalogs **代码接上** (Chat + Draft); autocomplete **above glass**; host Mode B paint still thin |
 | Native-quality IME (not WebView FLIP) | pitfalls §3 | **Contract 代码接上** (`imeOccupancy.ts`); host keyboard binding / 真机 still missing |
 | ~~Session swipe (composer only)~~ | `useEdgeSwipeSessionSwitch.ts` | **代码接上** state machine + composer surface; **host pan bind** still required |
 
@@ -257,7 +257,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | ~~Assistant catalog + conversation page~~ | `MobileAssistantTab.tsx`, `AssistantView.tsx` | **代码接上** catalog + LynxChatScreen; ensure path calls Cap `session/ensure` (no invented ids) |
-| Continuous / stateless admission | assistants DOCUMENTATION | Mode labels shown; admission APIs not fully ported |
+| ~~Continuous / stateless admission~~ | assistants DOCUMENTATION | **代码接上** `POST …/assistants/:id/messages` (PR#48); mode polish still thin |
 | ~~Share welcome + inbox~~ | `AssistantShareWelcome`, `MobileShareBridge` | **代码接上** share inbox + **welcome chrome** (Cap storage key + examples) |
 | ~~Scheduled list / history / editor~~ | `MobileScheduledTab.tsx` | **代码接上** list + history + editor upsert UI |
 | ~~Settings search + **all 21 mobile slugs**~~ | `MOBILE_SETTINGS_PAGE_SLUGS` | **代码接上** home search + grouped rows + push stubs |
@@ -272,10 +272,10 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Live Activity | iOS 17+ plugin |
 | Widgets / Control Center | `OpenChamberWidget` |
 | ~~Haptics~~ | `OpenChamberHaptics` | **代码接上** host-inject adapter; native impact still host-owned |
-| Virtual image assets | `openchamber-asset://` |
+| ~~Virtual image assets~~ | `openchamber-asset://` | **代码接上** TS + host scheme stubs (PR#48 / host-bridge deepen) |
 | ~~HEIC / media pick~~ | `OpenChamberMedia.transcode` / `pickMedia` | **代码接上** host-inject + Attach call site; no fake success without host |
-| About + diagnostics export | `AboutSettings` |
-| Predictive / edge back | `OpenChamberNavigation` |
+| ~~About + diagnostics export~~ | `AboutSettings` | **代码接上** `openchamber.client-diagnostics.v1` export (PR#48) |
+| ~~Predictive / edge back~~ | `OpenChamberNavigation` | **代码接上** JS policy + host stubs (PR#48); 真机 arena still host |
 
 ### Voice (existing path only)
 
@@ -327,6 +327,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 15. ~~**SSE live tail + IME occupancy contract + nested chat predecessor**~~ — 代码接上 in `cursor/lynx-sse-live-local`. Remaining: host IME binding / Keychain/QR, relay streaming body, 真机.
 16. ~~**context usage + edge swipe + haptics/HEIC/media + pin reveal**~~ — 代码接上 in `cursor/lynx-context-edge-media-local`. Remaining: host pan/haptics/media binders, Keychain/OAuth browser, Live Activity/Widgets, 真机.
 17. ~~**closable missing: host scaffold + lynx-ci workflow + DirectoryExplorer + 扫一扫/切换实例 + composer `/` `@` + admission + voice dictation status + About diagnostics + openchamber-asset hooks + predictive-back contract**~~ — 代码接上 in `cursor/lynx-closable-missing-local`. Remaining: real camera/SDK link / Keychain / IME 真机; not product-EXHAUSTED.
+18. ~~**linux gaps: GitIdentity* editor + Files HTML preview stub + DraftComposer `/` `@` + autocomplete above glass + host-bridge deepen + Missing strikethrough hygiene**~~ — 代码接上 in `cursor/lynx-host-bridge-deepen-local`. Remaining: host WKWebView HTML sheet / PierreDiff / live Keychain·camera·IME 真机.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -387,7 +388,7 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 | `sessions` | 代码接上 (wired GET/PUT) | Auto-delete + retention from settings blob |
 | `summary-ai` | 代码接上 (wired GET/PUT + small-model) | Settings blob + `/api/small-model`; failure ≠ empty |
 | `projects` | 代码接上 (list + editor) | settings blob list; detail save/delete via settings PUT |
-| `git` | 代码接上 (wired gitmoji + stub editor) | gitmoji toggle; identities editor stub |
+| `git` | 代码接上 (wired gitmoji + GitIdentity* editor) | gitmoji toggle; identities list/create/update/delete via `/api/git/identities` (no fake-success) |
 | `providers` | 代码接上 (list + editor) | catalog list; detail + **auth DELETE**; generic save unsupported |
 | `agents` | 代码接上 (list + editor) | list + `/api/config/agents/:name` PATCH/DELETE |
 | `assistants` | 代码接上 (list + editor) | snapshot list + PATCH/DELETE `/api/openchamber/assistants/:id` |
@@ -405,11 +406,36 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 ---
 
 
+
+## 代码接上 (host bridge deepen + git identities + HTML/Pierre stubs + draft `/` `@` — not landed under 三关)
+
+Slice on `cursor/lynx-host-bridge-deepen-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` (copy to `.github/workflows` when `workflow` scope available) — **not claimed live**. 真机过: not executed. Product **NOT DONE**.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Host HTTP client | Cap runtimeFetch / URLSession·OkHttp | `src/host/httpClient.ts` + iOS URLSession / Android OkHttp stubs |
+| Secure store Keychain/Keystore | `@aparajita/capacitor-secure-storage` | `secureStore.ts` + SecItem / EncryptedSharedPreferences API shapes; bounded timeout; never log tokens |
+| Camera QR → pairing callback | `mobileQrScan.ts` | Bridge `scanPairingQr` → `qrScanResult` → Lynx parse; adapter unavailable without host |
+| IME inset publisher | native composer keyboard | `imeInset.ts` + host keyboard observers → `keyboardInset` / `imeInset` |
+| OAuth browser | ASWebAuthenticationSession / Custom Tabs | `oauthBrowser.ts` + iOS/Android launcher stubs with clear inject points |
+| Host message channel | Cap plugin call/listen | `hostChannel.ts` Cap-plugin method list; wires adapters |
+| Virtual asset scheme handlers | `openchamber-asset://` | Scheme registry + iOS/Android handler stubs (`registerSchemeHandler`) |
+| Autocomplete ABOVE glass | Cap `OpenChamberComposerAutocomplete` | `composerAutocompleteLayout` + `ComposerAutocompleteList`; ChatScreen + DraftComposer |
+| DraftComposer `/` `@` catalogs | ChatScreen composerCatalog | Same load/detect/suggest/apply path as chat |
+| Settings git identities | Cap GitIdentity* `/api/git/identities` | List/create/update/delete + global read; never fake-success |
+| Files HTML preview | `MobileFilesSurface` iframe | Cap-like source/preview toggle; preview = honest host WebView stub + text source |
+| PierreDiff polish | `PierreDiffViewer` | Thin unified-text stub note — Cap viewer not ported |
+
+**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed (environment: Linux cloud VM).
+
+---
+
 ## Remaining (honest — not EXHAUSTED)
 
-Linux-doable Cap product rows continue to close. **Do not** mark the Lynx JS surface EXHAUSTED while DirectoryExplorer / composer chrome / host scaffolds / dictation status / diagnostics / asset hooks still have open polish or binder work.
+**Product NOT DONE.** Linux-doable Cap product rows continue to close. **Do not** mark the Lynx JS surface EXHAUSTED while host binders / HTML WebView / PierreDiff / Live Activity still need work.
 
-### 代码接上 this slice (`cursor/lynx-closable-missing-local`)
+### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
 | Item | Notes |
 |---|---|
@@ -424,19 +450,33 @@ Linux-doable Cap product rows continue to close. **Do not** mark the Lynx JS sur
 | `openchamber-asset://` hooks | TS + iOS/Android stub resolvers |
 | Predictive / edge-back contract | JS policy + host stubs + wiring notes |
 
+### 代码接上 this slice (`cursor/lynx-host-bridge-deepen-local`)
+
+| Item | Notes |
+|---|---|
+| Settings GitIdentity* editor | Real `/api/git/identities` list/create/update/delete (+ global read); no fake-success |
+| Files HTML preview | Cap iframe → Lynx labeled text stub + `planLynxHtmlPreview` until host WKWebView sheet |
+| DraftComposer `/` `@` catalogs | Same `loadLynxComposerCatalogs` path as ChatScreen |
+| Autocomplete above glass | `LynxComposerAutocompleteList` sibling overlay; `forbidInsideGlassContentView`; documented in imeOccupancy + ia-ui |
+| Host-bridge deepen | secureStore / httpClient / oauthBrowser / imeInset / hostChannel + iOS/Android stubs |
+| Gap-board Missing strikethrough | PR#48 DirectoryExplorer / 扫一扫 / composer `/` `@` / admission / diagnostics / assets / predictive-back |
+
 ### Still missing / host-only / 真机
 
 | Remaining | Why |
 |---|---|
-| Native Keychain / Keystore wiring | Injected secure-store adapter exists; OS keychain still host |
+| Native Keychain / Keystore live OS wiring | Stubs + JS adapter 代码接上; SecItem / EncryptedSharedPreferences still 真机 |
 | Real QR camera / AVCapture / CameraX | Adapter + chrome 代码接上; binder returns unavailable until host |
-| OAuth system browser open | Cap routes 代码接上; ASWebAuthenticationSession / Custom Tabs host |
-| IME keyboard binding + occupancy 真机 | Contract 代码接上; LynxView IME must be host-bound |
+| OAuth system browser open | Cap routes + host stubs 代码接上; ASWebAuthenticationSession / Custom Tabs 真机 |
+| Host WKWebView / WebView HTML preview sheet | Text stub only — no invent Lynx DOM iframe |
+| PierreDiff interactive viewer | Unified text stub; Cap Pierre runtime CSS not ported |
+| IME keyboard binding + occupancy 真机 | Contract + inset publisher stubs 代码接上; LynxView IME must be host-bound |
 | Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |
 | Share extension / Android share receiver | Inbox accepts payloads; extensions are native |
 | Live Activity / Widgets / Control Center | iOS-only host — later |
 | Linked Lynx SDK (CocoaPods/Gradle resolve) + APK/IPA CI | Scaffold files exist; artifacts not on Linux agent |
+| `.github/workflows/lynx-ci.yml` install | Needs `workflow` token scope |
 | Bonjour / Nearby, invented ASR, TanStack 1.18, Capgo OTA | 故意不移植 |
 | 真机过 | Empty 真机残差 until a written device log |
 

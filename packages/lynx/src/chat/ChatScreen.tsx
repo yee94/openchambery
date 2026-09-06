@@ -11,6 +11,7 @@ import {
   suggestionsForTrigger,
   type LynxComposerSuggestion,
 } from './composerCatalog';
+import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
 import {
   createLynxComposerActions,
   type LynxComposerActions,
@@ -733,31 +734,18 @@ export function LynxChatScreen({
                 {cardError}
               </LynxText>
             ) : null}
-            {composerCatalogHint ? (
-              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '4px' }}>
-                {composerCatalogHint}
-              </LynxText>
-            ) : null}
-            {composerSuggestions.length > 0 ? (
-              <LynxView style={{ marginBottom: '8px' }}>
-                {composerSuggestions.slice(0, 6).map((suggestion) => (
-                  <LynxView
-                    key={suggestion.id}
-                    bindtap={() => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
-                    style={{ padding: '6px 0' }}
-                    accessibility-role="button"
-                  >
-                    <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px' }}>
-                      {suggestion.insertText}
-                      {suggestion.subtitle ? ` · ${suggestion.subtitle}` : ''}
-                    </LynxText>
-                  </LynxView>
-                ))}
-              </LynxView>
-            ) : null}
+            {/* Autocomplete ABOVE glass composer — never inside blur-view/contentView */}
+            <LynxComposerAutocompleteList
+              locale={locale}
+              hint={composerCatalogHint}
+              suggestions={composerSuggestions}
+              onSelect={(suggestion) => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
+            />
             <LynxView
               // Cap: composer-only session swipe surface. Host binds pan → onComposerEdgeSwipeEvent.
+              // Glass/elevated card — autocomplete is a sibling ABOVE this node (not a child).
               data-session-swipe-surface="true"
+              data-lynx-glass-composer="true"
               style={{
                 padding: '10px 12px',
                 borderRadius: '12px',

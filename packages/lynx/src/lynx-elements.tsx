@@ -15,6 +15,12 @@ export type LynxViewProps = {
   'accessibility-element'?: boolean;
   'accessibility-role'?: string;
   flatten?: boolean;
+  /** Cap composer swipe surface / host layout markers */
+  'data-session-swipe-surface'?: string;
+  'data-lynx-glass-composer'?: string;
+  'data-lynx-autocomplete-placement'?: string;
+  'data-lynx-autocomplete-forbid-glass-content'?: string;
+  'data-mobile-html-preview'?: string;
 };
 
 export type LynxPageProps = LynxViewProps & {

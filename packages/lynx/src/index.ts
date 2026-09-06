@@ -316,3 +316,60 @@ export {
   loadLynxComposerCatalogs,
   suggestionsForTrigger,
 } from './chat/composerCatalog';
+
+export {
+  createLynxSecureStoreAdapter,
+  lynxSecurePrefixedTokenKey,
+  LYNX_SECURE_STORAGE_PREFIX,
+  LYNX_SECURE_TIMEOUT_MS,
+  LYNX_KEYCHAIN_ACCESS_WHEN_UNLOCKED,
+} from './host/secureStore';
+export { createLynxHttpClientAdapter } from './host/httpClient';
+export {
+  createLynxOAuthBrowserAdapter,
+  LYNX_OAUTH_CALLBACK_SCHEME,
+  LYNX_OAUTH_BROWSER_INJECT_POINTS,
+} from './host/oauthBrowser';
+export {
+  createLynxImeInsetPublisher,
+  LYNX_IME_INSET_DEFAULT,
+  LYNX_IME_INSET_WIRING_NOTES,
+} from './host/imeInset';
+export {
+  createLynxHostChannel,
+  LYNX_HOST_CHANNEL_METHODS,
+} from './host/hostChannel';
+export {
+  hostTabChromeCommand,
+  scanPairingQrCommand,
+  openOAuthAuthorizeCommand,
+} from './host/bridge';
+export {
+  createLynxVirtualAssetSchemeRegistry,
+  LYNX_VIRTUAL_ASSET_SCHEME_HANDLER_NOTES,
+} from './host/virtualAsset';
+export {
+  planLynxHtmlPreview,
+  isLynxHtmlPath,
+  LYNX_HTML_PREVIEW_STUB_NOTES,
+} from './chat/htmlPreview';
+export {
+  planLynxPierreDiff,
+  LYNX_PIERRE_DIFF_STUB_NOTES,
+} from './chat/pierreDiff';
+export {
+  LYNX_COMPOSER_AUTOCOMPLETE_LAYOUT,
+  computeLynxAutocompleteMaxHeight,
+  LYNX_COMPOSER_AUTOCOMPLETE_WIRING_NOTES,
+} from './chat/composerAutocompleteLayout';
+export { LYNX_COMPOSER_AUTOCOMPLETE_ABOVE_GLASS } from './chat/imeOccupancy';
+
+export {
+  loadLynxGitIdentities,
+  createLynxGitIdentity,
+  updateLynxGitIdentity,
+  deleteLynxGitIdentity,
+} from './settings/gitIdentities';
+export type { LynxGitIdentityProfile } from './settings/gitIdentities';
+
+export { LynxComposerAutocompleteList } from './chat/ComposerAutocompleteList';

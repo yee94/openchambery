@@ -28,6 +28,10 @@
 				A10000000000000000000014 /* OpenChamberLynxCameraAdapter.swift */,
 				A10000000000000000000015 /* OpenChamberLynxVirtualAsset.swift */,
 				A10000000000000000000016 /* OpenChamberLynxPredictiveBack.swift */,
+				A1000000000000000000001A /* OpenChamberLynxImeInset.swift */,
+				A10000000000000000000019 /* OpenChamberLynxOAuthBrowser.swift */,
+				A10000000000000000000018 /* OpenChamberLynxSecureStore.swift */,
+				A10000000000000000000017 /* OpenChamberLynxHttpClient.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -81,6 +85,10 @@
 		A10000000000000000000014 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxCameraAdapter.swift; sourceTree = "<group>"; };
 		A10000000000000000000015 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxVirtualAsset.swift; sourceTree = "<group>"; };
 		A10000000000000000000016 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxPredictiveBack.swift; sourceTree = "<group>"; };
+		A1000000000000000000001A = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxImeInset.swift; sourceTree = "<group>"; };
+		A10000000000000000000019 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxOAuthBrowser.swift; sourceTree = "<group>"; };
+		A10000000000000000000018 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxSecureStore.swift; sourceTree = "<group>"; };
+		A10000000000000000000017 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxHttpClient.swift; sourceTree = "<group>"; };
 	};
 	rootObject = A10000000000000000000001;
 }

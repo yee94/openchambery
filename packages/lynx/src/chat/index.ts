@@ -137,3 +137,14 @@ export {
   suggestionsForTrigger,
   applyLynxComposerSuggestion,
 } from './composerCatalog';
+
+export {
+  LYNX_COMPOSER_AUTOCOMPLETE_LAYOUT,
+  computeLynxAutocompleteMaxHeight,
+  LYNX_COMPOSER_AUTOCOMPLETE_WIRING_NOTES,
+} from './composerAutocompleteLayout';
+export { LYNX_COMPOSER_AUTOCOMPLETE_ABOVE_GLASS } from './imeOccupancy';
+export { planLynxHtmlPreview, isLynxHtmlPath } from './htmlPreview';
+export { planLynxPierreDiff } from './pierreDiff';
+
+export { LynxComposerAutocompleteList } from './ComposerAutocompleteList';

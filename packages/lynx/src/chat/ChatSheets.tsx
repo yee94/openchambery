@@ -14,6 +14,8 @@ import {
   type LynxGitSyncAction,
 } from './changesSurface';
 import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
+import { isLynxHtmlPath, planLynxHtmlPreview } from './htmlPreview';
+import { planLynxPierreDiff } from './pierreDiff';
 import type { LynxChatSheetKind } from './overflowMenu';
 
 export type ChatSheetProps = {
@@ -91,6 +93,7 @@ function FilesSheetBody({
   const [preview, setPreview] = useState<string | null>(null);
   const [previewNote, setPreviewNote] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [htmlViewMode, setHtmlViewMode] = useState<'preview' | 'source'>('source');
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +120,7 @@ function FilesSheetBody({
     setPreviewPath(filePath);
     setPreview(null);
     setPreviewNote(null);
+    setHtmlViewMode(isLynxHtmlPath(filePath) ? 'preview' : 'source');
     setPreviewBusy(true);
     const result = await readLynxFile(runtimeFetch, filePath);
     setPreviewBusy(false);
@@ -148,7 +152,30 @@ function FilesSheetBody({
         </LynxText>
         {previewBusy ? <Banner text={lynxT(locale, 'lynx.settings.loading')} muted /> : null}
         {previewNote ? <Banner text={previewNote} muted /> : null}
-        {preview !== null ? (
+        {planLynxHtmlPreview(previewPath).mode === 'html-stub' ? (
+          <LynxView data-mobile-html-preview="stub" style={{ marginBottom: '8px' }}>
+            <LynxView
+              bindtap={() => setHtmlViewMode((m) => (m === 'preview' ? 'source' : 'preview'))}
+              style={{ padding: '6px 0' }}
+            >
+              <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px' }}>
+                {htmlViewMode === 'preview'
+                  ? lynxT(locale, 'lynx.chat.sheet.files.htmlViewSource')
+                  : lynxT(locale, 'lynx.chat.sheet.files.htmlViewPreview')}
+              </LynxText>
+            </LynxView>
+            {htmlViewMode === 'preview' ? (
+              <Banner
+                text={(() => {
+                  const plan = planLynxHtmlPreview(previewPath);
+                  return plan.mode === 'html-stub' ? plan.note : '';
+                })()}
+                muted
+              />
+            ) : null}
+          </LynxView>
+        ) : null}
+        {preview !== null && (planLynxHtmlPreview(previewPath).mode !== 'html-stub' || htmlViewMode === 'source') ? (
           <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px' }}>
             {preview}
           </LynxText>
@@ -344,6 +371,7 @@ function ChangesSheetBody({
         </LynxText>
         {diffBusy ? <Banner text={lynxT(locale, 'lynx.settings.loading')} muted /> : null}
         {diffNote ? <Banner text={diffNote} muted /> : null}
+        <Banner text={planLynxPierreDiff({ unifiedDiff: diffText }).note} muted />
         {diffText !== null ? (
           <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px' }}>
             {diffText}
