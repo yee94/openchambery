@@ -1,10 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { AssistantCatalog } from '@/components/assistant/AssistantCatalog';
 
 export default function AssistantScreen() {
-  return (
-    <PlaceholderScreen
-      title="Assistant"
-      body="Stub catalog. Live assistants snapshot and share-in land later. Conversations push above this tab."
-    />
-  );
+  return <AssistantCatalog />;
 }

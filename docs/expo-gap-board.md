@@ -69,9 +69,9 @@ Catalog, enable guide, pushed conversation, share-in (exact instance+assistant).
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | Dock label only |
-| CI green | missing | |
-| 真机过 | missing | |
+| Track (CODE) | **code landed** | Live `GET /api/openchamber/assistants/snapshot` + capability; enable via `PUT .../assistants/settings`; tap opens bound `sessionID` or `POST .../session/new` into Chat; empty → onboarding → Settings `slug=assistants` create; long-press edit/delete (delete confirm + official DELETE). Unit tests green locally. Share-in inbox / recipient picker still open (Track 8 native share). Full Settings assistants CRUD is Track 7. |
+| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| 真机过 | missing | Do not mark from Linux VM |
 
 ### 6. Scheduled
 
