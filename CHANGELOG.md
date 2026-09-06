@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.1] - 2026-09-06
+
+### 会话
+
+- 展开「运行了」折叠后的工具列表不再挤在一起，手机行距按原来的工具行比例收一档。
+- 电脑端侧栏聚焦当前会话时平滑滚到视口大约三分之一处，不再贴在边缘。
+
 ## [1.19.6] - 2026-09-05
 
 汇总 1.19.5-beta.1 ~ 1.19.6-beta.2（1.19.5 正式版发布中断：macOS 签名 keychain 失败，Draft 未转正；npm 已有同名版本，顺延为 1.19.6）。
