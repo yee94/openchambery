@@ -9,6 +9,11 @@ type AgentAvatarProps = {
   /** Optional glyph used in place of the generated identicon. */
   emoji?: string;
   size?: number;
+  /**
+   * `rounded` keeps the compact agent-badge chip; `circle` is the Assistant
+   * contact face (list / header / settings) so emoji and identicon match.
+   */
+  shape?: 'rounded' | 'circle';
   className?: string;
   /** Accessible name when the surrounding control no longer shows text. */
   label?: string;
@@ -21,6 +26,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   name,
   emoji,
   size = 16,
+  shape = 'rounded',
   className,
   label,
 }) => {
@@ -30,7 +36,8 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   return (
     <span
       className={cn(
-        'inline-flex aspect-square shrink-0 overflow-hidden rounded-sm',
+        'inline-flex aspect-square shrink-0 overflow-hidden',
+        shape === 'circle' ? 'rounded-full' : 'rounded-sm',
         emoji && 'items-center justify-center select-none',
         color.class,
         className,
@@ -55,6 +62,8 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
             }
           : null),
       }}
+      data-agent-avatar=""
+      data-agent-avatar-shape={shape}
       role={label ? 'img' : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}

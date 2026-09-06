@@ -371,7 +371,7 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
                 selectSettingsAssistant(assistant.id);
                 onItemSelect?.();
               }}
-              icon={<AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} />}
+              icon={<AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} shape="circle" />}
             />
           );
         }) : (
@@ -535,7 +535,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
         {selectedID ? (
           <>
             <div className="mb-4 flex items-center gap-3">
-              <AgentAvatar name={selected?.id ?? 'new'} emoji={draftPresentation.avatarEmoji} size={38} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} />
+              <AgentAvatar name={selected?.id ?? 'new'} emoji={draftPresentation.avatarEmoji} size={38} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="circle" />
               <div className="min-w-0 flex-1">
                 <h2 className="truncate typography-ui-header font-semibold text-foreground">{selected ? selectedPresentation?.displayName : t('assistants.settings.create')}</h2>
                 {draft.providerID && draft.modelID ? (
@@ -623,7 +623,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
           </>
         ) : (
           <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-            <AgentAvatar name="assistants-empty" size={44} />
+            <AgentAvatar name="assistants-empty" size={44} shape="circle" />
             <p className="typography-ui">{t('assistants.settings.empty')}</p>
             <Button data-settings-item="assistants.create" size="sm" onClick={startCreate}><Icon name="add" className="size-4" />{t('assistants.settings.create')}</Button>
           </div>
