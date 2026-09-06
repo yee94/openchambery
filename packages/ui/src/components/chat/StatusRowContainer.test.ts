@@ -9,13 +9,14 @@ describe('StatusRowContainer source contracts', () => {
   const source = readFileSync(join(here, 'StatusRowContainer.tsx'), 'utf8')
   const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8')
 
-  test('hides generic busy assistant status until a concrete part exists', () => {
-    // Matches ProgressiveGroup's zero-row live header gate: no tool/reasoning/text
-    // part → no orphan "thinking / working" label.
+  test('keeps generic busy thinking visible while the turn is working', () => {
+    // First-prompt claim often has no tool/reasoning/text part yet. Hiding that
+    // generic WorkingPlaceholder left a blank slot under the model header while
+    // Stop stayed armed. Concrete parts still replace the generic phrase.
     expect(source).toContain('const showAssistantStatus = working.isWaitingForPermission')
-    expect(source).toContain('|| !working.isGenericStatus')
+    expect(source).toContain('|| working.isWorking')
     expect(source).toContain('showAssistantStatus={showAssistantStatus}')
-    expect(source).not.toMatch(/showAssistantStatus\s*\n\s*showTodos/)
+    expect(source).not.toContain('|| !working.isGenericStatus')
   })
 
   test('classic live status slot mounts inside the markdown pin-reveal root', () => {
