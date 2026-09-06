@@ -157,3 +157,151 @@ export const loadSessionIndexSnapshot = async (
   const payload = await response.json();
   return parseSessionIndexSnapshot(payload);
 };
+
+/** Deep-link / chat-header row from GET /api/openchamber/session-index/session/:id. */
+export type SessionIndexLookupHit = {
+  id: string;
+  directory: string;
+  title?: string;
+  parentID?: string | null;
+  branch?: string | null;
+  assistantID?: string | null;
+  assistantName?: string | null;
+};
+
+export type SessionIndexSessionHit = SessionIndexSession & {
+  directory: string;
+};
+
+/** Find a session row inside an already-loaded snapshot (O(dirs × sessions)). */
+export const findSessionInIndexSnapshot = (
+  snapshot: SessionIndexSnapshot,
+  sessionId: string,
+): SessionIndexSessionHit | null => {
+  const id = sessionId.trim();
+  if (!id) return null;
+  for (const dir of snapshot.directories) {
+    const directory = typeof dir.directory === 'string' ? dir.directory : '';
+    for (const session of dir.sessions) {
+      if (session.id !== id) continue;
+      return {
+        ...session,
+        directory:
+          (typeof session.directory === 'string' && session.directory) ||
+          (typeof session.project?.worktree === 'string' && session.project.worktree) ||
+          directory,
+      };
+    }
+  }
+  return null;
+};
+
+const parseLookupHit = (payload: unknown, fallbackId: string): SessionIndexLookupHit | null => {
+  const record = asRecord(payload);
+  if (!record || record.available !== true) return null;
+  const session = asRecord(record.session);
+  if (!session) return null;
+  const directory =
+    typeof session.directory === 'string' ? session.directory.trim() : '';
+  if (!directory) return null;
+  const id = typeof session.id === 'string' && session.id ? session.id : fallbackId;
+  const project = asRecord(session.project);
+  return {
+    id,
+    directory,
+    title: typeof session.title === 'string' ? session.title : undefined,
+    parentID: (session.parentID as string | null | undefined) ?? null,
+    branch:
+      typeof session.branch === 'string'
+        ? session.branch
+        : typeof project?.branch === 'string'
+          ? project.branch
+          : null,
+    assistantID: typeof session.assistantID === 'string' ? session.assistantID : null,
+    assistantName: typeof session.assistantName === 'string' ? session.assistantName : null,
+  };
+};
+
+/**
+ * Live GET /api/openchamber/session-index/session/:id (Cap deep-link lookup).
+ * 404 / 501 → null. Other HTTP failures throw SessionIndexError.
+ */
+export const lookupSessionIndexById = async (
+  active: ActiveRuntime,
+  sessionId: string,
+  options?: { signal?: AbortSignal },
+): Promise<SessionIndexLookupHit | null> => {
+  const id = sessionId.trim();
+  if (!id) return null;
+  let response;
+  try {
+    response = await openchamberFetch(
+      active,
+      `/api/openchamber/session-index/session/${encodeURIComponent(id)}`,
+      { method: 'GET', signal: options?.signal },
+    );
+  } catch (error) {
+    throw new SessionIndexError(
+      error instanceof Error ? error.message : 'session index lookup failed',
+      null,
+    );
+  }
+  if (response.status === 404 || response.status === 501) return null;
+  if (!response.ok) {
+    throw new SessionIndexError(`session index lookup failed (${response.status})`, response.status);
+  }
+  const payload = await response.json();
+  return parseLookupHit(payload, id);
+};
+
+/** Minimal OpenCode session GET payload used for chat header title fallback. */
+export type SessionGetHit = {
+  id: string;
+  title?: string;
+  directory?: string | null;
+  branch?: string | null;
+};
+
+/**
+ * Live GET /api/session/:id — Cap session.get last resort when index misses the row.
+ * 404 → null. Other HTTP failures throw SessionIndexError (shared transport error type).
+ */
+export const loadSessionGet = async (
+  active: ActiveRuntime,
+  sessionId: string,
+  options?: { directory?: string | null; signal?: AbortSignal },
+): Promise<SessionGetHit | null> => {
+  const id = sessionId.trim();
+  if (!id) return null;
+  const params = new URLSearchParams();
+  if (options?.directory) params.set('directory', options.directory);
+  const qs = params.toString();
+  const path = `/api/session/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`;
+  let response;
+  try {
+    response = await openchamberFetch(active, path, {
+      method: 'GET',
+      signal: options?.signal,
+    });
+  } catch (error) {
+    throw new SessionIndexError(
+      error instanceof Error ? error.message : 'session get failed',
+      null,
+    );
+  }
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new SessionIndexError(`session get failed (${response.status})`, response.status);
+  }
+  const payload = await response.json();
+  const record = asRecord(payload) ?? asRecord(asRecord(payload)?.data);
+  if (!record) return null;
+  const sid = typeof record.id === 'string' && record.id ? record.id : id;
+  const project = asRecord(record.project);
+  return {
+    id: sid,
+    title: typeof record.title === 'string' ? record.title : undefined,
+    directory: typeof record.directory === 'string' ? record.directory : options?.directory ?? null,
+    branch: typeof project?.branch === 'string' ? project.branch : null,
+  };
+};

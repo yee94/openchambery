@@ -39,7 +39,14 @@ import {
   resolveSessionSwipeNeighbor,
   shouldStartSessionSwipe,
 } from '@/lib/sessionSwipe';
-import { loadSessionIndexSnapshot } from '@/lib/sessionIndex';
+import { buildChatDetailHeaderLabels, resolveExpoChatSyncHintKind } from '@/lib/chatDetailTitle';
+import {
+  findSessionInIndexSnapshot,
+  loadSessionGet,
+  loadSessionIndexSnapshot,
+  lookupSessionIndexById,
+  type SessionIndexLookupHit,
+} from '@/lib/sessionIndex';
 import { buildSessionHomeModel, DRAFT_ROUTE_ID } from '@/lib/sessionHomeModel';
 import { t } from '@/lib/i18n';
 
@@ -59,6 +66,12 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
   const [changesOpen, setChangesOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [rankedIds, setRankedIds] = useState<string[]>([]);
+  const [titleMeta, setTitleMeta] = useState<{
+    title?: string;
+    assistantName?: string | null;
+    directory?: string | null;
+    branch?: string | null;
+  } | null>(null);
   const [awayFromEnd, setAwayFromEnd] = useState(false);
   const [composerOccupancy, setComposerOccupancy] = useState(0);
   const transcriptRef = useRef<TranscriptListHandle | null>(null);
@@ -68,27 +81,96 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
   useEffect(() => {
     if (!state.active) return;
     let cancelled = false;
-    void loadSessionIndexSnapshot(state.active)
-      .then((snapshot) => {
-        if (cancelled || !snapshot) return;
-        const model = buildSessionHomeModel(snapshot);
-        setRankedIds(
-          rankSessionsForSwipe(
-            model.catalog.map((row) => ({
-              id: row.id,
-              parentID: row.parentID,
-              activityMs: row.activityMs,
-            })),
-          ),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setRankedIds([]);
+    const active = state.active;
+    const sessionId = chat.sessionId;
+    setTitleMeta(null);
+
+    const applyLookup = (hit: SessionIndexLookupHit | null) => {
+      if (!hit || cancelled) return;
+      setTitleMeta({
+        title: hit.title,
+        assistantName: hit.assistantName,
+        directory: hit.directory,
+        branch: hit.branch,
       });
+    };
+
+    void (async () => {
+      try {
+        const snapshot = await loadSessionIndexSnapshot(active);
+        if (cancelled) return;
+        if (snapshot) {
+          const model = buildSessionHomeModel(snapshot, {
+            untitledLabel: t('mobile.sessions.untitled'),
+          });
+          setRankedIds(
+            rankSessionsForSwipe(
+              model.catalog.map((row) => ({
+                id: row.id,
+                parentID: row.parentID,
+                activityMs: row.activityMs,
+              })),
+            ),
+          );
+          if (sessionId) {
+            const fromSnapshot = findSessionInIndexSnapshot(snapshot, sessionId);
+            if (fromSnapshot) {
+              setTitleMeta({
+                title: fromSnapshot.title,
+                assistantName: null,
+                directory: fromSnapshot.directory,
+                branch: fromSnapshot.project?.branch ?? null,
+              });
+              return;
+            }
+          }
+        } else if (!cancelled) {
+          setRankedIds([]);
+        }
+
+        if (!sessionId) {
+          if (!cancelled) setTitleMeta(null);
+          return;
+        }
+
+        try {
+          const hit = await lookupSessionIndexById(active, sessionId);
+          if (cancelled) return;
+          if (hit) {
+            applyLookup(hit);
+            return;
+          }
+        } catch {
+          /* fall through to session GET */
+        }
+
+        try {
+          const got = await loadSessionGet(active, sessionId, {
+            directory: chat.directory,
+          });
+          if (cancelled) return;
+          if (got) {
+            setTitleMeta({
+              title: got.title,
+              assistantName: null,
+              directory: got.directory,
+              branch: got.branch,
+            });
+            return;
+          }
+        } catch {
+          /* keep prior / empty title meta */
+        }
+        if (!cancelled) setTitleMeta((prev) => prev);
+      } catch {
+        if (!cancelled) setRankedIds([]);
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [state.active, chat.sessionId]);
+  }, [state.active, chat.sessionId, chat.directory]);
 
   const moveQueued = useCallback(
     (item: MessageQueueChipItem, direction: -1 | 1) => {
@@ -259,6 +341,26 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
     }
   };
 
+  const syncHintKind = resolveExpoChatSyncHintKind({
+    sessionId: chat.sessionId ?? '',
+    hasTranscript: chat.rows.length > 0,
+    loadStatus: chat.status,
+  });
+  const headerLabels = buildChatDetailHeaderLabels(
+    {
+      isDraft: chat.isDraft,
+      sessionTitle: titleMeta?.title,
+      assistantName: titleMeta?.assistantName,
+      draftLabel: t('mobile.chat.draftTitle'),
+      untitledLabel: t('mobile.sessions.untitled'),
+    },
+    {
+      syncHint: syncHintKind ? t('mobile.chat.syncingMessages') : null,
+      directory: titleMeta?.directory ?? chat.directory,
+      branch: titleMeta?.branch ?? null,
+    },
+  );
+
   return (
     <View
       style={styles.root}
@@ -267,12 +369,8 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
       onResponderRelease={(e) => onBodyTouchEnd(e.nativeEvent.pageX, e.nativeEvent.pageY)}
     >
       <ChatDetailHeader
-        title={
-          chat.isDraft
-            ? t('mobile.chat.draftTitle')
-            : t('mobile.chat.title')
-        }
-        subtitle={chat.directory ? chat.directory.split('/').filter(Boolean).slice(-2).join(' · ') : null}
+        title={headerLabels.title}
+        subtitle={headerLabels.subtitle}
         contextDisplay={chat.contextDisplay}
         onBack={() => router.back()}
         onOverflow={openOverflow}
