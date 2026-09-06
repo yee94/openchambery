@@ -61,6 +61,11 @@ export function toOpenAICompletion({ id, model, text, created = Math.floor(Date.
 
 /**
  * OpenAI-shaped completions against OpenCode's already-connected providers.
+ *
+ * Public HTTP stays non-streaming (`stream: true` → validation_error).
+ * In-process callers (Assistant contact harness) may pass `onTextDelta` and
+ * `globalEventHub`; those are forwarded to generate for real throwaway-session
+ * `message.part.delta` tokens only — never as fake post-hoc SSE on this route.
  */
 export async function createChatCompletion({
   body,
@@ -71,11 +76,14 @@ export async function createChatCompletion({
   generateText = generateOpenCodeText,
   ensureTempDirectory,
   fetchImpl,
+  onTextDelta = null,
+  globalEventHub = null,
 }) {
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
   // Bundled OpenCode 1.18.4 generate is a full-turn JSON reply (sessionless
-  // generate or throwaway session.promptAsync). This gateway does not token-stream.
-  // Do not emit fake SSE after the fact.
+  // generate or throwaway session.promptAsync). This HTTP gateway does not
+  // token-stream. Do not emit fake SSE after the fact.
+  // In-process onTextDelta (optional) is a separate internal callback path.
   if (body.stream === true) {
     throw new LlmError(
       'validation_error',
@@ -114,6 +122,8 @@ export async function createChatCompletion({
       forwardImageParts: Boolean(catalog.models.find((entry) => (
         entry.providerID === resolved.providerID && entry.modelID === resolved.modelID
       ))?.acceptsImages),
+      onTextDelta,
+      globalEventHub,
     });
   } catch (error) {
     if (error instanceof LlmError) throw error;

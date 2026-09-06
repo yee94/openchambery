@@ -17,8 +17,26 @@ export const registerAssistantRoutes = (app, dependencies) => {
       headers: dependencies.getOpenCodeAuthHeaders(),
     }),
     ensureTempDirectory: ensureLlmTempDirectory,
+    // Throwaway generate may subscribe for real token deltas (contact harness).
+    globalEventHub: input?.globalEventHub ?? dependencies.globalEventHub,
   });
-  const service = createAssistantsService({ dbPath: dependencies.dbPath, dataDir: dependencies.openchamberDataDir, buildOpenCodeUrl: dependencies.buildOpenCodeUrl, getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders, getServerId: dependencies.getServerId, getAllowedRoots: dependencies.getAllowedRoots, listProjects: dependencies.listProjects, upsertScheduledTask: dependencies.upsertScheduledTask, syncScheduledTaskProject: dependencies.syncScheduledTaskProject, globalEventHub: dependencies.globalEventHub, onRevisionTip: dependencies.onRevisionTip, createChatCompletion: boundCompletion });
+  const service = createAssistantsService({
+    dbPath: dependencies.dbPath,
+    dataDir: dependencies.openchamberDataDir,
+    buildOpenCodeUrl: dependencies.buildOpenCodeUrl,
+    getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders,
+    getServerId: dependencies.getServerId,
+    getAllowedRoots: dependencies.getAllowedRoots,
+    listProjects: dependencies.listProjects,
+    listScheduledTasks: dependencies.listScheduledTasks,
+    sessionIndexService: dependencies.sessionIndexService,
+    upsertScheduledTask: dependencies.upsertScheduledTask,
+    syncScheduledTaskProject: dependencies.syncScheduledTaskProject,
+    globalEventHub: dependencies.globalEventHub,
+    onRevisionTip: dependencies.onRevisionTip,
+    onContactTurnEvent: dependencies.onContactTurnEvent,
+    createChatCompletion: boundCompletion,
+  });
   setAssignedSessionSettleHandler(({ sessionId, status }) => service.reportAssignedSessionSettle(sessionId, status));
   app.use('/api/openchamber/assistants', (req, res, next) => Promise.resolve(dependencies.refreshAllowedRoots?.()).then(next).catch((error) => respond(res, () => { throw error; })));
   app.get('/api/openchamber/assistants/capability', (_req, res) => respond(res, () => service.capability()));
@@ -30,7 +48,9 @@ export const registerAssistantRoutes = (app, dependencies) => {
   app.post('/api/openchamber/assistants/:assistantID/contact/reset', (req, res) => respond(res, () => service.resetContact(req.params.assistantID)));
   app.post('/api/openchamber/assistants/:assistantID/contact/cards', (req, res) => respond(res, () => service.appendContactCard(req.params.assistantID, req.body), 201));
   app.post('/api/openchamber/assistants/:assistantID/contact/dm', (req, res) => respond(res, () => service.deliverPeerMessage(req.params.assistantID, req.body), 201));
-  app.post('/api/openchamber/assistants/:assistantID/messages', (req, res) => respond(res, () => service.send(req.params.assistantID, req.body))); app.post('/api/openchamber/assistants/:assistantID/share', (req, res) => respond(res, () => service.share(req.params.assistantID, req.body), 202)); app.get('/api/openchamber/assistants/share-operations/:operationID', (req, res) => respond(res, () => { const operation = service.shareOperation(req.params.operationID); if (!operation) throw new AssistantError('not_found'); return operation; }));
+  app.get('/api/openchamber/assistants/:assistantID/scheduled-tasks', (req, res) => respond(res, () => service.listAssistantScheduledTasks(req.params.assistantID)));
+  // Contact send admits the user message at 202; assistant bubbles stream on SSE.
+  app.post('/api/openchamber/assistants/:assistantID/messages', (req, res) => respond(res, () => service.send(req.params.assistantID, req.body), 202)); app.post('/api/openchamber/assistants/:assistantID/share', (req, res) => respond(res, () => service.share(req.params.assistantID, req.body), 202)); app.get('/api/openchamber/assistants/share-operations/:operationID', (req, res) => respond(res, () => { const operation = service.shareOperation(req.params.operationID); if (!operation) throw new AssistantError('not_found'); return operation; }));
   app.use('/api/openchamber/assistants/topics', gone); app.use('/api/openchamber/assistants/:assistantID/topics', gone);
   return { service, close: () => { setAssignedSessionSettleHandler(null); service.close(); } };
 };

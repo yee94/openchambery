@@ -2,9 +2,9 @@ import type { KeyboardEvent } from 'react'
 
 /** Shared Grok-Bot cover chrome. Whole card is the hit target. */
 const CONTACT_CARD_CHROME_CLASS = [
-  'cursor-pointer rounded-2xl border border-border/50 bg-[var(--surface-elevated)]',
-  'px-2.5 py-2 text-left transition-colors',
-  'hover:border-border hover:bg-interactive-hover/40',
+  'cursor-pointer rounded-[1.35rem] bg-[var(--surface-elevated)] ring-1 ring-inset ring-[var(--surface-subtle)]',
+  'px-3.5 py-3 text-left transition-[background-color,box-shadow,transform] duration-200 ease-out motion-reduce:transition-none',
+  'hover:-translate-y-px hover:bg-interactive-hover/45 hover:shadow-sm active:translate-y-0 motion-reduce:hover:translate-y-0',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
 ].join(' ')
 

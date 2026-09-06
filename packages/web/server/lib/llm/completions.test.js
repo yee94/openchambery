@@ -47,6 +47,24 @@ describe('createChatCompletion', () => {
     expect(result.modelID).toBe('gpt-5.2')
   })
 
+  it('forwards in-process onTextDelta and globalEventHub to generateText', async () => {
+    const generateText = vi.fn(async () => ({ text: 'streamed', source: 'throwaway-session' }))
+    const onTextDelta = vi.fn()
+    const globalEventHub = { subscribeEvent: vi.fn() }
+    await createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({
+        models: [{ providerID: 'openai', modelID: 'gpt-5.2' }],
+        connected: ['openai'],
+      }),
+      body: { model: 'openai/gpt-5.2', messages: [{ role: 'user', content: 'hi' }] },
+      onTextDelta,
+      globalEventHub,
+    })
+    expect(generateText.mock.calls[0][0].onTextDelta).toBe(onTextDelta)
+    expect(generateText.mock.calls[0][0].globalEventHub).toBe(globalEventHub)
+  })
+
   it('forwards optional file parts on user messages', async () => {
     const generateText = vi.fn(async () => ({ text: 'saw it', source: 'throwaway-session' }))
     const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }

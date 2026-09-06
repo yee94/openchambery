@@ -6,6 +6,7 @@ import { AssistantShareWelcome } from '@/components/assistants/AssistantShareWel
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { Icon } from '@/components/icon/Icon';
+import type { IconName } from '@/components/icon/icons';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
@@ -19,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useI18n } from '@/lib/i18n';
 import type { ProjectEntry } from '@/lib/api/types';
+import type { GlobalScheduledTask, ScheduledTask, ScheduledTaskStatus } from '@/lib/scheduledTasksApi';
 import {
   createAssistant,
   deleteAssistant,
@@ -26,12 +28,17 @@ import {
   setAssistantsEnabled,
   updateAssistant,
   useAssistantCapabilityQuery,
+  useAssistantContactMessagesQuery,
+  useAssistantScheduledTasksQuery,
   useAssistantSnapshotQuery,
+  useGlobalScheduledTasksQuery,
   type AssistantDTO,
   type AssistantDraft,
+  type AssistantScheduledTaskEntry,
 } from '@/queries/assistantQueries';
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { useScopedAgentsQuery, useScopedProvidersQuery } from '@/queries/agentQueries';
 
 const MANAGED_WORKSPACE_VALUE = '__managed_workspace__';
@@ -62,6 +69,196 @@ const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
 const projectName = (project: ProjectEntry): string => (
   project.label?.trim() || project.path.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) || project.path
 );
+
+const scheduleTimes = (task: ScheduledTask): string[] => {
+  const raw = Array.isArray(task.schedule.times)
+    ? task.schedule.times
+    : (task.schedule.time ? [task.schedule.time] : []);
+  return Array.from(new Set(raw.filter((value) => /^([01]\d|2[0-3]):([0-5]\d)$/.test(value)))).sort((a, b) => a.localeCompare(b));
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isScheduledTask = (value: unknown): value is ScheduledTask => {
+  if (!isRecord(value) || !isRecord(value.schedule) || !isRecord(value.execution) || !isRecord(value.state)) return false;
+  const timesValid = value.schedule.times === undefined
+    || (Array.isArray(value.schedule.times) && value.schedule.times.every((time) => typeof time === 'string'));
+  const weekdaysValid = value.schedule.weekdays === undefined
+    || (Array.isArray(value.schedule.weekdays) && value.schedule.weekdays.every((day) => typeof day === 'number'));
+  const statusValid = value.state.lastStatus === undefined
+    || value.state.lastStatus === 'idle'
+    || value.state.lastStatus === 'running'
+    || value.state.lastStatus === 'success'
+    || value.state.lastStatus === 'error';
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.enabled === 'boolean'
+    && (value.schedule.kind === 'daily' || value.schedule.kind === 'weekly' || value.schedule.kind === 'once' || value.schedule.kind === 'cron')
+    && timesValid
+    && weekdaysValid
+    && statusValid
+    && typeof value.execution.prompt === 'string'
+    && typeof value.execution.providerID === 'string'
+    && typeof value.execution.modelID === 'string';
+};
+
+const formatScheduledTask = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t']): string => {
+  const times = scheduleTimes(task).join(', ') || '—';
+  const weekday = (value: number) => {
+    if (value === 0) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.sun');
+    if (value === 1) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.mon');
+    if (value === 2) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.tue');
+    if (value === 3) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.wed');
+    if (value === 4) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.thu');
+    if (value === 5) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.fri');
+    if (value === 6) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.sat');
+    return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.unknown');
+  };
+  if (task.schedule.kind === 'daily') {
+    return task.schedule.timezone
+      ? t('sessions.scheduledTasks.dialog.schedule.dailyWithTimezone', { time: times, timezone: task.schedule.timezone })
+      : t('sessions.scheduledTasks.dialog.schedule.daily', { time: times });
+  }
+  if (task.schedule.kind === 'weekly') {
+    const days = (task.schedule.weekdays ?? []).map(weekday).join(', ');
+    return task.schedule.timezone
+      ? t('sessions.scheduledTasks.dialog.schedule.weeklyWithTimezone', { days, time: times, timezone: task.schedule.timezone })
+      : t('sessions.scheduledTasks.dialog.schedule.weekly', { days, time: times });
+  }
+  if (task.schedule.kind === 'once') {
+    const date = task.schedule.date?.trim() || t('sessions.scheduledTasks.dialog.schedule.unknownDate');
+    const time = task.schedule.time?.trim() || '—';
+    return task.schedule.timezone
+      ? t('sessions.scheduledTasks.dialog.schedule.onceWithTimezone', { date, time, timezone: task.schedule.timezone })
+      : t('sessions.scheduledTasks.dialog.schedule.once', { date, time });
+  }
+  return task.schedule.timezone
+    ? t('sessions.scheduledTasks.dialog.schedule.cronWithTimezone', { cron: task.schedule.cron ?? '', timezone: task.schedule.timezone })
+    : t('sessions.scheduledTasks.dialog.schedule.cron', { cron: task.schedule.cron ?? '' });
+};
+
+type ScheduledTaskVisualStatus = ScheduledTaskStatus | 'paused';
+const SCHEDULE_STATUS_META: Record<ScheduledTaskVisualStatus, { icon: IconName; className: string }> = {
+  paused: { icon: 'pause', className: 'text-muted-foreground' },
+  idle: { icon: 'pulse', className: 'text-muted-foreground' },
+  running: { icon: 'loader-4', className: 'text-[var(--status-warning)]' },
+  success: { icon: 'checkbox-circle', className: 'text-[var(--status-success)]' },
+  error: { icon: 'error-warning', className: 'text-[var(--status-error)]' },
+};
+
+const scheduledTaskIdentity = (entry: Pick<GlobalScheduledTask, 'projectId' | 'task'>) => `${entry.projectId}:${entry.task.id}`;
+
+const AssistantScheduledTasksGroup: React.FC<{ assistantID: string }> = ({ assistantID }) => {
+  const { t } = useI18n();
+  const scheduledTasksQuery = useAssistantScheduledTasksQuery(assistantID);
+  const fallbackEnabled = scheduledTasksQuery.isError;
+  const contactQuery = useAssistantContactMessagesQuery(assistantID, fallbackEnabled);
+  const globalTasksQuery = useGlobalScheduledTasksQuery(fallbackEnabled);
+  const fallbackIdentities = new Set<string>();
+  for (const message of contactQuery.data?.messages ?? []) {
+    for (const card of message.cards) {
+      if (card.cardType === 'schedule') fallbackIdentities.add(`${card.projectID}:${card.taskID}`);
+    }
+  }
+  const mappedTasks: GlobalScheduledTask[] = (scheduledTasksQuery.data?.tasks ?? []).flatMap((entry: AssistantScheduledTaskEntry) => (
+    isScheduledTask(entry.task) ? [{ projectId: entry.projectID, task: entry.task }] : []
+  ));
+  const hasUnresolvedMappedTask = Boolean(scheduledTasksQuery.data?.tasks.some((entry: AssistantScheduledTaskEntry) => !isScheduledTask(entry.task)));
+  const fallbackTasks = (globalTasksQuery.data?.tasks ?? []).filter((entry: GlobalScheduledTask) => fallbackIdentities.has(scheduledTaskIdentity(entry)));
+  const tasks = [...(scheduledTasksQuery.data ? mappedTasks : (fallbackEnabled ? fallbackTasks : []))].sort((left, right) => {
+    if (left.task.enabled !== right.task.enabled) return left.task.enabled ? -1 : 1;
+    return left.task.name.localeCompare(right.task.name);
+  });
+  const failedFallbackProject = (globalTasksQuery.data?.failedProjectIds ?? []).some((projectID: string) => (
+    Array.from(fallbackIdentities).some((identity) => identity.startsWith(`${projectID}:`))
+  ));
+  const loading = scheduledTasksQuery.isPending
+    || (fallbackEnabled && (contactQuery.isPending || globalTasksQuery.isPending));
+  const hasLoadError = scheduledTasksQuery.isError
+    || contactQuery.isError
+    || globalTasksQuery.isError
+    || failedFallbackProject
+    || hasUnresolvedMappedTask;
+  const openScheduledTasks = useEvent(() => {
+    useUIStore.getState().setActiveMainTab('schedule');
+    useUIStore.getState().setScheduledTasksDialogOpen(true);
+  });
+  const retry = useEvent(() => {
+    void scheduledTasksQuery.refetch();
+    if (fallbackEnabled) {
+      void contactQuery.refetch();
+      void globalTasksQuery.refetch();
+    }
+  });
+
+  return (
+    <SettingsGroup label={t('assistants.settings.scheduledTasks.title')} ariaLabel={t('assistants.settings.scheduledTasks.title')}>
+      {loading && tasks.length === 0 ? (
+        <SettingsRow label={t('common.loading')}>
+          <Icon name="loader-4" className="size-4 animate-spin text-muted-foreground" />
+        </SettingsRow>
+      ) : null}
+      {tasks.map((entry) => {
+        const status: ScheduledTaskVisualStatus = entry.task.enabled ? (entry.task.state?.lastStatus ?? 'idle') : 'paused';
+        const statusMeta = SCHEDULE_STATUS_META[status];
+        const statusLabel = status === 'paused'
+          ? t('sessions.scheduledTasks.dialog.taskToggle.paused')
+          : status === 'running'
+            ? t('sessions.scheduledTasks.dialog.status.running')
+            : status === 'success'
+              ? t('sessions.scheduledTasks.dialog.status.success')
+              : status === 'error'
+                ? t('sessions.scheduledTasks.dialog.status.error')
+                : t('sessions.scheduledTasks.dialog.status.idle');
+        return (
+          <SettingsRow
+            key={scheduledTaskIdentity(entry)}
+            className="group relative cursor-pointer transition-colors hover:bg-interactive-hover"
+            label={(
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-muted-foreground">
+                  <Icon name="calendar" className="size-3.5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate typography-ui-label font-medium text-foreground">{entry.task.name}</span>
+                  <span className="mt-0.5 block typography-micro truncate text-muted-foreground">{formatScheduledTask(entry.task, t)}</span>
+                </span>
+              </span>
+            )}
+            controlClassName="min-w-fit"
+          >
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <span className={`inline-flex items-center gap-1.5 typography-micro ${statusMeta.className}`}>
+                <Icon name={statusMeta.icon} className={`size-3.5 ${status === 'running' ? 'animate-spin' : ''}`} />
+                {statusLabel}
+              </span>
+              <Icon name="arrow-right-s" className="size-4" />
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute inset-0 z-10 h-auto w-auto rounded-none bg-transparent p-0 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
+              onClick={openScheduledTasks}
+              aria-label={t('assistants.settings.scheduledTasks.open', { name: entry.task.name })}
+            >
+              <span className="sr-only">{t('assistants.settings.scheduledTasks.open', { name: entry.task.name })}</span>
+            </Button>
+          </SettingsRow>
+        );
+      })}
+      {hasLoadError ? (
+        <SettingsRow label={t('assistants.settings.scheduledTasks.loadError')}>
+          <Button variant="outline" size="sm" onClick={retry}>{t('assistants.actions.retry')}</Button>
+        </SettingsRow>
+      ) : null}
+      {!loading && !hasLoadError && tasks.length === 0 ? (
+        <SettingsRow label={t('assistants.settings.scheduledTasks.empty')}>
+          <Icon name="calendar" className="size-4 text-muted-foreground" />
+        </SettingsRow>
+      ) : null}
+    </SettingsGroup>
+  );
+};
 
 const WorkspaceOption = ({ name, path, icon = 'folder' }: { name: string; path?: string; icon?: 'folder' | 'cloud' | 'history' }) => (
   <span className="flex min-w-0 items-center gap-2">
@@ -417,6 +614,8 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
                   </SelectContent>
                 </Select>
             </SettingsField>
+
+            {selected ? <AssistantScheduledTasksGroup assistantID={selected.id} /> : null}
 
             <div className="flex justify-end">
               <Button onClick={save} disabled={saving}>{saving ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('assistants.settings.save')}</Button>

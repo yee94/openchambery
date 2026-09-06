@@ -84,6 +84,20 @@ export interface AssistantContactPeerAdmission {
   fromAssistantName: string;
   toAssistantID: string;
 }
+/** Assistant-owned scheduled-task mapping joined with live project-config task when available. */
+export interface AssistantScheduledTaskEntry {
+  assistantID: string;
+  projectID: string;
+  taskID: string;
+  createdAt: number;
+  projectPath: string | null;
+  projectLabel: string | null;
+  /** Live scheduled-task record, or null when project/task lookup failed or the task was deleted. */
+  task: Record<string, unknown> | null;
+}
+export interface AssistantScheduledTasksPage {
+  tasks: AssistantScheduledTaskEntry[];
+}
 
 export class AssistantAPIError extends Error {
   constructor(public readonly code: string, public readonly status: number, public readonly resource?: string, message?: string) {
@@ -247,5 +261,26 @@ export const parseAssistantContactPeerAdmission = (payload: unknown): AssistantC
     fromAssistantID: string(value.fromAssistantID, 'assistant_contact_peer'),
     fromAssistantName: string(value.fromAssistantName, 'assistant_contact_peer'),
     toAssistantID: string(value.toAssistantID, 'assistant_contact_peer'),
+  };
+};
+export const parseAssistantScheduledTasksPage = (payload: unknown): AssistantScheduledTasksPage => {
+  const value = record(payload, 'assistant_scheduled_tasks');
+  if (!Array.isArray(value.tasks)) return invalid('assistant_scheduled_tasks');
+  return {
+    tasks: value.tasks.map((entry) => {
+      const item = record(entry, 'assistant_scheduled_task');
+      const task = item.task === null || item.task === undefined
+        ? null
+        : record(item.task, 'assistant_scheduled_task_live');
+      return {
+        assistantID: string(item.assistantID, 'assistant_scheduled_task'),
+        projectID: string(item.projectID, 'assistant_scheduled_task'),
+        taskID: string(item.taskID, 'assistant_scheduled_task'),
+        createdAt: number(item.createdAt, 'assistant_scheduled_task'),
+        projectPath: nullableString(item.projectPath ?? null, 'assistant_scheduled_task'),
+        projectLabel: nullableString(item.projectLabel ?? null, 'assistant_scheduled_task'),
+        task,
+      };
+    }),
   };
 };

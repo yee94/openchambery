@@ -32,28 +32,34 @@ type MobileAssistantConversationHeaderProps = {
 
 const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHeaderProps> = ({ assistant, onBack }) => {
   const { t } = useI18n();
+  const mobileActions = useMobileAppActions();
   const presentation = assistant ? getAssistantPresentation(assistant.name) : null;
   const displayName = assistant && presentation ? presentation.displayName || assistant.name : '';
   const working = useAssistantWorking(assistant?.id ?? '', assistant?.assignedSessionIDs ?? [], Boolean(assistant?.working));
+  const openSettings = useEvent(() => {
+    if (!assistant) return;
+    openAssistantSettings(assistant.id, mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined);
+  });
 
   return (
     <MobileDetailNavigation
       title={
         assistant ? (
-          <span className="inline-flex min-w-0 items-center gap-2">
+          <span className="inline-flex min-w-0 items-center gap-2.5">
             <AssistantWorkingAvatar
               name={assistant.id}
               emoji={presentation?.avatarEmoji}
-              size={24}
+              size={28}
               label={displayName}
               working={working}
             />
-            <span className="truncate">{displayName || t('assistants.title')}</span>
+            <span className="truncate font-medium tracking-[-0.01em]">{displayName || t('assistants.title')}</span>
           </span>
         ) : (displayName || t('assistants.title'))
       }
       backAriaLabel={t('assistants.actions.backToChat')}
       onBack={onBack}
+      actions={assistant ? [{ icon: 'settings-3', ariaLabel: t('assistants.conversation.openSettings'), onClick: openSettings }] : []}
       overlay
     />
   );
@@ -185,6 +191,10 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const openEditSettings = useEvent((assistantID: string) => {
     openAssistantSettings(assistantID, mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined);
   });
+  const openConversationSettings = useEvent(() => {
+    if (!assistant) return;
+    openAssistantSettings(assistant.id, mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined);
+  });
   const [deleteTarget, setDeleteTarget] = React.useState<AssistantDTO | null>(null);
   const requestDeleteAssistant = useEvent((item: AssistantDTO) => {
     setDeleteTarget(item);
@@ -272,18 +282,28 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
         open={deleteTarget !== null}
         onOpenChange={handleDeleteDialogOpenChange}
       />
-      <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-border/60')}>
+      <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-[var(--surface-subtle)]')}>
         {isMobileSurface ? (
           <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} />
         ) : (
-          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 px-4 sm:px-5">
-            <AssistantWorkingAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} working={selectedWorking} />
+          <header className="flex h-16 shrink-0 items-center gap-3.5 border-b border-[var(--surface-subtle)]/70 px-5 sm:px-7">
+            <AssistantWorkingAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={30} label={presentation.displayName || assistant.name} working={selectedWorking} />
             <div className="min-w-0 flex-1">
-              <div className="truncate typography-ui-label font-medium">{presentation.displayName}</div>
-              <div className="mt-0.5 truncate typography-micro leading-none text-muted-foreground/70">
+              <div className="truncate typography-ui-label font-semibold tracking-[-0.01em] text-foreground">{presentation.displayName}</div>
+              <div className="mt-1 truncate typography-micro leading-none text-muted-foreground/55">
                 {t('assistants.conversation.contactHint')}
               </div>
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 rounded-full text-muted-foreground/65 transition-colors hover:text-foreground"
+              onClick={openConversationSettings}
+              aria-label={t('assistants.conversation.openSettings')}
+            >
+              <Icon name="settings-3" className="size-4" />
+            </Button>
           </header>
         )}
         <AssistantConversationSurface

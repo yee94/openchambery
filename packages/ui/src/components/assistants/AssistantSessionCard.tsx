@@ -109,9 +109,9 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
       onClick={openSession}
       onKeyDown={onActivateKeyDown}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2.5">
         <span className="relative inline-block size-6 shrink-0 leading-none">
-          <span className="flex size-6 items-center justify-center rounded-md bg-[var(--surface-muted)] text-foreground">
+          <span className="flex size-6 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-muted-foreground">
             <Icon name="chat-3" className="size-3" />
           </span>
           {working ? (
@@ -122,7 +122,7 @@ export const AssistantSessionCard: React.FC<AssistantSessionCardProps> = ({ card
             />
           ) : null}
         </span>
-        <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-1.5">
             <h3 className="min-w-0 flex-1 truncate typography-ui-label font-medium text-foreground">{title}</h3>
             {statusLabelKey ? (

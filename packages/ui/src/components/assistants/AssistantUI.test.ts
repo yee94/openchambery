@@ -147,9 +147,34 @@ describe('Assistant UI product contract', () => {
     expect(navigation.indexOf('selectAssistant(assistantID)')).toBeLessThan(navigation.indexOf("set({ secondary: { kind: 'assistant' } })"));
     expect(view).toContain('onMobileBack?: () => void');
     expect(view).toContain('<MobileDetailNavigation');
+    expect(view).toContain("actions={assistant ? [{ icon: 'settings-3'");
+    expect(view).toContain("t('assistants.conversation.openSettings')");
+    expect(view).toContain('variant="ghost"');
+    expect(view).toContain('size="icon"');
+    expect(view).toContain('<Icon name="settings-3"');
     expect(view).toContain('overlay');
     expect(view).not.toContain('<MobileOverlayPanel');
     expect(view).not.toContain('mobileSelectorOpen');
+  });
+
+  test('lists the selected Assistant scheduled tasks with an explicit fallback and retry state', async () => {
+    const [settings, queries, english] = await Promise.all([
+      read('../sections/assistants/AssistantsSettingsPage.tsx'),
+      read('../../queries/assistantQueries.ts'),
+      read('../../lib/i18n/messages/en.settings.ts'),
+    ]);
+    expect(queries).toContain("'scheduled-tasks', assistantID");
+    expect(queries).toContain('/scheduled-tasks`, { signal }');
+    expect(settings).toContain('useAssistantScheduledTasksQuery(assistantID)');
+    expect(settings).toContain('useAssistantContactMessagesQuery(assistantID, fallbackEnabled)');
+    expect(settings).toContain('useGlobalScheduledTasksQuery(fallbackEnabled)');
+    expect(settings).toContain("card.cardType === 'schedule'");
+    expect(settings).toContain("setActiveMainTab('schedule')");
+    expect(settings).toContain('setScheduledTasksDialogOpen(true)');
+    expect(settings).toContain('scheduledTasksQuery.isError');
+    expect(settings).toContain("t('assistants.settings.scheduledTasks.loadError')");
+    expect(settings).toContain("t('assistants.settings.scheduledTasks.empty')");
+    expect(english).toContain("'assistants.settings.scheduledTasks.title': 'Scheduled tasks'");
   });
 
   test('fills the mobile Assistant avatar while preserving its circular frame', async () => {
@@ -316,6 +341,17 @@ describe('Assistant UI product contract', () => {
     expect(conversation.indexOf('begun.turn')).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
     expect(conversation).toContain('sendGate.release()');
     expect(conversation).toContain('data-assistant-contact-turn-status');
+    expect(conversation).toContain('data-assistant-contact-processing');
+    expect(conversation).toContain("t('assistants.contact.processing')");
+    expect(conversation).toContain('data-assistant-contact-run-start');
+    expect(conversation).toContain('sameAssistantRun');
+    expect(conversation).toContain('showAvatar');
+    expect(conversation).toContain('data-assistant-contact-streaming-caret');
+    expect(conversation).toContain('animate-pulse');
+    expect(conversation).not.toContain('animate-bounce');
+    expect(conversation).toContain('subscribeOpenchamberEvents');
+    expect(conversation).toContain("event.type === 'contact-bubble-delta'");
+    expect(conversation).toContain('streamingTextLength');
     expect(conversation).toContain('isMobile={isMobile}');
     expect(conversation).toContain('oc-mobile-composer-surface');
     expect(conversation).toContain('chat-input-column');
@@ -368,7 +404,8 @@ describe('Assistant UI product contract', () => {
     expect(card).toContain('CONTACT_SESSION_CARD_COVER_CLASS');
     expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[15rem]');
     expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[20rem]');
-    expect(await read('contactCardChrome.ts')).toContain('rounded-2xl');
+    expect(await read('contactCardChrome.ts')).toContain('rounded-[1.35rem]');
+    expect(await read('contactCardChrome.ts')).toContain('ring-[var(--surface-subtle)]');
     expect(card).toContain('readSessionChangeSummary');
     expect(card).toContain('directoryName(directory)');
     expect(card).toContain('relative inline-block size-6');
@@ -475,6 +512,11 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer).toContain("fileAccept = 'image/*'");
     expect(promptComposer).toContain('data-composer-layout={layout}');
     expect(promptComposer).toContain('min-h-12 flex-row');
+    expect(promptComposer).toContain('const [inlineGrown, setInlineGrown] = React.useState(false)');
+    expect(promptComposer).toContain('const inlineAlignEnd = attachments.length > 0 || inlineGrown;');
+    expect(promptComposer).toContain("import { useEvent, useResizeObserver } from '@reactuses/core';");
+    expect(promptComposer).toContain('const resizeTextarea = useEvent(() => {');
+    expect(promptComposer).toContain('useResizeObserver(inline && autoResize');
     expect(promptComposer).toContain("inlineAlignEnd ? 'items-end' : 'items-center'");
     expect(promptComposer.indexOf('data-composer-inline-attach="true"')).toBeLessThan(
       promptComposer.indexOf('data-composer-input-shell="true"'),
@@ -482,10 +524,12 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer.indexOf('data-composer-input-shell="true"')).toBeLessThan(
       promptComposer.indexOf('data-composer-inline-send="true"'),
     );
-    expect(promptComposer).toContain('max-h-32 px-3 py-[14px] leading-5');
-    expect(promptComposer).toContain("inlineAlignEnd ? 'min-h-12' : 'h-12 min-h-12'");
+    expect(promptComposer).toContain('const contentHeight = inline ? Math.max(textarea.scrollHeight, 48) : textarea.scrollHeight;');
+    expect(promptComposer).toContain('const nextInlineGrown = nextHeight > 48;');
+    expect(promptComposer).toContain("'min-h-12 max-h-32 px-3 py-3 leading-6'");
     expect(promptComposer).toContain("fillContainer={inline ? false : textareaProps?.fillContainer}");
-    expect(promptComposer).toContain("inline && !inlineAlignEnd && 'flex h-12 items-center'");
+    expect(promptComposer).toContain("inline && 'flex min-h-12 items-end'");
+    expect(promptComposer).not.toContain('inline && !inlineAlignEnd');
     expect(promptComposer).not.toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
     expect(promptComposer).toContain('flex h-12 shrink-0 items-center pr-1.5');
   });
@@ -517,6 +561,7 @@ describe('Assistant UI product contract', () => {
       expect(source).toContain("'assistants.contact.attachment.image'");
       expect(source).toContain("'assistants.contact.attachment.file'");
       expect(source).toContain("'assistants.contact.timedOut'");
+      expect(source).toContain("'assistants.contact.processing'");
     }
     const zh = sources[files.indexOf('zh-CN.settings.ts')];
     expect(zh).toContain('添加文件');
@@ -524,9 +569,10 @@ describe('Assistant UI product contract', () => {
   });
 
   test('loads the OpenChamber contact transcript instead of OpenCode session history', async () => {
-    const [conversation, queries] = await Promise.all([
+    const [conversation, queries, documentation] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../../queries/assistantQueries.ts'),
+      read('DOCUMENTATION.md'),
     ]);
     expect(conversation).toContain('useAssistantContactMessagesQuery');
     expect(conversation).toContain('sendAssistantContactMessage');
@@ -537,6 +583,9 @@ describe('Assistant UI product contract', () => {
     expect(queries).toContain("type: 'file'");
     expect(queries).toContain('/contact/cards');
     expect(queries).toContain('/contact/dm');
+    expect(queries).toContain('CONTACT_SEND_TIMEOUT_MS = 15_000');
+    expect(documentation).toContain('Contact turn SSE streams real bubble deltas');
+    expect(documentation).not.toContain('The LLM gateway is still non-streaming.');
   });
 
   test('keeps Settings selection backend and contact send routes separate from OpenCode promptAsync', async () => {
@@ -655,13 +704,17 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<ChatContainer');
     expect(conversation).not.toContain('chat-content-max-width');
     expect(conversation).not.toContain('inputClassName=');
-    expect(conversation).toContain("bg-[var(--primary-base)] text-[var(--primary-foreground)]");
-    expect(conversation).toContain('border border-dashed border-border bg-[var(--surface-muted)]');
-    expect(conversation).toContain('border border-border/60 bg-[var(--surface-muted)] text-foreground');
+    expect(conversation).toContain("bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]");
+    expect(conversation).toContain('border border-dashed border-border/50 bg-[var(--surface-muted)]/70');
+    expect(conversation).toContain("cn('bg-[var(--surface-muted)] text-foreground', sameAssistantRun && 'rounded-tl-lg')");
+    expect(conversation).toContain("startsTurn ? 'mt-6 first:mt-0' : sameAssistantRun ? 'mt-1.5' : 'mt-3'");
+    expect(conversation).toContain("max-w-[min(82%,30rem)] items-end");
+    expect(conversation).toContain('data-assistant-contact-empty');
     expect(conversation).not.toContain("'bg-[var(--surface-elevated)] text-foreground'");
     expect(view).toContain('bg-[var(--surface-elevated)]');
     expect(view).toContain('border-border/50');
-    expect(view).toContain('border-l border-border/60');
+    expect(view).toContain('border-l border-[var(--surface-subtle)]');
+    expect(view).toContain('flex h-16');
     expect(view).toContain('focus-visible:ring-[var(--interactive-focus-ring)]');
     expect(view).toContain('border-border');
     expect(view).not.toContain('bg-sidebar');
@@ -748,9 +801,9 @@ describe('Assistant UI product contract', () => {
   test('shows retry for an empty stale snapshot and truncates long assistant names in conversation chrome', async () => {
     const view = await read('AssistantView.tsx');
     expect(view).toContain("snapshotQuery.isError ? t('assistants.state.staleSnapshot')");
-    expect(view).toContain('truncate typography-ui-label font-medium');
+    expect(view).toContain('truncate typography-ui-label font-semibold tracking-[-0.01em]');
     expect(view).toContain("assistants.conversation.contactHint");
-    expect(view).toContain('typography-micro leading-none text-muted-foreground/70');
+    expect(view).toContain('typography-micro leading-none text-muted-foreground/55');
     expect(view).toContain('presentation.displayName || assistant.name');
   });
 

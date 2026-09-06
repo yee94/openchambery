@@ -26,9 +26,13 @@ export const CREATE_ASSISTANT_TOOL_NAME = 'create_assistant';
 export const SCHEDULE_TASK_TOOL_NAME = 'schedule_task';
 export const MESSAGE_ASSISTANT_TOOL_NAME = 'message_assistant';
 export const NEW_CONVERSATION_TOOL_NAME = 'new_conversation';
+export const LIST_PROJECTS_TOOL_NAME = 'list_projects';
+export const LIST_SESSIONS_TOOL_NAME = 'list_sessions';
 const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
 export const NEW_CONVERSATION_CONFIRM_BUBBLE = 'Started a new conversation. Previous contact messages are cleared.';
+const LIST_SESSIONS_LIMIT_DEFAULT = 20;
+const LIST_SESSIONS_LIMIT_MAX = 50;
 
 const DENIED_CODING_TOOLS = new Set(['bash', 'edit', 'read', 'write', 'glob', 'grep', 'shell']);
 
@@ -41,6 +45,8 @@ const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|s
 const ASSIGN_SESSION_INTENT = /建会话|开会话|开(?:一个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session|write a file|写(?:一个)?文件/giu;
 const MESSAGE_ASSISTANT_INTENT = /给[^。\n]{1,40}说(?:一声)?|跟[^。\n]{1,24}说(?:一声)?|告诉(?!我)[^。\n]{1,40}|说一声|message (?:the )?(?:assistant|peer)|(?:tell|message)\s+[A-Za-z0-9._-]+|send (?:a )?message to/iu;
 const NEW_CONVERSATION_INTENT = /开新对话|新对话|清空(?:聊天|对话)|clear chat|new conversation|start over/iu;
+const LIST_PROJECTS_INTENT = /找项目|查项目|看看项目|有哪些项目|项目列表|list projects|find project|registered project|which project/iu;
+const LIST_SESSIONS_INTENT = /现有对话|现有会话|查会话|找会话|会话列表|有哪些会话|list sessions|find (?:a )?session|existing (?:conversation|session|chat)|active (?:conversation|session)/iu;
 const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
 const newConversationParameters = typeboxObject({});
 
@@ -81,6 +87,96 @@ const messageAssistantParameters = typeboxObject({
   name: typeboxOptional(typeboxString('Recipient assistant display name if `to` is omitted.')),
   toAssistantID: typeboxOptional(typeboxString('Recipient assistant id when already known.')),
 });
+
+const listProjectsParameters = typeboxObject({
+  query: typeboxOptional(typeboxString('Optional fuzzy filter against project label, path, or id (e.g. "openchamber yee").')),
+});
+
+const listSessionsParameters = typeboxObject({
+  projectPath: typeboxOptional(typeboxString('Registered project path to scope the session search.')),
+  projectID: typeboxOptional(typeboxString('Registered project id to scope the session search.')),
+  query: typeboxOptional(typeboxString('Optional fuzzy filter against session title or id.')),
+  limit: typeboxOptional(typeboxString('Max sessions to return (default 20, max 50).')),
+});
+
+/** Normalize a registered project row for model/tool consumption (no secrets). */
+export function sanitizeRegisteredProject(project) {
+  if (!project || typeof project !== 'object') return null;
+  const id = typeof project.id === 'string' ? project.id.trim() : '';
+  const projectPath = typeof project.path === 'string' ? project.path.trim() : '';
+  if (!id || !projectPath) return null;
+  const label = typeof project.label === 'string' && project.label.trim()
+    ? project.label.trim()
+    : null;
+  return label ? { id, path: projectPath, label } : { id, path: projectPath };
+}
+
+export function normalizeRegisteredProjects(projects) {
+  return (Array.isArray(projects) ? projects : [])
+    .map(sanitizeRegisteredProject)
+    .filter(Boolean);
+}
+
+const fuzzyHaystack = (value) => (typeof value === 'string' ? value.toLowerCase().replace(/[\s/_-]+/g, '') : '');
+
+/** True when every character of needle appears in order inside haystack (typo-tolerant). */
+const isFuzzySubsequence = (needle, haystack) => {
+  if (!needle || !haystack) return false;
+  if (haystack.includes(needle) || needle.includes(haystack)) return true;
+  let index = 0;
+  for (const character of haystack) {
+    if (character === needle[index]) index += 1;
+    if (index >= needle.length) return true;
+  }
+  return false;
+};
+
+/** Case/space-insensitive match against label, path, id, title. Empty query matches all. */
+export function matchesProjectQuery(project, query) {
+  const needle = fuzzyHaystack(typeof query === 'string' ? query.trim() : '');
+  if (!needle) return true;
+  const fields = [project?.label, project?.path, project?.id, project?.title, project?.sessionID]
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => fuzzyHaystack(value));
+  return fields.some((field) => isFuzzySubsequence(needle, field) || isFuzzySubsequence(field, needle));
+}
+
+export function filterRegisteredProjects(projects, query) {
+  const list = normalizeRegisteredProjects(projects);
+  const needle = typeof query === 'string' ? query.trim() : '';
+  if (!needle) return list;
+  return list.filter((project) => matchesProjectQuery(project, needle));
+}
+
+/** Injected into every contact turn so the model can match names without a tool call. */
+export function formatRegisteredProjectsPrompt(projects) {
+  const list = normalizeRegisteredProjects(projects);
+  if (list.length === 0) {
+    return [
+      'Registered projects: none.',
+      'You can see this catalog. There are zero registered projects right now.',
+      'Tell the user to add a project in Settings. Never invent a filesystem path and never claim you cannot see the project list.',
+    ].join(' ');
+  }
+  return [
+    'Registered projects (you CAN see this list every turn — look them up yourself; never say you cannot see registered projects; never ask for a raw path when a name/label matches):',
+    ...list.map((project) => (
+      project.label
+        ? `- label=${JSON.stringify(project.label)} path=${JSON.stringify(project.path)} id=${JSON.stringify(project.id)}`
+        : `- path=${JSON.stringify(project.path)} id=${JSON.stringify(project.id)}`
+    )),
+    'Fuzzy-match user names like "openchamber yee" / "openchamer yee" against label and path.',
+    'To open coding work after a match, call assign_session with that projectPath (or an existing sessionID from list_sessions).',
+    'Use list_projects to refresh/filter and list_sessions to search existing conversations in a project.',
+  ].join('\n');
+}
+
+export function boundSessionListLimit(value) {
+  if (value == null || value === '') return LIST_SESSIONS_LIMIT_DEFAULT;
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isFinite(parsed)) return LIST_SESSIONS_LIMIT_DEFAULT;
+  return Math.min(LIST_SESSIONS_LIMIT_MAX, Math.max(1, Math.trunc(parsed)));
+}
 
 const allowedToolName = (name, allowedNames) => {
   if (typeof name !== 'string' || !name.trim()) return false;
@@ -201,6 +297,12 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
   if (allowed.has(NEW_CONVERSATION_TOOL_NAME) && NEW_CONVERSATION_INTENT.test(text)) {
     requested.push(NEW_CONVERSATION_TOOL_NAME);
   }
+  if (allowed.has(LIST_PROJECTS_TOOL_NAME) && LIST_PROJECTS_INTENT.test(text)) {
+    requested.push(LIST_PROJECTS_TOOL_NAME);
+  }
+  if (allowed.has(LIST_SESSIONS_TOOL_NAME) && LIST_SESSIONS_INTENT.test(text)) {
+    requested.push(LIST_SESSIONS_TOOL_NAME);
+  }
   if (allowed.has(CREATE_ASSISTANT_TOOL_NAME) && CREATE_ASSISTANT_INTENT.test(text)) {
     requested.push(CREATE_ASSISTANT_TOOL_NAME);
   }
@@ -290,13 +392,21 @@ export function formatContactToolsPrompt(tools) {
   return [
     'The user talks in natural language (including Chinese). Never ask them to type slash commands.',
     'When they want a fresh contact chat (开新对话 / new conversation / clear chat), call new_conversation. That clears this contact transcript only. It is not OpenCode session/new and does not open a coding session.',
+    'When they want to find a registered project (找项目 / list projects / "openchamber yee"), call list_projects or use the Registered projects block already in context.',
+    'When they want existing conversations in a project (现有对话 / list sessions), call list_sessions.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
-    'When they want coding work or a Chat session (建会话 / open a session / write a file), call assign_session.',
+    'When they want coding work or a Chat session (建会话 / open a session / write a file / 开个新会话), call assign_session after matching the project.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
     'When they want to tell another assistant (给 PeerQA 说一声 / message PeerQA), call message_assistant.',
     `Call exactly one tool per reply by emitting one fenced JSON block:`,
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${NEW_CONVERSATION_TOOL_NAME}","arguments":{}}`,
+    '```',
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${LIST_PROJECTS_TOOL_NAME}","arguments":{"query":"openchamber yee"}}`,
+    '```',
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${LIST_SESSIONS_TOOL_NAME}","arguments":{"projectPath":"/path/to/repo","query":"login"}}`,
     '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${CREATE_ASSISTANT_TOOL_NAME}","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}`,
@@ -310,13 +420,16 @@ export function formatContactToolsPrompt(tools) {
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"..."}}`,
     '```',
-    'If the user asked for more than one of these, do them in that order across turns: new_conversation, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
+    'If the user asked for more than one of these, do them in that order across turns: new_conversation, then list_projects, then list_sessions, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
     'new_conversation deletes this contact\'s stored messages and watches. It never calls session/new or createNew.',
-    'assign_session opens a real OpenChamber/OpenCode session on a registered project. You are not the worker.',
+    'You already receive the registered project catalog each turn. Prefer matching label/path yourself; list_projects refreshes or filters. Never claim you cannot see projects; never ask for a raw path when a name matches.',
+    'list_sessions searches the OpenChamber session index for existing chats in a project. A failure is not an empty list — surface the error.',
+    'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
     'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建 / 我去说一声) is not sending.',
+    'When calling a tool, emit only the fence. No preamble, no planning, no "let me think".',
     'Never say 已创建, 已发送, created, scheduled, opened, or sent unless the tool already returned success.',
     'If no registered project exists, tell the user to add one in Settings — do not use assistant-workspaces.',
     'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces.',
@@ -371,6 +484,8 @@ export function createContactTools({
   deliverPeerMessage,
   resetContact,
   listAssistants,
+  listProjects,
+  listSessions,
   currentAssistant,
   onCard,
 } = {}) {
@@ -401,6 +516,78 @@ export function createContactTools({
           };
         } catch (error) {
           return toolFailure(error, 'new_conversation_failed', 'Could not start a new conversation.');
+        }
+      },
+    },
+    {
+      name: LIST_PROJECTS_TOOL_NAME,
+      label: 'List projects',
+      description: [
+        'List registered OpenChamber projects ({ id, path, label }).',
+        'Optional query fuzzy-matches label, path, or id (e.g. "openchamber yee").',
+        'Use when the user asks 找项目 / list projects. Prefer the Registered projects context first.',
+      ].join(' '),
+      parameters: listProjectsParameters,
+      execute: async (_toolCallId, params) => {
+        try {
+          if (typeof listProjects !== 'function') {
+            throw new AssignError('upstream_error', 'Listing registered projects is unavailable.');
+          }
+          const listed = await listProjects();
+          if (!Array.isArray(listed)) {
+            throw new AssignError('upstream_error', 'Registered project catalog failed to load.');
+          }
+          const projects = filterRegisteredProjects(listed, params?.query);
+          const text = projects.length === 0
+            ? (typeof params?.query === 'string' && params.query.trim()
+              ? `No registered projects matched ${JSON.stringify(params.query.trim())}.`
+              : 'No registered projects. Tell the user to add one in Settings.')
+            : `Registered projects (${projects.length}): ${JSON.stringify(projects)}`;
+          return {
+            content: [{ type: 'text', text }],
+            details: { projects, count: projects.length },
+            terminate: false,
+          };
+        } catch (error) {
+          return toolFailure(error, 'list_projects_failed', 'Could not list registered projects.');
+        }
+      },
+    },
+    {
+      name: LIST_SESSIONS_TOOL_NAME,
+      label: 'List sessions',
+      description: [
+        'Search existing OpenCode/OpenChamber sessions for a registered project.',
+        'Optional projectPath/projectID scopes the search; query filters title/id.',
+        'Returns bounded { sessionID, title, directory, updatedAt }. Failure is not an empty success.',
+        'Use when the user asks 现有对话 / list sessions. Then assign_session with sessionID to reuse, or without sessionID to create.',
+      ].join(' '),
+      parameters: listSessionsParameters,
+      execute: async (_toolCallId, params) => {
+        try {
+          if (typeof listSessions !== 'function') {
+            throw new AssignError('upstream_error', 'Listing sessions is unavailable.');
+          }
+          const result = await listSessions({
+            projectPath: params?.projectPath,
+            projectID: params?.projectID,
+            query: params?.query,
+            limit: boundSessionListLimit(params?.limit),
+          });
+          if (!result || !Array.isArray(result.sessions)) {
+            throw new AssignError('upstream_error', 'Session listing failed.');
+          }
+          const sessions = result.sessions;
+          const text = sessions.length === 0
+            ? 'No matching sessions found for that project/query.'
+            : `Sessions (${sessions.length}${result.truncated ? ', truncated' : ''}): ${JSON.stringify(sessions)}`;
+          return {
+            content: [{ type: 'text', text }],
+            details: { sessions, count: sessions.length, truncated: Boolean(result.truncated) },
+            terminate: false,
+          };
+        } catch (error) {
+          return toolFailure(error, 'list_sessions_failed', 'Could not list sessions.');
         }
       },
     },

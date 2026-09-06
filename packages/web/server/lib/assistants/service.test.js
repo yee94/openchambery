@@ -18,6 +18,12 @@ const setup = (directory = root(), client = {}, options = {}) => {
   }
   return service;
 };
+/** Wait for the async contact turn after 202 admission (not part of the HTTP body). */
+const settleSend = async (service, assistantID, body) => {
+  const sent = await service.send(assistantID, body);
+  const settled = await service.whenContactTurnSettled(sent.messageID);
+  return { ...sent, settled };
+};
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
 
 describe('assistants service', () => {
@@ -73,7 +79,12 @@ describe('assistants service', () => {
     const assistant = service.createAssistant(assistantInput);
     const current = await service.ensure(assistant.id);
     const sent = await service.send(assistant.id, { ...current, messageID: 'client_1', parts: [{ type: 'text', text: 'hello' }] });
-    expect(sent).toMatchObject({ admitted: true, messageID: 'client_1' });
+    expect(sent).toEqual({ binding: current, messageID: 'client_1', admitted: true });
+    // Admission resolves before the async turn persists assistant bubbles.
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: 'hello' },
+    ]);
+    await service.whenContactTurnSettled('client_1');
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.complete).toBe(true);
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
@@ -106,10 +117,10 @@ describe('assistants service', () => {
     const assistant = service.createAssistant(assistantInput);
     await service.ensure(assistant.id);
     expect(creates).toBe(1);
-    await service.send(assistant.id, { messageID: 'old_1', parts: [{ type: 'text', text: 'remember this secret' }] });
-    await service.send(assistant.id, { messageID: 'old_2', parts: [{ type: 'text', text: 'and this too' }] });
+    await settleSend(service, assistant.id, { messageID: 'old_1', parts: [{ type: 'text', text: 'remember this secret' }] });
+    await settleSend(service, assistant.id, { messageID: 'old_2', parts: [{ type: 'text', text: 'and this too' }] });
     expect(lastHistory.some((item) => item.content.includes('remember this secret'))).toBe(true);
-    const reset = await service.send(assistant.id, { messageID: 'reset_1', parts: [{ type: 'text', text: '开新对话' }] });
+    const reset = await settleSend(service, assistant.id, { messageID: 'reset_1', parts: [{ type: 'text', text: '开新对话' }] });
     expect(reset).toMatchObject({ admitted: true, messageID: 'reset_1' });
     expect(creates).toBe(1);
     const page = service.contactMessages(assistant.id, { limit: 50 });
@@ -117,7 +128,7 @@ describe('assistants service', () => {
       { role: 'user', text: '开新对话' },
       { role: 'assistant', text: 'Started a new conversation. Previous contact messages are cleared.' },
     ]);
-    await service.send(assistant.id, { messageID: 'fresh_1', parts: [{ type: 'text', text: 'what did I say before?' }] });
+    await settleSend(service, assistant.id, { messageID: 'fresh_1', parts: [{ type: 'text', text: 'what did I say before?' }] });
     expect(lastHistory.map((item) => item.content)).toEqual([
       '开新对话',
       'Started a new conversation. Previous contact messages are cleared.',
@@ -146,7 +157,7 @@ describe('assistants service', () => {
       },
     });
     const assistant = service.createAssistant(assistantInput);
-    await service.send(assistant.id, {
+    await settleSend(service, assistant.id, {
       messageID: 'attach_1',
       parts: [
         { type: 'text', text: 'look at these' },
@@ -154,7 +165,7 @@ describe('assistants service', () => {
         { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'note.txt' },
       ],
     });
-    await service.send(assistant.id, { messageID: 'reset_leftover', parts: [{ type: 'text', text: '开新对话' }] });
+    await settleSend(service, assistant.id, { messageID: 'reset_leftover', parts: [{ type: 'text', text: '开新对话' }] });
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
       { role: 'user', text: '开新对话' },
@@ -173,7 +184,7 @@ describe('assistants service', () => {
     });
     const assistant = service.createAssistant(assistantInput);
     await service.ensure(assistant.id);
-    await service.send(assistant.id, { messageID: 'keep_1', parts: [{ type: 'text', text: 'hello' }] });
+    await settleSend(service, assistant.id, { messageID: 'keep_1', parts: [{ type: 'text', text: 'hello' }] });
     expect(service.contactMessages(assistant.id, { limit: 50 }).messages.length).toBeGreaterThan(0);
     expect(service.resetContact(assistant.id)).toEqual({ assistantID: assistant.id, reset: true });
     expect(creates).toBe(1);
@@ -196,7 +207,7 @@ describe('assistants service', () => {
       },
     });
     const assistant = service.createAssistant(assistantInput);
-    await service.send(assistant.id, {
+    await settleSend(service, assistant.id, {
       messageID: 'mixed_1',
       parts: [{ type: 'text', text: 'look' }, image, file],
     });
@@ -229,7 +240,7 @@ describe('assistants service', () => {
       },
     });
     const assistant = service.createAssistant(assistantInput);
-    await service.send(assistant.id, { messageID: 'file_only_1', parts: [image] });
+    await settleSend(service, assistant.id, { messageID: 'file_only_1', parts: [image] });
     expect(harness.userText).toBe('[attachment]');
     expect(harness.userParts).toEqual([image]);
     const user = service.contactMessages(assistant.id).messages.find((message) => message.role === 'user');
@@ -241,14 +252,14 @@ describe('assistants service', () => {
   it('returns the frozen compact and message admission DTO field sets', async () => {
     const service = setup(root(), { promptAsync: async () => ({ response: { status: 204 } }) }); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id);
     expect(await service.compact(assistant.id, current)).toEqual({ binding: current, summarized: true });
-    expect(await service.send(assistant.id, { ...current, messageID: 'client_204', parts: [{ type: 'text', text: 'hello' }] })).toEqual({ binding: current, messageID: 'client_204', admitted: true });
+    expect(await settleSend(service, assistant.id, { ...current, messageID: 'client_204', parts: [{ type: 'text', text: 'hello' }] })).toMatchObject({ binding: current, messageID: 'client_204', admitted: true });
     expect(Object.keys(assistantContractFixtures.assistant)).toContain('managedWorkspacePath'); expect(Object.keys(assistantContractFixtures.assistant)).not.toContain('skillRoots'); expect(Object.keys(assistantContractFixtures.compactResponse).sort()).toEqual(['binding', 'summarized']); expect(Object.keys(assistantContractFixtures.messageAdmission).sort()).toEqual(['admitted', 'binding', 'messageID']); service.close();
   });
 
   it('admits 33-part direct messages and 129-part shares', async () => {
     const prompts = []; const service = setup(root(), { promptAsync: async (input) => { prompts.push(input); return { response: { status: 204 } }; } }); const assistant = service.createAssistant(assistantInput); const binding = await service.ensure(assistant.id);
     const directParts = Array.from({ length: 33 }, (_, index) => ({ type: 'text', text: String(index) })); const shareParts = Array.from({ length: 129 }, (_, index) => ({ type: 'text', text: String(index) }));
-    await service.send(assistant.id, { ...binding, messageID: 'parts-33', parts: directParts }); await service.share(assistant.id, { operationID: 'parts-129', payload: { messageID: 'share-parts-129', parts: shareParts } });
+    await settleSend(service, assistant.id, { ...binding, messageID: 'parts-33', parts: directParts }); await service.share(assistant.id, { operationID: 'parts-129', payload: { messageID: 'share-parts-129', parts: shareParts } });
     const deliveryTarget = service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope: { sessionID: binding.sessionID, directory: binding.directory } }); await service.sendWithCapturedConfig({ deliveryTarget, messageID: 'delivery-parts-129', parts: shareParts });
     // Composer send is the contact harness (no promptAsync). Share + queued
     // delivery still use the legacy OpenCode path; assign uses promptAsync on
@@ -338,7 +349,7 @@ describe('assistants service', () => {
     const assistant = service.createAssistant({ ...assistantInput, variant: 'fast' });
     expect(assistant.variant).toBe('fast');
     const binding = await service.ensure(assistant.id);
-    await service.send(assistant.id, { ...binding, messageID: 'variant-message', parts: [{ type: 'text', text: 'message' }] });
+    await settleSend(service, assistant.id, { ...binding, messageID: 'variant-message', parts: [{ type: 'text', text: 'message' }] });
     await service.share(assistant.id, { operationID: 'variant-share', payload: { messageID: 'variant-share-message', parts: [{ type: 'text', text: 'share' }] } });
     // Composer send is the contact harness. Share still captures the OpenCode variant.
     expect(prompts).toEqual(expect.arrayContaining([expect.objectContaining({ variant: 'fast' })]));
@@ -385,7 +396,7 @@ describe('assistants service', () => {
 
   it('uses the workspace directory for OpenCode skill discovery without catalog injection', async () => {
     const directory = root(); const workspace = path.join(directory, 'workspace'); const skill = path.join(workspace, '.agents', 'skills', 'project-skill'); fs.mkdirSync(skill, { recursive: true }); fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: project-skill\ndescription: Project skill\n---\nInstructions'); let created; let harness; const service = setup(directory, { create: async (input) => { created = input; return { data: { id: 'ses_workspace' } }; }, promptAsync: async () => ({ response: { status: 204 } }) }, { runContactTurn: async (input) => { harness = input; return { text: 'ok', bubbles: ['ok'] }; } }); const assistant = service.createAssistant({ ...assistantInput, workspacePath: workspace, defaultPrompt: 'Base prompt' }); const current = await service.ensure(assistant.id);
-    await service.send(assistant.id, { ...current, messageID: 'client_skill', parts: [{ type: 'text', text: 'hello' }] }); expect(created.directory).toBe(fs.realpathSync(workspace)); expect(harness.assistant.defaultPrompt).toBe('Base prompt'); expect(harness.assistant.defaultPrompt).not.toContain('project-skill'); service.close();
+    await settleSend(service, assistant.id, { ...current, messageID: 'client_skill', parts: [{ type: 'text', text: 'hello' }] }); expect(created.directory).toBe(fs.realpathSync(workspace)); expect(harness.assistant.defaultPrompt).toBe('Base prompt'); expect(harness.assistant.defaultPrompt).not.toContain('project-skill'); service.close();
   });
 
   it('rejects retired skillRoots input', async () => {
@@ -420,9 +431,9 @@ describe('assistants service', () => {
     const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }) });
     const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
     const first = await service.ensure(assistant.id);
-    const sent = await service.send(assistant.id, { ...first, messageID: 'stateless-1', parts: [{ type: 'text', text: 'one' }] });
+    const sent = await settleSend(service, assistant.id, { ...first, messageID: 'stateless-1', parts: [{ type: 'text', text: 'one' }] });
     expect(sent.binding.sessionID).toBe(first.sessionID);
-    const second = await service.send(assistant.id, { ...sent.binding, messageID: 'stateless-2', parts: [{ type: 'text', text: 'two' }] });
+    const second = await settleSend(service, assistant.id, { ...sent.binding, messageID: 'stateless-2', parts: [{ type: 'text', text: 'two' }] });
     expect(second.binding.sessionID).toBe(first.sessionID);
     expect(creates).toBe(1);
     expect(service.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual([
@@ -435,8 +446,8 @@ describe('assistants service', () => {
     const directory = root(); const tips = [];
     const service = setup(directory, {}, { onRevisionTip: (tip) => tips.push(tip) });
     const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
-    await service.send(assistant.id, { messageID: 'msg_stateless_1', parts: [{ type: 'text', text: 'one' }] });
-    await service.send(assistant.id, { messageID: 'msg_stateless_2', parts: [{ type: 'text', text: 'two' }] });
+    await settleSend(service, assistant.id, { messageID: 'msg_stateless_1', parts: [{ type: 'text', text: 'one' }] });
+    await settleSend(service, assistant.id, { messageID: 'msg_stateless_2', parts: [{ type: 'text', text: 'two' }] });
     const page = service.contactMessages(assistant.id, { limit: 10 });
     expect(page.messages.map((message) => [message.messageID, message.text])).toEqual([
       ['msg_stateless_1', 'one'],
@@ -502,7 +513,7 @@ describe('assistants service', () => {
     const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }) });
     const assistant = service.createAssistant({ ...assistantInput, mode: 'continuous' });
     const binding = await service.ensure(assistant.id);
-    const sent = await service.send(assistant.id, { ...binding, messageID: 'continuous-1', parts: [{ type: 'text', text: 'hello' }] });
+    const sent = await settleSend(service, assistant.id, { ...binding, messageID: 'continuous-1', parts: [{ type: 'text', text: 'hello' }] });
     expect(sent.binding).toEqual(binding);
     expect(creates).toBe(1);
     expect(service.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual(['hello', 'reply:hello']);
@@ -861,7 +872,7 @@ describe('assistants service', () => {
       },
     });
     const assistant = service.createAssistant(assistantInput);
-    const sent = await service.send(assistant.id, {
+    const sent = await settleSend(service, assistant.id, {
       messageID: 'client_assign',
       parts: [{ type: 'text', text: 'Fix login' }],
     });
@@ -905,7 +916,7 @@ describe('assistants service', () => {
       },
     });
     const host = service.createAssistant(assistantInput);
-    await service.send(host.id, {
+    await settleSend(service, host.id, {
       messageID: 'client_create_assistant',
       parts: [{ type: 'text', text: '建一个助理叫 FlowQA，模型 opencode-go/deepseek-v4-flash' }],
     });
@@ -959,7 +970,7 @@ describe('assistants service', () => {
       },
     });
     const host = service.createAssistant(assistantInput);
-    await service.send(host.id, {
+    await settleSend(service, host.id, {
       messageID: 'client_schedule',
       parts: [{ type: 'text', text: '每天 18:00 Asia/Shanghai 排一个 ping 定时任务' }],
     });
@@ -985,6 +996,198 @@ describe('assistants service', () => {
       part.type === 'card' && part.cardType === 'schedule' && part.taskID === 'task_ping' && part.time === '18:00'
     )))).toBe(true);
     expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
+    const owned = await service.listAssistantScheduledTasks(host.id);
+    expect(owned.tasks).toEqual([expect.objectContaining({
+      assistantID: host.id,
+      projectID: 'proj_app',
+      taskID: 'task_ping',
+      task: null,
+    })]);
+    service.close();
+  });
+
+  it('injects registered projects into the contact turn and assigns after a name match', async () => {
+    const directory = root();
+    const project = path.join(directory, 'openchamber-yee');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const harness = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: 'ses_named' } };
+      },
+      promptAsync: async () => ({ response: { status: 204 } }),
+    }, {
+      listProjects: async () => [{ id: 'proj_yee', path: project, label: 'OpenChamber Yee' }],
+      getAllowedRoots: () => [project, directory],
+      runContactTurn: async (input) => {
+        harness.push(input);
+        expect(input.projects).toEqual([
+          { id: 'proj_yee', path: project, label: 'OpenChamber Yee' },
+        ]);
+        expect(input.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
+          'list_projects',
+          'list_sessions',
+          'assign_session',
+        ]));
+        const listed = await input.tools.find((tool) => tool.name === 'list_projects').execute('call_p', {
+          query: 'openchamer yee',
+        });
+        expect(listed.details.projects).toEqual([
+          { id: 'proj_yee', path: project, label: 'OpenChamber Yee' },
+        ]);
+        const assign = input.tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_a', {
+          prompt: 'Start coding',
+          projectPath: listed.details.projects[0].path,
+          title: 'Yee work',
+        });
+        return {
+          text: 'Opened on OpenChamber Yee.',
+          bubbles: ['Opened on OpenChamber Yee.'],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_named_project',
+      parts: [{ type: 'text', text: '你看看 openchamer yee 项目，在那里开个新会话' }],
+    });
+    expect(harness).toHaveLength(1);
+    expect(creates[0]).toMatchObject({
+      directory: fs.realpathSync(project),
+      title: 'Yee work',
+    });
+    service.close();
+  });
+
+  it('list_sessions failure is not an empty success', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      listProjects: async () => [{ id: 'proj_app', path: directory, label: 'App' }],
+      sessionIndexService: {
+        snapshot: () => {
+          throw new Error('index down');
+        },
+      },
+      runContactTurn: async ({ tools }) => {
+        const list = tools.find((tool) => tool.name === 'list_sessions');
+        const result = await list.execute('call_s', { projectPath: directory });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          details: result.details,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_list_sessions_fail',
+      parts: [{ type: 'text', text: '现有对话' }],
+    });
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.at(-1).text).toContain('index down');
+    service.close();
+  });
+
+  it('lists sessions from the session index for a project', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      listProjects: async () => [{ id: 'proj_app', path: directory, label: 'App' }],
+      sessionIndexService: {
+        snapshot: () => ({
+          directories: [
+            {
+              directory,
+              sessions: [
+                { id: 'ses_old', title: 'Old', time: { updated: 1 } },
+                { id: 'ses_new', title: 'Login work', time: { updated: 9 } },
+              ],
+            },
+            {
+              directory: path.join(directory, 'other'),
+              sessions: [{ id: 'ses_other', title: 'Other', time: { updated: 20 } }],
+            },
+          ],
+        }),
+      },
+      runContactTurn: async ({ tools }) => {
+        const list = tools.find((tool) => tool.name === 'list_sessions');
+        const result = await list.execute('call_s', { projectPath: directory, query: 'login' });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          details: result.details,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_list_sessions_ok',
+      parts: [{ type: 'text', text: '现有对话 login' }],
+    });
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.at(-1).text).toContain('ses_new');
+    expect(page.messages.at(-1).text).not.toContain('ses_other');
+    service.close();
+  });
+
+  it('keeps assistant scheduled-task mapping when live project lookup fails', async () => {
+    const directory = root();
+    let failLive = false;
+    const service = setup(directory, {}, {
+      listProjects: async () => {
+        if (failLive) throw new Error('projects unavailable');
+        return [{ id: 'proj_app', path: directory, label: 'App' }];
+      },
+      listScheduledTasks: async () => {
+        if (failLive) throw new Error('tasks unavailable');
+        return [{ id: 'task_ping', name: 'Daily ping', enabled: true }];
+      },
+      upsertScheduledTask: async (_projectID, task) => ({
+        created: true,
+        task: { id: 'task_ping', name: task.name, schedule: task.schedule, execution: task.execution },
+        tasks: [],
+      }),
+      runContactTurn: async ({ tools }) => {
+        const schedule = tools.find((tool) => tool.name === 'schedule_task');
+        const result = await schedule.execute('call_1', {
+          name: 'Daily ping',
+          prompt: 'ping',
+          time: '18:00',
+          timezone: 'Asia/Shanghai',
+        });
+        return {
+          text: 'Scheduled.',
+          bubbles: ['Scheduled.'],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await settleSend(service, host.id, {
+      messageID: 'client_schedule_map',
+      parts: [{ type: 'text', text: '排定时任务' }],
+    });
+    const live = await service.listAssistantScheduledTasks(host.id);
+    expect(live.tasks[0]).toMatchObject({
+      taskID: 'task_ping',
+      projectLabel: 'App',
+      task: expect.objectContaining({ id: 'task_ping', name: 'Daily ping' }),
+    });
+    failLive = true;
+    const kept = await service.listAssistantScheduledTasks(host.id);
+    expect(kept.tasks).toEqual([expect.objectContaining({
+      taskID: 'task_ping',
+      projectID: 'proj_app',
+      projectPath: null,
+      projectLabel: null,
+      task: null,
+    })]);
     service.close();
   });
 
@@ -1044,7 +1247,7 @@ describe('assistants service', () => {
       },
     });
     const assistant = service.createAssistant(assistantInput);
-    await service.send(assistant.id, {
+    await settleSend(service, assistant.id, {
       messageID: 'client_no_project',
       parts: [{ type: 'text', text: 'Fix login' }],
     });
@@ -1382,7 +1585,7 @@ describe('assistants service', () => {
     });
     const sender = service.createAssistant({ ...assistantInput, name: 'DeepSeekQA' });
     const recipient = service.createAssistant({ ...assistantInput, name: 'PeerQA' });
-    await service.send(sender.id, {
+    await settleSend(service, sender.id, {
       messageID: 'client_message_assistant',
       parts: [{ type: 'text', text: '给 PeerQA 说一声 hello-from-assistant 写好了' }],
     });
@@ -1439,7 +1642,7 @@ describe('assistants service', () => {
       text: 'loop',
     })).toThrow('validation_error');
     service.deliverPeerMessage(sender.id, { toAssistantID: recipient.id, text: 'ping' });
-    const sent = await service.send(recipient.id, {
+    const sent = await settleSend(service, recipient.id, {
       messageID: 'after-peer',
       parts: [{ type: 'text', text: 'hello' }],
     });
@@ -1449,8 +1652,69 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('surfaces no_provider when the contact harness cannot reach a model', async () => {
+  it('broadcasts contact-turn-start/end and bubble-delta without re-inserting the user row', async () => {
+    const events = [];
+    const directory = root();
+    const service = setup(directory, {}, {
+      onContactTurnEvent: (event) => events.push(event),
+      runContactTurn: async ({ userText, onBubbleDelta }) => {
+        if (typeof onBubbleDelta === 'function') {
+          onBubbleDelta(0, `stream:${userText}`, false);
+          onBubbleDelta(0, '', true);
+        }
+        return { text: `stream:${userText}`, bubbles: [`stream:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const sent = await service.send(assistant.id, {
+      messageID: 'turn_stream_1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    expect(sent).toEqual({
+      binding: expect.objectContaining({ sessionID: null, sessionGeneration: 0 }),
+      messageID: 'turn_stream_1',
+      admitted: true,
+    });
+    expect(sent).not.toHaveProperty('settled');
+    const settled = await service.whenContactTurnSettled('turn_stream_1');
+    expect(settled).toMatchObject({ status: 'complete' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const types = events.map((event) => event.type);
+    expect(types[0]).toBe('openchamber:contact-turn-start');
+    expect(events[0].properties).toMatchObject({
+      assistantID: assistant.id,
+      turnID: 'turn_stream_1',
+      messageID: 'turn_stream_1',
+      occurredAt: expect.any(Number),
+    });
+    expect(events.some((event) => (
+      event.type === 'openchamber:contact-bubble-delta'
+      && event.properties?.bubbleIndex === 0
+      && event.properties?.delta === 'stream:hi'
+      && event.properties?.done === false
+    ))).toBe(true);
+    expect(types.at(-1)).toBe('openchamber:contact-turn-end');
+    expect(events.at(-1).properties).toMatchObject({
+      assistantID: assistant.id,
+      turnID: 'turn_stream_1',
+      status: 'complete',
+      occurredAt: expect.any(Number),
+    });
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => message.messageID)).toEqual([
+      'turn_stream_1',
+      'turn_stream_1:bubble:1',
+    ]);
+    const db = new (require('better-sqlite3'))(path.join(directory, 'assistants.sqlite'));
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_contact_message WHERE message_id=?').get('turn_stream_1').count).toBe(1);
+    db.close();
+    service.close();
+  });
+
+  it('admits the user then broadcasts turn-end error when the harness fails', async () => {
+    const events = [];
     const service = setup(root(), {}, {
+      onContactTurnEvent: (event) => events.push(event),
       runContactTurn: async () => {
         const error = new Error('No connected model');
         error.code = 'no_provider';
@@ -1458,10 +1722,23 @@ describe('assistants service', () => {
       },
     });
     const assistant = service.createAssistant(assistantInput);
-    await expect(service.send(assistant.id, {
+    const sent = await service.send(assistant.id, {
       messageID: 'client_no_provider',
       parts: [{ type: 'text', text: 'hello' }],
-    })).rejects.toMatchObject({ code: 'no_provider' });
+    });
+    expect(sent).toMatchObject({ admitted: true, messageID: 'client_no_provider' });
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['user']);
+    const settled = await service.whenContactTurnSettled('client_no_provider');
+    expect(settled).toMatchObject({ status: 'error', code: 'no_provider' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(events.some((event) => event.type === 'openchamber:contact-turn-start')).toBe(true);
+    expect(events.some((event) => (
+      event.type === 'openchamber:contact-turn-end'
+      && event.properties?.status === 'error'
+      && event.properties?.turnID === 'client_no_provider'
+    ))).toBe(true);
+    // User row stays; no assistant bubble on failure.
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['user']);
     service.close();
   });
 

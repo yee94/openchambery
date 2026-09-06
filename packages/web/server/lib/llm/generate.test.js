@@ -242,4 +242,218 @@ describe('generateOpenCodeText', () => {
     expect(promptAsync).toHaveBeenCalled()
     expect(prompt).not.toHaveBeenCalled()
   })
+
+  it('forwards filtered throwaway session text deltas via onTextDelta and still returns full text', async () => {
+    const subscribers = new Set()
+    const globalEventHub = {
+      subscribeEvent(fn) {
+        subscribers.add(fn)
+        return () => { subscribers.delete(fn) }
+      },
+      emit(event) {
+        for (const fn of Array.from(subscribers)) fn(event)
+      },
+    }
+    const deltas = []
+    const onTextDelta = vi.fn((text) => { deltas.push(text) })
+
+    const promptAsync = vi.fn(async () => {
+      // Same-session text deltas
+      globalEventHub.emit({
+        payload: {
+          type: 'message.part.delta',
+          properties: {
+            sessionID: 'ses_tmp',
+            messageID: 'msg_asst',
+            partID: 'prt_1',
+            field: 'text',
+            delta: 'Hel',
+          },
+        },
+      })
+      globalEventHub.emit({
+        payload: {
+          type: 'message.part.delta',
+          properties: {
+            sessionID: 'ses_tmp',
+            messageID: 'msg_asst',
+            partID: 'prt_1',
+            field: 'text',
+            delta: 'lo',
+          },
+        },
+      })
+      // Other session — must be ignored
+      globalEventHub.emit({
+        payload: {
+          type: 'message.part.delta',
+          properties: {
+            sessionID: 'ses_other',
+            messageID: 'msg_other',
+            partID: 'prt_x',
+            field: 'text',
+            delta: 'NOPE',
+          },
+        },
+      })
+      // Same session, different messageID after lock — ignored
+      globalEventHub.emit({
+        payload: {
+          type: 'message.part.delta',
+          properties: {
+            sessionID: 'ses_tmp',
+            messageID: 'msg_other_asst',
+            partID: 'prt_2',
+            field: 'text',
+            delta: 'SKIP',
+          },
+        },
+      })
+      // Non-text field — ignored
+      globalEventHub.emit({
+        payload: {
+          type: 'message.part.delta',
+          properties: {
+            sessionID: 'ses_tmp',
+            messageID: 'msg_asst',
+            partID: 'prt_1',
+            field: 'reasoning',
+            delta: 'think',
+          },
+        },
+      })
+      return { response: { status: 204 } }
+    })
+
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => ({
+        session: {
+          create: async () => ({ data: { id: 'ses_tmp' } }),
+          update: async () => ({ data: { id: 'ses_tmp' } }),
+          prompt: vi.fn(),
+          promptAsync,
+          status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
+          messages: async () => ({ data: [completedAssistant('Hello')] }),
+          delete: async () => ({ data: true }),
+        },
+        tool: { ids: async () => ({ data: [] }) },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      onTextDelta,
+      globalEventHub,
+    })
+
+    expect(result).toEqual({ text: 'Hello', source: 'throwaway-session' })
+    expect(deltas).toEqual(['Hel', 'lo'])
+    expect(onTextDelta).toHaveBeenCalledTimes(2)
+    // Listener removed after complete — further emits must not reach onTextDelta
+    expect(subscribers.size).toBe(0)
+    globalEventHub.emit({
+      payload: {
+        type: 'message.part.delta',
+        properties: {
+          sessionID: 'ses_tmp',
+          messageID: 'msg_asst',
+          partID: 'prt_1',
+          field: 'text',
+          delta: 'late',
+        },
+      },
+    })
+    expect(onTextDelta).toHaveBeenCalledTimes(2)
+  })
+
+  it('removes the hub listener when generate fails after subscribe', async () => {
+    const subscribers = new Set()
+    const globalEventHub = {
+      subscribeEvent(fn) {
+        subscribers.add(fn)
+        return () => { subscribers.delete(fn) }
+      },
+    }
+    const onTextDelta = vi.fn()
+
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => ({
+        session: {
+          create: async () => ({ data: { id: 'ses_tmp' } }),
+          update: async () => ({ data: { id: 'ses_tmp' } }),
+          prompt: vi.fn(),
+          promptAsync: async () => ({ response: { status: 204 } }),
+          status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
+          messages: async () => ({
+            data: [{
+              info: { role: 'assistant', error: { message: 'boom' }, time: { completed: Date.now() } },
+              parts: [],
+            }],
+          }),
+          delete: async () => ({ data: true }),
+        },
+        tool: { ids: async () => ({ data: [] }) },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      onTextDelta,
+      globalEventHub,
+    })).rejects.toMatchObject({ code: 'upstream_error', message: 'boom' })
+
+    expect(subscribers.size).toBe(0)
+  })
+
+  it('does not invent deltas on the sessionless /generate JSON path', async () => {
+    const onTextDelta = vi.fn()
+    const subscribers = new Set()
+    const globalEventHub = {
+      subscribeEvent(fn) {
+        subscribers.add(fn)
+        return () => { subscribers.delete(fn) }
+      },
+    }
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ text: 'full reply' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      fetchImpl,
+      detect: async () => ({ available: true, mode: 'http', url: 'http://127.0.0.1:4096/generate' }),
+      onTextDelta,
+      globalEventHub,
+    })
+
+    expect(result).toEqual({ text: 'full reply', source: 'generate' })
+    expect(onTextDelta).not.toHaveBeenCalled()
+    expect(subscribers.size).toBe(0)
+  })
+})
+
+describe('subscribeThrowawayTextDeltas', () => {
+  it('returns null without a callback or hub', () => {
+    expect(_test.subscribeThrowawayTextDeltas({
+      sessionID: 'ses_1',
+      onTextDelta: null,
+      globalEventHub: { subscribeEvent: () => () => {} },
+    })).toBeNull()
+    expect(_test.subscribeThrowawayTextDeltas({
+      sessionID: 'ses_1',
+      onTextDelta: () => {},
+      globalEventHub: null,
+    })).toBeNull()
+  })
 })

@@ -6,4 +6,23 @@ export const assistantContractFixtures = Object.freeze({
   abortResponse: Object.freeze({ binding: Object.freeze({ sessionID: 'ses_fixture', directory: '/workspace', sessionGeneration: 4 }), aborted: true }),
   shareOperation: Object.freeze({ operationID: 'share_fixture', assistantID: 'assistant_fixture', sessionID: 'ses_fixture', messageID: 'msg_fixture', state: 'running', phase: 'submitted', attempt: 1, leaseExpiresAt: 1234, errorCode: null }),
   historicalMessages: Object.freeze({ entries: Object.freeze([Object.freeze({ sessionID: 'ses_fixture', directory: null, info: Object.freeze({ id: 'msg_fixture', sessionID: 'ses_fixture', role: 'assistant', time: Object.freeze({ created: 1234 }) }), parts: Object.freeze([]) })]), nextCursor: null, complete: true }),
+  assistantScheduledTasks: Object.freeze({
+    tasks: Object.freeze([
+      Object.freeze({
+        assistantID: 'assistant_fixture',
+        projectID: 'proj_fixture',
+        taskID: 'task_fixture',
+        createdAt: 1234,
+        projectPath: '/workspace',
+        projectLabel: 'Fixture',
+        task: Object.freeze({
+          id: 'task_fixture',
+          name: 'Daily ping',
+          enabled: true,
+          schedule: Object.freeze({ kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai' }),
+          execution: Object.freeze({ prompt: 'ping', providerID: 'provider_fixture', modelID: 'model_fixture' }),
+        }),
+      }),
+    ]),
+  }),
 });

@@ -20,12 +20,36 @@ import {
   updateSessionCardStatus,
   upsertContactWatch,
 } from './contact-store.js';
-import { ASSIGNED_SESSION_FALLBACK_BUBBLE, confirmBubbleAfterContactReset, createContactTools } from './contact-tools.js';
+import {
+  ASSIGNED_SESSION_FALLBACK_BUBBLE,
+  boundSessionListLimit,
+  confirmBubbleAfterContactReset,
+  createContactTools,
+  filterRegisteredProjects,
+  matchesProjectQuery,
+  normalizeRegisteredProjects,
+  sanitizeRegisteredProject,
+} from './contact-tools.js';
 import { AssignError, ASSIGN_CODES, assignSession, resolveAssignDirectory } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
 
 const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 11;
+const normalizeSessionDirectory = (value) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  let resolved = trimmed;
+  try { resolved = fs.realpathSync(trimmed); } catch { /* Keep the original path when realpath is unavailable. */ }
+  const normalized = resolved.replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized || null;
+};
+const directoryContained = (candidate, root) => {
+  const left = normalizeSessionDirectory(candidate);
+  const right = normalizeSessionDirectory(root);
+  if (!left || !right) return false;
+  return left === right || left.startsWith(`${right}/`);
+};
 const BACKFILL_PAGE_SIZE = 100;
 const BACKFILL_MAX_PAGES = 3;
 const BACKFILL_MESSAGES_ATTEMPTS = 3;
@@ -64,7 +88,7 @@ const isTransientMessagesFailure = (result, error) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -84,7 +108,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     CREATE INDEX IF NOT EXISTS assistant_message_mirror_page ON assistant_message_mirror(assistant_id, session_id, ordinal, message_id);
     CREATE TABLE IF NOT EXISTS assistant_message_part_mirror (assistant_id TEXT NOT NULL, session_id TEXT NOT NULL, message_id TEXT NOT NULL, part_id TEXT NOT NULL, part_json TEXT NOT NULL, ordinal INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (assistant_id, session_id, message_id, part_id));
     CREATE INDEX IF NOT EXISTS assistant_message_part_mirror_message ON assistant_message_part_mirror(assistant_id, session_id, message_id, ordinal, part_id);
-    CREATE TABLE IF NOT EXISTS assistant_message_backfill (assistant_id TEXT NOT NULL, session_id TEXT NOT NULL, cursor TEXT, complete INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY (assistant_id, session_id));`);
+    CREATE TABLE IF NOT EXISTS assistant_message_backfill (assistant_id TEXT NOT NULL, session_id TEXT NOT NULL, cursor TEXT, complete INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY (assistant_id, session_id));
+    CREATE TABLE IF NOT EXISTS assistant_scheduled_task (
+      assistant_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (assistant_id, project_id, task_id)
+    );
+    CREATE INDEX IF NOT EXISTS assistant_scheduled_task_assistant
+      ON assistant_scheduled_task(assistant_id, created_at DESC);`);
   ensureContactSchema(db);
   const historyColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_session_history')").all().map((column) => column.name));
   if (!historyColumns.has('directory')) db.exec('ALTER TABLE assistant_session_history ADD COLUMN directory TEXT');
@@ -612,10 +645,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (parts.length === 0 && userText) parts.push({ type: 'text', text: userText });
     return parts;
   };
-  const persistContactTurn = (assistantID, { userMessageID, userText, userParts, bubbles, cards = [], turnID }) => {
+  /** Admit the user row only — HTTP 202 returns here; assistant bubbles persist later. */
+  const admitContactUser = (assistantID, { userMessageID, userText, userParts, turnID }) => {
     db.exec('BEGIN IMMEDIATE');
     try {
-      let ordinal = nextContactOrdinal(db, assistantID);
       insertContactMessage(db, {
         messageID: userMessageID,
         assistantID,
@@ -623,12 +656,23 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         turnID,
         bubbleIndex: 0,
         createdAt: now(),
-        ordinal,
+        ordinal: nextContactOrdinal(db, assistantID),
         status: 'complete',
         parts: Array.isArray(userParts) && userParts.length > 0 ? userParts : [{ type: 'text', text: userText }],
       });
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  /** Persist assistant bubbles/cards for an already-admitted user turn (no user row). */
+  const persistContactAssistantReply = (assistantID, { userMessageID, bubbles, cards = [], turnID }) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      let ordinal = nextContactOrdinal(db, assistantID);
       bubbles.forEach((text, index) => {
-        ordinal += 1;
         const bubbleID = `${userMessageID}:bubble:${index + 1}`;
         insertContactMessage(db, {
           messageID: bubbleID,
@@ -641,11 +685,11 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           status: 'complete',
           parts: [{ type: 'text', text }],
         });
+        ordinal += 1;
       });
       cards.forEach((cardInput, index) => {
         const card = parseContactCard({ type: 'card', cardType: cardInput?.cardType || 'session', ...cardInput });
         if (!card) return;
-        ordinal += 1;
         insertContactMessage(db, {
           messageID: `${userMessageID}:card:${index + 1}`,
           assistantID,
@@ -657,6 +701,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           status: 'complete',
           parts: [card],
         });
+        ordinal += 1;
         if (card.cardType === 'session' && card.sessionID) {
           upsertContactWatch(db, {
             assistantID,
@@ -673,6 +718,43 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
+  };
+  const emitContactTurnEvent = (type, properties) => {
+    if (typeof onContactTurnEvent !== 'function' || closed) return;
+    const payload = { type, properties: { ...properties, occurredAt: properties?.occurredAt ?? now() } };
+    queueMicrotask(() => {
+      if (!closed) {
+        try { onContactTurnEvent(payload); } catch { /* SSE fan-out must not break the turn. */ }
+      }
+    });
+  };
+  // Serialize contact turns per assistant so rapid sends do not interleave persist.
+  const contactTurnLanes = new Map();
+  const inContactTurnLane = (assistantID, task) => {
+    const previous = contactTurnLanes.get(assistantID) ?? Promise.resolve();
+    let tail;
+    const run = previous.catch(() => {}).then(task);
+    tail = run.catch(() => {}).finally(() => {
+      if (contactTurnLanes.get(assistantID) === tail) contactTurnLanes.delete(assistantID);
+    });
+    contactTurnLanes.set(assistantID, tail);
+    return run;
+  };
+  // In-process test hook — never included in the HTTP JSON body.
+  const contactTurnSettlements = new Map();
+  const contactTurnSettlement = (messageID) => {
+    let entry = contactTurnSettlements.get(messageID);
+    if (!entry) {
+      let resolve;
+      const promise = new Promise((settled) => { resolve = settled; });
+      entry = { promise, resolve };
+      contactTurnSettlements.set(messageID, entry);
+    }
+    return entry;
+  };
+  const whenContactTurnSettled = (messageID) => contactTurnSettlement(messageID).promise;
+  const resolveContactTurnSettlement = (messageID, result) => {
+    contactTurnSettlement(messageID).resolve(result);
   };
   const assignWork = (row, params) => assignSession({
     ...params,
@@ -692,12 +774,23 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     try { real = fs.realpathSync(resolved); } catch { /* Compare the resolved path when realpath is unavailable. */ }
     const contained = (candidate, root) => candidate === root || candidate.startsWith(`${root}${path.sep}`);
     for (const project of Array.isArray(projects) ? projects : []) {
-      if (typeof project?.id !== 'string' || typeof project?.path !== 'string') continue;
-      let projectPath = path.resolve(project.path);
+      const sanitized = sanitizeRegisteredProject(project);
+      if (!sanitized) continue;
+      let projectPath = path.resolve(sanitized.path);
       try { projectPath = fs.realpathSync(projectPath); } catch { /* Keep the resolved project path. */ }
-      if (projectPath === real || contained(real, projectPath)) return { id: project.id, path: projectPath };
+      if (projectPath === real || contained(real, projectPath)) {
+        return { id: sanitized.id, path: projectPath, ...(sanitized.label ? { label: sanitized.label } : {}) };
+      }
     }
     return null;
+  };
+  const recordAssistantScheduledTask = (assistantID, projectID, taskID) => {
+    if (typeof assistantID !== 'string' || !assistantID.trim()) return;
+    if (typeof projectID !== 'string' || !projectID.trim()) return;
+    if (typeof taskID !== 'string' || !taskID.trim()) return;
+    db.prepare(
+      'INSERT OR IGNORE INTO assistant_scheduled_task(assistant_id, project_id, task_id, created_at) VALUES (?,?,?,?)',
+    ).run(assistantID, projectID, taskID, now());
   };
   const scheduleWork = async (row, params) => {
     if (typeof upsertScheduledTask !== 'function') {
@@ -741,12 +834,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         modelID: params.modelID,
       },
     });
+    const taskID = upserted?.task?.id;
+    if (typeof taskID === 'string' && taskID.trim()) {
+      recordAssistantScheduledTask(row.assistant_id, project.id, taskID);
+    }
     if (typeof syncScheduledTaskProject === 'function') {
       try { await syncScheduledTaskProject(project.id); } catch { /* Card persistence does not depend on scheduler sync. */ }
     }
     return {
       task: upserted?.task,
-      taskID: upserted?.task?.id,
+      taskID,
       projectID: project.id,
       name: upserted?.task?.name || params.name,
       kind: upserted?.task?.schedule?.kind || kind,
@@ -755,6 +852,155 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       prompt: upserted?.task?.execution?.prompt || params.prompt,
     };
   };
+  const listSessionsFromIndex = (params = {}) => {
+    if (!sessionIndexService || typeof sessionIndexService.snapshot !== 'function') {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session index is unavailable.');
+    }
+    let snapshot;
+    try {
+      snapshot = sessionIndexService.snapshot();
+    } catch (error) {
+      throw new AssignError(
+        ASSIGN_CODES.UPSTREAM,
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Session index snapshot failed.',
+      );
+    }
+    if (!snapshot || !Array.isArray(snapshot.directories)) {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session index snapshot failed.');
+    }
+    const limit = boundSessionListLimit(params.limit);
+    const query = typeof params.query === 'string' ? params.query.trim() : '';
+    const projectPath = typeof params.projectPath === 'string' ? params.projectPath.trim() : '';
+    const projectID = typeof params.projectID === 'string' ? params.projectID.trim() : '';
+    const scopeRoots = [];
+    if (projectPath) scopeRoots.push(projectPath);
+    if (Array.isArray(params.projectRoots)) {
+      for (const root of params.projectRoots) {
+        if (typeof root === 'string' && root.trim()) scopeRoots.push(root.trim());
+      }
+    }
+    const sessions = [];
+    for (const directory of snapshot.directories) {
+      const dir = typeof directory?.directory === 'string' ? directory.directory : '';
+      if (!dir) continue;
+      if (scopeRoots.length > 0 && !scopeRoots.some((root) => directoryContained(dir, root))) continue;
+      for (const session of Array.isArray(directory.sessions) ? directory.sessions : []) {
+        if (!session || typeof session.id !== 'string' || !session.id) continue;
+        const title = typeof session.title === 'string' ? session.title : '';
+        const updatedAt = typeof session.time?.updated === 'number'
+          ? session.time.updated
+          : (typeof session.updatedAt === 'number' ? session.updatedAt : 0);
+        const row = {
+          sessionID: session.id,
+          title,
+          directory: dir,
+          updatedAt,
+        };
+        if (query && !matchesProjectQuery({ ...row, id: session.id }, query)) continue;
+        sessions.push(row);
+      }
+    }
+    sessions.sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
+    const truncated = sessions.length > limit;
+    return {
+      sessions: sessions.slice(0, limit),
+      truncated,
+      source: 'session-index',
+      ...(projectID ? { projectID } : {}),
+    };
+  };
+  const listSessionsWork = async (params = {}) => {
+    const projectPath = typeof params.projectPath === 'string' ? params.projectPath.trim() : '';
+    const projectID = typeof params.projectID === 'string' ? params.projectID.trim() : '';
+    let projectRoots = [];
+    if (projectID || projectPath) {
+      let projects;
+      try {
+        projects = await listProjects();
+      } catch (error) {
+        throw new AssignError(
+          ASSIGN_CODES.UPSTREAM,
+          typeof error?.message === 'string' && error.message.trim()
+            ? error.message.trim()
+            : 'Registered project catalog failed to load.',
+        );
+      }
+      if (!Array.isArray(projects)) {
+        throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Registered project catalog failed to load.');
+      }
+      const normalized = normalizeRegisteredProjects(projects);
+      if (projectID) {
+        const match = normalized.find((project) => project.id === projectID);
+        if (!match) {
+          throw new AssignError(ASSIGN_CODES.PROJECT_REQUIRED, `No registered project with id ${projectID}.`);
+        }
+        projectRoots = [match.path];
+      } else if (projectPath) {
+        const match = await matchRegisteredProject(projectPath);
+        if (match) projectRoots = [match.path];
+        else projectRoots = [projectPath];
+      }
+    }
+    return listSessionsFromIndex({
+      ...params,
+      projectPath: projectRoots[0] || projectPath || undefined,
+      projectRoots,
+      projectID: projectID || undefined,
+    });
+  };
+  const listAssistantScheduledTasks = async (assistantID) => {
+    editable(assistantID);
+    const mappings = db.prepare(
+      'SELECT assistant_id AS assistantID, project_id AS projectID, task_id AS taskID, created_at AS createdAt FROM assistant_scheduled_task WHERE assistant_id=? ORDER BY created_at DESC, task_id ASC',
+    ).all(assistantID);
+    if (mappings.length === 0) return { tasks: [] };
+    let projects = [];
+    try {
+      const listed = await listProjects();
+      projects = normalizeRegisteredProjects(Array.isArray(listed) ? listed : []);
+    } catch {
+      // Failed project lookups must not wipe the mapping.
+      projects = [];
+    }
+    const projectByID = new Map(projects.map((project) => [project.id, project]));
+    const liveByKey = new Map();
+    if (typeof listScheduledTasks === 'function') {
+      const projectIDs = [...new Set(mappings.map((row) => row.projectID))];
+      await Promise.all(projectIDs.map(async (projectID) => {
+        try {
+          const tasks = await listScheduledTasks(projectID);
+          if (!Array.isArray(tasks)) return;
+          for (const task of tasks) {
+            if (task && typeof task.id === 'string') liveByKey.set(`${projectID}:${task.id}`, task);
+          }
+        } catch {
+          // Keep the mapping row with task:null when live lookup fails.
+        }
+      }));
+    }
+    return {
+      tasks: mappings.map((row) => {
+        const project = projectByID.get(row.projectID) || null;
+        const live = liveByKey.get(`${row.projectID}:${row.taskID}`) || null;
+        return {
+          assistantID: row.assistantID,
+          projectID: row.projectID,
+          taskID: row.taskID,
+          createdAt: row.createdAt,
+          projectPath: project?.path ?? null,
+          projectLabel: project?.label ?? null,
+          task: live,
+        };
+      }),
+    };
+  };
+  /**
+   * Contact composer send: validate → admit user (202) → async turn.
+   * Does not await the LLM. Live bubble tokens use openchamber:contact-bubble-delta
+   * on /api/openchamber/events; turn lifecycle uses contact-turn-start/end.
+   */
   const send = async (assistantID, input) => {
     if (!plainObject(input)) fail('validation_error');
     if (input.parts !== undefined) validateParts(input.parts);
@@ -763,61 +1009,150 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (!userText) fail('validation_error');
     const userParts = userContactParts(input, userText);
     const row = active(assistantID);
-    // Contact turns are OpenChamber-owned. Binding mismatch no longer gates send;
-    // OpenCode session history is not the user-visible queue.
+    // Snapshot history before admitting the user so the harness does not see a
+    // duplicate of the current userText (prompt still receives userText).
     const history = contactHistoryForLlm(db, assistantID);
     if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
-    const assignedCards = [];
-    let contactResetThisTurn = false;
-    const tools = createContactTools({
-      assignWork: (params) => assignWork(row, params),
-      createAssistant: (input) => createAssistant(input),
-      scheduleTask: (params) => scheduleWork(row, params),
-      deliverPeerMessage: (input) => deliverPeerMessage(row.assistant_id, input),
-      resetContact: () => {
-        const result = resetContact(row.assistant_id);
-        contactResetThisTurn = true;
-        return result;
-      },
-      listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
-      currentAssistant: output(row),
-      onCard: (card) => assignedCards.push(card),
-    });
-    let generated;
+    let registeredProjects = [];
     try {
-      generated = await runContactTurn({
-        assistant: output(row),
-        history,
-        userText,
-        userParts,
-        createChatCompletion,
-        tools,
-      });
+      const listed = await listProjects();
+      if (!Array.isArray(listed)) {
+        throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Registered project catalog failed to load.');
+      }
+      registeredProjects = filterRegisteredProjects(listed);
     } catch (error) {
-      if (error instanceof AssistantError) throw error;
-      const detail = typeof error?.message === 'string' && error.message.trim() ? error.message : undefined;
-      if (error?.code === 'no_provider') fail('no_provider', detail);
-      fail('upstream_error', detail);
+      if (error instanceof AssignError || error instanceof AssistantError) throw error;
+      // Still allow the turn — tools can surface a later catalog failure.
+      registeredProjects = [];
     }
-    const resetThisTurn = contactResetThisTurn || generated?.reset === true;
-    const bubbles = resetThisTurn
-      ? confirmBubbleAfterContactReset(generated?.bubbles)
-      : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
-    const cards = resetThisTurn
-      ? []
-      : [
-        ...assignedCards,
-        ...(Array.isArray(generated?.cards) ? generated.cards : []),
-      ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
-    if (bubbles.length === 0 && cards.length === 0) fail('upstream_error');
-    persistContactTurn(row.assistant_id, {
+    const turnID = messageID;
+    const assistantSnapshot = output(row);
+    admitContactUser(row.assistant_id, {
       userMessageID: messageID,
       userText,
       userParts,
-      bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
-      cards,
-      turnID: messageID,
+      turnID,
     });
+    emitContactTurnEvent('openchamber:contact-turn-start', {
+      assistantID: row.assistant_id,
+      turnID,
+      messageID,
+    });
+    contactTurnSettlement(messageID);
+    const kickTurn = () => {
+      void inContactTurnLane(row.assistant_id, async () => {
+        const assignedCards = [];
+        let contactResetThisTurn = false;
+        const tools = createContactTools({
+          assignWork: (params) => assignWork(row, params),
+          createAssistant: (toolInput) => createAssistant(toolInput),
+          scheduleTask: (params) => scheduleWork(row, params),
+          deliverPeerMessage: (toolInput) => deliverPeerMessage(row.assistant_id, toolInput),
+          resetContact: () => {
+            const result = resetContact(row.assistant_id);
+            contactResetThisTurn = true;
+            return result;
+          },
+          listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
+          listProjects: async () => {
+            const listed = await listProjects();
+            if (!Array.isArray(listed)) {
+              throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Registered project catalog failed to load.');
+            }
+            return listed;
+          },
+          listSessions: (params) => listSessionsWork(params),
+          currentAssistant: assistantSnapshot,
+          onCard: (card) => assignedCards.push(card),
+        });
+        try {
+          const generated = await runContactTurn({
+            assistant: assistantSnapshot,
+            history,
+            userText,
+            userParts,
+            createChatCompletion,
+            tools,
+            projects: registeredProjects,
+            globalEventHub,
+            onBubbleDelta: (bubbleIndex, delta, done) => {
+              emitContactTurnEvent('openchamber:contact-bubble-delta', {
+                assistantID: row.assistant_id,
+                turnID,
+                bubbleIndex,
+                delta: typeof delta === 'string' ? delta : '',
+                done: Boolean(done),
+              });
+            },
+          });
+          if (closed) {
+            resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
+            return;
+          }
+          const resetThisTurn = contactResetThisTurn || generated?.reset === true;
+          const bubbles = resetThisTurn
+            ? confirmBubbleAfterContactReset(generated?.bubbles)
+            : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
+          const cards = resetThisTurn
+            ? []
+            : [
+              ...assignedCards,
+              ...(Array.isArray(generated?.cards) ? generated.cards : []),
+            ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
+          if (bubbles.length === 0 && cards.length === 0) {
+            const detail = 'Assistant returned no text';
+            emitContactTurnEvent('openchamber:contact-turn-end', {
+              assistantID: row.assistant_id,
+              turnID,
+              status: 'error',
+              error: detail,
+            });
+            resolveContactTurnSettlement(messageID, { status: 'error', error: detail });
+            return;
+          }
+          // new_conversation wipes the transcript (including the admitted user row).
+          // Re-admit the reset user message, then persist only the confirm bubble.
+          if (resetThisTurn) {
+            const existingUser = db.prepare('SELECT 1 AS ok FROM assistant_contact_message WHERE message_id=?').get(messageID);
+            if (!existingUser) {
+              admitContactUser(row.assistant_id, {
+                userMessageID: messageID,
+                userText,
+                userParts,
+                turnID,
+              });
+            }
+          }
+          persistContactAssistantReply(row.assistant_id, {
+            userMessageID: messageID,
+            bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
+            cards,
+            turnID,
+          });
+          emitContactTurnEvent('openchamber:contact-turn-end', {
+            assistantID: row.assistant_id,
+            turnID,
+            status: 'complete',
+          });
+          resolveContactTurnSettlement(messageID, { status: 'complete' });
+        } catch (error) {
+          const detail = typeof error?.message === 'string' && error.message.trim()
+            ? error.message.trim()
+            : (error?.code || 'upstream_error');
+          const statusCode = error?.code === 'no_provider' ? 'no_provider' : (error?.code || 'upstream_error');
+          emitContactTurnEvent('openchamber:contact-turn-end', {
+            assistantID: row.assistant_id,
+            turnID,
+            status: 'error',
+            error: detail,
+            ...(statusCode !== detail ? { code: statusCode } : {}),
+          });
+          resolveContactTurnSettlement(messageID, { status: 'error', error: detail, code: statusCode });
+        }
+      });
+    };
+    // Defer past send() resolution so callers observe admission before assistant rows.
+    setImmediateFn(kickTurn);
     return { binding: binding(row), messageID, admitted: true };
   };
   const contactMessages = (assistantID, query = {}) => {
@@ -988,6 +1323,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=?').run(assistantID);
+      db.prepare('DELETE FROM assistant_scheduled_task WHERE assistant_id=?').run(assistantID);
       deleteContactMessages(db, assistantID);
       bump();
       db.exec('COMMIT');
@@ -996,5 +1332,5 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, resetContact, appendContactCard, deliverPeerMessage, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

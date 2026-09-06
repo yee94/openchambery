@@ -3,6 +3,7 @@ import { useEvent } from '@reactuses/core'
 import { ChatPromptComposer, type ChatPromptAttachment } from '@/components/chat/ChatPromptComposer'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
+import { subscribeOpenchamberEvents, type OpenChamberEvent } from '@/lib/openchamberEvents'
 import { createUuid } from '@/lib/uuid'
 import { cn } from '@/lib/utils'
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
@@ -16,16 +17,24 @@ import {
 } from '@/queries/assistantQueries'
 import { getAssistantPresentation } from './assistantPresentation'
 import {
+  admitContactTurnPreview,
+  applyContactBubbleDelta,
   beginContactComposerSubmit,
   contactOptimisticSending,
+  contactTurnPreviewWorking,
   contactSendErrorMessage,
   createContactSendGate,
   EMPTY_CONTACT_MESSAGES,
+  endContactTurnPreview,
+  markContactOptimisticAdmitted,
   markContactOptimisticFailed,
   mergeContactTranscript,
   reconcileContactOptimisticTurns,
+  reconcileContactTurnPreviews,
   scopeContactOptimisticTurns,
+  scopeContactTurnPreviews,
   type ContactOptimisticTurn,
+  type ContactTurnPreview,
 } from './contactOptimisticTurns'
 import { AssistantAssistantCard } from './AssistantAssistantCard'
 import { AssistantScheduleCard } from './AssistantScheduleCard'
@@ -86,39 +95,75 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const [draft, setDraft] = React.useState('')
   const [attachments, setAttachments] = React.useState<ChatPromptAttachment[]>([])
   const [optimisticTurns, setOptimisticTurns] = React.useState<ContactOptimisticTurn[]>([])
+  const [turnPreviews, setTurnPreviews] = React.useState<ContactTurnPreview[]>([])
   const [sendError, setSendError] = React.useState<string | null>(null)
   const sendGate = React.useMemo(() => createContactSendGate(), [])
-  const setContactSending = useAssistantContactWorkingStore((state) => state.setSending)
+  const settledTurnIDsRef = React.useRef(new Set<string>())
+  const setContactWorking = useAssistantContactWorkingStore((state) => state.setWorking)
   const working = useAssistantWorking(assistant.id, assistant.assignedSessionIDs ?? [], Boolean(assistant.working))
   const scrollerRef = React.useRef<HTMLDivElement | null>(null)
   const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
-  const transcript = mergeContactTranscript(messages, optimisticTurns, assistant.id)
-  const sending = contactOptimisticSending(optimisticTurns)
+  const scopedOptimisticTurns = scopeContactOptimisticTurns(optimisticTurns, assistant.id)
+  const scopedTurnPreviews = scopeContactTurnPreviews(turnPreviews, assistant.id)
+  const transcript = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
+  const sending = contactOptimisticSending(scopedOptimisticTurns)
+  const processing = contactTurnPreviewWorking(scopedTurnPreviews)
+  const streamingTextLength = scopedTurnPreviews.reduce((total, preview) => (
+    total + preview.bubbles.reduce((bubbleTotal, bubble) => bubbleTotal + bubble.text.length, 0)
+  ), 0)
+  const previewByTurnID = new Map(scopedTurnPreviews.map((preview) => [preview.turnID, preview]))
 
   React.useEffect(() => {
     setSendError(null)
-    setOptimisticTurns((current) => reconcileContactOptimisticTurns(
-      scopeContactOptimisticTurns(current, assistant.id),
-      messages,
-    ))
-  }, [assistant.id, messages])
+    settledTurnIDsRef.current.clear()
+    setOptimisticTurns((current) => scopeContactOptimisticTurns(current, assistant.id))
+    setTurnPreviews((current) => scopeContactTurnPreviews(current, assistant.id))
+  }, [assistant.id])
 
   React.useEffect(() => {
-    setContactSending(assistant.id, sending)
-  }, [assistant.id, sending, setContactSending])
+    setOptimisticTurns((current) => reconcileContactOptimisticTurns(current, messages))
+    setTurnPreviews((current) => reconcileContactTurnPreviews(current, messages))
+  }, [messages])
+
+  React.useEffect(() => {
+    setContactWorking(assistant.id, sending || processing)
+  }, [assistant.id, processing, sending, setContactWorking])
 
   React.useEffect(() => {
     const id = assistant.id
     return () => {
-      setContactSending(id, false)
+      setContactWorking(id, false)
     }
-  }, [assistant.id, setContactSending])
+  }, [assistant.id, setContactWorking])
+
+  const handleContactEvent = useEvent((event: OpenChamberEvent) => {
+    if (!('assistantID' in event) || event.assistantID !== assistant.id) return
+    if (event.type === 'contact-turn-start') {
+      if (settledTurnIDsRef.current.has(event.turnID)) return
+      setTurnPreviews((current) => admitContactTurnPreview(current, event.assistantID, event.turnID, event.occurredAt))
+      return
+    }
+    if (event.type === 'contact-bubble-delta') {
+      if (settledTurnIDsRef.current.has(event.turnID)) return
+      setTurnPreviews((current) => applyContactBubbleDelta(current, event))
+      return
+    }
+    if (event.type === 'contact-turn-end') {
+      settledTurnIDsRef.current.add(event.turnID)
+      setTurnPreviews((current) => reconcileContactTurnPreviews(endContactTurnPreview(current, event), messages))
+    }
+  })
+
+  React.useEffect(() => {
+    if (!active) return
+    return subscribeOpenchamberEvents(handleContactEvent)
+  }, [active, assistant.id])
 
   React.useEffect(() => {
     const node = scrollerRef.current
     if (!node) return
     node.scrollTop = node.scrollHeight
-  }, [transcript.length, sending])
+  }, [streamingTextLength, transcript.length])
 
   const addFiles = useEvent(async (files: ArrayLike<File> | null) => {
     const result = await readContactComposerFiles(files)
@@ -151,7 +196,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     const sentAssistantID = assistant.id
     const begun = beginContactComposerSubmit({
       gate: sendGate,
-      sending: contactOptimisticSending(optimisticTurns),
+      sending: contactOptimisticSending(scopedOptimisticTurns),
       text,
       attachments: staged,
       assistantID: sentAssistantID,
@@ -164,6 +209,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     setSendError(null)
     try {
       await sendAssistantContactMessage(sentAssistantID, begun.messageID, { parts: begun.parts })
+      setOptimisticTurns((current) => markContactOptimisticAdmitted(current, begun.messageID))
+      if (!settledTurnIDsRef.current.has(begun.messageID)) {
+        setTurnPreviews((current) => admitContactTurnPreview(current, sentAssistantID, begun.messageID))
+      }
       if (capabilityQuery.data?.serverInstanceID) {
         void donateNativeAssistantInteraction({
           serverInstanceID: capabilityQuery.data.serverInstanceID,
@@ -187,61 +236,113 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
 
   const loadFailed = contactQuery.isError && transcript.length === 0
   const empty = contactQuery.isSuccess && transcript.length === 0
-  const optimisticByID = new Map(optimisticTurns.map((turn) => [turn.messageID, turn]))
+  const optimisticByID = new Map(scopedOptimisticTurns.map((turn) => [turn.messageID, turn]))
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div
         ref={scrollerRef}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+        className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-9 sm:px-8 sm:pt-7 sm:pb-12"
         data-assistant-contact-transcript=""
       >
         {warning ? (
           <p className="mb-3 typography-micro text-[var(--status-warning)]">{warning}</p>
         ) : null}
         {loadFailed ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
-            <Icon name="error-warning" className="size-6 text-muted-foreground" />
-            <p className="mt-3 typography-ui text-muted-foreground">{t('assistants.contact.loadFailed')}</p>
+          <div className="mx-auto flex h-full min-h-56 max-w-xs flex-col items-center justify-center pb-16 text-center" data-assistant-contact-error="">
+            <div className="relative">
+              <AssistantWorkingAvatar
+                name={assistant.id}
+                emoji={presentation.avatarEmoji}
+                size={44}
+                label={displayName}
+              />
+              <span aria-hidden className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--surface-elevated)] text-[var(--status-error)] ring-2 ring-background">
+                <Icon name="error-warning" className="size-3" />
+              </span>
+            </div>
+            <p className="mt-4 typography-ui-label font-medium text-foreground">{displayName}</p>
+            <p className="mt-1.5 typography-ui leading-6 text-muted-foreground">{t('assistants.contact.loadFailed')}</p>
           </div>
         ) : empty ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
-            <p className="typography-ui-header font-semibold">{t('assistants.conversation.emptyTitle', { name: displayName })}</p>
-            <p className="mt-2 max-w-md typography-ui text-muted-foreground">{t('assistants.contact.empty')}</p>
+          <div className="mx-auto flex h-full min-h-56 max-w-sm flex-col items-center justify-center pb-16 text-center" data-assistant-contact-empty="">
+            <AssistantWorkingAvatar
+              name={assistant.id}
+              emoji={presentation.avatarEmoji}
+              size={48}
+              label={displayName}
+              className="opacity-90"
+            />
+            <p className="mt-5 typography-ui-header font-medium tracking-[-0.01em] text-foreground">{t('assistants.conversation.emptyTitle', { name: displayName })}</p>
+            <p className="mt-2 max-w-xs typography-ui leading-6 text-muted-foreground/80">{t('assistants.contact.empty')}</p>
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-2">
-            {transcript.map((message) => {
+          <div className="mx-auto flex w-full max-w-[42rem] flex-col">
+            {transcript.map((message, messageIndex) => {
+              const previousMessage = messageIndex > 0 ? transcript[messageIndex - 1] : null
               const isUser = message.role === 'user'
               const isPeer = message.role === 'peer'
+              const sameAssistantRun = message.role === 'assistant'
+                && previousMessage?.role === 'assistant'
+                && previousMessage.turnID === message.turnID
+              const startsTurn = previousMessage?.turnID !== message.turnID
+              const showAvatar = !isUser && (isPeer || !sameAssistantRun)
               const senderName = isPeer ? peerName(message.fromAssistantID, message.fromAssistantName) : displayName
               const sender = isPeer && message.fromAssistantID
                 ? snapshotQuery.data?.assistants.find((item) => item.id === message.fromAssistantID)
                 : assistant
               const senderPresentation = sender ? getAssistantPresentation(sender.name) : null
               const optimistic = optimisticByID.get(message.messageID)
+              const preview = previewByTurnID.get(message.turnID)
+              const processingRow = message.status === 'admitted' && message.messageID.endsWith(':preview:admitted')
+              const failedPreviewRow = message.status === 'failed' && message.messageID.endsWith(':preview:failed')
               return (
                 <div
                   key={message.messageID}
-                  className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
+                  className={cn(
+                    'flex w-full',
+                    isUser ? 'justify-end' : 'justify-start',
+                    startsTurn ? 'mt-6 first:mt-0' : sameAssistantRun ? 'mt-1.5' : 'mt-3',
+                  )}
                   data-assistant-contact-role={message.role}
-                  data-assistant-contact-turn-status={optimistic?.status}
+                  data-assistant-contact-turn-status={optimistic?.status ?? message.status}
+                  data-assistant-contact-run-start={message.role === 'assistant' && !sameAssistantRun ? '' : undefined}
                 >
                   {!isUser ? (
-                    <AssistantWorkingAvatar
-                      name={sender?.id || message.fromAssistantID || assistant.id}
-                      emoji={senderPresentation?.avatarEmoji}
-                      size={24}
-                      label={senderName}
-                      working={!isPeer && working}
-                      className="mt-1 mr-2"
-                    />
+                    <div className="mr-2.5 flex w-8 shrink-0 justify-center pt-0.5">
+                      {showAvatar ? (
+                        <AssistantWorkingAvatar
+                          name={sender?.id || message.fromAssistantID || assistant.id}
+                          emoji={senderPresentation?.avatarEmoji}
+                          size={28}
+                          label={senderName}
+                          working={!isPeer && working}
+                        />
+                      ) : (
+                        <span className="size-7" aria-hidden />
+                      )}
+                    </div>
                   ) : null}
-                  <div className={cn('flex min-w-0 max-w-[min(100%,28rem)] flex-col gap-2', isUser && 'items-end')}>
+                  <div className={cn(
+                    'flex min-w-0 flex-col gap-1.5',
+                    isUser ? 'max-w-[min(82%,30rem)] items-end' : 'max-w-[min(84%,34rem)] items-start',
+                  )}>
                     {isPeer ? (
-                      <span className="typography-micro text-muted-foreground">
+                      <span className="mb-0.5 px-1 typography-micro text-muted-foreground/75">
                         {t('assistants.contact.peer.from', { name: senderName })}
                       </span>
+                    ) : null}
+                    {processingRow ? (
+                      <div
+                        role="status"
+                        aria-label={t('assistants.contact.processing')}
+                        className="inline-flex w-fit items-center gap-1 rounded-full bg-[var(--surface-muted)] px-3.5 py-2.5 text-muted-foreground/70"
+                        data-assistant-contact-processing=""
+                      >
+                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.45s] [animation-duration:1.4s] motion-reduce:animate-none" />
+                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.22s] [animation-duration:1.4s] motion-reduce:animate-none" />
+                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-duration:1.4s] motion-reduce:animate-none" />
+                      </div>
                     ) : null}
                     {message.parts.map((part, index) => {
                       if (part.type === 'card' && part.cardType === 'session') {
@@ -259,7 +360,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                             key={`${message.messageID}:file:${index}`}
                             src={part.url}
                             alt={part.filename || t('assistants.contact.attachment.image')}
-                            className="max-h-64 max-w-full rounded-2xl border border-border object-contain"
+                            className="max-h-72 max-w-full rounded-[1.35rem] border border-border/40 object-contain"
                             data-assistant-contact-image=""
                           />
                         )
@@ -268,7 +369,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                         return (
                           <div
                             key={`${message.messageID}:file:${index}`}
-                            className="flex max-w-full items-center gap-2 rounded-2xl border border-border bg-[var(--surface-elevated)] px-3 py-2"
+                            className="flex max-w-full items-center gap-2.5 rounded-[1.25rem] bg-[var(--surface-muted)] px-3.5 py-2.5 ring-1 ring-inset ring-[var(--surface-subtle)]"
                             data-assistant-contact-file=""
                           >
                             <Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" />
@@ -278,31 +379,41 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                           </div>
                         )
                       }
-                      if (part.type === 'text' && part.text.trim()) {
+                      if (part.type === 'text' && (part.text.trim() || message.status === 'streaming')) {
                         return (
                           <div
                             key={`${message.messageID}:text:${index}`}
                             aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
                             className={cn(
-                              'rounded-2xl px-3 py-2 typography-ui',
+                              'whitespace-pre-wrap break-words rounded-[1.35rem] px-4 py-2.5 typography-ui leading-6',
                               isUser
-                                ? 'bg-[var(--primary-base)] text-[var(--primary-foreground)]'
+                                ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'
                                 : isPeer
-                                  ? 'border border-dashed border-border bg-[var(--surface-muted)] text-foreground'
-                                  : 'border border-border/60 bg-[var(--surface-muted)] text-foreground',
+                                  ? 'rounded-[1.25rem] border border-dashed border-border/50 bg-[var(--surface-muted)]/70 text-foreground'
+                                  : cn('bg-[var(--surface-muted)] text-foreground', sameAssistantRun && 'rounded-tl-lg'),
                             )}
                           >
                             {SETTLE_TEXT[part.text] ? t(SETTLE_TEXT[part.text]) : part.text}
+                            {message.status === 'streaming' && index === message.parts.length - 1 ? (
+                              <span
+                                aria-hidden
+                                className="ml-0.5 inline-block h-[1em] w-px translate-y-[0.12em] animate-pulse bg-current opacity-45 [animation-duration:1.1s] motion-reduce:animate-none"
+                                data-assistant-contact-streaming-caret=""
+                              />
+                            ) : null}
                           </div>
                         )
                       }
                       return null
                     })}
                     {optimistic?.status === 'sending' ? (
-                      <p className="typography-micro text-muted-foreground">{t('assistants.contact.sending')}</p>
+                      <p className="px-1 typography-micro text-muted-foreground/75">{t('assistants.contact.sending')}</p>
                     ) : null}
                     {optimistic?.status === 'failed' ? (
-                      <p className="typography-micro text-[var(--status-error)]">{optimistic.error || t('assistants.contact.sendFailed')}</p>
+                      <p className="px-1 typography-micro text-[var(--status-error)]">{optimistic.error || t('assistants.contact.sendFailed')}</p>
+                    ) : null}
+                    {failedPreviewRow ? (
+                      <p className="px-1 typography-micro text-[var(--status-error)]">{preview?.error || t('assistants.contact.sendFailed')}</p>
                     ) : null}
                   </div>
                 </div>
@@ -312,7 +423,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         )}
       </div>
       <footer
-        className="relative z-10 shrink-0 bg-background"
+        className="relative z-10 shrink-0 bg-background pt-1"
         data-assistant-contact-composer=""
       >
         {sendError ? (

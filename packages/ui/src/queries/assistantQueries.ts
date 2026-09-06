@@ -5,12 +5,13 @@ import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
-import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
-export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
+import { fetchGlobalScheduledTasks } from '@/lib/scheduledTasksApi';
+import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantScheduledTasksPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
+export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantScheduledTaskEntry, AssistantScheduledTasksPage, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
 export interface AssistantDraft { enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant?: string | null; mode: AssistantMode; }
-export { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseShareOperation } from './assistantDTO';
+export { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantScheduledTasksPage, parseShareOperation } from './assistantDTO';
 
 const ASSISTANT_HISTORY_PAGE_SIZE = 30;
 const key = {
@@ -18,6 +19,8 @@ const key = {
   capability: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'capability'] as const,
   history: (assistantID: string, sessionID: string, sessionGeneration: number, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'history', assistantID, sessionID, sessionGeneration] as const,
   contact: (assistantID: string, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'contact', assistantID] as const,
+  scheduledTasks: (assistantID: string, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'scheduled-tasks', assistantID] as const,
+  globalScheduledTasks: (transport = getRuntimeTransportIdentity()) => [transport, 'scheduled-tasks'] as const,
 };
 
 /**
@@ -166,6 +169,38 @@ export const useAssistantContactMessagesQuery = (assistantID: string, enabled = 
   }), [assistantID, runtimeGeneration, transport]);
   return query;
 };
+export const assistantScheduledTasksQueryOptions = (
+  assistantID: string,
+  transport = getRuntimeTransportIdentity(),
+  runtimeGeneration = getRuntimeGeneration(),
+) => ({
+  queryKey: key.scheduledTasks(assistantID, transport, runtimeGeneration),
+  queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    assertCurrent(transport, runtimeGeneration);
+    const page = parseAssistantScheduledTasksPage(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/scheduled-tasks`, { signal }));
+    assertCurrent(transport, runtimeGeneration);
+    return page;
+  },
+  refetchOnMount: 'always' as const,
+  retry: (failureCount: number, error: Error) => !(error instanceof AssistantAPIError && error.status === 404) && failureCount < 2,
+});
+export const useAssistantScheduledTasksQuery = (assistantID: string, enabled = true) => {
+  const transport = getRuntimeTransportIdentity();
+  const runtimeGeneration = getRuntimeGeneration();
+  return useQuery({
+    ...assistantScheduledTasksQueryOptions(assistantID, transport, runtimeGeneration),
+    enabled: enabled && Boolean(assistantID),
+  });
+};
+export const globalScheduledTasksQueryOptions = (transport = getRuntimeTransportIdentity()) => ({
+  queryKey: key.globalScheduledTasks(transport),
+  queryFn: fetchGlobalScheduledTasks,
+  refetchOnMount: 'always' as const,
+});
+export const useGlobalScheduledTasksQuery = (enabled = true) => useQuery({
+  ...globalScheduledTasksQueryOptions(),
+  enabled,
+});
 const invalidateContact = (assistantID: string, transport = getRuntimeTransportIdentity()) => {
   void queryClient.invalidateQueries({
     queryKey: [transport, getRuntimeGeneration(), 'assistants', 'contact', assistantID],
@@ -196,11 +231,11 @@ export const sendAssistantMessage = async (assistantID: string, binding: Session
 export type AssistantContactSendPart =
   | { type: 'text'; text: string }
   | { type: 'file'; mime: string; url: string; filename?: string };
-/** Slightly above server GENERATE_TIMEOUT_MS (90s) so a 502 body can win first. */
-export const CONTACT_SEND_TIMEOUT_MS = 95_000;
+/** Bounds message persistence/admission; generation continues after the 202 response. */
+export const CONTACT_SEND_TIMEOUT_MS = 15_000;
 export const mapContactSendFailure = (error: unknown): never => {
   if (error instanceof AssistantAPIError) throw error;
-  if (isAbortError(error)) throw new AssistantAPIError('generate_timeout', 408);
+  if (isAbortError(error)) throw new AssistantAPIError('admission_timeout', 408);
   throw error;
 };
 export const sendAssistantContactMessage = async (

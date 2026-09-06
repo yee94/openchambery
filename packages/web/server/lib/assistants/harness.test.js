@@ -128,6 +128,83 @@ describe('createContactStreamFn', () => {
     expect(events.some((event) => event.type === 'toolcall_end' && event.toolCall?.name === 'create_assistant')).toBe(true)
     expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'toolUse' })
   })
+
+  it('passes onTextDelta and globalEventHub into createChatCompletion and forwards real deltas', async () => {
+    const deltas = []
+    const bubbleDeltas = []
+    const hub = { subscribeEvent: vi.fn() }
+    const createChatCompletion = vi.fn(async ({ onTextDelta }) => {
+      onTextDelta?.('Hello')
+      onTextDelta?.(' world')
+      return { completion: { choices: [{ message: { content: 'Hello world' } }] } }
+    })
+    const streamFn = createContactStreamFn(createChatCompletion, {
+      onTextDelta: (delta) => deltas.push(delta),
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+      globalEventHub: hub,
+    })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] },
+    )
+    for await (const event of stream) void event
+    expect(createChatCompletion.mock.calls[0][0].globalEventHub).toBe(hub)
+    expect(typeof createChatCompletion.mock.calls[0][0].onTextDelta).toBe('function')
+    expect(deltas).toEqual(['Hello', ' world'])
+    expect(bubbleDeltas.some((item) => item.done === false)).toBe(false)
+    expect(bubbleDeltas).toEqual([{ index: 0, delta: 'Hello world', done: true }])
+  })
+
+  it('stops bubble deltas at a fence start and does not leak tool JSON', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = vi.fn(async ({ onTextDelta }) => {
+      onTextDelta?.('On it.\n\n')
+      onTextDelta?.('```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```')
+      return {
+        completion: {
+          choices: [{
+            message: {
+              content: 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```',
+            },
+          }],
+        },
+      }
+    })
+    const streamFn = createContactStreamFn(createChatCompletion, {
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      {
+        messages: [{ role: 'user', content: 'assign', timestamp: 1 }],
+        tools: [{ name: 'assign_session' }],
+      },
+    )
+    for await (const event of stream) void event
+    const leaked = bubbleDeltas.some((item) => item.delta.includes('openchamber-tool') || item.delta.includes('assign_session'))
+    expect(leaked).toBe(false)
+    expect(bubbleDeltas.some((item) => item.delta.includes('On it'))).toBe(false)
+    expect(bubbleDeltas).toEqual([])
+  })
+
+  it('emits final stripped bubbles as done:true once when no live deltas arrive', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = vi.fn(async () => ({
+      completion: { choices: [{ message: { content: 'One.\n\nTwo.' } }] },
+    }))
+    const streamFn = createContactStreamFn(createChatCompletion, {
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] },
+    )
+    for await (const event of stream) void event
+    expect(bubbleDeltas).toEqual([
+      { index: 0, delta: 'One.', done: true },
+      { index: 1, delta: 'Two.', done: true },
+    ])
+  })
 })
 
 describe('runContactTurn', () => {
@@ -172,11 +249,14 @@ describe('runContactTurn', () => {
       expect(options.initialState.systemPrompt).toContain('create_assistant')
       expect(options.initialState.systemPrompt).toContain('message_assistant')
       expect(options.initialState.systemPrompt).toContain('new_conversation')
+      expect(options.initialState.systemPrompt).toContain('list_projects')
+      expect(options.initialState.systemPrompt).toContain('list_sessions')
       expect(options.initialState.systemPrompt).toContain('建助理')
       expect(options.initialState.systemPrompt).toContain('开新对话')
       expect(options.initialState.systemPrompt).toContain('说一声')
       expect(options.initialState.systemPrompt).toContain('A reply without the tool call does nothing')
       expect(options.initialState.systemPrompt).toContain('已创建')
+      expect(options.initialState.systemPrompt).toContain('cannot see the registered project list')
       this.state = { ...options.initialState, messages: [] }
       this.prompt = async () => {
         this.state.messages = [
@@ -206,11 +286,75 @@ describe('runContactTurn', () => {
       userText: 'assign login',
       createChatCompletion: vi.fn(),
       tools: [assignTool, { name: 'bash', execute: vi.fn() }],
+      projects: [{ id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' }],
       AgentImpl,
     })
-    expect(result.bubbles).toEqual(['Opening that.'])
+    expect(result.bubbles).toEqual(['opened'])
     expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_1', cardType: 'session' })])
     expect(result.thinkingLevel).toBe('off')
+  })
+
+  it('does not persist pre-tool planning as contact bubbles', async () => {
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'Let me think — I should match openchamber yee and call assign_session.' },
+              { type: 'toolCall', id: 'call_1', name: 'assign_session', arguments: { prompt: 'x', projectPath: '/repo' } },
+            ],
+          },
+          {
+            role: 'toolResult',
+            toolName: 'assign_session',
+            content: [{ type: 'text', text: 'Opened a coding session.' }],
+            details: {
+              card: {
+                type: 'card',
+                cardType: 'session',
+                sessionID: 'ses_plan',
+                directory: '/repo',
+                title: 'Work',
+                status: 'busy',
+              },
+            },
+          },
+        ]
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: 'assign login',
+      createChatCompletion: vi.fn(),
+      tools: [{ name: 'assign_session', execute: vi.fn() }],
+      AgentImpl,
+    })
+    expect(result.bubbles.join('\n')).not.toMatch(/Let me think|assign_session/)
+    expect(result.bubbles).toEqual(['Opened a coding session.'])
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_plan' })])
+  })
+
+  it('injects the registered projects catalog into the system prompt every turn', async () => {
+    function AgentImpl(options) {
+      expect(options.initialState.systemPrompt).toContain('Registered projects')
+      expect(options.initialState.systemPrompt).toContain('OpenChamber Yee')
+      expect(options.initialState.systemPrompt).toContain('/repo/openchamber-yee')
+      expect(options.initialState.systemPrompt).toContain('never say you cannot see registered projects')
+      this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Found it.' }] }] }
+      this.prompt = async () => {}
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: '找 openchamber yee',
+      createChatCompletion: vi.fn(),
+      projects: [{ id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' }],
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['Found it.'])
   })
 
   it('retries a missed fence once and then executes create_assistant', async () => {

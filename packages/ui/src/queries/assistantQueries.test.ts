@@ -41,7 +41,7 @@ mock.module('@/lib/runtime-fetch', () => ({
           admitted: true,
           messageID: 'oc_contact_1',
           binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
-        }), { status: 200 });
+        }), { status: 202 });
       }
       return new Response(JSON.stringify({ entries: [], nextCursor: null, complete: true }), { status: 200 });
     }
@@ -328,21 +328,21 @@ describe('contact send abort', () => {
     contactSendBehavior = 'ok';
   });
 
-  test('aborts the contact POST slightly above the 90s generate timeout and maps abort to generate_timeout', async () => {
+  test('bounds contact admission and maps an admission stall to admission_timeout', async () => {
     const { readFile } = await import('node:fs/promises');
     const { dirname, join } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
     const { AssistantAPIError } = await import('./assistantDTO');
     const source = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'assistantQueries.ts'), 'utf8');
-    expect(CONTACT_SEND_TIMEOUT_MS).toBe(95_000);
+    expect(CONTACT_SEND_TIMEOUT_MS).toBe(15_000);
     expect(source).toContain('AbortSignal.timeout(CONTACT_SEND_TIMEOUT_MS)');
     expect(source).toContain('mapContactSendFailure(error)');
     try {
       mapContactSendFailure(new DOMException('The operation was aborted.', 'TimeoutError'));
-      throw new Error('expected generate_timeout');
+      throw new Error('expected admission_timeout');
     } catch (error) {
       expect(error instanceof AssistantAPIError).toBe(true);
-      expect(error instanceof AssistantAPIError ? error.code : '').toBe('generate_timeout');
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('admission_timeout');
       expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
     }
     try {
@@ -355,7 +355,7 @@ describe('contact send abort', () => {
     }
   });
 
-  test('contact POST carries the 95s AbortSignal and maps stall abort to generate_timeout', async () => {
+  test('contact POST accepts 202 and carries the admission AbortSignal', async () => {
     const { AssistantAPIError } = await import('./assistantDTO');
     const admitted = await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
     expect(admitted).toEqual({
@@ -369,10 +369,10 @@ describe('contact send abort', () => {
     contactSendBehavior = 'timeout';
     try {
       await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
-      throw new Error('expected generate_timeout');
+      throw new Error('expected admission_timeout');
     } catch (error) {
       expect(error instanceof AssistantAPIError).toBe(true);
-      expect(error instanceof AssistantAPIError ? error.code : '').toBe('generate_timeout');
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('admission_timeout');
       expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
     }
 
