@@ -6,6 +6,8 @@ import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { cssVar } from '../theme/tokens';
 import { createLynxSession } from '../projects/sessionActions';
 import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
+import { LynxComposerGlassCard } from './ComposerGlassCard';
+import type { LynxHostGlobalProps } from '../host/embedding';
 import {
   applyLynxComposerSuggestion,
   detectLynxComposerTrigger,
@@ -80,6 +82,10 @@ export async function materializeLynxDraftSession(input: {
 export type LynxDraftComposerProps = {
   locale: string;
   onBack: () => void;
+  /** Host chrome props for GlassChrome composer / autocomplete chips. */
+  host: LynxHostGlobalProps;
+  /** Mode A true; Mode B false. Composer glass still paints (dock-only gate). */
+  fullPageAutoGlassSkin?: boolean;
   runtimeFetch?: LynxRuntimeFetch | null;
   directory?: string | null;
   model?: LynxDraftComposerModel;
@@ -96,6 +102,8 @@ const DEFAULT_MODEL: LynxDraftComposerModel = {
 export function LynxDraftComposer({
   locale,
   onBack,
+  host,
+  fullPageAutoGlassSkin = true,
   runtimeFetch = null,
   directory = null,
   model = DEFAULT_MODEL,
@@ -212,40 +220,39 @@ export function LynxDraftComposer({
           hint={composerCatalogHint}
           suggestions={composerSuggestions}
           onSelect={(suggestion) => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
+          host={host}
+          fullPageAutoGlassSkin={fullPageAutoGlassSkin}
         />
-        <LynxView
-          data-lynx-glass-composer="true"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            padding: '10px 12px',
-            borderRadius: '12px',
-            backgroundColor: cssVar('surface.elevated'),
-          }}
+        <LynxComposerGlassCard
+          host={host}
+          fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+          variant="pill"
         >
-          <LynxInput
-            value={draft}
-            placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
-            bindinput={(event) => setDraft(event.detail?.value ?? '')}
-            style={{ flexGrow: 1, color: cssVar('surface.foreground') }}
-          />
-          <LynxView
-            bindtap={send}
-            accessibility-role="button"
-            accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
-            style={{
-              marginLeft: '12px',
-              padding: '8px 12px',
-              borderRadius: '10px',
-              backgroundColor: cssVar('primary.base'),
-              opacity: busy ? 0.6 : 1,
-            }}
-          >
-            <LynxText style={{ color: '#fff', fontWeight: '600' }}>
-              {busy ? lynxT(locale, 'lynx.draft.busy') : lynxT(locale, 'lynx.chat.composer.send')}
-            </LynxText>
+          <LynxView style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <LynxInput
+              value={draft}
+              placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
+              bindinput={(event) => setDraft(event.detail?.value ?? '')}
+              style={{ flexGrow: 1, color: cssVar('surface.foreground') }}
+            />
+            <LynxView
+              bindtap={send}
+              accessibility-role="button"
+              accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
+              style={{
+                marginLeft: '12px',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                backgroundColor: cssVar('primary.base'),
+                opacity: busy ? 0.6 : 1,
+              }}
+            >
+              <LynxText style={{ color: '#fff', fontWeight: '600' }}>
+                {busy ? lynxT(locale, 'lynx.draft.busy') : lynxT(locale, 'lynx.chat.composer.send')}
+              </LynxText>
+            </LynxView>
           </LynxView>
-        </LynxView>
+        </LynxComposerGlassCard>
       </LynxView>
     </LynxView>
   );

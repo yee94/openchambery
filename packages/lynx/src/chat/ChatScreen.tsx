@@ -12,6 +12,8 @@ import {
   type LynxComposerSuggestion,
 } from './composerCatalog';
 import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
+import { LynxComposerGlassCard } from './ComposerGlassCard';
+import type { LynxHostGlobalProps } from '../host/embedding';
 import {
   createLynxComposerActions,
   type LynxComposerActions,
@@ -80,6 +82,10 @@ export type LynxChatScreenProps = {
   sessionId: string;
   directory?: string | null;
   onBack: () => void;
+  /** Host chrome props for GlassChrome composer / autocomplete chips. */
+  host: LynxHostGlobalProps;
+  /** Mode A true; Mode B false. Composer glass still paints (dock-only gate). */
+  fullPageAutoGlassSkin?: boolean;
   /** Connect runtime fetch. Null → labeled unconnected; actions fail honestly. */
   runtimeFetch?: LynxRuntimeFetch | null;
   model?: LynxComposerModel;
@@ -128,6 +134,8 @@ export function LynxChatScreen({
   sessionId,
   directory = null,
   onBack,
+  host,
+  fullPageAutoGlassSkin = true,
   runtimeFetch = null,
   model = DEFAULT_MODEL,
   title,
@@ -740,19 +748,16 @@ export function LynxChatScreen({
               hint={composerCatalogHint}
               suggestions={composerSuggestions}
               onSelect={(suggestion) => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
+              host={host}
+              fullPageAutoGlassSkin={fullPageAutoGlassSkin}
             />
-            <LynxView
-              // Cap: composer-only session swipe surface. Host binds pan → onComposerEdgeSwipeEvent.
-              // Glass/elevated card — autocomplete is a sibling ABOVE this node (not a child).
-              data-session-swipe-surface="true"
-              data-lynx-glass-composer="true"
-              style={{
-                padding: '10px 12px',
-                borderRadius: '12px',
-                backgroundColor: cssVar('surface.elevated'),
-                marginBottom: '8px',
-              }}
-              accessibility-label={lynxT(locale, 'lynx.chat.edgeSwipe.surface')}
+            <LynxComposerGlassCard
+              host={host}
+              fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+              variant="card"
+              sessionSwipeSurface
+              accessibilityLabel={lynxT(locale, 'lynx.chat.edgeSwipe.surface')}
+              style={{ marginBottom: '8px' }}
             >
               <LynxInput
                 value={draft}
@@ -761,7 +766,7 @@ export function LynxChatScreen({
                 accessibility-label={lynxT(locale, 'lynx.chat.composer.placeholder')}
                 style={{ color: cssVar('surface.foreground'), fontSize: '14px' }}
               />
-            </LynxView>
+            </LynxComposerGlassCard>
             <LynxView style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
               <LynxView bindtap={() => { void onAttach(); }} style={{ padding: '8px 12px' }}>
                 <LynxText style={{ color: cssVar('surface.mutedForeground') }}>

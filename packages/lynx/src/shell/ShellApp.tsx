@@ -332,6 +332,8 @@ export function LynxShellApp({
         ) : chatRoute ? (
           <LynxChatScreen
             locale={host.locale}
+            host={host}
+            fullPageAutoGlassSkin={fullPageAutoGlassSkin}
             sessionId={chatRoute.sessionId}
             directory={chatRoute.directory}
             onBack={() => {
@@ -346,6 +348,8 @@ export function LynxShellApp({
         ) : assistantRoute?.sessionId ? (
           <LynxChatScreen
             locale={host.locale}
+            host={host}
+            fullPageAutoGlassSkin={fullPageAutoGlassSkin}
             sessionId={assistantRoute.sessionId}
             directory={assistantRoute.directory}
             onBack={() => {
@@ -360,6 +364,8 @@ export function LynxShellApp({
         ) : secondary?.kind === 'draft' ? (
           <LynxDraftComposer
             locale={host.locale}
+            host={host}
+            fullPageAutoGlassSkin={fullPageAutoGlassSkin}
             onBack={closeSecondary}
             runtimeFetch={runtimeFetch}
             directory={secondary.directory ?? null}

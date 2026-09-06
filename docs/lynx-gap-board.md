@@ -248,7 +248,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML preview = labeled text stub until host WKWebView; PierreDiff = text stub. |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | ~~Context usage~~ | `mobileContextUsage.ts` | **代码接上** header chip + Cap `/api/config/providers` limit |
-| ~~Composer attachments, `/` `@`, agent/model~~ | composer DOCUMENTATION | Attach + `/` `@` catalogs **代码接上** (Chat + Draft); autocomplete **above glass**; host Mode B paint still thin |
+| ~~Composer attachments, `/` `@`, agent/model~~ | composer DOCUMENTATION | Attach + `/` `@` catalogs **代码接上** (Chat + Draft); autocomplete **above glass**; `LynxComposerGlassCard` GlassChrome **代码接上**; host Mode B overlay / 真机 still thin |
 | Native-quality IME (not WebView FLIP) | pitfalls §3 | **Contract 代码接上** (`imeOccupancy.ts`); host keyboard binding / 真机 still missing |
 | ~~Session swipe (composer only)~~ | `useEdgeSwipeSessionSwitch.ts` | **代码接上** state machine + composer surface; **host pan bind** still required |
 
@@ -292,7 +292,7 @@ These are **intentional** platform differences already true in Cap, plus Lynx 3.
 | Surface | iOS | Android analogue | Source / reason |
 |---|---|---|---|
 | Liquid glass dock | iOS 26 `UITabBarController` / Lynx `blur-effect="glass"` | Lynx-drawn capsule or Material nav; `blur-radius` only | Cap: `OpenChamberTabBar` is iOS-only. Lynx 3.8 glass attrs are **iOS** |
-| Glass composer | `UIGlassEffect` / `<blur-view blur-effect="glass">` | Material / Lynx blur-radius composer | Cap: `OpenChamberComposer` iOS-only |
+| Glass composer | `UIGlassEffect` / `<blur-view blur-effect="glass">` via `LynxComposerGlassCard` (**代码接上**, not 真机过) | Material / Lynx blur-radius composer | Cap: `OpenChamberComposer` iOS-only; Lynx Android blur-radius only |
 | Live Activity / Dynamic Island | iOS 17+ ActivityKit | No-op or a notification | Cap plugin iOS-only |
 | Widgets / Control Center | WidgetKit | Optional; not required for first slice | Cap iOS extension |
 | Share UX | Share Extension + suggestions | `ShareReceiverActivity` + full-page picker (never a sheet) | README share section |
@@ -328,6 +328,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 16. ~~**context usage + edge swipe + haptics/HEIC/media + pin reveal**~~ — 代码接上 in `cursor/lynx-context-edge-media-local`. Remaining: host pan/haptics/media binders, Keychain/OAuth browser, Live Activity/Widgets, 真机.
 17. ~~**closable missing: host scaffold + lynx-ci workflow + DirectoryExplorer + 扫一扫/切换实例 + composer `/` `@` + admission + voice dictation status + About diagnostics + openchamber-asset hooks + predictive-back contract**~~ — 代码接上 in `cursor/lynx-closable-missing-local`. Remaining: real camera/SDK link / Keychain / IME 真机; not product-EXHAUSTED.
 18. ~~**linux gaps: GitIdentity* editor + Files HTML preview stub + DraftComposer `/` `@` + autocomplete above glass + host-bridge deepen + Missing strikethrough hygiene**~~ — 代码接上 in `cursor/lynx-linux-gaps-local`. Remaining: host WKWebView HTML sheet / PierreDiff / live Keychain·camera·IME 真机; product NOT DONE.
+19. ~~**composer glass: LynxComposerGlassCard GlassChrome on Chat+Draft + autocomplete sibling ABOVE glass + optional row searchChip**~~ — 代码接上 in `cursor/lynx-composer-glass-local`. Remaining: Mode B host composer overlay / live UIGlassEffect 真机; product NOT DONE.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -431,6 +432,21 @@ Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vi
 
 ---
 
+## 代码接上 (composer GlassChrome — not landed under 三关)
+
+Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. 真机过: not executed. Product **NOT DONE**.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Composer GlassChrome / blur-view | Cap `OpenChamberComposer` UIGlassEffect | `LynxComposerGlassCard` on Chat + Draft; iOS glass / glass-interactive; Android blur-radius; no elevated solid fill |
+| Autocomplete sibling ABOVE glass | Cap `OpenChamberComposerAutocomplete` | `forbidInsideGlassContentView` remains true; list never nested under composer GlassChrome |
+| Optional autocomplete glass chips | Cap search-chip spirit | Per-row `searchChip` GlassChrome **in sibling list tree only** (not composer contentView) |
+
+**CI绿:** Local Vitest `@openchamber/lynx` + tsc + rspeedy. lynx-ci workflow template only.
+**真机过:** not executed (Linux cloud VM). Host Mode B composer overlay / live UIGlassEffect paint still residual.
+
+---
+
 ## Remaining (honest — not EXHAUSTED)
 
 **Product NOT DONE.** Linux-doable Cap product rows continue to close. **Do not** mark the Lynx JS surface EXHAUSTED while host binders / HTML WebView / PierreDiff / Live Activity still need work.
@@ -450,7 +466,7 @@ Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vi
 | `openchamber-asset://` hooks | TS + iOS/Android stub resolvers |
 | Predictive / edge-back contract | JS policy + host stubs + wiring notes |
 
-### 代码接上 this slice (`cursor/lynx-linux-gaps-local`)
+### 代码接上 prior slice (`cursor/lynx-linux-gaps-local`)
 
 | Item | Notes |
 |---|---|
@@ -461,6 +477,14 @@ Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vi
 | Host-bridge deepen | secureStore / httpClient / oauthBrowser / imeInset / hostChannel + iOS/Android stubs |
 | Gap-board Missing strikethrough | PR#48 DirectoryExplorer / 扫一扫 / composer `/` `@` / admission / diagnostics / assets / predictive-back |
 
+### 代码接上 this slice (`cursor/lynx-composer-glass-local`)
+
+| Item | Notes |
+|---|---|
+| Composer GlassChrome | `LynxComposerGlassCard` replaces elevated solid fill on Chat + Draft; iOS glass/interactive; Android blur-radius |
+| Autocomplete ABOVE glass preserved | List stays sibling; `forbidInsideGlassContentView=true`; optional row `searchChip` only in sibling tree |
+| Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
+
 ### Still missing / host-only / 真机
 
 | Remaining | Why |
@@ -470,6 +494,7 @@ Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vi
 | OAuth system browser open | Cap routes + host stubs 代码接上; ASWebAuthenticationSession / Custom Tabs 真机 |
 | Host WKWebView / WebView HTML preview sheet | Text stub only — no invent Lynx DOM iframe |
 | PierreDiff interactive viewer | Unified text stub; Cap Pierre runtime CSS not ported |
+| Composer glass 真机 / Mode B host overlay | `LynxComposerGlassCard` JS 代码接上; live UIGlassEffect + host Mode B composer overlay still 真机 |
 | IME keyboard binding + occupancy 真机 | Contract + inset publisher stubs 代码接上; LynxView IME must be host-bound |
 | Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |

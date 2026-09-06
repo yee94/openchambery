@@ -148,3 +148,8 @@ export { planLynxHtmlPreview, isLynxHtmlPath } from './htmlPreview';
 export { planLynxPierreDiff } from './pierreDiff';
 
 export { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
+export {
+  LynxComposerGlassCard,
+  composerGlassSurfaceForVariant,
+  type LynxComposerGlassVariant,
+} from './ComposerGlassCard';
