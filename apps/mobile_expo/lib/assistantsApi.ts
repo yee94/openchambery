@@ -262,3 +262,49 @@ export const deleteAssistant = async (
     throw new AssistantsApiError(await readErrorCode(response), response.status);
   }
 };
+
+
+export type AssistantDraft = {
+  enabled: boolean;
+  name: string;
+  defaultPrompt: string;
+  workspacePath: string | null;
+  providerID: string;
+  modelID: string;
+  agent: string | null;
+  mode: AssistantMode;
+  variant?: string | null;
+};
+
+/** POST /api/openchamber/assistants — create. */
+export const createAssistant = async (
+  active: ActiveRuntime,
+  draft: AssistantDraft,
+): Promise<AssistantDTO> => {
+  const response = await openchamberFetch(
+    active,
+    '/api/openchamber/assistants',
+    jsonInit('POST', draft),
+  );
+  if (!response.ok) {
+    throw new AssistantsApiError(await readErrorCode(response), response.status);
+  }
+  return parseAssistantDTO(await response.json());
+};
+
+/** PATCH /api/openchamber/assistants/:id — update with expectedRevision. */
+export const updateAssistant = async (
+  active: ActiveRuntime,
+  assistant: Pick<AssistantDTO, 'id' | 'revision'>,
+  draft: AssistantDraft,
+): Promise<AssistantDTO> => {
+  const response = await openchamberFetch(
+    active,
+    `/api/openchamber/assistants/${encodeURIComponent(assistant.id)}`,
+    jsonInit('PATCH', { ...draft, expectedRevision: assistant.revision }),
+  );
+  if (!response.ok) {
+    throw new AssistantsApiError(await readErrorCode(response), response.status);
+  }
+  return parseAssistantDTO(await response.json());
+};

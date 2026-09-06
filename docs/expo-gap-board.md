@@ -89,9 +89,9 @@ All writable `MOBILE_SETTINGS_PAGE_SLUGS` except Voice (omitted). No `iosNativeU
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | Dock label only |
-| CI green | missing | |
-| 真机过 | missing | |
+| Track (CODE) | **code landed** | Settings home search + Cap groups; real editors for all Expo slugs (instances, appearance language+theme only, chat, notifications, sessions, summary-ai, projects, git, providers+OAuth browser, agents, assistants CRUD, behavior, commands, mcp+OAuth pending, plugins file APIs, magic-prompts, snippets, skills.installed, usage, about). Official GET/PUT settings merge + catalog APIs; failure != empty; tokens not logged; Voice/iosNativeUi/Capgo omitted. Unit tests green locally. |
+| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| 真机过 | missing | Do not mark from Linux VM |
 
 ### 8. System shell
 
@@ -134,7 +134,7 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Relay-only skip 1.5s headstart | **code landed** | Unit-tested injectable race; Cap TS relay under lib/relay |
 | Session index Projects home + `项目 · 分支` | **code landed** | Expo Projects home on `work/expo-native`; 真机过 still open |
 | Chat LegendList + Send/Stop | **code landed** | LegendList contract (not 1.18 TanStack); draft materialize; WS/SSE/poll fallback |
-| Settings home + `MOBILE_SETTINGS_PAGE_SLUGS` | not started | Omit Voice |
+| Settings home + `MOBILE_SETTINGS_PAGE_SLUGS` | **code landed** | Omit Voice; assistants CRUD forms included |
 | Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity) | not started | Always on; no `iosNativeUi` toggle |
 | Android honest degrade | not started | No fake glass |
 | Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); CI Actions not claimed |
