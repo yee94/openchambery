@@ -5,7 +5,7 @@ import type { LynxPendingConnection, LynxSavedConnection } from '../connection/t
 import { connectionDisplayUrl } from '../connection/urls';
 import { loadAssistantSnapshot } from '../assistants/api';
 import { lynxT } from '../i18n/catalog';
-import { LynxText, LynxView } from '../lynx-elements';
+import { LynxInput, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { cssVar } from '../theme/tokens';
 import { parsePastedPairingLink } from '../connect/pairingPaste';
@@ -17,6 +17,14 @@ import {
   type LynxSettingsBlob,
   LYNX_APPEARANCE_THEME_IDS,
 } from './api';
+import {
+  LYNX_RESPONSE_STYLE_PRESETS,
+  loadLynxAgentsMd,
+  loadLynxSmallModelCapabilities,
+  sanitizeLynxResponseStylePreset,
+  saveLynxAgentsMd,
+  type LynxResponseStyleValue,
+} from './behavior';
 import {
   catalogLoaderForSlug,
   loadUsageRows,
@@ -628,6 +636,276 @@ function GitBody({ ctx }: { ctx: SettingsBodyContext }) {
   );
 }
 
+
+function SummaryAiBody({ ctx }: { ctx: SettingsBodyContext }) {
+  const { settings, error, status, patch } = useSettingsBlob(ctx.runtimeFetch);
+  const [capabilities, setCapabilities] = useState<Record<string, string[]> | null>(null);
+  const [capStatus, setCapStatus] = useState<'loading' | 'ok' | 'empty' | 'failed' | 'no-runtime'>('loading');
+  const [capError, setCapError] = useState<string | null>(null);
+  const [commitPrompt, setCommitPrompt] = useState('');
+  const [titlePrompt, setTitlePrompt] = useState('');
+  const [promptsReady, setPromptsReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await loadLynxSmallModelCapabilities(ctx.runtimeFetch);
+      if (cancelled) return;
+      if (result.status === 'ok') {
+        setCapabilities(result.callableModels);
+        setCapStatus('ok');
+        setCapError(null);
+        return;
+      }
+      if (result.status === 'empty') {
+        setCapabilities(result.callableModels);
+        setCapStatus('empty');
+        setCapError(null);
+        return;
+      }
+      if (result.status === 'no-runtime') {
+        setCapStatus('no-runtime');
+        setCapabilities(null);
+        return;
+      }
+      setCapStatus('failed');
+      setCapError(result.error.message);
+      setCapabilities(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx.runtimeFetch]);
+
+  useEffect(() => {
+    if (!settings || promptsReady) return;
+    setCommitPrompt(typeof settings.summaryCommitPrompt === 'string' ? settings.summaryCommitPrompt : '');
+    setTitlePrompt(typeof settings.summarySessionTitlePrompt === 'string' ? settings.summarySessionTitlePrompt : '');
+    setPromptsReady(true);
+  }, [settings, promptsReady]);
+
+  if (status === 'no-runtime' || capStatus === 'no-runtime') {
+    return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
+  }
+  if (status === 'failed') return <Banner text={error || lynxT(ctx.locale, 'lynx.settings.loadFailed')} />;
+  if (capStatus === 'failed') {
+    return <Banner text={capError || lynxT(ctx.locale, 'lynx.settings.summary.capabilitiesFailed')} />;
+  }
+  if (status === 'loading' || !settings || capStatus === 'loading') {
+    return <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted />;
+  }
+
+  const mode = settings.summaryModelMode === 'custom' ? 'custom' : 'provider';
+  const providerID = typeof settings.summaryProviderID === 'string' ? settings.summaryProviderID : '';
+  const modelID = typeof settings.summaryModelID === 'string' ? settings.summaryModelID : '';
+  const providerIds = Object.keys(capabilities ?? {});
+
+  return (
+    <LynxView>
+      <Banner text={lynxT(ctx.locale, 'lynx.settings.summary.hint')} muted />
+      <Row
+        title={lynxT(ctx.locale, 'lynx.settings.summary.mode.provider')}
+        subtitle={mode === 'provider' ? '✓' : undefined}
+        onTap={() => { void patch({ summaryModelMode: 'provider' }); }}
+      />
+      <Row
+        title={lynxT(ctx.locale, 'lynx.settings.summary.mode.custom')}
+        subtitle={mode === 'custom' ? '✓' : undefined}
+        onTap={() => { void patch({ summaryModelMode: 'custom' }); }}
+      />
+      {mode === 'provider' ? (
+        capStatus === 'empty' || providerIds.length === 0 ? (
+          <Banner text={lynxT(ctx.locale, 'lynx.settings.summary.providerUnavailable')} muted />
+        ) : (
+          providerIds.map((id) => (
+            <Row
+              key={id}
+              title={id}
+              subtitle={providerID === id ? (modelID || '✓') : (capabilities?.[id]?.[0] ?? '')}
+              onTap={() => {
+                const nextModel = capabilities?.[id]?.includes(modelID)
+                  ? modelID
+                  : (capabilities?.[id]?.[0] ?? '');
+                void patch({ summaryProviderID: id, summaryModelID: nextModel });
+              }}
+            />
+          ))
+        )
+      ) : (
+        <>
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+            {lynxT(ctx.locale, 'lynx.settings.summary.baseUrl')}
+          </LynxText>
+          <LynxInput
+            value={typeof settings.summaryCustomBaseURL === 'string' ? settings.summaryCustomBaseURL : ''}
+            bindinput={(event) => {
+              void patch({ summaryCustomBaseURL: event.detail?.value ?? '' });
+            }}
+            style={{ color: cssVar('surface.foreground'), fontSize: '14px', marginBottom: '8px' }}
+          />
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+            {lynxT(ctx.locale, 'lynx.settings.summary.modelId')}
+          </LynxText>
+          <LynxInput
+            value={modelID}
+            bindinput={(event) => {
+              void patch({ summaryModelID: event.detail?.value ?? '' });
+            }}
+            style={{ color: cssVar('surface.foreground'), fontSize: '14px', marginBottom: '8px' }}
+          />
+        </>
+      )}
+      <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '8px' }}>
+        {lynxT(ctx.locale, 'lynx.settings.summary.commitPrompt')}
+      </LynxText>
+      <LynxInput
+        value={commitPrompt}
+        bindinput={(event) => setCommitPrompt(event.detail?.value ?? '')}
+        style={{ color: cssVar('surface.foreground'), fontSize: '13px', marginBottom: '8px' }}
+      />
+      <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+        {lynxT(ctx.locale, 'lynx.settings.summary.titlePrompt')}
+      </LynxText>
+      <LynxInput
+        value={titlePrompt}
+        bindinput={(event) => setTitlePrompt(event.detail?.value ?? '')}
+        style={{ color: cssVar('surface.foreground'), fontSize: '13px', marginBottom: '8px' }}
+      />
+      <LynxView
+        bindtap={() => {
+          void patch({
+            summaryCommitPrompt: commitPrompt,
+            summarySessionTitlePrompt: titlePrompt,
+          });
+        }}
+        style={{ padding: '8px 0' }}
+      >
+        <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          {lynxT(ctx.locale, 'lynx.scheduled.editor.save')}
+        </LynxText>
+      </LynxView>
+    </LynxView>
+  );
+}
+
+function BehaviorBody({ ctx }: { ctx: SettingsBodyContext }) {
+  const { settings, error, status, patch } = useSettingsBlob(ctx.runtimeFetch);
+  const [prompt, setPrompt] = useState('');
+  const [promptStatus, setPromptStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime'>('loading');
+  const [promptError, setPromptError] = useState<string | null>(null);
+  const [promptDirty, setPromptDirty] = useState(false);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await loadLynxAgentsMd(ctx.runtimeFetch);
+      if (cancelled) return;
+      if (result.status === 'ok') {
+        setPrompt(result.content);
+        setPromptStatus('ok');
+        setPromptError(null);
+        setPromptDirty(false);
+        return;
+      }
+      if (result.status === 'no-runtime') {
+        setPromptStatus('no-runtime');
+        return;
+      }
+      setPromptStatus('failed');
+      setPromptError(result.error.message);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx.runtimeFetch]);
+
+  if (status === 'no-runtime' || promptStatus === 'no-runtime') {
+    return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
+  }
+  if (status === 'failed') return <Banner text={error || lynxT(ctx.locale, 'lynx.settings.loadFailed')} />;
+  if (promptStatus === 'failed') {
+    return <Banner text={promptError || lynxT(ctx.locale, 'lynx.settings.behavior.agentsFailed')} />;
+  }
+  if (status === 'loading' || !settings || promptStatus === 'loading') {
+    return <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted />;
+  }
+
+  const enabled = Boolean(settings.responseStyleEnabled);
+  const preset = sanitizeLynxResponseStylePreset(settings.responseStylePreset);
+  const custom = typeof settings.responseStyleCustomInstructions === 'string'
+    ? settings.responseStyleCustomInstructions
+    : '';
+
+  const savePrompt = async () => {
+    setSaveNote(null);
+    const result = await saveLynxAgentsMd(ctx.runtimeFetch, prompt);
+    if (result.status === 'ok') {
+      setPromptDirty(false);
+      setSaveNote(lynxT(ctx.locale, 'lynx.settings.behavior.saved'));
+      return;
+    }
+    setSaveNote(result.status === 'failed' ? result.error.message : lynxT(ctx.locale, 'lynx.settings.noRuntime'));
+  };
+
+  const setPreset = (next: LynxResponseStyleValue) => {
+    void patch({
+      responseStylePreset: next,
+      responseStyleEnabled: true,
+    });
+  };
+
+  return (
+    <LynxView>
+      <Banner text={lynxT(ctx.locale, 'lynx.settings.behavior.hint')} muted />
+      <ToggleRow
+        label={lynxT(ctx.locale, 'lynx.settings.behavior.responseStyle')}
+        value={enabled}
+        onToggle={() => {
+          void patch({ responseStyleEnabled: !enabled });
+        }}
+      />
+      {([...LYNX_RESPONSE_STYLE_PRESETS, 'custom'] as const).map((item) => (
+        <Row
+          key={item}
+          title={item}
+          subtitle={preset === item ? '✓' : undefined}
+          onTap={() => setPreset(item)}
+        />
+      ))}
+      {preset === 'custom' ? (
+        <LynxInput
+          value={custom}
+          bindinput={(event) => {
+            void patch({ responseStyleCustomInstructions: event.detail?.value ?? '' });
+          }}
+          style={{ color: cssVar('surface.foreground'), fontSize: '13px', marginBottom: '12px' }}
+        />
+      ) : null}
+      <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '8px' }}>
+        {lynxT(ctx.locale, 'lynx.settings.behavior.agentsMd')}
+      </LynxText>
+      <LynxInput
+        value={prompt}
+        bindinput={(event) => {
+          setPrompt(event.detail?.value ?? '');
+          setPromptDirty(true);
+        }}
+        style={{ color: cssVar('surface.foreground'), fontSize: '13px', marginBottom: '8px' }}
+      />
+      <LynxView
+        bindtap={() => { void savePrompt(); }}
+        style={{ padding: '8px 0' }}
+      >
+        <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          {lynxT(ctx.locale, 'lynx.settings.behavior.saveAgents')}
+        </LynxText>
+      </LynxView>
+      {saveNote ? <Banner text={saveNote} muted /> : null}
+    </LynxView>
+  );
+}
+
 export function renderLynxSettingsBody(
   slug: LynxMobileSettingsSlug,
   body: LynxSettingsBodyKind,
@@ -671,8 +949,9 @@ export function renderLynxSettingsBody(
     case 'about':
       return <AboutBody ctx={ctx} />;
     case 'summary-ai':
+      return <SummaryAiBody ctx={ctx} />;
     case 'behavior':
-      return <Banner text={lynxT(ctx.locale, 'lynx.settings.page.stub')} muted />;
+      return <BehaviorBody ctx={ctx} />;
     default:
       return <Banner text={lynxT(ctx.locale, 'lynx.settings.page.stub')} muted />;
   }

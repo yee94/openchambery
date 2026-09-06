@@ -4,6 +4,7 @@ import { lynxT, tabLabel } from '../../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import type { LynxRuntimeFetch } from '../../runtime/fetch';
 import { loadGlobalScheduledTasks, loadScheduledTaskRuns } from '../../scheduled/api';
+import { ScheduledEditor } from '../../scheduled/ScheduledEditor';
 import type {
   LynxGlobalScheduledTask,
   LynxScheduledLoadResult,
@@ -18,6 +19,10 @@ export type ScheduledTabProps = {
   onOpenEditorStub?: (task: LynxGlobalScheduledTask | null) => void;
   onOpenRunSession?: (run: LynxScheduledTaskRun) => void;
 };
+
+type EditorState =
+  | { open: false }
+  | { open: true; task: LynxGlobalScheduledTask | null };
 
 type HistoryState =
   | { status: 'idle' }
@@ -40,7 +45,8 @@ export function ScheduledTab({
   const [result, setResult] = useState<LynxScheduledLoadResult | null>(resultOverride);
   const [view, setView] = useState<'tasks' | 'history'>('tasks');
   const [history, setHistory] = useState<HistoryState>({ status: 'idle' });
-  const [editorStubVisible, setEditorStubVisible] = useState(false);
+  const [editor, setEditor] = useState<EditorState>({ open: false });
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     if (resultOverride) {
@@ -56,7 +62,7 @@ export function ScheduledTab({
     return () => {
       cancelled = true;
     };
-  }, [runtimeFetch, resultOverride]);
+  }, [runtimeFetch, resultOverride, reloadToken]);
 
   useEffect(() => {
     if (view !== 'history') return;
@@ -85,7 +91,7 @@ export function ScheduledTab({
   }, [view, runtimeFetch]);
 
   const openEditor = (task: LynxGlobalScheduledTask | null) => {
-    setEditorStubVisible(true);
+    setEditor({ open: true, task });
     onOpenEditorStub?.(task);
   };
 
@@ -117,7 +123,7 @@ export function ScheduledTab({
         <LynxView
           bindtap={() => openEditor(null)}
           accessibility-role="button"
-          accessibility-label={lynxT(locale, 'lynx.scheduled.editor.stub')}
+          accessibility-label={lynxT(locale, 'lynx.scheduled.editor.title.new')}
         >
           <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>+</LynxText>
         </LynxView>
@@ -146,19 +152,14 @@ export function ScheduledTab({
         </LynxView>
       </LynxView>
 
-      {editorStubVisible ? (
-        <LynxView
-          style={{
-            marginBottom: '12px',
-            padding: '10px 12px',
-            borderRadius: '12px',
-            backgroundColor: cssVar('surface.elevated'),
-          }}
-        >
-          <LynxText style={{ color: cssVar('surface.foreground') }}>
-            {lynxT(locale, 'lynx.scheduled.editor.stub')}
-          </LynxText>
-        </LynxView>
+      {editor.open ? (
+        <ScheduledEditor
+          locale={locale}
+          runtimeFetch={runtimeFetch}
+          initial={editor.task}
+          onClose={() => setEditor({ open: false })}
+          onSaved={() => setReloadToken((n) => n + 1)}
+        />
       ) : null}
 
       {view === 'tasks' ? (

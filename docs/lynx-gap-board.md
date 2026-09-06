@@ -102,6 +102,22 @@ Slice on `cursor/lynx-settings-ci-local` (PR into `work/lynx-native`). Package V
 **真机过:** not executed (environment: Linux cloud VM).
 
 ---
+## 代码接上 (gap-close: summary-ai/behavior, scheduled editor, assistant ensure, chat sheets — not landed under 三关)
+
+Slice on `cursor/lynx-gap-close-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` (copy to `.github/workflows` when `workflow` scope available) — **not claimed live**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Settings `summary-ai` body | `SummarySettings.tsx`, `/api/config/settings`, `/api/small-model` | Wired GET/PUT settings blob fields + callableModels. Failure / empty capabilities ≠ silent empty success. |
+| Settings `behavior` body | `BehaviorPage.tsx`, `/api/behavior/agents-md`, response-style settings | Wired agents.md GET/PUT + responseStyleEnabled/Preset/Custom via settings blob. Failure ≠ empty. |
+| Scheduled editor UI | `ScheduledTaskEditorDialog`, PUT upsert | Real editor chrome (name/enabled/schedule/prompt/provider/model) calling `upsertScheduledTask`. Create needs project id from settings projects. Never fake-success. |
+| Assistant unbound ensure | `ensureAssistantSession`, `AssistantView` | Shell calls Cap `POST …/session/ensure` when runtime present; null sessionID stays unbound labeled (no invented chat id). |
+| Chat overflow + Files/Changes stubs | MobileApp overflow, Files/Changes sheets | Overflow menu hooks; Files/Changes navigate to labeled stub sheets with correct back. Bodies not ported. |
+
+**CI绿:** Linux lynx-ci template only (not installed under `.github/workflows` without workflow scope). Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -110,7 +126,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | Package exists; CocoaPods/Gradle Lynx SDK and APK/IPA CI still missing |
+| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | Package + Linux CI template exists; CocoaPods/Gradle Lynx SDK and APK/IPA CI still missing; `.github/workflows/lynx-ci.yml` not installed without workflow scope |
 | ~~Connect / splash while auto-connect resolves~~ | `MobileApp.tsx` welcome | **代码接上** ConnectWelcome splash + welcome; host LynxView chrome still thin |
 | ~~Instance list, add, delete, password unlock~~ | `mobileConnections.ts` | **代码接上** instances UI on welcome + settings/instances |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
@@ -138,13 +154,13 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | ~~**LegendList-semantics timeline**~~ | `TimelineList.tsx` | **代码接上** in `packages/lynx/src/chat` (list semantics + LynxTimelineList). Rich turn cards still missing |
-| Chat header / overflow | `MobileChatScreen.tsx` | Header back + title landed; overflow menu missing |
+| Chat header / overflow | `MobileChatScreen.tsx` | Header + overflow menu hooks **代码接上**; rich actions still thin |
 | ~~Send / Stop / queue / abort~~ | ChatInput + queue | **代码接上** hooks + official routes; composer text input host binding still thin |
 | Questions / permissions | chat cards | |
 | Activity / sorted / collapsed | chat DOCUMENTATION | |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid tests |
 | Nested child session stack + predecessor | `mobileNavigation.ts` | |
-| Files / Changes / turn-diff sheets | `MobileFilesSurface`, `MobileChangesSurface` | |
+| Files / Changes / turn-diff sheets | `MobileFilesSurface`, `MobileChangesSurface` | Entry stubs navigate correctly; Cap sheet bodies still missing |
 | MCP sheet | `mobile-mcp` | |
 | Context usage | `mobileContextUsage.ts` | |
 | Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | |
@@ -155,10 +171,10 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| ~~Assistant catalog + conversation page~~ | `MobileAssistantTab.tsx`, `AssistantView.tsx` | **代码接上** catalog + LynxChatScreen chrome; ensure-session labeled when unbound |
+| ~~Assistant catalog + conversation page~~ | `MobileAssistantTab.tsx`, `AssistantView.tsx` | **代码接上** catalog + LynxChatScreen; ensure path calls Cap `session/ensure` (no invented ids) |
 | Continuous / stateless admission | assistants DOCUMENTATION | Mode labels shown; admission APIs not fully ported |
 | Share welcome + inbox | `AssistantShareWelcome`, `MobileShareBridge` | |
-| ~~Scheduled list / history / editor~~ | `MobileScheduledTab.tsx` | **代码接上** list + history hooks; editor labeled stub |
+| ~~Scheduled list / history / editor~~ | `MobileScheduledTab.tsx` | **代码接上** list + history + editor upsert UI |
 | ~~Settings search + **all 21 mobile slugs**~~ | `MOBILE_SETTINGS_PAGE_SLUGS` | **代码接上** home search + grouped rows + push stubs |
 | Settings split collection → entity editor | `SettingsView.tsx` | |
 
@@ -219,6 +235,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 8. ~~**Connect welcome + instances UI**~~ — 代码接上 splash/list/paste. Remaining: host QR camera + Keychain wiring + 真机.
 9. ~~**Projects MobileTabPageHeader**~~ — 代码接上 collapsing header + glass search + primary +. Remaining: pixel polish / menu.
 10. ~~**CI skeleton (Linux)**~~ — `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) type-check + vitest + rspeedy. Remaining: Android APK + iOS sim runners (do not claim 真机过).
+11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`. Remaining: rich Files/Changes bodies, entity editors, host Keychain, 真机.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 
@@ -277,13 +294,13 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 | `chat` | 代码接上 (wired GET/PUT) | Reasoning / queue / follow-up via `/api/config/settings` |
 | `notifications` | 代码接上 (wired hooks) | Toggles via settings blob; APNs/FCM register host-owned |
 | `sessions` | 代码接上 (wired GET/PUT) | Auto-delete + retention from settings blob |
-| `summary-ai` | 代码接上 (row + labeled stub body) | Settings blob + `/api/small-model` |
+| `summary-ai` | 代码接上 (wired GET/PUT + small-model) | Settings blob + `/api/small-model`; failure ≠ empty |
 | `projects` | 代码接上 (list) | `projects[]` from settings blob; editor stub |
 | `git` | 代码接上 (wired gitmoji + stub editor) | gitmoji toggle; identities editor stub |
 | `providers` | 代码接上 (list) | `/api/config/catalog/providers` (failure ≠ empty); editor stub |
 | `agents` | 代码接上 (list) | `GET /api/agent` (failure ≠ empty); editor stub |
 | `assistants` | 代码接上 (list) | assistants snapshot list; editor stub |
-| `behavior` | 代码接上 (row + labeled stub body) | agents.md + response style |
+| `behavior` | 代码接上 (wired agents.md + response style) | `/api/behavior/agents-md` + settings blob response style |
 | `commands` | 代码接上 (list) | commands metadata catalog; editor stub |
 | `mcp` | 代码接上 (list) | `GET /api/config/mcp`; editor stub |
 | `plugins` | 代码接上 (list) | `GET /api/config/plugins`; editor stub |

@@ -12,3 +12,4 @@ export type {
   LynxScheduledLoadResult,
   LynxScheduledTaskStatus,
 } from './types';
+export { ScheduledEditor, type ScheduledEditorProps } from './ScheduledEditor';

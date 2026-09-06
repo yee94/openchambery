@@ -26,7 +26,8 @@ describe('Lynx settings metadata', () => {
     expect(getLynxSettingsPageMeta('appearance')?.body).toBe('wired');
     expect(getLynxSettingsPageMeta('providers')?.body).toBe('list');
     expect(getLynxSettingsPageMeta('about')?.body).toBe('wired');
-    expect(getLynxSettingsPageMeta('behavior')?.body).toBe('stub');
+    expect(getLynxSettingsPageMeta('behavior')?.body).toBe('wired');
+    expect(getLynxSettingsPageMeta('summary-ai')?.body).toBe('wired');
     expect(LYNX_FORBIDDEN_SETTINGS_TOGGLES).toContain('iosNativeUi');
   });
 

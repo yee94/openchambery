@@ -9,6 +9,12 @@ import {
   type LynxComposerActions,
   type LynxComposerModel,
 } from './composerActions';
+import {
+  LYNX_CHAT_OVERFLOW_ITEMS,
+  chatSheetFromOverflowId,
+  type LynxChatOverflowItemId,
+  type LynxChatSheetKind,
+} from './overflowMenu';
 import { fetchSessionMessages } from './sessionApi';
 import { LynxTimelineList } from './TimelineList';
 import {
@@ -41,8 +47,7 @@ const DEFAULT_MODEL: LynxComposerModel = {
 
 /**
  * Pushed chat page: header + LegendList timeline + composer send/stop/queue.
- * Maps Cap MobileChatScreen / TimelineList behaviors that fit Lynx without
- * inventing ASR, WebView FLIP, or TanStack split lists.
+ * Overflow menu hooks Files/Changes as labeled stub sheets that navigate correctly.
  */
 export function LynxChatScreen({
   locale,
@@ -59,6 +64,8 @@ export function LynxChatScreen({
   const [draft, setDraft] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueCount, setQueueCount] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [sheet, setSheet] = useState<LynxChatSheetKind | null>(null);
 
   const sessionApi = useMemo(
     () => (runtimeFetch ? { runtimeFetch } : null),
@@ -77,10 +84,33 @@ export function LynxChatScreen({
     [sessionId, directory, model, sessionApi, timeline.sessionIsWorking],
   );
 
+  const reloadTranscript = useCallback(() => {
+    if (!runtimeFetch) {
+      setTimeline((state) => applyInitialFailure(
+        state,
+        'labeled stub: no connect runtime — transcript not loaded',
+      ));
+      return;
+    }
+    void (async () => {
+      const result = await fetchSessionMessages(
+        { runtimeFetch },
+        { sessionId, directory, limit: 30 },
+      );
+      if (result.status === 'ok') {
+        setTimeline((state) => applyInitialPage(state, result.page));
+      } else {
+        setTimeline((state) => applyInitialFailure(state, result.error));
+      }
+    })();
+  }, [runtimeFetch, sessionId, directory]);
+
   useEffect(() => {
     let cancelled = false;
     setTimeline(createEmptyTimelineState(sessionId, directory));
     setActionError(null);
+    setMenuOpen(false);
+    setSheet(null);
 
     if (!runtimeFetch) {
       setTimeline((state) => applyInitialFailure(
@@ -130,7 +160,6 @@ export function LynxChatScreen({
             return failLoadOlder(current, result.error);
           }
           const applied = applyOlderPage(current, result.page);
-          // Settle after prepend so maintainVisibleContentPosition can release.
           queueMicrotask(() => {
             setTimeline((settled) => clearPrependSettle(settled));
           });
@@ -174,7 +203,58 @@ export function LynxChatScreen({
     setQueueCount(composer.getQueue().length);
   }, [composer, draft]);
 
+  const onOverflowSelect = (id: LynxChatOverflowItemId) => {
+    setMenuOpen(false);
+    const sheetKind = chatSheetFromOverflowId(id);
+    if (sheetKind) {
+      setSheet(sheetKind);
+      return;
+    }
+    if (id === 'refreshTranscript') {
+      reloadTranscript();
+    }
+  };
+
   const connected = Boolean(runtimeFetch);
+
+  if (sheet) {
+    return (
+      <LynxView
+        style={{
+          flexGrow: 1,
+          backgroundColor: cssVar('surface.background'),
+        }}
+        accessibility-label={lynxT(locale, sheet === 'files' ? 'lynx.chat.menu.files' : 'lynx.chat.menu.changes')}
+      >
+        <LynxView style={{ flexDirection: 'row', padding: '12px 16px', alignItems: 'center' }}>
+          <LynxView
+            bindtap={() => setSheet(null)}
+            accessibility-label={lynxT(locale, 'lynx.shell.back')}
+          >
+            <LynxText style={{ color: cssVar('primary.base') }}>
+              {lynxT(locale, 'lynx.shell.back')}
+            </LynxText>
+          </LynxView>
+          <LynxText
+            style={{
+              marginLeft: '12px',
+              color: cssVar('surface.foreground'),
+              fontWeight: '600',
+              flexGrow: 1,
+            }}
+          >
+            {lynxT(locale, sheet === 'files' ? 'lynx.chat.menu.files' : 'lynx.chat.menu.changes')}
+          </LynxText>
+        </LynxView>
+        <LynxText style={{ padding: '16px', color: cssVar('surface.mutedForeground') }}>
+          {lynxT(
+            locale,
+            sheet === 'files' ? 'lynx.chat.sheet.files.stub' : 'lynx.chat.sheet.changes.stub',
+          )}
+        </LynxText>
+      </LynxView>
+    );
+  }
 
   return (
     <LynxView
@@ -200,7 +280,38 @@ export function LynxChatScreen({
         >
           {title ?? lynxT(locale, 'lynx.shell.chat.title')}
         </LynxText>
+        <LynxView
+          bindtap={() => setMenuOpen((open) => !open)}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.chat.menu.open')}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '700' }}>···</LynxText>
+        </LynxView>
       </LynxView>
+
+      {menuOpen ? (
+        <LynxView
+          style={{
+            margin: '0 16px 8px',
+            padding: '8px 12px',
+            borderRadius: '12px',
+            backgroundColor: cssVar('surface.elevated'),
+          }}
+        >
+          {LYNX_CHAT_OVERFLOW_ITEMS.map((item) => (
+            <LynxView
+              key={item.id}
+              bindtap={() => onOverflowSelect(item.id)}
+              style={{ padding: '10px 0' }}
+            >
+              <LynxText style={{ color: cssVar('surface.foreground') }}>
+                {lynxT(locale, item.labelKey)}
+                {item.stubSheet ? ` · ${lynxT(locale, 'lynx.chat.menu.stubHint')}` : ''}
+              </LynxText>
+            </LynxView>
+          ))}
+        </LynxView>
+      ) : null}
 
       {!connected ? (
         <LynxText style={{ padding: '0 16px 8px', color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
@@ -262,4 +373,3 @@ export function LynxChatScreen({
     </LynxView>
   );
 }
-

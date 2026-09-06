@@ -77,4 +77,11 @@ describe('assistants snapshot API', () => {
     }, 'asst_1');
     expect(binding).toEqual({ sessionID: 'ses_9', directory: '/repo', sessionGeneration: 4 });
   });
+
+  test('ensure with null sessionID does not invent an id', async () => {
+    const binding = await ensureAssistantSession(async () => (
+      jsonResponse(200, { sessionID: null, directory: '/repo', sessionGeneration: 1 })
+    ), 'asst_1');
+    expect(binding.sessionID).toBeNull();
+  });
 });

@@ -22,6 +22,18 @@ export type LynxSettingsBlob = {
   sessionRetentionAction?: 'archive' | 'delete';
   gitmojiEnabled?: boolean;
   projects?: Array<{ id?: string; path?: string; name?: string; [key: string]: unknown }>;
+  /** Summary AI (Cap SummarySettings) */
+  summaryModelMode?: 'provider' | 'custom';
+  summaryProviderID?: string;
+  summaryModelID?: string;
+  summaryCustomBaseURL?: string;
+  hasSummaryCustomAPIToken?: boolean;
+  summaryCommitPrompt?: string;
+  summarySessionTitlePrompt?: string;
+  /** Behavior response style (Cap BehaviorPage) */
+  responseStyleEnabled?: boolean;
+  responseStylePreset?: string;
+  responseStyleCustomInstructions?: string;
   [key: string]: unknown;
 };
 

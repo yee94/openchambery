@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { ensureAssistantSession } from '../assistants/api';
 import type { LynxAssistantDTO } from '../assistants/types';
 import { LynxChatScreen } from '../chat/ChatScreen';
 import { shouldPaintLynxDock, type LynxHostGlobalProps } from '../host/embedding';
@@ -160,9 +161,7 @@ export function LynxShellApp({
   };
 
   const openAssistantNeedsSession = (assistant: LynxAssistantDTO) => {
-    setAssistantNeedsSessionNote(
-      `${lynxT(host.locale, 'lynx.assistant.openNeedsSession')}: ${assistant.name}`,
-    );
+    // Cap AssistantView: ensure only while unbound — never invent a chat id.
     setNavigation((state) => reduceLynxNavigation(state, {
       type: 'openAssistant',
       assistantId: assistant.id,
@@ -170,6 +169,40 @@ export function LynxShellApp({
       directory: assistant.effectiveWorkspacePath,
       title: assistant.name,
     }));
+
+    if (!runtimeFetch) {
+      setAssistantNeedsSessionNote(
+        `${lynxT(host.locale, 'lynx.assistant.openNeedsSession')}: ${assistant.name}`,
+      );
+      return;
+    }
+
+    setAssistantNeedsSessionNote(lynxT(host.locale, 'lynx.assistant.ensuring'));
+    void (async () => {
+      try {
+        const binding = await ensureAssistantSession(runtimeFetch, assistant.id);
+        if (!binding.sessionID) {
+          setAssistantNeedsSessionNote(
+            lynxT(host.locale, 'lynx.assistant.ensureUnbound'),
+          );
+          return;
+        }
+        setAssistantNeedsSessionNote(null);
+        setNavigation((state) => reduceLynxNavigation(state, {
+          type: 'openAssistant',
+          assistantId: assistant.id,
+          sessionId: binding.sessionID,
+          directory: binding.directory || assistant.effectiveWorkspacePath,
+          title: assistant.name,
+        }));
+      } catch (error) {
+        setAssistantNeedsSessionNote(
+          `${lynxT(host.locale, 'lynx.assistant.ensureFailed')}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    })();
   };
 
   const settingsBodyContext: SettingsBodyContext = {

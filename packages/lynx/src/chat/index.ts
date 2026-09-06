@@ -49,3 +49,11 @@ export {
 } from './composerActions';
 export { LynxTimelineList } from './TimelineList';
 export { LynxChatScreen } from './ChatScreen';
+
+export {
+  LYNX_CHAT_OVERFLOW_ITEMS,
+  chatSheetFromOverflowId,
+  type LynxChatOverflowItem,
+  type LynxChatOverflowItemId,
+  type LynxChatSheetKind,
+} from './overflowMenu';

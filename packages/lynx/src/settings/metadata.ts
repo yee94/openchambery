@@ -103,7 +103,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'personalization',
     kind: 'single',
     keywords: ['summary', 'commit', 'session title', 'prompt', 'provider'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'projects',
@@ -151,7 +151,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'opencode',
     kind: 'single',
     keywords: ['behavior', 'agents.md', 'system prompt', 'instructions'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'commands',
