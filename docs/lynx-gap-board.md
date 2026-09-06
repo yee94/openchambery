@@ -30,7 +30,7 @@ These rows are **代码接上** for the scaffold contracts only (no OpenChamber 
 |---|---|
 | Lynx app package | `packages/lynx` (`@openchamber/lynx`). Workspace Vitest project. No rspeedy/APK/IPA job yet. |
 | Host Tab/Nav embedding decision | **Locked:** Mode B iOS 26 host `UITabBar`; Mode A older iOS + Android. Mode C forbidden. `src/host/embedding.ts` + `host/ios/` + `host/android/`. |
-| Four-tab dock IA | Projects / Assistant / Scheduled / Settings. Chat is a pushed secondary page; dock hidden. Projects/Assistant/Scheduled remain **labeled stubs**; Settings home lists real slug rows. |
+| Four-tab dock IA | Projects / Assistant / Scheduled / Settings. Chat is a pushed secondary page; dock hidden. Settings home lists real slug rows. Projects/Assistant/Scheduled tab **bodies** are 代码接上 in the tabs-home slice (see below). |
 | Lynx 3.8 glass mapping | iOS `glass` → `UIGlassEffect`, `glass-container` → `UIGlassContainerEffect`, plus `glass-style` / `glass-interactive` / `glass-tint-color` / `spacing`. Android: `blur-radius` 降级. |
 
 真机过: **not executed** (environment: Linux cloud agent; no Xcode/adb device).
@@ -71,6 +71,21 @@ Chat timeline + Settings tab home on `cursor/lynx-chat-settings-local` (PR into 
 
 ---
 
+
+## 代码接上 (Projects / Assistant / Scheduled tabs — not landed under 三关)
+
+Tab bodies on `cursor/lynx-tabs-home-local` (PR into `work/lynx-native`). Package Vitest + `tsc` gate the claim. No track CI / 真机过.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Projects home UI | `MobileProjectsHome.tsx`, `useMobileProjectsHomeModel.ts` | `ProjectsHome` wired to `createSessionIndexHomeBindings` / `projectSessionIndexHome`: project cards, worktree groups, session rows, search, pin/in-progress cues, `项目 · 分支` subtitle, collapsing-title header spirit, draft→push Chat. **failure ≠ empty**. |
+| Assistant catalog + conversation chrome | `MobileAssistantTab.tsx`, assistants snapshot | `assistants/*` → `GET /api/openchamber/assistants/snapshot` (+ ensure-session hook). Catalog tab; open conversation reuses `LynxChatScreen`. No invented ASR. Missing session → labeled stub (not fake chat id). |
+| Scheduled list / history / editor hooks | `scheduledTasksApi.ts`, `MobileScheduledTab` | `scheduled/*` → `GET /api/openchamber/scheduled-tasks`, runs history, upsert PUT hook. Editor chrome is a **labeled stub**. Partial `failedProjectIds` preserved; no-runtime / HTTP failure ≠ empty success. |
+
+**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -85,21 +100,21 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
 | `openchamber://` parse + apply | `deepLinks.ts` | Parse/build exist; **apply / navigation** still missing |
 | Secure store (Keychain / Keystore) | Capacitor secure storage | Injected adapter only — **native Keychain/Keystore wiring** still missing |
-| Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA stubs landed; session-index data path exists; pixel bodies still missing |
+| Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA + Projects/Assistant/Scheduled tab bodies **代码接上**; rich pixel polish / swipe menus still missing |
 | Host Tab/Nav **binary** (linked Lynx SDK) | `packages/lynx/host/*` | Strategy + sources landed; not an Xcode/Gradle project yet |
 
 ### Projects (chat list)
 
 | Item | Cap/web source |
 |---|---|
-| Project cards + worktree groups | `MobileProjectsHome.tsx` |
-| Session rows, search, pin / in-progress | `useMobileProjectsHomeModel.ts` |
-| `项目 · 分支` subtitle | `formatHomeSessionSubtitle` |
-| Swipe / long-press actions | `sessionMenuModel.ts` |
-| New-session draft page | `kind: 'draft'` |
-| Add project directory explorer | `DirectoryExplorerDialog` |
-| Header 扫一扫 / 切换实例 | `MobileProjectsHome` |
-| Session index as data source | `GET /api/openchamber/session-index` (server) | Client + home projection in `packages/lynx`; **Projects UI** still missing |
+| ~~Project cards + worktree groups~~ | `MobileProjectsHome.tsx` | **代码接上** in `ProjectsHome` (worktree groups from session-index + optional parent map) |
+| ~~Session rows, search, pin / in-progress~~ | `useMobileProjectsHomeModel.ts` | **代码接上** search + pin/busy cues |
+| ~~`项目 · 分支` subtitle~~ | `formatHomeSessionSubtitle` | **代码接上** |
+| Swipe / long-press actions | `sessionMenuModel.ts` | |
+| New-session draft page | `kind: 'draft'` | Draft secondary push landed; composer body still stub |
+| Add project directory explorer | `DirectoryExplorerDialog` | |
+| Header 扫一扫 / 切换实例 | `MobileProjectsHome` | |
+| ~~Session index as data source~~ | `GET /api/openchamber/session-index` (server) | Client + home projection + **Projects UI** 代码接上 |
 
 ### Chat
 
@@ -123,10 +138,10 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Assistant catalog + conversation page | `MobileAssistantTab.tsx`, `AssistantView.tsx` | |
-| Continuous / stateless admission | assistants DOCUMENTATION | |
+| ~~Assistant catalog + conversation page~~ | `MobileAssistantTab.tsx`, `AssistantView.tsx` | **代码接上** catalog + LynxChatScreen chrome; ensure-session labeled when unbound |
+| Continuous / stateless admission | assistants DOCUMENTATION | Mode labels shown; admission APIs not fully ported |
 | Share welcome + inbox | `AssistantShareWelcome`, `MobileShareBridge` | |
-| Scheduled list / history / editor | `MobileScheduledTab.tsx` | |
+| ~~Scheduled list / history / editor~~ | `MobileScheduledTab.tsx` | **代码接上** list + history hooks; editor labeled stub |
 | ~~Settings search + **all 21 mobile slugs**~~ | `MOBILE_SETTINGS_PAGE_SLUGS` | **代码接上** home search + grouped rows + push stubs |
 | Settings split collection → entity editor | `SettingsView.tsx` | |
 
@@ -179,11 +194,12 @@ First implementation slice after this doc gate (order is deliberate: connect →
 
 1. ~~Host app skeleton + embedding decision~~ — scaffold in `packages/lynx`. Remaining: link Lynx SDK, rspeedy bundle, device host; wire HTTP/Keychain/relay adapters.
 2. ~~Connect + instance persistence client~~ — 代码接上 in `packages/lynx`. Remaining: welcome/instances UI, native secure store, and a real server 真机 pass (LAN then relay). No demo hosts. No Bonjour.
-3. ~~Four-tab shell IA~~ — navigation stubs landed. Remaining: real tab bodies.
-4. ~~Projects home data path~~ — session-index bindings in `packages/lynx`. Remaining: Projects UI (failure ≠ empty).
+3. ~~Four-tab shell IA~~ — navigation + Projects/Assistant/Scheduled tab bodies 代码接上. Remaining: swipe menus, draft composer body, share welcome.
+4. ~~Projects home data path + UI~~ — session-index bindings + ProjectsHome UI in `packages/lynx` (failure ≠ empty). Remaining: directory explorer / 扫一扫 / instance switch chrome.
 5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. Remaining: rich turn cards, SSE live tail, Files/Changes, native IME.
 6. ~~**Settings home + slug map**~~ — 代码接上 search + 21 rows + labeled stub bodies. Remaining: real GET/PUT editors per slug.
-7. **CI** that builds Android debug APK + iOS simulator. Linux analyze alone is never “CI绿”.
+7. ~~**Assistant catalog + Scheduled list/history**~~ — 代码接上 snapshot/list/history hooks. Remaining: editor chrome, share welcome, admission flows.
+8. **CI** that builds Android debug APK + iOS simulator. Linux analyze alone is never “CI绿”.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 

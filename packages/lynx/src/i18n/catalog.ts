@@ -45,7 +45,33 @@ export type LynxMessageKey =
   | 'lynx.settings.search.placeholder'
   | 'lynx.settings.search.empty'
   | 'lynx.settings.page.stub'
-  | 'lynx.settings.voice.listOnly';
+  | 'lynx.settings.voice.listOnly'
+  | 'lynx.projects.search.placeholder'
+  | 'lynx.projects.empty'
+  | 'lynx.projects.failure'
+  | 'lynx.projects.unsupported'
+  | 'lynx.projects.loading'
+  | 'lynx.projects.pinned'
+  | 'lynx.projects.inProgress'
+  | 'lynx.projects.newDraft'
+  | 'lynx.projects.noRuntime'
+  | 'lynx.assistant.loading'
+  | 'lynx.assistant.failure'
+  | 'lynx.assistant.empty'
+  | 'lynx.assistant.disabled'
+  | 'lynx.assistant.noRuntime'
+  | 'lynx.assistant.unsupported'
+  | 'lynx.assistant.mode.continuous'
+  | 'lynx.assistant.mode.stateless'
+  | 'lynx.assistant.openNeedsSession'
+  | 'lynx.scheduled.loading'
+  | 'lynx.scheduled.failure'
+  | 'lynx.scheduled.empty'
+  | 'lynx.scheduled.noRuntime'
+  | 'lynx.scheduled.history'
+  | 'lynx.scheduled.editor.stub'
+  | 'lynx.scheduled.views.tasks'
+  | 'lynx.scheduled.partialFailure'
 
 type LynxDictionary = Record<LynxMessageKey, string>;
 
@@ -76,6 +102,32 @@ const en: LynxDictionary = {
   'lynx.settings.search.empty': 'No matching settings',
   'lynx.settings.page.stub': 'Labeled stub: this settings body is not wired to OpenChamber APIs yet.',
   'lynx.settings.voice.listOnly': 'Voice is listed only until existing /api/dictation routes are ported. No invented ASR.',
+  'lynx.projects.search.placeholder': 'Search projects and sessions',
+  'lynx.projects.empty': 'No projects yet',
+  'lynx.projects.failure': 'Could not refresh session index (showing last known data if any)',
+  'lynx.projects.unsupported': 'Session index is unsupported on this instance',
+  'lynx.projects.loading': 'Loading projects…',
+  'lynx.projects.pinned': 'Pinned',
+  'lynx.projects.inProgress': 'In progress',
+  'lynx.projects.newDraft': 'New chat',
+  'lynx.projects.noRuntime': 'Labeled stub: connect runtime / session-index bindings not injected — failure ≠ empty.',
+  'lynx.assistant.loading': 'Loading assistants…',
+  'lynx.assistant.failure': 'Could not load assistants snapshot',
+  'lynx.assistant.empty': 'No assistants yet',
+  'lynx.assistant.disabled': 'Assistants are disabled on this instance',
+  'lynx.assistant.noRuntime': 'Labeled stub: connect runtime not injected — assistants catalog will not fake success.',
+  'lynx.assistant.unsupported': 'Assistants API unsupported on this instance',
+  'lynx.assistant.mode.continuous': 'Continuous',
+  'lynx.assistant.mode.stateless': 'Stateless',
+  'lynx.assistant.openNeedsSession': 'Labeled stub: no bound session yet — call ensure session API; do not invent a chat id.',
+  'lynx.scheduled.loading': 'Loading schedules…',
+  'lynx.scheduled.failure': 'Could not load schedules',
+  'lynx.scheduled.empty': 'No scheduled tasks',
+  'lynx.scheduled.noRuntime': 'Labeled stub: connect runtime not injected — schedule list will not fake success.',
+  'lynx.scheduled.history': 'History',
+  'lynx.scheduled.editor.stub': 'Labeled stub: schedule editor chrome not wired yet (upsert API hook exists).',
+  'lynx.scheduled.views.tasks': 'Tasks',
+  'lynx.scheduled.partialFailure': 'Some projects failed to load schedules',
 
 };
 
@@ -106,6 +158,32 @@ const es: LynxDictionary = {
   'lynx.settings.search.empty': 'Sin ajustes coincidentes',
   'lynx.settings.page.stub': 'Stub etiquetado: este cuerpo de ajustes aún no está conectado a las API.',
   'lynx.settings.voice.listOnly': 'Voz solo aparece en la lista hasta portar /api/dictation. Sin ASR inventado.',
+  'lynx.projects.search.placeholder': 'Buscar proyectos y sesiones',
+  'lynx.projects.empty': 'Aún no hay proyectos',
+  'lynx.projects.failure': 'No se pudo actualizar el índice (se muestra lo conocido si existe)',
+  'lynx.projects.unsupported': 'El índice de sesiones no es compatible en esta instancia',
+  'lynx.projects.loading': 'Cargando proyectos…',
+  'lynx.projects.pinned': 'Fijados',
+  'lynx.projects.inProgress': 'En curso',
+  'lynx.projects.newDraft': 'Nuevo chat',
+  'lynx.projects.noRuntime': 'Stub etiquetado: sin runtime / bindings de índice — fallo ≠ vacío.',
+  'lynx.assistant.loading': 'Cargando agentes…',
+  'lynx.assistant.failure': 'No se pudo cargar el snapshot de agentes',
+  'lynx.assistant.empty': 'Aún no hay agentes',
+  'lynx.assistant.disabled': 'Los agentes están desactivados en esta instancia',
+  'lynx.assistant.noRuntime': 'Stub etiquetado: sin runtime — el catálogo no fingirá éxito.',
+  'lynx.assistant.unsupported': 'API de agentes no compatible en esta instancia',
+  'lynx.assistant.mode.continuous': 'Continuo',
+  'lynx.assistant.mode.stateless': 'Sin estado',
+  'lynx.assistant.openNeedsSession': 'Stub etiquetado: sin sesión enlazada — llame ensure session; no invente un id de chat.',
+  'lynx.scheduled.loading': 'Cargando tareas…',
+  'lynx.scheduled.failure': 'No se pudieron cargar las tareas',
+  'lynx.scheduled.empty': 'No hay tareas programadas',
+  'lynx.scheduled.noRuntime': 'Stub etiquetado: sin runtime — la lista no fingirá éxito.',
+  'lynx.scheduled.history': 'Historial',
+  'lynx.scheduled.editor.stub': 'Stub etiquetado: editor de tareas aún no cableado (existe el hook upsert).',
+  'lynx.scheduled.views.tasks': 'Tareas',
+  'lynx.scheduled.partialFailure': 'Algunos proyectos no cargaron tareas',
 
 };
 
@@ -136,6 +214,32 @@ const fr: LynxDictionary = {
   'lynx.settings.search.empty': 'Aucun réglage correspondant',
   'lynx.settings.page.stub': 'Gabarit étiqueté : ce corps de réglages n’est pas encore branché aux API.',
   'lynx.settings.voice.listOnly': 'Voix listée seulement jusqu’au port de /api/dictation. Pas d’ASR inventé.',
+  'lynx.projects.search.placeholder': 'Rechercher projets et sessions',
+  'lynx.projects.empty': 'Aucun projet pour l’instant',
+  'lynx.projects.failure': 'Impossible d’actualiser l’index (données connues affichées si présentes)',
+  'lynx.projects.unsupported': 'Index de sessions non pris en charge sur cette instance',
+  'lynx.projects.loading': 'Chargement des projets…',
+  'lynx.projects.pinned': 'Épinglés',
+  'lynx.projects.inProgress': 'En cours',
+  'lynx.projects.newDraft': 'Nouveau chat',
+  'lynx.projects.noRuntime': 'Gabarit étiqueté : runtime / bindings absents — échec ≠ vide.',
+  'lynx.assistant.loading': 'Chargement des agents…',
+  'lynx.assistant.failure': 'Impossible de charger l’instantané des agents',
+  'lynx.assistant.empty': 'Aucun agent pour l’instant',
+  'lynx.assistant.disabled': 'Les agents sont désactivés sur cette instance',
+  'lynx.assistant.noRuntime': 'Gabarit étiqueté : pas de runtime — le catalogue n’invente pas le succès.',
+  'lynx.assistant.unsupported': 'API agents non prise en charge sur cette instance',
+  'lynx.assistant.mode.continuous': 'Continu',
+  'lynx.assistant.mode.stateless': 'Sans état',
+  'lynx.assistant.openNeedsSession': 'Gabarit étiqueté : pas de session liée — appeler ensure session ; ne pas inventer d’id.',
+  'lynx.scheduled.loading': 'Chargement des tâches…',
+  'lynx.scheduled.failure': 'Impossible de charger les tâches',
+  'lynx.scheduled.empty': 'Aucune tâche planifiée',
+  'lynx.scheduled.noRuntime': 'Gabarit étiqueté : pas de runtime — la liste n’invente pas le succès.',
+  'lynx.scheduled.history': 'Historique',
+  'lynx.scheduled.editor.stub': 'Gabarit étiqueté : éditeur non branché (hook upsert présent).',
+  'lynx.scheduled.views.tasks': 'Tâches',
+  'lynx.scheduled.partialFailure': 'Certains projets n’ont pas chargé leurs tâches',
 
 };
 
@@ -166,6 +270,32 @@ const ja: LynxDictionary = {
   'lynx.settings.search.empty': '一致する設定がありません',
   'lynx.settings.page.stub': '明示スタブ: この設定本文はまだ API 未接続です。',
   'lynx.settings.voice.listOnly': '音声は /api/dictation 移植まで一覧のみ。独自 ASR は作りません。',
+  'lynx.projects.search.placeholder': '案件とセッションを検索',
+  'lynx.projects.empty': '案件はまだありません',
+  'lynx.projects.failure': 'セッション索引を更新できません（既知データがあれば表示）',
+  'lynx.projects.unsupported': 'このインスタンスはセッション索引非対応です',
+  'lynx.projects.loading': '案件を読み込み中…',
+  'lynx.projects.pinned': 'ピン留め',
+  'lynx.projects.inProgress': '進行中',
+  'lynx.projects.newDraft': '新しいチャット',
+  'lynx.projects.noRuntime': '明示スタブ: 接続ランタイム / セッション索引バインド未注入 — 失敗≠空。',
+  'lynx.assistant.loading': '助手を読み込み中…',
+  'lynx.assistant.failure': '助手スナップショットを読み込めません',
+  'lynx.assistant.empty': '助手はまだありません',
+  'lynx.assistant.disabled': 'このインスタンスでは助手が無効です',
+  'lynx.assistant.noRuntime': '明示スタブ: 接続ランタイム未注入 — 助手一覧は成功を偽装しません。',
+  'lynx.assistant.unsupported': 'このインスタンスは助手 API 非対応です',
+  'lynx.assistant.mode.continuous': '連続',
+  'lynx.assistant.mode.stateless': 'ステートレス',
+  'lynx.assistant.openNeedsSession': '明示スタブ: セッション未バインド — ensure session API を呼ぶこと。チャット id を捏造しない。',
+  'lynx.scheduled.loading': '予定を読み込み中…',
+  'lynx.scheduled.failure': '予定を読み込めません',
+  'lynx.scheduled.empty': '予定タスクはありません',
+  'lynx.scheduled.noRuntime': '明示スタブ: 接続ランタイム未注入 — 予定一覧は成功を偽装しません。',
+  'lynx.scheduled.history': '履歴',
+  'lynx.scheduled.editor.stub': '明示スタブ: 予定エディタ UI 未配線（upsert API フックは存在）。',
+  'lynx.scheduled.views.tasks': 'タスク',
+  'lynx.scheduled.partialFailure': '一部の案件の予定読み込みに失敗',
 
 };
 
@@ -196,6 +326,32 @@ const ko: LynxDictionary = {
   'lynx.settings.search.empty': '일치하는 설정 없음',
   'lynx.settings.page.stub': '표시된 스텁: 이 설정 본문은 아직 API에 연결되지 않았습니다.',
   'lynx.settings.voice.listOnly': '음성은 /api/dictation 이식 전까지 목록만. 임의 ASR 없음.',
+  'lynx.projects.search.placeholder': '프로젝트와 세션 검색',
+  'lynx.projects.empty': '프로젝트가 아직 없습니다',
+  'lynx.projects.failure': '세션 인덱스를 새로고침할 수 없음 (이전 데이터가 있으면 표시)',
+  'lynx.projects.unsupported': '이 인스턴스는 세션 인덱스를 지원하지 않음',
+  'lynx.projects.loading': '프로젝트 불러오는 중…',
+  'lynx.projects.pinned': '고정됨',
+  'lynx.projects.inProgress': '진행 중',
+  'lynx.projects.newDraft': '새 채팅',
+  'lynx.projects.noRuntime': '표시된 스텁: 연결 런타임 / 세션 인덱스 바인딩 없음 — 실패≠빈 목록.',
+  'lynx.assistant.loading': '도우미 불러오는 중…',
+  'lynx.assistant.failure': '도우미 스냅샷을 불러올 수 없음',
+  'lynx.assistant.empty': '도우미가 아직 없습니다',
+  'lynx.assistant.disabled': '이 인스턴스에서 도우미가 비활성화됨',
+  'lynx.assistant.noRuntime': '표시된 스텁: 연결 런타임 없음 — 도우미 목록은 성공을 위장하지 않음.',
+  'lynx.assistant.unsupported': '이 인스턴스는 도우미 API를 지원하지 않음',
+  'lynx.assistant.mode.continuous': '연속',
+  'lynx.assistant.mode.stateless': '상태 없음',
+  'lynx.assistant.openNeedsSession': '표시된 스텁: 세션 미연결 — ensure session API를 호출하세요. 채팅 id를 만들지 마세요.',
+  'lynx.scheduled.loading': '일정 불러오는 중…',
+  'lynx.scheduled.failure': '일정을 불러올 수 없음',
+  'lynx.scheduled.empty': '예약 작업 없음',
+  'lynx.scheduled.noRuntime': '표시된 스텁: 연결 런타임 없음 — 일정 목록은 성공을 위장하지 않음.',
+  'lynx.scheduled.history': '기록',
+  'lynx.scheduled.editor.stub': '표시된 스텁: 일정 편집기 UI 미연결 (upsert API 훅은 존재).',
+  'lynx.scheduled.views.tasks': '작업',
+  'lynx.scheduled.partialFailure': '일부 프로젝트의 일정 로드 실패',
 
 };
 
@@ -226,6 +382,32 @@ const pl: LynxDictionary = {
   'lynx.settings.search.empty': 'Brak pasujących ustawień',
   'lynx.settings.page.stub': 'Oznaczony stub: ta treść ustawień nie jest jeszcze podłączona do API.',
   'lynx.settings.voice.listOnly': 'Głos tylko na liście do czasu portu /api/dictation. Bez wymyślonego ASR.',
+  'lynx.projects.search.placeholder': 'Szukaj projektów i sesji',
+  'lynx.projects.empty': 'Brak projektów',
+  'lynx.projects.failure': 'Nie udało się odświeżyć indeksu (pokazano znane dane jeśli są)',
+  'lynx.projects.unsupported': 'Indeks sesji nie jest obsługiwany na tej instancji',
+  'lynx.projects.loading': 'Wczytywanie projektów…',
+  'lynx.projects.pinned': 'Przypięte',
+  'lynx.projects.inProgress': 'W toku',
+  'lynx.projects.newDraft': 'Nowy czat',
+  'lynx.projects.noRuntime': 'Oznaczony stub: brak runtime / powiązań indeksu — błąd ≠ pusta lista.',
+  'lynx.assistant.loading': 'Wczytywanie agentów…',
+  'lynx.assistant.failure': 'Nie udało się wczytać migawki agentów',
+  'lynx.assistant.empty': 'Brak agentów',
+  'lynx.assistant.disabled': 'Agenci są wyłączeni na tej instancji',
+  'lynx.assistant.noRuntime': 'Oznaczony stub: brak runtime — katalog nie udaje sukcesu.',
+  'lynx.assistant.unsupported': 'API agentów nieobsługiwane na tej instancji',
+  'lynx.assistant.mode.continuous': 'Ciągły',
+  'lynx.assistant.mode.stateless': 'Bezstanowy',
+  'lynx.assistant.openNeedsSession': 'Oznaczony stub: brak sesji — wywołaj ensure session; nie wymyślaj id czatu.',
+  'lynx.scheduled.loading': 'Wczytywanie zadań…',
+  'lynx.scheduled.failure': 'Nie udało się wczytać zadań',
+  'lynx.scheduled.empty': 'Brak zaplanowanych zadań',
+  'lynx.scheduled.noRuntime': 'Oznaczony stub: brak runtime — lista nie udaje sukcesu.',
+  'lynx.scheduled.history': 'Historia',
+  'lynx.scheduled.editor.stub': 'Oznaczony stub: edytor jeszcze niepodłączony (hook upsert istnieje).',
+  'lynx.scheduled.views.tasks': 'Zadania',
+  'lynx.scheduled.partialFailure': 'Część projektów nie wczytała zadań',
 
 };
 
@@ -256,6 +438,32 @@ const ptBR: LynxDictionary = {
   'lynx.settings.search.empty': 'Nenhum ajuste correspondente',
   'lynx.settings.page.stub': 'Stub rotulado: este corpo de ajustes ainda não está ligado às APIs.',
   'lynx.settings.voice.listOnly': 'Voz só na lista até portar /api/dictation. Sem ASR inventado.',
+  'lynx.projects.search.placeholder': 'Buscar projetos e sessões',
+  'lynx.projects.empty': 'Ainda não há projetos',
+  'lynx.projects.failure': 'Não foi possível atualizar o índice (mostra dados conhecidos se houver)',
+  'lynx.projects.unsupported': 'Índice de sessões não suportado nesta instância',
+  'lynx.projects.loading': 'Carregando projetos…',
+  'lynx.projects.pinned': 'Fixados',
+  'lynx.projects.inProgress': 'Em andamento',
+  'lynx.projects.newDraft': 'Novo chat',
+  'lynx.projects.noRuntime': 'Stub rotulado: runtime / bindings ausentes — falha ≠ vazio.',
+  'lynx.assistant.loading': 'Carregando agentes…',
+  'lynx.assistant.failure': 'Não foi possível carregar o snapshot de agentes',
+  'lynx.assistant.empty': 'Ainda não há agentes',
+  'lynx.assistant.disabled': 'Agentes desativados nesta instância',
+  'lynx.assistant.noRuntime': 'Stub rotulado: sem runtime — o catálogo não fingirá sucesso.',
+  'lynx.assistant.unsupported': 'API de agentes não suportada nesta instância',
+  'lynx.assistant.mode.continuous': 'Contínuo',
+  'lynx.assistant.mode.stateless': 'Sem estado',
+  'lynx.assistant.openNeedsSession': 'Stub rotulado: sem sessão vinculada — chame ensure session; não invente id de chat.',
+  'lynx.scheduled.loading': 'Carregando agendas…',
+  'lynx.scheduled.failure': 'Não foi possível carregar agendas',
+  'lynx.scheduled.empty': 'Nenhuma tarefa agendada',
+  'lynx.scheduled.noRuntime': 'Stub rotulado: sem runtime — a lista não fingirá sucesso.',
+  'lynx.scheduled.history': 'Histórico',
+  'lynx.scheduled.editor.stub': 'Stub rotulado: editor ainda não ligado (hook upsert existe).',
+  'lynx.scheduled.views.tasks': 'Tarefas',
+  'lynx.scheduled.partialFailure': 'Alguns projetos falharam ao carregar agendas',
 
 };
 
@@ -286,6 +494,32 @@ const uk: LynxDictionary = {
   'lynx.settings.search.empty': 'Немає відповідних налаштувань',
   'lynx.settings.page.stub': 'Позначена заглушка: це тіло налаштувань ще не підключене до API.',
   'lynx.settings.voice.listOnly': 'Голос лише в списку до порту /api/dictation. Без вигаданого ASR.',
+  'lynx.projects.search.placeholder': 'Пошук проєктів і сесій',
+  'lynx.projects.empty': 'Проєктів ще немає',
+  'lynx.projects.failure': 'Не вдалося оновити індекс (показано відомі дані, якщо є)',
+  'lynx.projects.unsupported': 'Індекс сесій не підтримується на цьому екземплярі',
+  'lynx.projects.loading': 'Завантаження проєктів…',
+  'lynx.projects.pinned': 'Закріплені',
+  'lynx.projects.inProgress': 'У процесі',
+  'lynx.projects.newDraft': 'Новий чат',
+  'lynx.projects.noRuntime': 'Позначений stub: немає runtime / привʼязок індексу — помилка ≠ порожньо.',
+  'lynx.assistant.loading': 'Завантаження асистентів…',
+  'lynx.assistant.failure': 'Не вдалося завантажити знімок асистентів',
+  'lynx.assistant.empty': 'Асистентів ще немає',
+  'lynx.assistant.disabled': 'Асистенти вимкнені на цьому екземплярі',
+  'lynx.assistant.noRuntime': 'Позначений stub: немає runtime — каталог не симулює успіх.',
+  'lynx.assistant.unsupported': 'API асистентів не підтримується на цьому екземплярі',
+  'lynx.assistant.mode.continuous': 'Безперервний',
+  'lynx.assistant.mode.stateless': 'Без стану',
+  'lynx.assistant.openNeedsSession': 'Позначений stub: немає сесії — викличте ensure session; не вигадуйте id чату.',
+  'lynx.scheduled.loading': 'Завантаження розкладу…',
+  'lynx.scheduled.failure': 'Не вдалося завантажити розклад',
+  'lynx.scheduled.empty': 'Немає запланованих задач',
+  'lynx.scheduled.noRuntime': 'Позначений stub: немає runtime — список не симулює успіх.',
+  'lynx.scheduled.history': 'Історія',
+  'lynx.scheduled.editor.stub': 'Позначений stub: редактор ще не підключено (upsert hook існує).',
+  'lynx.scheduled.views.tasks': 'Задачі',
+  'lynx.scheduled.partialFailure': 'Деякі проєкти не завантажили розклад',
 
 };
 
@@ -316,6 +550,32 @@ const zhCN: LynxDictionary = {
   'lynx.settings.search.empty': '没有匹配的设置',
   'lynx.settings.page.stub': '已标注占位：此设置正文尚未接入 OpenChamber API。',
   'lynx.settings.voice.listOnly': '语音在移植现有 /api/dictation 之前仅列出。不发明 ASR。',
+  'lynx.projects.search.placeholder': '搜索项目与会话',
+  'lynx.projects.empty': '暂无项目',
+  'lynx.projects.failure': '无法刷新会话索引（若有缓存会继续显示）',
+  'lynx.projects.unsupported': '此实例不支持会话索引',
+  'lynx.projects.loading': '正在加载项目…',
+  'lynx.projects.pinned': '已置顶',
+  'lynx.projects.inProgress': '进行中',
+  'lynx.projects.newDraft': '新建对话',
+  'lynx.projects.noRuntime': '已标注占位：未注入连接运行时 / 会话索引绑定 — 失败≠空列表。',
+  'lynx.assistant.loading': '正在加载助手…',
+  'lynx.assistant.failure': '无法加载助手快照',
+  'lynx.assistant.empty': '暂无助手',
+  'lynx.assistant.disabled': '此实例已禁用助手',
+  'lynx.assistant.noRuntime': '已标注占位：未注入连接运行时 — 助手目录不会伪装成功。',
+  'lynx.assistant.unsupported': '此实例不支持助手 API',
+  'lynx.assistant.mode.continuous': '连续',
+  'lynx.assistant.mode.stateless': '无状态',
+  'lynx.assistant.openNeedsSession': '已标注占位：尚无绑定会话 — 请调用 ensure session API；不要虚构聊天 id。',
+  'lynx.scheduled.loading': '正在加载定时任务…',
+  'lynx.scheduled.failure': '无法加载定时任务',
+  'lynx.scheduled.empty': '暂无定时任务',
+  'lynx.scheduled.noRuntime': '已标注占位：未注入连接运行时 — 定时列表不会伪装成功。',
+  'lynx.scheduled.history': '历史',
+  'lynx.scheduled.editor.stub': '已标注占位：定时编辑器界面尚未接入（upsert API 钩子已存在）。',
+  'lynx.scheduled.views.tasks': '任务',
+  'lynx.scheduled.partialFailure': '部分项目的定时任务加载失败',
 
 };
 
@@ -346,6 +606,32 @@ const zhTW: LynxDictionary = {
   'lynx.settings.search.empty': '沒有符合的設定',
   'lynx.settings.page.stub': '已標示占位：此設定本文尚未接上 OpenChamber API。',
   'lynx.settings.voice.listOnly': '語音在移植現有 /api/dictation 之前僅列出。不發明 ASR。',
+  'lynx.projects.search.placeholder': '搜尋專案與工作階段',
+  'lynx.projects.empty': '尚無專案',
+  'lynx.projects.failure': '無法重新整理工作階段索引（若有快取會繼續顯示）',
+  'lynx.projects.unsupported': '此實例不支援工作階段索引',
+  'lynx.projects.loading': '正在載入專案…',
+  'lynx.projects.pinned': '已釘選',
+  'lynx.projects.inProgress': '進行中',
+  'lynx.projects.newDraft': '新建對話',
+  'lynx.projects.noRuntime': '已標示占位：未注入連線執行環境 / 工作階段索引綁定 — 失敗≠空清單。',
+  'lynx.assistant.loading': '正在載入助理…',
+  'lynx.assistant.failure': '無法載入助理快照',
+  'lynx.assistant.empty': '尚無助理',
+  'lynx.assistant.disabled': '此實例已停用助理',
+  'lynx.assistant.noRuntime': '已標示占位：未注入連線執行環境 — 助理目錄不會偽裝成功。',
+  'lynx.assistant.unsupported': '此實例不支援助理 API',
+  'lynx.assistant.mode.continuous': '連續',
+  'lynx.assistant.mode.stateless': '無狀態',
+  'lynx.assistant.openNeedsSession': '已標示占位：尚無綁定工作階段 — 請呼叫 ensure session API；不要虛構聊天 id。',
+  'lynx.scheduled.loading': '正在載入排程…',
+  'lynx.scheduled.failure': '無法載入排程',
+  'lynx.scheduled.empty': '尚無排程任務',
+  'lynx.scheduled.noRuntime': '已標示占位：未注入連線執行環境 — 排程清單不會偽裝成功。',
+  'lynx.scheduled.history': '歷史',
+  'lynx.scheduled.editor.stub': '已標示占位：排程編輯器介面尚未接上（upsert API 掛鉤已存在）。',
+  'lynx.scheduled.views.tasks': '任務',
+  'lynx.scheduled.partialFailure': '部分專案的排程載入失敗',
 
 };
 

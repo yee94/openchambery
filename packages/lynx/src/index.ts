@@ -126,3 +126,23 @@ export {
   filterLynxSettingsPages,
   getLynxSettingsPageMeta,
 } from './settings/metadata';
+
+export {
+  loadAssistantSnapshot,
+  loadAssistantCapability,
+  ensureAssistantSession,
+  parseLynxAssistantSnapshot,
+  type LynxAssistantDTO,
+  type LynxAssistantSnapshot,
+  type LynxAssistantLoadResult,
+} from './assistants';
+export {
+  loadGlobalScheduledTasks,
+  loadScheduledTaskRuns,
+  upsertScheduledTask,
+  type LynxScheduledTask,
+  type LynxGlobalScheduledTasksResponse,
+  type LynxScheduledLoadResult,
+} from './scheduled';
+export { filterLynxProjectsHomeForSearch } from './projects';
+export type { LynxHomeWorktreeGroup } from './session-index/homeModel';

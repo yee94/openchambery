@@ -1,0 +1,1 @@
+export { filterLynxProjectsHomeForSearch } from './search';

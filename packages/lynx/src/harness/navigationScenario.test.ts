@@ -20,7 +20,7 @@ describe('Lynx navigation harness', () => {
       { platform: 'ios', iosMajorVersion: 26 },
       [
         { action: { type: 'setActiveTab', tab: 'assistant' }, expectDockHidden: false },
-        { action: { type: 'openAssistant' }, expectDockHidden: true },
+        { action: { type: 'openAssistant', assistantId: 'asst_1' }, expectDockHidden: true },
       ],
     );
     expect(results[0]?.lynxDockPainted).toBe(false);

@@ -67,6 +67,8 @@ describe('Projects home session-index projection', () => {
     expect(model.projects).toHaveLength(1);
     expect(model.projects[0]?.label).toBe('openchamber');
     expect(model.projects[0]?.sessions.map((row) => row.id)).toEqual(['ses_root']);
+    expect(model.projects[0]?.worktrees).toHaveLength(1);
+    expect(model.projects[0]?.worktrees[0]?.kind).toBe('main');
     expect(model.projects[0]?.sessions[0]?.subtitle).toBe('openchamber · work/lynx-native');
     expect(model.pinnedSessions.map((row) => row.id)).toEqual(['ses_old']);
     expect(model.inProgressSessions.map((row) => row.id)).toEqual(['ses_root']);

@@ -21,7 +21,12 @@ export type LynxSecondaryState =
       kind: 'draft';
     }
   | {
+      /** Assistant conversation page — Cap depth; Lynx reuses chat chrome when session exists. */
       kind: 'assistant';
+      assistantId: string;
+      sessionId: string | null;
+      directory: string | null;
+      title?: string | null;
     }
   | {
       kind: 'instances';
@@ -95,7 +100,13 @@ export type LynxNavigationAction =
   | { type: 'pushChat'; sessionId: string; directory?: string | null }
   | { type: 'popChat' }
   | { type: 'openDraft' }
-  | { type: 'openAssistant' }
+  | {
+      type: 'openAssistant';
+      assistantId: string;
+      sessionId?: string | null;
+      directory?: string | null;
+      title?: string | null;
+    }
   | { type: 'openInstances' }
   | { type: 'closeSecondary' }
   | { type: 'reset' };
@@ -150,7 +161,16 @@ export function reduceLynxNavigation(
     case 'openDraft':
       return { ...state, secondary: { kind: 'draft' } };
     case 'openAssistant':
-      return { ...state, secondary: { kind: 'assistant' } };
+      return {
+        ...state,
+        secondary: {
+          kind: 'assistant',
+          assistantId: action.assistantId,
+          sessionId: action.sessionId ?? null,
+          directory: action.directory ?? null,
+          title: action.title ?? null,
+        },
+      };
     case 'openInstances':
       return { ...state, secondary: { kind: 'instances' } };
     case 'closeSecondary':
