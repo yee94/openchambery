@@ -127,6 +127,7 @@ export function AppearanceSettingsPage({ onBack }: { onBack: () => void }) {
           <SettingsChoiceRow
             label={t('settings.appearance.theme')}
             value={mode}
+            showDivider={false}
             options={[
               { value: 'system', label: t('settings.appearance.theme.system') },
               { value: 'light', label: t('settings.appearance.theme.light') },

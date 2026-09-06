@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, View as RNView } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View as RNView } from 'react-native';
 
 import {
   SettingsCard,
@@ -169,7 +169,7 @@ export function ProvidersSettingsPage({ onBack }: { onBack: () => void }) {
               <Pressable
                 key={p.id}
                 onPress={() => setSelected(p)}
-                style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}
               >
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{p.name}</Text>
                 <Text style={{ color: theme.muted, fontSize: 12 }}>{p.id}</Text>
@@ -216,7 +216,7 @@ export function AgentsSettingsPage({ onBack }: { onBack: () => void }) {
         ) : (
           <SettingsCard>
             {agents.map((agent) => (
-              <RNView key={agent.name} style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}>
+              <RNView key={agent.name} style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{agent.name}</Text>
                 {agent.description ? (
                   <Text style={{ color: theme.muted, fontSize: 12, marginTop: 2 }}>{agent.description}</Text>
@@ -263,7 +263,7 @@ export function CommandsSettingsPage({ onBack }: { onBack: () => void }) {
         ) : (
           <SettingsCard>
             {commands.map((cmd) => (
-              <RNView key={cmd.name} style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}>
+              <RNView key={cmd.name} style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
                 <Text style={{ color: theme.text, fontWeight: '600' }}>/{cmd.name}</Text>
                 {cmd.description ? (
                   <Text style={{ color: theme.muted, fontSize: 12 }}>{cmd.description}</Text>
@@ -312,7 +312,7 @@ export function McpSettingsPage({ onBack }: { onBack: () => void }) {
         {servers ? (
           <SettingsCard>
             {servers.map((server) => (
-              <RNView key={server.name} style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}>
+              <RNView key={server.name} style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{server.name}</Text>
                 <Text style={{ color: theme.muted, fontSize: 12 }}>
                   {server.type || (server.url ? 'remote' : 'stdio')}
@@ -403,7 +403,7 @@ export function PluginsSettingsPage({ onBack }: { onBack: () => void }) {
         {list ? (
           <SettingsCard>
             {list.entries.map((entry) => (
-              <RNView key={entry.id} style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}>
+              <RNView key={entry.id} style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{entry.spec || entry.id}</Text>
                 <Pressable
                   onPress={() => {
@@ -427,7 +427,7 @@ export function PluginsSettingsPage({ onBack }: { onBack: () => void }) {
                     .then((f) => setFileContent(f.content))
                     .catch((err) => Alert.alert(err instanceof Error ? err.message : t('settings.error.loadFailed')));
                 }}
-                style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}
               >
                 <Text style={{ color: theme.text }}>{file.fileName || file.id}</Text>
               </Pressable>
@@ -510,7 +510,7 @@ export function SkillsSettingsPage({ onBack }: { onBack: () => void }) {
         ) : (
           <SettingsCard>
             {skills.map((skill) => (
-              <RNView key={skill.name} style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}>
+              <RNView key={skill.name} style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{skill.name}</Text>
                 {skill.description ? (
                   <Text style={{ color: theme.muted, fontSize: 12 }}>{skill.description}</Text>
@@ -564,7 +564,7 @@ export function SnippetsSettingsPage({ onBack }: { onBack: () => void }) {
                   setName(s.name);
                   setContent(s.content ?? '');
                 }}
-                style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}
               >
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{s.name}</Text>
               </Pressable>
@@ -670,7 +670,7 @@ export function MagicPromptsSettingsPage({ onBack }: { onBack: () => void }) {
               <Pressable
                 key={item.id}
                 onPress={() => setSelected(item)}
-                style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}
               >
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{item.title || item.id}</Text>
               </Pressable>
@@ -727,7 +727,7 @@ export function UsageSettingsPage({ onBack }: { onBack: () => void }) {
         ) : (
           <SettingsCard>
             {rows.map((row) => (
-              <RNView key={row.providerId} style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}>
+              <RNView key={row.providerId} style={{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
                 <Text style={{ color: theme.text, fontWeight: '600' }}>{row.providerId}</Text>
                 {row.ok ? (
                   <Text style={{ color: theme.muted, fontSize: 12 }}>{t('settings.usage.ok')}</Text>

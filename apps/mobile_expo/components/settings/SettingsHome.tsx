@@ -7,12 +7,24 @@ import {
   View as RNView,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   MobileTabPageHeader,
   useCollapsingTabHeader,
 } from '@/components/chrome/MobileTabPageHeader';
-import { SURFACE_RADIUS, useSettingsTheme } from '@/components/settings/SettingsChrome';
+import {
+  SETTINGS_CONTROL_RADIUS,
+  SETTINGS_PAGE_INSET,
+  SETTINGS_ROW_INSET,
+  SETTINGS_ROW_MIN_HEIGHT,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_SECTION_STACK_GAP,
+  SURFACE_RADIUS,
+  SettingsChevron,
+  settingsRowDivider,
+  useSettingsTheme,
+} from '@/components/settings/SettingsChrome';
 import { Text, View } from '@/components/Themed';
 import { t } from '@/lib/i18n';
 import {
@@ -23,6 +35,7 @@ import type { SettingsPageSlug } from '@/lib/settings/metadata';
 
 export function SettingsHome() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const theme = useSettingsTheme();
   const { scrollY, onScroll, listTopPad } = useCollapsingTabHeader();
   const [query, setQuery] = useState('');
@@ -42,10 +55,18 @@ export function SettingsHome() {
       <Animated.ScrollView
         onScroll={onScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingTop: listTopPad, paddingBottom: 32 }}
+        contentContainerStyle={{
+          paddingTop: listTopPad,
+          paddingBottom: insets.bottom + 88,
+        }}
         keyboardShouldPersistTaps="handled"
       >
-        <RNView style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <RNView
+          style={[
+            styles.searchWrap,
+            { backgroundColor: theme.field },
+          ]}
+        >
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -59,45 +80,80 @@ export function SettingsHome() {
         </RNView>
 
         {query.trim() ? (
-          <RNView style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <RNView
+            style={[
+              styles.card,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
             {hits.length === 0 ? (
-              <Text style={[styles.empty, { color: theme.muted }]}>{t('settings.home.searchEmpty')}</Text>
+              <Text style={[styles.empty, { color: theme.muted }]}>
+                {t('settings.home.searchEmpty')}
+              </Text>
             ) : (
-              hits.map((hit) => (
+              hits.map((hit, index) => (
                 <Pressable
                   key={hit.slug}
                   onPress={() => openPage(hit.slug)}
-                  style={[styles.row, { borderBottomColor: theme.border }]}
+                  style={[
+                    styles.row,
+                    settingsRowDivider(theme.border, index === hits.length - 1),
+                  ]}
                   testID={`settings-search-${hit.slug}`}
                 >
-                  <RNView style={{ flex: 1 }}>
-                    <Text style={[styles.rowTitle, { color: theme.text }]}>{t(hit.titleKey)}</Text>
-                    <Text style={[styles.rowSub, { color: theme.muted }]}>{t(hit.groupTitleKey)}</Text>
+                  <RNView style={styles.rowText}>
+                    <Text style={[styles.rowTitle, { color: theme.text }]}>
+                      {t(hit.titleKey)}
+                    </Text>
+                    <Text style={[styles.rowSub, { color: theme.muted }]}>
+                      {t(hit.groupTitleKey)}
+                    </Text>
                   </RNView>
-                  <Text style={{ color: theme.muted }}>›</Text>
+                  <SettingsChevron color={theme.muted} />
                 </Pressable>
               ))
             )}
           </RNView>
         ) : (
-          groups.map((group) => (
-            <RNView key={group.group} style={styles.groupBlock}>
-              <Text style={[styles.groupTitle, { color: theme.muted }]}>{t(group.titleKey)}</Text>
-              <RNView style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                {group.pages.map((page) => (
-                  <Pressable
-                    key={page.slug}
-                    onPress={() => openPage(page.slug)}
-                    style={[styles.row, { borderBottomColor: theme.border }]}
-                    testID={`settings-nav-${page.slug}`}
-                  >
-                    <Text style={[styles.rowTitle, { color: theme.text }]}>{t(page.titleKey)}</Text>
-                    <Text style={{ color: theme.muted }}>›</Text>
-                  </Pressable>
-                ))}
+          <RNView style={styles.navList}>
+            {groups.map((group) => (
+              <RNView key={group.group} style={styles.groupBlock}>
+                <Text style={[styles.groupTitle, { color: theme.muted }]}>
+                  {t(group.titleKey)}
+                </Text>
+                <RNView
+                  style={[
+                    styles.card,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                      marginBottom: 0,
+                    },
+                  ]}
+                >
+                  {group.pages.map((page, index) => (
+                    <Pressable
+                      key={page.slug}
+                      onPress={() => openPage(page.slug)}
+                      style={[
+                        styles.row,
+                        settingsRowDivider(
+                          theme.border,
+                          index === group.pages.length - 1,
+                        ),
+                      ]}
+                      testID={`settings-nav-${page.slug}`}
+                    >
+                      <Text style={[styles.rowTitle, { color: theme.text }]}>
+                        {t(page.titleKey)}
+                      </Text>
+                      <SettingsChevron color={theme.muted} />
+                    </Pressable>
+                  ))}
+                </RNView>
               </RNView>
-            </RNView>
-          ))
+            ))}
+          </RNView>
         )}
       </Animated.ScrollView>
     </View>
@@ -107,24 +163,29 @@ export function SettingsHome() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   searchWrap: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: SETTINGS_PAGE_INSET,
+    marginBottom: 4,
+    borderRadius: SETTINGS_CONTROL_RADIUS,
     paddingHorizontal: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
-  search: { height: 42, fontSize: 15 },
-  groupBlock: { marginBottom: 8 },
+  search: { height: 44, fontSize: 15 },
+  navList: {
+    marginTop: SETTINGS_SECTION_STACK_GAP,
+    gap: SETTINGS_SECTION_STACK_GAP,
+  },
+  groupBlock: {
+    gap: SETTINGS_SECTION_GAP,
+  },
   groupTitle: {
-    marginHorizontal: 20,
-    marginBottom: 6,
+    marginHorizontal: SETTINGS_PAGE_INSET + 8,
     fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    lineHeight: 16,
+    fontWeight: '400',
   },
   card: {
-    marginHorizontal: 16,
+    marginHorizontal: SETTINGS_PAGE_INSET,
     marginBottom: 12,
     borderRadius: SURFACE_RADIUS,
     borderWidth: StyleSheet.hairlineWidth,
@@ -134,11 +195,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+    paddingHorizontal: SETTINGS_ROW_INSET,
+    paddingVertical: 11,
+    minHeight: SETTINGS_ROW_MIN_HEIGHT,
   },
-  rowTitle: { fontSize: 15, fontWeight: '600' },
-  rowSub: { fontSize: 12, marginTop: 2 },
-  empty: { padding: 16, textAlign: 'center' },
+  rowText: { flex: 1, minWidth: 0 },
+  rowTitle: { fontSize: 15, fontWeight: '400' },
+  rowSub: { fontSize: 12, marginTop: 2, lineHeight: 16 },
+  empty: { padding: 16, textAlign: 'center', fontSize: 14 },
 });

@@ -6,6 +6,7 @@ import {
   SettingsErrorState,
   SettingsLoading,
   SettingsPageScaffold,
+  settingsRowDivider,
   useSettingsTheme,
 } from '@/components/settings/SettingsChrome';
 import { Text } from '@/components/Themed';
@@ -51,10 +52,13 @@ export function ProjectsSettingsPage({ onBack }: { onBack: () => void }) {
           <SettingsLoading />
         ) : (
           <SettingsCard>
-            {projects.map((project) => (
+            {projects.map((project, index) => (
               <RNView
                 key={project.id}
-                style={{ padding: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}
+                style={[
+                  { paddingHorizontal: 14, paddingVertical: 11, minHeight: 52 },
+                  settingsRowDivider(theme.border, index === projects.length - 1),
+                ]}
               >
                 <Text style={{ color: theme.text, fontWeight: '600' }}>
                   {projectLabelFromPath(project.path, project.label)}

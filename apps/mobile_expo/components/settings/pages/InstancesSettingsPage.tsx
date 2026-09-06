@@ -4,8 +4,10 @@ import { Pressable, ScrollView, View as RNView } from 'react-native';
 
 import {
   SettingsCard,
+  SettingsChevron,
   SettingsPageScaffold,
   SettingsPrimaryButton,
+  settingsRowDivider,
   useSettingsTheme,
 } from '@/components/settings/SettingsChrome';
 import { Text } from '@/components/Themed';
@@ -20,7 +22,7 @@ export function InstancesSettingsPage({ onBack }: { onBack: () => void }) {
 
   return (
     <SettingsPageScaffold title={t('settings.pages.instances')} onBack={onBack}>
-      <ScrollView contentContainerStyle={{ paddingVertical: 16 }}>
+      <ScrollView contentContainerStyle={{ paddingVertical: 16, paddingBottom: 40 }}>
         {statusLabel ? (
           <RNView style={{ paddingHorizontal: 20, marginBottom: 8 }}>
             <Text style={{ color: theme.muted }} testID="connection-status">
@@ -29,31 +31,44 @@ export function InstancesSettingsPage({ onBack }: { onBack: () => void }) {
           </RNView>
         ) : null}
         <SettingsCard>
-          {state.connections.map((conn) => {
+          {state.connections.map((conn, index) => {
             const active = state.active?.connectionId === conn.id;
+            const isLast = index === state.connections.length - 1;
             return (
               <Pressable
                 key={conn.id}
                 onPress={() => void controller.connectSaved(conn.id)}
-                style={{
-                  padding: 14,
-                  borderBottomWidth: 0.5,
-                  borderBottomColor: theme.border,
-                  backgroundColor: active ? 'rgba(99,102,241,0.12)' : 'transparent',
-                }}
+                style={[
+                  {
+                    paddingHorizontal: 14,
+                    paddingVertical: 11,
+                    minHeight: 52,
+                    backgroundColor: active ? theme.selectionWash : 'transparent',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                  },
+                  settingsRowDivider(theme.border, isLast),
+                ]}
               >
-                <Text style={{ color: theme.text, fontWeight: '700' }}>
-                  {conn.label || getConnectionLabel(connectionDisplayUrl(conn.candidates))}
-                </Text>
-                <Text style={{ color: theme.muted, fontSize: 12, marginTop: 2 }}>
-                  {connectionDisplayUrl(conn.candidates)}
-                </Text>
-                <Pressable
-                  onPress={() => void controller.removeConnection(conn.id)}
-                  style={{ marginTop: 8 }}
-                >
-                  <Text style={{ color: theme.danger }}>{t('mobile.connect.delete')}</Text>
-                </Pressable>
+                <RNView style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>
+                    {conn.label || getConnectionLabel(connectionDisplayUrl(conn.candidates))}
+                  </Text>
+                  <Text style={{ color: theme.muted, fontSize: 12, marginTop: 2 }}>
+                    {connectionDisplayUrl(conn.candidates)}
+                  </Text>
+                  <Pressable
+                    onPress={() => void controller.removeConnection(conn.id)}
+                    style={{ marginTop: 8 }}
+                    hitSlop={8}
+                  >
+                    <Text style={{ color: theme.danger, fontSize: 13 }}>
+                      {t('mobile.connect.delete')}
+                    </Text>
+                  </Pressable>
+                </RNView>
+                <SettingsChevron color={theme.muted} />
               </Pressable>
             );
           })}

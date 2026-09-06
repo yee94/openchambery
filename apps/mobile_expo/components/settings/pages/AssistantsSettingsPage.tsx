@@ -3,6 +3,7 @@ import { Alert, Pressable, ScrollView, View as RNView } from 'react-native';
 
 import {
   SettingsCard,
+  SettingsChevron,
   SettingsChoiceRow,
   SettingsErrorState,
   SettingsLoading,
@@ -10,6 +11,7 @@ import {
   SettingsPrimaryButton,
   SettingsTextField,
   SettingsToggleRow,
+  settingsRowDivider,
   useSettingsTheme,
 } from '@/components/settings/SettingsChrome';
 import { Text } from '@/components/Themed';
@@ -271,6 +273,7 @@ export function AssistantsSettingsPage({
           <SettingsToggleRow
             label={t('settings.assistants.instanceEnabled')}
             value={snapshot?.enabled ?? false}
+            showDivider={false}
             onValueChange={(next) => {
               if (!active || !snapshot) return;
               void setAssistantsEnabled(active, next, snapshot.revision)
@@ -282,16 +285,31 @@ export function AssistantsSettingsPage({
           />
         </SettingsCard>
         <SettingsCard>
-          {(snapshot?.assistants ?? []).map((assistant) => (
+          {(snapshot?.assistants ?? []).map((assistant, index, arr) => (
             <Pressable
               key={assistant.id}
               onPress={() => setEditingId(assistant.id)}
-              style={{ paddingHorizontal: 14, paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: theme.border }}
+              style={[
+                {
+                  paddingHorizontal: 14,
+                  paddingVertical: 11,
+                  minHeight: 52,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                },
+                settingsRowDivider(theme.border, index === arr.length - 1),
+              ]}
             >
-              <Text style={{ color: theme.text, fontWeight: '600' }}>{assistant.name}</Text>
-              <Text style={{ color: theme.muted, marginTop: 2, fontSize: 12 }}>
-                {assistant.providerID}/{assistant.modelID}
-              </Text>
+              <RNView style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ color: theme.text, fontWeight: '400', fontSize: 15 }}>
+                  {assistant.name}
+                </Text>
+                <Text style={{ color: theme.muted, marginTop: 2, fontSize: 12 }}>
+                  {assistant.providerID}/{assistant.modelID}
+                </Text>
+              </RNView>
+              <SettingsChevron color={theme.muted} />
             </Pressable>
           ))}
           {(snapshot?.assistants.length ?? 0) === 0 ? (
