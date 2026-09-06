@@ -623,6 +623,24 @@ describe('reduceNativeLiveActivity catalog', () => {
     expect(payload.payload.items).toHaveLength(NATIVE_LIVE_ACTIVITY_ITEM_LIMIT);
     expect(payload.payload.workingCount).toBe(NATIVE_LIVE_ACTIVITY_ITEM_LIMIT);
   });
+
+  test('pushes a renamed session title onto a running live activity', () => {
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog([catalogItem({ sessionId: 'ses_a', statusType: 'retry', title: 'New session' })], { now: 80 }),
+    );
+    const renamed = reduceNativeLiveActivity(started.state, observeCatalog(
+      [catalogItem({ sessionId: 'ses_a', statusType: 'retry', title: 'Fix live activity titles' })],
+      { now: 120 },
+    ));
+    expect(renamed.commands[0]).toMatchObject({ type: 'update' });
+    const payload = renamed.commands[0];
+    expect(payload?.type).toBe('update');
+    if (payload?.type !== 'update') return;
+    expect(payload.payload.items).toEqual([
+      expect.objectContaining({ sessionId: 'ses_a', title: 'Fix live activity titles', status: 'retry' }),
+    ]);
+  });
 });
 
 describe('applyNativeLiveActivityCommand', () => {

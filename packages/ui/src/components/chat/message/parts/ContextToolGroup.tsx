@@ -13,7 +13,7 @@ import {
     summarizeProcessTools,
     summarizeUsedToolDiffs,
 } from './processToolGrouping';
-import { getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
+import { getToolGroupExpandedListClass, getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 
@@ -169,7 +169,7 @@ export const ContextToolGroup: React.FC<{
             </div>
 
             {isExpanded && children ? (
-                <div id={contentId} className="relative ml-2 pl-3 pt-0.5">
+                <div id={contentId} className={getToolGroupExpandedListClass(isMobile)}>
                     <span
                         aria-hidden="true"
                         className="pointer-events-none absolute bottom-0 left-0 top-0 w-px opacity-40"

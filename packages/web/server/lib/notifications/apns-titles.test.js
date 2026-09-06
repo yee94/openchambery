@@ -33,12 +33,14 @@ describe('apns-titles', () => {
 
   it('localizes payload title by type and keeps session name as body', () => {
     expect(localizeApnsPayload({ type: 'question', sessionName: 'Build fix' }, 'zh-CN')).toEqual({
-      title: '智能体需要你的输入',
+      title: '需要你回答',
       body: 'Build fix',
       badge: undefined,
       tag: undefined,
       data: undefined,
     });
+    expect(resolveApnsTitle('ready', 'zh-CN')).toBe('任务已完成');
+    expect(resolveApnsTitle('ready', 'en')).toBe('Task completed');
     expect(localizeApnsPayload({ type: 'ready' }, 'fr').body).toBe('Session');
     expect(localizeApnsPayload({ type: 'ready' }, 'zh-CN').body).toBe('会话');
   });

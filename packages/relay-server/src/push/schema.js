@@ -14,7 +14,18 @@ export const MAX_DATA_TOTAL_BYTES = 2048;
 export const LIVE_ACTIVITY_KIND = 'liveactivity';
 export const LIVE_ACTIVITY_EVENTS = new Set(['update', 'end']);
 export const LIVE_ACTIVITY_STATUSES = new Set(['working', 'tool', 'retry', 'input', 'permission', 'stale', 'complete', 'error']);
-export const LIVE_ACTIVITY_CONTENT_KEYS = new Set(['status', 'eventVersion', 'updatedAt', 'endedAt']);
+export const LIVE_ACTIVITY_CONTENT_KEYS = new Set([
+  'status',
+  'eventVersion',
+  'updatedAt',
+  'endedAt',
+  'title',
+  'workingCount',
+  'items',
+]);
+const MAX_LIVE_ACTIVITY_ITEMS = 4;
+const MAX_LIVE_ACTIVITY_ITEM_TITLE = 80;
+const MAX_LIVE_ACTIVITY_ITEM_SESSION = 128;
 
 const bytes = (value) => Buffer.byteLength(value, 'utf8');
 const isSafeInt = (value) => typeof value === 'number' && Number.isSafeInteger(value);
@@ -71,6 +82,29 @@ const uniqueTokens = (tokens) => {
   return unique;
 };
 
+const parseLiveActivityItems = (value) => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > MAX_LIVE_ACTIVITY_ITEMS) return null;
+  const items = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const sessionID = typeof raw.sessionID === 'string'
+      ? raw.sessionID
+      : (typeof raw.sessionId === 'string' ? raw.sessionId : '');
+    if (!sessionID || sessionID.length > MAX_LIVE_ACTIVITY_ITEM_SESSION) return null;
+    if (typeof raw.status !== 'string' || !LIVE_ACTIVITY_STATUSES.has(raw.status)) return null;
+    if (!isFiniteNumber(raw.startedAt)) return null;
+    const title = typeof raw.title === 'string' ? raw.title.slice(0, MAX_LIVE_ACTIVITY_ITEM_TITLE) : '';
+    const item = { sessionID, title, status: raw.status, startedAt: raw.startedAt };
+    if (raw.endedAt !== undefined) {
+      if (!isFiniteNumber(raw.endedAt)) return null;
+      item.endedAt = raw.endedAt;
+    }
+    items.push(item);
+  }
+  return items;
+};
+
 const parseContentState = (value, event) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const keys = Object.keys(value);
@@ -79,8 +113,19 @@ const parseContentState = (value, event) => {
   if (!isSafeInt(value.eventVersion) || !isFiniteNumber(value.updatedAt)) return null;
   if (event === 'end' && !isFiniteNumber(value.endedAt)) return null;
   if (value.endedAt !== undefined && !isFiniteNumber(value.endedAt)) return null;
+  if (value.title !== undefined && (typeof value.title !== 'string' || value.title.length > MAX_LIVE_ACTIVITY_ITEM_TITLE)) {
+    return null;
+  }
+  if (value.workingCount !== undefined && (!isSafeInt(value.workingCount) || value.workingCount < 0)) {
+    return null;
+  }
+  const items = parseLiveActivityItems(value.items);
+  if (items === null) return null;
   const contentState = { status: value.status, eventVersion: value.eventVersion, updatedAt: value.updatedAt };
   if (value.endedAt !== undefined) contentState.endedAt = value.endedAt;
+  if (value.title !== undefined) contentState.title = value.title;
+  if (value.workingCount !== undefined) contentState.workingCount = value.workingCount;
+  if (items !== undefined) contentState.items = items;
   return contentState;
 };
 
