@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxText, LynxView } from '../lynx-elements';
@@ -35,6 +35,27 @@ import {
 import { resolveLynxComposerOccupancyInset } from './imeOccupancy';
 import type { LynxChatRoute } from '../shell/navigation';
 import {
+  buildLynxChatContextChrome,
+  fetchLynxModelContextLimit,
+  getLynxLatestUserMessageModel,
+  type LynxContextDisplay,
+  type LynxContextMessageLike,
+} from './contextUsage';
+import {
+  createLynxEdgeSwipeSessionSwitchMachine,
+  type LynxEdgeSwipeMachine,
+} from './edgeSwipeSessionSwitch';
+import {
+  armLynxMarkdownPinReveal,
+  createLynxMarkdownPinRevealState,
+  markLynxMarkdownPinReady,
+  type LynxMarkdownPinRevealState,
+} from './markdownPinReveal';
+import type { LynxHapticsAdapter } from '../host/haptics';
+import type { LynxMediaAdapter } from '../host/media';
+import { pickLynxComposerAttachments } from '../host/media';
+import { applyLynxEdgeSwipeHaptic } from '../host/haptics';
+import {
   applyInitialFailure,
   applyInitialPage,
   applyOlderPage,
@@ -63,6 +84,24 @@ export type LynxChatScreenProps = {
    * Back pops to this session (ShellApp uses resolveLynxSecondaryBackDecision).
    */
   predecessor?: LynxChatRoute | null;
+  /** Host-injected haptics (OpenChamberHaptics). Absent → no fake success. */
+  haptics?: LynxHapticsAdapter | null;
+  /** Host-injected media pick / HEIC (OpenChamberMedia). Absent → unavailable. */
+  media?: LynxMediaAdapter | null;
+  /**
+   * Newest-first top-level session ids for composer edge-swipe switch.
+   * Host/shell supplies; empty disables switch targets.
+   */
+  orderedSessionIds?: readonly string[];
+  /** Called when edge-swipe commits a session switch. */
+  onSessionSwipe?: (direction: 'prev' | 'next', targetId: string) => void;
+  /**
+   * Host/shell fills this ref with the edge-swipe dispatch so native pan can
+   * feed events. Composer-surface ownership still enforced inside the machine.
+   */
+  edgeSwipeDispatchRef?: MutableRefObject<
+    ((event: Parameters<LynxEdgeSwipeMachine['dispatch']>[0]) => void) | null
+  >;
 };
 
 const DEFAULT_MODEL: LynxComposerModel = {
@@ -87,6 +126,11 @@ export function LynxChatScreen({
   initialSheet = null,
   onSheetClosed,
   predecessor = null,
+  haptics = null,
+  media = null,
+  orderedSessionIds = [],
+  onSessionSwipe,
+  edgeSwipeDispatchRef,
 }: LynxChatScreenProps) {
   const [timeline, setTimeline] = useState<LynxTimelineState>(() =>
     createEmptyTimelineState(sessionId, directory),
@@ -101,8 +145,21 @@ export function LynxChatScreen({
   const [cardBusy, setCardBusy] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
   const [liveConnection, setLiveConnection] = useState<LynxLiveTailConnectionState>('idle');
+  const [contextDisplay, setContextDisplay] = useState<LynxContextDisplay>(null);
+  const [contextLimit, setContextLimit] = useState(0);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [pinReveal, setPinReveal] = useState<LynxMarkdownPinRevealState>(() =>
+    createLynxMarkdownPinRevealState(sessionId),
+  );
   const timelineRef = useRef(timeline);
   timelineRef.current = timeline;
+  const edgeSwipeRef = useRef<LynxEdgeSwipeMachine | null>(null);
+  const orderedSessionIdsRef = useRef(orderedSessionIds);
+  orderedSessionIdsRef.current = orderedSessionIds;
+  const onSessionSwipeRef = useRef(onSessionSwipe);
+  onSessionSwipeRef.current = onSessionSwipe;
+  const hapticsRef = useRef(haptics);
+  hapticsRef.current = haptics;
 
   const sessionApi = useMemo(
     () => (runtimeFetch ? { runtimeFetch } : null),
@@ -124,6 +181,144 @@ export function LynxChatScreen({
   composerRef.current = composer;
 
   const occupancyInset = resolveLynxComposerOccupancyInset();
+
+  const messagesForContext = useMemo((): LynxContextMessageLike[] => (
+    timeline.entries.map((entry) => ({
+      id: entry.messageId,
+      role: entry.role,
+      tokens: entry.tokens,
+      model: entry.model,
+    }))
+  ), [timeline.entries]);
+
+  const refreshContextUsage = useCallback(() => {
+    const display = buildLynxChatContextChrome({
+      messages: messagesForContext,
+      contextLimit,
+      isDraft: false,
+      getParts: (messageId) => {
+        const entry = timelineRef.current.entries.find((row) => row.messageId === messageId);
+        return entry?.parts;
+      },
+    });
+    setContextDisplay(display);
+  }, [messagesForContext, contextLimit]);
+
+  useEffect(() => {
+    refreshContextUsage();
+  }, [refreshContextUsage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const modelRef = getLynxLatestUserMessageModel(messagesForContext);
+    void (async () => {
+      const result = await fetchLynxModelContextLimit(runtimeFetch, {
+        directory,
+        modelRef,
+        fallbackModel: { providerID: model.providerID, modelID: model.modelID },
+      });
+      if (cancelled) return;
+      if (result.status === 'ok' && result.limit) {
+        setContextLimit(result.limit.contextLimit);
+      } else {
+        setContextLimit(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [runtimeFetch, directory, messagesForContext, model.providerID, model.modelID]);
+
+  // Cap markdown pin-reveal: arm on session open; Lynx rows stamp ready immediately
+  // in this slice (no deferred markdown worker), then reveal after a microtask /
+  // timeout so the contract stays testable for host binding.
+  useEffect(() => {
+    const entryKeys = timeline.entries.map((entry) => entry.key);
+    setPinReveal((prev) => armLynxMarkdownPinReveal(prev, {
+      reason: 'session-open',
+      entryKeys,
+      scopeKey: sessionId,
+    }));
+    const generationAtArm = Date.now();
+    const readyTimer = setTimeout(() => {
+      setPinReveal((prev) => {
+        if (prev.scopeKey !== sessionId) return prev;
+        return markLynxMarkdownPinReady(prev);
+      });
+    }, timeline.hydrated ? 0 : 600);
+    void generationAtArm;
+    return () => {
+      clearTimeout(readyTimer);
+    };
+    // Re-arm only when session / hydration boundary changes — not on live-tail growth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Cap: live-tail must not re-arm
+  }, [sessionId, timeline.hydrated]);
+
+  useEffect(() => {
+    edgeSwipeRef.current = createLynxEdgeSwipeSessionSwitchMachine({
+      resolveTargets: () => {
+        const ordered = orderedSessionIdsRef.current;
+        const index = ordered.findIndex((id) => id === sessionId);
+        return {
+          currentId: sessionId,
+          prevId: index > 0 ? ordered[index - 1]! : null,
+          nextId: index >= 0 && index < ordered.length - 1 ? ordered[index + 1]! : null,
+        };
+      },
+    });
+  }, [sessionId]);
+
+  const applyEdgeSwipeEffects = useCallback(async (
+    effects: ReturnType<LynxEdgeSwipeMachine['dispatch']>,
+  ) => {
+    for (const effect of effects) {
+      if (effect.type === 'haptic' && hapticsRef.current) {
+        await applyLynxEdgeSwipeHaptic(hapticsRef.current, effect.strength);
+      }
+      if (effect.type === 'switch') {
+        onSessionSwipeRef.current?.(effect.direction, effect.targetId);
+      }
+    }
+  }, []);
+
+  /** Host may bind pan and call this with composer-surface ownership flags. */
+  const onComposerEdgeSwipeEvent = useCallback((
+    event: Parameters<LynxEdgeSwipeMachine['dispatch']>[0],
+  ) => {
+    const machine = edgeSwipeRef.current;
+    if (!machine) return;
+    const effects = machine.dispatch(event);
+    void applyEdgeSwipeEffects(effects);
+  }, [applyEdgeSwipeEffects]);
+
+  useEffect(() => {
+    if (!edgeSwipeDispatchRef) return;
+    edgeSwipeDispatchRef.current = onComposerEdgeSwipeEvent;
+    return () => {
+      edgeSwipeDispatchRef.current = null;
+    };
+  }, [edgeSwipeDispatchRef, onComposerEdgeSwipeEvent]);
+
+  const onAttach = useCallback(async () => {
+    setAttachError(null);
+    if (!media) {
+      setAttachError('no-host: media pick unavailable');
+      return;
+    }
+    const result = await pickLynxComposerAttachments(media);
+    if (result.status === 'unavailable') {
+      setAttachError(`unavailable: ${result.reason}`);
+      return;
+    }
+    if (result.status === 'failed') {
+      setAttachError(result.error);
+      return;
+    }
+    if (result.status === 'cancelled') return;
+    // Files accepted — host still owns upload/attach into prompt parts.
+    setAttachError(null);
+    void result.files;
+  }, [media]);
 
   const reloadTranscript = useCallback(() => {
     if (!runtimeFetch) {
@@ -399,6 +594,23 @@ export function LynxChatScreen({
         >
           {title ?? lynxT(locale, 'lynx.shell.chat.title')}
         </LynxText>
+        {contextDisplay ? (
+          <LynxText
+            accessibility-label={lynxT(locale, 'lynx.chat.context.aria')}
+            style={{
+              marginRight: '10px',
+              color: contextDisplay.status === 'error'
+                ? 'var(--status-error)'
+                : contextDisplay.status === 'warning'
+                  ? 'var(--status-warning)'
+                  : 'var(--status-success)',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}
+          >
+            {Math.round(contextDisplay.percentage)}% · {contextDisplay.tokens}
+          </LynxText>
+        ) : null}
         <LynxView
           bindtap={() => setMenuOpen((open) => !open)}
           accessibility-role="button"
@@ -461,6 +673,7 @@ export function LynxChatScreen({
         locale={locale}
         state={timeline}
         onLoadOlder={onLoadOlder}
+        pinRevealPhase={pinReveal.phase}
         footer={(
           <LynxView style={{ padding: '12px 16px', paddingBottom: `${12 + occupancyInset}px` }}>
             {questions.map((question) => (
@@ -488,12 +701,15 @@ export function LynxChatScreen({
               </LynxText>
             ) : null}
             <LynxView
+              // Cap: composer-only session swipe surface. Host binds pan → onComposerEdgeSwipeEvent.
+              data-session-swipe-surface="true"
               style={{
                 padding: '10px 12px',
                 borderRadius: '12px',
                 backgroundColor: cssVar('surface.elevated'),
                 marginBottom: '8px',
               }}
+              accessibility-label={lynxT(locale, 'lynx.chat.edgeSwipe.surface')}
             >
               <LynxInput
                 value={draft}
@@ -504,6 +720,11 @@ export function LynxChatScreen({
               />
             </LynxView>
             <LynxView style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+              <LynxView bindtap={() => { void onAttach(); }} style={{ padding: '8px 12px' }}>
+                <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+                  {lynxT(locale, 'lynx.chat.composer.attach')}
+                </LynxText>
+              </LynxView>
               {timeline.sessionIsWorking ? (
                 <LynxView bindtap={() => { void onStop(); }} style={{ padding: '8px 12px' }}>
                   <LynxText style={{ color: cssVar('primary.base') }}>
@@ -527,6 +748,11 @@ export function LynxChatScreen({
             {actionError ? (
               <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '6px' }}>
                 {actionError}
+              </LynxText>
+            ) : null}
+            {attachError ? (
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '6px' }}>
+                {attachError}
               </LynxText>
             ) : null}
           </LynxView>

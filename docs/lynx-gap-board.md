@@ -185,6 +185,23 @@ Slice on `cursor/lynx-sse-live-local` (PR into `work/lynx-native`). Package Vite
 **真机过:** not executed.
 
 ---
+
+## 代码接上 (context usage + edge swipe + host media/haptics + pin reveal — not landed under 三关)
+
+Slice on `cursor/lynx-context-edge-media-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Context usage chrome | `mobileContextUsage.ts`, `/api/config/providers` | Port baseline scan + display; resolve context limit from real Cap providers catalog; chip in chat header. Failure / missing limit → hide (never invent). |
+| Edge swipe session switch | `useEdgeSwipeSessionSwitch.ts` | Composer-only ownership + geometry + state machine (`edgeSwipeSessionSwitch.ts`). Host binds pan via `edgeSwipeDispatchRef`. Docs: `LYNX_EDGE_SWIPE_HOST_CONTRACT`. |
+| Haptics adapter | `OpenChamberHaptics`, `streamingHaptics.ts` | Host-inject `createLynxHapticsAdapter`; no host → `unavailable` (not fake-success). Wired from edge-swipe effects. |
+| HEIC / media pick | `OpenChamberMedia`, `native-media-pick.ts`, `native-image-transcode.ts` | Host-inject pick + transcode; composer Attach call site; no host → unavailable / not-heic skipped honestly. |
+| Load-older / markdown pin reveal polish | Cap load-older + `markdownPinReveal.ts` | `canAcceptLynxLoadOlderTap` rejects settle/busy; pin-reveal arm/ready/timeout state + TimelineList visibility attr. |
+
+**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -226,14 +243,14 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Send / Stop / queue / abort~~ | ChatInput + queue | **代码接上** hooks + official routes; composer text input host binding still thin |
 | ~~Questions / permissions~~ | chat cards | **代码接上** pending `/question`+`/permission` cards + reply |
 | ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
-| ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid tests |
+| ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid + prepend-settle gate + pin-reveal polish |
 | ~~Nested child session stack + predecessor~~ | `mobileNavigation.ts` | **代码接上** reconcile + predecessor chrome; host underlay pixel polish still thin |
 | ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML iframe / PierreDiff polish still thin. |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
-| Context usage | `mobileContextUsage.ts` | |
-| Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | |
+| ~~Context usage~~ | `mobileContextUsage.ts` | **代码接上** header chip + Cap `/api/config/providers` limit |
+| Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | Attach + host media inject 代码接上; `/` `@` / agent·model chrome still thin |
 | Native-quality IME (not WebView FLIP) | pitfalls §3 | **Contract 代码接上** (`imeOccupancy.ts`); host keyboard binding / 真机 still missing |
-| Session swipe (composer only) | `useEdgeSwipeSessionSwitch.ts` | |
+| ~~Session swipe (composer only)~~ | `useEdgeSwipeSessionSwitch.ts` | **代码接上** state machine + composer surface; **host pan bind** still required |
 
 ### Assistant / Scheduled / Settings
 
@@ -254,9 +271,9 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Share extension / Android share receiver | `packages/mobile` share | Host/native still owns extensions; Lynx inbox accepts payloads |
 | Live Activity | iOS 17+ plugin |
 | Widgets / Control Center | `OpenChamberWidget` |
-| Haptics | `OpenChamberHaptics` |
+| ~~Haptics~~ | `OpenChamberHaptics` | **代码接上** host-inject adapter; native impact still host-owned |
 | Virtual image assets | `openchamber-asset://` |
-| HEIC transcode | `OpenChamberMedia.transcode` |
+| ~~HEIC / media pick~~ | `OpenChamberMedia.transcode` / `pickMedia` | **代码接上** host-inject + Attach call site; no fake success without host |
 | About + diagnostics export | `AboutSettings` |
 | Predictive / edge back | `OpenChamberNavigation` |
 
@@ -308,6 +325,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 13. ~~**diff/preview + commit/sync + provider auth + push/share hooks**~~ — 代码接上 in `cursor/lynx-diff-push-share-local`. Remaining: host Keychain/QR/browser OAuth open, 真机.
 14. ~~**rich turn cards + swipe menu + share welcome + draft + list harness**~~ — 代码接上 in `cursor/lynx-cards-swipe-harness-local`.
 15. ~~**SSE live tail + IME occupancy contract + nested chat predecessor**~~ — 代码接上 in `cursor/lynx-sse-live-local`. Remaining: host IME binding / Keychain/QR, relay streaming body, 真机.
+16. ~~**context usage + edge swipe + haptics/HEIC/media + pin reveal**~~ — 代码接上 in `cursor/lynx-context-edge-media-local`. Remaining: host pan/haptics/media binders, Keychain/QR/OAuth browser, Live Activity/Widgets, 真机.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 
@@ -384,6 +402,27 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 | `about` | 代码接上 (wired) | Lynx client version **separate** from `/api/system/info` instance version |
 
 ---
+
+
+## Lynx JS feature surface — EXHAUSTED pending host (honest)
+
+As of `cursor/lynx-context-edge-media-local`, **Linux-doable Cap product rows that are in-scope for Lynx JS** are 代码接上 against real APIs or honest host-inject contracts. Remaining work is **host-only / 真机 / out-of-scope**:
+
+| Remaining | Why host / out of scope |
+|---|---|
+| Native Keychain / Keystore wiring | Injected secure-store adapter exists; OS keychain still host |
+| QR camera scan | Pairing parse/redeem 代码接上; camera plugin host-owned |
+| OAuth system browser open | Cap routes 代码接上; opening ASWebAuthenticationSession / Custom Tabs is host |
+| IME keyboard binding + occupancy 真机 | Contract 代码接上; LynxView IME must be host-bound |
+| Edge-swipe / back / Predictive Back pan arena | State machines 代码接上; native gesture ownership is host |
+| Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |
+| Share extension / Android share receiver | Inbox accepts payloads; extensions are native |
+| Live Activity / Widgets / Control Center | iOS-only host — 故意不在本切片 |
+| Linked Lynx SDK Xcode/Gradle + APK/IPA CI | Linux CI template only |
+| Bonjour / Nearby, invented ASR, TanStack 1.18, Capgo OTA | 故意不移植 |
+| Workflows / 真机过 | Out of scope for Linux cloud agent |
+
+Do **not** mark product rows **landed** under 三关 until CI绿 (track workflow) + 真机过.
 
 ## How to move a row
 

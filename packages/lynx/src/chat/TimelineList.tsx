@@ -9,10 +9,16 @@ import {
   resolveLynxTimelineListFlags,
 } from './listSemantics';
 import {
+  canAcceptLynxLoadOlderTap,
   resolveLynxLoadOlderBusy,
   resolveLynxLoadOlderVisibility,
   shouldIgnoreScrollLoadOlder,
 } from './loadOlder';
+import {
+  lynxMarkdownPinRevealVisibility,
+  mergeLynxMarkdownPinRevealStyle,
+  type LynxMarkdownPinRevealPhase,
+} from './markdownPinReveal';
 import type { LynxTimelineEntry, LynxTimelineState } from './timelineModel';
 import { LynxTurnCard } from './TurnCards';
 
@@ -23,6 +29,11 @@ export type LynxTimelineListProps = {
   renderEntry?: (entry: LynxTimelineEntry) => ReactNode;
   header?: ReactNode;
   footer?: ReactNode;
+  /**
+   * Cap markdown pin-reveal phase. `pending` hides the list (layout still runs)
+   * until seed rows report ready / timeout. Live-tail must stay `ready`.
+   */
+  pinRevealPhase?: LynxMarkdownPinRevealPhase;
 };
 
 function DefaultEntry({ locale, entry }: { locale: string; entry: LynxTimelineEntry }) {
@@ -50,6 +61,7 @@ export function LynxTimelineList({
   renderEntry,
   header,
   footer,
+  pinRevealPhase = 'ready',
 }: LynxTimelineListProps) {
   const flags = resolveLynxTimelineListFlags({
     followEnabled: state.followEnabled,
@@ -65,21 +77,34 @@ export function LynxTimelineList({
     isLoadingOlder: state.isLoadingOlder,
   });
   const loadOlderBusy = resolveLynxLoadOlderBusy({ isLoadingOlder: state.isLoadingOlder });
+  const acceptLoadOlder = canAcceptLynxLoadOlderTap({
+    canLoadEarlier: state.canLoadEarlier,
+    isLoadingOlder: state.isLoadingOlder,
+    prependSettling: state.prependSettling,
+  });
 
   const handleLoadOlderTap = () => {
     // Contract: only the button path may load older history.
     if (shouldIgnoreScrollLoadOlder(LYNX_LOAD_OLDER_TRIGGER)) return;
-    if (loadOlderBusy) return;
+    if (!acceptLoadOlder) return;
     onLoadOlder();
   };
 
+  const listStyle = mergeLynxMarkdownPinRevealStyle(
+    { flexGrow: 1 },
+    pinRevealPhase,
+  );
+  const pinVisibility = lynxMarkdownPinRevealVisibility(pinRevealPhase);
+
   return (
     <LynxList
-      style={{ flexGrow: 1 }}
+      style={listStyle}
       scroll-orientation="vertical"
       recycle-items={flags.recycleItems && LYNX_RECYCLE_ITEMS}
       accessibility-label={lynxT(locale, 'lynx.chat.timeline.aria')}
       id={`lynx-timeline-${state.sessionId}`}
+      data-markdown-pin-reveal={pinRevealPhase === 'pending' ? 'pending' : 'ready'}
+      data-pin-visibility={pinVisibility}
     >
       <LynxView style={{ padding: '8px 16px' }} id="lynx-timeline-header">
         {header}
@@ -91,7 +116,7 @@ export function LynxTimelineList({
             style={{
               padding: '10px 12px',
               alignItems: 'center',
-              opacity: loadOlderBusy ? 0.6 : 1,
+              opacity: acceptLoadOlder ? 1 : 0.6,
             }}
           >
             <LynxText style={{ color: cssVar('primary.base'), fontSize: '14px' }}>
@@ -117,7 +142,12 @@ export function LynxTimelineList({
       ) : null}
 
       {state.entries.map((entry) => (
-        <LynxView key={entry.key} id={`lynx-timeline-row-${entry.key}`}>
+        <LynxView
+          key={entry.key}
+          id={`lynx-timeline-row-${entry.key}`}
+          data-turn-entry={entry.key}
+          data-markdown-ready="true"
+        >
           {renderEntry ? renderEntry(entry) : <DefaultEntry locale={locale} entry={entry} />}
         </LynxView>
       ))}

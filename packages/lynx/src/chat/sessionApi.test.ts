@@ -63,6 +63,32 @@ describe('Lynx session API', () => {
     }
   });
 
+  test('parses Cap message tokens and model onto timeline entries', () => {
+    const page = parseMessagesPayload({
+      messages: [
+        {
+          info: {
+            id: 'u1',
+            role: 'user',
+            model: { providerID: 'anthropic', modelID: 'claude' },
+          },
+          parts: [{ type: 'text', text: 'hi' }],
+        },
+        {
+          info: {
+            id: 'a1',
+            role: 'assistant',
+            tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
+          },
+          parts: [{ type: 'text', text: 'yo' }],
+        },
+      ],
+    });
+    expect(page?.entries[0]?.model).toEqual({ providerID: 'anthropic', modelID: 'claude' });
+    expect(page?.entries[1]?.tokens?.input).toBe(10);
+    expect(page?.entries[1]?.tokens?.output).toBe(5);
+  });
+
   test('no-runtime-shaped fetch failure is not empty success', async () => {
     const runtimeFetch = async () => ({
       ok: false,

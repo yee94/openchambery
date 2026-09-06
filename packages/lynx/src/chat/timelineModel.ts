@@ -7,6 +7,13 @@ import type { LynxMessagePart } from './messageParts';
 
 export type LynxTimelineRole = 'user' | 'assistant' | 'system' | 'unknown';
 
+export type LynxTimelineEntryTokens = {
+  input?: number;
+  output?: number;
+  reasoning?: number;
+  cache?: { read?: number; write?: number };
+};
+
 export type LynxTimelineEntry = {
   key: string;
   messageId: string;
@@ -15,6 +22,10 @@ export type LynxTimelineEntry = {
   createdAt?: number;
   /** Cap/OpenCode parts for rich turn cards. Absent → text-only fallback. */
   parts?: LynxMessagePart[];
+  /** Cap message.info.tokens — used by context-usage chrome. */
+  tokens?: LynxTimelineEntryTokens;
+  /** Cap message.info.model — used to resolve context limit. */
+  model?: { providerID: string; modelID: string };
 };
 
 export type LynxTimelinePage = {

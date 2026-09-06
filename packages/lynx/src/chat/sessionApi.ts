@@ -61,15 +61,69 @@ const roleOf = (value: unknown): LynxTimelineRole => {
   return 'unknown';
 };
 
+const readFiniteNumber = (value: unknown): number | undefined => (
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined
+);
+
+const tokensFromInfo = (info: Record<string, unknown> | null): LynxTimelineEntry['tokens'] => {
+  if (!info) return undefined;
+  const tokens = info.tokens;
+  if (!tokens || typeof tokens !== 'object') return undefined;
+  const record = tokens as Record<string, unknown>;
+  const cache = record.cache && typeof record.cache === 'object'
+    ? record.cache as Record<string, unknown>
+    : null;
+  const parsed = {
+    input: readFiniteNumber(record.input),
+    output: readFiniteNumber(record.output),
+    reasoning: readFiniteNumber(record.reasoning),
+    cache: cache
+      ? { read: readFiniteNumber(cache.read), write: readFiniteNumber(cache.write) }
+      : undefined,
+  };
+  if (
+    parsed.input === undefined
+    && parsed.output === undefined
+    && parsed.reasoning === undefined
+    && !parsed.cache
+  ) {
+    return undefined;
+  }
+  return parsed;
+};
+
+const modelFromInfo = (info: Record<string, unknown> | null): LynxTimelineEntry['model'] => {
+  if (!info) return undefined;
+  const model = info.model;
+  if (!model || typeof model !== 'object') return undefined;
+  const record = model as Record<string, unknown>;
+  const providerID = typeof record.providerID === 'string' && record.providerID.trim()
+    ? record.providerID.trim()
+    : typeof record.providerId === 'string' && record.providerId.trim()
+      ? record.providerId.trim()
+      : '';
+  const modelID = typeof record.modelID === 'string' && record.modelID.trim()
+    ? record.modelID.trim()
+    : typeof record.modelId === 'string' && record.modelId.trim()
+      ? record.modelId.trim()
+      : '';
+  if (!providerID || !modelID) return undefined;
+  return { providerID, modelID };
+};
+
 const entryFromMessage = (raw: unknown, index: number): LynxTimelineEntry | null => {
   if (!raw || typeof raw !== 'object') return null;
   const record = raw as {
-    info?: { id?: unknown; role?: unknown; time?: { created?: unknown } };
+    info?: { id?: unknown; role?: unknown; time?: { created?: unknown }; tokens?: unknown; model?: unknown };
     id?: unknown;
     role?: unknown;
     parts?: unknown;
+    tokens?: unknown;
+    model?: unknown;
   };
-  const info = record.info && typeof record.info === 'object' ? record.info : null;
+  const info = record.info && typeof record.info === 'object'
+    ? record.info as Record<string, unknown>
+    : null;
   const messageId =
     (info && typeof info.id === 'string' && info.id)
     || (typeof record.id === 'string' && record.id)
@@ -81,6 +135,10 @@ const entryFromMessage = (raw: unknown, index: number): LynxTimelineEntry | null
     : undefined;
   const createdAt = typeof createdRaw === 'number' ? createdRaw : undefined;
   const parts = parseLynxMessageParts(record.parts);
+  const tokens = tokensFromInfo(info)
+    ?? tokensFromInfo(record as unknown as Record<string, unknown>);
+  const model = modelFromInfo(info)
+    ?? modelFromInfo(record as unknown as Record<string, unknown>);
   return {
     key: messageId,
     messageId,
@@ -88,6 +146,8 @@ const entryFromMessage = (raw: unknown, index: number): LynxTimelineEntry | null
     text: textFromLynxParts(parts),
     createdAt: createdAt ?? index,
     parts,
+    ...(tokens ? { tokens } : {}),
+    ...(model ? { model } : {}),
   };
 };
 

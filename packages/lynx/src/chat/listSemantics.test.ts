@@ -10,6 +10,7 @@ import {
 } from './listSemantics';
 import {
   LYNX_FORBID_BOUNCE_INFINITE_LOAD,
+  canAcceptLynxLoadOlderTap,
   resolveLynxLoadOlderBusy,
   resolveLynxLoadOlderVisibility,
   shouldIgnoreScrollLoadOlder,
@@ -54,7 +55,8 @@ describe('LegendList 1.19 list semantics', () => {
 
   test('mobile load-older is button-only (no bounce infinite)', () => {
     expect(LYNX_FORBID_BOUNCE_INFINITE_LOAD).toBe(true);
-    expect(shouldIgnoreScrollLoadOlder('bounce')).toBe(true);
+    expect(shouldIgnoreScrollLoadOlder('bounce')).toBe(true)
+    expect(canAcceptLynxLoadOlderTap({ canLoadEarlier: true, isLoadingOlder: false, prependSettling: true })).toBe(false);
     expect(shouldIgnoreScrollLoadOlder('scroll-top')).toBe(true);
     expect(shouldIgnoreScrollLoadOlder('button')).toBe(false);
     expect(resolveLynxLoadOlderVisibility({ canLoadEarlier: false, isLoadingOlder: false })).toBe(false);

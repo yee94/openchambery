@@ -238,6 +238,9 @@ export type LynxMessageKey =
   | 'lynx.draft.busy'
   | 'lynx.shell.chat.predecessor'
   | 'lynx.chat.live.label'
+  | 'lynx.chat.context.aria'
+  | 'lynx.chat.composer.attach'
+  | 'lynx.chat.edgeSwipe.surface'
 
 type LynxDictionary = Record<LynxMessageKey, string>;
 
@@ -460,6 +463,9 @@ const en: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': 'Parent session',
   'lynx.chat.live.label': 'Live',
+  'lynx.chat.context.aria': 'Context usage',
+  'lynx.chat.composer.attach': 'Attach',
+  'lynx.chat.edgeSwipe.surface': 'Session swipe surface',
 
 };
 
@@ -682,6 +688,9 @@ const es: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': 'Sesión padre',
   'lynx.chat.live.label': 'En vivo',
+  'lynx.chat.context.aria': 'Uso del contexto',
+  'lynx.chat.composer.attach': 'Adjuntar',
+  'lynx.chat.edgeSwipe.surface': 'Superficie de cambio de sesión',
 
 };
 
@@ -904,6 +913,9 @@ const fr: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': 'Session parente',
   'lynx.chat.live.label': 'Direct',
+  'lynx.chat.context.aria': 'Utilisation du contexte',
+  'lynx.chat.composer.attach': 'Joindre',
+  'lynx.chat.edgeSwipe.surface': 'Surface de changement de session',
 
 };
 
@@ -1126,6 +1138,9 @@ const ja: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': '親セッション',
   'lynx.chat.live.label': 'ライブ',
+  'lynx.chat.context.aria': 'コンテキスト使用量',
+  'lynx.chat.composer.attach': '添付',
+  'lynx.chat.edgeSwipe.surface': 'セッション切り替え面',
 
 };
 
@@ -1348,6 +1363,9 @@ const ko: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': '상위 세션',
   'lynx.chat.live.label': '라이브',
+  'lynx.chat.context.aria': '컨텍스트 사용량',
+  'lynx.chat.composer.attach': '첨부',
+  'lynx.chat.edgeSwipe.surface': '세션 전환 표면',
 
 };
 
@@ -1570,6 +1588,9 @@ const pl: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': 'Sesja nadrzędna',
   'lynx.chat.live.label': 'Na żywo',
+  'lynx.chat.context.aria': 'Użycie kontekstu',
+  'lynx.chat.composer.attach': 'Dołącz',
+  'lynx.chat.edgeSwipe.surface': 'Powierzchnia zmiany sesji',
 
 };
 
@@ -1792,6 +1813,9 @@ const ptBR: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': 'Sessão pai',
   'lynx.chat.live.label': 'Ao vivo',
+  'lynx.chat.context.aria': 'Uso do contexto',
+  'lynx.chat.composer.attach': 'Anexar',
+  'lynx.chat.edgeSwipe.surface': 'Superfície de troca de sessão',
 
 };
 
@@ -2014,6 +2038,9 @@ const uk: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': 'Батьківська сесія',
   'lynx.chat.live.label': 'Наживо',
+  'lynx.chat.context.aria': 'Використання контексту',
+  'lynx.chat.composer.attach': 'Додати',
+  'lynx.chat.edgeSwipe.surface': 'Поверхня зміни сесії',
 
 };
 
@@ -2236,6 +2263,9 @@ const zhCN: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': '父会话',
   'lynx.chat.live.label': '实时',
+  'lynx.chat.context.aria': '上下文用量',
+  'lynx.chat.composer.attach': '附件',
+  'lynx.chat.edgeSwipe.surface': '会话滑动切换区',
 
 };
 
@@ -2458,6 +2488,9 @@ const zhTW: LynxDictionary = {
   'lynx.draft.busy': 'Creating…',
   'lynx.shell.chat.predecessor': '父工作階段',
   'lynx.chat.live.label': '即時',
+  'lynx.chat.context.aria': '上下文用量',
+  'lynx.chat.composer.attach': '附件',
+  'lynx.chat.edgeSwipe.surface': '工作階段滑動切換區',
 
 };
 

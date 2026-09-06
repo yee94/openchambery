@@ -100,3 +100,33 @@ export {
   LYNX_IME_OCCUPANCY_CONTRACT,
   resolveLynxComposerOccupancyInset,
 } from './imeOccupancy';
+
+export {
+  buildLynxContextDisplay,
+  buildLynxChatContextChrome,
+  fetchLynxModelContextLimit,
+  formatLynxContextTokens,
+  getLynxLatestAssistantTotalTokens,
+  getLynxLatestUserMessageModel,
+  getLynxNumericLimit,
+  resolveLynxContextLimitFromProvidersPayload,
+  type LynxContextDisplay,
+} from './contextUsage';
+export {
+  createLynxEdgeSwipeSessionSwitchMachine,
+  evaluateLynxSwipeDirection,
+  shouldStartLynxSessionSwipe,
+  resolveLynxSessionSwipeTargets,
+  LYNX_EDGE_SWIPE_HOST_CONTRACT,
+  LYNX_SESSION_SWIPE_SURFACE_ATTR,
+} from './edgeSwipeSessionSwitch';
+export {
+  armLynxMarkdownPinReveal,
+  createLynxMarkdownPinRevealState,
+  markLynxMarkdownPinReady,
+  resolveLynxMarkdownPinRevealKeys,
+  LYNX_MARKDOWN_PIN_REVEAL_TIMEOUT_MS,
+} from './markdownPinReveal';
+export {
+  canAcceptLynxLoadOlderTap,
+} from './loadOlder';

@@ -243,3 +243,37 @@ export {
   LYNX_IME_OCCUPANCY_CONTRACT,
   resolveLynxComposerOccupancyInset,
 } from './chat';
+
+export {
+  createLynxHapticsAdapter,
+  resolveLynxHapticMethod,
+  LYNX_HAPTICS_CONTRACT,
+  applyLynxEdgeSwipeHaptic,
+} from './host/haptics';
+export {
+  createLynxMediaAdapter,
+  pickLynxComposerAttachments,
+  isLynxHeicMime,
+  LYNX_MEDIA_CONTRACT,
+  LYNX_NATIVE_MEDIA_PICK_LIMIT,
+} from './host/media';
+export {
+  buildLynxContextDisplay,
+  buildLynxChatContextChrome,
+  fetchLynxModelContextLimit,
+  getLynxLatestAssistantTotalTokens,
+  getLynxLatestUserMessageModel,
+} from './chat/contextUsage';
+export {
+  createLynxEdgeSwipeSessionSwitchMachine,
+  shouldStartLynxSessionSwipe,
+  evaluateLynxSwipeDirection,
+  LYNX_EDGE_SWIPE_HOST_CONTRACT,
+} from './chat/edgeSwipeSessionSwitch';
+export {
+  armLynxMarkdownPinReveal,
+  createLynxMarkdownPinRevealState,
+  markLynxMarkdownPinReady,
+  resolveLynxMarkdownPinRevealKeys,
+} from './chat/markdownPinReveal';
+export { canAcceptLynxLoadOlderTap } from './chat/loadOlder';
