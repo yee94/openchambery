@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.24] - 2026-09-07
+
+### 会话
+
+- 思考扫光底色改回 muted，高光用 foreground，暗色下动效更清楚。
+- 子代理后面那行忙碌文案与思考扫光同一套 token。
+
 ## [1.19.7-beta.23] - 2026-09-07
 
 ### 性能

@@ -1863,9 +1863,10 @@ input[aria-label="Terminal input"] {
 }
 
 /* Highlight sweep across live status / thinking labels (Delegating…, Thinking…).
-   Base must stay legible in light mode: plain muted-foreground (and tools-description
-   at ~0.6× muted) disappears on white while clipped to the gradient. Default leans
-   toward foreground like thinking traces; callers may still override the custom prop. */
+   Base stays muted so the sweep is visible; highlight is a plain foreground
+   token. Do not put color-mix in --oc-text-shimmer-base — some Android
+   WebViews drop it, then color:transparent + background-clip:text paints
+   nothing. Callers may still override the custom prop. */
 @keyframes oc-text-shimmer {
   0% {
     background-position: 100% 50%;
@@ -1876,21 +1877,12 @@ input[aria-label="Terminal input"] {
 }
 
 .animate-text-shimmer {
-  --oc-text-shimmer-base: color-mix(
-    in srgb,
-    var(--surface-muted-foreground) 32%,
-    var(--surface-foreground) 68%
-  );
+  --oc-text-shimmer-base: var(--surface-muted-foreground);
   background-image: linear-gradient(
     90deg,
     var(--oc-text-shimmer-base) 0%,
     var(--oc-text-shimmer-base) 38%,
-    color-mix(
-        in srgb,
-        var(--oc-text-shimmer-base) 22%,
-        var(--surface-foreground) 78%
-      )
-      50%,
+    var(--surface-foreground) 50%,
     var(--oc-text-shimmer-base) 62%,
     var(--oc-text-shimmer-base) 100%
   );
@@ -2044,14 +2036,7 @@ input[aria-label="Terminal input"] {
 
   .animate-text-shimmer {
     animation: none;
-    color: var(
-      --oc-text-shimmer-base,
-      color-mix(
-        in srgb,
-        var(--surface-muted-foreground) 32%,
-        var(--surface-foreground) 68%
-      )
-    ) !important;
+    color: var(--oc-text-shimmer-base, var(--surface-muted-foreground)) !important;
     background-image: none;
   }
 

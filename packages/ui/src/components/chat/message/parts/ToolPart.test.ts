@@ -148,11 +148,14 @@ describe('tool busy title chrome', () => {
         expect(toolPartSource).not.toContain('flex items-center gap-2 min-w-0 flex-1');
     });
 
-    test('busy task description shimmer uses tools-title like thinking traces', () => {
+    test('busy task description shimmer uses the shared thinking tokens', () => {
         expect(toolPartSource).toContain("taskBusy && 'animate-text-shimmer'");
-        expect(toolPartSource).toContain("color: taskBusy ? 'var(--tools-title)' : 'var(--tools-description)'");
-        expect(toolPartSource).toContain("['--oc-text-shimmer-base' as string]: 'var(--tools-title)'");
-        expect(toolPartSource).not.toContain("['--oc-text-shimmer-base' as string]: 'var(--tools-description)'");
+        const descriptionBlock = toolPartSource.slice(
+            toolPartSource.indexOf('{justificationText && ('),
+            toolPartSource.indexOf('{!justificationText && normalizedPartTool === \'lsp\''),
+        );
+        expect(descriptionBlock).toContain("['--oc-text-shimmer-base' as string]: 'var(--surface-muted-foreground)'");
+        expect(descriptionBlock).not.toContain("['--oc-text-shimmer-base' as string]: 'var(--tools-title)'");
     });
 
     test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {
