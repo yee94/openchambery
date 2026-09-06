@@ -124,7 +124,6 @@ const ensureRelayTunnel = (active: ActiveRuntime) => {
       relayUrl: active.transport.relay.relayUrl,
       serverId: active.transport.relay.serverId,
       hostEncPubJwk: active.transport.relay.hostEncPubJwk,
-      ...(active.transport.relay.grant ? { grant: active.transport.relay.grant } : {}),
     });
     active.transport.tunnel = tunnel;
   }

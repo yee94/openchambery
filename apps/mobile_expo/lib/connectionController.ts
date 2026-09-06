@@ -26,6 +26,7 @@ import {
   type MobileSavedConnection,
 } from '@/lib/connectionStore';
 import { parseConnectionPayload, type PairingConnectionPayload } from '@/lib/connectionPayload';
+import { writeSecureToken } from '@/lib/secureStore';
 import { t } from '@/lib/i18n';
 
 export type ConnectionPhase = 'booting' | 'connecting' | 'onboarding' | 'password' | 'connected';
@@ -254,6 +255,7 @@ export class ConnectionController {
     let chosen: Awaited<ReturnType<typeof establishLiveTransport>> = null;
     let adopted = false;
     try {
+      // Cap redeemPairingConnection ordering + errors only.
       const candidates = pairingCandidatesToMobile(payload.candidates);
       if (candidates.length === 0) {
         this.setState({ error: t('mobile.connect.link.invalid'), busy: false });
@@ -268,50 +270,37 @@ export class ConnectionController {
         pairingId: payload.pairingId,
         secret: payload.secret,
       });
+      // Cap: HTTP fail / empty clientToken / SecureStore write fail / catch → authRequired ONLY.
+      // Do NOT invent pairingFailed or auth-disabled tokenless adopt after failed redeem.
+      if (!redeemed.ok || !redeemed.clientToken) {
+        this.setState({ error: t('mobile.connect.error.authRequired'), busy: false });
+        return false;
+      }
+      const label =
+        payload.label ||
+        redeemed.serverLabel ||
+        getConnectionLabel(connectionDisplayUrl(candidates));
+      const runtimeKey = secureTokenKeyOf(candidates);
+      const stored = await writeSecureToken(runtimeKey, redeemed.clientToken);
+      if (!stored) {
+        this.setState({ error: t('mobile.connect.error.authRequired'), busy: false });
+        return false;
+      }
       const transport =
         chosen.kind === 'relay'
           ? { kind: 'relay' as const, relay: chosen.relay, tunnel: chosen.tunnel }
           : { kind: 'direct' as const, url: chosen.url };
-
-      if (redeemed.ok && redeemed.clientToken) {
-        const label =
-          payload.label ||
-          redeemed.serverLabel ||
-          getConnectionLabel(connectionDisplayUrl(candidates));
-        await this.adoptTransport({
-          label,
-          candidates,
-          token: redeemed.clientToken,
-          transport,
-        });
-        adopted = true;
-        return true;
-      }
-
-      // Redeem failed (expired QR, HTTP error, empty token). Do NOT claim
-      // "password required" when the host has auth disabled — connect tokenless.
-      const session = await fetchSessionOnTransport(chosen);
-      if (isAuthDisabledSession(session)) {
-        const label =
-          payload.label || getConnectionLabel(connectionDisplayUrl(candidates));
-        await this.adoptTransport({
-          label,
-          candidates,
-          token: null,
-          transport,
-        });
-        adopted = true;
-        return true;
-      }
-
-      const errorKey =
-        redeemed.ok === false && redeemed.reason === 'unreachable'
-          ? 'mobile.connect.error.unreachable'
-          : 'mobile.connect.error.pairingFailed';
-      this.setState({ error: t(errorKey), busy: false });
-      return false;
-    } catch {
-      this.setState({ error: t('mobile.connect.error.pairingFailed'), busy: false });
+      await this.adoptTransport({
+        label,
+        candidates,
+        token: redeemed.clientToken,
+        transport,
+      });
+      adopted = true;
+      return true;
+    } catch (error) {
+      console.warn('[mobile-connect] pairing threw', error);
+      this.setState({ error: t('mobile.connect.error.authRequired'), busy: false });
       return false;
     } finally {
       if (!adopted && chosen?.kind === 'relay') chosen.tunnel.close();

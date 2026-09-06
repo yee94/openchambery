@@ -60,7 +60,6 @@ export const openchamberFetch = async (
       relayUrl: transport.relay.relayUrl,
       serverId: transport.relay.serverId,
       hostEncPubJwk: transport.relay.hostEncPubJwk,
-      ...(transport.relay.grant ? { grant: transport.relay.grant } : {}),
     });
     transport.tunnel = tunnel;
   }

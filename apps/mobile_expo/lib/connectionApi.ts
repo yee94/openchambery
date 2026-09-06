@@ -25,8 +25,6 @@ export type SessionStatus = {
 export type PairingRedeemResponse = {
   ok?: boolean;
   clientToken?: unknown;
-  token?: unknown;
-  client?: { label?: unknown; token?: unknown } | null;
   server?: { label?: unknown; url?: unknown } | null;
 };
 
@@ -34,24 +32,25 @@ export type RedeemPairingResult =
   | { ok: true; clientToken: string; serverLabel?: string }
   | { ok: false; reason: 'http' | 'no-token' | 'unreachable' };
 
-/** Cap-parity: pull clientToken from redeem JSON even if nested oddly. */
+/** Cap-parity: only `result.clientToken` string (no nested token invent). */
 export const parsePairingRedeemToken = (body: unknown): string => {
   if (!body || typeof body !== 'object') return '';
-  const record = body as Record<string, unknown>;
-  const nested =
-    record.client && typeof record.client === 'object'
-      ? (record.client as Record<string, unknown>).token
-      : undefined;
-  for (const candidate of [record.clientToken, record.token, nested]) {
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-  }
-  return '';
+  const token = (body as PairingRedeemResponse).clientToken;
+  return typeof token === 'string' ? token.trim() : '';
 };
 
 export const parsePairingRedeemServerLabel = (body: unknown): string | undefined => {
   if (!body || typeof body !== 'object') return undefined;
   const server = (body as PairingRedeemResponse).server;
   return typeof server?.label === 'string' && server.label.trim() ? server.label.trim() : undefined;
+};
+
+const logConnect = (step: string, detail: Record<string, unknown> = {}): void => {
+  try {
+    console.info('[mobile-connect]', step, JSON.stringify(detail));
+  } catch {
+    console.info('[mobile-connect]', step);
+  }
 };
 
 export const isAuthDisabledSession = (status: SessionStatus | null | undefined): boolean =>
@@ -139,7 +138,6 @@ const defaultOpenRelay: OpenRelaySession = (relay) =>
     relayUrl: relay.relayUrl,
     serverId: relay.serverId,
     hostEncPubJwk: relay.hostEncPubJwk,
-    ...(relay.grant ? { grant: relay.grant } : {}),
   });
 
 let openRelaySession: OpenRelaySession = defaultOpenRelay;
@@ -250,17 +248,22 @@ export const establishLiveTransport = async (
         RELAY_CONNECT_TIMEOUT_MS,
         tunnel.fetch('/health').then((r) => r as FetchLikeResponse).catch(() => null),
       );
+      logConnect('establish:relay:health', { ok: health?.ok === true, status: health?.status ?? null });
       if (health?.ok) return { kind: 'relay', relay: candidate.relay, tunnel };
       tunnel.close();
       continue;
     }
     const url = normalizeConnectionUrl(candidate.url) || candidate.url;
     const health = await httpBackend.request(`${url}/health`, { method: 'GET' });
+    logConnect('establish:direct:health', { ok: health?.ok === true, status: health?.status ?? null });
     if (!health?.ok) continue;
     if (expectedServerId) {
       const payload = await health.json().catch(() => null);
       const reported = payload && typeof payload === 'object' ? (payload as Record<string, unknown>).serverId : null;
-      if (typeof reported === 'string' && reported && reported !== expectedServerId) continue;
+      if (typeof reported === 'string' && reported && reported !== expectedServerId) {
+        logConnect('establish:server-id-mismatch', { url });
+        continue;
+      }
     }
     return { kind: 'direct', url };
   }
@@ -276,7 +279,7 @@ export const postAuthSession = async (
     password,
     trustDevice: true,
     issueClientToken: true,
-    clientLabel: 'OpenChamber Expo',
+    clientLabel: 'OpenChamber Mobile',
     clientKind: 'mobile',
     devicePlatform: mobileDevicePlatform(),
     dedupeKey,
@@ -307,9 +310,9 @@ export const redeemPairing = async (
   const body = JSON.stringify({
     pairingId: input.pairingId,
     secret: input.secret,
-    clientLabel: 'OpenChamber Expo',
+    clientLabel: 'OpenChamber Mobile',
     clientKind: 'mobile',
-    deviceName: 'OpenChamber Expo',
+    deviceName: 'OpenChamber Mobile',
     // Cap parity — server stores this on the device row.
     devicePlatform: mobileDevicePlatform(),
     dedupeKey,
@@ -329,8 +332,13 @@ export const redeemPairing = async (
             .catch(() => null),
         )
       : await httpBackend.request(`${transport.url}/api/client-auth/pairing/redeem`, init);
-  if (!response) return { ok: false, reason: 'unreachable' };
-  if (!response.ok) return { ok: false, reason: 'http' };
+  logConnect('redeem:http', {
+    transport: transport.kind,
+    ok: response?.ok === true,
+    status: response?.status ?? null,
+  });
+  // Cap: !response?.ok → authRequired path (controller maps any redeem fail there).
+  if (!response?.ok) return { ok: false, reason: response ? 'http' : 'unreachable' };
   const json = await response.json().catch(() => null);
   const issued = parsePairingRedeemToken(json);
   if (!issued) return { ok: false, reason: 'no-token' };

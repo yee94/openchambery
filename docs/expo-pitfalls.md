@@ -49,11 +49,20 @@ Yee’s walk is often **relay-only** (no home LAN). A 1.5s stall here is a produ
 
 ### Persist the full candidate set
 
-Pairing v2 (`connectionPayload.ts`) carries `lan` + `relayUrl` + `hostEncPubJwk` + optional grant + `serverId`. Reload must not drop relay. Home ↔ away is a **reprobe**, not a re-pair. Never log the pairing secret, grant, or client token.
+Pairing v2 (`connectionPayload.ts`) carries `lan` + `relayUrl` + `hostEncPubJwk` + `serverId` (pairing payload may include one-time `grant`, but Cap drops it when building `MobileRelayConfig` — never persist grant). Reload must not drop relay. Home ↔ away is a **reprobe**, not a re-pair. Never log the pairing secret, grant, or client token.
 
-### Auth-disabled must not look like “password required”
+### Auth-disabled must not look like "password required" (URL / saved reconnect)
 
-OpenChamber with **no UI password** returns `GET /auth/session` → `{ authenticated: true, disabled: true }`. Cap and Expo probes must adopt that host **without** a client token (URL connect and saved reconnect). Pairing redeem failures (expired QR, HTTP error, empty token) historically reused `mobile.connect.error.authRequired` — the same string as a real password gate — so Yee saw「该服务器需要密码或客户端令牌」on an open LAN box after QR scan. Prefer: (1) Cap-parity redeem body including `devicePlatform` + robust `clientToken` parse; (2) after redeem failure, re-check `/auth/session` and tokenless-adopt when `disabled:true`; (3) otherwise surface `pairingFailed`, not `authRequired`.
+OpenChamber with **no UI password** returns `GET /auth/session` → `{ authenticated: true, disabled: true }`. Cap and Expo **probes** must adopt that host **without** a client token on URL connect and saved reconnect.
+
+### Do not invent `pairingFailed` on redeem
+
+Cap `redeemPairingConnection` on redeem HTTP fail / empty `clientToken` / SecureStore write fail / catch → **`t('mobile.connect.error.authRequired')` ONLY**. Cap does **not** invent `pairingFailed` ("已过期") and does **not** auth-disabled tokenless-adopt after a failed redeem. Expo must copy that path:
+
+1. Cap-parity redeem body: `clientLabel` / `deviceName` = `'OpenChamber Mobile'`, plus `clientKind`, `devicePlatform`, `dedupeKey`.
+2. Parse **only** `result.clientToken` string (no nested token invent).
+3. Cap `pairingCandidatesToMobile` drops pairing `grant` when building `MobileRelayConfig`.
+4. Fail adopt if SecureStore write fails when a token was issued.
 
 ### Do not send the bearer to an unverified LAN host
 

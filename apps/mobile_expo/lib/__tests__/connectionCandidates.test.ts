@@ -108,7 +108,7 @@ describe('pairing payload persist', () => {
     expect(relay && relay.type === 'relay' && relay.hostEncPubJwk).toEqual(hostEncPubJwk);
   });
 
-  it('persist+reload keeps full lan + relay candidates including grant', () => {
+  it('pairingCandidatesToMobile drops grant like Cap parseRelayConfig', () => {
     const mobile = pairingCandidatesToMobile([
       { type: 'lan', url: 'http://192.168.1.20:4096' },
       { type: 'lan', url: 'http://192.168.1.21:4096' },
@@ -121,17 +121,23 @@ describe('pairing payload persist', () => {
       },
     ]);
     expect(mobile.map((c) => c.kind)).toEqual(['direct', 'direct', 'relay']);
+    const relay = mobile[2];
+    expect(relay?.kind).toBe('relay');
+    if (relay?.kind === 'relay') {
+      expect(relay.relay.serverId).toBe('srv_test');
+      expect('grant' in relay.relay).toBe(false);
+    }
     const raw = serializeTransportCandidates(mobile);
     expect(raw).toHaveLength(3);
     const relayRaw = raw[2] as { kind: string; relay: Record<string, unknown> };
     expect(relayRaw.kind).toBe('relay');
-    expect(relayRaw.relay.grant).toBe('grant-1');
+    expect(relayRaw.relay.grant).toBeUndefined();
     expect(relayRaw.relay.serverId).toBe('srv_test');
-    expect(Object.keys(relayRaw.relay).sort()).toEqual(['grant', 'hostEncPubJwk', 'relayUrl', 'serverId']);
+    expect(Object.keys(relayRaw.relay).sort()).toEqual(['hostEncPubJwk', 'relayUrl', 'serverId']);
 
     const reloaded = parseTransportCandidates(raw);
     expect(reloaded).toHaveLength(3);
-    expect(reloaded[2]?.kind === 'relay' && reloaded[2].relay.grant).toBe('grant-1');
+    expect(reloaded[2]?.kind === 'relay' && 'grant' in reloaded[2].relay).toBe(false);
   });
 });
 
@@ -193,15 +199,21 @@ describe('ConnectionController pairing persist', () => {
     expect(controller.getState().active?.candidates).toHaveLength(2);
     expect(
       controller.getState().active?.candidates.some(
-        (c) => c.kind === 'relay' && c.relay.grant === 'grant-keep',
+        (c) => c.kind === 'relay' && c.relay.serverId === 'srv_test',
       ),
     ).toBe(true);
+    expect(
+      controller.getState().active?.candidates.some(
+        (c) => c.kind === 'relay' && 'grant' in c.relay,
+      ),
+    ).toBe(false);
 
     const again = new ConnectionController({ skipAutoConnect: true });
     await again.bootstrap();
     const saved = again.getState().connections[0];
     expect(saved?.candidates).toHaveLength(2);
-    expect(saved?.candidates.some((c) => c.kind === 'relay' && c.relay.grant === 'grant-keep')).toBe(true);
+    expect(saved?.candidates.some((c) => c.kind === 'relay' && c.relay.serverId === 'srv_test')).toBe(true);
+    expect(saved?.candidates.some((c) => c.kind === 'relay' && 'grant' in c.relay)).toBe(false);
 
     setConnectionHttp(null);
     setOpenRelaySession(null);

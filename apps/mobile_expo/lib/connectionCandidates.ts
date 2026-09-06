@@ -9,7 +9,6 @@ export type MobileRelayConfig = {
   relayUrl: string;
   serverId: string;
   hostEncPubJwk: JsonWebKey;
-  grant?: string;
 };
 
 export type MobileTransportCandidate =
@@ -102,12 +101,11 @@ export const parseRelayConfig = (value: unknown): MobileRelayConfig | null => {
   const key = jwk as Record<string, unknown>;
   if (key.kty !== 'EC' || key.crv !== 'P-256') return null;
   if (typeof key.x !== 'string' || !key.x || typeof key.y !== 'string' || !key.y) return null;
-  const grant = typeof record.grant === 'string' && record.grant.trim() ? record.grant.trim() : undefined;
+  // Cap parity: MobileRelayConfig never carries pairing `grant` (never persisted).
   return {
     relayUrl: record.relayUrl.trim(),
     serverId: record.serverId.trim(),
     hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: key.x, y: key.y },
-    ...(grant ? { grant } : {}),
   };
 };
 
@@ -124,7 +122,7 @@ export const parseTransportCandidate = (value: unknown): MobileTransportCandidat
   return null;
 };
 
-/** Persist FULL lan+relay+hostEncPubJwk+grant+serverId (Track 1 contract). */
+/** Persist lan+relay+hostEncPubJwk+serverId (Cap: grant/token never land here). */
 export const serializeTransportCandidate = (c: MobileTransportCandidate): unknown =>
   c.kind === 'relay'
     ? {
@@ -133,7 +131,6 @@ export const serializeTransportCandidate = (c: MobileTransportCandidate): unknow
           relayUrl: c.relay.relayUrl,
           serverId: c.relay.serverId,
           hostEncPubJwk: c.relay.hostEncPubJwk,
-          ...(c.relay.grant ? { grant: c.relay.grant } : {}),
         },
       }
     : { kind: 'direct', url: c.url };
@@ -161,11 +158,11 @@ export const pairingCandidatesToMobile = (
     })
     .flatMap((c): MobileTransportCandidate[] => {
       if (c.type === 'relay') {
+        // Cap pairingCandidatesToMobile: drop grant when building MobileRelayConfig.
         const relay = parseRelayConfig({
           relayUrl: c.relayUrl,
           serverId: c.serverId,
           hostEncPubJwk: c.hostEncPubJwk,
-          grant: c.grant,
         });
         return relay ? [{ kind: 'relay', relay }] : [];
       }

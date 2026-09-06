@@ -11,7 +11,7 @@ export type PairingRelayCandidate = {
   relayUrl: string;
   serverId: string;
   hostEncPubJwk: JsonWebKey;
-  /** One-time relay grant. Persisted with the connection so away-mode reconnect works. */
+  // One-time relay-infrastructure authorization. Cap: never persisted on MobileRelayConfig.
   grant?: string;
   priority?: number;
 };
