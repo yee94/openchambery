@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -15,7 +15,9 @@ import { NativeComposerTextView } from 'openchamber-system-shell';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ComposerAutocompleteList } from '@/components/chat/ComposerAutocompleteList';
+import { ScrollToBottomDisc } from '@/components/chat/ScrollToBottomDisc';
 import { GlassComposerShell } from '@/components/chrome/GlassComposerShell';
+import { GlassDisc } from '@/components/chrome/GlassDisc';
 import { Text, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import {
@@ -50,6 +52,9 @@ export type ChatComposerProps = {
   onAttachmentsChange?: (next: StagedPromptAttachment[]) => void;
   /** Collapsed-pill occupancy only — expand/autocomplete must not raise accessories. */
   onOccupancyHeightChange?: (height: number) => void;
+  /** Cap liquid-glass arrow.down — excluded from occupancy. */
+  showScrollToBottom?: boolean;
+  onScrollToBottom?: () => void;
 };
 
 let localAttachSeq = 0;
@@ -59,11 +64,12 @@ const nextAttachId = () => {
 };
 
 /**
- * Text + Send/Stop + attach + slash/@/# autocomplete list.
+ * Cap circular +/-/stop discs inside GlassComposerShell.
  * No mic / TTS (will-not-port).
  * iOS: UITextView owns IME via NativeComposerTextView; GlassComposerShell keeps chrome.
  * Android: RN TextInput in solid/Material pill (honest degrade, not fake glass).
- * Autocomplete stays above the card in RN — never inside UIGlassEffect contentView.
+ * Autocomplete / scroll-to-bottom stay above the card — never inside UIGlassEffect contentView,
+ * and never raise published occupancy (collapsed pill only).
  */
 const COLLAPSED_LINE_HEIGHT = 40;
 const PILL_VERTICAL_PADDING = 12;
@@ -81,11 +87,15 @@ export function ChatComposer({
   attachments = [],
   onAttachmentsChange,
   onOccupancyHeightChange,
+  showScrollToBottom,
+  onScrollToBottom,
 }: ChatComposerProps) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
+  const dark = colorScheme === 'dark';
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
+  const background = useThemeColor({}, 'background');
   const [selection, setSelection] = useState<{ start: number; end: number }>({
     start: value.length,
     end: value.length,
@@ -123,11 +133,18 @@ export function ChatComposer({
         expanded,
         lastRestHeight: nextRest,
         autocompleteOpen: openTrigger != null,
+        scrollToBottomVisible: Boolean(showScrollToBottom),
       });
       onOccupancyHeightChange?.(published);
     },
-    [inputHeight, lastRestOccupancy, onOccupancyHeightChange, openTrigger],
+    [inputHeight, lastRestOccupancy, onOccupancyHeightChange, openTrigger, showScrollToBottom],
   );
+
+  useEffect(() => {
+    publishOccupancy(COLLAPSED_LINE_HEIGHT, focused);
+    // Seed accessories with collapsed occupancy on mount / contract changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- focused handled by native focus/blur
+  }, [publishOccupancy]);
 
   const handleChangeText = useCallback(
     (next: string) => {
@@ -297,29 +314,41 @@ export function ChatComposer({
         },
       ]}
     >
-      {showAutocomplete ? (
-        <ComposerAutocompleteList
-          rows={autocompleteRows}
-          loading={autocompleteLoading}
-          onSelect={handleSelectAutocomplete}
-        />
+      {/* Autocomplete + attachments overlay above the card — never inside glass contentView. */}
+      <RNView pointerEvents="box-none" style={styles.overlayRail}>
+        {showAutocomplete ? (
+          <ComposerAutocompleteList
+            rows={autocompleteRows}
+            loading={autocompleteLoading}
+            onSelect={handleSelectAutocomplete}
+          />
+        ) : null}
+        {attachments.length > 0 ? (
+          <RNView style={styles.attachRow}>{attachmentChips}</RNView>
+        ) : null}
+      </RNView>
+
+      {/* Scroll-to-bottom GlassDisc — excluded from published occupancy. */}
+      {showScrollToBottom && onScrollToBottom ? (
+        <RNView pointerEvents="box-none" style={styles.scrollSlot}>
+          <ScrollToBottomDisc visible onPress={onScrollToBottom} />
+        </RNView>
       ) : null}
 
-      {attachments.length > 0 ? (
-        <RNView style={styles.attachRow}>{attachmentChips}</RNView>
-      ) : null}
-
-      <GlassComposerShell colorScheme={colorScheme === 'dark' ? 'dark' : 'light'} style={styles.pill}>
+      <GlassComposerShell
+        colorScheme={dark ? 'dark' : 'light'}
+        style={styles.pill}
+      >
         {onAttachmentsChange ? (
-          <Pressable
-            accessibilityRole="button"
+          <GlassDisc
+            colorScheme={dark ? 'dark' : 'light'}
             accessibilityLabel={t('mobile.chat.attach.title')}
             onPress={openAttachMenu}
             disabled={disabled}
-            style={styles.attachButton}
+            style={styles.attachDisc}
           >
-            <Text style={[styles.attachButtonLabel, { color: muted }]}>+</Text>
-          </Pressable>
+            <Text style={[styles.attachGlyph, { color: muted }]}>+</Text>
+          </GlassDisc>
         ) : null}
         {Platform.OS === 'ios' ? (
           <NativeComposerTextView
@@ -401,9 +430,11 @@ export function ChatComposer({
               void impactMedium();
               onStop();
             }}
-            style={[styles.action, styles.stop]}
+            style={styles.actionHit}
           >
-            <Text style={styles.actionLabel}>{t('mobile.chat.stop')}</Text>
+            <RNView style={[styles.actionCircle, { backgroundColor: text }]}>
+              <RNView style={[styles.stopSquare, { backgroundColor: background }]} />
+            </RNView>
           </Pressable>
         ) : (
           <Pressable
@@ -415,12 +446,16 @@ export function ChatComposer({
               onSend();
             }}
             disabled={!canSend}
-            style={[styles.action, styles.send, !canSend && styles.disabled]}
+            style={[styles.actionHit, !canSend && styles.disabled]}
           >
             {disabled ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={muted} size="small" />
+            ) : canSend ? (
+              <RNView style={[styles.actionCircle, { backgroundColor: text }]}>
+                <Text style={[styles.sendArrow, { color: background }]}>↑</Text>
+              </RNView>
             ) : (
-              <Text style={styles.actionLabel}>{t('mobile.chat.send')}</Text>
+              <Text style={[styles.sendGhost, { color: muted }]}>↑</Text>
             )}
           </Pressable>
         )}
@@ -429,21 +464,40 @@ export function ChatComposer({
   );
 }
 
+const ACTION_DISC = 32;
+const ACTION_GLYPH = 24;
+
 const styles = StyleSheet.create({
   shell: {
     paddingHorizontal: 12,
     paddingTop: 8,
     backgroundColor: 'transparent',
+    overflow: 'visible',
+    zIndex: 5,
+  },
+  overlayRail: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: '100%',
+    zIndex: 6,
+  },
+  scrollSlot: {
+    position: 'absolute',
+    right: 18,
+    bottom: '100%',
+    marginBottom: 8,
+    zIndex: 7,
   },
   pill: {
     minHeight: 48,
     borderRadius: 24,
-    paddingLeft: 6,
-    paddingRight: 6,
+    paddingLeft: 4,
+    paddingRight: 4,
     paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
+    gap: 6,
   },
   input: {
     flex: 1,
@@ -458,46 +512,56 @@ const styles = StyleSheet.create({
     maxHeight: 120,
     minHeight: COLLAPSED_LINE_HEIGHT,
   },
-  action: {
-    minWidth: 64,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  send: {
-    backgroundColor: '#E87722',
-  },
-  stop: {
-    backgroundColor: '#B42318',
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  actionLabel: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  attachButton: {
+  attachDisc: {
     width: 36,
     height: 36,
     borderRadius: 18,
+  },
+  attachGlyph: {
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '500',
+    marginTop: -1,
+  },
+  actionHit: {
+    width: ACTION_DISC,
+    height: ACTION_DISC,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  actionCircle: {
+    width: ACTION_GLYPH,
+    height: ACTION_GLYPH,
+    borderRadius: ACTION_GLYPH / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  attachButtonLabel: {
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: '500',
+  stopSquare: {
+    width: ACTION_GLYPH * 0.38,
+    height: ACTION_GLYPH * 0.38,
+    borderRadius: ACTION_GLYPH * 0.38 * 0.2,
+  },
+  sendArrow: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: -1,
+  },
+  sendGhost: {
+    fontSize: 18,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  disabled: {
+    opacity: 0.45,
   },
   attachRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
     marginBottom: 6,
-    paddingHorizontal: 2,
+    paddingHorizontal: 14,
   },
   attachChip: {
     flexDirection: 'row',

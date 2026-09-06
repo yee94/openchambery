@@ -10,6 +10,7 @@ import {
   View as RNView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChangesSheet } from '@/components/chat/ChangesSheet';
 import { ChatDetailHeader } from '@/components/chat/ChatDetailHeader';
@@ -20,7 +21,10 @@ import { PermissionCard } from '@/components/chat/PermissionCard';
 import { QuestionCard } from '@/components/chat/QuestionCard';
 import { QueueEditModal } from '@/components/chat/QueueEditModal';
 import { QueuedMessageChips } from '@/components/chat/QueuedMessageChips';
-import { TranscriptList } from '@/components/chat/TranscriptList';
+import {
+  TranscriptList,
+  type TranscriptListHandle,
+} from '@/components/chat/TranscriptList';
 import { Text, View, useThemeColor } from '@/components/Themed';
 import { useChatSession } from '@/hooks/useChatSession';
 import { useComposerAutocomplete } from '@/hooks/useComposerAutocomplete';
@@ -44,6 +48,7 @@ export type ChatScreenProps = {
 };
 
 export function ChatScreen({ routeSessionId }: ChatScreenProps) {
+  const insets = useSafeAreaInsets();
   const chat = useChatSession(routeSessionId);
   const { state } = useConnection();
   const router = useRouter();
@@ -54,6 +59,9 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
   const [changesOpen, setChangesOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [rankedIds, setRankedIds] = useState<string[]>([]);
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const [composerOccupancy, setComposerOccupancy] = useState(0);
+  const transcriptRef = useRef<TranscriptListHandle | null>(null);
   const swipeStart = useRef<{ x: number; y: number; surface: boolean } | null>(null);
   const headerSwipeStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -277,9 +285,11 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         </RNView>
       ) : (
         <TranscriptList
+          ref={transcriptRef}
           rows={chat.rows}
           structureEpoch={chat.structureEpoch}
           emptyLabel={chat.isDraft ? t('mobile.chat.draftEmpty') : t('mobile.chat.empty')}
+          onAwayFromEndChange={setAwayFromEnd}
           onMessageLongPress={(row) => {
             const options = [
               t('mobile.chat.message.copy'),
@@ -330,34 +340,47 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         </RNView>
       ) : null}
 
-      {chat.pendingQuestions.map((question) => (
-        <QuestionCard
-          key={question.id}
-          question={question}
-          busy={chat.questionBusyId === question.id}
-          onSubmit={(answers) => chat.replyQuestion(question, answers)}
-          onDismiss={() => chat.dismissQuestion(question)}
-        />
-      ))}
+      {/* Accessories dock to collapsed occupancy only (Cap --oc-native-composer-height).
+          Expand / autocomplete / scroll-to-bottom overlays must not raise this inset. */}
+      <RNView
+        pointerEvents="box-none"
+        style={[
+          styles.accessoryDock,
+          {
+            // published occupancy = collapsed pill; add shell safe-bottom (padTop cancels Cap -8 settle).
+            bottom: Math.max(composerOccupancy, 48) + Math.max(insets.bottom, 8),
+          },
+        ]}
+      >
+        {chat.pendingQuestions.map((question) => (
+          <QuestionCard
+            key={question.id}
+            question={question}
+            busy={chat.questionBusyId === question.id}
+            onSubmit={(answers) => chat.replyQuestion(question, answers)}
+            onDismiss={() => chat.dismissQuestion(question)}
+          />
+        ))}
 
-      {chat.pendingPermissions.map((perm) => (
-        <PermissionCard
-          key={perm.id}
-          permission={perm}
-          busy={chat.permissionBusyId === perm.id}
-          onRespond={(response) => chat.respondPermission(perm, response)}
-        />
-      ))}
+        {chat.pendingPermissions.map((perm) => (
+          <PermissionCard
+            key={perm.id}
+            permission={perm}
+            busy={chat.permissionBusyId === perm.id}
+            onRespond={(response) => chat.respondPermission(perm, response)}
+          />
+        ))}
 
-      <QueuedMessageChips
-        items={chat.queueItems}
-        onRemove={(item) => {
-          void chat.removeQueued(item);
-        }}
-        onMoveUp={(item) => moveQueued(item, -1)}
-        onMoveDown={(item) => moveQueued(item, 1)}
-        onEdit={editQueued}
-      />
+        <QueuedMessageChips
+          items={chat.queueItems}
+          onRemove={(item) => {
+            void chat.removeQueued(item);
+          }}
+          onMoveUp={(item) => moveQueued(item, -1)}
+          onMoveDown={(item) => moveQueued(item, 1)}
+          onEdit={editQueued}
+        />
+      </RNView>
 
       <RNView
         onStartShouldSetResponder={() => true}
@@ -383,6 +406,9 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
           onAutocompleteTriggerChange={autocomplete.onTriggerChange}
           attachments={chat.attachments}
           onAttachmentsChange={chat.setAttachments}
+          showScrollToBottom={awayFromEnd}
+          onScrollToBottom={() => transcriptRef.current?.scrollToEnd(true)}
+          onOccupancyHeightChange={setComposerOccupancy}
         />
       </RNView>
 
@@ -428,6 +454,12 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  accessoryDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 4,
   },
   center: {
     flex: 1,

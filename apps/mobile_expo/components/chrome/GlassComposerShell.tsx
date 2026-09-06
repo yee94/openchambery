@@ -26,6 +26,8 @@ function solidFill(scheme: 'light' | 'dark' | 'auto'): string {
 /**
  * iOS: real UIGlassEffect via expo-glass-effect when API available.
  * Android / older iOS: solid Material/capsule shell — never claimed as UIGlassEffect.
+ * Host for NativeComposerTextView (iOS IME) / RN TextInput (Android) — occupancy stays
+ * collapsed-pill only; expand / scroll-to-bottom / autocomplete must not raise accessories.
  */
 export function GlassComposerShell({ children, style, colorScheme = 'auto' }: Props) {
   if (canUseGlass()) {

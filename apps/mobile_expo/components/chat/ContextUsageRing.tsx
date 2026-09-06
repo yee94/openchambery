@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { StyleSheet, View as RNView } from 'react-native';
 
 import { Text, useThemeColor } from '@/components/Themed';
@@ -17,12 +17,78 @@ const toneColor = (tone: MobileContextDisplay['tone']): string => {
   return '#32D583';
 };
 
+/** Segment count for continuous-looking arc without react-native-svg. */
+const ARC_SEGMENTS = 40;
+
+type ArcRingProps = {
+  size: number;
+  stroke: number;
+  pct: number;
+  color: string;
+  trackColor: string;
+  children?: React.ReactNode;
+};
+
+/**
+ * Real progress arc via rotated radial dashes (no SVG/Skia in package.json).
+ * Prefer this over opacity-on-full-border approximation.
+ */
+function ArcRing({ size, stroke, pct, color, trackColor, children }: ArcRingProps) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const filled = Math.round((clamped / 100) * ARC_SEGMENTS);
+  const radius = (size - stroke) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const segLen = (2 * Math.PI * radius) / ARC_SEGMENTS + 1.15;
+
+  const ticks = useMemo(() => {
+    return Array.from({ length: ARC_SEGMENTS }, (_, i) => {
+      const angle = (i / ARC_SEGMENTS) * Math.PI * 2 - Math.PI / 2;
+      const deg = (angle * 180) / Math.PI + 90;
+      const active = i < filled;
+      return (
+        <RNView
+          key={i}
+          pointerEvents="none"
+          style={[
+            styles.tick,
+            {
+              width: stroke,
+              height: segLen,
+              borderRadius: stroke / 2,
+              left: cx - stroke / 2,
+              top: cy - segLen / 2,
+              backgroundColor: active ? color : trackColor,
+              opacity: active ? 1 : 0.55,
+              transform: [
+                { translateX: Math.cos(angle) * radius },
+                { translateY: Math.sin(angle) * radius },
+                { rotate: `${deg}deg` },
+              ],
+            },
+          ]}
+        />
+      );
+    });
+  }, [color, cx, cy, filled, radius, segLen, stroke, trackColor]);
+
+  return (
+    <RNView style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      {ticks}
+      {children}
+    </RNView>
+  );
+}
+
 function ContextUsageRingImpl({ display, compact }: ContextUsageRingProps) {
   const muted = useThemeColor({}, 'muted');
   if (!display) return null;
 
   const pct = Math.max(0, Math.min(100, display.percentage));
   const color = toneColor(display.tone);
+  const size = compact ? 36 : 40;
+  const stroke = compact ? 2.5 : 3;
+  const trackColor = 'rgba(127,127,127,0.35)';
 
   return (
     <RNView
@@ -34,19 +100,16 @@ function ContextUsageRingImpl({ display, compact }: ContextUsageRingProps) {
       })}
       accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}
     >
-      <RNView style={[styles.ring, compact && styles.ringCompact, { borderColor: 'rgba(127,127,127,0.35)' }]}>
-        <RNView
-          style={[
-            styles.progress,
-            compact && styles.progressCompact,
-            {
-              borderColor: color,
-              // Approximate ring fill via border opacity + label (no SVG dependency).
-              opacity: 0.35 + (pct / 100) * 0.65,
-            },
-          ]}
-        />
-        <Text style={[styles.percent, { color }]}>{Math.round(pct)}%</Text>
+      <RNView
+        style={[
+          styles.ringFace,
+          compact ? styles.ringFaceCompact : null,
+          { width: size, height: size, borderRadius: size / 2 },
+        ]}
+      >
+        <ArcRing size={size} stroke={stroke} pct={pct} color={color} trackColor={trackColor}>
+          <Text style={[styles.percent, { color }]}>{Math.round(pct)}%</Text>
+        </ArcRing>
       </RNView>
       {compact ? null : (
         <Text style={[styles.tokens, { color: muted }]} numberOfLines={1}>
@@ -76,30 +139,16 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 0,
   },
-  ring: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 3,
+  ringFace: {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(20,20,20,0.55)',
   },
-  ringCompact: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2.5,
+  ringFaceCompact: {
     backgroundColor: 'rgba(127,127,127,0.12)',
   },
-  progress: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 20,
-    borderWidth: 3,
-  },
-  progressCompact: {
-    borderRadius: 18,
-    borderWidth: 2.5,
+  tick: {
+    position: 'absolute',
   },
   percent: {
     fontSize: 10,
