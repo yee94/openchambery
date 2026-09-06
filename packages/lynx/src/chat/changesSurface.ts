@@ -10,12 +10,19 @@ export type LynxGitChangeEntry = {
   staged: boolean;
 };
 
+export type LynxGitDiffStat = {
+  insertions: number;
+  deletions: number;
+};
+
 export type LynxGitStatusResult =
   | {
       status: 'ok';
       directory: string;
       branch: string | null;
       entries: LynxGitChangeEntry[];
+      /** Cap `GitStatus.diffStats` — path → +/- counts for ChangeRow chips. */
+      diffStats: Record<string, LynxGitDiffStat>;
     }
   | { status: 'no-runtime' }
   | { status: 'no-directory' }
@@ -52,6 +59,24 @@ const pushFiles = (
       : fallbackStatus;
     target.push({ path, status, staged });
   }
+};
+
+
+const parseDiffStats = (raw: unknown): Record<string, LynxGitDiffStat> => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, LynxGitDiffStat> = {};
+  for (const [path, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!path.trim() || !value || typeof value !== 'object') continue;
+    const record = value as Record<string, unknown>;
+    const insertions = typeof record.insertions === 'number' && Number.isFinite(record.insertions)
+      ? Math.max(0, Math.floor(record.insertions))
+      : 0;
+    const deletions = typeof record.deletions === 'number' && Number.isFinite(record.deletions)
+      ? Math.max(0, Math.floor(record.deletions))
+      : 0;
+    out[path] = { insertions, deletions };
+  }
+  return out;
 };
 
 /** Cap `GET /api/git/status?directory=` (gitApiHttp). */
@@ -103,7 +128,8 @@ export const loadLynxGitStatus = async (
         });
       }
     }
-    return { status: 'ok', directory: trimmed, branch, entries };
+    const diffStats = parseDiffStats(payload.diffStats);
+    return { status: 'ok', directory: trimmed, branch, entries, diffStats };
   } catch (error) {
     return {
       status: 'failed',

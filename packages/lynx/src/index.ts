@@ -361,6 +361,11 @@ export {
   summarizeLynxDiffStats,
   buildLynxOriginalModifiedPreview,
   lynxPierreDiffLineToken,
+  resolveLynxPierreDiffFeature,
+  lynxChangeStatusCode,
+  lynxChangeStatusToken,
+  LYNX_CHANGE_ROW_SPACING,
+  LYNX_PIERRE_DIFF_BLOCKERS,
   LYNX_PIERRE_DIFF_STUB_NOTES,
 } from './chat/pierreDiff';
 export {

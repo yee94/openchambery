@@ -39,6 +39,30 @@ describe('loadLynxGitStatus', () => {
       { path: 'b.ts', status: 'modified', staged: false },
       { path: 'c.ts', status: 'untracked', staged: false },
     ]);
+    expect(result.diffStats).toEqual({});
+  });
+
+  test('parses Cap diffStats for ChangeRow +/- chips', async () => {
+    const runtimeFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        branch: 'main',
+        files: [],
+        stagedFiles: ['a.ts'],
+        diffStats: {
+          'a.ts': { insertions: 3, deletions: 1 },
+          'b.ts': { insertions: 0, deletions: 2 },
+        },
+      }),
+    });
+    const result = await loadLynxGitStatus(runtimeFetch, '/repo');
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.diffStats).toEqual({
+      'a.ts': { insertions: 3, deletions: 1 },
+      'b.ts': { insertions: 0, deletions: 2 },
+    });
   });
 });
 

@@ -245,7 +245,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid + prepend-settle gate + pin-reveal polish |
 | ~~Nested child session stack + predecessor~~ | `mobileNavigation.ts` | **代码接上** reconcile + predecessor chrome; host underlay pixel polish still thin |
-| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push + **stage/unstage** (GlassChrome searchChip +/-). HTML preview = labeled text stub until host WKWebView; PierreDiff = portable text + Cap status add/del colors (runtime stub). |
+| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push + **stage/unstage** (GlassChrome searchChip +/-, Cap size-6 spacing). HTML preview = labeled text stub until host WKWebView; PierreDiff = portable text only — Cap `@pierre/diffs` **unavailable** (Shadow DOM / react-dom blocker). |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | ~~Context usage~~ | `mobileContextUsage.ts` | **代码接上** header chip + Cap `/api/config/providers` limit |
 | | ~~Composer attachments, `/` `@`, agent/model~~ | composer DOCUMENTATION | Attach + `/` `@` catalogs **代码接上** (Chat + Draft); autocomplete **above glass**; GlassChrome + in-glass Attach/Send/Stop/Queue **代码接上**; Cap Agent·model **picker sheets** (`/api/agent` + `/api/config/providers` → prompt_async selection) **代码接上**; host Mode B overlay / 真机 still thin |
@@ -335,6 +335,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 23. ~~**Cap sheet height snaps 72/98dvh: LynxMobileResizableSheet half 0.72 / expanded 0.98 (was 50%/92%)**~~ — 代码接上 in `cursor/lynx-sheet-height-cap-local` (PR #55). Remaining: Mode B host overlay / live UIGlassEffect / 真机 drag feel; product NOT DONE.
 24. ~~**linux closable after #55: portable text diff + Cap stage/unstage + Projects rename wiring + docs hygiene**~~ — 代码接上 in `cursor/lynx-linux-closable-after-55-local`. Remaining: host-only / 真机 (Pierre runtime, WKWebView, Keychain, camera, IME, Mode B); product NOT DONE.
 25. ~~**diff/chip polish on #56: Cap status add/del tokens + GlassChrome searchChip stage/unstage**~~ — 代码接上 in `cursor/lynx-diff-chip-polish-local`. Remaining: Pierre `@pierre/diffs` runtime / Mode B / 真机; product NOT DONE.
+26. ~~**Pierre investigation + ChangeRow spacing on #57 tip: honest Shadow DOM blocker + Cap size-6 chip / +n/-m slash / diffStats**~~ — 代码接上 in `cursor/lynx-pierre-diffs-local`. Cap `@pierre/diffs` **cannot** run in Lynx (diffs-container Shadow DOM + react-dom). Portable path only; product NOT DONE / no 真机过.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -431,7 +432,7 @@ Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vi
 | DraftComposer `/` `@` catalogs | ChatScreen composerCatalog | Same load/detect/suggest/apply path as chat |
 | Settings git identities | Cap GitIdentity* `/api/git/identities` | List/create/update/delete + global read; never fake-success |
 | Files HTML preview | `MobileFilesSurface` iframe | Cap-like source/preview toggle; preview = honest host WebView stub + text source |
-| PierreDiff polish | `PierreDiffViewer` | Portable line-kind/stats text 代码接上; Cap `@pierre/diffs` viewer still stub |
+| PierreDiff polish | `PierreDiffViewer` | Portable line-kind/stats + Cap ChangeRow spacing 代码接上; Cap `@pierre/diffs` **unavailable** (honest blocker, not stub-faked) |
 
 **CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
 **真机过:** not executed (environment: Linux cloud VM).
@@ -528,9 +529,24 @@ Slice on `cursor/lynx-diff-chip-polish-local` (PR into `work/lynx-native`). Pack
 
 ---
 
+## 代码接上 (Pierre investigation + ChangeRow spacing on #57 tip — not landed under 三关)
+
+Slice on `cursor/lynx-pierre-diffs-local` (base PR#57 tip `858e6d0bb`; PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. 真机过: not executed. Product **NOT DONE**.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Cap `@pierre/diffs` | `PierreDiffViewer` → `FileDiff` / `diffs-container` Shadow DOM + `PIERRE_RUNTIME_BASE_CSS` + worker | **Unavailable** in Lynx. `resolveLynxPierreDiffFeature({ preferPierre: true })` still activates **portable-text** and records `LYNX_PIERRE_DIFF_BLOCKERS`. No fake CSS/iframe. |
+| Portable feature path | Cap git `file-diff` / `diff` text | Unchanged real APIs; monospace line colors + Cap `+n / -m` slash spacing. |
+| ChangeRow chip spacing | Cap `ChangeRow`: `size-6` / `gap-1.5` / `mx-0.5` / `h-8` / `w-3.5` | `LYNX_CHANGE_ROW_SPACING` + stage chip **24px** (was ~32), status letter, Cap slash stats; `diffStats` from `GET /api/git/status`. |
+
+**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**真机过:** not executed. Host WebView sheet would be required before any Pierre HTML mount — out of scope / not claimed.
+
+---
+
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` runtime / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
+**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -611,12 +627,21 @@ Slice on `cursor/lynx-diff-chip-polish-local` (PR into `work/lynx-native`). Pack
 | Projects session rename | Long-press → rename draft → `PATCH /session/:id` (`renameLynxSession`) |
 | Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
 
-### 代码接上 this slice (`cursor/lynx-diff-chip-polish-local`)
+### 代码接上 prior slice (`cursor/lynx-diff-chip-polish-local` / PR#57)
 
 | Item | Notes |
 |---|---|
 | Diff add/del tokens | Cap `--status-success` / `--status-error` on portable lines; del distinguished from hunk/muted |
 | Stage/unstage glass chips | Cap +/- on `GlassChrome` `searchChip` (Changes sheet only; outside transcript) |
+| Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
+
+### 代码接上 this slice (`cursor/lynx-pierre-diffs-local`)
+
+| Item | Notes |
+|---|---|
+| Pierre investigation | Cap `@pierre/diffs@1.3.0-beta.6` in monorepo (`packages/ui`); Lynx **cannot** host — Shadow DOM / react-dom / worker blockers documented |
+| Feature path | `resolveLynxPierreDiffFeature` + `preferPierre` → always portable-text; `pierreViewer: 'unavailable'` |
+| ChangeRow spacing | Cap-measurable `LYNX_CHANGE_ROW_SPACING`; stage chip 24px; `+n / -m` slash; status letter; status `diffStats` |
 | Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
 
 ### Still missing / host-only / 真机
@@ -627,7 +652,7 @@ Slice on `cursor/lynx-diff-chip-polish-local` (PR into `work/lynx-native`). Pack
 | Real QR camera / AVCapture / CameraX | Adapter + chrome 代码接上; binder returns unavailable until host |
 | OAuth system browser open | Cap routes + host stubs 代码接上; ASWebAuthenticationSession / Custom Tabs 真机 |
 | Host WKWebView / WebView HTML preview sheet | Text stub only — no invent Lynx DOM iframe |
-| PierreDiff interactive viewer | Portable text lines/stats + Cap status add/del colors 代码接上; Cap `@pierre/diffs` / PIERRE_RUNTIME_BASE_CSS not ported |
+| PierreDiff interactive viewer | **Blocked:** `@pierre/diffs` needs `diffs-container` Shadow DOM + `react-dom` + worker; Lynx/rspeedy has none. Feature path → portable-text only (`resolveLynxPierreDiffFeature`). Do not fake CSS/iframe. |
 | Composer glass / actions / pickers 真机 / Mode B host overlay | GlassCard + in-glass actions + half-height resizable Agent·model sheets JS 代码接上; live UIGlassEffect + host Mode B overlay / drag feel still 真机 |
 | IME keyboard binding + occupancy 真机 | Contract + inset publisher stubs 代码接上; LynxView IME must be host-bound |
 | Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |

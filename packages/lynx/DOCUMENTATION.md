@@ -37,7 +37,7 @@ Do not invent `/api/nearby/redeem` or Bonjour browse.
 
 ## Does not own
 
-- Native IME host binding (contract documented; host wires keyboard) / HTML iframe Files preview / PierreDiff polish
+- Native IME host binding (contract documented; host wires keyboard) / HTML iframe Files preview / PierreDiff (`@pierre/diffs` Shadow DOM blocker — portable text only)
 - Push token mint (host) / Live Activity / Capgo / QR camera / Keychain wiring
 - Capacitor `packages/mobile` and shared React `packages/ui` runtimes
 - Nearby / Bonjour browse

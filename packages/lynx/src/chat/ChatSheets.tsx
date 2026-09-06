@@ -6,7 +6,6 @@ import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { loadMcpCatalog, type LynxCatalogItem } from '../settings/catalogs';
-import { LYNX_COLLAPSING_ACTION_SIZE } from '../shell/tabPageHeader';
 import { cssVar } from '../theme/tokens';
 import {
   commitLynxGitChanges,
@@ -16,11 +15,15 @@ import {
   syncLynxGit,
   unstageLynxGitFiles,
   type LynxGitChangeEntry,
+  type LynxGitDiffStat,
   type LynxGitSyncAction,
 } from './changesSurface';
 import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
 import { isLynxHtmlPath, planLynxHtmlPreview } from './htmlPreview';
 import {
+  LYNX_CHANGE_ROW_SPACING,
+  lynxChangeStatusCode,
+  lynxChangeStatusToken,
   lynxPierreDiffLineToken,
   planLynxPierreDiff,
   type LynxPierreDiffPlan,
@@ -259,6 +262,7 @@ function ChangesSheetBody({
   fullPageAutoGlassSkin: boolean;
 }) {
   const [entries, setEntries] = useState<LynxGitChangeEntry[] | null>(null);
+  const [diffStats, setDiffStats] = useState<Record<string, LynxGitDiffStat>>({});
   const [branch, setBranch] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'no-directory'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -280,11 +284,13 @@ function ChangesSheetBody({
       if (cancelled) return;
       if (result.status === 'ok') {
         setEntries(result.entries);
+        setDiffStats(result.diffStats);
         setBranch(result.branch);
         setStatus('ok');
         return;
       }
       setEntries(null);
+      setDiffStats({});
       setStatus(result.status);
       if (result.status === 'failed') setError(result.error.message);
     })();
@@ -304,7 +310,7 @@ function ChangesSheetBody({
     setDiffBusy(false);
     if (result.status === 'ok') {
       if (result.isBinary) {
-        setDiffPlan(planLynxPierreDiff({ binary: true }));
+        setDiffPlan(planLynxPierreDiff({ binary: true, preferPierre: true }));
         setDiffNote(lynxT(locale, 'lynx.chat.sheet.changes.binary'));
         return;
       }
@@ -313,6 +319,7 @@ function ChangesSheetBody({
         original: result.original,
         modified: result.modified,
         path: entry.path,
+        preferPierre: true,
       }));
       return;
     }
@@ -416,9 +423,19 @@ function ChangesSheetBody({
         {diffNote ? <Banner text={diffNote} muted /> : null}
         {diffPlan ? <Banner text={diffPlan.note} muted /> : null}
         {diffPlan?.hasTextPreview ? (
-          <LynxView style={{ flexDirection: 'row', marginBottom: '8px' }}>
-            <LynxText style={{ color: cssVar('status.success'), fontSize: '12px', marginRight: '10px' }}>
+          <LynxView style={{ flexDirection: 'row', alignItems: 'center', marginBottom: '8px' }}>
+            <LynxText style={{ color: cssVar('status.success'), fontSize: '12px' }}>
               +{diffPlan.stats.insertions}
+            </LynxText>
+            <LynxText
+              style={{
+                color: cssVar('surface.mutedForeground'),
+                fontSize: '12px',
+                marginLeft: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
+                marginRight: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
+              }}
+            >
+              /
             </LynxText>
             <LynxText style={{ color: cssVar('status.error'), fontSize: '12px' }}>
               -{diffPlan.stats.deletions}
@@ -431,6 +448,7 @@ function ChangesSheetBody({
             style={{
               color: cssVar(lynxPierreDiffLineToken(line.kind)),
               fontSize: '12px',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             }}
           >
             {line.text.length ? line.text : ' '}
@@ -495,20 +513,79 @@ function ChangesSheetBody({
       {entries.length === 0 ? (
         <Banner text={lynxT(locale, 'lynx.chat.sheet.changes.empty')} muted />
       ) : (
-        entries.map((entry) => (
+        entries.map((entry) => {
+          const statusCode = lynxChangeStatusCode(entry.status);
+          const stats = diffStats[entry.path];
+          return (
           <LynxView
             key={`${entry.staged ? 's' : 'u'}:${entry.path}`}
-            style={{ padding: '10px 0', flexDirection: 'row', alignItems: 'center' }}
+            style={{
+              minHeight: `${LYNX_CHANGE_ROW_SPACING.rowMinHeightPx}px`,
+              paddingTop: `${LYNX_CHANGE_ROW_SPACING.rowPaddingYPx}px`,
+              paddingBottom: `${LYNX_CHANGE_ROW_SPACING.rowPaddingYPx}px`,
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
           >
             <LynxView
-              style={{ flexGrow: 1 }}
+              style={{
+                flexGrow: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                minWidth: '0px',
+              }}
               bindtap={() => { void openDiff(entry); }}
             >
-              <LynxText style={{ color: cssVar('surface.foreground') }}>{entry.path}</LynxText>
-              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
-                {entry.status}
-                {entry.staged ? ' · staged' : ''}
+              <LynxText
+                style={{
+                  color: cssVar(lynxChangeStatusToken(statusCode)),
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  width: `${LYNX_CHANGE_ROW_SPACING.statusCodeWidthPx}px`,
+                  textAlign: 'center',
+                  marginRight: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
+                  flexShrink: 0,
+                }}
+              >
+                {statusCode}
               </LynxText>
+              <LynxView style={{ flexGrow: 1, minWidth: '0px' }}>
+                <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '13px' }}>
+                  {entry.path}
+                </LynxText>
+                <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px' }}>
+                  {entry.status}
+                  {entry.staged ? ' · staged' : ''}
+                </LynxText>
+              </LynxView>
+              {stats ? (
+                <LynxView
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                    marginLeft: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
+                    marginRight: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
+                  }}
+                >
+                  <LynxText style={{ color: cssVar('status.success'), fontSize: '12px' }}>
+                    +{stats.insertions}
+                  </LynxText>
+                  <LynxText
+                    style={{
+                      color: cssVar('surface.mutedForeground'),
+                      fontSize: '12px',
+                      marginLeft: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
+                      marginRight: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
+                    }}
+                  >
+                    /
+                  </LynxText>
+                  <LynxText style={{ color: cssVar('status.error'), fontSize: '12px' }}>
+                    -{stats.deletions}
+                  </LynxText>
+                </LynxView>
+              ) : null}
             </LynxView>
             <StageGlassChip
               symbol={entry.staged ? '-' : '+'}
@@ -520,7 +597,8 @@ function ChangesSheetBody({
               onTap={() => { if (!actionBusy) void runStageToggle(entry); }}
             />
           </LynxView>
-        ))
+          );
+        })
       )}
     </LynxScrollView>
   );
@@ -558,7 +636,8 @@ function StageGlassChip({
   fullPageAutoGlassSkin: boolean;
   onTap: () => void;
 }) {
-  const size = Math.round(LYNX_COLLAPSING_ACTION_SIZE * 0.8); // searchChip-sized, Cap size-6 spirit
+  // Cap ChangeRow action: size-6 (24px). Still GlassChrome searchChip surface.
+  const size = LYNX_CHANGE_ROW_SPACING.actionSizePx;
   const inner = (
     <LynxView
       bindtap={onTap}
@@ -575,7 +654,7 @@ function StageGlassChip({
         style={{
           color: cssVar('surface.foreground'),
           fontWeight: '700',
-          fontSize: '16px',
+          fontSize: '14px',
         }}
       >
         {symbol}
@@ -586,8 +665,8 @@ function StageGlassChip({
   const chipStyle: Record<string, string | number | undefined> = {
     width: `${size}px`,
     height: `${size}px`,
-    borderRadius: `${size / 2}px`,
-    marginLeft: '8px',
+    borderRadius: '4px', // Cap action is rounded (not full pill)
+    marginLeft: `${LYNX_CHANGE_ROW_SPACING.chipMarginLeftPx}px`,
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
