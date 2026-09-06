@@ -5891,7 +5891,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     const footerGapClass = 'gap-x-1.5 gap-y-0';
     const isVSCode = isVSCodeRuntime();
-    const showDraftTargetSelectors = surface.kind === 'primary' && surfaceHasNewDraft && !isVSCode;
+    // Establishing reuses ChatInput under an `invisible` foot for geometry only.
+    // `.oc-mobile-composer-reveal { visibility: visible }` would otherwise punch
+    // project/branch chips through that hide — drop the selectors until claim.
+    const showDraftTargetSelectors = surface.kind === 'primary'
+        && surfaceHasNewDraft
+        && !isVSCode
+        && !draftBusy;
 
     const selectedDraftProject = React.useMemo(() => {
         const explicit = newSessionDraft?.selectedProjectId
