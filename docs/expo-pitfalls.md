@@ -108,13 +108,14 @@ Use `applicationIdSuffix ".debug"`. Launcher **art** stays the official mark. Do
 
 Honest: only one `.debug` package can be installed at a time. Side-by-side means **vs release OpenChamber**, not vs Flutter v2 and Cap debug simultaneously.
 
-### Debug / prerelease APK must embed JS (no Metro)
+### Debug / prerelease APK must embed JS **and** disable Metro probe (no assembleDebug sideload)
 
-`./gradlew assembleDebug` after `expo prebuild` does **not** embed the JS bundle by default. React Native's `debuggableVariants` defaults to `['debug', 'debugOptimized']`, so the debug variant skips `createBundle*JsAndAssets` and waits for Metro at runtime.
+Two separate traps:
 
-A sideloaded GitHub prerelease APK without Metro therefore hangs forever on the **Expo splash wireframe** (native splash never hands off — JS never loads, so `SplashScreen.hideAsync()` in `app/_layout.tsx` is moot).
+1. **Missing bundle:** `./gradlew assembleDebug` after `expo prebuild` does **not** embed the JS bundle by default. React Native's `debuggableVariants` defaults to `['debug', 'debugOptimized']`, so the debug variant skips `createBundle*JsAndAssets` and waits for Metro at runtime.
+2. **Developer support still on:** even with `debuggableVariants = []` (bundle embedded), `assembleDebug` keeps `BuildConfig.DEBUG` / `ReactBuildConfig.DEBUG = true`, so Expo's `ReactHost` starts with `useDevSupport=true` and probes Metro (`isPackagerRunning`) before falling back to `assets/index.android.bundle`. A sticky `debug_http_host` or a black-holed :8081 (OkHttp **readTimeout=0**) can leave the **Expo splash wireframe** up forever — JS never reaches `SplashScreen.hideAsync()` in `app/_layout.tsx`.
 
-**Fix (Track 9):** config plugin `withAndroidDebugSideBySide` sets `debuggableVariants = []` in `android/app/build.gradle` `react { }` so `assembleDebug` still keeps `applicationIdSuffix ".debug"` / label **OpenChamber Expo**, but runs Expo `export:embed` with Hermes `dev=false` and packs `assets/index.android.bundle` into the APK. CI greps the APK for that asset before publishing.
+**Fix (Track 9):** publish **`assembleRelease`** signed with the **debug keystore**, with `applicationIdSuffix ".debug"` / label **OpenChamber Expo** on the release buildType (same Cap google-services `.debug` client). Release → `useDevSupport=false` → load embedded Hermes only. Plugin still sets `debuggableVariants = []` so local `assembleDebug` embeds JS for Metro-connected work. CI greps the APK for the bundle, then runs an API 30 emulator smoke (`scripts/expo-android-emulator-smoke.sh`) that fails without `ReactNativeJS` logcat evidence before prerelease upload.
 
 Do not ship Metro-dependent debug APKs as "installable" prereleases.
 
@@ -130,7 +131,7 @@ Never print secret values. Never log tokens, pairing secrets, grants, or bearer 
 
 ### Do not claim green device builds you did not run
 
-Linux CI that only lints is not an iOS Simulator build and not 真机过. The first Expo workflow (`expo-mobile-ci.yml`) is lint/typecheck only. Say so.
+Linux CI that only lints is not an iOS Simulator build and not 真机过. The Expo workflow (`expo-mobile-ci.yml`) now builds the Android sideload APK and runs an emulator smoke — still not 真机过 / iOS Simulator. Say so.
 
 ### Prereleases stay off the stable feed
 

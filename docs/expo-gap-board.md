@@ -105,13 +105,13 @@ Push, share inbox, Live Activity, WidgetKit/NSE, external browser, HEIC / picker
 
 ### 9. CI + side-by-side debug prerelease
 
-Lint/typecheck/vitest, Android debug APK job, `applicationIdSuffix .debug`, label **OpenChamber Expo**, prerelease tag `expo-v2-debug-<sha7>` (not `/releases/latest`). Published APK must **embed Hermes JS** (`debuggableVariants=[]`) — Metro-less sideload; otherwise hangs on Expo splash forever (see `docs/expo-pitfalls.md`).
+Lint/typecheck/vitest, Android **assembleRelease** sideload APK (debug keystore + `applicationIdSuffix .debug`), API 30 emulator smoke (logcat must show `ReactNativeJS`), label **OpenChamber Expo**, prerelease tag `expo-v2-debug-<sha7>` (not `/releases/latest`). Embedding Hermes alone is not enough — publish release-variant so `useDevSupport=false` (see `docs/expo-pitfalls.md`).
 
 | Row | Status | Notes |
 |---|---|---|
 | Lint / typecheck / unit tests workflow | **CI green** @ `63e43620` | Tip run https://github.com/yee94/openchambery/actions/runs/34027594765 — Lint/typecheck/unit tests **green**. Prior `1436c630` / 34024670880 superseded. |
-| Device binary jobs | **CI green** (Android); iOS residual | Android debug APK job **green** on tip `63e43620` (~22m assemble + embed). Artifact contains `assets/index.android.bundle` (~4MB Hermes). Run https://github.com/yee94/openchambery/actions/runs/34027594765. iOS simulator residual: macos runner + CocoaPods + Track 8 native modules not wired. |
-| Debug APK + prerelease link | **CI green** | Prerelease tag `expo-v2-debug-63e4362` — https://github.com/yee94/openchambery/releases/tag/expo-v2-debug-63e4362. Standalone embedded Hermes (`debuggableVariants=[]`); **no Metro required**. Prior `expo-v2-debug-1436c63` hung on splash (no bundle) — superseded. |
+| Device binary jobs | in progress (Android emulator smoke); iOS residual | Switching published binary to assembleRelease+.debug + API 30 emulator logcat gate. Prior embed-only assembleDebug @ `63e43620` green in CI but still hung on device splash. iOS simulator residual: macos runner + CocoaPods + Track 8 native modules not wired. |
+| Debug APK + prerelease link | in progress | `63e4362` embedded Hermes but still hung on device (assembleDebug / useDevSupport). Next: assembleRelease+.debug id + emulator smoke — tip SHA pending CI. Prior `expo-v2-debug-1436c63` hung (no bundle). |
 | 真机过 | missing | |
 
 ## Bootstrap / process rows

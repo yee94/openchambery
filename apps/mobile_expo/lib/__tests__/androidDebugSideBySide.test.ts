@@ -6,11 +6,13 @@ const require = createRequire(import.meta.url);
 const {
   injectDebugSideBySide,
   injectEmbedJsInDebug,
+  injectReleaseSideloadIdentity,
 } = require(
   path.resolve(__dirname, '../../plugins/withAndroidDebugSideBySide.js'),
 ) as {
   injectDebugSideBySide: (gradle: string) => string;
   injectEmbedJsInDebug: (gradle: string) => string;
+  injectReleaseSideloadIdentity: (gradle: string) => string;
 };
 
 const EXPO_REACT_BLOCK = `
@@ -28,9 +30,7 @@ react {
 }
 `;
 
-describe('injectDebugSideBySide', () => {
-  it('adds applicationIdSuffix into an existing debug buildType', () => {
-    const input = `
+const EXPO_BUILD_TYPES = `
 android {
     defaultConfig {
         applicationId 'com.yee94.openchamber'
@@ -40,35 +40,63 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
+            signingConfig signingConfigs.debug
             minifyEnabled false
         }
     }
 }
+`;
+
+describe('injectDebugSideBySide', () => {
+  it('adds applicationIdSuffix into debug and release buildTypes', () => {
+    const input = `
+${EXPO_BUILD_TYPES}
 ${EXPO_REACT_BLOCK}
 `;
     const out = injectDebugSideBySide(input);
     expect(out).toContain('applicationIdSuffix ".debug"');
     expect(out).toContain('versionNameSuffix "-debug"');
     expect(out).toContain('resValue "string", "app_name", "OpenChamber Expo"');
-    expect(out.indexOf('applicationIdSuffix')).toBeGreaterThan(out.indexOf('debug {'));
-    expect(out.indexOf('applicationIdSuffix')).toBeLessThan(out.indexOf('release {'));
+    // Both buildTypes get the suffix (debug for local; release for sideload).
+    const debugIdx = out.indexOf('debug {');
+    const releaseIdx = out.indexOf('release {');
+    expect(debugIdx).toBeGreaterThan(-1);
+    expect(releaseIdx).toBeGreaterThan(debugIdx);
+    const debugSlice = out.slice(debugIdx, releaseIdx);
+    const releaseSlice = out.slice(releaseIdx, out.indexOf('}\n}', releaseIdx) + 1 || undefined);
+    expect(debugSlice).toContain('applicationIdSuffix ".debug"');
+    expect(out.slice(releaseIdx)).toContain('applicationIdSuffix ".debug"');
+    expect(out.slice(releaseIdx)).toContain('signingConfig signingConfigs.debug');
     expect(out).toMatch(/^\s*debuggableVariants\s*=\s*\[\s*\]\s*$/m);
     expect(out).not.toMatch(/^\s*\/\/\s*debuggableVariants/m);
   });
 
-  it('is idempotent when suffix and embed already present', () => {
+  it('is idempotent when suffix and embed already present on both types', () => {
     const once = injectDebugSideBySide(`
-buildTypes {
-        debug {
-            signingConfig signingConfigs.debug
-        }
-}
+${EXPO_BUILD_TYPES}
 ${EXPO_REACT_BLOCK}
 `);
     const twice = injectDebugSideBySide(once);
     expect(twice).toBe(once);
-    expect(twice.split('applicationIdSuffix ".debug"').length - 1).toBe(1);
+    expect(twice.split('applicationIdSuffix ".debug"').length - 1).toBe(2);
     expect(twice.split('debuggableVariants = []').length - 1).toBe(1);
+  });
+});
+
+describe('injectReleaseSideloadIdentity', () => {
+  it('forces release to use debug keystore + .debug id', () => {
+    const input = `
+buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+        }
+}
+`;
+    const out = injectReleaseSideloadIdentity(input);
+    expect(out).toContain('applicationIdSuffix ".debug"');
+    expect(out).toContain('signingConfig signingConfigs.debug');
+    expect(out).not.toContain('signingConfig signingConfigs.release');
   });
 });
 

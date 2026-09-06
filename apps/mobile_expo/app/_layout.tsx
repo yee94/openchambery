@@ -27,15 +27,26 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
+  // Hide native Expo splash as soon as fonts resolve OR fail — otherwise a font
+  // hang leaves the wireframe forever and looks identical to a Metro/bundle miss.
+  // Run before the throw-on-error effect so ErrorBoundary does not keep the native splash.
+  useEffect(() => {
+    if (loaded || error) {
+      void SplashScreen.hideAsync();
+    }
+  }, [loaded, error]);
+
   useEffect(() => {
     if (error) throw error;
   }, [error]);
 
+  // Safety: never leave preventAutoHideAsync up if JS is alive but fonts stall.
   useEffect(() => {
-    if (loaded) {
+    const t = setTimeout(() => {
       void SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, []);
 
   if (!loaded) {
     return null;
