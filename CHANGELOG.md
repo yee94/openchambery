@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.25] - 2026-09-07
+
+### 会话
+
+- Markdown 列表缩进与代码字号对齐到切换 Markstream 之前的节奏。
+
 ## [1.19.7-beta.24] - 2026-09-07
 
 ### 会话
