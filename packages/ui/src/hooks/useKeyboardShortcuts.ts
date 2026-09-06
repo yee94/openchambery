@@ -96,21 +96,34 @@ export const canAbortActiveComposerShortcut = ({
   surfaceKind,
   wiringCanAbort,
   primaryCanAbort,
+  pendingSend = false,
 }: {
   sessionId: string | null | undefined;
   surfaceKind: 'primary' | 'secondary' | null | undefined;
   wiringCanAbort: boolean | null | undefined;
   primaryCanAbort: boolean;
+  pendingSend?: boolean;
 }): boolean => {
   if (!sessionId) {
     return false;
+  }
+
+  // Optimistic send marks pending before ChatInput re-renders the surface
+  // snapshot, so double-ESC must not wait on stale `wiringCanAbort`.
+  if (pendingSend) {
+    return true;
   }
 
   if (wiringCanAbort) {
     return true;
   }
 
-  return surfaceKind === 'primary' && primaryCanAbort;
+  if (surfaceKind === 'secondary') {
+    return false;
+  }
+
+  // Primary composer, or no mounted surface (Files/Git while a run is live).
+  return primaryCanAbort;
 };
 
 export const executeLeaderCompact = async ({
@@ -1147,8 +1160,15 @@ export const useKeyboardShortcuts = () => {
         window.dispatchEvent(new CustomEvent('openchamber:dictation-toggle'));
         return;
       }
+    };
 
-      if (e.key === 'Escape') {
+    // Capture-phase so expanded composer, context-panel editor, and CodeMirror
+    // cannot swallow the first Esc before the abort prompt is shown.
+    const handleAbortEscapeCapture = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape' || e.isComposing) {
+          return;
+        }
+
         const target = e.target as Element | null;
         const isInsideDialog = Boolean(target?.closest('[role="dialog"]'));
         const isSettingsMounted = Boolean(document.querySelector('[data-settings-view="true"]'));
@@ -1166,7 +1186,6 @@ export const useKeyboardShortcuts = () => {
           isAboutDialogOpen,
           isMultiRunLauncherOpen,
           isImagePreviewOpen,
-          activeMainTab,
           isPromptNavigatorPanelOpen,
         } = useUIStore.getState();
 
@@ -1182,7 +1201,6 @@ export const useKeyboardShortcuts = () => {
           return;
         }
 
-        // If settings is open, close it
         if (isSettingsDialogOpen) {
           e.preventDefault();
           setSettingsDialogOpen(false);
@@ -1195,35 +1213,38 @@ export const useKeyboardShortcuts = () => {
           return;
         }
 
-        // Check if any overlay is open or not on a composer tab - don't process abort
         const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen || isMultiRunLauncherOpen || isImagePreviewOpen;
-        const isComposerActive = isChatComposerMainTab(activeMainTab);
-
-        if (hasOverlay || !isComposerActive) {
+        if (hasOverlay) {
           resetAbortPriming();
           return;
         }
 
-        // Double-ESC abort logic targets the active composer surface.
         const surface = getActiveChatInputSurface();
         const wiring = surface ? createChatInputControllerWiring(surface) : null;
-        const sessionId = surface?.sessionID ?? currentSessionId;
+        const sessionId = surface?.sessionID ?? useSessionUIStore.getState().currentSessionId;
+        const pendingSend = Boolean(
+          sessionId && useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId),
+        );
         const canAbortNow = canAbortActiveComposerShortcut({
           sessionId,
           surfaceKind: surface?.kind,
           wiringCanAbort: wiring?.canAbort,
           primaryCanAbort: working.canAbort,
+          pendingSend,
         });
         if (!canAbortNow) {
           resetAbortPriming();
           return;
         }
 
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
         const now = Date.now();
         const primedUntil = abortPrimedUntilRef.current;
 
         if (primedUntil && now < primedUntil) {
-          e.preventDefault();
           resetAbortPriming();
           if (wiring) {
             void wiring.abort();
@@ -1234,7 +1255,6 @@ export const useKeyboardShortcuts = () => {
           return;
         }
 
-        e.preventDefault();
         // Primary abort chip still uses the session UI store; Assistant keeps a
         // local priming window when its surface abortPrompt is not session-bound.
         const expiresAt = surface?.kind === 'secondary'
@@ -1252,9 +1272,7 @@ export const useKeyboardShortcuts = () => {
             resetAbortPriming();
           }
         }, delay || 0);
-        return;
-      }
-    };
+      };
 
     window.addEventListener('keydown', handleLeaderKeyCapture, true);
     window.addEventListener('beforeinput', handleLeaderBeforeInputCapture, true);
@@ -1262,6 +1280,7 @@ export const useKeyboardShortcuts = () => {
     window.addEventListener('compositionupdate', handleLeaderCompositionCapture, true);
     window.addEventListener('compositionend', handleLeaderCompositionCapture, true);
     window.addEventListener('keydown', handleTerminalShortcutCapture, true);
+    window.addEventListener('keydown', handleAbortEscapeCapture, true);
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
@@ -1271,6 +1290,7 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('compositionupdate', handleLeaderCompositionCapture, true);
       window.removeEventListener('compositionend', handleLeaderCompositionCapture, true);
       window.removeEventListener('keydown', handleTerminalShortcutCapture, true);
+      window.removeEventListener('keydown', handleAbortEscapeCapture, true);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [

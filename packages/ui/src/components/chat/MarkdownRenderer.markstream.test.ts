@@ -51,6 +51,20 @@ describe('markstream-react trial path', () => {
     expect(theme).toMatch(/\.image-node__img \{[\s\S]*max-width: 100%/);
   });
 
+  test('Markstream wraps file path tokens during React render instead of after DOM commit', () => {
+    const source = readFileSync(join(here, 'MarkstreamRendererImpl.tsx'), 'utf8');
+    const fileRefs = readFileSync(join(here, 'markstream/markstreamFileReferences.tsx'), 'utf8');
+    expect(source).toContain('MarkstreamFileReferenceProvider');
+    expect(source).toContain('enableFileReferences && !isStreaming');
+    expect(source).toContain('ensureMarkstreamFileReferenceComponents');
+    expect(fileRefs).toContain('splitParagraphPathTokens');
+    expect(fileRefs).toContain("setCustomComponents({");
+    expect(fileRefs).toContain('text: MarkstreamTextNode');
+    expect(fileRefs).toContain('inline_code: MarkstreamInlineCodeNode');
+    expect(fileRefs).not.toContain('MutationObserver');
+    expect(fileRefs).not.toContain('wrapMarkdownFileReferenceTokens');
+  });
+
   test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {
     const theme = readFileSync(join(here, 'markstream/markstreamTheme.css'), 'utf8');
     const indexCss = readFileSync(join(here, '../../index.css'), 'utf8');

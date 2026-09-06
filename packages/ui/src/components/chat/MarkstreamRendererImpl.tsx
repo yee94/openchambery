@@ -4,12 +4,23 @@ import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { cn } from '@/lib/utils';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { markdownHeightCacheKey, rememberMarkdownHeight } from './markdown/markdownHeightCache';
-import { handleMarkstreamPointerEvent } from './markstream/markstreamInteractions';
+import {
+  handleMarkstreamFileReferenceKeyDown,
+  handleMarkstreamPointerEvent,
+} from './markstream/markstreamInteractions';
+import {
+  ensureMarkstreamFileReferenceComponents,
+  MarkstreamFileReferenceProvider,
+} from './markstream/markstreamFileReferences';
 import { MARKSTREAM_CHAT_STREAM_PERFORMANCE } from './markstream/markstreamPerformance';
 import type { ToolPopupContent } from './message/types';
 import 'markstream-react/index.css';
 import './markstream/markstreamTheme.css';
+
+ensureMarkstreamFileReferenceComponents();
 
 type MarkdownVariant = 'assistant' | 'reasoning' | 'tool';
 
@@ -46,13 +57,25 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
   isStreaming = false,
   variant = 'assistant',
   onShowPopup,
+  enableFileReferences = true,
 }) => {
   const themeSystem = useOptionalThemeSystem();
   const isDark = themeSystem?.currentTheme.metadata.variant === 'dark';
+  const { editor, runtime } = useRuntimeAPIs();
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
   const containerRef = React.useRef<HTMLDivElement>(null);
   const customId = part?.id ? `oc-ms-${part.id}` : `oc-ms-${messageId}`;
   const cacheKey = markdownHeightCacheKey(content, `markstream:${variant}`);
   const recordHeight = !isStreaming;
+  const fileReferencesEnabled = enableFileReferences && !isStreaming;
+  const fileReferenceOptions = fileReferencesEnabled
+    ? {
+      effectiveDirectory,
+      editor,
+      preferRuntimeEditor: runtime.isVSCode,
+      onShowPopup,
+    }
+    : undefined;
 
   const enabledRef = React.useRef(recordHeight);
   enabledRef.current = recordHeight;
@@ -71,9 +94,13 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
   useResizeObserver(containerRef, handleResize);
 
   const handleClick = useEvent((event: MouseEvent) => {
-    handleMarkstreamPointerEvent(event, { onShowPopup });
+    handleMarkstreamPointerEvent(event, { onShowPopup, fileReference: fileReferenceOptions });
+  });
+  const handleKeyDown = useEvent((event: KeyboardEvent) => {
+    handleMarkstreamFileReferenceKeyDown(event, { fileReference: fileReferenceOptions });
   });
   useEventListener('click', handleClick, containerRef);
+  useEventListener('keydown', handleKeyDown, containerRef);
 
   return (
     <div
@@ -84,15 +111,24 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
       data-oc-markdown-engine="markstream"
       data-oc-markstream-virtual="off"
     >
-      <MarkdownRender
+      <MarkstreamFileReferenceProvider
+        enabled={fileReferencesEnabled}
+        effectiveDirectory={effectiveDirectory}
+        editor={editor}
+        preferRuntimeEditor={runtime.isVSCode}
+        onShowPopup={onShowPopup}
         content={content}
-        customId={customId}
-        final={!isStreaming}
-        isDark={isDark}
-        codeBlockOptions={MARKSTREAM_CODE_BLOCK_OPTIONS}
-        codeBlockStream={isStreaming}
-        {...MARKSTREAM_CHAT_STREAM_PERFORMANCE}
-      />
+      >
+        <MarkdownRender
+          content={content}
+          customId={customId}
+          final={!isStreaming}
+          isDark={isDark}
+          codeBlockOptions={MARKSTREAM_CODE_BLOCK_OPTIONS}
+          codeBlockStream={isStreaming}
+          {...MARKSTREAM_CHAT_STREAM_PERFORMANCE}
+        />
+      </MarkstreamFileReferenceProvider>
     </div>
   );
 };
