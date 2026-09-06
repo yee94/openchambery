@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.8] - 2026-09-06
+
+### 会话
+
+- 并入最新 main（Live Activity / 推送标题 / 工具行距 / 侧栏滚动）。试验分支仍默认用 Markstream 渲染助手正文，并保持关掉文档内节点虚拟化（`max-live-nodes=0`，同时关闭 batch / smooth / defer），只留 TanStack 管会话列表高度。
+- Markstream 图片按现有 Markdown 约束限制最大宽度（`max-width: 100%` / `object-contain`），大图不再撑破气泡。关闭 Markstream：`localStorage.setItem('oc:markstream-react','0')` 后刷新。
+
 ## [1.19.7-beta.7] - 2026-09-06
 
 ### 移动端
