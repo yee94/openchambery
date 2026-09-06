@@ -315,10 +315,19 @@ export function createQueryTranscriptRepository(
   const cacheUnsubs = new Map<string, () => void>()
   /** Per-scope release for repository subscribe → active registry retain. */
   const listenerRetainReleases = new Map<string, () => void>()
-  /** Narrow projection caches for reference stability. */
+  /**
+   * Narrow projection caches for reference stability.
+   * `cachedFrom` is the immutable InfiniteData reference last projected; the
+   * same canonical object is projected once for every reader until purge /
+   * destroy clears the entry or Query replaces the data reference. notify only
+   * fans out listeners — it does not drop a still-valid projection.
+   */
   const projectionCache = new Map<
     string,
     {
+      /** Authoritative SessionTranscriptData identity last projected (undefined = empty). */
+      cachedFrom?: SessionTranscriptData | undefined
+      hasTranscriptCache?: boolean
       transcript?: TranscriptData
       pagination?: TranscriptPagination
       messages: Map<string, Message | undefined>
@@ -369,7 +378,7 @@ export function createQueryTranscriptRepository(
   ) => {
     const key = scopeKey(identity)
     if (p0Painted.has(key)) return
-    const transcript = toTranscriptData(readData(scope), identity.sessionID)
+    const transcript = projectTranscript(scope)
     if (!evaluateTranscriptP0Satisfied(transcript) && !p0Latches.has(key)) return
     p0Painted.add(key)
     recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
@@ -475,8 +484,10 @@ export function createQueryTranscriptRepository(
   const notify = (scope: TranscriptScope) => {
     const identity = resolveScopeIdentity(scope, deps)
     const key = scopeKey(identity)
-    // Invalidate projection cache so next read rebuilds with sharing.
-    projectionCache.delete(key)
+    // Do not drop projection entries here. `projectTranscript` reuses when
+    // `cachedFrom ===` the immutable Query data identity; deleting on every
+    // query event + manual notify forced duplicate projectFlat work for the
+    // same canonical snapshot. Purge/destroy/reset still clear the map.
     const set = listeners.get(key)
     if (!set || set.size === 0) return
     for (const listener of set) listener(scope)
@@ -610,6 +621,28 @@ export function createQueryTranscriptRepository(
     return next
   }
 
+  const projectTranscript = (scope: TranscriptScope): TranscriptData => {
+    const identity = resolveScopeIdentity(scope, deps)
+    const key = scopeKey(identity)
+    const raw = readData(scope)
+    const cache = getProjection(key)
+    if (cache.hasTranscriptCache && cache.cachedFrom === raw && cache.transcript) {
+      return cache.transcript
+    }
+    // Canonical identity changed (or first build): drop derived message/parts
+    // slots so readers rebind against the new projection.
+    if (cache.cachedFrom !== raw) {
+      cache.messages.clear()
+      cache.parts.clear()
+      cache.pagination = undefined
+    }
+    const data = toTranscriptData(raw, identity.sessionID)
+    const shared = shareTranscript(key, data)
+    cache.cachedFrom = raw
+    cache.hasTranscriptCache = true
+    return shared
+  }
+
   const messageStateKey = (
     identity: ReturnType<typeof resolveScopeIdentity>,
     messageID: string,
@@ -702,7 +735,7 @@ export function createQueryTranscriptRepository(
     if (command.type === "reset") {
       void durableQueue.clearSession(durableScope)
       if (command.page) {
-        const transcript = toTranscriptData(readData(scope), identity.sessionID)
+        const transcript = projectTranscript(scope)
         for (const record of command.page.records) {
           const info = transcript.messagesByID[record.info.id] ?? record.info
           persistSettledRecord(
@@ -723,7 +756,7 @@ export function createQueryTranscriptRepository(
     }
     if (command.type === "sse-event" || command.type === "sse-event-batch") {
       const events = command.type === "sse-event" ? [command.event] : command.events
-      const transcript = toTranscriptData(readData(scope), identity.sessionID)
+      const transcript = projectTranscript(scope)
       for (const event of events) {
         const action = transcriptDurableSseAction(event)
         if (action.action === "remove") {
@@ -738,7 +771,7 @@ export function createQueryTranscriptRepository(
       return
     }
     if (command.type === "http-page" || command.type === "materialize-snapshots") {
-      const transcript = toTranscriptData(readData(scope), identity.sessionID)
+      const transcript = projectTranscript(scope)
       const records = command.type === "http-page" ? command.page.records : command.records
       for (const record of records) {
         const info = transcript.messagesByID[record.info.id]
@@ -890,7 +923,7 @@ export function createQueryTranscriptRepository(
           source: "network",
           purpose: "initial",
           durationMs: Date.now() - startedAt,
-          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          transcript: projectTranscript(scope),
           request: repository.getRequestState?.(scope),
           hydration: repository.getHydrationState?.(scope),
           error,
@@ -968,7 +1001,7 @@ export function createQueryTranscriptRepository(
           source: "network",
           purpose: "reconcile-page",
           durationMs: Date.now() - startedAt,
-          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          transcript: projectTranscript(scope),
           request: repository.getRequestState?.(scope),
           hydration: repository.getHydrationState?.(scope),
           error,
@@ -992,10 +1025,7 @@ export function createQueryTranscriptRepository(
 
   const repository: QueryTranscriptRepository = {
     getTranscript(scope) {
-      const identity = resolveScopeIdentity(scope, deps)
-      const key = scopeKey(identity)
-      const data = toTranscriptData(readData(scope), identity.sessionID)
-      return shareTranscript(key, data)
+      return projectTranscript(scope)
     },
 
     getPagination(scope) {
@@ -1387,15 +1417,16 @@ export function createQueryTranscriptRepository(
       })()
       scheduleDurableAfterApply(scope, identity, command, result)
       if (result.applied) {
+        // Lazy suppliers: disabled / SSE noise / unchanged batches never project.
         recordTranscriptCommandDiagnostics({
           directory: identity.directory,
           sessionID: identity.sessionID,
           transport: identity.transport,
           generation: identity.generation,
           command,
-          transcript: toTranscriptData(readData(scope), identity.sessionID),
-          request: repository.getRequestState?.(scope),
-          hydration: repository.getHydrationState?.(scope),
+          transcript: () => repository.getTranscript(scope),
+          request: () => repository.getRequestState?.(scope),
+          hydration: () => repository.getHydrationState?.(scope),
           error: result.error,
           changed: result.changed,
         })
@@ -1547,7 +1578,7 @@ export function createQueryTranscriptRepository(
           source: hadCanonical ? "query-cache" : "network",
           purpose: "initial",
           durationMs: Date.now() - startedAt,
-          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          transcript: projectTranscript(scope),
           request: repository.getRequestState?.(scope),
           hydration: repository.getHydrationState?.(scope),
           error,

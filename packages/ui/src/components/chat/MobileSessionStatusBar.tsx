@@ -71,6 +71,7 @@ import { MobileSheetSnapHandle } from '@/components/ui/MobileSheetSnapHandle';
 import {
   MOBILE_SESSIONS_WINDOW_ID,
 } from '@/components/ui/MobileWindowMotionRegistry';
+import { buildMobileSessionStatusList } from './mobileSessionStatusBarList';
 
 interface MobileSessionStatusBarProps {
   onSessionSwitch?: (sessionId: string) => void;
@@ -241,98 +242,46 @@ function MobileActionButton({
   );
 }
 
+/**
+ * Sheet-open list derivation + always-on badge totals.
+ * Closed sheet skips the expensive parent/child enrichment while badge counts
+ * stay live so the next open (and keepMounted header) remain fresh.
+ * While MobileWindowMotion is still present (open or exit animation), freeze the
+ * last open list so open→false does not flash an empty body; clear only after
+ * actual presence ends (onExitComplete) — never a guessed timeout.
+ */
 function useSessionGrouping(
   sessions: Session[],
-  sessionStatus: Record<string, { type: string }> | undefined
+  sessionStatus: Record<string, { type: string }> | undefined,
+  listEnabled: boolean,
+  retainLastOpenList: boolean,
 ) {
   const unseenCounts = useNotificationStore((s) => s.index.session.unseenCount);
+  const lastOpenSessionsRef = React.useRef<SessionWithStatus[]>([]);
 
-  const parentChildMap = React.useMemo(() => {
-    const map = new Map<string, Session[]>();
-    const allIds = new Set(sessions.map((s) => s.id));
-
-    sessions.forEach((session) => {
-      const parentID = (session as { parentID?: string }).parentID;
-      if (parentID && allIds.has(parentID)) {
-        map.set(parentID, [...(map.get(parentID) || []), session]);
-      }
-    });
-    return map;
-  }, [sessions]);
-
-  const getStatusType = React.useCallback((sessionId: string): 'busy' | 'retry' | 'idle' => {
-    const status = sessionStatus?.[sessionId];
-    if (status?.type === 'busy' || status?.type === 'retry') return status.type;
-    return 'idle';
-  }, [sessionStatus]);
-
-  const hasRunningChildren = React.useCallback((sessionId: string): boolean => {
-    const children = parentChildMap.get(sessionId) || [];
-    return children.some((child) => getStatusType(child.id) !== 'idle');
-  }, [parentChildMap, getStatusType]);
-
-  const getRunningChildrenCount = React.useCallback((sessionId: string): number => {
-    const children = parentChildMap.get(sessionId) || [];
-    return children.filter((child) => getStatusType(child.id) !== 'idle').length;
-  }, [parentChildMap, getStatusType]);
-
-  const getChildIndicators = React.useCallback((sessionId: string): Array<{ session: Session; isRunning: boolean }> => {
-    const children = parentChildMap.get(sessionId) || [];
-    return children
-      .filter((child) => getStatusType(child.id) !== 'idle')
-      .map((child) => ({ session: child, isRunning: true }))
-      .slice(0, 3);
-  }, [parentChildMap, getStatusType]);
-
-  const processedSessions = React.useMemo(() => {
-    const sessionIds = new Set(sessions.map((s) => s.id));
-    const topLevel = sessions.filter((session) => {
-      const parentID = (session as { parentID?: string }).parentID;
-      return !parentID || !sessionIds.has(parentID);
-    });
-
-    const running: SessionWithStatus[] = [];
-    const viewed: SessionWithStatus[] = [];
-
-    topLevel.forEach((session) => {
-      const statusType = getStatusType(session.id);
-      const hasRunning = hasRunningChildren(session.id);
-      const attention = (unseenCounts[session.id] ?? 0) > 0;
-
-      const enriched: SessionWithStatus = {
-        ...session,
-        _statusType: statusType,
-        _hasRunningChildren: hasRunning,
-        _runningChildrenCount: getRunningChildrenCount(session.id),
-        _childIndicators: getChildIndicators(session.id),
-      };
-
-      if (statusType !== 'idle' || hasRunning) {
-        running.push(enriched);
-      } else if (attention) {
-        running.push(enriched);
-      } else {
-        viewed.push(enriched);
-      }
-    });
-
-    const sortByActivityUpdated = (a: Session, b: Session) =>
-      getSessionActivityUpdatedAt(b) - getSessionActivityUpdatedAt(a);
-
-    running.sort(sortByActivityUpdated);
-    viewed.sort(sortByActivityUpdated);
-
-    return [...running, ...viewed];
-  }, [sessions, getStatusType, hasRunningChildren, getRunningChildrenCount, getChildIndicators, unseenCounts]);
-
-  const totalRunning = processedSessions.reduce((sum, s) => {
-    const selfRunning = s._statusType !== 'idle' ? 1 : 0;
-    return sum + selfRunning + (s._runningChildrenCount ?? 0);
-  }, 0);
-
-  const totalUnread = processedSessions.filter((s) => (unseenCounts[s.id] ?? 0) > 0).length;
-
-  return { sessions: processedSessions, totalRunning, totalUnread, totalCount: processedSessions.length };
+  return React.useMemo(() => {
+    const result = buildMobileSessionStatusList(
+      sessions,
+      sessionStatus,
+      unseenCounts,
+      listEnabled,
+      getSessionActivityUpdatedAt,
+    );
+    if (listEnabled) {
+      lastOpenSessionsRef.current = result.sessions;
+      return result;
+    }
+    if (!retainLastOpenList) {
+      lastOpenSessionsRef.current = [];
+      return result;
+    }
+    // Exit / keepMounted presence: badges stay live; body keeps last open rows.
+    return {
+      ...result,
+      sessions: lastOpenSessionsRef.current,
+      totalCount: lastOpenSessionsRef.current.length,
+    };
+  }, [listEnabled, retainLastOpenList, sessions, sessionStatus, unseenCounts]);
 }
 
 function useSessionHelpers() {
@@ -712,7 +661,24 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const expandedWorktreeGroups = useSessionStatusBarCollapseStore((state) => state.expandedWorktreeGroups);
   const setWorktreeGroupExpanded = useSessionStatusBarCollapseStore((state) => state.setWorktreeGroupExpanded);
 
-  const { sessions: sortedSessions, totalRunning, totalUnread } = useSessionGrouping(sessions, sessionStatus);
+  // Presence tracks open + exit animation so the last open list is retained
+  // until MobileWindowMotion onExitComplete — not a guessed timeout.
+  const [sheetPresent, setSheetPresent] = React.useState(open);
+  React.useEffect(() => {
+    if (open) setSheetPresent(true);
+  }, [open]);
+  const handleSheetExitComplete = useEvent(() => {
+    sessionSheetSnap.reset();
+    setSheetPresent(false);
+  });
+
+  // Closed: badge totals live. Open: full list enrichment. Exit: last open rows.
+  const { sessions: sortedSessions, totalRunning, totalUnread } = useSessionGrouping(
+    sessions,
+    sessionStatus,
+    open,
+    sheetPresent,
+  );
   const { getSessionTitle, needsAttention } = useSessionHelpers();
   const getProjectStatus = useProjectStatus(sessions, sessionStatus, currentSessionId);
   const resolveProjectRoots = useProjectRootsResolver();
@@ -743,9 +709,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   // the same state slot because it is a list scope alongside project scopes.
   const filterProjectId = useUIStore((state) => state.mobileSessionFilterProjectId);
   const setFilterProjectId = useUIStore((state) => state.setMobileSessionFilterProjectId);
+  // Use the raw session catalog + pin set — not sortedSessions — so a closed
+  // sheet (which skips list enrichment) cannot wipe the pinned filter tab.
   const hasPinnedSessions = React.useMemo(
-    () => sortedSessions.some((session) => pinnedSessionIds.has(session.id)),
-    [pinnedSessionIds, sortedSessions],
+    () => sessions.some((session) => pinnedSessionIds.has(session.id)),
+    [pinnedSessionIds, sessions],
   );
 
   React.useEffect(() => {
@@ -933,8 +901,10 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   }, []);
 
   // Filter sessions by exact project/worktree directory keys so adjacent or
-  // nested worktree paths remain separate groups.
+  // nested worktree paths remain separate groups. Use sheetPresent (open + exit)
+  // so closing does not drop the filtered body mid-animation.
   const filteredSessions = React.useMemo(() => {
+    if (!sheetPresent) return sortedSessions;
     if (!filterProjectId) return sortedSessions;
     if (filterProjectId === PINNED_SESSION_FILTER_ID) {
       return sortedSessions.filter((session) => pinnedSessionIds.has(session.id));
@@ -946,10 +916,10 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       const dir = sessionDirectory(session);
       return roots.some((root) => normalize(root) === dir);
     });
-  }, [sortedSessions, filterProjectId, pinnedSessionIds, projects, resolveProjectRoots]);
+  }, [sheetPresent, sortedSessions, filterProjectId, pinnedSessionIds, projects, resolveProjectRoots]);
 
   const projectSessionGroups = React.useMemo<ProjectSessionGroup[]>(() => {
-    if (!selectedProject) return [];
+    if (!sheetPresent || !selectedProject) return [];
     const projectRoot = normalize(selectedProject.path);
     const worktrees = orderWorktrees(
       worktreeOrderByProject[selectedProject.id],
@@ -978,7 +948,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       groupByDirectory.get(sessionDirectory(session))?.sessions.push(session);
     }
     return groups;
-  }, [availableWorktreesByProject, filteredSessions, formatProjectLabel, selectedProject, worktreeOrderByProject]);
+  }, [availableWorktreesByProject, filteredSessions, formatProjectLabel, sheetPresent, selectedProject, worktreeOrderByProject]);
 
   const sessionContextLabel = React.useCallback((session: Session): string | undefined => {
     const directory = sessionDirectory(session);
@@ -1697,7 +1667,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         ariaLabel={t('mobile.sessions.sheet.title')}
         surfaceClassName={sessionSheetSnap.snapPoint === MOBILE_SHEET_EXPANDED_SNAP ? 'h-[98dvh] max-h-[98dvh]' : 'h-[72dvh] max-h-[98dvh]'}
         surfaceElementRef={sessionSheetSnap.surfaceRef}
-        onExitComplete={sessionSheetSnap.reset}
+        onExitComplete={handleSheetExitComplete}
       >
         <div className="flex min-h-0 flex-1 flex-col">
           {renderHeader()}

@@ -74,7 +74,7 @@ export type MobileSessionRowProps = {
   highlightQuery?: string;
 };
 
-export function MobileSessionRow({
+function MobileSessionRowImpl({
   session,
   depth = 0,
   hasChildren = false,
@@ -442,3 +442,5 @@ export function MobileSessionRow({
     </div>
   );
 }
+
+export const MobileSessionRow = React.memo(MobileSessionRowImpl);

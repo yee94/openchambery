@@ -4041,14 +4041,65 @@ export function useUserMessageHistory(sessionID: string, directory?: string): st
  * Ticket 09 batch 1A: message/part data comes from TranscriptRepository;
  * session.revert still comes from the directory session catalog.
  */
+type SessionMessageRecordsFrozenScope = {
+  sessionID: string
+  directory: string
+  store: StoreApi<DirectoryStore>
+  bindingRevision: number
+  transportIdentity: string
+  generation: number
+}
+
+type SessionMessageRecordsFrozenSnapshot = {
+  scope: SessionMessageRecordsFrozenScope
+  list: SessionMessageRecord[]
+}
+
+const captureSessionMessageRecordsFrozenScope = (
+  sessionID: string,
+  directory: string,
+  store: StoreApi<DirectoryStore>,
+): SessionMessageRecordsFrozenScope => ({
+  sessionID,
+  directory,
+  store,
+  bindingRevision: getTranscriptRepositoryBindingRevision(),
+  transportIdentity: getRuntimeTransportIdentity(),
+  generation: getRuntimeGeneration(),
+})
+
+const sessionMessageRecordsFrozenScopesEqual = (
+  left: SessionMessageRecordsFrozenScope,
+  right: SessionMessageRecordsFrozenScope,
+): boolean => (
+  left.sessionID === right.sessionID
+  && left.directory === right.directory
+  && left.store === right.store
+  && left.bindingRevision === right.bindingRevision
+  && left.transportIdentity === right.transportIdentity
+  && left.generation === right.generation
+)
+
 export function useSessionMessageRecords(
   sessionID: string,
   directory?: string,
-  options?: { suspendPartUpdates?: boolean; suspendPartUpdatesForMessageId?: string | null },
+  options?: {
+    suspendPartUpdates?: boolean
+    suspendPartUpdatesForMessageId?: string | null
+    /**
+     * When false, hold a scope-stamped painted list and unsubscribe from live
+     * transcript content. Same-scope frozen reads never re-hit live authority
+     * (that historical bug left a silent body under an animating status line).
+     * Scope changes (session/directory/store/binding/runtime) drop the old
+     * snapshot and seed once for the new scope. Resume rebinds live authority.
+     */
+    enabled?: boolean
+  },
 ) {
   const system = useSyncSystem()
   const targetDirectory = directory ?? system.directory
   const store = useDirectoryStore(targetDirectory)
+  const enabled = options?.enabled ?? true
   const snapshotRef = useRef<SessionMessageRecordsSnapshot>({
     sessionID,
     sourceMessages: EMPTY_MESSAGES,
@@ -4059,110 +4110,164 @@ export function useSessionMessageRecords(
     list: [],
     byId: new Map(),
   })
+  // Scope-stamped painted list for `enabled=false`. Distinct from snapshotRef so
+  // a frozen underlay cannot rebuild from live getTranscript on the same scope.
+  const frozenSnapshotRef = useRef<SessionMessageRecordsFrozenSnapshot | null>(null)
 
-  const getSnapshot = useCallback(() => {
-    // Include binding revision so React re-reads after store→Query swap.
-    void getTranscriptRepositoryBindingRevision()
-    if (!sessionID) {
-      return EMPTY_SESSION_MESSAGE_RECORDS
-    }
+  const readLiveList = useMemo(
+    () => (): SessionMessageRecord[] => {
+      if (!sessionID) return EMPTY_SESSION_MESSAGE_RECORDS
 
-    const repository = getTranscriptRepository()
-      ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
-    const data = repository.getTranscript(transcriptScope(targetDirectory, sessionID))
-    const suspendPartUpdates = Boolean(options?.suspendPartUpdates)
-    const suspendedPartUpdatesMessageID = options?.suspendPartUpdatesForMessageId ?? undefined
-    // Prefer current-session snapshot sourceMessages so consecutive getSnapshot
-    // reads (React tearing check) reuse the same Message[] when transcript refs
-    // are unchanged — avoids Maximum update depth from list identity churn.
-    const previousForMessages = snapshotRef.current.sessionID === sessionID
-      ? snapshotRef.current.sourceMessages
-      : readCachedSessionMessageRecordsSnapshot(
-        store,
+      const repository = getTranscriptRepository()
+        ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+      const data = repository.getTranscript(transcriptScope(targetDirectory, sessionID))
+      const suspendPartUpdates = Boolean(options?.suspendPartUpdates)
+      const suspendedPartUpdatesMessageID = options?.suspendPartUpdatesForMessageId ?? undefined
+      // Prefer current-session snapshot sourceMessages so consecutive getSnapshot
+      // reads (React tearing check) reuse the same Message[] when transcript refs
+      // are unchanged — avoids Maximum update depth from list identity churn.
+      const previousForMessages = snapshotRef.current.sessionID === sessionID
+        ? snapshotRef.current.sourceMessages
+        : readCachedSessionMessageRecordsSnapshot(
+          store,
+          sessionID,
+          suspendPartUpdates,
+          suspendedPartUpdatesMessageID,
+        )?.sourceMessages
+      const messages = messagesFromTranscriptData(data, previousForMessages)
+      const state = store.getState()
+      const session = state.session.find((candidate) => candidate.id === sessionID)
+      const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
+      const source: SessionMessageRecordsSource = {
         sessionID,
+        messages,
+        parts: data.partsByMessageID,
+        revertMessageID,
+      }
+
+      const reusableSnapshot = getReusableSessionMessageRecordsSnapshot(
+        store,
+        source,
         suspendPartUpdates,
         suspendedPartUpdatesMessageID,
-      )?.sourceMessages
-    const messages = messagesFromTranscriptData(data, previousForMessages)
-    const state = store.getState()
-    const session = state.session.find((candidate) => candidate.id === sessionID)
-    const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
-    const source: SessionMessageRecordsSource = {
+      )
+      if (reusableSnapshot) {
+        snapshotRef.current = reusableSnapshot
+        return reusableSnapshot.list
+      }
+
+      const previousSnapshot = snapshotRef.current.sessionID === sessionID
+        ? snapshotRef.current
+        : readCachedSessionMessageRecordsSnapshot(store, sessionID, suspendPartUpdates, suspendedPartUpdatesMessageID)
+
+      const nextSnapshot = buildSessionMessageRecordsSnapshotFromSource(
+        source,
+        previousSnapshot,
+        suspendPartUpdates,
+        suspendedPartUpdatesMessageID,
+      )
+      snapshotRef.current = nextSnapshot
+      rememberSessionMessageRecordsSnapshot(store, nextSnapshot)
+      return nextSnapshot.list
+    },
+    [
+      options?.suspendPartUpdates,
+      options?.suspendPartUpdatesForMessageId,
       sessionID,
-      messages,
-      parts: data.partsByMessageID,
-      revertMessageID,
-    }
-
-    const reusableSnapshot = getReusableSessionMessageRecordsSnapshot(
       store,
-      source,
-      suspendPartUpdates,
-      suspendedPartUpdatesMessageID,
-    )
-    if (reusableSnapshot) {
-      snapshotRef.current = reusableSnapshot
-      return reusableSnapshot.list
-    }
+      targetDirectory,
+    ],
+  )
 
-    const previousSnapshot = snapshotRef.current.sessionID === sessionID
-      ? snapshotRef.current
-      : readCachedSessionMessageRecordsSnapshot(store, sessionID, suspendPartUpdates, suspendedPartUpdatesMessageID)
+  const getSnapshot = useMemo(
+    () => () => {
+      // Binding + runtime identity participate in the frozen scope stamp so a
+      // store→Query swap or runtime switch re-seeds without a parent re-render.
+      const scope = captureSessionMessageRecordsFrozenScope(sessionID, targetDirectory, store)
 
-    const nextSnapshot = buildSessionMessageRecordsSnapshotFromSource(
-      source,
-      previousSnapshot,
-      suspendPartUpdates,
-      suspendedPartUpdatesMessageID,
-    )
-    snapshotRef.current = nextSnapshot
-    rememberSessionMessageRecordsSnapshot(store, nextSnapshot)
-    return nextSnapshot.list
-  }, [
-    options?.suspendPartUpdates,
-    options?.suspendPartUpdatesForMessageId,
-    sessionID,
-    store,
-    targetDirectory,
-  ])
+      if (!sessionID) {
+        frozenSnapshotRef.current = {
+          scope,
+          list: EMPTY_SESSION_MESSAGE_RECORDS,
+        }
+        return EMPTY_SESSION_MESSAGE_RECORDS
+      }
 
-  // getSnapshot always reads live transcript data, so the subscription must be
-  // unconditional. Gating it on an `enabled` flag produced a snapshot that was
-  // fresh on read but never notified: the body kept whatever it had painted at
-  // the last unrelated re-render while sibling always-on readers (session
-  // status) kept animating, which reads as "working, but my message vanished".
-  const subscribe = useCallback((notify: () => void) => {
-    if (!sessionID) return () => undefined
-    // Observe-path ensure for reconnect-stale inactive sessions (batch 1A).
-    scheduleEnsureTranscriptOnObserve(targetDirectory, sessionID)
-    let repoUnsub = (() => {
-      const repository = getTranscriptRepository()
-        ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
-      return repository.subscribe(transcriptScope(targetDirectory, sessionID), () => {
-        notify()
-      })
-    })()
-    const unsubBinding = subscribeTranscriptRepositoryBinding(() => {
-      repoUnsub()
-      const repository = getTranscriptRepository()
-        ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
-      repoUnsub = repository.subscribe(transcriptScope(targetDirectory, sessionID), () => {
-        notify()
-      })
-      resetObserveEnsureGate(targetDirectory, sessionID)
+      // Same-scope freeze: return the stamped list only — never live authority.
+      if (!enabled) {
+        const frozen = frozenSnapshotRef.current
+        if (frozen && sessionMessageRecordsFrozenScopesEqual(frozen.scope, scope)) {
+          return frozen.list
+        }
+        // Scope changed (or first inactive seed): drop the old snapshot and seed
+        // this scope once so disabled empty→real session and runtime swaps work.
+      }
+
+      const list = readLiveList()
+      frozenSnapshotRef.current = { scope, list }
+      return list
+    },
+    [enabled, readLiveList, sessionID, store, targetDirectory],
+  )
+
+  // Active: full transcript + catalog + binding. Frozen: only narrow binding /
+  // runtime identity lifecycle notifies so scope stamps can refresh without
+  // re-subscribing to high-frequency transcript content.
+  const subscribe = useMemo(
+    () => (notify: () => void) => {
+      if (!sessionID) return () => undefined
+
+      if (!enabled) {
+        const unsubBinding = subscribeTranscriptRepositoryBinding(() => {
+          notify()
+        })
+        const unsubRuntime = subscribeRuntimeEndpointChanged(() => {
+          notify()
+        })
+        return () => {
+          unsubBinding()
+          unsubRuntime()
+        }
+      }
+
+      // Observe-path ensure for reconnect-stale inactive sessions (batch 1A).
+      // Resume cancels prior gate via reset on binding swap; fresh schedule only
+      // while actively subscribed so frozen surfaces do not kick ensure work.
       scheduleEnsureTranscriptOnObserve(targetDirectory, sessionID)
-      notify()
-    })
-    // Store subscription covers session.revert metadata (catalog, not transcript).
-    const unsubStore = store.subscribe(() => {
-      notify()
-    })
-    return () => {
-      unsubBinding()
-      repoUnsub()
-      unsubStore()
-    }
-  }, [sessionID, store, targetDirectory])
+      let repoUnsub = (() => {
+        const repository = getTranscriptRepository()
+          ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+        return repository.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+          notify()
+        })
+      })()
+      const unsubBinding = subscribeTranscriptRepositoryBinding(() => {
+        repoUnsub()
+        const repository = getTranscriptRepository()
+          ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+        repoUnsub = repository.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+          notify()
+        })
+        resetObserveEnsureGate(targetDirectory, sessionID)
+        scheduleEnsureTranscriptOnObserve(targetDirectory, sessionID)
+        notify()
+      })
+      const unsubRuntime = subscribeRuntimeEndpointChanged(() => {
+        notify()
+      })
+      // Store subscription covers session.revert metadata (catalog, not transcript).
+      const unsubStore = store.subscribe(() => {
+        notify()
+      })
+      return () => {
+        unsubBinding()
+        unsubRuntime()
+        repoUnsub()
+        unsubStore()
+      }
+    },
+    [enabled, sessionID, store, targetDirectory],
+  )
 
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

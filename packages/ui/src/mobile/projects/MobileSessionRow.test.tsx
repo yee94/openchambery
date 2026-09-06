@@ -7,7 +7,9 @@ import { renderToString } from 'react-dom/server';
 
 import { I18nProvider } from '@/lib/i18n';
 
-import { MobileSessionRow } from './MobileSessionRow';
+import {
+  MobileSessionRow,
+} from './MobileSessionRow';
 import {
   resolveMobileSessionIndicator,
   type MobileSessionIndicator,
@@ -139,6 +141,17 @@ describe('resolveMobileSessionIndicator', () => {
     expect(resolve({ running: true, unread: true })).toBe('running');
     expect(resolve({ unread: true })).toBe('completed-unread');
     expect(resolve()).toBe('idle');
+  });
+});
+
+describe('MobileSessionRow memo contract', () => {
+  test('MobileSessionRow uses default React.memo (no custom comparer)', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionRow.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('export const MobileSessionRow = React.memo(MobileSessionRowImpl)');
+    expect(source).not.toContain('areMobileSessionRowPropsEqual');
   });
 });
 

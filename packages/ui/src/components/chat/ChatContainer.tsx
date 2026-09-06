@@ -119,6 +119,10 @@ import {
     buildTranscriptTailFingerprint,
     reportTranscriptStall,
 } from './transcriptStallWatchdog';
+import {
+    resetTranscriptStallStateForInactive,
+    shouldArmTranscriptStallWatchdog,
+} from './transcriptStallWatchdogEffect';
 
 import { useRecoverPendingQuestions } from '@/hooks/useRecoverPendingQuestions';
 import { useI18n } from '@/lib/i18n';
@@ -954,10 +958,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         key: string | null;
         attempt: number;
     }>({ key: sessionIdentityEnsureKey, attempt: 0 });
-    // Messages from sync system
+    // Messages from sync system. Inactive surfaces (phone predecessor) freeze
+    // the painted snapshot and unsubscribe so streaming on another session does
+    // not re-render this underlay — resume re-subscribes to live authority.
     const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', effectiveSessionDirectory, {
         suspendPartUpdates: Boolean(streamingMessageId),
         suspendPartUpdatesForMessageId: streamingMessageId,
+        enabled: active,
     });
     const sessionMessages = currentSessionId ? sessionMessageRecords : EMPTY_MESSAGES;
     const draftPendingMessage = newSessionDraft.pendingUserMessage;
@@ -1532,16 +1539,23 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         () => buildTranscriptTailFingerprint(renderedViewportMessages),
     );
     React.useEffect(() => {
-        if (!currentSessionId || !transcriptStallSessionKey || !sessionIsWorking) {
-            transcriptStallRef.current = { ...transcriptStallRef.current, lastMovementAt: null };
+        if (!shouldArmTranscriptStallWatchdog({
+            active,
+            sessionId: currentSessionId,
+            sessionKey: transcriptStallSessionKey,
+            sessionIsWorking,
+        })) {
+            // Drop stall history when inactive/idle so a later activate does not
+            // inherit a near-threshold clock and fire an immediate false refresh.
+            transcriptStallRef.current = resetTranscriptStallStateForInactive(transcriptStallRef.current);
             return;
         }
-        const sessionId = currentSessionId;
+        const sessionId = currentSessionId!;
         const directory = effectiveSessionDirectory;
         const interval = setInterval(() => {
             const fingerprint = readTranscriptTailFingerprint();
             const result = advanceTranscriptStallState(transcriptStallRef.current, {
-                sessionKey: transcriptStallSessionKey,
+                sessionKey: transcriptStallSessionKey!,
                 working: true,
                 streaming: Boolean(streamingMessageId),
                 fingerprint,
@@ -1566,6 +1580,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         }, TRANSCRIPT_STALL_POLL_MS);
         return () => clearInterval(interval);
     }, [
+        active,
         currentSessionId,
         effectiveSessionDirectory,
         readTranscriptTailFingerprint,

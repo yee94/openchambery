@@ -123,7 +123,7 @@ type SessionListProps = Pick<
   highlightQuery?: string;
 };
 
-function MobileLiveSessionRow(props: MobileSessionRowProps) {
+function MobileLiveSessionRowImpl(props: MobileSessionRowProps) {
   // Live child-store only — matches MobileSessionsSheet's useAllSessionStatuses
   // so sticky global fallback busy cannot disagree with the recent-sessions list.
   const status = useLiveSessionStatus(props.session.id);
@@ -147,8 +147,10 @@ function MobileLiveSessionRow(props: MobileSessionRowProps) {
   return <MobileSessionRow {...props} indicator={indicator} />;
 }
 
+const MobileLiveSessionRow = React.memo(MobileLiveSessionRowImpl);
+
 /** Flat session list only — no subagent nesting or expand/collapse chevrons. */
-function SessionList({
+function SessionListImpl({
   sessions,
   onSelectSession,
   onPinSession,
@@ -178,6 +180,8 @@ function SessionList({
     </>
   );
 }
+
+const SessionList = React.memo(SessionListImpl);
 
 /**
  * Linked worktree header: same long-press + left-swipe pattern as session rows.
