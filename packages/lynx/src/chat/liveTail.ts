@@ -180,12 +180,16 @@ export function applyNormalizedEventToTimeline(
   return { state: applyLynxLivePatch(state, patch), patch };
 }
 
-const decoder = new TextDecoder();
+function createUtf8StreamDecoder(): TextDecoder {
+  // Lazily construct — PrimJS may lack TextDecoder until encoding-polyfill runs.
+  return new TextDecoder();
+}
 
 async function* readUtf8Chunks(
   stream: ReadableStream<Uint8Array>,
   signal: AbortSignal,
 ): AsyncIterable<string> {
+  const decoder = createUtf8StreamDecoder();
   const reader = stream.getReader();
   try {
     while (!signal.aborted) {
