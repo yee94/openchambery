@@ -17,6 +17,7 @@ describe('feature routes runtime composition', () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toMatch(/const broadcastContactTurnEvent = createOpenChamberEventBroadcaster\(/);
     expect(source).toMatch(/onContactTurnEvent: \(event\) => broadcastContactTurnEvent\(event\)/);
+    expect(source).toMatch(/onContactTurnComplete: \(event\) => notifyContactTurnComplete\?\.\(event\)/);
     expect(source).toMatch(/onRevisionTip: \(tip\) => broadcastAssistantRevisionTip\(\{\s*type: 'openchamber:assistants-changed'/);
     // Contact turn envelopes stay off the assistants-changed revision watermark path.
     expect(source).not.toMatch(/onRevisionTip:[\s\S]*contact-turn/);

@@ -128,6 +128,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       globalMessageStreamHub,
       getServerId,
       sessionIndexService,
+      notifyContactTurnComplete,
     } = routeDependencies;
 
     registerSettingsUtilityRoutes(app, {
@@ -256,6 +257,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         properties: tip,
       }),
       onContactTurnEvent: (event) => broadcastContactTurnEvent(event),
+      onContactTurnComplete: (event) => notifyContactTurnComplete?.(event),
     });
     messageQueueRuntime?.setAssistantDeliveryService?.(assistantRoutesRuntime.service);
 

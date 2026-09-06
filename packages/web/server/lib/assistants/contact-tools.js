@@ -429,7 +429,7 @@ export function formatContactToolsPrompt(tools) {
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
     'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建 / 我去说一声) is not sending.',
-    'When calling a tool, emit only the fence. No preamble, no planning, no "let me think".',
+    'When calling a tool that takes a beat (找项目 / 开会话), you may say one short spoken line first (≤40 characters, e.g. 我去找一下), then only the fence. No planning, no tool names, no "let me think".',
     'Never say 已创建, 已发送, created, scheduled, opened, or sent unless the tool already returned success.',
     'If no registered project exists, tell the user to add one in Settings — do not use assistant-workspaces.',
     'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces.',

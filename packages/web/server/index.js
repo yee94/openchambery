@@ -1603,6 +1603,7 @@ async function main(options = {}) {
     globalMessageStreamHub,
     getServerId: () => relayService.getServerId(),
     sessionIndexService,
+    notifyContactTurnComplete: (event) => notificationTriggerRuntime.sendContactTurnNotification(event),
   });
 
   const previewProxyRuntime = createPreviewProxyRuntime({

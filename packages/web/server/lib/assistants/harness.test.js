@@ -183,8 +183,7 @@ describe('createContactStreamFn', () => {
     for await (const event of stream) void event
     const leaked = bubbleDeltas.some((item) => item.delta.includes('openchamber-tool') || item.delta.includes('assign_session'))
     expect(leaked).toBe(false)
-    expect(bubbleDeltas.some((item) => item.delta.includes('On it'))).toBe(false)
-    expect(bubbleDeltas).toEqual([])
+    expect(bubbleDeltas).toEqual([{ index: 0, delta: 'On it.', done: true }])
   })
 
   it('emits final stripped bubbles as done:true once when no live deltas arrive', async () => {
@@ -335,6 +334,48 @@ describe('runContactTurn', () => {
     expect(result.bubbles.join('\n')).not.toMatch(/Let me think|assign_session/)
     expect(result.bubbles).toEqual(['Opened a coding session.'])
     expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_plan' })])
+  })
+
+  it('keeps a short spoken preamble then the tool confirm', async () => {
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: '我去找一下' },
+              { type: 'toolCall', id: 'call_1', name: 'assign_session', arguments: { prompt: 'x' } },
+            ],
+          },
+          {
+            role: 'toolResult',
+            toolName: 'assign_session',
+            content: [{ type: 'text', text: 'Opened a coding session.' }],
+            details: {
+              card: {
+                type: 'card',
+                cardType: 'session',
+                sessionID: 'ses_speak',
+                directory: '/repo',
+                title: 'Work',
+                status: 'busy',
+              },
+            },
+          },
+        ]
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: 'assign login',
+      createChatCompletion: vi.fn(),
+      tools: [{ name: 'assign_session', execute: vi.fn() }],
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['我去找一下', 'Opened a coding session.'])
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_speak' })])
   })
 
   it('injects the registered projects catalog into the system prompt every turn', async () => {

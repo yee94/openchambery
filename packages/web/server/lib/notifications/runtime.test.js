@@ -199,6 +199,45 @@ const completionPayload = (sessionId = 'ses_root', finish = 'stop') => ({
   },
 });
 
+describe('contact turn notifications', () => {
+  it('sends an SMS-style title and body when a contact turn completes', async () => {
+    const { runtime, emitDesktopNotification, broadcastUiNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.sendContactTurnNotification({
+      assistantID: 'asst_1',
+      name: '大小白',
+      body: '我去找一下',
+      status: 'complete',
+    });
+    expect(emitDesktopNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: '大小白',
+      body: '我去找一下',
+      tag: 'contact-asst_1',
+      kind: 'ready',
+      assistantID: 'asst_1',
+    }));
+    expect(broadcastUiNotification).toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      title: '大小白',
+      body: '我去找一下',
+      data: expect.objectContaining({ assistantID: 'asst_1', type: 'ready' }),
+    }), { requireNoSse: true });
+  });
+
+  it('skips contact notifications when completion notices are disabled', async () => {
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime({
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnCompletion: false })),
+    });
+    await runtime.sendContactTurnNotification({
+      assistantID: 'asst_1',
+      name: '大小白',
+      body: 'hi',
+      status: 'complete',
+    });
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+});
+
 describe('notification trigger live activity end', () => {
   it('ends the live activity on top-level completion and error', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => rootSessionResponse()));

@@ -152,7 +152,7 @@ function MobileAssistantCard({
   assignedSessionIDs = [],
   serverWorking = false,
 }: MobileAssistantCardProps) {
-  const working = useAssistantWorking(assistantID, assignedSessionIDs, serverWorking);
+  const working = useAssistantWorking(assistantID);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [pressed, setPressed] = React.useState(false);
   const longPressRef = React.useRef<MobileLongPressController | null>(null);

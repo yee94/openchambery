@@ -40,7 +40,7 @@ import { AssistantAssistantCard } from './AssistantAssistantCard'
 import { AssistantScheduleCard } from './AssistantScheduleCard'
 import { AssistantSessionCard } from './AssistantSessionCard'
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
-import { useAssistantContactWorkingStore, useAssistantWorking } from './assistantWorking'
+import { useAssistantContactWorkingStore } from './assistantWorking'
 import {
   filesFromClipboard,
   filesFromDrop,
@@ -100,7 +100,6 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const sendGate = React.useMemo(() => createContactSendGate(), [])
   const settledTurnIDsRef = React.useRef(new Set<string>())
   const setContactWorking = useAssistantContactWorkingStore((state) => state.setWorking)
-  const working = useAssistantWorking(assistant.id, assistant.assignedSessionIDs ?? [], Boolean(assistant.working))
   const scrollerRef = React.useRef<HTMLDivElement | null>(null)
   const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
   const scopedOptimisticTurns = scopeContactOptimisticTurns(optimisticTurns, assistant.id)
@@ -316,7 +315,6 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                           emoji={senderPresentation?.avatarEmoji}
                           size={28}
                           label={senderName}
-                          working={!isPeer && working}
                         />
                       ) : (
                         <span className="size-7" aria-hidden />
