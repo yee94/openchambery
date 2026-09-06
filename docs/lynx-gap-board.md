@@ -210,7 +210,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | **Live** `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853`). iOS IPA / CocoaPods resolve still missing. Sideload `applicationId` = `com.yee94.openchamber.lynx.debug`. First-paint cream + globalProps 代码接上 — **not** 真机过. |
+| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | **Live** `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12`). iOS IPA / CocoaPods resolve still missing. Sideload `applicationId` = `com.yee94.openchamber.lynx.debug`. First-paint cream + globalProps 代码接上 — **not** 真机过. |
 | ~~Connect / splash while auto-connect resolves~~ | `MobileApp.tsx` welcome | **代码接上** ConnectWelcome splash + welcome; host LynxView chrome still thin |
 | ~~Instance list, add, delete, password unlock~~ | `mobileConnections.ts` | **代码接上** instances UI on welcome + settings/instances |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
@@ -239,7 +239,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 |---|---|---|
 | ~~**LegendList-semantics timeline**~~ | `TimelineList.tsx` | **代码接上** list semantics + LynxTimelineList + **rich turn cards** (Activity / Q&P) |
 | ~~SSE / event live tail~~ | `event-pipeline.ts` | **代码接上** Cap `/api/global/event` SSE fold into same list; WS host inject still thin |
-| Chat header / overflow | `MobileChatScreen.tsx` | Header + Files/Changes/MCP overflow **代码接上**; rich actions still thin |
+| Chat header / overflow | `MobileChatScreen.tsx` | Header + Cap phone overflow **new-session** + Files/Changes/MCP/refresh **代码接上**; Capgo update 故意不移植; iPad Settings omitted (Lynx has Settings tab) |
 | ~~Send / Stop / queue / abort~~ | ChatInput + queue | **代码接上** hooks + official routes; composer text input host binding still thin |
 | ~~Questions / permissions~~ | chat cards | **代码接上** pending `/question`+`/permission` cards + reply |
 | ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
@@ -340,7 +340,8 @@ First implementation slice after this doc gate (order is deliberate: connect →
 28. ~~**Changes revert glass + Cap confirm + pull-if-behind on #59 tip**~~ — 代码接上 in `cursor/lynx-revert-confirm-pull-local`. GlassChrome searchChip revert (↩) like stage +/−; Cap Dialog confirm before revert (Cap does **not** confirm commit&push); Cap commit→fetch→pull-if-behind(rebase)→push-if-ahead. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
 29. ~~**Centered Cap Dialog revert confirm on #60 tip**~~ — 代码接上 in `cursor/lynx-centered-confirm-dialog-local`. Replace elevated-in-sheet confirm card with Cap Dialog spirit (**scrim + centered max-w-md panel**); keep RevertGlassChip + pull-if-behind. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
 30. ~~**Dialog shell portal + destructive tokens + Cap arrow-go-back glyph on #61 tip**~~ — 代码接上 in `cursor/lynx-dialog-portal-theme-local`. Mount `LynxCenteredDialog` at **shell-root portal** (full-screen overlay, Cap DialogPortal spirit) — not nested absolute inside Changes relative; destructive uses `status.error` / `status.onError` (Cap `--destructive-foreground`, never `#fff`); RevertGlassChip glyph = Cap Icon `arrow-go-back` unicode ↩. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
-31. ~~**Android first-paint / black-screen mitigation + live CI honesty**~~ — 代码接上 (PR #65 + docs follow-up): Flexoki-light `cssVar` fallbacks, cream `windowBackground`, HostActivity MATCH_PARENT + ViewFactory `globalProps` (safe-area stubs), ConnectWelcome hard splash colors; `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` **live** (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853`). **Not** 真机过. Cap Linux JS skim: no further tiny product holes beyond host — **Next = host/真机-bound**. Product NOT DONE / 三关未齐 / not EXHAUSTED.
+31. ~~**Android first-paint / black-screen mitigation + live CI honesty**~~ — 代码接上 (PR #65 + docs follow-up): Flexoki-light `cssVar` fallbacks, cream `windowBackground`, HostActivity MATCH_PARENT + ViewFactory `globalProps` (safe-area stubs), ConnectWelcome hard splash colors; `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` **live** (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12`). **Not** 真机过. Follow-ons on tip: #67 TextDecoder polyfill, #68 root page + hard splash text, #69 drop explicit `<page>` (Android BehaviorController). First-paint stack Linux JS closed; remaining ConnectWelcome paint = emulator/host. Product NOT DONE / 三关未齐 / not EXHAUSTED.
+32. ~~**Cap phone overflow new-session → draft**~~ — 代码接上 in `cursor/lynx-overflow-new-session-local`. Cap `MobileApp` overflow first item `new-session` opens draft; Lynx overflow previously started at Files. Wire `onOpenDraft` → shell `openDraft` / `LynxDraftComposer`. Docs honesty: tip APK `lynx-v2-debug-30b1c12` (was stale `09b3853`); note #67–#69. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B; product NOT DONE.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -610,14 +611,14 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring — including Changes revert glass + Cap centered Dialog at shell-root portal + theme onError + Cap `arrow-go-back` glyph + pull-if-behind commit→push in Next #28–#30 + Android first-paint mitigation in Next #31). Cap skim (2026-09-07): **no further tiny Linux JS product holes** beyond host — Next = host/真机-bound. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log).
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `30b1c12` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32). Independent Cap skim (2026-09-07): found Cap phone overflow `new-session` → draft still missing on tip — **not** host-only; closed in #32. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log).
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
 | Item | Notes |
 |---|---|
 | Host Xcode/Gradle scaffold + bridge stubs | `packages/lynx/host/**` + README run steps; SDK pods/AAR still unresolved on Linux |
-| `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` | **Live** on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853`). Template copy under `packages/lynx/ci/` remains for reference. |
+| `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` | **Live** on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12`). Template copy under `packages/lynx/ci/` remains for reference. |
 | Projects DirectoryExplorer | `/api/fs/home` + `/api/fs/list` + settings `projects[]` add |
 | 扫一扫 / 切换实例 chrome | Camera adapter honest `unavailable`; instances → secondary nav |
 | Composer `/` `@` agent/model | Cap commands/agents/magic-prompts + `/api/config/providers` models |
@@ -752,8 +753,17 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Android cream windowBackground | `themes.xml` / `colors.xml` `lynx_window_background` `#fffdf4`; nav bar softened (not pure black void) |
 | HostActivity + ViewFactory globalProps | MATCH_PARENT LynxView; `globalProps` (platform android, chromeOwner Mode A, locale, safe-area stubs) → `updateGlobalProps` + `TemplateData`; App reads `lynx.__globalProps` |
 | ConnectWelcome first paint | Hard Flexoki cream/ink splash colors + splash log line; not 真机过 |
-| Live CI | `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` live; lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853` |
-| Cap Linux JS skim | No further tiny Cap product holes closable on Linux beyond host — Next = host/真机-bound |
+| Live CI | `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` live; lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12` |
+| Cap Linux JS skim (at #31) | Claimed no further tiny holes; independent skim found Cap phone overflow `new-session` → closed in Next #32 |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+
+### 代码接上 this slice (`cursor/lynx-overflow-new-session-local` / Next #32)
+
+| Item | Notes |
+|---|---|
+| Cap phone overflow new-session | First overflow item → shell `openDraft` / `LynxDraftComposer` (Cap `mobile.menu.newSession`) |
+| Overflow order | Cap phone: new-session · Files · Changes · MCP · refresh (no Capgo update; no iPad Settings) |
+| Docs honesty | Tip SHA / APK `lynx-v2-debug-30b1c12`; Next #31 notes #67 TextDecoder / #68 page+splash / #69 no-explicit-page |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
 ### Still missing / host-only / 真机

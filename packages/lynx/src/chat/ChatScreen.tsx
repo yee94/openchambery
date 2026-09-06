@@ -101,6 +101,11 @@ export type LynxChatScreenProps = {
   initialSheet?: LynxChatSheetKind | null;
   onSheetClosed?: () => void;
   /**
+   * Cap phone overflow first item `new-session` → open draft composer.
+   * Shell supplies `openDraft` navigation; absent → item still listed but no-op.
+   */
+  onOpenDraft?: () => void;
+  /**
    * Cap nested child stack: immediate predecessor route for underlay chrome.
    * Back pops to this session (ShellApp uses resolveLynxSecondaryBackDecision).
    */
@@ -134,7 +139,7 @@ const DEFAULT_MODEL: LynxComposerModel = {
  * Pushed chat page: header + LegendList timeline + composer send/stop/queue.
  * Live Cap `/api/global/event` SSE folds into the same list (no overlay).
  * IME occupancy is collapsed-foot only — host binds native IME (no WebView FLIP).
- * Overflow menu opens Files/Changes/MCP sheets backed by Cap list endpoints.
+ * Overflow menu: Cap phone order new-session + Files/Changes/MCP + refresh.
  */
 export function LynxChatScreen({
   locale,
@@ -148,6 +153,7 @@ export function LynxChatScreen({
   title,
   initialSheet = null,
   onSheetClosed,
+  onOpenDraft,
   predecessor = null,
   haptics = null,
   media = null,
@@ -598,6 +604,10 @@ export function LynxChatScreen({
 
   const onOverflowSelect = (id: LynxChatOverflowItemId) => {
     setMenuOpen(false);
+    if (id === 'newSession') {
+      onOpenDraft?.();
+      return;
+    }
     const sheetKind = chatSheetFromOverflowId(id);
     if (sheetKind) {
       setSheet(sheetKind);
