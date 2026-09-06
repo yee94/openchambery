@@ -2071,6 +2071,198 @@ button.oc-mobile-worktree-label-trigger:active,
   height: 0;
 }
 
+/* Mobile notifications keep the front card crisp while collapsed rear cards
+   step down through restrained surface levels. Sonner owns the 5% scale /
+   0.5rem offset; each exposed edge gets only a short contact shadow. */
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime) {
+  --oc-toast-background: color-mix(
+    in srgb,
+    var(--surface-elevated, var(--card)) 96%,
+    transparent
+  );
+  --oc-toast-background-rear-near: color-mix(
+    in srgb,
+    var(--surface-elevated, var(--card)) 86%,
+    var(--surface-background, var(--background))
+  );
+  --oc-toast-background-rear-far: color-mix(
+    in srgb,
+    var(--surface-elevated, var(--card)) 72%,
+    var(--surface-background, var(--background))
+  );
+  --oc-toast-shadow: 0 5px 12px -9px
+    color-mix(
+      in srgb,
+      var(--surface-foreground, var(--foreground)) 30%,
+      transparent
+    );
+  --oc-toast-shadow-rear-near: 0 3px 7px -5px
+    color-mix(
+      in srgb,
+      var(--surface-foreground, var(--foreground)) 22%,
+      transparent
+    );
+  --oc-toast-shadow-rear-far: 0 2px 5px -4px
+    color-mix(
+      in srgb,
+      var(--surface-foreground, var(--foreground)) 16%,
+      transparent
+    );
+}
+
+:root.dark:is(.device-mobile, .device-tablet, .mobile-pointer):not(
+    .desktop-runtime
+  ) {
+  --oc-toast-background: color-mix(
+    in srgb,
+    var(--surface-foreground, var(--foreground)) 7%,
+    var(--surface-elevated, var(--card))
+  );
+  --oc-toast-background-rear-near: color-mix(
+    in srgb,
+    var(--surface-foreground, var(--foreground)) 4%,
+    var(--surface-elevated, var(--card))
+  );
+  --oc-toast-background-rear-far: color-mix(
+    in srgb,
+    var(--surface-foreground, var(--foreground)) 1%,
+    var(--surface-elevated, var(--card))
+  );
+  --oc-toast-shadow: 0 5px 12px -9px
+    color-mix(
+      in srgb,
+      var(--surface-background, var(--background)) 76%,
+      transparent
+    );
+  --oc-toast-shadow-rear-near: 0 3px 7px -5px
+    color-mix(
+      in srgb,
+      var(--surface-background, var(--background)) 62%,
+      transparent
+    );
+  --oc-toast-shadow-rear-far: 0 2px 5px -4px
+    color-mix(
+      in srgb,
+      var(--surface-background, var(--background)) 48%,
+      transparent
+    );
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toaster] {
+  --gap: 0.5rem !important;
+  --oc-toast-action-background: transparent;
+  --oc-toast-action-foreground: var(--primary-base);
+  --oc-toast-cancel-background: transparent;
+  --oc-toast-cancel-foreground: var(--muted-foreground);
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast][data-styled="true"] {
+  min-height: 3.25rem;
+  padding: 0.5rem 0.625rem !important;
+  gap: 0.375rem !important;
+  border: 0 !important;
+  border-radius: var(--radius-xl) !important;
+  background: var(--oc-toast-background) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast][data-expanded="false"][data-front="false"][data-index="1"] {
+  --oc-toast-shadow: var(--oc-toast-shadow-rear-near);
+  background: var(--oc-toast-background-rear-near) !important;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast][data-expanded="false"][data-front="false"][data-index]:not(
+    [data-index="1"]
+  ) {
+  --oc-toast-shadow: var(--oc-toast-shadow-rear-far);
+  background: var(--oc-toast-background-rear-far) !important;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-content] {
+  min-width: 0;
+  gap: 0.125rem;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-title],
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-description] {
+  overflow-wrap: anywhere;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-icon] {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-inline: 0.125rem 0.25rem;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  .oc-toast-status-icon-desktop {
+  display: none;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  .oc-toast-status-icon-mobile {
+  display: block;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-button] {
+  min-width: 36px;
+  min-height: 36px;
+  height: auto !important;
+  margin-inline: 0 !important;
+  padding: 0.375rem 0.5rem !important;
+  border: 0 !important;
+  border-radius: var(--radius-md) !important;
+  background: transparent !important;
+  color: var(--primary-base) !important;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-cancel] {
+  background: transparent !important;
+  color: var(--muted-foreground) !important;
+}
+
+@media (hover: hover) {
+  :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+    [data-sonner-toast]
+    [data-button]:hover {
+    background: var(--interactive-hover) !important;
+  }
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-button]:active {
+  background: var(--interactive-active) !important;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast]
+  [data-button]:focus-visible {
+  box-shadow: 0 0 0 2px var(--interactive-focus-ring) !important;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .oc-mobile-glass-surface,
   .oc-mobile-floating-surface,
@@ -2098,6 +2290,15 @@ button.oc-mobile-worktree-label-trigger:active,
 
   .oc-mobile-glass-control--clear {
     background: var(--surface-elevated);
+  }
+
+  :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(
+      .desktop-runtime
+    )
+    [data-sonner-toast][data-styled="true"] {
+    background: var(--surface-elevated, var(--card)) !important;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   /* Composer glass is defined near the keyboard block; reduced-transparency
