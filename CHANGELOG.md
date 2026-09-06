@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.11] - 2026-09-06
+
+### 会话
+
+- 正在发送消息时也可以按两下 Esc 中止；第一次会立刻提示再按一次。
+- 焦点在正文、展开输入或侧栏编辑器时，Esc 中止不再被吃掉。
+
 ## [1.19.7-beta.10] - 2026-09-06
 
 ### 会话
