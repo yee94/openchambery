@@ -33,7 +33,9 @@ import { Text, View, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useConnection } from '@/context/ConnectionContext';
+import { useHomeAttention } from '@/hooks/useHomeAttention';
 import { useProjectsHome } from '@/hooks/useProjectsHome';
+import { dispatchMarkSessionViewed } from '@/lib/homeAttention';
 import { t } from '@/lib/i18n';
 import {
   filterProjectsHomeForSearch,
@@ -408,6 +410,7 @@ export function ProjectsHome() {
   const router = useRouter();
   const { controller, statusLabel, state } = useConnection();
   const active = state.active;
+  const attention = useHomeAttention({ enabled: Boolean(active), bridge: false });
   const {
     status,
     model,
@@ -423,6 +426,8 @@ export function ProjectsHome() {
     probeGitRepo,
   } = useProjectsHome({
     untitledLabel: t('mobile.sessions.untitled'),
+    unseenBySession: attention.unseenBySession,
+    runningSessionIds: attention.runningSessionIds,
   });
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -449,6 +454,7 @@ export function ProjectsHome() {
     (session: HomeSessionRow) => {
       setSearchOpen(false);
       setSearchQuery('');
+      dispatchMarkSessionViewed(session.id);
       router.push(`/chat/${encodeURIComponent(session.id)}`);
     },
     [router],

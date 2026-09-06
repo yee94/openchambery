@@ -5,9 +5,10 @@ import { Platform } from 'react-native';
 import { useConnection } from '@/context/ConnectionContext';
 import {
   applyChatEventToTranscript,
-  startGlobalEventStream,
   type EventTransportKind,
 } from '@/lib/eventStream';
+import { subscribeGlobalEvents } from '@/lib/globalEventHub';
+import { dispatchSetViewingSession } from '@/lib/homeAttention';
 import {
   createTranscriptController,
   type TranscriptRow,
@@ -258,13 +259,23 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     void refreshQuestions();
   }, [refreshQuestions, directory]);
 
-  // Events: prefer WS, SSE fallback, poll only reconnect fallback.
+  // Mark this session as viewed for home unread while Chat is open.
+  useEffect(() => {
+    if (!sessionId || isDraftSessionRouteId(sessionId)) {
+      dispatchSetViewingSession(null);
+      return;
+    }
+    dispatchSetViewingSession(sessionId);
+    return () => dispatchSetViewingSession(null);
+  }, [sessionId]);
+
+  // Events: shared global hub (home attention + chat) — WS → SSE → poll.
   useEffect(() => {
     if (!active || !sessionId) return;
     const cadence = resolveStreamingRenderCadence(platformCadence());
-    const handle = startGlobalEventStream(active, {
-      onTransport: setTransport,
-      onEvent: (event) => {
+    return subscribeGlobalEvents(
+      active,
+      (event) => {
         setPendingQuestions((prev) => applyQuestionEvent(prev, event, sessionId));
         const controller = transcriptRef.current;
         applyChatEventToTranscript(event, sessionId, {
@@ -295,8 +306,8 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
           setBusy: (next) => controller.setBusy(next),
         });
       },
-    });
-    return () => handle.cleanup();
+      { onTransport: setTransport },
+    );
   }, [active, sessionId]);
 
   const send = useCallback(async () => {

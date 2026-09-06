@@ -8,6 +8,8 @@ import { SplashConnecting } from '@/components/connect/SplashConnecting';
 import { ConnectionProvider, useConnection } from '@/context/ConnectionContext';
 import { useDeepLinkNavigation } from '@/hooks/useDeepLinkNavigation';
 import { usePushRegistration } from '@/hooks/usePushRegistration';
+import { useHomeAttention } from '@/hooks/useHomeAttention';
+import { dispatchMarkSessionViewed } from '@/lib/homeAttention';
 import { useShareInbox } from '@/hooks/useShareInbox';
 import { t } from '@/lib/i18n';
 
@@ -52,6 +54,7 @@ function RootLayoutNav() {
 
   const openSession = useCallback(
     (sessionId: string) => {
+      dispatchMarkSessionViewed(sessionId);
       router.push(`/chat/${encodeURIComponent(sessionId)}`);
     },
     [router],
@@ -63,6 +66,8 @@ function RootLayoutNav() {
     onOpenSession: openSession,
   });
   useShareInbox({ enabled: state.phase === 'connected' });
+  // Home unread/running — keep subscribed while connected (not only on Projects tab).
+  useHomeAttention({ enabled: state.phase === 'connected' });
 
   useEffect(() => {
     if (state.phase === 'booting' || state.phase === 'connecting') return;
