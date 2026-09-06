@@ -18,6 +18,7 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useI18n } from '@/lib/i18n';
+import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { GlobalScheduledTask, ScheduledTask, ScheduledTaskStatus } from '@/lib/scheduledTasksApi';
 import {
@@ -37,22 +38,54 @@ import {
 } from '@/queries/assistantQueries';
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useScopedProvidersQuery } from '@/queries/agentQueries';
 
 const MANAGED_WORKSPACE_VALUE = '__managed_workspace__';
 const LEGACY_WORKSPACE_VALUE = '__current_workspace__';
 
-const emptyDraft = (): AssistantDraft => ({
-  enabled: true,
-  name: '',
-  defaultPrompt: '',
-  workspacePath: null,
-  providerID: '',
-  modelID: '',
-  agent: null,
-  mode: 'continuous',
-});
+export const DEFAULT_ASSISTANT_NAME = '默认助理';
+
+/** Resolves an initial provider and model for default assistant creation. */
+export const resolveDefaultAssistantModel = (): { providerID: string; modelID: string } | null => {
+  const configState = useConfigStore.getState();
+  const settingsDefaultModel = configState.settingsDefaultModel;
+  if (settingsDefaultModel) {
+    const parsed = parseModelIdentifier(settingsDefaultModel);
+    if (parsed?.providerId && parsed?.modelId) {
+      return { providerID: parsed.providerId, modelID: parsed.modelId };
+    }
+  }
+  if (configState.currentProviderId && configState.currentModelId) {
+    return { providerID: configState.currentProviderId, modelID: configState.currentModelId };
+  }
+  const providers = configState.providers;
+  for (const provider of providers) {
+    const models = provider.models;
+    if (Array.isArray(models) && models.length > 0) {
+      const firstModel = models[0] as { id?: string };
+      if (firstModel?.id) {
+        return { providerID: provider.id, modelID: firstModel.id };
+      }
+    }
+  }
+  return null;
+};
+
+const emptyDraft = (defaultName = ''): AssistantDraft => {
+  const defaultModel = resolveDefaultAssistantModel();
+  return {
+    enabled: true,
+    name: defaultName,
+    defaultPrompt: '',
+    workspacePath: null,
+    providerID: defaultModel?.providerID ?? '',
+    modelID: defaultModel?.modelID ?? '',
+    agent: null,
+    mode: 'continuous',
+  };
+};
 
 const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
   enabled: assistant.enabled,
@@ -300,6 +333,24 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
     if (!snapshot) return;
     try {
       await setAssistantsEnabled(enabled, snapshot.revision);
+      // When enabling with an empty catalog, seed the default assistant so the user
+      // immediately has an active contact ready without manual onboarding.
+      if (enabled && snapshot.assistants.length === 0) {
+        const defaultModel = resolveDefaultAssistantModel();
+        if (defaultModel) {
+          const created = await createAssistant({
+            enabled: true,
+            name: DEFAULT_ASSISTANT_NAME,
+            defaultPrompt: '',
+            workspacePath: null,
+            providerID: defaultModel.providerID,
+            modelID: defaultModel.modelID,
+            agent: null,
+            mode: 'continuous',
+          });
+          selectSettingsAssistant(created.id);
+        }
+      }
     } catch {
       toast.error(t('assistants.settings.toast.toggleFailed'));
     }
@@ -422,9 +473,9 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   React.useEffect(() => {
     if (selectedID !== 'new' || createRequestRevision <= handledCreateRequestRef.current) return;
     handledCreateRequestRef.current = createRequestRevision;
-    setDraft(emptyDraft());
+    setDraft(emptyDraft(!snapshot?.assistants.length ? DEFAULT_ASSISTANT_NAME : ''));
     window.requestAnimationFrame(() => document.getElementById('assistant-name')?.focus());
-  }, [createRequestRevision, selectedID]);
+  }, [createRequestRevision, selectedID, snapshot?.assistants.length]);
 
   React.useEffect(() => {
     if (snapshotQuery.isSuccess && capabilityQuery.data?.serverInstanceID && defaultShareAssistant?.serverInstanceID === capabilityQuery.data.serverInstanceID
