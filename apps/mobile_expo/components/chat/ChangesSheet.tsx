@@ -16,7 +16,8 @@ import {
 import { Text, useThemeColor } from '@/components/Themed';
 import { useConnection } from '@/context/ConnectionContext';
 import {
-  buildSimpleDiffText,
+  buildSimpleDiffLines,
+  type SimpleDiffLine,
   isStagedGitFile,
   isUnstagedGitFile,
   loadGitFileDiff,
@@ -53,7 +54,7 @@ export function ChangesSheet({
   const [branch, setBranch] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [diffText, setDiffText] = useState('');
+  const [diffLines, setDiffLines] = useState<SimpleDiffLine[]>([]);
 
   useEffect(() => {
     if (!visible) return;
@@ -61,6 +62,7 @@ export function ChangesSheet({
       setRoute({ type: 'diff', path: initialDiffPath.trim(), staged: initialDiffStaged });
     } else {
       setRoute({ type: 'list' });
+      setDiffLines([]);
     }
   }, [visible, initialDiffPath, initialDiffStaged]);
 
@@ -95,7 +97,7 @@ export function ChangesSheet({
     setError(null);
     void loadGitFileDiff(active, directory, route.path, { staged: route.staged })
       .then((diff) => {
-        if (!cancelled) setDiffText(buildSimpleDiffText(diff));
+        if (!cancelled) setDiffLines(buildSimpleDiffLines(diff));
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'diff failed');
@@ -178,9 +180,31 @@ export function ChangesSheet({
           />
         ) : (
           <ScrollView contentContainerStyle={{ padding: 16 }}>
-            <Text style={[styles.diff, { color: textColor }]} selectable>
-              {diffText || (loading ? '' : '—')}
-            </Text>
+            {diffLines.length === 0 && !loading ? (
+              <Text style={[styles.diff, { color: muted }]}>—</Text>
+            ) : (
+              diffLines.map((line, index) => (
+                <Text
+                  key={`${index}:${line.kind}:${line.text.slice(0, 24)}`}
+                  style={[
+                    styles.diff,
+                    {
+                      color:
+                        line.kind === 'add'
+                          ? '#16a34a'
+                          : line.kind === 'del'
+                            ? '#dc2626'
+                            : line.kind === 'meta'
+                              ? muted
+                              : textColor,
+                    },
+                  ]}
+                  selectable
+                >
+                  {line.text || ' '}
+                </Text>
+              ))
+            )}
           </ScrollView>
         )}
       </RNView>

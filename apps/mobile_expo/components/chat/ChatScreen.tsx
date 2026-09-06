@@ -16,6 +16,7 @@ import { ChangesSheet } from '@/components/chat/ChangesSheet';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ContextUsageRing } from '@/components/chat/ContextUsageRing';
 import { FilesSheet } from '@/components/chat/FilesSheet';
+import { MobileSessionsSheet } from '@/components/chat/MobileSessionsSheet';
 import { PermissionCard } from '@/components/chat/PermissionCard';
 import { QuestionCard } from '@/components/chat/QuestionCard';
 import { QueueEditModal } from '@/components/chat/QueueEditModal';
@@ -36,7 +37,7 @@ import {
   shouldStartSessionSwipe,
 } from '@/lib/sessionSwipe';
 import { loadSessionIndexSnapshot } from '@/lib/sessionIndex';
-import { buildSessionHomeModel } from '@/lib/sessionHomeModel';
+import { buildSessionHomeModel, DRAFT_ROUTE_ID } from '@/lib/sessionHomeModel';
 import { t } from '@/lib/i18n';
 
 export type ChatScreenProps = {
@@ -52,6 +53,7 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
   const [androidEditItem, setAndroidEditItem] = useState<MessageQueueChipItem | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [rankedIds, setRankedIds] = useState<string[]>([]);
   const swipeStart = useRef<{ x: number; y: number; surface: boolean } | null>(null);
   const headerSwipeStart = useRef<{ x: number; y: number } | null>(null);
@@ -238,7 +240,7 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
       endX: x,
       endY: y,
       viewportWidth: Dimensions.get('window').width,
-      disabled: filesOpen || changesOpen,
+      disabled: filesOpen || changesOpen || sessionsOpen,
       startedOnExcludedTarget: false,
     });
     if (result.back) {
@@ -246,8 +248,7 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
       return;
     }
     if (result.open) {
-      // Sessions sheet residual — navigate home for now (sheet host not yet Expo-native).
-      router.replace('/(tabs)');
+      setSessionsOpen(true);
     }
   };
 
@@ -401,6 +402,20 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         visible={changesOpen}
         directory={chat.directory}
         onClose={() => setChangesOpen(false)}
+      />
+
+      <MobileSessionsSheet
+        visible={sessionsOpen}
+        currentSessionId={chat.sessionId}
+        onClose={() => setSessionsOpen(false)}
+        onOpenSession={(sessionId) => {
+          setSessionsOpen(false);
+          router.replace(`/chat/${encodeURIComponent(sessionId)}`);
+        }}
+        onDraft={() => {
+          setSessionsOpen(false);
+          router.replace(`/chat/${DRAFT_ROUTE_ID}`);
+        }}
       />
     </View>
   );

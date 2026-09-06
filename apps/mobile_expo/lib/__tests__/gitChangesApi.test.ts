@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildSimpleDiffLines,
   buildSimpleDiffText,
   isStagedGitFile,
   isUnstagedGitFile,
@@ -40,5 +41,17 @@ describe('buildSimpleDiffText', () => {
     const text = buildSimpleDiffText({ original: 'a\n', modified: 'b\n', path: 'x' });
     expect(text).toContain('-a');
     expect(text).toContain('+b');
+  });
+});
+
+
+describe('buildSimpleDiffLines', () => {
+  it('colors add/del and marks meta', () => {
+    expect(buildSimpleDiffLines({ original: 'a', modified: 'a', path: 'x', isBinary: true })).toEqual([
+      { kind: 'meta', text: '(binary file)' },
+    ]);
+    const lines = buildSimpleDiffLines({ original: 'a\n', modified: 'b\n', path: 'x' });
+    expect(lines.some((l) => l.kind === 'del' && l.text.includes('-a'))).toBe(true);
+    expect(lines.some((l) => l.kind === 'add' && l.text.includes('+b'))).toBe(true);
   });
 });

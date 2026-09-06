@@ -157,3 +157,22 @@ export const buildSimpleDiffText = (diff: GitFileDiff): string => {
   const text = out.join('\n');
   return text.length > 80_000 ? `${text.slice(0, 80_000)}\n…` : text;
 };
+
+
+export type SimpleDiffLine = {
+  kind: 'context' | 'add' | 'del' | 'meta';
+  text: string;
+};
+
+/** Line-oriented simple diff chrome (Cap contract without Pierre). */
+export const buildSimpleDiffLines = (diff: GitFileDiff): SimpleDiffLine[] => {
+  const text = buildSimpleDiffText(diff);
+  if (text === '(binary file)' || text === '(no textual changes)') {
+    return [{ kind: 'meta', text }];
+  }
+  return text.split('\n').map((line) => {
+    if (line.startsWith('+')) return { kind: 'add' as const, text: line };
+    if (line.startsWith('-')) return { kind: 'del' as const, text: line };
+    return { kind: 'context' as const, text: line };
+  });
+};

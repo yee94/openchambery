@@ -49,7 +49,7 @@ LegendList semantics (not 1.18 TanStack), transcript, Send/Stop, events WS/SSE, 
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **code landed** | LegendList transcript (`initialScrollAtEnd` / `maintainScrollAtEnd` / MVCP); load `GET .../messages?turns=6`; Send `prompt_async` / Stop `abort`; draft materialize `POST /api/session` then prompt; events prefer `/api/global/event/ws` → SSE → poll-only reconnect fallback; streaming markdown paced 64ms (Android 128ms) with incomplete-fence isolation; composer text+send/stop (no mic/TTS). **Residuals landed:** tool cards + reasoning + queue chips; slash/`@`/`#` autocomplete; context usage ring; attachments (HEIC device residual); queue ↑↓ + iOS Alert.prompt edit; Used fold + skill groups; question cards; Android queue edit modal; **permission prompts** (`GET /api/permission` + asked/replied/rejected; once/always/reject card); **Files sheet** (list/search/read, Share copy, HTML source/preview from auth fetch); **Changes sheet** (git status + file-diff text); **composer/header session swipe** helpers + RN wiring (sessions open → tabs until MobileSessionsSheet); **transcript overflow** share/fork/copy (session menu + message long-press). Unit + 关3 perf green locally. Residual: Cap MobileSessionsSheet host; Pierre diff chrome; HTML WebView polish; HEIC device; LatticeOrb/FlipUp; glass composer Track 8 (leave alone). |
+| Track (CODE) | **code landed** | LegendList transcript (`initialScrollAtEnd` / `maintainScrollAtEnd` / MVCP); load `GET .../messages?turns=6`; Send `prompt_async` / Stop `abort`; draft materialize `POST /api/session` then prompt; events prefer `/api/global/event/ws` → SSE → poll-only reconnect fallback; streaming markdown paced 64ms (Android 128ms) with incomplete-fence isolation; composer text+send/stop (no mic/TTS). **Residuals landed:** tool cards + reasoning + queue chips; slash/`@`/`#` autocomplete; context usage ring; attachments (HEIC device residual); queue ↑↓ + iOS Alert.prompt edit; Used fold + skill groups; question cards; Android queue edit modal; **permission prompts** (`GET /api/permission` + asked/replied/rejected; once/always/reject card); **Files sheet** (list/search/read, Share copy, HTML source/preview from auth fetch); **Changes sheet** (git status + file-diff text + simple +/- line chrome); **composer swipe** neighbor switch + **header/edge swipe → MobileSessionsSheet** (session-index + homeAttention list/search/pin/open/draft — not tabs jump); **transcript overflow** share/fork/copy (session menu + message long-press). Unit + 关3 perf green locally. Residual (non-feature / polish-device): full Pierre diff viewer; HTML `WebView` preview (auth-fetch source landed; no RN WebView dep yet); HEIC device; LatticeOrb/FlipUp motion; glass composer Track 8 (leave alone). |
 | CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
@@ -151,6 +151,23 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Plan mode / project notes / Todo product | will-not-port | Removed 1.19.2 |
 | Voice STT/TTS client | will-not-port | Same as Flutter |
 | Live hosted OAuth / Local Network prompt / live `wss` phone | 真机过 residual | Even after code lands |
+
+## Feature-track CODE exhaustion (tip audit)
+
+Tracks **1–8 Track (CODE)** are **code landed** on `work/expo-native` for required Cap contracts covered by this inventory. Remaining open work is **not** a missing feature-track CODE cell:
+
+| Residual | Kind |
+|---|---|
+| All nine-track **真机过** rows | device |
+| HEIC pick / Live hosted OAuth / Local Network / live `wss` | device |
+| iOS Share Extension target UI / WidgetKit Live Activity UI / APNs·FCM | device (Track 8 APIs landed) |
+| HTML `WebView` preview (auth-fetch source already landed) | polish |
+| Full Pierre diff viewer (simple +/- chrome landed) | polish |
+| LatticeOrb / FlipUp motion | polish |
+| iOS Simulator CI binary | CI residual (macos/pods) |
+| Signed release workflow | Track 9 process (debug APK/prerelease already green) |
+
+**CODE-exhausted** for feature tracks 1–8 pending tip CI re-green after this push. Do not invent new product tracks from polish pixels.
 
 ## How to update
 
