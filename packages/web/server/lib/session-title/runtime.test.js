@@ -243,6 +243,17 @@ describe('session-title helpers', () => {
       metadata: { openchamber: { smallModel: { purpose: '' } } },
     })).toBe(false);
     expect(isSystemOwnedSession({ title: 'Ordinary' })).toBe(false);
+    expect(isSystemOwnedSession({
+      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
+    })).toBe(false);
+    expect(isSystemOwnedSession({
+      metadata: {
+        openchamber: {
+          assistant: { assistantID: 'assistant_1' },
+          assigned: { from: 'contact' },
+        },
+      },
+    })).toBe(false);
   });
 
   it('skips title generation and patch for system-owned sessions', async () => {

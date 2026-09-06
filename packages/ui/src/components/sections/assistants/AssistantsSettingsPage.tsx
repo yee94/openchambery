@@ -341,7 +341,9 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               <AgentAvatar name={selected?.id ?? 'new'} emoji={draftPresentation.avatarEmoji} size={38} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} />
               <div className="min-w-0 flex-1">
                 <h2 className="truncate typography-ui-header font-semibold text-foreground">{selected ? selectedPresentation?.displayName : t('assistants.settings.create')}</h2>
-                <p className="mt-0.5 typography-micro leading-none text-muted-foreground/70">{draft.mode === 'continuous' ? t('assistants.mode.continuous') : t('assistants.mode.stateless')}</p>
+                {draft.providerID && draft.modelID ? (
+                  <p className="mt-0.5 typography-micro leading-none text-muted-foreground/70">{`${draft.providerID}/${draft.modelID}`}</p>
+                ) : null}
               </div>
               {selected ? <Button variant="ghost" size="sm" onClick={remove} disabled={saving} className="text-[var(--status-error)]"><Icon name="delete-bin" className="size-4" />{t('assistants.settings.delete')}</Button> : null}
             </div>
@@ -384,19 +386,6 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
                 </SettingsRow>
                 <SettingsRow itemId="assistants.agent" label={t('assistants.settings.agent')}>
                   <AgentSelector agentName={draft.agent ?? ''} agents={catalogAgents} onChange={(agent) => patchDraft('agent', agent || null)} className="oc-settings-inline-value" />
-                </SettingsRow>
-                <SettingsRow
-                  itemId="assistants.mode"
-                  label={t('assistants.settings.mode')}
-                  description={draft.mode === 'stateless' ? t('assistants.conversation.statelessHint') : t('assistants.conversation.continuousHint')}
-                >
-                  <div className="flex min-w-0 flex-wrap justify-end gap-2">
-                    <div className="flex flex-wrap gap-2">
-                      {(['continuous', 'stateless'] as const).map((mode) => (
-                        <Button key={mode} variant="chip" size="xs" aria-pressed={draft.mode === mode} onClick={() => patchDraft('mode', mode)}>{mode === 'continuous' ? t('assistants.mode.continuous') : t('assistants.mode.stateless')}</Button>
-                      ))}
-                    </div>
-                  </div>
                 </SettingsRow>
             </SettingsGroup>
 

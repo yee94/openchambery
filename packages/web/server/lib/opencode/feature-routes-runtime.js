@@ -15,6 +15,7 @@ import { registerScheduledTaskToolRoute } from '../scheduled-tasks/managed-tool-
 import { registerConversationRoutes } from '../conversations/routes.js';
 import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';
 import { registerAssistantRoutes } from '../assistants/routes.js';
+import { registerLlmRoutes } from '../llm/routes.js';
 import { registerMessageQueueRoutes } from '../message-queue/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerPluginRoutes } from './plugin-routes.js';
@@ -215,6 +216,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenChamberEventClients,
       writeSseEvent,
     });
+    registerLlmRoutes(app, {
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+    });
     assistantRoutesRuntime = registerAssistantRoutes(app, {
       openchamberDataDir,
       dbPath: path.join(openchamberDataDir, 'assistants.sqlite'),
@@ -222,6 +227,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenCodeAuthHeaders,
       getServerId,
       getAllowedRoots: () => assistantAllowedRoots,
+      listProjects: async () => {
+        const settings = await readSettingsFromDiskMigrated();
+        return sanitizeProjects(settings?.projects ?? [])
+          .filter((project) => project && typeof project.id === 'string' && typeof project.path === 'string')
+          .map((project) => ({ id: project.id, path: project.path }));
+      },
+      upsertScheduledTask: (projectID, task) => projectConfigRuntime.upsertScheduledTask(projectID, task),
+      syncScheduledTaskProject: (projectID) => scheduledTasksRuntime.syncProject(projectID),
       refreshAllowedRoots: refreshAssistantAllowedRoots,
       globalEventHub: globalMessageStreamHub,
       onRevisionTip: (tip) => broadcastAssistantRevisionTip({

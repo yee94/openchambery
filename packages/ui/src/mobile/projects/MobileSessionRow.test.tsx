@@ -193,6 +193,23 @@ describe('MobileSessionRow status placement', () => {
     expect(html).not.toContain('#oc-arrow-down-s');
   });
 
+  test('shows session change counts next to the title when provided', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileSessionRow
+          session={{ id: 'session-1', title: 'Login', changes: '+12 −3' }}
+          onSelect={noop}
+          onPin={noop}
+          onArchive={noop}
+          onOpenActions={noop}
+        />
+      </I18nProvider>,
+    );
+    expect(html).toContain('oc-mobile-session-changes');
+    expect(html).toContain('+12 −3');
+    expect(html.indexOf('Login')).toBeLessThan(html.indexOf('+12 −3'));
+  });
+
   test('wraps keyword matches in mark when highlightQuery is set', () => {
     const html = renderToString(
       <I18nProvider>

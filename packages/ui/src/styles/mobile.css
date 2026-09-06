@@ -1236,13 +1236,14 @@ button.oc-mobile-worktree-label-trigger:active,
   flex: none;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  /* Visible so the Grok-Bot working dot can sit on the corner. */
+  overflow: visible;
   box-sizing: border-box;
   border-radius: 999px;
   background: transparent;
 }
 
-.oc-mobile-assistant-avatar > [role="img"] {
+.oc-mobile-assistant-avatar [role="img"] {
   overflow: hidden;
   border-radius: inherit;
 }
@@ -1252,7 +1253,7 @@ button.oc-mobile-worktree-label-trigger:active,
   background: var(--interactive-selection);
 }
 
-.oc-mobile-assistant-avatar--emoji > [role="img"] {
+.oc-mobile-assistant-avatar--emoji [role="img"] {
   width: 100% !important;
   min-width: 100% !important;
   max-width: 100% !important;
@@ -1263,7 +1264,7 @@ button.oc-mobile-worktree-label-trigger:active,
   background: var(--interactive-selection);
 }
 
-.oc-mobile-assistant-avatar--emoji > [role="img"] > span {
+.oc-mobile-assistant-avatar--emoji [role="img"] > span {
   font-size: 1.75rem !important;
   line-height: 1 !important;
 }
