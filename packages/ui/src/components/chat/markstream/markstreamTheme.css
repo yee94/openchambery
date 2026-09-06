@@ -56,3 +56,23 @@
 .oc-markstream-host .markstream-react > .node-slot:last-of-type .paragraph-node {
   margin-bottom: 0;
 }
+
+/* Library `:where(.markstream-react) .image-node__img` sets `max-width: none`
+   so intrinsic pixel width can grow the assistant bubble. Match decorate.ts
+   MARKDOWN_IMAGE_CLASS (`max-w-full`) plus placeholder containment
+   (`h-auto`, `object-contain`). */
+.oc-markstream-host .markstream-react,
+.oc-markstream-host .markstream-react .node-slot,
+.oc-markstream-host .markstream-react .image-node {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.oc-markstream-host .markstream-react img:not([data-md-link-favicon='true']),
+.oc-markstream-host .markstream-react .image-node__img {
+  display: block;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
