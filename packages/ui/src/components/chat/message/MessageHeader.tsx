@@ -32,9 +32,9 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
     const displayModelName = modelName || 'Assistant';
 
     return (
-        <div className={cn('mb-1.5 min-w-0 overflow-hidden')}>
-            <div className={cn('flex min-w-0 items-center justify-between gap-2 overflow-hidden')}>
-                <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        <div className={cn('mb-1.5')}>
+            <div className={cn('flex items-center justify-between gap-2')}>
+                <div className="flex items-center gap-2">
                     <div className="flex-shrink-0">
                         {isUser ? (
                             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -54,10 +54,10 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                             </div>
                         )}
                     </div>
-                    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                    <div className="flex items-center gap-2">
                         <h3
                             className={cn(
-                                'inline-flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-semibold typography-ui-header tracking-tight leading-tight',
+                                'inline-flex min-w-0 items-center gap-1.5 font-semibold typography-ui-header tracking-tight leading-tight',
                                 isUser ? 'text-primary' : 'text-foreground'
                             )}
                         >
@@ -71,14 +71,14 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                         {!isUser && agentName && (
                             <div
                                 className={cn(
-                                    'agent-badge inline-flex min-w-0 max-w-[45%] shrink items-center gap-1 overflow-hidden whitespace-nowrap cursor-default rounded font-normal leading-tight',
+                                    'agent-badge inline-flex items-center gap-1 cursor-default rounded font-normal leading-tight',
                                     isMobile ? 'px-1 py-px text-[10px]' : 'px-1.5 py-0.5 typography-micro',
                                     getAgentColor(agentName).class
                                 )}
                             >
                                 {/* 与选择 Agent 一致：用 identicon 头像代替通用机器人图标 */}
                                 <AgentAvatar name={agentName} size={10} />
-                                <span className="truncate">
+                                <span>
                                     {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
                                 </span>
                             </div>

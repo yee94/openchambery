@@ -37,6 +37,8 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       )}
       // currentColor is the reliable SVG paint path; presentation-attribute
       // fill="var(--agent-color)" often resolves transparent in Chromium.
+      // Emoji uses inline display+align so a caller className like `block`
+      // cannot strip the flex box and leave the glyph off-center.
       style={{
         width: `calc(${size}px * var(--dpt-n, 1))`,
         minWidth: `calc(${size}px * var(--dpt-n, 1))`,
@@ -45,13 +47,29 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         minHeight: `calc(${size}px * var(--dpt-n, 1))`,
         maxHeight: `calc(${size}px * var(--dpt-n, 1))`,
         color: `var(${color.var})`,
+        ...(emoji
+          ? {
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }
+          : null),
       }}
       role={label ? 'img' : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
       {emoji ? (
-        <span aria-hidden="true" style={{ fontSize: `calc(${size * 0.75}px * var(--dpt-n, 1))`, lineHeight: 1 }}>
+        <span
+          aria-hidden="true"
+          className="flex h-full w-full items-center justify-center leading-none"
+          style={{
+            fontSize: `calc(${size * 0.75}px * var(--dpt-n, 1))`,
+            lineHeight: 1,
+            // Emoji fonts paint slightly high in the em box on iOS/Android.
+            transform: 'translateY(0.06em)',
+          }}
+        >
           {emoji}
         </span>
       ) : <svg

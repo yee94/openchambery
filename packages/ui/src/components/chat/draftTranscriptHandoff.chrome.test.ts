@@ -155,6 +155,9 @@ describe('draft transcript handoff Chrome continuity', () => {
             expect(draft.scrollerPresent).toBe(true);
             expect(draft.composerPresent).toBe(true);
             expect(draft.composerVisibility).toBe('hidden');
+            expect(draft.userVisibility).toBe('visible');
+            expect(draft.headerVisibility).toBe('visible');
+            expect(draft.pinReveal).not.toBe('pending');
 
             for (const frame of samples.slice(1)) {
               const label = `${claimTiming}:${width}:${frame.phase}:${frame.frame}`;

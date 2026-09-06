@@ -1260,13 +1260,23 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-assistant-avatar--emoji > [role="img"] {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
   background: var(--interactive-selection);
 }
 
 .oc-mobile-assistant-avatar--emoji [role="img"] > span {
+  display: flex !important;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
   font-size: 1.75rem !important;
   line-height: 1 !important;
+  /* Match AgentAvatar optical nudge so the glyph sits in the circle. */
+  transform: translateY(0.06em);
 }
 
 .oc-mobile-assistant-avatar--visual {
@@ -1289,22 +1299,6 @@ button.oc-mobile-worktree-label-trigger:active,
 
 .oc-mobile-assistant-card-content {
   padding-top: 0.0625rem;
-}
-
-.oc-mobile-assistant-card-header {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.oc-mobile-assistant-mode {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.125rem 0.4375rem;
-  background: var(--surface-muted);
 }
 
 .oc-mobile-assistant-summary {
@@ -2071,23 +2065,24 @@ button.oc-mobile-worktree-label-trigger:active,
   height: 0;
 }
 
-/* Mobile notifications keep the front card crisp while collapsed rear cards
-   step down through restrained surface levels. Sonner owns the 5% scale /
-   0.5rem offset; each exposed edge gets only a short contact shadow. */
+/* Mobile notifications use the shared glass blur, but a denser fill than
+   dock/control glass so the frost reads without turning the banner airy.
+   Collapsed rear cards recede toward the page canvas. Sonner owns the 5%
+   scale / 0.5rem offset; each exposed edge gets only a short contact shadow. */
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime) {
   --oc-toast-background: color-mix(
     in srgb,
-    var(--surface-elevated, var(--card)) 96%,
+    var(--surface-elevated, var(--card)) 90%,
     transparent
   );
   --oc-toast-background-rear-near: color-mix(
     in srgb,
-    var(--surface-elevated, var(--card)) 86%,
+    var(--surface-elevated, var(--card)) 82%,
     var(--surface-background, var(--background))
   );
   --oc-toast-background-rear-far: color-mix(
     in srgb,
-    var(--surface-elevated, var(--card)) 72%,
+    var(--surface-elevated, var(--card)) 70%,
     var(--surface-background, var(--background))
   );
   --oc-toast-shadow: 0 5px 12px -9px
@@ -2115,18 +2110,18 @@ button.oc-mobile-worktree-label-trigger:active,
   ) {
   --oc-toast-background: color-mix(
     in srgb,
-    var(--surface-foreground, var(--foreground)) 7%,
-    var(--surface-elevated, var(--card))
+    var(--surface-elevated, var(--card)) 88%,
+    transparent
   );
   --oc-toast-background-rear-near: color-mix(
     in srgb,
-    var(--surface-foreground, var(--foreground)) 4%,
-    var(--surface-elevated, var(--card))
+    var(--surface-elevated, var(--card)) 80%,
+    var(--surface-background, var(--background))
   );
   --oc-toast-background-rear-far: color-mix(
     in srgb,
-    var(--surface-foreground, var(--foreground)) 1%,
-    var(--surface-elevated, var(--card))
+    var(--surface-elevated, var(--card)) 68%,
+    var(--surface-background, var(--background))
   );
   --oc-toast-shadow: 0 5px 12px -9px
     color-mix(
@@ -2165,8 +2160,12 @@ button.oc-mobile-worktree-label-trigger:active,
   border: 0 !important;
   border-radius: var(--radius-xl) !important;
   background: var(--oc-toast-background) !important;
-  -webkit-backdrop-filter: blur(16px) saturate(1.08);
-  backdrop-filter: blur(16px) saturate(1.08);
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
 }
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)

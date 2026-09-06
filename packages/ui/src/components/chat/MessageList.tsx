@@ -676,6 +676,12 @@ interface MessageListProps {
      */
     headerSlot?: React.ReactNode;
     footerSlot?: React.ReactNode;
+    /**
+     * Classic (TanStack) path only. Rendered after the streaming tail **inside**
+     * the markdown pin-reveal root so cold-open / jump-to-latest cannot leave a
+     * visible WorkingPlaceholder while the transcript is still `visibility: hidden`.
+     */
+    liveStatusSlot?: React.ReactNode;
     timelineScrollClassName?: string;
     timelineScrollStyle?: React.CSSProperties;
     timelineScrollDataset?: Record<string, string>;
@@ -2358,6 +2364,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     directory,
     headerSlot,
     footerSlot,
+    liveStatusSlot,
     timelineScrollClassName,
     timelineScrollStyle,
     timelineScrollDataset,
@@ -3154,6 +3161,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                             activeStreamingPhase={activeStreamingPhase}
                             reviewTransferDirection={reviewTransferDirection}
                         />
+                        {/* Inside pin-reveal root: cold-open must not leave a
+                            visible status label over a still-hidden transcript. */}
+                        {liveStatusSlot}
                     </div>
                 </FadeInDisabledProvider>
 

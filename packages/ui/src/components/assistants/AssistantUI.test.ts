@@ -138,7 +138,7 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('oc-mobile-assistant-card-shell');
     expect(mobileTab).toContain('oc-mobile-assistant-card');
     expect(mobileTab).toContain('oc-mobile-entity-title');
-    expect(mobileTab).toContain('oc-mobile-entity-meta');
+    expect(mobileTab).not.toContain('oc-mobile-entity-meta');
     expect(phoneShell).toContain("secondaryKind === 'assistant'");
     expect(phoneShell).toContain('<AssistantView');
     expect(phoneShell).toContain('activeOverride');
@@ -178,9 +178,11 @@ describe('Assistant UI product contract', () => {
   });
 
   test('fills the mobile Assistant avatar while preserving its circular frame', async () => {
-    const [mobileTab, mobileStyles] = await Promise.all([
+    const [mobileTab, mobileStyles, agentAvatar, workingAvatar] = await Promise.all([
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
       read('../../styles/mobile.css'),
+      read('../chat/AgentAvatar.tsx'),
+      read('AssistantWorkingAvatar.tsx'),
     ]);
     expect(mobileTab).toContain("'oc-mobile-assistant-avatar'");
     expect(mobileTab).toContain("'oc-mobile-assistant-avatar--emoji'");
@@ -188,6 +190,12 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('size={40}');
     expect(mobileTab).not.toContain('size={avatarEmoji ? 40 : 38}');
     expect(mobileTab).not.toContain('oc-mobile-assistant-avatar oc-mobile-glass-control');
+    // Working avatar must not force `block` — that strips AgentAvatar flex and off-centers emoji.
+    expect(workingAvatar).not.toContain('className="block"');
+    expect(agentAvatar).toContain("display: 'inline-flex'");
+    expect(agentAvatar).toContain("alignItems: 'center'");
+    expect(agentAvatar).toContain("justifyContent: 'center'");
+    expect(agentAvatar).toContain("transform: 'translateY(0.06em)'");
     const avatarStyles = mobileStyles.slice(
       mobileStyles.indexOf('.oc-mobile-assistant-avatar {'),
       mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
@@ -206,6 +214,8 @@ describe('Assistant UI product contract', () => {
     expect(avatarStyles).toContain('.oc-mobile-assistant-avatar--emoji');
     expect(avatarStyles).toContain('padding: 0');
     expect(avatarStyles).toContain('font-size: 1.75rem !important');
+    expect(avatarStyles).toContain('display: inline-flex !important');
+    expect(avatarStyles).toContain('transform: translateY(0.06em)');
     expect(avatarStyles).toContain('background: var(--interactive-selection)');
     const visualStyles = avatarStyles.slice(
       avatarStyles.indexOf('.oc-mobile-assistant-avatar--visual {'),
@@ -215,20 +225,27 @@ describe('Assistant UI product contract', () => {
     expect(visualStyles).not.toContain('background: var(--surface-muted)');
   });
 
-  test('gives mobile Assistant cards room for model and bounded prompt details', async () => {
-    const [mobileTab, mobileStyles] = await Promise.all([
+  test('shows bounded prompt details without a model badge on Assistant cards', async () => {
+    const [mobileTab, view, mobileStyles] = await Promise.all([
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('AssistantView.tsx'),
       read('../../styles/mobile.css'),
     ]);
     expect(mobileTab).toContain('oc-mobile-assistant-name');
-    expect(mobileTab).toContain('oc-mobile-assistant-card-header');
-    expect(mobileTab).toContain('oc-mobile-assistant-mode');
     expect(mobileTab).toContain('oc-mobile-assistant-summary');
     expect(mobileTab).not.toContain('name="arrow-right-s"');
-    expect(mobileTab).toContain('{subtitle}');
+    // List cards keep name + prompt only — no provider/model chip.
+    expect(mobileTab).not.toContain('oc-mobile-assistant-card-header');
+    expect(mobileTab).not.toContain('oc-mobile-assistant-mode');
+    expect(mobileTab).not.toContain('{subtitle}');
+    expect(mobileTab).not.toContain('assistant.providerID');
+    expect(mobileTab).not.toContain('assistant.modelID');
     expect(mobileTab).not.toContain("t('assistants.mode.continuous')");
     expect(mobileTab).not.toContain("t('assistants.mode.stateless')");
     expect(mobileTab).toContain('{summary}');
+    expect(view).not.toContain('item.providerID');
+    expect(view).not.toContain('item.modelID');
+    expect(view).not.toContain('{subtitle}');
     const cardStyles = mobileStyles.slice(
       mobileStyles.indexOf('.oc-mobile-assistant-catalog {'),
       mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
@@ -237,7 +254,6 @@ describe('Assistant UI product contract', () => {
     expect(cardStyles).toContain('min-height: 7rem');
     expect(cardStyles).toContain('align-items: flex-start');
     expect(cardStyles).toContain('padding: 1rem');
-    expect(cardStyles).toContain('.oc-mobile-assistant-card-header');
     expect(cardStyles).toContain('-webkit-line-clamp: 3');
   });
 

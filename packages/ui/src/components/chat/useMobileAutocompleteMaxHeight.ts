@@ -17,22 +17,38 @@ export type MobileAutocompleteFixedBox = {
   maxHeight: number;
 };
 
-/** Viewport-fixed box for the slash catalog, anchored above the composer. */
+/**
+ * Viewport-fixed box for the slash catalog, anchored above the composer.
+ *
+ * `fixedContainingBottom` is the bottom edge of the `position: fixed`
+ * containing block in the same client coordinate space as `composerTop`
+ * (normally `window.innerHeight` when the panel is body-portaled). It must
+ * NOT be the visual-viewport bottom: when the IME shrinks `visualViewport`,
+ * using that bottom for CSS `bottom` parks the panel under the keyboard.
+ *
+ * `visibleBottom` still clamps the anchor into the on-screen band so a
+ * partially covered composer cannot push the panel off-screen.
+ */
 export const computeMobileAutocompleteFixedBox = (args: {
   composerTop: number;
   composerLeft: number;
   composerWidth: number;
+  /** Bottom of the fixed containing block (layout/client coords). */
+  fixedContainingBottom: number;
+  /** Bottom of the visible band (visualViewport top + height). */
   visibleBottom: number;
   boundaryTop: number;
   viewportHeight: number;
   gap?: number;
 }): MobileAutocompleteFixedBox => {
   const gap = args.gap ?? MOBILE_AUTOCOMPLETE_GAP_PX;
-  const popupBottom = args.composerTop - gap;
+  // Prefer the composer top, but never anchor below the visible band — on
+  // small Android screens the IME can cover the un-lifted card for a frame.
+  const popupBottom = Math.min(args.composerTop - gap, args.visibleBottom - gap);
   return {
     left: args.composerLeft,
     width: args.composerWidth,
-    bottom: Math.max(0, args.visibleBottom - popupBottom),
+    bottom: Math.max(0, args.fixedContainingBottom - popupBottom),
     maxHeight: computeMobileAutocompleteMaxHeight({
       popupBottom,
       boundaryTop: args.boundaryTop,
@@ -139,11 +155,13 @@ export const useMobileAutocompleteMaxHeight = (
         measure();
         window.addEventListener('resize', measure);
         window.addEventListener('oc:keyboard-settled', measure);
+        window.addEventListener('oc:keyboard-anim', measure);
         window.visualViewport?.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('scroll', measure);
         return () => {
             window.removeEventListener('resize', measure);
             window.removeEventListener('oc:keyboard-settled', measure);
+            window.removeEventListener('oc:keyboard-anim', measure);
             window.visualViewport?.removeEventListener('resize', measure);
             window.visualViewport?.removeEventListener('scroll', measure);
         };
@@ -153,10 +171,11 @@ export const useMobileAutocompleteMaxHeight = (
 };
 
 /**
- * Phone slash catalogs must be `position: fixed` (same stacking as the
- * context metadata sheet). `absolute` inside the composer cannot backdrop-
- * filter the transcript on iOS — WebKit only frosts within that ancestor.
- * `probeRef` stays in the composer; its parent is the composer card.
+ * Phone slash catalogs must be `position: fixed` against the layout viewport
+ * (body portal). `absolute` inside the composer cannot backdrop-filter the
+ * transcript on iOS — WebKit only frosts within that ancestor — and Capacitor
+ * keeps `will-change: transform` on `.oc-mobile-composer`, which traps fixed
+ * descendants. `probeRef` stays in the composer; its parent is the card.
  */
 export const useMobileAutocompleteFixedBox = (
     probeRef: React.RefObject<HTMLElement | null>,
@@ -169,6 +188,8 @@ export const useMobileAutocompleteFixedBox = (
             setBox(undefined);
             return;
         }
+        let animFrame = 0;
+        let settleTimer = 0;
         const measure = () => {
             const origin = probeRef.current?.parentElement;
             if (!origin) return;
@@ -176,12 +197,20 @@ export const useMobileAutocompleteFixedBox = (
             const visualViewport = window.visualViewport;
             const visualTop = visualViewport?.offsetTop ?? 0;
             const viewportHeight = visualViewport?.height ?? window.innerHeight;
+            // Layout/client bottom of the fixed containing block. Body-portaled
+            // `position: fixed` resolves against the layout viewport, so CSS
+            // `bottom` must be measured from `innerHeight` — not the visual
+            // viewport bottom (that shrinks under the IME and parks the panel
+            // behind the keyboard on small Android screens).
+            const fixedContainingBottom = window.innerHeight;
+            const visibleBottom = visualTop + viewportHeight;
             const boundaryTop = resolveMobileAutocompleteBoundaryTop(origin, visualTop) ?? visualTop;
             const next = computeMobileAutocompleteFixedBox({
                 composerTop: rect.top,
                 composerLeft: rect.left,
                 composerWidth: rect.width,
-                visibleBottom: visualTop + viewportHeight,
+                fixedContainingBottom,
+                visibleBottom,
                 boundaryTop,
                 viewportHeight,
             });
@@ -195,14 +224,30 @@ export const useMobileAutocompleteFixedBox = (
                     : next
             ));
         };
+        // Android FLIP lifts the composer with a short transform; keyboard-
+        // settled fires when the lift *starts*, so re-measure once the
+        // transform has had a frame to apply and again after the show easing.
+        const measureAfterLift = () => {
+            measure();
+            if (animFrame) window.cancelAnimationFrame(animFrame);
+            if (settleTimer) window.clearTimeout(settleTimer);
+            animFrame = window.requestAnimationFrame(() => {
+                measure();
+                settleTimer = window.setTimeout(measure, 220);
+            });
+        };
         measure();
         window.addEventListener('resize', measure);
-        window.addEventListener('oc:keyboard-settled', measure);
+        window.addEventListener('oc:keyboard-settled', measureAfterLift);
+        window.addEventListener('oc:keyboard-anim', measureAfterLift);
         window.visualViewport?.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('scroll', measure);
         return () => {
+            if (animFrame) window.cancelAnimationFrame(animFrame);
+            if (settleTimer) window.clearTimeout(settleTimer);
             window.removeEventListener('resize', measure);
-            window.removeEventListener('oc:keyboard-settled', measure);
+            window.removeEventListener('oc:keyboard-settled', measureAfterLift);
+            window.removeEventListener('oc:keyboard-anim', measureAfterLift);
             window.visualViewport?.removeEventListener('resize', measure);
             window.visualViewport?.removeEventListener('scroll', measure);
         };

@@ -10,18 +10,14 @@ type ComposerAutocompleteLayerProps = {
   children: React.ReactNode;
 };
 
-const resolvePortalHost = (origin: HTMLElement | null): Element | null => {
-  if (!origin) return null;
-  return origin.closest('.oc-chat-composer-swap-scope')
-    ?? origin.closest('main');
-};
-
 /**
  * Desktop: in-flow `absolute bottom-full` panel.
- * Phone: viewport-fixed host, portaled out of the composer (same stacking as
- * the context metadata sheet). iOS WebKit will not frost the transcript from
- * inside `.oc-mobile-composer` — Capacitor keeps `will-change: transform` on
- * that node, which both traps `position: fixed` and clips backdrop-filter.
+ * Phone: viewport-fixed host portaled to `document.body` so CSS `bottom` is
+ * measured against the layout viewport. Portaling into the chat column kept
+ * the panel under transformed ancestors (session swipe / shell), and using
+ * the visual-viewport bottom for `bottom` parked catalogs under the Android
+ * IME on small screens. iOS WebKit also cannot frost the transcript from an
+ * `absolute` child of `.oc-mobile-composer` (`will-change: transform`).
  */
 export const ComposerAutocompleteLayer = React.forwardRef<HTMLDivElement, ComposerAutocompleteLayerProps>(({
   isMobile,
@@ -30,16 +26,8 @@ export const ComposerAutocompleteLayer = React.forwardRef<HTMLDivElement, Compos
   children,
 }, forwardedRef) => {
   const probeRef = React.useRef<HTMLSpanElement>(null);
-  const [portalHost, setPortalHost] = React.useState<Element | null>(null);
   const box = useMobileAutocompleteFixedBox(probeRef, isMobile);
-
-  React.useLayoutEffect(() => {
-    if (!isMobile) {
-      setPortalHost(null);
-      return;
-    }
-    setPortalHost(resolvePortalHost(probeRef.current?.parentElement ?? null));
-  }, [isMobile]);
+  const portalHost = typeof document !== 'undefined' ? document.body : null;
 
   if (!isMobile) {
     return (
@@ -66,6 +54,7 @@ export const ComposerAutocompleteLayer = React.forwardRef<HTMLDivElement, Compos
                 width: box.width,
                 bottom: box.bottom,
                 maxHeight: box.maxHeight,
+                overflow: 'hidden',
               }
             : { visibility: 'hidden' as const }),
         }}

@@ -46,11 +46,13 @@ describe('MessageHeader', () => {
     );
   });
 
-  test('constrains long model and agent identities to one clipped header row', () => {
-    const html = renderHeader(true);
-    expect(html).toContain('min-w-0 overflow-hidden');
-    expect(html).toContain('whitespace-nowrap');
-    expect(html).toContain('max-w-[45%]');
-    expect(html).toContain('class="truncate"');
+  test('keeps the agent badge next to the model name on the left', () => {
+    const html = renderHeader(false);
+    expect(html).toContain('GLM-5.3');
+    expect(html).toContain('agent-badge');
+    expect(html).toContain('Orchestrator');
+    expect(html).toContain('flex items-center gap-2');
+    expect(html).not.toContain('max-w-[45%]');
+    expect(html).not.toMatch(/inline-flex min-w-0 flex-1 items-center gap-1\.5/);
   });
 });
