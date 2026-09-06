@@ -161,6 +161,7 @@ interface ChatMessageProps {
     scrollToBottom?: () => void;
     turnGroupingContext?: TurnGroupingContext;
     assistantHeaderMessageId?: string;
+    turnOwnsAssistantHeader?: boolean;
     isInActiveTurn?: boolean;
     activeStreamingPhase?: StreamPhase | null;
     animateUserOnMount?: boolean;
@@ -176,6 +177,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     animationHandlers,
     turnGroupingContext,
     assistantHeaderMessageId,
+    turnOwnsAssistantHeader = false,
     isInActiveTurn = false,
     activeStreamingPhase = null,
     animateUserOnMount = false,
@@ -615,11 +617,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const hasTurnGrouping = Boolean(turnGroupingContext);
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
-    // Live working status sits directly under this turn — drop the idle pb-8 gap
-    // so "Delegating task …" etc. don't float far below the last tool row.
-    // Incomplete assistants keep isInActiveTurn after an abnormal settle
-    // (no time.completed); Processed chrome must still restore pb-8 so the
-    // next turn does not sit on top of the Processed header.
+    // Standalone assistant rows own their bottom gap. Grouped rows leave that
+    // spacing to TurnItem so the shared header/body geometry has one owner.
     const tightenWorkingBottomGap = shouldTightenWorkingBottomGap({
         isWorking: turnGroupingContext?.isWorking === true,
         isInActiveTurn,
@@ -670,6 +669,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const shouldShowHeader = React.useMemo(() => {
         if (isUser) return true;
+        if (turnOwnsAssistantHeader) return false;
 
         // Use turn grouping context if available for more precise control
         const headerMessageId = assistantHeaderMessageId ?? turnGroupingContext?.headerMessageId;
@@ -694,7 +694,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
         // Ungrouped fallback path: always show assistant header.
         return true;
-    }, [assistantHeaderMessageId, hasStartedStreamingHeader, isUser, turnGroupingContext, streamPhase, message.info.id]);
+    }, [assistantHeaderMessageId, hasStartedStreamingHeader, isUser, turnGroupingContext, streamPhase, message.info.id, turnOwnsAssistantHeader]);
 
     const handleCopyCode = React.useCallback((code: string) => {
         void copyTextToClipboard(code).then((result) => {
@@ -1076,7 +1076,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 className={cn(
                     'group w-full',
                     isUser ? (isMobile ? 'pt-2' : 'pt-6') : assistantTopPaddingClass,
-                    isUser ? 'pb-0' : isFollowedByAssistant ? 'pb-0' : tightenWorkingBottomGap ? 'pb-1' : 'pb-8'
+                    isUser ? 'pb-0' : isFollowedByAssistant || turnOwnsAssistantHeader ? 'pb-0' : tightenWorkingBottomGap ? 'pb-1' : 'pb-8'
                 )}
                 id={`message-${message.info.id}`}
                 data-message-id={message.info.id}
@@ -1100,6 +1100,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 borderBottomRightRadius: 'var(--radius-sm)',
                                             }}
                                             className="px-3 py-1.5 shadow-none border border-primary/5"
+                                            data-user-message-bubble="true"
                                         >
                                             <MessageBody
                                                 messageId={message.info.id}
@@ -1268,6 +1269,7 @@ export default React.memo(ChatMessage, (prev, next) => {
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.reviewTransferDirection === next.reviewTransferDirection
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
+        && prev.turnOwnsAssistantHeader === next.turnOwnsAssistantHeader
         && prev.animateUserOnMount === next.animateUserOnMount
         && prev.onUserAnimationConsumed === next.onUserAnimationConsumed
         && areRelevantTurnGroupingContextsEqual(

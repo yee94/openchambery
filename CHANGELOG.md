@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.15] - 2026-09-06
+
+### 会话
+
+- 新建对话首条消息建立会话时，草稿与正式 transcript 共用同一视口与输入区占位，交接不再闪空白页。
+- 发送后助手模型头（logo / 名称 / Agent）从 pending 起就占位并在原位置续上，不再等 SSE 才突然出现。
+- 会话还没有消息壳、却仍 busy 时，不再单独显示底部「正在思考」孤儿状态。
+- 回合底部间距在 live 工作期间保持紧凑，完成元数据落地时几何更稳。
+
+### 移动端
+
+- 用户气泡图片与长文折叠的裁剪更稳，避免圆角或行数在 WebKit 上被撑破。
+- 默认主题改为 carbonfox-light / vitesse-dark，启动闪屏与状态栏底色对齐。
+
 ## [1.19.7-beta.14] - 2026-09-06
 
 ### 助手

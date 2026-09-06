@@ -240,7 +240,7 @@ function MobileAssistantCard({
             <AssistantWorkingAvatar
               name={assistantID}
               emoji={avatarEmoji}
-              size={avatarEmoji ? 40 : 38}
+              size={40}
               label={displayName}
               working={working}
             />

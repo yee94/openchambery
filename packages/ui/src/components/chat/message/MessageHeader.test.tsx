@@ -45,4 +45,12 @@ describe('MessageHeader', () => {
       /:root\.mobile-pointer:not\(\.desktop-runtime\) \.typography-(markdown|code|ui-header|ui-label|meta|micro)[\s\S]{0,240}font-size:\s*unset/,
     );
   });
+
+  test('constrains long model and agent identities to one clipped header row', () => {
+    const html = renderHeader(true);
+    expect(html).toContain('min-w-0 overflow-hidden');
+    expect(html).toContain('whitespace-nowrap');
+    expect(html).toContain('max-w-[45%]');
+    expect(html).toContain('class="truncate"');
+  });
 });

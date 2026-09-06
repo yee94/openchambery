@@ -1096,6 +1096,7 @@ const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, 
     return (
         <div
             className="relative w-full group/message"
+            data-user-message-body="true"
             style={CONTAIN_LAYOUT_STYLE}
             onTouchStart={isTouchContext && canCopyMessage && hasCopyableText ? revealCopyHint : undefined}
         >

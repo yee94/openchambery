@@ -288,6 +288,7 @@ type ChatViewportProps = {
     scrollRef: React.RefObject<HTMLDivElement | null>;
     messageListRef: React.RefObject<MessageListHandle | null>;
     pendingRevealWork: boolean;
+    initialPinRevealComplete?: boolean;
     renderedMessages: SessionMessageRecord[];
     isLoadingOlder: boolean;
     sessionIsWorking: boolean;
@@ -319,6 +320,7 @@ type ChatViewportProps = {
     canLoadEarlierPrompts: boolean;
     isLoadingOlderPrompts: boolean;
     onLoadEarlierPrompts: () => void;
+    transcriptStatusRow?: React.ReactNode;
 };
 
 const ChatViewport = React.memo(({
@@ -331,6 +333,7 @@ const ChatViewport = React.memo(({
     scrollRef,
     messageListRef,
     pendingRevealWork,
+    initialPinRevealComplete = false,
     renderedMessages,
     isLoadingOlder,
     sessionIsWorking,
@@ -357,6 +360,7 @@ const ChatViewport = React.memo(({
     canLoadEarlierPrompts,
     isLoadingOlderPrompts,
     onLoadEarlierPrompts,
+    transcriptStatusRow,
 }: ChatViewportProps) => {
     const { t } = useI18n();
     const legendTimelineEnabled = useFeatureFlagsStore((state) => state.legendTimelineEnabled);
@@ -486,6 +490,7 @@ const ChatViewport = React.memo(({
                         sessionKey={currentSessionId}
                         virtualizerKey={virtualizerKey}
                         disableStaging={pendingRevealWork}
+                        initialPinRevealComplete={initialPinRevealComplete}
                         messages={renderedMessages}
                         sessionIsWorking={sessionIsWorking}
                         activeStreamingMessageId={streamingMessageId}
@@ -561,6 +566,10 @@ const ChatViewport = React.memo(({
                                         ))}
                                     </div>
                                 )}
+
+                                {transcriptStatusRow ? (
+                                    <div className="mb-1">{transcriptStatusRow}</div>
+                                ) : null}
 
                                 <div
                                     className="flex-shrink-0"
@@ -655,6 +664,7 @@ const ChatViewport = React.memo(({
                             sessionKey={currentSessionId}
                             virtualizerKey={virtualizerKey}
                             disableStaging={pendingRevealWork}
+                            initialPinRevealComplete={initialPinRevealComplete}
                             messages={renderedMessages}
                             sessionIsWorking={sessionIsWorking}
                             activeStreamingMessageId={streamingMessageId}
@@ -678,9 +688,14 @@ const ChatViewport = React.memo(({
                             </div>
                         )}
 
-                        <div className="mb-1">
-                            <StatusRowContainer />
-                        </div>
+                        {/* No transcript shell: busy status alone is unstable empty chrome
+                            (same idea as ProgressiveGroup hiding a zero-row Working header).
+                            Do not paint "thinking XmYs" over a blank viewport. */}
+                        {renderedMessages.length > 0 ? (
+                            <div className="mb-1">
+                                {transcriptStatusRow ?? <StatusRowContainer />}
+                            </div>
+                        ) : null}
 
                         {/* The chrome reservation itself comes from
                             `.chat-scroll-foot-inset` padding on this content
@@ -717,6 +732,7 @@ const ChatViewport = React.memo(({
         && prev.scrollRef === next.scrollRef
         && prev.messageListRef === next.messageListRef
         && prev.pendingRevealWork === next.pendingRevealWork
+        && prev.initialPinRevealComplete === next.initialPinRevealComplete
         && prev.renderedMessages === next.renderedMessages
         && prev.isLoadingOlder === next.isLoadingOlder
         && prev.sessionIsWorking === next.sessionIsWorking
@@ -742,7 +758,8 @@ const ChatViewport = React.memo(({
         && prev.showPromptNavigator === next.showPromptNavigator
         && prev.canLoadEarlierPrompts === next.canLoadEarlierPrompts
         && prev.isLoadingOlderPrompts === next.isLoadingOlderPrompts
-        && prev.onLoadEarlierPrompts === next.onLoadEarlierPrompts;
+        && prev.onLoadEarlierPrompts === next.onLoadEarlierPrompts
+        && prev.transcriptStatusRow === next.transcriptStatusRow;
 });
 
 ChatViewport.displayName = 'ChatViewport';
@@ -823,6 +840,7 @@ type ChatContainerContentProps = Omit<ChatContainerProps, 'host'> & {
     warning?: string | null;
     pendingUserMessages?: readonly PendingUserMessagePresentation[];
     onPendingUserMessagesMaterialized?: (messageIDs: readonly string[]) => void;
+    committedDraftHandoffMessageId?: string | null;
 };
 
 const estimateSessionViewBytes = (messageCount: number): number => {
@@ -848,6 +866,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     warning = null,
     pendingUserMessages: hostPendingUserMessages = EMPTY_PENDING_USER_MESSAGES,
     onPendingUserMessagesMaterialized,
+    committedDraftHandoffMessageId = null,
 }) => {
     const hostFeatures = hostedFeatures ?? resolveChatContainerHostFeatures(undefined);
     const { t } = useI18n();
@@ -946,6 +965,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const retainedPendingUserMessages = useSessionUIStore(
         (state) => (currentSessionId ? state.retainedPendingUserMessages.get(currentSessionId) : undefined),
     ) ?? EMPTY_PENDING_USER_MESSAGES;
+    const initialPinRevealComplete = Boolean(
+        committedDraftHandoffMessageId
+        && retainedPendingUserMessages.some((message) => message.info.id === committedDraftHandoffMessageId),
+    );
     const clearRetainedPendingUserMessages = useSessionUIStore((state) => state.clearRetainedPendingUserMessages);
     const pendingUserMessages = React.useMemo(() => {
         if (retainedPendingUserMessages.length === 0) return hostPendingUserMessages;
@@ -1993,32 +2016,69 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 		// partial draft banners were easy to miss (especially desktop /
 		// expanded-input layouts).
 		if ((draftSubmitting || draftEstablishing) && draftPendingMessage) {
+			const draftViewportKey = `draft:${newSessionDraft.draftID ?? 'pending'}`;
 			return (
-				<div className="relative flex h-full flex-col bg-background">
-					<div className="relative min-h-0 flex-1">
-						<ScrollShadow
-							className="absolute inset-0 overflow-y-auto overflow-x-hidden chat-scroll"
-							style={CHAT_SCROLL_STYLE}
-						>
-							<MessageList
-								sessionKey={`draft:${newSessionDraft.draftID ?? 'pending'}`}
-								messages={[draftPendingMessage]}
-								sessionIsWorking
-								isLoadingOlder={false}
-								onMessageContentChange={handleMessageContentChange}
-								getAnimationHandlers={getAnimationHandlers}
-								scrollToBottom={resumeToLatestInstant}
-							/>
-							<div
-								className="chat-message-column px-4 pb-10 pt-2 typography-meta text-muted-foreground"
-								role="status"
-								aria-live="polite"
-							>
-								<span className="animate-text-shimmer">{t('chat.emptyState.establishingConversation')}</span>
-								<BusyDots />
+				<div ref={composerSwapScopeRef} className={cn('relative flex h-full flex-col bg-background', isMobile && 'oc-chat-composer-swap-scope')}>
+					<ChatViewport
+						key={draftViewportKey}
+						currentSessionId={draftViewportKey}
+						virtualizerKey={draftViewportKey}
+						isDesktopExpandedInput={false}
+						isMobile={isMobile}
+						stickyUserHeader={stickyUserHeader}
+						directory={effectiveSessionDirectory}
+						scrollRef={scrollRef}
+						messageListRef={messageListRef}
+						pendingRevealWork={false}
+						renderedMessages={[draftPendingMessage]}
+						isLoadingOlder={false}
+						sessionIsWorking
+						streamingMessageId={null}
+						activeStreamingPhase={null}
+						retryOverlay={null}
+						handleMessageContentChange={handleMessageContentChange}
+						getAnimationHandlers={getAnimationHandlers}
+						handleHistoryScroll={timelineController.handleHistoryScroll}
+						handleHistoryUpwardIntent={handleTimelineUpwardIntent}
+						onTimelineIsAtEndChange={handleTimelineIsAtEndChange}
+						timelineFollowSuspended={false}
+						timelineHistoryAnchorToken={timelineHistoryAnchorToken}
+						scrollToBottom={resumeToLatestInstant}
+						sessionQuestions={[]}
+						sessionPermissions={[]}
+						isProgrammaticFollowActive={isFollowingProgrammatically}
+						showLoadOlderButton={false}
+						onLoadOlder={handleLoadOlderClick}
+						turnIds={[]}
+						activeTurnId={null}
+						onSelectTurn={handlePromptNavigatorSelect}
+						showPromptNavigator={false}
+						canLoadEarlierPrompts={false}
+						isLoadingOlderPrompts={false}
+						onLoadEarlierPrompts={handleLoadOlderClick}
+						transcriptStatusRow={(
+							<div className="chat-column" role="status" aria-live="polite">
+								<div className="flex h-[1.2rem] items-center py-0.5 typography-meta text-muted-foreground">
+									<span className="animate-text-shimmer">{t('chat.emptyState.establishingConversation')}</span>
+									<BusyDots />
+								</div>
 							</div>
-						</ScrollShadow>
+						)}
+					/>
+					<div
+						className={cn(
+							'invisible pointer-events-none relative z-10',
+							isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
+							isDesktopExpandedInput
+								? 'absolute inset-0 bg-background'
+								: 'bg-background',
+						)}
+						aria-hidden="true"
+					>
+						{!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}
+						{promptSurface}
 					</div>
+					<ImageSaveActionsHost />
 				</div>
 			);
 		}
@@ -2250,6 +2310,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 scrollRef={scrollRef}
                 messageListRef={messageListRef}
                 pendingRevealWork={timelineController.pendingRevealWork}
+                initialPinRevealComplete={initialPinRevealComplete}
                 renderedMessages={timelineController.renderedMessages}
                 isLoadingOlder={isLoadOlderBusy}
                 sessionIsWorking={sessionIsWorking}
@@ -2357,8 +2418,49 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
         useShallow((state) => ({
             sessionId: state.currentSessionId,
             directory: state.currentSessionDirectory,
+            draftID: state.newSessionDraft.open ? state.newSessionDraft.draftID : null,
+            draftPendingMessageId: state.newSessionDraft.open
+                ? state.newSessionDraft.pendingUserMessage?.info.id ?? null
+                : null,
         })),
     );
+    const committedDraftPendingRef = React.useRef<{
+        identity: string;
+        messageId: string;
+    } | null>(null);
+    const draftPendingIdentity = selectedSession.draftID && selectedSession.draftPendingMessageId
+        ? `${selectedSession.draftID}:${selectedSession.draftPendingMessageId}`
+        : null;
+    if (
+        draftPendingIdentity
+        && committedDraftPendingRef.current?.identity !== draftPendingIdentity
+    ) {
+        committedDraftPendingRef.current = null;
+    }
+    useIsomorphicLayoutEffect(() => {
+        if (!draftPendingIdentity || !selectedSession.draftPendingMessageId) {
+            return;
+        }
+        // This layout commit contains the local pending shell. A same-frame
+        // session claim can present that exact retained row without a timed
+        // paint heuristic or a Markdown visibility gap.
+        committedDraftPendingRef.current = {
+            identity: draftPendingIdentity,
+            messageId: selectedSession.draftPendingMessageId,
+        };
+    }, [draftPendingIdentity, selectedSession.draftPendingMessageId]);
+    const selectedRetainedPendingMessages = useSessionUIStore((state) => (
+        selectedSession.sessionId
+            ? state.retainedPendingUserMessages.get(selectedSession.sessionId) ?? EMPTY_PENDING_USER_MESSAGES
+            : EMPTY_PENDING_USER_MESSAGES
+    ));
+    const committedDraftPending = committedDraftPendingRef.current;
+    const committedDraftHandoffMessageId = committedDraftPending
+        && selectedRetainedPendingMessages.some(
+            (message) => message.info.id === committedDraftPending.messageId,
+        )
+        ? committedDraftPending.messageId
+        : null;
     const selectedSessionView = React.useMemo<SessionViewSelection | null>(() => {
         if (!selectedSession.sessionId) {
             return null;
@@ -2396,6 +2498,17 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
     const pendingRenderEntry = pendingSessionView?.intent === selectionIntent
         ? pendingSessionView.entry
         : null;
+    const immediateHandoffRenderEntry = React.useMemo(() => {
+        if (!selectedSessionView || !committedDraftHandoffMessageId) {
+            return null;
+        }
+        return reconcileSessionViewCache(
+            [],
+            selectedSessionView,
+            cacheLimits,
+            DEFAULT_SESSION_VIEW_ESTIMATED_BYTES,
+        )[0] ?? null;
+    }, [cacheLimits, committedDraftHandoffMessageId, selectedSessionView]);
     const renderedSessionViews = React.useMemo(
         () => {
             const next = [...cachedSessionViews];
@@ -2405,9 +2518,15 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
             ) {
                 next.push(pendingRenderEntry);
             }
+            if (
+                immediateHandoffRenderEntry
+                && !next.some((entry) => entry.key === immediateHandoffRenderEntry.key)
+            ) {
+                next.push(immediateHandoffRenderEntry);
+            }
             return next.sort((left, right) => left.key.localeCompare(right.key));
         },
-        [cachedSessionViews, pendingRenderEntry],
+        [cachedSessionViews, immediateHandoffRenderEntry, pendingRenderEntry],
     );
     const activeSessionViewKey = resolveActiveSessionViewKey(renderedSessionViews, selectionKey);
     const isMaterializingSessionView = Boolean(selectionKey && !activeSessionViewKey);
@@ -2415,12 +2534,22 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
     useIsomorphicLayoutEffect(() => {
         committedSelectionIntentRef.current = selectionIntent;
         committedSelectionKeyRef.current = selectionKey;
-        setSessionViewRenderState((current) => applySessionViewSelectionIntent(
-            current,
-            selectionIntent,
-            cacheLimits,
-        ));
-    }, [cacheLimits, cacheNeedsTrim, selectionIntent, selectionKey]);
+        setSessionViewRenderState((current) => {
+            const selected = applySessionViewSelectionIntent(
+                current,
+                selectionIntent,
+                cacheLimits,
+            );
+            return committedDraftHandoffMessageId
+                ? materializeSessionViewRenderIntent(
+                    selected,
+                    selectionIntent,
+                    selectionIntent,
+                    DEFAULT_SESSION_VIEW_ESTIMATED_BYTES,
+                )
+                : selected;
+        });
+    }, [cacheLimits, cacheNeedsTrim, committedDraftHandoffMessageId, selectionIntent, selectionKey]);
 
     const pendingSessionViewIntent = pendingSessionView?.intent ?? null;
     useIsomorphicLayoutEffect(() => {
@@ -2499,6 +2628,9 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
                         sessionDirectory={view.directory}
                         sessionViewKey={view.key}
                         onSessionViewEstimateChange={handleSessionViewEstimateChange}
+                        committedDraftHandoffMessageId={activeSessionViewKey === view.key
+                            ? committedDraftHandoffMessageId
+                            : null}
                     />
                 </React.Activity>
             ))}
