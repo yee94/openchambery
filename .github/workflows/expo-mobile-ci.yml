@@ -64,7 +64,7 @@ jobs:
     name: Android sideload APK (release+debug id)
     runs-on: ubuntu-latest
     needs: lint-typecheck-test
-    timeout-minutes: 50
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/mobile_expo
@@ -126,7 +126,10 @@ jobs:
 
       - name: Assemble release APK (embedded JS, debug keystore, .debug id)
         working-directory: apps/mobile_expo/android
-        run: ./gradlew assembleRelease --no-daemon
+        env:
+          # quick-crypto / Nitro native compile OOMs default heap on ubuntu-latest.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dkotlin.daemon.jvm.options=-Xmx2g
+        run: ./gradlew assembleRelease --no-daemon --build-cache
 
       - name: Locate APK + assert embedded bundle
         id: apk_meta
