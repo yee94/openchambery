@@ -1,7 +1,8 @@
 /**
- * Cap ChangesPanel revert confirm dialog spirit (DialogTitle / Description /
- * Cancel / destructive Revert). Cap confirms revert-all + directory; Lynx flat
- * Changes sheet uses the same dialog for per-file revert. Cap does **not**
+ * Cap ChangesPanel revert confirm — Cap DialogTitle / Description / Cancel /
+ * destructive Revert. Cap confirms revert-all + directory; Lynx flat Changes
+ * sheet uses the same **centered Dialog** (scrim + panel) for per-file revert —
+ * not an elevated-in-sheet card and not MobileResizableSheet. Cap does **not**
  * confirm commit&push — do not add that here.
  */
 

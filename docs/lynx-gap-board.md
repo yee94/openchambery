@@ -245,7 +245,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid + prepend-settle gate + pin-reveal polish |
 | ~~Nested child session stack + predecessor~~ | `mobileNavigation.ts` | **代码接上** reconcile + predecessor chrome; host underlay pixel polish still thin |
-| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push + **stage/unstage** (GlassChrome searchChip +/−) + **revert** GlassChrome ↩ + Cap confirm dialog + Cap commit→push **pull-if-behind**. HTML preview = labeled text stub until host WKWebView; PierreDiff = portable text only — Cap `@pierre/diffs` **unavailable** (Shadow DOM / react-dom blocker). |
+| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push + **stage/unstage** (GlassChrome searchChip +/−) + **revert** GlassChrome ↩ + Cap **centered Dialog** revert confirm (scrim+panel) + Cap commit→push **pull-if-behind**. HTML preview = labeled text stub until host WKWebView; PierreDiff = portable text only — Cap `@pierre/diffs` **unavailable** (Shadow DOM / react-dom blocker). |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | ~~Context usage~~ | `mobileContextUsage.ts` | **代码接上** header chip + Cap `/api/config/providers` limit |
 | | ~~Composer attachments, `/` `@`, agent/model~~ | composer DOCUMENTATION | Attach + `/` `@` catalogs **代码接上** (Chat + Draft); autocomplete **above glass**; GlassChrome + in-glass Attach/Send/Stop/Queue **代码接上**; Cap Agent·model **picker sheets** (`/api/agent` + `/api/config/providers` → prompt_async selection) **代码接上**; host Mode B overlay / 真机 still thin |
@@ -338,6 +338,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 26. ~~**Pierre investigation + ChangeRow spacing on #57 tip: honest Shadow DOM blocker + Cap size-6 chip / +n/-m slash / diffStats**~~ — 代码接上 in `cursor/lynx-pierre-diffs-local`. Cap `@pierre/diffs` **cannot** run in Lynx (diffs-container Shadow DOM + react-dom). Portable path only; product NOT DONE / no 真机过.
 27. ~~**Changes revert + generateCommitMessage + commitAndPush on #58 tip**~~ — 代码接上 in `cursor/lynx-changes-revert-commitmsg-local`. Cap `POST /api/git/revert`, Cap mobile `POST /api/small-model/generate` purpose commit (not dead `/api/git/commit-message`), combined commit→push. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
 28. ~~**Changes revert glass + Cap confirm + pull-if-behind on #59 tip**~~ — 代码接上 in `cursor/lynx-revert-confirm-pull-local`. GlassChrome searchChip revert (↩) like stage +/−; Cap Dialog confirm before revert (Cap does **not** confirm commit&push); Cap commit→fetch→pull-if-behind(rebase)→push-if-ahead. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
+29. ~~**Centered Cap Dialog revert confirm on #60 tip**~~ — 代码接上 in `cursor/lynx-centered-confirm-dialog-local`. Replace elevated-in-sheet confirm card with Cap Dialog spirit (**scrim + centered max-w-md panel**); keep RevertGlassChip + pull-if-behind. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -569,8 +570,22 @@ Slice on `cursor/lynx-revert-confirm-pull-local` (base PR#59 tip `778c844ae`; PR
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | Revert GlassChrome chip | Cap ChangeRow `arrow-go-back` size-6 | `RevertGlassChip` = GlassChrome `searchChip` ↩ (same size as stage +/−); not plain ActionChip text. |
-| Cap confirm before revert | Cap ChangesPanel Dialog (revert-all / directory) | Cap Dialog spirit for per-file (Lynx flat list). Cap does **not** confirm commit&push — not added. |
+| Cap confirm before revert | Cap ChangesPanel Dialog (revert-all / directory) | Was elevated-in-sheet card in #28; **centered Dialog** (scrim+panel) in Next #29. Cap does **not** confirm commit&push — not added. |
 | pull-if-behind on commit&push | Cap `handleCommit({ pushAfter: true })` | Parse status `ahead`/`behind`/`tracking`; commit→fetch→pull(rebase) if behind→push if ahead. Failure ≠ silent skip. |
+
+**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**真机过:** not executed.
+
+---
+
+## 代码接上 (Centered Cap Dialog revert confirm on #60 tip — not landed under 三关)
+
+Slice on `cursor/lynx-centered-confirm-dialog-local` (base PR#60 tip `ac8cfd793`; PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. 真机过: not executed. Product **NOT DONE**.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Cap centered Dialog | Cap `Dialog` / `DialogContent` (scrim + centered `max-w-md`) | `LynxCenteredDialog` replaces elevated-in-sheet revert confirm card. Scrim dismiss when not busy; Cancel + destructive Revert footer. |
+| RevertGlassChip + pull-if-behind | unchanged from #28 | Keep glass ↩ chip + commit→fetch→pull-if-behind→push. |
 
 **CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
 **真机过:** not executed.
@@ -578,7 +593,7 @@ Slice on `cursor/lynx-revert-confirm-pull-local` (base PR#59 tip `778c844ae`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring — including Changes revert glass/confirm + Cap pull-if-behind commit→push in Next #28). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
+**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring — including Changes revert glass + Cap centered Dialog confirm + pull-if-behind commit→push in Next #28–#29). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -685,14 +700,23 @@ Slice on `cursor/lynx-revert-confirm-pull-local` (base PR#59 tip `778c844ae`; PR
 | Cap commitAndPush | `commitAndPushLynxGitChanges` = commit → push (pull-if-behind completed in Next #28); Changes Commit & Push chip |
 | Docs honesty | ia-ui unchanged; gap-board Next #27; NOT DONE / 三关未齐 |
 
-### 代码接上 this slice (`cursor/lynx-revert-confirm-pull-local` / Next #28)
+### 代码接上 prior slice (`cursor/lynx-revert-confirm-pull-local` / Next #28)
 
 | Item | Notes |
 |---|---|
 | Revert GlassChrome searchChip | Cap ChangeRow icon size-6 → Lynx `RevertGlassChip` ↩ on GlassChrome `searchChip` (same as stage +/−); not ActionChip text |
-| Cap confirm dialog before revert | Cap ChangesPanel Dialog spirit; per-file on Lynx flat list. Cap does **not** confirm commit&push — omitted honestly |
+| Cap confirm dialog before revert | Cap ChangesPanel Dialog spirit (initially elevated-in-sheet card; replaced by centered modal in #29). Cap does **not** confirm commit&push — omitted honestly |
 | Cap pull-if-behind | Parse `ahead`/`behind`/`tracking` from `GET /api/git/status`; commit→fetch→pull(rebase) if behind→push if ahead; failure ≠ silent skip |
 | Docs honesty | gap-board Next #28; NOT DONE / 三关未齐 |
+
+### 代码接上 this slice (`cursor/lynx-centered-confirm-dialog-local` / Next #29)
+
+| Item | Notes |
+|---|---|
+| Cap centered Dialog confirm | `LynxCenteredDialog`: scrim (`bg-black/50` spirit) + flex-centered `max-w-md` panel — **not** elevated-in-sheet card, **not** MobileResizableSheet half-card |
+| RevertGlassChip + pull-if-behind preserved | Unchanged from #28; confirm opens centered modal before `POST /api/git/revert` |
+| Cap does not confirm commit&push | Still omitted honestly |
+| Docs honesty | gap-board Next #29; NOT DONE / 三关未齐 / no 真机过 |
 
 ### Still missing / host-only / 真机
 

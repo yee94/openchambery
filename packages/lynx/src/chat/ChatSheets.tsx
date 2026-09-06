@@ -26,6 +26,10 @@ import {
   resolveLynxRevertConfirm,
   type LynxRevertConfirmRequest,
 } from './revertConfirm';
+import {
+  LynxCenteredDialog,
+  LynxCenteredDialogAction,
+} from '../shell/CenteredDialog';
 import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
 import { isLynxHtmlPath, planLynxHtmlPreview } from './htmlPreview';
 import {
@@ -282,7 +286,7 @@ function ChangesSheetBody({
   const [actionNote, setActionNote] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
-  /** Cap ChangesPanel Dialog spirit — confirm before destructive revert. */
+  /** Cap ChangesPanel centered Dialog — confirm before destructive revert. */
   const [pendingRevert, setPendingRevert] = useState<LynxRevertConfirmRequest | null>(null);
 
   useEffect(() => {
@@ -573,6 +577,7 @@ function ChangesSheetBody({
   }
 
   return (
+    <LynxView style={{ flexGrow: 1, position: 'relative' }}>
     <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
       <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
         {directory}
@@ -715,60 +720,47 @@ function ChangesSheetBody({
           );
         })
       )}
-      {pendingRevert ? (
-        <LynxView
-          style={{
-            marginTop: '16px',
-            padding: '16px',
-            borderRadius: '12px',
-            backgroundColor: cssVar('surface.elevated'),
-          }}
-          accessibility-label={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
-        >
-          <LynxText
-            style={{
-              color: cssVar('surface.foreground'),
-              fontSize: '15px',
-              fontWeight: '700',
-              marginBottom: '8px',
-            }}
-          >
-            {lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
-          </LynxText>
-          <LynxText
-            style={{
-              color: cssVar('surface.mutedForeground'),
-              fontSize: '13px',
-              marginBottom: '4px',
-            }}
-          >
-            {lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmDescription')}
-          </LynxText>
+    </LynxScrollView>
+      <LynxCenteredDialog
+        locale={locale}
+        open={pendingRevert != null}
+        title={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
+        description={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmDescription')}
+        ariaLabel={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
+        busy={actionBusy}
+        onClose={() => { if (!actionBusy) dismissRevertConfirm(); }}
+        footer={(
+          <>
+            <LynxCenteredDialogAction
+              label={lynxT(locale, 'lynx.chat.sheet.changes.cancel')}
+              disabled={actionBusy}
+              onTap={() => { dismissRevertConfirm(); }}
+            />
+            <LynxCenteredDialogAction
+              label={actionBusy
+                ? lynxT(locale, 'lynx.chat.sheet.changes.reverting')
+                : lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmAction')}
+              destructive
+              disabled={actionBusy}
+              onTap={() => { confirmRevert(); }}
+            />
+          </>
+        )}
+      >
+        {pendingRevert ? (
           <LynxText
             style={{
               color: cssVar('surface.foreground'),
               fontSize: '12px',
-              marginBottom: '12px',
+              marginBottom: '8px',
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             }}
           >
             {pendingRevert.path}
           </LynxText>
-          <LynxView style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-            <ActionChip
-              label={lynxT(locale, 'lynx.chat.sheet.changes.cancel')}
-              onTap={() => { if (!actionBusy) dismissRevertConfirm(); }}
-            />
-            <ActionChip
-              label={actionBusy
-                ? lynxT(locale, 'lynx.chat.sheet.changes.reverting')
-                : lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmAction')}
-              onTap={() => { if (!actionBusy) confirmRevert(); }}
-            />
-          </LynxView>
-        </LynxView>
-      ) : null}
-    </LynxScrollView>
+        ) : null}
+      </LynxCenteredDialog>
+    </LynxView>
   );
 }
 

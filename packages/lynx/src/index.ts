@@ -416,3 +416,10 @@ export {
   LynxComposerGlassCard,
   composerGlassSurfaceForVariant,
 } from './chat/ComposerGlassCard';
+
+export {
+  LYNX_CENTERED_DIALOG,
+  LYNX_CENTERED_DIALOG_NOTES,
+  shouldAllowLynxCenteredDialogDismiss,
+} from './shell/centeredDialog';
+export { LynxCenteredDialog, LynxCenteredDialogAction } from './shell/CenteredDialog';
