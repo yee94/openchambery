@@ -116,8 +116,8 @@ is server-global, so every device token of a server sees the same badge.
 
 Host (`apns-runtime.js`):
 - `OPENCHAMBER_PUSH_RELAY_URL` (explicit send-URL override), `OPENCHAMBER_APNS_ENVIRONMENT`
-  (`sandbox` default / `production` for TestFlight and App Store). The signing keypair is
-  auto-generated — nothing to set.
+  (`production` default for TestFlight/App Store builds; set `sandbox` for Xcode development
+  builds). The signing keypair is auto-generated — nothing to set.
 - Direct fallback: `OPENCHAMBER_APNS_KEY_ID`, `OPENCHAMBER_APNS_TEAM_ID`, `OPENCHAMBER_APNS_P8`
   (or `_P8_PATH`), `OPENCHAMBER_APNS_BUNDLE_ID`, `OPENCHAMBER_PUSH_RELAY_DISABLED=true`.
 
@@ -136,8 +136,8 @@ device tokens, or signatures.
 2. Give those values only to the Push process (environment or Docker secret). Do not put the
    `.p8` on Layer 1 or on each OpenChamber Host when using Relay mode.
 3. Xcode: confirm the Push Notifications capability; Clean Build Folder; run on device.
-   Development builds use APNs `sandbox`. TestFlight and App Store Hosts set
-   `OPENCHAMBER_APNS_ENVIRONMENT=production`.
+   Hosts default to APNs `production` (TestFlight/App Store tokens). Xcode development
+   builds (sandbox tokens) need `OPENCHAMBER_APNS_ENVIRONMENT=sandbox`.
 
 ## Security posture
 

@@ -115,6 +115,25 @@ describe('apns runtime bundle ID', () => {
   });
 });
 
+describe('apns runtime APNs environment', () => {
+  it('defaults resolveApnsConfig environment to production when env and settings omit it', async () => {
+    process.env.OPENCHAMBER_APNS_KEY_ID = 'KEY123';
+    process.env.OPENCHAMBER_APNS_TEAM_ID = 'TEAM123';
+    process.env.OPENCHAMBER_APNS_P8 = P8;
+    const runtime = createApnsRuntime(makeDeps());
+    await expect(runtime.resolveApnsConfig()).resolves.toMatchObject({ environment: 'production' });
+  });
+
+  it('uses sandbox when OPENCHAMBER_APNS_ENVIRONMENT=sandbox', async () => {
+    process.env.OPENCHAMBER_APNS_KEY_ID = 'KEY123';
+    process.env.OPENCHAMBER_APNS_TEAM_ID = 'TEAM123';
+    process.env.OPENCHAMBER_APNS_P8 = P8;
+    process.env.OPENCHAMBER_APNS_ENVIRONMENT = 'sandbox';
+    const runtime = createApnsRuntime(makeDeps());
+    await expect(runtime.resolveApnsConfig()).resolves.toMatchObject({ environment: 'sandbox' });
+  });
+});
+
 describe('apns runtime relay mode (default)', () => {
   it('registers tokens (signed) and posts signed generic text, dropping dead tokens', async () => {
     const fetchMock = vi.fn(async (url) =>
@@ -921,17 +940,29 @@ describe('apns live activity relay and direct delivery', () => {
     expect(sent.dismissalDate).toBeLessThanOrEqual(Math.floor(after / 1000) + 60 * 60);
   });
 
-  it('forwards OPENCHAMBER_APNS_ENVIRONMENT=production as env on live-activity relay send', async () => {
+  it('defaults live-activity relay env to production when OPENCHAMBER_APNS_ENVIRONMENT is unset', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
     vi.stubGlobal('fetch', fetchMock);
     process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
-    process.env.OPENCHAMBER_APNS_ENVIRONMENT = 'production';
     const runtime = createApnsRuntime(makeDeps());
     await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
     fetchMock.mockClear();
     await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'complete' });
     const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
     expect(sent.env).toBe('production');
+  });
+
+  it('forwards OPENCHAMBER_APNS_ENVIRONMENT=sandbox as env on live-activity relay send', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    process.env.OPENCHAMBER_APNS_ENVIRONMENT = 'sandbox';
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'ses_1');
+    fetchMock.mockClear();
+    await runtime.sendLiveActivityEnd({ sessionId: 'ses_1', status: 'complete' });
+    const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(sent.env).toBe('sandbox');
   });
 
   it('keeps tokens after a failed relay end so a later attempt can retry', async () => {
