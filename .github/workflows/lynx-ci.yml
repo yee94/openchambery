@@ -53,13 +53,9 @@ jobs:
       - name: Rspeedy build (Lynx bundle)
         run: bun run --cwd packages/lynx build:rspeedy
 
-  # --- Native binary jobs (documented; not claimed green without runners) ---
-  # APK assembleDebug and iOS simulator builds require Android SDK / Xcode
-  # Mac runners. Until those runners exist on this track, keep the jobs
-  # omitted rather than skipped-green theater. Do not tick 真机过 from CI.
-  #
-  # Planned (not enabled):
-  # - lynx-android-apk: runs-on [self-hosted, android] → assembleDebug
-  # - lynx-ios-sim: runs-on macos-14 → xcodebuild -sdk iphonesimulator
+  # --- Native binary / sideload APK ---
+  # Android sideload APK + GitHub prerelease live in lynx-mobile-ci.yml
+  # (assembleRelease + debug keystore + applicationIdSuffix .debug, Expo-style).
+  # iOS simulator builds are still not enabled here. Do not tick 真机过 from CI.
   #
   # Capacitor mobile-ci.yml remaining green on main is unrelated to Lynx.

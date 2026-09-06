@@ -1,6 +1,10 @@
 package com.yee94.openchamber.lynx
 
 import android.app.Activity
+import android.os.Bundle
+import com.lynx.tasm.LynxView
+import com.lynx.tasm.LynxViewBuilder
+import com.lynx.xelement.XElementBehaviors
 
 /**
  * Android host for the Lynx phone shell.
@@ -9,19 +13,28 @@ import android.app.Activity
  * Chat is a Lynx push that hides the dock. Do not add a fifth Chat destination
  * or a Material bottom nav (that would double-paint chrome).
  *
- * Application id must stay `com.yee94.openchamber` / `.debug` when FCM lands
+ * Sideload applicationId is `com.yee94.openchamber.lynx.debug` so this APK
+ * installs beside Cap/Flutter/Expo (`com.yee94.openchamber(.debug)`). FCM will
+ * not work until a matching Firebase Android app is added
  * (`docs/lynx-pitfalls.md` §6). This file does not register push.
- *
- * Requires the official Lynx Android SDK before it can compile in Gradle.
  */
 class OpenChamberLynxHostActivity : Activity() {
     private val decision = OpenChamberLynxEmbedding.resolve()
 
-    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // LynxView view = OpenChamberLynxViewFactory.create(this, decision)
-        // setContentView(view)
         check(decision.mode == LynxEmbeddingMode.A)
         check(decision.androidGlassDowngrade)
+
+        val lynxView = buildLynxView()
+        setContentView(lynxView)
+        lynxView.renderTemplateUrl(OpenChamberLynxViewFactory.BUNDLE_URL, "")
+    }
+
+    private fun buildLynxView(): LynxView {
+        val viewBuilder = LynxViewBuilder()
+        viewBuilder.addBehaviors(XElementBehaviors().create())
+        viewBuilder.setTemplateProvider(OpenChamberLynxTemplateProvider(this))
+        return viewBuilder.build(this)
     }
 }
