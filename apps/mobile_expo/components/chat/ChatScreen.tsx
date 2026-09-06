@@ -1,8 +1,22 @@
-import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, StyleSheet, View as RNView } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActionSheetIOS,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Platform,
+  Pressable,
+  Share,
+  StyleSheet,
+  View as RNView,
+} from 'react-native';
+import { useRouter } from 'expo-router';
 
+import { ChangesSheet } from '@/components/chat/ChangesSheet';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ContextUsageRing } from '@/components/chat/ContextUsageRing';
+import { FilesSheet } from '@/components/chat/FilesSheet';
+import { PermissionCard } from '@/components/chat/PermissionCard';
 import { QuestionCard } from '@/components/chat/QuestionCard';
 import { QueueEditModal } from '@/components/chat/QueueEditModal';
 import { QueuedMessageChips } from '@/components/chat/QueuedMessageChips';
@@ -11,7 +25,18 @@ import { Text, View, useThemeColor } from '@/components/Themed';
 import { useChatSession } from '@/hooks/useChatSession';
 import { useComposerAutocomplete } from '@/hooks/useComposerAutocomplete';
 import { useConnection } from '@/context/ConnectionContext';
+import { evaluateHeaderSwipe } from '@/lib/headerSwipe';
 import type { MessageQueueChipItem } from '@/lib/messageQueueApi';
+import { forkChatSession, shareChatSession } from '@/lib/sessionChatActions';
+import {
+  evaluateSwipeDirection,
+  isNativeIosBackEdgeStart,
+  rankSessionsForSwipe,
+  resolveSessionSwipeNeighbor,
+  shouldStartSessionSwipe,
+} from '@/lib/sessionSwipe';
+import { loadSessionIndexSnapshot } from '@/lib/sessionIndex';
+import { buildSessionHomeModel } from '@/lib/sessionHomeModel';
 import { t } from '@/lib/i18n';
 
 export type ChatScreenProps = {
@@ -21,9 +46,40 @@ export type ChatScreenProps = {
 export function ChatScreen({ routeSessionId }: ChatScreenProps) {
   const chat = useChatSession(routeSessionId);
   const { state } = useConnection();
+  const router = useRouter();
   const muted = useThemeColor({}, 'muted');
   const autocomplete = useComposerAutocomplete(state.active, chat.directory);
   const [androidEditItem, setAndroidEditItem] = useState<MessageQueueChipItem | null>(null);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [changesOpen, setChangesOpen] = useState(false);
+  const [rankedIds, setRankedIds] = useState<string[]>([]);
+  const swipeStart = useRef<{ x: number; y: number; surface: boolean } | null>(null);
+  const headerSwipeStart = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!state.active) return;
+    let cancelled = false;
+    void loadSessionIndexSnapshot(state.active)
+      .then((snapshot) => {
+        if (cancelled || !snapshot) return;
+        const model = buildSessionHomeModel(snapshot);
+        setRankedIds(
+          rankSessionsForSwipe(
+            model.catalog.map((row) => ({
+              id: row.id,
+              parentID: row.parentID,
+              activityMs: row.activityMs,
+            })),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setRankedIds([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.active, chat.sessionId]);
 
   const moveQueued = useCallback(
     (item: MessageQueueChipItem, direction: -1 | 1) => {
@@ -64,9 +120,150 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
     [chat],
   );
 
+  const runOverflow = useCallback(
+    async (action: 'files' | 'changes' | 'share' | 'fork' | 'refresh' | 'copy') => {
+      if (action === 'files') {
+        setFilesOpen(true);
+        return;
+      }
+      if (action === 'changes') {
+        setChangesOpen(true);
+        return;
+      }
+      if (action === 'refresh') {
+        void chat.refresh();
+        return;
+      }
+      if (!state.active || !chat.sessionId) return;
+      try {
+        if (action === 'share') {
+          const shared = await shareChatSession(state.active, chat.sessionId, chat.directory);
+          if (shared.shareUrl) {
+            await Share.share({ message: shared.shareUrl });
+          } else {
+            Alert.alert(t('mobile.chat.menu.share'), 'OK');
+          }
+          return;
+        }
+        if (action === 'fork') {
+          const forked = await forkChatSession(state.active, chat.sessionId, {
+            directory: chat.directory,
+          });
+          router.replace(`/chat/${encodeURIComponent(forked.id)}`);
+          return;
+        }
+        if (action === 'copy') {
+          const text = chat.rows
+            .map((row) => `${row.role}: ${row.text}`)
+            .join('\n\n')
+            .slice(0, 50_000);
+          await Share.share({ message: text || chat.sessionId });
+        }
+      } catch (err) {
+        Alert.alert('Error', err instanceof Error ? err.message : 'action failed');
+      }
+    },
+    [chat, router, state.active],
+  );
+
+  const openOverflow = useCallback(() => {
+    const labels = [
+      t('mobile.chat.menu.files'),
+      t('mobile.chat.menu.changes'),
+      t('mobile.chat.menu.share'),
+      t('mobile.chat.menu.fork'),
+      t('mobile.chat.menu.refresh'),
+      t('mobile.chat.menu.copy'),
+      t('mobile.chat.attach.cancel'),
+    ];
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: labels, cancelButtonIndex: labels.length - 1 },
+        (index) => {
+          const map = ['files', 'changes', 'share', 'fork', 'refresh', 'copy'] as const;
+          if (index >= 0 && index < map.length) void runOverflow(map[index]!);
+        },
+      );
+      return;
+    }
+    Alert.alert(t('mobile.chat.title'), undefined, [
+      { text: labels[0], onPress: () => void runOverflow('files') },
+      { text: labels[1], onPress: () => void runOverflow('changes') },
+      { text: labels[2], onPress: () => void runOverflow('share') },
+      { text: labels[3], onPress: () => void runOverflow('fork') },
+      { text: labels[4], onPress: () => void runOverflow('refresh') },
+      { text: labels[5], onPress: () => void runOverflow('copy') },
+      { text: labels[6], style: 'cancel' },
+    ]);
+  }, [runOverflow]);
+
+
+  const onComposerTouchStart = (x: number, y: number) => {
+    const ok = shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: false,
+      withinNativeBackEdge: isNativeIosBackEdgeStart(x, Platform.OS),
+      composerActive: false,
+    });
+    swipeStart.current = ok ? { x, y, surface: true } : null;
+  };
+
+  const onComposerTouchEnd = (x: number, y: number) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    if (!start?.surface || !chat.sessionId) return;
+    const direction = evaluateSwipeDirection({
+      startX: start.x,
+      startY: start.y,
+      endX: x,
+      endY: y,
+    });
+    if (!direction) return;
+    const neighbor = resolveSessionSwipeNeighbor(rankedIds, chat.sessionId, direction);
+    if (neighbor) router.replace(`/chat/${encodeURIComponent(neighbor)}`);
+  };
+
+  const onBodyTouchStart = (x: number, y: number) => {
+    headerSwipeStart.current = { x, y };
+  };
+
+  const onBodyTouchEnd = (x: number, y: number) => {
+    const start = headerSwipeStart.current;
+    headerSwipeStart.current = null;
+    if (!start) return;
+    const result = evaluateHeaderSwipe({
+      startX: start.x,
+      startY: start.y,
+      endX: x,
+      endY: y,
+      viewportWidth: Dimensions.get('window').width,
+      disabled: filesOpen || changesOpen,
+      startedOnExcludedTarget: false,
+    });
+    if (result.back) {
+      router.back();
+      return;
+    }
+    if (result.open) {
+      // Sessions sheet residual — navigate home for now (sheet host not yet Expo-native).
+      router.replace('/(tabs)');
+    }
+  };
+
   return (
-    <View style={styles.root}>
+    <View
+      style={styles.root}
+      onStartShouldSetResponder={() => true}
+      onResponderGrant={(e) => onBodyTouchStart(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+      onResponderRelease={(e) => onBodyTouchEnd(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+    >
       <ContextUsageRing display={chat.contextDisplay} />
+      <RNView style={styles.overflowRow}>
+        <Pressable onPress={openOverflow} accessibilityRole="button">
+          <Text style={styles.overflowBtn}>{t('mobile.chat.menu.files')} · {t('mobile.chat.menu.changes')} · •••</Text>
+        </Pressable>
+      </RNView>
 
       {chat.status === 'loading' && chat.rows.length === 0 ? (
         <RNView style={styles.center}>
@@ -77,9 +274,48 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         <TranscriptList
           rows={chat.rows}
           structureEpoch={chat.structureEpoch}
-          emptyLabel={
-            chat.isDraft ? t('mobile.chat.draftEmpty') : t('mobile.chat.empty')
-          }
+          emptyLabel={chat.isDraft ? t('mobile.chat.draftEmpty') : t('mobile.chat.empty')}
+          onMessageLongPress={(row) => {
+            const options = [
+              t('mobile.chat.message.copy'),
+              t('mobile.chat.message.share'),
+              t('mobile.chat.message.fork'),
+              t('mobile.chat.attach.cancel'),
+            ];
+            const run = async (kind: 'copy' | 'share' | 'fork') => {
+              try {
+                if (kind === 'copy' || kind === 'share') {
+                  await Share.share({ message: row.text || '' });
+                  return;
+                }
+                if (!state.active || !chat.sessionId) return;
+                const forked = await forkChatSession(state.active, chat.sessionId, {
+                  messageId: row.id,
+                  directory: chat.directory,
+                });
+                router.replace(`/chat/${encodeURIComponent(forked.id)}`);
+              } catch (err) {
+                Alert.alert('Error', err instanceof Error ? err.message : 'failed');
+              }
+            };
+            if (Platform.OS === 'ios') {
+              ActionSheetIOS.showActionSheetWithOptions(
+                { options, cancelButtonIndex: 3 },
+                (index) => {
+                  if (index === 0) void run('copy');
+                  if (index === 1) void run('share');
+                  if (index === 2) void run('fork');
+                },
+              );
+              return;
+            }
+            Alert.alert(t('mobile.chat.message.copy'), undefined, [
+              { text: options[0], onPress: () => void run('copy') },
+              { text: options[1], onPress: () => void run('share') },
+              { text: options[2], onPress: () => void run('fork') },
+              { text: options[3], style: 'cancel' },
+            ]);
+          }}
         />
       )}
 
@@ -99,6 +335,15 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         />
       ))}
 
+      {chat.pendingPermissions.map((perm) => (
+        <PermissionCard
+          key={perm.id}
+          permission={perm}
+          busy={chat.permissionBusyId === perm.id}
+          onRespond={(response) => chat.respondPermission(perm, response)}
+        />
+      ))}
+
       <QueuedMessageChips
         items={chat.queueItems}
         onRemove={(item) => {
@@ -109,22 +354,32 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         onEdit={editQueued}
       />
 
-      <ChatComposer
-        value={chat.draft}
-        onChangeText={chat.setDraft}
-        onSend={() => {
-          void chat.send();
-        }}
-        onStop={() => {
-          void chat.stop();
-        }}
-        busy={chat.busy}
-        autocompleteRows={autocomplete.rows}
-        autocompleteLoading={autocomplete.loading}
-        onAutocompleteTriggerChange={autocomplete.onTriggerChange}
-        attachments={chat.attachments}
-        onAttachmentsChange={chat.setAttachments}
-      />
+      <RNView
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={(e) =>
+          onComposerTouchStart(e.nativeEvent.pageX, e.nativeEvent.pageY)
+        }
+        onResponderRelease={(e) =>
+          onComposerTouchEnd(e.nativeEvent.pageX, e.nativeEvent.pageY)
+        }
+      >
+        <ChatComposer
+          value={chat.draft}
+          onChangeText={chat.setDraft}
+          onSend={() => {
+            void chat.send();
+          }}
+          onStop={() => {
+            void chat.stop();
+          }}
+          busy={chat.busy}
+          autocompleteRows={autocomplete.rows}
+          autocompleteLoading={autocomplete.loading}
+          onAutocompleteTriggerChange={autocomplete.onTriggerChange}
+          attachments={chat.attachments}
+          onAttachmentsChange={chat.setAttachments}
+        />
+      </RNView>
 
       <QueueEditModal
         visible={androidEditItem != null}
@@ -135,6 +390,17 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
           setAndroidEditItem(null);
           if (item) void chat.editQueued(item, value);
         }}
+      />
+
+      <FilesSheet
+        visible={filesOpen}
+        rootDirectory={chat.directory}
+        onClose={() => setFilesOpen(false)}
+      />
+      <ChangesSheet
+        visible={changesOpen}
+        directory={chat.directory}
+        onClose={() => setChangesOpen(false)}
       />
     </View>
   );
@@ -161,5 +427,15 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#F97066',
     fontSize: 13,
+  },
+  overflowRow: {
+    paddingHorizontal: 12,
+    paddingBottom: 4,
+    alignItems: 'flex-end',
+  },
+  overflowBtn: {
+    color: '#3b82f6',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

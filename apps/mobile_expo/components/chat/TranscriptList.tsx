@@ -12,6 +12,7 @@ export type TranscriptListProps = {
   /** Bumps only when ids/order change — used as LegendList extraData for structure. */
   structureEpoch: number;
   emptyLabel?: string;
+  onMessageLongPress?: (row: TranscriptRow) => void;
 };
 
 /**
@@ -21,13 +22,13 @@ export type TranscriptListProps = {
  * - maintainVisibleContentPosition for prepend stability
  * - re-enter scrolls to latest (1.19.3-beta.5)
  */
-export function TranscriptList({ rows, structureEpoch, emptyLabel }: TranscriptListProps) {
+export function TranscriptList({ rows, structureEpoch, emptyLabel, onMessageLongPress }: TranscriptListProps) {
   const listRef = useRef<LegendListRef | null>(null);
   const keyExtractor = useCallback((item: TranscriptRow) => item.id, []);
 
   const renderItem = useCallback(({ item }: { item: TranscriptRow }) => {
-    return <MessageBubble row={item} />;
-  }, []);
+    return <MessageBubble row={item} onLongPress={onMessageLongPress ? () => onMessageLongPress(item) : undefined} />;
+  }, [onMessageLongPress]);
 
   // Re-enter / structure mount: scroll to latest edge (1.19.3-beta.5).
   // Depend on structureEpoch only — token updates must not resubscribe scroll.

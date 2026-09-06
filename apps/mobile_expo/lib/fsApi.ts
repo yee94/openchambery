@@ -136,3 +136,74 @@ export const cloneRepository = async (
     output: typeof payload?.output === 'string' ? payload.output : undefined,
   };
 };
+
+const MAX_FILE_CHARS = 250_000;
+
+/** GET /api/fs/read — text file content (Cap MobileFilesSurface). */
+export const readFilesystemFile = async (
+  active: ActiveRuntime,
+  path: string,
+  options?: { signal?: AbortSignal; allowOutsideWorkspace?: boolean },
+): Promise<{ content: string; path: string }> => {
+  const params = new URLSearchParams({ path });
+  if (options?.allowOutsideWorkspace) params.set('allowOutsideWorkspace', 'true');
+  const response = await openchamberFetch(active, `/api/fs/read?${params.toString()}`, {
+    method: 'GET',
+    signal: options?.signal,
+  });
+  if (!response.ok) {
+    throw new FsApiError('Failed to read file', response.status);
+  }
+  let content = await response.text();
+  if (content.length > MAX_FILE_CHARS) {
+    content = `${content.slice(0, MAX_FILE_CHARS)}\n…`;
+  }
+  return { content, path };
+};
+
+/** GET /api/find/file — Cap file search for Files sheet. */
+export const searchFilesystemFiles = async (
+  active: ActiveRuntime,
+  input: { directory: string; query: string; maxResults?: number },
+  options?: { signal?: AbortSignal },
+): Promise<Array<{ path: string; name: string }>> => {
+  const params = new URLSearchParams();
+  if (input.directory.trim()) params.set('directory', input.directory.trim());
+  params.set('query', input.query);
+  params.set('dirs', 'false');
+  params.set('type', 'file');
+  if (typeof input.maxResults === 'number') params.set('limit', String(input.maxResults));
+  const response = await openchamberFetch(active, `/api/find/file?${params.toString()}`, {
+    method: 'GET',
+    signal: options?.signal,
+  });
+  if (!response.ok) {
+    throw new FsApiError('Failed to search files', response.status);
+  }
+  const payload = await response.json();
+  const rows = Array.isArray(payload) ? payload : Array.isArray(asRecord(payload)?.results) ? (asRecord(payload)!.results as unknown[]) : [];
+  return rows.flatMap((entry) => {
+    const row = asRecord(entry);
+    if (!row || typeof row.path !== 'string') return [];
+    const name =
+      typeof row.name === 'string'
+        ? row.name
+        : row.path.split('/').filter(Boolean).at(-1) ?? row.path;
+    return [{ path: row.path, name }];
+  });
+};
+
+export const isHtmlFilePath = (path: string): boolean => /\.html?$/i.test(path);
+export const isMarkdownFilePath = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path);
+export const fileNameFromPath = (path: string): string => {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/g, '');
+  if (!normalized || normalized === '/') return normalized || '/';
+  return normalized.split('/').filter(Boolean).at(-1) ?? normalized;
+};
+export const parentDirectoryPath = (path: string): string | null => {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/g, '');
+  if (!normalized || normalized === '/') return null;
+  const index = normalized.lastIndexOf('/');
+  if (index <= 0) return normalized.startsWith('/') ? '/' : null;
+  return normalized.slice(0, index);
+};

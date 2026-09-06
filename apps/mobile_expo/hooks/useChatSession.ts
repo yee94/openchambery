@@ -61,6 +61,15 @@ import {
   type QuestionRequest,
   QuestionApiError,
 } from '@/lib/questionApi';
+import {
+  applyPermissionEvent,
+  isPermissionNotFoundError,
+  listPendingPermissions,
+  replyToPermission,
+  type PermissionRequest,
+  type PermissionResponse,
+  PermissionApiError,
+} from '@/lib/permissionApi';
 
 export type ChatLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -85,6 +94,10 @@ export type ChatSessionView = {
   directory: string | null;
   removeQueued: (item: MessageQueueChipItem) => Promise<void>;
   reorderQueued: (orderedIds: string[]) => Promise<void>;
+  /** Cap session permission requests (interactive PermissionCard). */
+  pendingPermissions: PermissionRequest[];
+  respondPermission: (request: PermissionRequest, response: PermissionResponse) => Promise<void>;
+  permissionBusyId: string | null;
   editQueued: (item: MessageQueueChipItem, content: string) => Promise<void>;
   attachments: StagedPromptAttachment[];
   setAttachments: (next: StagedPromptAttachment[]) => void;
@@ -131,6 +144,8 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
   const [providerCatalog, setProviderCatalog] = useState<unknown>(null);
   const [pendingQuestions, setPendingQuestions] = useState<QuestionRequest[]>([]);
   const [questionBusyId, setQuestionBusyId] = useState<string | null>(null);
+  const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
+  const [permissionBusyId, setPermissionBusyId] = useState<string | null>(null);
   const queueRevisionRef = useRef(0);
   const queueScopeIdRef = useRef<string | null>(null);
 
@@ -161,6 +176,7 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     if (isDraftSessionRouteId(routeSessionId)) {
       transcriptRef.current.replaceFromRecords([]);
       setPendingQuestions([]);
+      setPendingPermissions([]);
       setStatus('ready');
       setError(null);
     }
@@ -259,6 +275,26 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     void refreshQuestions();
   }, [refreshQuestions, directory]);
 
+  const refreshPermissions = useCallback(async () => {
+    if (!active || !sessionId) {
+      setPendingPermissions([]);
+      return;
+    }
+    try {
+      const pending = await listPendingPermissions(active, {
+        directory: directoryRef.current,
+        sessionId,
+      });
+      setPendingPermissions(pending);
+    } catch {
+      // Permissions are blocking chrome — do not fail the chat surface on list errors.
+    }
+  }, [active, sessionId]);
+
+  useEffect(() => {
+    void refreshPermissions();
+  }, [refreshPermissions, directory]);
+
   // Mark this session as viewed for home unread while Chat is open.
   useEffect(() => {
     if (!sessionId || isDraftSessionRouteId(sessionId)) {
@@ -276,6 +312,7 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     return subscribeGlobalEvents(
       active,
       (event) => {
+        setPendingPermissions((prev) => applyPermissionEvent(prev, event, sessionId));
         setPendingQuestions((prev) => applyQuestionEvent(prev, event, sessionId));
         const controller = transcriptRef.current;
         applyChatEventToTranscript(event, sessionId, {
@@ -562,6 +599,36 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     [active],
   );
 
+  const respondPermission = useCallback(
+    async (request: PermissionRequest, response: PermissionResponse) => {
+      if (!active) return;
+      setPermissionBusyId(request.id);
+      try {
+        await replyToPermission(active, {
+          requestId: request.id,
+          reply: response,
+          directory: directoryRef.current,
+        });
+        setPendingPermissions((prev) => prev.filter((p) => p.id !== request.id));
+      } catch (err) {
+        if (isPermissionNotFoundError(err)) {
+          setPendingPermissions((prev) => prev.filter((p) => p.id !== request.id));
+          return;
+        }
+        const message =
+          err instanceof PermissionApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'permission reply failed';
+        setError(message);
+      } finally {
+        setPermissionBusyId(null);
+      }
+    },
+    [active],
+  );
+
   // Context usage ring — Cap MobileContextProgressButton data subset.
   useEffect(() => {
     if (!active || !sessionId) {
@@ -636,6 +703,9 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       replyQuestion,
       dismissQuestion,
       questionBusyId,
+      pendingPermissions,
+      respondPermission,
+      permissionBusyId,
     }),
     [
       attachments,
@@ -648,6 +718,9 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       error,
       pendingQuestions,
       questionBusyId,
+      pendingPermissions,
+      respondPermission,
+      permissionBusyId,
       queueItems,
       queueRevision,
       queueScopeId,

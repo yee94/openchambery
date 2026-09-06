@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { StyleSheet, View as RNView } from 'react-native';
+import { Pressable, StyleSheet, View as RNView } from 'react-native';
 
 import { ReasoningDisclosure } from '@/components/chat/ReasoningDisclosure';
 import { SkillGroup } from '@/components/chat/SkillGroup';
@@ -11,10 +11,11 @@ import { safeStreamingMarkdownText } from '@/lib/streamingMarkdown';
 import { partsSignature, segmentsFromParts } from '@/lib/toolCards';
 
 export type MessageBubbleProps = {
+  onLongPress?: () => void;
   row: TranscriptRow;
 };
 
-function MessageBubbleImpl({ row }: MessageBubbleProps) {
+function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const isUser = row.role === 'user';
@@ -38,7 +39,8 @@ function MessageBubbleImpl({ row }: MessageBubbleProps) {
 
   if (isUser || !hasStructured) {
     return (
-      <RNView
+      <Pressable
+        onLongPress={onLongPress}
         style={[styles.wrap, isUser ? styles.userWrap : styles.assistantWrap]}
         accessibilityRole="text"
       >
@@ -57,12 +59,12 @@ function MessageBubbleImpl({ row }: MessageBubbleProps) {
             </Text>
           ) : null}
         </RNView>
-      </RNView>
+      </Pressable>
     );
   }
 
   return (
-    <RNView style={[styles.wrap, styles.assistantWrap]} accessibilityRole="text">
+    <Pressable onLongPress={onLongPress} style={[styles.wrap, styles.assistantWrap]} accessibilityRole="text">
       <RNView style={styles.assistantColumn}>
         {segments.map((segment) => {
           if (segment.kind === 'reasoning') {
@@ -94,7 +96,7 @@ function MessageBubbleImpl({ row }: MessageBubbleProps) {
           <Text style={[styles.streaming, { color: muted }]}>streaming</Text>
         ) : null}
       </RNView>
-    </RNView>
+    </Pressable>
   );
 }
 
