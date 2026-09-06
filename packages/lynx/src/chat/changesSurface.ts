@@ -365,3 +365,261 @@ export const unstageLynxGitFiles = async (
   }
   return postGitJson(runtimeFetch, '/api/git/unstage', trimmedDir, { paths: cleaned }, options);
 };
+
+/**
+ * Cap `POST /api/git/revert` — MobileChangesSurface handleRevertFile.
+ * Body: `{ path: string, scope?: 'all' | 'working' }`. Failure ≠ fake-success.
+ */
+export const revertLynxGitFile = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  path: string,
+  options?: { scope?: 'all' | 'working'; signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const trimmedPath = path.trim();
+  if (!trimmedPath) {
+    return { status: 'failed', error: new Error('path is required to revert git changes') };
+  }
+  const body: Record<string, unknown> = { path: trimmedPath };
+  if (options?.scope) body.scope = options.scope;
+  return postGitJson(runtimeFetch, '/api/git/revert', trimmedDir, body, options);
+};
+
+/**
+ * Cap MobileChangesSurface handleRevertAll — Promise.all of per-file revert.
+ * Stops reporting the first failure (Cap also surfaces one toast). Failure ≠ fake-success.
+ */
+export const revertLynxGitFiles = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  paths: readonly string[],
+  options?: { scope?: 'all' | 'working'; signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const cleaned = Array.from(new Set(paths.map((p) => p.trim()).filter(Boolean)));
+  if (cleaned.length === 0) {
+    return { status: 'failed', error: new Error('path is required to revert git changes') };
+  }
+  for (const path of cleaned) {
+    const result = await revertLynxGitFile(runtimeFetch, trimmedDir, path, options);
+    if (result.status !== 'ok') return result;
+  }
+  return { status: 'ok' };
+};
+
+export type LynxGeneratedCommitMessage = {
+  subject: string;
+  highlights: string[];
+};
+
+export type LynxGenerateCommitMessageResult =
+  | { status: 'ok'; message: LynxGeneratedCommitMessage }
+  | { status: 'no-runtime' }
+  | { status: 'no-directory' }
+  | { status: 'failed'; error: Error; httpStatus?: number };
+
+const COMMIT_DIFF_FILE_LIMIT = 30;
+const COMMIT_DIFF_TOTAL_CHAR_LIMIT = 120_000;
+
+/** Cap magicPrompts `git.commit.generate.visible` default (no Cap store dependency). */
+const LYNX_COMMIT_GENERATE_SYSTEM =
+  'You are generating a Conventional Commits subject line from the diffs of the selected files.';
+
+/** Cap magicPrompts `git.commit.generate.instructions` shape — JSON subject + highlights. */
+const buildLynxCommitGenerateInstructions = (selectedFiles: readonly string[]): string => (
+  `Return exactly one JSON object and nothing else. Do not include prose, markdown, explanations, or code fences.
+
+The JSON object must have exactly this shape:
+{"subject": string, "highlights": string[]}
+
+Rules:
+- subject format: <type>: <summary>
+- allowed types: feat, fix, refactor, perf, docs, test, build, ci, chore, style, revert
+- no scope in subject
+- keep subject concise and user-facing
+- highlights: 0-3 concise user-facing points
+- use double quotes for all JSON strings
+- do not include trailing commas or comments
+
+Selected files:
+${selectedFiles.map((file) => `- ${file}`).join('\n')}`
+);
+
+const extractLynxJsonObject = (value: string): Record<string, unknown> | null => {
+  const text = value.trim();
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced?.[1] ?? text).trim();
+  const start = candidate.indexOf('{');
+  if (start < 0) return null;
+  for (let end = candidate.length; end > start; end -= 1) {
+    if (candidate[end - 1] !== '}') continue;
+    try {
+      const parsed = JSON.parse(candidate.slice(start, end)) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Keep scanning; models sometimes wrap JSON with prose or fences.
+    }
+  }
+  return null;
+};
+
+const parseLynxCommitStructured = (
+  structured: Record<string, unknown> | null,
+): LynxGeneratedCommitMessage => {
+  const subject = typeof structured?.subject === 'string' ? structured.subject.trim() : '';
+  const highlights = Array.isArray(structured?.highlights)
+    ? structured.highlights
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+    : [];
+  if (!subject) {
+    throw new Error('Structured output missing subject');
+  }
+  return { subject, highlights };
+};
+
+const collectLynxSelectedFileDiffs = async (
+  runtimeFetch: LynxRuntimeFetch,
+  directory: string,
+  files: readonly string[],
+  options?: { signal?: AbortSignal },
+): Promise<string> => {
+  const limited = files.slice(0, COMMIT_DIFF_FILE_LIMIT);
+  const chunks = await Promise.all(limited.map(async (path) => {
+    try {
+      const [stagedRes, unstagedRes] = await Promise.all([
+        runtimeFetch(`/api/git/diff?${gitQuery(directory, { path, staged: 'true' })}`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: options?.signal,
+        }).catch(() => null),
+        runtimeFetch(`/api/git/diff?${gitQuery(directory, { path })}`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: options?.signal,
+        }).catch(() => null),
+      ]);
+      const parts: string[] = [];
+      if (stagedRes?.ok) {
+        const payload = asRecord(await stagedRes.json().catch(() => null));
+        if (typeof payload.diff === 'string' && payload.diff.trim()) parts.push(payload.diff);
+      }
+      if (unstagedRes?.ok) {
+        const payload = asRecord(await unstagedRes.json().catch(() => null));
+        if (typeof payload.diff === 'string' && payload.diff.trim()) parts.push(payload.diff);
+      }
+      return parts.length > 0 ? parts.join('\n') : `--- ${path} (no textual diff available)`;
+    } catch {
+      return `--- ${path} (diff unavailable)`;
+    }
+  }));
+
+  let total = '';
+  for (const chunk of chunks) {
+    if (total.length + chunk.length > COMMIT_DIFF_TOTAL_CHAR_LIMIT) {
+      total += '\n[remaining diffs truncated]';
+      break;
+    }
+    total += (total ? '\n\n' : '') + chunk;
+  }
+  if (files.length > limited.length) {
+    total += `\n[${files.length - limited.length} more selected files omitted]`;
+  }
+  return total;
+};
+
+/**
+ * Cap MobileChangesSurface `generateCommitMessage` — primary transport is
+ * `POST /api/small-model/generate` with `purpose: 'commit'` (gitApi.ts).
+ * Cap session-fallback (magic store / active chat) is **not** ported; 404 /
+ * missing text fails honestly. Dead Cap gitApiHttp `/api/git/commit-message`
+ * route is unused (no matching server route).
+ */
+export const generateLynxCommitMessage = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  files: readonly string[],
+  options?: {
+    preferredProviderID?: string;
+    preferredModelID?: string;
+    signal?: AbortSignal;
+  },
+): Promise<LynxGenerateCommitMessageResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const cleaned = files.map((p) => p.trim()).filter(Boolean);
+  if (cleaned.length === 0) {
+    return { status: 'failed', error: new Error('No files provided to generate commit message') };
+  }
+  try {
+    const diffs = await collectLynxSelectedFileDiffs(runtimeFetch, trimmedDir, cleaned, options);
+    const instructions = buildLynxCommitGenerateInstructions(cleaned);
+    const body: Record<string, unknown> = {
+      purpose: 'commit',
+      system: LYNX_COMMIT_GENERATE_SYSTEM,
+      prompt: `${instructions}\n\nDiffs of the selected files:\n${diffs}`,
+      directory: trimmedDir,
+    };
+    if (options?.preferredProviderID) body.preferredProviderID = options.preferredProviderID;
+    if (options?.preferredModelID) body.preferredModelID = options.preferredModelID;
+
+    const response = await runtimeFetch('/api/small-model/generate', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    });
+    if (response.status === 0) return { status: 'no-runtime' };
+    const payload = asRecord(await response.json().catch(() => null));
+    if (!response.ok) {
+      const message = typeof payload.error === 'string' && payload.error.trim()
+        ? payload.error.trim()
+        : `small-model/generate failed (${response.status})`;
+      return { status: 'failed', error: new Error(message), httpStatus: response.status };
+    }
+    if (typeof payload.text !== 'string') {
+      return { status: 'failed', error: new Error('Malformed commit generation response'), httpStatus: response.status };
+    }
+    const message = parseLynxCommitStructured(extractLynxJsonObject(payload.text));
+    return { status: 'ok', message };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+};
+
+/**
+ * Cap MobileChangesSurface `handleCommit({ pushAfter: true })` spirit —
+ * commit then push. Cap's fetch/pull-if-behind dance needs ahead/behind from
+ * status (not yet parsed on Lynx); this combined path is commit → push only.
+ * Failure ≠ fake-success (stops after first failed step).
+ */
+export const commitAndPushLynxGitChanges = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  message: string,
+  options?: { addAll?: boolean; remote?: string; branch?: string; signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  const committed = await commitLynxGitChanges(runtimeFetch, directory, message, options);
+  if (committed.status !== 'ok') return committed;
+  return syncLynxGit(runtimeFetch, directory, 'push', {
+    remote: options?.remote,
+    branch: options?.branch,
+    signal: options?.signal,
+  });
+};

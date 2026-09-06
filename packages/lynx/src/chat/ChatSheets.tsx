@@ -8,9 +8,12 @@ import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { loadMcpCatalog, type LynxCatalogItem } from '../settings/catalogs';
 import { cssVar } from '../theme/tokens';
 import {
+  commitAndPushLynxGitChanges,
   commitLynxGitChanges,
+  generateLynxCommitMessage,
   loadLynxGitFileDiff,
   loadLynxGitStatus,
+  revertLynxGitFile,
   stageLynxGitFiles,
   syncLynxGit,
   unstageLynxGitFiles,
@@ -378,6 +381,79 @@ function ChangesSheetBody({
     setActionNote(result.error.message);
   };
 
+  const runCommitAndPush = async () => {
+    setActionBusy(true);
+    setActionNote(null);
+    const result = await commitAndPushLynxGitChanges(runtimeFetch, directory, commitMessage);
+    setActionBusy(false);
+    if (result.status === 'ok') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.changes.commitAndPushOk'));
+      setCommitMessage('');
+      setReloadNonce((n) => n + 1);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setActionNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    if (result.status === 'no-directory') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.noDirectory'));
+      return;
+    }
+    setActionNote(result.error.message);
+  };
+
+  const runGenerateCommitMessage = async () => {
+    setActionBusy(true);
+    setActionNote(null);
+    const stagedPaths = (entries ?? []).filter((entry) => entry.staged).map((entry) => entry.path);
+    const result = await generateLynxCommitMessage(runtimeFetch, directory, stagedPaths);
+    setActionBusy(false);
+    if (result.status === 'ok') {
+      setCommitMessage(result.message.subject);
+      const highlights = result.message.highlights.filter(Boolean);
+      setActionNote(highlights.length > 0
+        ? `${lynxT(locale, 'lynx.chat.sheet.changes.generateOk')} · ${highlights.join(' · ')}`
+        : lynxT(locale, 'lynx.chat.sheet.changes.generateOk'));
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setActionNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    if (result.status === 'no-directory') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.noDirectory'));
+      return;
+    }
+    setActionNote(result.error.message);
+  };
+
+  const runRevert = async (entry: LynxGitChangeEntry) => {
+    setActionBusy(true);
+    setActionNote(null);
+    const result = await revertLynxGitFile(runtimeFetch, directory, entry.path);
+    setActionBusy(false);
+    if (result.status === 'ok') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.changes.revertOk'));
+      if (diffEntry?.path === entry.path) {
+        setDiffEntry(null);
+        setDiffPlan(null);
+        setDiffNote(null);
+      }
+      setReloadNonce((n) => n + 1);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setActionNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    if (result.status === 'no-directory') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.noDirectory'));
+      return;
+    }
+    setActionNote(result.error.message);
+  };
+
   const runSync = async (action: LynxGitSyncAction) => {
     setActionBusy(true);
     setActionNote(null);
@@ -488,8 +564,16 @@ function ChangesSheetBody({
         />
         <LynxView style={{ flexDirection: 'row', marginTop: '8px', flexWrap: 'wrap' }}>
           <ActionChip
+            label={actionBusy ? lynxT(locale, 'lynx.chat.sheet.changes.busy') : lynxT(locale, 'lynx.chat.sheet.changes.generateMessage')}
+            onTap={() => { if (!actionBusy) void runGenerateCommitMessage(); }}
+          />
+          <ActionChip
             label={actionBusy ? lynxT(locale, 'lynx.chat.sheet.changes.busy') : lynxT(locale, 'lynx.chat.sheet.changes.commit')}
             onTap={() => { if (!actionBusy) void runCommit(); }}
+          />
+          <ActionChip
+            label={lynxT(locale, 'lynx.chat.sheet.changes.commitAndPush')}
+            onTap={() => { if (!actionBusy) void runCommitAndPush(); }}
           />
           <ActionChip
             label={lynxT(locale, 'lynx.chat.sheet.changes.fetch')}
@@ -587,6 +671,10 @@ function ChangesSheetBody({
                 </LynxView>
               ) : null}
             </LynxView>
+            <ActionChip
+              label={lynxT(locale, 'lynx.chat.sheet.changes.revert')}
+              onTap={() => { if (!actionBusy) void runRevert(entry); }}
+            />
             <StageGlassChip
               symbol={entry.staged ? '-' : '+'}
               label={entry.staged

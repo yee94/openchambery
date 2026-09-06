@@ -183,3 +183,130 @@ describe('stageLynxGitFiles / unstageLynxGitFiles', () => {
     expect(empty.status).toBe('failed');
   });
 });
+
+import {
+  commitAndPushLynxGitChanges,
+  generateLynxCommitMessage,
+  revertLynxGitFile,
+  revertLynxGitFiles,
+} from './changesSurface';
+
+describe('revertLynxGitFile / revertLynxGitFiles', () => {
+  test('revert posts Cap /api/git/revert with path', async () => {
+    const calls: Array<{ path: string; body: string | undefined }> = [];
+    const runtimeFetch = async (path: string, init?: { body?: string }) => {
+      calls.push({ path, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    const result = await revertLynxGitFile(runtimeFetch, '/repo', 'a.ts', { scope: 'working' });
+    expect(result).toEqual({ status: 'ok' });
+    expect(calls[0]?.path).toContain('/api/git/revert?');
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ path: 'a.ts', scope: 'working' });
+  });
+
+  test('bulk revert walks unique paths; first failure stops', async () => {
+    const paths: string[] = [];
+    const runtimeFetch = async (path: string, init?: { body?: string }) => {
+      const body = init?.body ? JSON.parse(init.body) as { path?: string } : {};
+      paths.push(String(body.path));
+      if (body.path === 'b.ts') {
+        return { ok: false, status: 500, json: async () => ({ error: 'revert failed' }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    const ok = await revertLynxGitFiles(runtimeFetch, '/repo', ['a.ts', ' a.ts ', 'c.ts']);
+    expect(ok).toEqual({ status: 'ok' });
+    expect(paths).toEqual(['a.ts', 'c.ts']);
+
+    const failed = await revertLynxGitFiles(runtimeFetch, '/repo', ['a.ts', 'b.ts', 'c.ts']);
+    expect(failed.status).toBe('failed');
+  });
+
+  test('empty path / no-runtime / no-directory never fake-success', async () => {
+    expect(await revertLynxGitFile(null, '/repo', 'a.ts')).toEqual({ status: 'no-runtime' });
+    const runtimeFetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    expect(await revertLynxGitFile(runtimeFetch, ' ', 'a.ts')).toEqual({ status: 'no-directory' });
+    const empty = await revertLynxGitFile(runtimeFetch, '/repo', '  ');
+    expect(empty.status).toBe('failed');
+    expect(await revertLynxGitFiles(runtimeFetch, '/repo', [' ', ''])).toMatchObject({ status: 'failed' });
+  });
+});
+
+describe('generateLynxCommitMessage', () => {
+  test('posts Cap /api/small-model/generate purpose commit + parses subject', async () => {
+    const calls: Array<{ path: string; body: string | undefined }> = [];
+    const runtimeFetch = async (path: string, init?: { body?: string }) => {
+      calls.push({ path, body: init?.body });
+      if (path.includes('/api/git/diff')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ diff: '@@ -1 +1 @@\n-old\n+new\n' }),
+        };
+      }
+      if (path === '/api/small-model/generate') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: '{"subject":"fix: widget","highlights":["a","b"]}',
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const result = await generateLynxCommitMessage(runtimeFetch, '/repo', ['a.ts']);
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.message).toEqual({ subject: 'fix: widget', highlights: ['a', 'b'] });
+    const generate = calls.find((c) => c.path === '/api/small-model/generate');
+    expect(generate).toBeTruthy();
+    expect(JSON.parse(generate!.body!)).toMatchObject({
+      purpose: 'commit',
+      directory: '/repo',
+    });
+    expect(calls.some((c) => c.path.includes('/api/git/diff'))).toBe(true);
+  });
+
+  test('empty files / HTTP failure / no-runtime never fake-success', async () => {
+    expect(await generateLynxCommitMessage(null, '/repo', ['a.ts'])).toEqual({ status: 'no-runtime' });
+    const runtimeFetch = async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'unavailable' }),
+    });
+    expect(await generateLynxCommitMessage(runtimeFetch, ' ', ['a.ts'])).toEqual({ status: 'no-directory' });
+    const empty = await generateLynxCommitMessage(runtimeFetch, '/repo', ['  ']);
+    expect(empty.status).toBe('failed');
+    const failed = await generateLynxCommitMessage(runtimeFetch, '/repo', ['a.ts']);
+    expect(failed.status).toBe('failed');
+  });
+});
+
+describe('commitAndPushLynxGitChanges', () => {
+  test('commits then pushes; stops on commit failure', async () => {
+    const paths: string[] = [];
+    const runtimeFetch = async (path: string) => {
+      paths.push(path);
+      if (path.includes('/api/git/commit')) {
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      }
+      if (path.includes('/api/git/push')) {
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      }
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    expect(await commitAndPushLynxGitChanges(runtimeFetch, '/repo', 'feat: x')).toEqual({ status: 'ok' });
+    expect(paths.some((p) => p.includes('/api/git/commit'))).toBe(true);
+    expect(paths.some((p) => p.includes('/api/git/push'))).toBe(true);
+
+    const failCommit = async (path: string) => {
+      if (path.includes('/api/git/commit')) {
+        return { ok: false, status: 500, json: async () => ({ error: 'no' }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    const failed = await commitAndPushLynxGitChanges(failCommit, '/repo', 'feat: x');
+    expect(failed.status).toBe('failed');
+  });
+});

@@ -336,6 +336,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 24. ~~**linux closable after #55: portable text diff + Cap stage/unstage + Projects rename wiring + docs hygiene**~~ — 代码接上 in `cursor/lynx-linux-closable-after-55-local`. Remaining: host-only / 真机 (Pierre runtime, WKWebView, Keychain, camera, IME, Mode B); product NOT DONE.
 25. ~~**diff/chip polish on #56: Cap status add/del tokens + GlassChrome searchChip stage/unstage**~~ — 代码接上 in `cursor/lynx-diff-chip-polish-local`. Remaining: Pierre `@pierre/diffs` runtime / Mode B / 真机; product NOT DONE.
 26. ~~**Pierre investigation + ChangeRow spacing on #57 tip: honest Shadow DOM blocker + Cap size-6 chip / +n/-m slash / diffStats**~~ — 代码接上 in `cursor/lynx-pierre-diffs-local`. Cap `@pierre/diffs` **cannot** run in Lynx (diffs-container Shadow DOM + react-dom). Portable path only; product NOT DONE / no 真机过.
+27. ~~**Changes revert + generateCommitMessage + commitAndPush on #58 tip**~~ — 代码接上 in `cursor/lynx-changes-revert-commitmsg-local`. Cap `POST /api/git/revert`, Cap mobile `POST /api/small-model/generate` purpose commit (not dead `/api/git/commit-message`), combined commit→push. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -544,9 +545,24 @@ Slice on `cursor/lynx-pierre-diffs-local` (base PR#57 tip `858e6d0bb`; PR into `
 
 ---
 
+
+## 代码接上 (Changes revert + generateCommitMessage + commitAndPush — not landed under 三关)
+
+Slice on `cursor/lynx-changes-revert-commitmsg-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Revert file / bulk | `MobileChangesSurface` → `POST /api/git/revert` | `revertLynxGitFile` / `revertLynxGitFiles`; row Revert chip. Failure ≠ fake-success. |
+| generateCommitMessage | Cap `gitApi.generateCommitMessage` → `POST /api/small-model/generate` | Cap-default commit magic prompt text + diff collect via `/api/git/diff`. No Cap session-fallback; dead `/api/git/commit-message` unused. |
+| commitAndPush | Cap `handleCommit({ pushAfter: true })` | `commitAndPushLynxGitChanges` commit→push. Cap fetch/pull-if-behind deferred (ahead/behind not parsed). |
+
+**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
+**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring — including Changes revert / generateCommitMessage / commit→push in Next #27). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -643,6 +659,15 @@ Slice on `cursor/lynx-pierre-diffs-local` (base PR#57 tip `858e6d0bb`; PR into `
 | Feature path | `resolveLynxPierreDiffFeature` + `preferPierre` → always portable-text; `pierreViewer: 'unavailable'` |
 | ChangeRow spacing | Cap-measurable `LYNX_CHANGE_ROW_SPACING`; stage chip 24px; `+n / -m` slash; status letter; status `diffStats` |
 | Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
+
+### 代码接上 this slice (`cursor/lynx-changes-revert-commitmsg-local` / Next #27)
+
+| Item | Notes |
+|---|---|
+| Cap revert file / bulk | `POST /api/git/revert` via `revertLynxGitFile` / `revertLynxGitFiles`; Changes row Revert chip; failure ≠ fake-success |
+| Cap generateCommitMessage | Cap mobile path `POST /api/small-model/generate` purpose `commit` + Cap-default magic prompt text + `/api/git/diff` collect; parse subject/highlights. Session-fallback / dead `/api/git/commit-message` **not** ported |
+| Cap commitAndPush | `commitAndPushLynxGitChanges` = commit → push (Cap fetch/pull-if-behind needs ahead/behind parse — later); Changes Commit & Push chip |
+| Docs honesty | ia-ui unchanged; gap-board Next #27; NOT DONE / 三关未齐 |
 
 ### Still missing / host-only / 真机
 
