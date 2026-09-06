@@ -6,11 +6,16 @@ import {
 } from './overflowMenu';
 
 describe('Lynx chat overflow menu', () => {
-  test('exposes Files, Changes, and MCP sheet entry points with real data paths', () => {
+  test('Cap phone order: new-session first, then Files/Changes/MCP/refresh', () => {
     const ids = LYNX_CHAT_OVERFLOW_ITEMS.map((item) => item.id);
-    expect(ids).toContain('files');
-    expect(ids).toContain('changes');
-    expect(ids).toContain('mcp');
+    expect(ids[0]).toBe('newSession');
+    expect(ids).toEqual([
+      'newSession',
+      'files',
+      'changes',
+      'mcp',
+      'refreshTranscript',
+    ]);
     expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'files')?.stubSheet).toBeUndefined();
     expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'changes')?.stubSheet).toBeUndefined();
     expect(LYNX_CHAT_OVERFLOW_ITEMS.find((i) => i.id === 'mcp')?.stubSheet).toBeUndefined();
@@ -21,5 +26,6 @@ describe('Lynx chat overflow menu', () => {
     expect(chatSheetFromOverflowId('changes')).toBe('changes');
     expect(chatSheetFromOverflowId('mcp')).toBe('mcp');
     expect(chatSheetFromOverflowId('refreshTranscript')).toBeNull();
+    expect(chatSheetFromOverflowId('newSession')).toBeNull();
   });
 });

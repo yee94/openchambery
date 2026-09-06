@@ -350,6 +350,7 @@ export function LynxShellApp({
             runtimeFetch={runtimeFetch}
             initialSheet={chatSheet}
             onSheetClosed={() => setChatSheet(null)}
+            onOpenDraft={openDraft}
             predecessor={chatPredecessor}
           />
         ) : assistantRoute?.sessionId ? (
@@ -367,6 +368,7 @@ export function LynxShellApp({
             title={assistantRoute.title ?? undefined}
             initialSheet={chatSheet}
             onSheetClosed={() => setChatSheet(null)}
+            onOpenDraft={openDraft}
           />
         ) : secondary?.kind === 'draft' ? (
           <LynxDraftComposer

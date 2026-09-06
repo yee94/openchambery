@@ -1,9 +1,10 @@
 /**
- * Chat overflow menu model — Cap MobileApp overflow hooks for Files / Changes / MCP
- * entry points (and extensible session actions).
+ * Chat overflow menu model — Cap MobileApp overflow hooks for phone chat.
+ * Cap order (phone): new-session first, then Files / Changes / MCP / refresh.
+ * Capgo `update` is 故意不移植. iPad-only Settings omitted (Lynx has Settings tab).
  */
-
 export type LynxChatOverflowItemId =
+  | 'newSession'
   | 'files'
   | 'changes'
   | 'mcp'
@@ -12,6 +13,7 @@ export type LynxChatOverflowItemId =
 export type LynxChatOverflowItem = {
   id: LynxChatOverflowItemId;
   labelKey:
+    | 'lynx.chat.menu.newSession'
     | 'lynx.chat.menu.files'
     | 'lynx.chat.menu.changes'
     | 'lynx.chat.menu.mcp'
@@ -21,6 +23,7 @@ export type LynxChatOverflowItem = {
 };
 
 export const LYNX_CHAT_OVERFLOW_ITEMS: readonly LynxChatOverflowItem[] = [
+  { id: 'newSession', labelKey: 'lynx.chat.menu.newSession' },
   { id: 'files', labelKey: 'lynx.chat.menu.files' },
   { id: 'changes', labelKey: 'lynx.chat.menu.changes' },
   { id: 'mcp', labelKey: 'lynx.chat.menu.mcp' },
