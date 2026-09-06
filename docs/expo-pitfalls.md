@@ -108,6 +108,16 @@ Use `applicationIdSuffix ".debug"`. Launcher **art** stays the official mark. Do
 
 Honest: only one `.debug` package can be installed at a time. Side-by-side means **vs release OpenChamber**, not vs Flutter v2 and Cap debug simultaneously.
 
+### Debug / prerelease APK must embed JS (no Metro)
+
+`./gradlew assembleDebug` after `expo prebuild` does **not** embed the JS bundle by default. React Native's `debuggableVariants` defaults to `['debug', 'debugOptimized']`, so the debug variant skips `createBundle*JsAndAssets` and waits for Metro at runtime.
+
+A sideloaded GitHub prerelease APK without Metro therefore hangs forever on the **Expo splash wireframe** (native splash never hands off — JS never loads, so `SplashScreen.hideAsync()` in `app/_layout.tsx` is moot).
+
+**Fix (Track 9):** config plugin `withAndroidDebugSideBySide` sets `debuggableVariants = []` in `android/app/build.gradle` `react { }` so `assembleDebug` still keeps `applicationIdSuffix ".debug"` / label **OpenChamber Expo**, but runs Expo `export:embed` with Hermes `dev=false` and packs `assets/index.android.bundle` into the APK. CI greps the APK for that asset before publishing.
+
+Do not ship Metro-dependent debug APKs as "installable" prereleases.
+
 ### Secrets: reuse existing GitHub Actions names only
 
 Do not create `EXPO_*` / `EAS_*` secret aliases. When a signed workflow is added later, reuse:

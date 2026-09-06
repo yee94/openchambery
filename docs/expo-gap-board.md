@@ -105,13 +105,13 @@ Push, share inbox, Live Activity, WidgetKit/NSE, external browser, HEIC / picker
 
 ### 9. CI + side-by-side debug prerelease
 
-Lint/typecheck/vitest, Android debug APK job, `applicationIdSuffix .debug`, label **OpenChamber Expo**, prerelease tag `expo-v2-debug-<sha7>` (not `/releases/latest`).
+Lint/typecheck/vitest, Android debug APK job, `applicationIdSuffix .debug`, label **OpenChamber Expo**, prerelease tag `expo-v2-debug-<sha7>` (not `/releases/latest`). Published APK must **embed Hermes JS** (`debuggableVariants=[]`) — Metro-less sideload; otherwise hangs on Expo splash forever (see `docs/expo-pitfalls.md`).
 
 | Row | Status | Notes |
 |---|---|---|
 | Lint / typecheck / unit tests workflow | **CI green** @ `1436c630` | Tip run https://github.com/yee94/openchambery/actions/runs/34024670880 — Lint/typecheck/unit tests **green**. Expanded workflow since `329b6ae0`; prior proof `8d0043d1` / 34019907976 superseded. |
-| Device binary jobs | **CI green** (Android); iOS residual | Android debug APK job **green** on tip `1436c630` (~20m assemble). Artifact `openchamber-expo-android-debug-apk` on run 34024670880. iOS simulator residual: macos runner + CocoaPods + Track 8 native modules not wired. |
-| Debug APK + prerelease link | **CI green** | Prerelease tag `expo-v2-debug-1436c63` — https://github.com/yee94/openchambery/releases/tag/expo-v2-debug-1436c63. `contents: write` on publish job OK. Prior `expo-v2-debug-8d0043d` superseded. |
+| Device binary jobs | **CI green** (Android assemble); iOS residual | Android debug APK job assembled on tip `1436c630` — but that APK lacked embedded JS (splash hang). Embed-JS fix on tip after this push; CI now greps APK for bundle. iOS simulator residual: macos runner + CocoaPods + Track 8 native modules not wired. |
+| Debug APK + prerelease link | **CI green** (prior tip hung on device) | Prior prerelease `expo-v2-debug-1436c63` assembled without embedded JS — sideload hung forever on Expo splash (no Metro). Fix: plugin sets `debuggableVariants=[]` + CI asserts `assets/index.android.bundle` in APK + notes say standalone. Re-green tip SHA/URL after this push. |
 | 真机过 | missing | |
 
 ## Bootstrap / process rows
@@ -138,7 +138,7 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity / UITextView IME) | **code landed** | NativeTabs + expo-glass-effect + NativeComposerTextView (UITextView IME CODE) + Live Activity module; WidgetKit UI / Share Extension / glass+IME 真机过 still open |
 | Android honest degrade | **code landed** | Material NativeTabs + solid composer; Live Activity no-op |
 | Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); covered by Expo Mobile CI unit tests on tip |
-| Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | **CI green** @ `1436c630` | https://github.com/yee94/openchambery/releases/tag/expo-v2-debug-1436c63 — side-by-side debug APK published (not `/releases/latest`) |
+| Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**, embedded JS) | **in progress** → re-green | Prior `expo-v2-debug-1436c63` published but Metro-dependent (splash hang). Embed-JS fix landing; update SHA/URL when Actions green. |
 | Signed release workflow | not started | Existing secret names only; debug keystore for Track 9 |
 | CI lint / typecheck on `work/expo-native` | **CI green** @ `1436c630` | https://github.com/yee94/openchambery/actions/runs/34024670880 (lint+typecheck+vitest) |
 | Android debug CI binary | **CI green** @ `1436c630` | Run 34024670880 Android job + prerelease green; artifact linked above. Earlier share-in tip `0471f854` run 34022438420 failed assemble (`shareDraftsDir` missing) — helper landed @ `1186ad68`, tip green supersedes. |

@@ -4,6 +4,9 @@ name: Expo Mobile CI
 # Does not replace Capacitor mobile-ci.yml on main.
 # Does not claim iOS Simulator / device walks. iOS simulator residual: macos
 # runner + CocoaPods + Track 8 native modules not wired in this workflow yet.
+#
+# Critical: published APK embeds Hermes JS (debuggableVariants=[]). Plain
+# assembleDebug without that hangs forever on Expo splash when Metro is absent.
 on:
   push:
     branches:
@@ -87,21 +90,25 @@ jobs:
 
       - name: Prebuild Android CNG
         run: npx expo prebuild --platform android --non-interactive
+        env:
+          CI: '1'
 
-      - name: Verify debug applicationIdSuffix
+      - name: Verify debug identity + embedded-JS gradle
         run: |
           set -euo pipefail
           gradle_file=android/app/build.gradle
           test -f "$gradle_file"
           grep -q 'applicationIdSuffix ".debug"' "$gradle_file"
           grep -q 'OpenChamber Expo' "$gradle_file" || grep -q 'OpenChamber Expo' android/app/src/main/res/values/strings.xml
-          echo "OK: debug side-by-side identity present"
+          # Active empty debuggableVariants so assembleDebug embeds Hermes.
+          grep -E '^[[:space:]]*debuggableVariants[[:space:]]*=[[:space:]]*\[\]' "$gradle_file"
+          echo "OK: debug side-by-side identity + debuggableVariants=[] (embed JS) present"
 
-      - name: Assemble debug APK
+      - name: Assemble debug APK (embedded JS)
         working-directory: apps/mobile_expo/android
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Locate APK
+      - name: Locate APK + assert embedded bundle
         id: apk_meta
         working-directory: apps/mobile_expo
         run: |
@@ -109,6 +116,13 @@ jobs:
           apk=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -n 1)
           test -n "$apk"
           test -f "$apk"
+          # Gate: sideloaded APK must contain JS (Hermes bytecode still named *.bundle).
+          if ! unzip -l "$apk" | grep -E 'assets/index\.android\.bundle|\.hbc'; then
+            echo "::error::APK missing embedded JS bundle — would hang on Expo splash without Metro"
+            unzip -l "$apk" | grep -E 'assets/' || true
+            exit 1
+          fi
+          echo "OK: embedded JS bundle present in APK"
           sha7=$(echo "${GITHUB_SHA}" | cut -c1-7)
           out="openchamber-expo-debug-${sha7}.apk"
           cp "$apk" "$out"
@@ -161,6 +175,6 @@ jobs:
               --repo "${{ github.repository }}" \
               --prerelease \
               --title "OpenChamber Expo debug ${SHA7}" \
-              --notes "Track 9 side-by-side debug APK for work/expo-native @ $GITHUB_SHA. applicationId com.yee94.openchamber.debug, label OpenChamber Expo. Debug keystore. Reuses Cap google-services.json. Not /releases/latest. Artifact: $APK_NAME"
+              --notes "Track 9 side-by-side **standalone** debug APK for work/expo-native @ $GITHUB_SHA. applicationId com.yee94.openchamber.debug, label OpenChamber Expo. Debug keystore. JS: **embedded Hermes** (debuggableVariants=[] / export:embed / dev=false) — **no Metro required**. Reuses Cap google-services.json. Not /releases/latest. Artifact: $APK_NAME. Prior tip APKs hung on Expo splash because assembleDebug omitted the JS bundle."
           fi
           echo "Prerelease URL: https://github.com/${{ github.repository }}/releases/tag/$tag"
