@@ -17,7 +17,7 @@ Independent **React Native + Expo** rewrite of OpenChamber mobile.
 |---|---|
 | [`docs/expo-feature-inventory.md`](expo-feature-inventory.md) | Full Cap/WebView inventory. Each row: **required** / **will-not-port** / **device-only** |
 | [`docs/expo-pitfalls.md`](expo-pitfalls.md) | Historical pitfalls this track must not repeat |
-| [`docs/expo-gap-board.md`](expo-gap-board.md) | Living status board (not started → 真机过 residual) |
+| [`docs/expo-gap-board.md`](expo-gap-board.md) | Living board + nine CODE-acceptance feature tracks (`missing` → 真机过). UI resemblance ≠ done |
 | [`docs/expo-acceptance.md`](expo-acceptance.md) | 三关: Feature/API · Visual/IA · Performance |
 | [`docs/expo-ia-ui.md`](expo-ia-ui.md) | IA + UI contract for the Expo UI teammate |
 

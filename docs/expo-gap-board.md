@@ -1,20 +1,122 @@
 # Expo rewrite — living gap board
 
-Status columns (use exactly these):
-
-| Status | Meaning |
-|---|---|
-| **not started** | In inventory, no Expo code |
-| **in progress** | Branch has a partial implementation |
-| **landed** | Code complete on `work/expo-native` (CI/unit as applicable). **Not** 真机过 |
-| **will-not-port** | Explicitly out of scope — see inventory |
-| **真机过 residual** | Needs a physical device walk; automated green ≠ 真机过 |
+**UI resemblance is not done.** A stub tab, a matching screenshot, or a CSS clone does **not** clear a feature track. **CODE acceptance** requires every **missing** cell on that track to move to **code landed** (and the track’s CI gate to **CI green**). 真机过 is a later, separate column.
 
 Inventory (what “done” means): [`docs/expo-feature-inventory.md`](expo-feature-inventory.md).  
 Acceptance (how we close a row): [`docs/expo-acceptance.md`](expo-acceptance.md).  
 Pitfalls: [`docs/expo-pitfalls.md`](expo-pitfalls.md).
 
 Do not mark 真机过 from a Linux VM.
+
+## Feature-track status (CODE acceptance)
+
+Use exactly these marks on the nine tracks below:
+
+| Mark | Meaning |
+|---|---|
+| **missing** | Required Cap/WebView behavior has no Expo implementation. Stub UI does **not** clear this |
+| **in progress** | Partial Expo code; do not treat as landed |
+| **code landed** | Implementation on `work/expo-native` (unit/contract tests as applicable). Still not 真机过 |
+| **CI green** | The job that gates this track actually passed on GitHub for the tip SHA. Local lint ≠ device CI |
+| **真机过** | Physical phone walk recorded. Simulator / Expo web / WidgetTester never count |
+| **will-not-port** | Explicitly out of scope — see inventory |
+
+A track is **CODE-accepted** only when every required row is **code landed** and the track’s CI gate is **CI green**. 真机过 may stay open.
+
+### 1. Connect
+
+Onboarding, QR pairing v2, LAN + relay race, relay-only skip 1.5s, SecureStore, no local PIN.
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | Stub shell has no connect screen |
+| CI green | missing | No connect contract tests in Expo CI |
+| 真机过 | missing | |
+
+### 2. Session / Home
+
+Session-index, search + highlight, pin/in-progress, `项目 · 分支` subtitle, draft new session.
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | Projects tab is a placeholder title |
+| CI green | missing | |
+| 真机过 | missing | |
+
+### 3. Chat
+
+LegendList semantics (not 1.18 TanStack), transcript, Send/Stop, events WS/SSE, markdown/tools, 关3 perf harness.
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | `/chat/[sessionId]` is a stub route only |
+| CI green | missing | No `chat_transcript_perf` analogue yet |
+| 真机过 | missing | |
+
+### 4. Projects
+
+Project cards, worktrees, overflow menus, new/edit/close, plus-menu 扫一扫 / 切换实例.
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | Dock label only |
+| CI green | missing | |
+| 真机过 | missing | |
+
+### 5. Assistant
+
+Catalog, enable guide, pushed conversation, share-in (exact instance+assistant).
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | Dock label only |
+| CI green | missing | |
+| 真机过 | missing | |
+
+### 6. Scheduled
+
+任务/历史记录, filters, APIs, open history session.
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | Dock label only |
+| CI green | missing | |
+| 真机过 | missing | |
+
+### 7. Settings
+
+All writable `MOBILE_SETTINGS_PAGE_SLUGS` except Voice (omitted). No `iosNativeUi`.
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | Dock label only |
+| CI green | missing | |
+| 真机过 | missing | |
+
+### 8. System shell
+
+Push, share inbox, Live Activity, WidgetKit/NSE, external browser, HEIC / pickers, haptics, native back, iOS glass / Android degrade.
+
+| Row | Status | Notes |
+|---|---|---|
+| Track (CODE) | **missing** | No native modules yet. Native is always-on by contract |
+| CI green | missing | |
+| 真机过 | missing | |
+
+### 9. CI + side-by-side debug prerelease
+
+Lint/typecheck, later device jobs, `applicationIdSuffix .debug`, label **OpenChamber Expo**, direct-link prerelease off `/releases/latest`.
+
+| Row | Status | Notes |
+|---|---|---|
+| Lint / typecheck workflow | **code landed** | `.github/workflows/expo-mobile-ci.yml`. Local `npm run lint` + `typecheck` passed. GitHub **CI green** not claimed here |
+| Device binary jobs | **missing** | Do not add until they actually run |
+| Debug APK + prerelease link | **missing** | |
+| 真机过 | missing | |
+
+## Bootstrap / process rows
+
+These are not feature tracks. Stub chrome must not be copied into tracks 1–8 as **code landed**.
 
 ## Seed (bootstrap 2026-09-06)
 
@@ -51,9 +153,9 @@ Do not mark 真机过 from a Linux VM.
 
 ## How to update
 
-1. Change a row’s status in this file in the same PR as the code.
+1. Change a **feature-track** mark (`missing` / `in progress` / `code landed` / `CI green` / `真机过`) in the same PR as the code. Stub UI never moves a track off **missing**.
 2. Link the inventory row if the contract moved.
-3. Never move a row to an implied sixth column (“looks fine on Simulator”). Simulator ≠ 真机过.
+3. Never treat Simulator, Expo web, or a screenshot as 真机过 or as CODE acceptance.
 4. If a feature is dropped, move it to **will-not-port** and say why — do not delete history.
 
 ## Next slices (do not implement in the bootstrap)
