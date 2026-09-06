@@ -72,12 +72,36 @@ function injectIdentityIntoBuildTypeBody(blockBody, opts = {}) {
  * @returns {{ text: string, replaced: boolean }}
  */
 function rewriteBuildType(buildGradle, typeName, transformBody) {
+  // Prefer a match inside buildTypes { ... } so we never rewrite signingConfigs.debug.
+  const buildTypesRe = /\bbuildTypes\s*\{/;
+  const bt = buildTypesRe.exec(buildGradle);
+  let searchFrom = 0;
+  let searchUntil = buildGradle.length;
+  if (bt && bt.index != null) {
+    const btOpen = bt.index + bt[0].length - 1;
+    let depth = 0;
+    let i = btOpen;
+    for (; i < buildGradle.length; i++) {
+      const ch = buildGradle[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) break;
+      }
+    }
+    if (depth === 0) {
+      searchFrom = btOpen + 1;
+      searchUntil = i;
+    }
+  }
+
+  const slice = buildGradle.slice(searchFrom, searchUntil);
   const re = new RegExp(`(\\b${typeName}\\s*\\{)`);
-  const m = re.exec(buildGradle);
+  const m = re.exec(slice);
   if (!m || m.index == null) {
     return { text: buildGradle, replaced: false };
   }
-  const openIdx = m.index + m[1].length - 1; // index of '{'
+  const openIdx = searchFrom + m.index + m[1].length - 1; // index of '{'
   let depth = 0;
   let i = openIdx;
   for (; i < buildGradle.length; i++) {
@@ -99,11 +123,6 @@ function rewriteBuildType(buildGradle, typeName, transformBody) {
   };
 }
 
-/**
- * Inject Cap-style debug side-by-side fields into buildTypes.debug { ... }.
- * @param {string} buildGradle
- * @returns {string}
- */
 function injectDebugIdentity(buildGradle) {
   const rewritten = rewriteBuildType(buildGradle, 'debug', (body) =>
     injectIdentityIntoBuildTypeBody(body, { ensureSigningDebug: false }),

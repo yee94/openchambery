@@ -106,8 +106,20 @@ jobs:
           test "$count" -ge 2
           grep -q 'OpenChamber Expo' "$gradle_file" || grep -q 'OpenChamber Expo' android/app/src/main/res/values/strings.xml
           # Release must sign with debug keystore for sideload.
-          awk '/\brelease[[:space:]]*\{/,/^[[:space:]]*\}/' "$gradle_file" | grep -q 'signingConfig signingConfigs.debug'
-          awk '/\brelease[[:space:]]*\{/,/^[[:space:]]*\}/' "$gradle_file" | grep -q 'applicationIdSuffix ".debug"'
+          # GNU awk has no \b; match release buildType inside buildTypes.
+          awk '
+            /buildTypes[[:space:]]*\{/ { in_bt=1 }
+            in_bt && /release[[:space:]]*\{/ { in_rel=1 }
+            in_rel { print }
+            in_rel && /^[[:space:]]*\}/ { exit }
+          ' "$gradle_file" | tee /tmp/release-bt.txt | grep -q 'signingConfig signingConfigs.debug'
+          grep -q 'applicationIdSuffix ".debug"' /tmp/release-bt.txt
+          awk '
+            /buildTypes[[:space:]]*\{/ { in_bt=1 }
+            in_bt && /debug[[:space:]]*\{/ { in_dbg=1 }
+            in_dbg { print }
+            in_dbg && /^[[:space:]]*\}/ { exit }
+          ' "$gradle_file" | tee /tmp/debug-bt.txt | grep -q 'applicationIdSuffix ".debug"'
           # Active empty debuggableVariants so debug variant also embeds Hermes.
           grep -E '^[[:space:]]*debuggableVariants[[:space:]]*=[[:space:]]*\[\]' "$gradle_file"
           echo "OK: release sideload identity + debuggableVariants=[] present"

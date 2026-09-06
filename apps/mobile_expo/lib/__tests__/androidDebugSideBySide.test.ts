@@ -131,3 +131,37 @@ react {
     expect(out.indexOf('debuggableVariants')).toBeGreaterThan(out.indexOf('react {'));
   });
 });
+
+describe('signingConfigs isolation', () => {
+  it('does not inject applicationIdSuffix into signingConfigs.debug', () => {
+    const input = `
+android {
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+}
+${EXPO_REACT_BLOCK}
+`;
+    const out = injectDebugSideBySide(input);
+    const signingSlice = out.slice(
+      out.indexOf('signingConfigs'),
+      out.indexOf('buildTypes'),
+    );
+    expect(signingSlice).not.toContain('applicationIdSuffix');
+    expect(signingSlice).not.toContain('versionNameSuffix');
+    const debugBt = out.slice(out.indexOf('buildTypes'));
+    expect(debugBt).toContain('applicationIdSuffix ".debug"');
+    expect(out.split('applicationIdSuffix ".debug"').length - 1).toBe(2);
+  });
+});
