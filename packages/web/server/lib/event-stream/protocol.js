@@ -126,9 +126,19 @@ export function sendMessageStreamWsFrame(socket, payload) {
 }
 
 export function sendMessageStreamWsEvent(socket, payload, options = {}) {
+  // Optional per-connection reasoning projector (includeReasoning=false).
+  // null from projectEvent means drop this frame entirely.
+  let candidate = payload;
+  if (options.reasoningFilter && typeof options.reasoningFilter.projectEvent === 'function') {
+    candidate = options.reasoningFilter.projectEvent(payload);
+    if (candidate == null) {
+      return true;
+    }
+  }
+
   // Summarize FileDiff bodies before fan-out so Relay/WS never carries full
   // patch frames. Identity is preserved for non-diff and already-summary events.
-  const outbound = summarizeOutboundEventPayload(payload);
+  const outbound = summarizeOutboundEventPayload(candidate);
   return sendMessageStreamWsFrame(socket, {
     type: 'event',
     payload: outbound,

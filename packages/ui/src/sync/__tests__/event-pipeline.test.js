@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { createEventPipeline } from '../event-pipeline';
 import { setRuntimeUrlAuthToken } from '../../lib/runtime-auth';
+import {
+  resetReasoningProjectionClientForTests,
+  setIncludeReasoningProjection,
+} from '../../lib/reasoning-projection-client';
 
 const originalDocument = globalThis.document;
 const originalWindow = globalThis.window;
@@ -66,6 +70,7 @@ afterEach(() => {
   globalThis.WebSocket = originalWebSocket;
   setRuntimeUrlAuthToken(null, null);
   FakeWebSocket.instances = [];
+  resetReasoningProjectionClientForTests();
 });
 
 function createSdkWithSingleEvent(event, hold) {
@@ -604,6 +609,55 @@ describe('createEventPipeline', () => {
         },
       },
     ]);
+  });
+
+  it('adds includeReasoning=false on WS URL when projection is closed and drops pending on reasoning reconnect', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+    setRuntimeUrlAuthToken('test-url-token', Date.now() + 60_000);
+    setIncludeReasoningProjection(false);
+
+    let deliveredCount = 0;
+    const { cleanup, reconnect } = createEventPipeline({
+      sdk: {
+        global: {
+          event: async () => ({ stream: (async function* () {})() }),
+        },
+      },
+      transport: 'ws',
+      reconnectDelayMs: 0,
+      onEvent: () => {
+        deliveredCount += 1;
+      },
+    });
+
+    try {
+      const first = await waitForSocket(0);
+      expect(first.url).toContain('includeReasoning=false');
+      first.emitOpen();
+      first.emitMessage({ type: 'ready', scope: 'global' });
+      // Queue a frame then toggle-reconnect before flush can deliver it.
+      first.emitMessage({
+        type: 'event',
+        eventId: 'evt-stale',
+        directory: '/tmp/project',
+        payload: {
+          type: 'message.part.delta',
+          properties: {
+            sessionID: 'ses_1',
+            messageID: 'msg_1',
+            partID: 'part_1',
+            field: 'text',
+            delta: 'stale',
+          },
+        },
+      });
+      reconnect('reasoning_projection');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(deliveredCount).toBe(0);
+    } finally {
+      cleanup();
+    }
   });
 
   it('falls back to SSE when websocket closes before ready in auto mode', async () => {

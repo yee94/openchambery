@@ -34,6 +34,7 @@ Official OpenCode pagination is message-count based and uses **opaque** cursors 
 | `scanLimit` | **omitted** | `10..200` when present | Optional override only. Host→OpenCode local page size; when omitted it resolves to `_inner_scanLimit`. Clients should omit this. |
 | `before` | omitted | opaque string ≤ 8192 chars | Resume older history: host cursor (`oc1.…`) or raw OpenCode SDK cursor on first page |
 | `directory` | omitted | path string | Forwarded to directory-scoped OpenCode client |
+| `includeReasoning` | omitted (include) | strict `'false'` only disables | OpenChamber projection control. When `'false'`, drop `type=reasoning` parts from turn-page / reconcile / exact responses after other projections. Missing or any other value keeps existing behavior (slim reasoning identity on turn pages; full parts on reconcile/exact). **Never forwarded to OpenCode.** Same contract on transcript-cache reads, official `session.messages` list proxy, and event SSE/WS send boundaries — see `event-stream/reasoning-projection.js`. |
 
 Invalid `turns`, explicit invalid `scanLimit`, or `before` (malformed/stale host token, oversize) → HTTP 400.
 
@@ -91,7 +92,7 @@ Changes query guards: `sessionID` / `messageID` length `1..512`; optional `file`
 | Kept | Dropped |
 |---|---|
 | `tool`: `id`, `sessionID`, `messageID`, `callID`, `tool`, `state.status`, `state.title`, `state.time`, slim locator `state.input` (`path` / `pattern` / `command` / `subagent_type` / `description` / skill `name` / `id` / …), slim `state.metadata` (`sessionId`, skill `name`, `additions` / `deletions`) | `state.output`, write `content`, task `prompt`, patch/diff bodies, other metadata, `state.error` |
-| `reasoning`: `id`, `sessionID`, `messageID`, `time` | reasoning `text` body |
+| `reasoning`: `id`, `sessionID`, `messageID`, `time` (default include path) | reasoning `text` body; when `includeReasoning=false` the entire reasoning part is removed |
 | `file` (user and assistant): `id`, `sessionID`, `messageID`, `type`, `mime`, `filename`, existing stable `size` / `width` / `height`, derived `byteSize` | `url`, base64, attachment body |
 
 Rules:

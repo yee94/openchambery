@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import {
   clearRuntimeAuthCredentialProvider,
@@ -7,6 +7,10 @@ import {
 } from './runtime-auth';
 import { adoptRelayTunnel, deactivateRelayTunnel } from './relay/runtime-tunnel';
 import type { RelayTunnelClient } from './relay/tunnel-client';
+import {
+  resetReasoningProjectionClientForTests,
+  setIncludeReasoningProjection,
+} from './reasoning-projection-client';
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from './runtime-url';
 
 // Clear sticky mocks, then load the real runtime-fetch after restore.
@@ -748,6 +752,280 @@ describe('runtimeFetch header sanitization', () => {
       setRuntimeUrlResolver(previous);
       Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
       globalThis.fetch = originalFetch;
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+});
+
+describe('runtimeFetch reasoning projection query', () => {
+  afterEach(() => {
+    resetReasoningProjectionClientForTests();
+    globalThis.fetch = originalFetch;
+    clearRuntimeAuthCredentialProvider();
+    deactivateRelayTunnel();
+  });
+
+  test('appends includeReasoning=false on message GETs when projection is closed', async () => {
+    const previous = getRuntimeUrlResolver();
+    const calls: string[] = [];
+    try {
+      setIncludeReasoningProjection(false);
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://runtime.example' });
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        calls.push(String(input instanceof Request ? input.url : input));
+        return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+      }) as typeof fetch;
+
+      await runtimeFetch('/api/session/ses_1/message', { method: 'GET', query: { directory: '/repo' } });
+      await runtimeFetch('/api/session/ses_1/message/msg_1', { method: 'GET' });
+      await runtimeFetch('/api/openchamber/sessions/ses_1/messages', { method: 'GET', query: { turns: 3 } });
+      await runtimeFetch('/api/openchamber/sessions/ses_1/messages/reconcile', { method: 'GET' });
+      await runtimeFetch('/api/openchamber/transcript-cache/session', { method: 'GET' });
+      await runtimeFetch('/api/openchamber/transcript-cache/message', { method: 'GET' });
+      await runtimeFetch('/api/global/event', { method: 'GET' });
+      await runtimeFetch('/api/event', { method: 'GET' });
+
+      expect(calls.every((url) => url.includes('includeReasoning=false'))).toBe(true);
+      expect(calls[0]).toContain('directory=%2Frepo');
+      expect(calls[2]).toContain('turns=3');
+    } finally {
+      setRuntimeUrlResolver(previous);
+    }
+  });
+
+  test('does not inject on non-target GETs, POSTs, or when projection is open', async () => {
+    const previous = getRuntimeUrlResolver();
+    const calls: string[] = [];
+    try {
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://runtime.example' });
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        calls.push(String(input instanceof Request ? input.url : input));
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      setIncludeReasoningProjection(true);
+      await runtimeFetch('/api/session/ses_1/message', { method: 'GET' });
+      expect(calls[0]).not.toContain('includeReasoning');
+
+      setIncludeReasoningProjection(false);
+      await runtimeFetch('/api/config/providers', { method: 'GET' });
+      await runtimeFetch('/api/session/ses_1/message', {
+        method: 'POST',
+        body: '{}',
+        headers: { 'content-type': 'application/json' },
+      });
+      expect(calls[1]).not.toContain('includeReasoning');
+      expect(calls[2]).not.toContain('includeReasoning');
+    } finally {
+      setRuntimeUrlResolver(previous);
+    }
+  });
+
+  test('relay Request message GET rebuilds path with includeReasoning while keeping auth and signal', async () => {
+    const calls: Array<{ path: string; headers: Headers; signal?: AbortSignal }> = [];
+    const controller = new AbortController();
+    const relay = {
+      fetch: async (input: string | URL | Request, init?: RequestInit) => {
+        const path = input instanceof Request ? input.url : input.toString();
+        calls.push({
+          path,
+          headers: new Headers(init?.headers),
+          signal: init?.signal ?? (input instanceof Request ? input.signal : undefined),
+        });
+        return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+      openWebSocket: () => { throw new Error('unused'); },
+      getStatus: () => ({ state: 'connected' as const }),
+      subscribeStatus: () => () => undefined,
+      close: () => undefined,
+    } satisfies RelayTunnelClient;
+
+    try {
+      setIncludeReasoningProjection(false);
+      setRuntimeBearerToken('runtime-token');
+      adoptRelayTunnel({ relayUrl: 'wss://relay.example', serverId: 'server-a', hostEncPubJwk: {} }, relay);
+
+      const request = new Request('https://app.example/api/session/ses_1/message?directory=%2Frepo', {
+        method: 'GET',
+        headers: { Accept: 'application/json', 'x-sdk-header': 'kept' },
+        signal: controller.signal,
+      });
+      // Window origin so extractRelayPath treats it as a runtime path.
+      const originalWindow = globalThis.window;
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'https://app.example', href: 'https://app.example/' } },
+      });
+      try {
+        await runtimeFetch(request);
+      } finally {
+        Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      }
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].path).toContain('/api/session/ses_1/message');
+      expect(calls[0].path).toContain('directory=%2Frepo');
+      expect(calls[0].path).toContain('includeReasoning=false');
+      expect(calls[0].headers.get('authorization')).toBe('Bearer runtime-token');
+      expect(calls[0].headers.get('x-sdk-header')).toBe('kept');
+      expect(calls[0].signal).toBe(controller.signal);
+    } finally {
+      deactivateRelayTunnel();
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+
+  test('relay non-message Request still forwards the original Request', async () => {
+    const calls: Array<{ kind: 'request' | 'path'; value: string }> = [];
+    const relay = {
+      fetch: async (input: string | URL | Request) => {
+        if (input instanceof Request) {
+          calls.push({ kind: 'request', value: input.url });
+        } else {
+          calls.push({ kind: 'path', value: input.toString() });
+        }
+        return new Response('{}', { status: 200 });
+      },
+      openWebSocket: () => { throw new Error('unused'); },
+      getStatus: () => ({ state: 'connected' as const }),
+      subscribeStatus: () => () => undefined,
+      close: () => undefined,
+    } satisfies RelayTunnelClient;
+
+    try {
+      setIncludeReasoningProjection(false);
+      adoptRelayTunnel({ relayUrl: 'wss://relay.example', serverId: 'server-a', hostEncPubJwk: {} }, relay);
+      const originalWindow = globalThis.window;
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'https://app.example', href: 'https://app.example/' } },
+      });
+      try {
+        await runtimeFetch(new Request('https://app.example/api/config/providers', { method: 'GET' }));
+      } finally {
+        Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      }
+      expect(calls).toEqual([{ kind: 'request', value: 'https://app.example/api/config/providers' }]);
+    } finally {
+      deactivateRelayTunnel();
+    }
+  });
+
+  test('remote absolute runtime Request GETs keep includeReasoning=false + auth + signal', async () => {
+    const previous = getRuntimeUrlResolver();
+    const originalWindow = globalThis.window;
+    const endpoints = [
+      { name: 'exact message', path: '/api/session/ses_1/message/msg_1?directory=%2Frepo' },
+      { name: 'message list', path: '/api/session/ses_1/message?directory=%2Frepo&limit=30' },
+      { name: 'turn-page reconcile', path: '/api/openchamber/sessions/ses_1/messages/reconcile?directory=%2Frepo' },
+      { name: 'global event SSE', path: '/api/global/event' },
+    ] as const;
+
+    try {
+      // Window origin differs from remote runtime — SDK emits absolute cross-origin URLs.
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'https://app.example', href: 'https://app.example/' } },
+      });
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://server.example' });
+      setIncludeReasoningProjection(false);
+      setRuntimeBearerToken('runtime-token');
+
+      for (const endpoint of endpoints) {
+        const controller = new AbortController();
+        const calls: Array<{ url: string; headers: Headers; signal: AbortSignal }> = [];
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+          const request = input instanceof Request ? input : new Request(input);
+          calls.push({
+            url: request.url,
+            headers: request.headers,
+            signal: request.signal,
+          });
+          return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+        }) as typeof fetch;
+
+        const absolute = `https://server.example${endpoint.path}`;
+        await runtimeFetch(new Request(absolute, {
+          method: 'GET',
+          headers: { Accept: 'application/json', 'x-sdk-header': 'kept' },
+          signal: controller.signal,
+        }));
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url.startsWith('https://server.example')).toBe(true);
+        expect(calls[0].url).toContain('includeReasoning=false');
+        if (endpoint.path.includes('directory=')) {
+          expect(calls[0].url).toContain('directory=%2Frepo');
+        }
+        if (endpoint.path.includes('limit=30')) {
+          expect(calls[0].url).toContain('limit=30');
+        }
+        expect(calls[0].headers.get('authorization')).toBe('Bearer runtime-token');
+        expect(calls[0].headers.get('x-sdk-header')).toBe('kept');
+        expect(calls[0].signal).toBe(controller.signal);
+      }
+    } finally {
+      setRuntimeUrlResolver(previous);
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+
+  test('remote absolute runtime Request does not add includeReasoning when projection is open', async () => {
+    const previous = getRuntimeUrlResolver();
+    const originalWindow = globalThis.window;
+    const calls: string[] = [];
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'https://app.example', href: 'https://app.example/' } },
+      });
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://server.example' });
+      setIncludeReasoningProjection(true);
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        calls.push(input instanceof Request ? input.url : String(input));
+        return new Response('[]', { status: 200 });
+      }) as typeof fetch;
+
+      await runtimeFetch(new Request('https://server.example/api/session/ses_1/message?directory=%2Frepo', {
+        method: 'GET',
+      }));
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toBe('https://server.example/api/session/ses_1/message?directory=%2Frepo');
+      expect(calls[0]).not.toContain('includeReasoning');
+    } finally {
+      setRuntimeUrlResolver(previous);
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
+  });
+
+  test('non-active external absolute URL with same path is unchanged when projection is closed', async () => {
+    const previous = getRuntimeUrlResolver();
+    const originalWindow = globalThis.window;
+    const calls: string[] = [];
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'https://app.example', href: 'https://app.example/' } },
+      });
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://server.example' });
+      setIncludeReasoningProjection(false);
+      setRuntimeBearerToken('runtime-token');
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(input);
+        calls.push(request.url);
+        return new Response('[]', { status: 200 });
+      }) as typeof fetch;
+
+      const external = 'https://other.example/api/session/ses_1/message?directory=%2Frepo';
+      await runtimeFetch(new Request(external, { method: 'GET' }));
+
+      expect(calls).toEqual([external]);
+      expect(calls[0]).not.toContain('includeReasoning');
+    } finally {
+      setRuntimeUrlResolver(previous);
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
       clearRuntimeAuthCredentialProvider();
     }
   });

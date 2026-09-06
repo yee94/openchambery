@@ -37,12 +37,36 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Local `/api/fs/read` and `/api/fs/raw` proxy helpers and shared proxy utility helpers.
   - Optional file reads signal existence through `x-openchamber-file-exists` while preserving plain-text bodies.
 
+- `reasoning-projection.ts`
+  - OpenChamber outbound reasoning projection (`includeReasoning=false`, strict
+    string only). HTTP snapshot helpers + per-connection stateful SSE filter.
+  - Drops `type=reasoning` parts, reasoning deltas, unknown part deltas, and
+    `session.next.reasoning.*` (dispatch strips terminal `.N` version suffixes;
+    kept events preserve original `type`). Keeps `tokens.reasoning`. Never mutates
+    inputs; never forwards the query param to OpenCode. SSE splitter holds a
+    trailing CR so CRLF across chunks cannot split one event.
+  - Used by `sseProxy.ts`, `bridge-proxy-runtime.ts`, and
+    `bridge-session-turn-page-runtime.ts`. Internal watchers stay full-fidelity.
+
+- `sseProxy.ts`
+  - Extension Host SSE proxy to OpenCode `/event` and `/global/event`.
+  - Reads `includeReasoning` from the webview path query; strips it before the
+    upstream OpenCode fetch. When `'false'`, parse-filters SSE blocks before
+    `api:sse:chunk` postMessage, and emits `:heartbeat\n\n` every 10s while no
+    downstream chunk was sent (keeps the webview 30s SSE idle timeout alive
+    during pure-reasoning upstream). Enabled path remains byte passthrough with
+    no synthetic heartbeat.
+
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
   - Exact `GET /session/:sessionID/message/:messageID` responses are L1-projected
     (`summary.diffs` → thin `{ file, status?, additions, deletions }[]` plus
     additive `diffCount` / `hasDiffs`) on the Extension Host before the payload
-    enters the webview. Full `parts` behavior is preserved.
+    enters the webview. Full `parts` behavior is preserved unless
+    `includeReasoning=false` (then `type=reasoning` parts are removed after L1).
+  - Official `GET /session/:sessionID/message` list responses apply the same
+    reasoning strip when `includeReasoning=false`. The param is stripped before
+    OpenCode upstream.
 
 - `session-turn-page-runtime.ts`
   - Pure turn-window aggregation over official OpenCode `session.messages` pages.
@@ -89,6 +113,9 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     `{ records, cursor, complete, turnCount, partsProjection }` where `cursor`
     is an opaque Host token when history remains. `partsProjection` is
     `slim-v1` on every turn-page response (first packet and prepend).
+  - Optional payload `includeReasoning` (from webview query): only strict
+    `'false'` drops entire `type=reasoning` parts after slim-v1; keeps
+    `tokens.reasoning`. Missing/other values keep slim reasoning identity.
   - Maps `invalid_cursor` to a safe client error string; never logs message
     contents, tokens, or secrets.
   - Whole aggregation uses a 45s AbortController timeout (signal forwarded; cleared
@@ -148,10 +175,17 @@ so shared UI worktree-order synchronization exits cleanly in this runtime.
 Session turn-page (`GET /api/openchamber/sessions/:sessionID/messages`) is an
 OpenChamber-owned webview route (`webview/sessionTurnPageRoute.ts`). It is
 matched ahead of the generic OpenCode proxy, validates `turns` (1..10) and
-`scanLimit` (10..200), dispatches `api:session-turn-page` to the Extension Host,
-and returns the same unified JSON contract as the web host module
+`scanLimit` (10..200), forwards optional `includeReasoning` query to the bridge,
+dispatches `api:session-turn-page` to the Extension Host, and returns the same
+unified JSON contract as the web host module
 (`packages/web/server/lib/session-turn-pages/`), including opaque Host cursors
 (`oc1.` tokens). Non-GET → 405; illegal query → 400.
+
+Reasoning projection (`includeReasoning=false`) is per webview request/SSE
+stream on the Extension Host send boundary (parity with web Host
+`event-stream/reasoning-projection.js`). Internal watchers stay full-fidelity.
+VS Code does not implement transcript-cache read or messages/reconcile routes;
+those remain Host-only when present.
 
 Session turn-changes (`GET /api/openchamber/sessions/:sessionID/changes`) is an
 OpenChamber-owned webview route (`webview/sessionTurnChangesRoute.ts`). It is

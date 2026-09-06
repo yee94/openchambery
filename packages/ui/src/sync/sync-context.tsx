@@ -6,9 +6,10 @@ import type { StoreApi } from "zustand"
 import { useStore } from "zustand"
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createEventPipeline } from "./event-pipeline"
-import { bindStreamReconnect, noteStreamActivity } from "./stream-liveness"
+import { bindStreamReconnect, noteStreamActivity, requestStreamReconnect } from "./stream-liveness"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
+import { subscribeReasoningProjection } from "@/lib/reasoning-projection-client"
 import { reduceGlobalEvent, applyGlobalProject, applyDirectoryEvent, type SessionMaterializationReason } from "./event-reducer"
 import { useGlobalSyncStore } from "./global-sync-store"
 import { ChildStoreManager, type DirectoryStore } from "./child-store"
@@ -2984,6 +2985,25 @@ export function SyncProvider(props: {
       lastRuntimeIdentityRef.current = {
         transport: getRuntimeTransportIdentity(),
         generation: getRuntimeGeneration(),
+      }
+    })
+  }, [])
+
+  // Reasoning projection toggle (showReasoningTraces): drop in-memory transcript
+  // projection, reconnect the event stream with the new includeReasoning query,
+  // and re-ensure currently viewed sessions. Durable disk is preserved.
+  useEffect(() => {
+    return subscribeReasoningProjection(() => {
+      requestStreamReconnect("reasoning_projection")
+      const repo = transcriptStackRef.current?.repository as
+        | (NonNullable<typeof transcriptStackRef.current>["repository"] & {
+          resetReasoningProjection?: () => void
+        })
+        | undefined
+      repo?.resetReasoningProjection?.()
+      const sessions = getCompensationViewedSessions()
+      for (const session of sessions) {
+        void ensureTranscriptInitial(session.directory, session.sessionID).catch(() => undefined)
       }
     })
   }, [])

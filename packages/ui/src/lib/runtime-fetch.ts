@@ -1,5 +1,6 @@
 import { getActiveRelayTunnel } from './relay/runtime-tunnel';
 import { TUNNEL_PARSE_BASE } from './relay/tunnel-payloads';
+import { getIncludeReasoningProjection } from './reasoning-projection-client';
 import { buildRuntimeAuthHeaders, getRuntimeAuthGeneration } from './runtime-auth';
 import { getRuntimeUrlResolver, type RuntimeUrlQuery } from './runtime-url';
 
@@ -65,7 +66,17 @@ const shouldResolveFetchInput = (input: string): boolean => {
 const buildRuntimeFetchUrlFromAbsolute = (input: string, query?: RuntimeUrlQuery): string => {
   try {
     const url = new URL(input);
-    if (!isCurrentWindowUrl(url)) return input;
+    if (!isCurrentWindowUrl(url)) {
+      // Remote direct SDK uses absolute active-runtime URLs (cross-origin vs
+      // window). Still apply query (e.g. includeReasoning=false) when this is
+      // the configured runtime service — same active-runtime gate as auth.
+      // External absolute URLs stay identity.
+      if (query && isActiveRuntimeServiceUrl(url)) {
+        appendRuntimeQuery(url, query);
+        return url.toString();
+      }
+      return input;
+    }
     const rewritten = buildRuntimeFetchUrl(`${url.pathname}${url.search}`, query);
     if (!isAbsoluteUrl(rewritten) && (url.protocol === 'http:' || url.protocol === 'https:')) {
       appendRuntimeQuery(url, query);
@@ -174,6 +185,72 @@ const runtimeRequestPathname = (rawUrl: string): string | null => {
   } catch {
     return null;
   }
+};
+
+/**
+ * Message / event GETs that Host projects when `includeReasoning=false`.
+ * Strict path match only — never POST/PATCH or unrelated GET surfaces.
+ */
+const REASONING_PROJECTION_GET_PATHS: readonly RegExp[] = [
+  // Official SDK session.messages list
+  /^\/api\/session\/(?!status$)[^/]+\/message\/?$/,
+  // Exact session.message
+  /^\/api\/session\/(?!status$)[^/]+\/message\/[^/]+\/?$/,
+  // Host turn-page
+  /^\/api\/openchamber\/sessions\/[^/]+\/messages\/?$/,
+  // Host turn-page reconcile
+  /^\/api\/openchamber\/sessions\/[^/]+\/messages\/reconcile\/?$/,
+  // Durable transcript-cache reads (response projection only; writes untouched)
+  /^\/api\/openchamber\/transcript-cache\/session\/?$/,
+  /^\/api\/openchamber\/transcript-cache\/message\/?$/,
+  // Global + directory event SSE
+  /^\/api\/global\/event\/?$/,
+  /^\/api\/event\/?$/,
+];
+
+const shouldInjectIncludeReasoningFalse = (method: string, pathname: string | null): boolean => {
+  if (getIncludeReasoningProjection()) return false;
+  if (!pathname) return false;
+  if (method.toUpperCase() !== 'GET') return false;
+  return REASONING_PROJECTION_GET_PATHS.some((pattern) => pattern.test(pathname));
+};
+
+const mergeRuntimeQuery = (
+  base: RuntimeUrlQuery | undefined,
+  extra: Record<string, string>,
+): RuntimeUrlQuery => {
+  if (!base) return extra;
+  if (base instanceof URLSearchParams) {
+    const next = new URLSearchParams(base);
+    for (const [key, value] of Object.entries(extra)) {
+      next.set(key, value);
+    }
+    return next;
+  }
+  return { ...base, ...extra };
+};
+
+const resolveFetchMethod = (input: string | URL | Request, requestInit: RequestInit): string =>
+  String(requestInit.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+
+const resolveInputPathname = (input: string | URL | Request): string | null => {
+  const raw = input instanceof Request ? input.url : input.toString();
+  return runtimeRequestPathname(raw);
+};
+
+/**
+ * When closed, force `includeReasoning=false` onto message/event GET query.
+ * Returns the effective query object for path builders.
+ */
+const reasoningProjectionQuery = (
+  input: string | URL | Request,
+  method: string,
+  query?: RuntimeUrlQuery,
+): RuntimeUrlQuery | undefined => {
+  if (!shouldInjectIncludeReasoningFalse(method, resolveInputPathname(input))) {
+    return query;
+  }
+  return mergeRuntimeQuery(query, { includeReasoning: 'false' });
 };
 
 /**
@@ -291,14 +368,29 @@ const tryRelayFetch = async (
 ): Promise<Response | null> => {
   const relay = getActiveRelayTunnel();
   if (!relay) return null;
-  const path = extractRelayPath(input, query);
+  const method = resolveFetchMethod(input, requestInit);
+  const effectiveQuery = reasoningProjectionQuery(input, method, query);
+  const path = extractRelayPath(input, effectiveQuery);
   if (path === null) return null;
   const inputHeaders = input instanceof Request ? input.headers : undefined;
   const headers = await mergeHeaders(inputHeaders, requestInit.headers, true);
   if (input instanceof Request) {
-    // Forward the Request itself — the tunnel reads its method/body/signal
-    // natively (incl. stream bodies). Re-wrapping as `new Request(path, input)`
-    // throws on a stream body without duplex:'half'.
+    // Message GET may need a rebuilt path so includeReasoning query is not
+    // dropped (relay.fetch(Request) keeps the original URL). GET has no stream
+    // body, so path-string fetch preserves headers/signal safely. Other Request
+    // shapes (incl. stream bodies) still forward the Request natively —
+    // re-wrapping as `new Request(path, input)` throws without duplex:'half'.
+    if (
+      method === 'GET'
+      && shouldInjectIncludeReasoningFalse(method, resolveInputPathname(input))
+    ) {
+      return relay.fetch(path, {
+        ...requestInit,
+        method: 'GET',
+        headers,
+        signal: requestInit.signal ?? input.signal,
+      });
+    }
     return relay.fetch(input, { ...requestInit, headers });
   }
   return relay.fetch(path, { ...requestInit, headers });
@@ -366,12 +458,14 @@ const coalesceReadKey = (
 
 export const runtimeFetch = async (input: string | URL | Request, init: RuntimeFetchOptions = {}): Promise<Response> => {
   const { query, ...requestInit } = init;
+  const methodEarly = resolveFetchMethod(input, requestInit);
+  const effectiveQuery = reasoningProjectionQuery(input, methodEarly, query);
 
   // Resolve the transport once — relay tunnel or network — then apply the SAME
   // read-coalescing to both. On a relay the tunnel is bandwidth/latency-bound, so
   // deduping concurrent identical GETs matters there most.
   const relay = getActiveRelayTunnel();
-  const relayPath = relay ? extractRelayPath(input, query) : null;
+  const relayPath = relay ? extractRelayPath(input, effectiveQuery) : null;
   const authGeneration = getRuntimeAuthGeneration();
 
   let doFetch: () => Promise<Response>;
@@ -380,13 +474,26 @@ export const runtimeFetch = async (input: string | URL | Request, init: RuntimeF
   if (relay && relayPath !== null) {
     const inputHeaders = input instanceof Request ? input.headers : undefined;
     const headers = await mergeHeaders(inputHeaders, requestInit.headers, true);
-    doFetch = input instanceof Request
-      ? () => relay.fetch(input, { ...requestInit, headers })
-      : () => relay.fetch(relayPath, { ...requestInit, headers });
+    method = methodEarly;
+    // Message GET + includeReasoning rewrite: use path string so query is not
+    // dropped by relay.fetch(original Request). Other Requests keep native body.
+    const rebuildMessageGet =
+      input instanceof Request
+      && method === 'GET'
+      && shouldInjectIncludeReasoningFalse(method, resolveInputPathname(input));
+    doFetch = rebuildMessageGet
+      ? () => relay.fetch(relayPath, {
+        ...requestInit,
+        method: 'GET',
+        headers,
+        signal: requestInit.signal ?? input.signal,
+      })
+      : input instanceof Request
+        ? () => relay.fetch(input, { ...requestInit, headers })
+        : () => relay.fetch(relayPath, { ...requestInit, headers });
     url = relayPath;
-    method = String(requestInit.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
   } else {
-    const resolvedInput = resolveRuntimeFetchInput(input, query);
+    const resolvedInput = resolveRuntimeFetchInput(input, effectiveQuery);
     const inputHeaders = resolvedInput instanceof Request ? resolvedInput.headers : undefined;
     const headers = await mergeHeaders(inputHeaders, requestInit.headers, shouldAttachRuntimeAuth(resolvedInput));
     url =

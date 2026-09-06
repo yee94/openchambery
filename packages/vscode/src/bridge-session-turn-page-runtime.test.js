@@ -590,4 +590,57 @@ describe('bridge session turn-page runtime', () => {
     });
     expect(JSON.stringify(result.data)).not.toContain(patch);
   });
+
+  it('drops reasoning parts when includeReasoning=false and keeps tokens.reasoning', async () => {
+    responseImpl = async () => new Response(
+      JSON.stringify([
+        {
+          info: { id: 'msg_u1', role: 'user', time: { created: 1 } },
+          parts: [{ type: 'text', text: 'hi' }],
+        },
+        {
+          info: {
+            id: 'msg_a1',
+            role: 'assistant',
+            time: { created: 2 },
+            tokens: { input: 1, output: 2, reasoning: 77 },
+          },
+          parts: [
+            { id: 'p_r', type: 'reasoning', text: 'secret chain of thought' },
+            { id: 'p_t', type: 'text', text: 'answer' },
+          ],
+        },
+      ]),
+      { status: 200, headers: { 'content-type': 'application/json', 'x-next-cursor': '' } },
+    );
+
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    const result = await handleSessionTurnPageBridgeMessage(
+      {
+        id: 'req_reason_off',
+        type: 'api:session-turn-page',
+        payload: { sessionID: 'ses_1', turns: 3, includeReasoning: 'false' },
+      },
+      defaultCtx,
+    );
+
+    expect(result.success).toBe(true);
+    const assistant = result.data.records.find((r) => r.info?.id === 'msg_a1');
+    expect(assistant.info.tokens.reasoning).toBe(77);
+    expect(assistant.parts.every((p) => p.type !== 'reasoning')).toBe(true);
+    expect(JSON.stringify(result.data)).not.toContain('secret chain');
+
+    const kept = await handleSessionTurnPageBridgeMessage(
+      {
+        id: 'req_reason_default',
+        type: 'api:session-turn-page',
+        payload: { sessionID: 'ses_1', turns: 3 },
+      },
+      defaultCtx,
+    );
+    expect(kept.success).toBe(true);
+    // Default slim path keeps reasoning identity (no body) rather than dropping the part.
+    const keptAssistant = kept.data.records.find((r) => r.info?.id === 'msg_a1');
+    expect(keptAssistant.parts.some((p) => p.type === 'reasoning')).toBe(true);
+  });
 });

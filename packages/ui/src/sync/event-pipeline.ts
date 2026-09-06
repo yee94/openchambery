@@ -16,6 +16,7 @@ import type { Event, OpencodeClient, SessionStatus } from "@opencode-ai/sdk/v2/c
 import { opencodeClient } from "@/lib/opencode/client"
 import { getRuntimeUrlResolver } from "@/lib/runtime-url"
 import { clearRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken } from "@/lib/runtime-auth"
+import { getIncludeReasoningProjection } from "@/lib/reasoning-projection-client"
 import { type RelayTunnelWebSocket } from "@/lib/relay/tunnel-client"
 import { openRuntimeWebSocket } from "@/lib/relay/runtime-socket"
 import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
@@ -336,9 +337,18 @@ function buildGlobalEventWsUrl(lastEventId?: string): string {
     baseUrl = "/api"
   }
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
+  const query: Record<string, string> = {}
+  if (lastEventId && lastEventId.length > 0) {
+    query.lastEventId = lastEventId
+  }
+  // Same projection flag as runtimeFetch message/SSE GETs. Host filters
+  // reasoning events per connection when includeReasoning=false.
+  if (!getIncludeReasoningProjection()) {
+    query.includeReasoning = "false"
+  }
   return getRuntimeUrlResolver().websocket(
     `${normalizedBase}global/event/ws`,
-    lastEventId && lastEventId.length > 0 ? { lastEventId } : undefined,
+    Object.keys(query).length > 0 ? query : undefined,
   )
 }
 
@@ -468,6 +478,23 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   const flushAll = () => {
     for (const directory of directories.keys()) {
       flushDir(directory)
+    }
+  }
+
+  /**
+   * Drop queued SSE/WS batches without delivering them. Used when the
+   * reasoning projection flag flips so a closed connection's pending deltas
+   * cannot write reasoning back after the stream is already replaced.
+   */
+  const dropPendingBatches = () => {
+    for (const d of directories.values()) {
+      if (d.timer) {
+        clearTimeout(d.timer)
+        d.timer = undefined
+      }
+      d.queue.length = 0
+      d.buffer.length = 0
+      d.coalesced.clear()
     }
   }
 
@@ -1198,6 +1225,11 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   }
 
   const reconnect = (reason = "manual") => {
+    // Projection toggle: discard in-flight coalesced batches before abort so
+    // they cannot flush after the new filtered connection is up.
+    if (reason === "reasoning_projection") {
+      dropPendingBatches()
+    }
     attemptAbortReason = `${activeTransport}_${reason}`
     attempt?.abort()
   }

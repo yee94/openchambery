@@ -1,5 +1,13 @@
 import type { OpenCodeManager } from './opencode';
 import { waitForApiUrl } from './opencode-ready';
+import {
+  createReasoningOutboundFilter,
+  createSseBlockSplitter,
+  filterSseBlock,
+  readIncludeReasoningFromUrl,
+  stripIncludeReasoningParam,
+  type ReasoningOutboundFilter,
+} from './reasoning-projection';
 
 type OpenSseProxyOptions = {
   manager: OpenCodeManager;
@@ -22,6 +30,14 @@ const SSE_RESPONSE_HEADERS = {
 // SSE reconnect configuration
 const MAX_RECONNECTS = 3;
 const BASE_RECONNECT_DELAY = 1000; // 1 second
+
+/**
+ * When includeReasoning=false drops every upstream block (long pure-reasoning
+ * turns), the webview SSE client still needs activity within its 30s idle
+ * timeout. Match the Web Host SSE comment heartbeat cadence.
+ */
+const FILTERED_SSE_HEARTBEAT_INTERVAL_MS = 10_000;
+const FILTERED_SSE_HEARTBEAT_CHUNK = ':heartbeat\n\n';
 
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
   if (signal.aborted) {
@@ -61,6 +77,8 @@ const createSseUrl = (baseUrl: string, pathname: '/event' | '/global/event', sea
   const base = `${baseUrl.replace(/\/+$/, '')}/`;
   const url = new URL(pathname.replace(/^\/+/, ''), base);
   for (const [key, value] of searchParams) {
+    // OpenChamber-only projection control — never forward to OpenCode.
+    if (key === 'includeReasoning') continue;
     url.searchParams.append(key, value);
   }
   if (pathname === '/event' && !url.searchParams.has('directory')) {
@@ -93,7 +111,9 @@ const fetchSseResponse = async (
     throw new Error('OpenCode API URL not available');
   }
 
-  const { pathname, searchParams, directory } = normalizeSsePath(path);
+  // Strip OpenChamber-only includeReasoning before upstream OpenCode fetch.
+  const upstreamPath = stripIncludeReasoningParam(path);
+  const { pathname, searchParams, directory } = normalizeSsePath(upstreamPath);
   const resolvedDirectory = directory || resolveDefaultDirectory(manager);
   const targetUrl = createSseUrl(baseUrl, pathname, searchParams, resolvedDirectory);
 
@@ -117,13 +137,69 @@ const fetchSseResponse = async (
   return response;
 };
 
-const pipeSseResponse = async (response: Response, signal: AbortSignal, onChunk: (chunk: string) => void): Promise<void> => {
+const pipeSseResponse = async (
+  response: Response,
+  signal: AbortSignal,
+  onChunk: (chunk: string) => void,
+  reasoningFilter: ReasoningOutboundFilter | null,
+): Promise<void> => {
   if (!response.body) {
     throw new Error('OpenCode SSE response missing body');
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const splitter = reasoningFilter ? createSseBlockSplitter() : null;
+
+  // Filtered-only keepalive: last real downstream emission timestamp.
+  let lastDownstreamEmissionMs = Date.now();
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+  const emitDownstream = (chunk: string) => {
+    if (!chunk || signal.aborted) return;
+    lastDownstreamEmissionMs = Date.now();
+    onChunk(chunk);
+  };
+
+  const clearHeartbeat = () => {
+    if (heartbeatTimer != null) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  };
+
+  if (reasoningFilter) {
+    heartbeatTimer = setInterval(() => {
+      if (signal.aborted) {
+        clearHeartbeat();
+        return;
+      }
+      if (Date.now() - lastDownstreamEmissionMs >= FILTERED_SSE_HEARTBEAT_INTERVAL_MS) {
+        // Comment frame — SDK treats pure comments as activity; no reasoning body.
+        emitDownstream(FILTERED_SSE_HEARTBEAT_CHUNK);
+      }
+    }, FILTERED_SSE_HEARTBEAT_INTERVAL_MS);
+    heartbeatTimer.unref?.();
+  }
+
+  const cancelReader = () => {
+    void reader.cancel().catch(() => {});
+  };
+  if (signal.aborted) {
+    cancelReader();
+  } else {
+    signal.addEventListener('abort', cancelReader, { once: true });
+  }
+
+  const emitFilteredBlocks = (blocks: string[]) => {
+    if (!reasoningFilter) return;
+    for (const block of blocks) {
+      const filtered = filterSseBlock(block, reasoningFilter);
+      if (filtered && filtered.length > 0) {
+        emitDownstream(filtered);
+      }
+    }
+  };
 
   try {
     while (!signal.aborted) {
@@ -132,18 +208,30 @@ const pipeSseResponse = async (response: Response, signal: AbortSignal, onChunk:
         break;
       }
       if (value && value.length > 0) {
-        const chunk = decoder.decode(value, { stream: true });
-        if (chunk.length > 0) {
-          onChunk(chunk);
+        if (reasoningFilter && splitter) {
+          // Disabled path: parse SSE blocks, drop reasoning, re-serialize.
+          emitFilteredBlocks(splitter.push(value));
+        } else {
+          // Enabled path: byte-identical passthrough (no synthetic heartbeat).
+          const chunk = decoder.decode(value, { stream: true });
+          if (chunk.length > 0) {
+            onChunk(chunk);
+          }
         }
       }
     }
 
-    const remaining = decoder.decode();
-    if (!signal.aborted && remaining.length > 0) {
-      onChunk(remaining);
+    if (reasoningFilter && splitter) {
+      emitFilteredBlocks(splitter.finish());
+    } else {
+      const remaining = decoder.decode();
+      if (!signal.aborted && remaining.length > 0) {
+        onChunk(remaining);
+      }
     }
   } finally {
+    signal.removeEventListener('abort', cancelReader);
+    clearHeartbeat();
     try {
       await reader.cancel();
     } catch {
@@ -167,9 +255,16 @@ export const openSseProxy = async ({
   // Reconnect logic with exponential backoff
   let reconnectAttempts = 0;
 
+  // Per openSseProxy lifecycle: includeReasoning from webview URL query.
+  // Default (missing/other) keeps full stream; only strict 'false' filters.
+  const includeReasoning = readIncludeReasoningFromUrl(path);
+  const reasoningFilter = includeReasoning
+    ? null
+    : createReasoningOutboundFilter();
+
   const connect = async (): Promise<Response> => {
     try {
-      const { pathname } = normalizeSsePath(path);
+      const { pathname } = normalizeSsePath(stripIncludeReasoningParam(path));
       console.log(`[SSE] Connecting to ${pathname} (attempt ${reconnectAttempts + 1}/${MAX_RECONNECTS + 1})`);
 
       const result = await fetchSseResponse(manager, path, headers, signal);
@@ -208,7 +303,7 @@ export const openSseProxy = async ({
   const run = (async () => {
     let activeResponse = response;
     try {
-      await pipeSseResponse(activeResponse, signal, onChunk);
+      await pipeSseResponse(activeResponse, signal, onChunk, reasoningFilter);
     } catch (error: unknown) {
       const cause = (error as { cause?: { code?: string } } | null)?.cause;
 
@@ -228,7 +323,7 @@ export const openSseProxy = async ({
             // Attempt to reconnect
             try {
               activeResponse = await connect();
-              await pipeSseResponse(activeResponse, signal, onChunk);
+              await pipeSseResponse(activeResponse, signal, onChunk, reasoningFilter);
               return; // Successfully reconnected
             } catch (reconnectError) {
               console.error('[SSE] Reconnect failed', reconnectError);
@@ -239,6 +334,8 @@ export const openSseProxy = async ({
         // Re-throw if we couldn't recover
         throw error;
       }
+    } finally {
+      reasoningFilter?.dispose();
     }
   })();
 

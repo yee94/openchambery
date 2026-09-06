@@ -44,7 +44,8 @@ const MarkstreamFileReferenceContext = React.createContext<MarkstreamFileReferen
 
 let fileReferenceComponentsRegistered = false;
 
-export const ensureMarkstreamFileReferenceComponents = (): void => {
+/** Registers Markstream node overrides once (module load / first Provider). */
+const ensureMarkstreamFileReferenceComponents = (): void => {
   if (fileReferenceComponentsRegistered) {
     return;
   }
@@ -55,6 +56,9 @@ export const ensureMarkstreamFileReferenceComponents = (): void => {
     link: MarkstreamLinkNode,
   });
 };
+
+// Side-effect registration when this module is imported (Provider or host).
+ensureMarkstreamFileReferenceComponents();
 
 export const MarkstreamFileReferenceProvider: React.FC<{
   enabled: boolean;

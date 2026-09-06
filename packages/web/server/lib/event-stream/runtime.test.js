@@ -127,6 +127,59 @@ describe('event stream broadcaster', () => {
 });
 
 describe('message stream websocket runtime', () => {
+  it('filters reasoning events per connection when includeReasoning=false', async () => {
+    const server = new EventEmitter();
+    const wsClients = new Set();
+
+    const runtime = createMessageStreamWsRuntime({
+      server,
+      uiAuthController: null,
+      isRequestOriginAllowed: async () => true,
+      rejectWebSocketUpgrade() {
+        throw new Error('upgrade should not be used in this test');
+      },
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      processForwardedEventPayload() {},
+      wsClients,
+      upstreamReconnectDelayMs: 0,
+      fetchImpl: async (_url, options) => createSseResponse({
+        signal: options.signal,
+        holdOpen: true,
+        blocks: [
+          'id: evt-1\ndata: {"type":"message.part.updated","properties":{"part":{"id":"p_r","messageID":"m1","type":"reasoning","text":"secret"}}}\n\n',
+          'id: evt-2\ndata: {"type":"message.part.updated","properties":{"part":{"id":"p_t","messageID":"m1","type":"text","text":"hi"}}}\n\n',
+          'id: evt-3\ndata: {"type":"session.next.reasoning.delta","properties":{"delta":"nope"}}\n\n',
+          'id: evt-4\ndata: {"type":"message.part.delta","properties":{"messageID":"m1","partID":"p_t","field":"text","delta":"!"}}\n\n',
+        ],
+      }),
+    });
+
+    const filtered = new FakeSocket();
+    const full = new FakeSocket();
+    runtime.wsServer.emit('connection', filtered, { url: '/api/global/event/ws?includeReasoning=false' });
+    runtime.wsServer.emit('connection', full, { url: '/api/global/event/ws' });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const filteredEvents = filtered.sent.filter((frame) => frame.type === 'event');
+    const fullEvents = full.sent.filter((frame) => frame.type === 'event');
+
+    expect(filteredEvents.some((frame) => frame.payload?.type === 'session.next.reasoning.delta')).toBe(false);
+    expect(filteredEvents.some((frame) => frame.payload?.properties?.part?.type === 'reasoning')).toBe(false);
+    expect(JSON.stringify(filteredEvents)).not.toContain('secret');
+    expect(filteredEvents.some((frame) => frame.payload?.type === 'message.part.updated'
+      && frame.payload?.properties?.part?.type === 'text')).toBe(true);
+    expect(filteredEvents.some((frame) => frame.payload?.type === 'message.part.delta')).toBe(true);
+
+    expect(fullEvents.some((frame) => frame.payload?.properties?.part?.type === 'reasoning')).toBe(true);
+    expect(fullEvents.some((frame) => frame.payload?.type === 'session.next.reasoning.delta')).toBe(true);
+
+    filtered.close();
+    full.close();
+    await runtime.close();
+  });
+
   it('shares one global upstream SSE reader across multiple websocket clients', async () => {
     const server = new EventEmitter();
     const wsClients = new Set();

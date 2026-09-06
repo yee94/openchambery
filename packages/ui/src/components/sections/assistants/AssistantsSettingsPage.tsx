@@ -45,10 +45,10 @@ import { useScopedProvidersQuery } from '@/queries/agentQueries';
 const MANAGED_WORKSPACE_VALUE = '__managed_workspace__';
 const LEGACY_WORKSPACE_VALUE = '__current_workspace__';
 
-export const DEFAULT_ASSISTANT_NAME = '默认助理';
+const DEFAULT_ASSISTANT_NAME = '默认助理';
 
 /** Resolves an initial provider and model for default assistant creation. */
-export const resolveDefaultAssistantModel = (): { providerID: string; modelID: string } | null => {
+const resolveDefaultAssistantModel = (): { providerID: string; modelID: string } | null => {
   const configState = useConfigStore.getState();
   const settingsDefaultModel = configState.settingsDefaultModel;
   if (settingsDefaultModel) {

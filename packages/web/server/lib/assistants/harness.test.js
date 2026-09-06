@@ -285,7 +285,7 @@ describe('runContactTurn', () => {
       userText: 'assign login',
       createChatCompletion: vi.fn(),
       tools: [assignTool, { name: 'bash', execute: vi.fn() }],
-      projects: [{ id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' }],
+      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' }],
       AgentImpl,
     })
     expect(result.bubbles).toEqual(['opened'])
@@ -382,7 +382,7 @@ describe('runContactTurn', () => {
     function AgentImpl(options) {
       expect(options.initialState.systemPrompt).toContain('Registered projects')
       expect(options.initialState.systemPrompt).toContain('OpenChamber Yee')
-      expect(options.initialState.systemPrompt).toContain('/repo/openchamber-yee')
+      expect(options.initialState.systemPrompt).toContain('/repo/sample-app')
       expect(options.initialState.systemPrompt).toContain('never say you cannot see registered projects')
       this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Found it.' }] }] }
       this.prompt = async () => {}
@@ -392,7 +392,7 @@ describe('runContactTurn', () => {
       history: [],
       userText: '找 openchamber yee',
       createChatCompletion: vi.fn(),
-      projects: [{ id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' }],
+      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' }],
       AgentImpl,
     })
     expect(result.bubbles).toEqual(['Found it.'])

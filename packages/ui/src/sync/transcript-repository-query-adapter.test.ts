@@ -3,6 +3,11 @@ import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query"
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
 
 import {
+  getIncludeReasoningProjection,
+  resetReasoningProjectionClientForTests,
+  setIncludeReasoningProjection,
+} from "@/lib/reasoning-projection-client"
+import {
   createSessionTranscriptController,
   getPreviousTranscriptPageParam,
   isRetryableSessionMessagePageError,
@@ -1375,6 +1380,399 @@ describe("Query repository durable cache wiring", () => {
     expect(upserts).toEqual([])
     expect((await inner.readSession(durableScope)).records).toEqual([])
     repo.destroy()
+  })
+
+  test("closed reasoning projection skips durable seed and durable writes; full disk retained", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const settled = {
+      info: {
+        id: "msg_r",
+        sessionID: SESSION,
+        role: "assistant",
+        time: { created: 2 },
+        finish: "stop",
+      } as Message,
+      parts: [{
+        id: "r1",
+        messageID: "msg_r",
+        sessionID: SESSION,
+        type: "reasoning",
+        text: "think",
+      } as Part],
+    }
+    const written = await inner.upsertSettled(durableScope, settled.info, settled.parts)
+    expect(written.status).toBe("written")
+    let readSessionCalls = 0
+    let upsertCalls = 0
+    const durableStore = {
+      ...inner,
+      readSession: async (target: typeof durableScope) => {
+        readSessionCalls += 1
+        return inner.readSession(target)
+      },
+      upsertSettled: async (...args: Parameters<typeof inner.upsertSettled>) => {
+        upsertCalls += 1
+        return inner.upsertSettled(...args)
+      },
+    }
+    setIncludeReasoningProjection(false)
+    try {
+      const repo = createQueryTranscriptRepository({
+        client,
+        transport: TRANSPORT,
+        generation: GENERATION,
+        durableStore,
+        fetcher: async () =>
+          transportPage(
+            [{ info: userMessage("msg_net"), parts: [textPart("p_net", "msg_net", "live")] }],
+            { complete: true },
+          ),
+        probe: {
+          getTransport: () => TRANSPORT,
+          getGeneration: () => GENERATION,
+        },
+      })
+      await repo.ensureInitial(scope)
+      expect(readSessionCalls).toBe(0)
+      expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_net"])
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(upsertCalls).toBe(0)
+      // Prior full durable row still present for re-open seed.
+      expect((await inner.readMessage(durableScope, "msg_r"))?.parts.some((p) => p.type === "reasoning")).toBe(true)
+      repo.destroy()
+    } finally {
+      resetReasoningProjectionClientForTests()
+    }
+  })
+
+  test("resetReasoningProjection clears Query projection, keeps listeners, discards stale authority", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          await gate
+          return transportPage(
+            [{
+              info: assistantMessage("msg_reason"),
+              parts: [{
+                id: "r1",
+                messageID: "msg_reason",
+                sessionID: SESSION,
+                type: "reasoning",
+                text: "late",
+              } as Part],
+            }],
+            { complete: true },
+          )
+        }
+        return transportPage(
+          [{ info: userMessage("msg_clean"), parts: [textPart("p_clean", "msg_clean")] }],
+          { complete: true },
+        )
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    let notifies = 0
+    const unsub = repo.subscribe(scope, () => {
+      notifies += 1
+    })
+    const first = repo.ensureInitial(scope)
+    // Toggle projection generation while first flight is in-flight.
+    setIncludeReasoningProjection(false)
+    repo.resetReasoningProjection()
+    expect(repo.getTranscript(scope).messageOrder).toEqual([])
+    // Listener retain must survive reset (subscribe still active).
+    expect(notifies).toBeGreaterThanOrEqual(1)
+    release()
+    await first.catch(() => undefined)
+    // Late first response must not reintroduce reasoning after reset.
+    expect(repo.getTranscript(scope).messageOrder).not.toContain("msg_reason")
+    await repo.ensureInitial(scope)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_clean"])
+    unsub()
+    repo.destroy()
+    resetReasoningProjectionClientForTests()
+  })
+
+  test("off→on lifecycle: filtered Query, reasoning-only exact=0, tool exact, durable full restore", async () => {
+    const settled = (id: string, created: number): Message =>
+      ({ id, sessionID: SESSION, role: "assistant", time: { created }, finish: "stop" }) as Message
+    const fullReasoning = (messageID: string, text: string): Part =>
+      ({
+        id: `${messageID}-r`,
+        messageID,
+        sessionID: SESSION,
+        type: "reasoning",
+        text,
+        time: { start: 1, end: 2 },
+      }) as unknown as Part
+    const fullTool = (messageID: string, output: string): Part =>
+      ({
+        id: `${messageID}-t`,
+        messageID,
+        sessionID: SESSION,
+        type: "tool",
+        tool: "bash",
+        callID: `${messageID}-t`,
+        state: { status: "completed", output },
+      }) as unknown as Part
+    const slimTool = (messageID: string): Part =>
+      ({
+        id: `${messageID}-t`,
+        messageID,
+        sessionID: SESSION,
+        type: "tool",
+        tool: "bash",
+        callID: `${messageID}-t`,
+        state: { status: "completed" },
+        slim: true,
+      }) as unknown as Part
+
+    const msgTool = settled("msg_tool_r", 2)
+    const msgReasonOnly = settled("msg_reason_only", 3)
+    const toolFullParts = [fullTool("msg_tool_r", "tool-out"), fullReasoning("msg_tool_r", "think-tool")]
+    const reasonOnlyParts = [fullReasoning("msg_reason_only", "think-only")]
+
+    const inner = createMemoryTranscriptDurableStore()
+    expect((await inner.upsertSettled(durableScope, msgTool, toolFullParts)).status).toBe("written")
+    expect((await inner.upsertSettled(durableScope, msgReasonOnly, reasonOnlyParts)).status).toBe("written")
+
+    let readSessionCalls = 0
+    let upsertCalls = 0
+    const durableStore = {
+      ...inner,
+      readSession: async (target: typeof durableScope) => {
+        readSessionCalls += 1
+        return inner.readSession(target)
+      },
+      upsertSettled: async (...args: Parameters<typeof inner.upsertSettled>) => {
+        upsertCalls += 1
+        return inner.upsertSettled(...args)
+      },
+    }
+
+    /** Host-shaped page: includeReasoning=false drops type=reasoning parts. */
+    const hostAuthorityPage = () => {
+      const include = getIncludeReasoningProjection()
+      const toolParts = include
+        ? toolFullParts
+        : [slimTool("msg_tool_r")]
+      const reasonParts = include ? reasonOnlyParts : []
+      return transportPage(
+        [
+          { info: msgTool, parts: toolParts },
+          ...(reasonParts.length > 0
+            ? [{ info: msgReasonOnly, parts: reasonParts }]
+            : [{ info: msgReasonOnly, parts: [] as Part[] }]),
+        ],
+        { complete: true },
+      )
+    }
+
+    const exactFetches: string[] = []
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+      fetcher: async () => hostAuthorityPage(),
+      fetchMessage: async ({ messageID }) => {
+        exactFetches.push(messageID)
+        const include = getIncludeReasoningProjection()
+        if (messageID === "msg_tool_r") {
+          return {
+            info: msgTool,
+            parts: include ? toolFullParts : [fullTool("msg_tool_r", "tool-out")],
+          }
+        }
+        if (messageID === "msg_reason_only") {
+          return {
+            info: msgReasonOnly,
+            parts: include ? reasonOnlyParts : [],
+          }
+        }
+        throw new Error(`unexpected exact fill for ${messageID}`)
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    let notifies = 0
+    const unsub = repo.subscribe(scope, () => {
+      notifies += 1
+    })
+
+    try {
+      // ── open: durable full seed paints reasoning ─────────────────────────
+      setIncludeReasoningProjection(true)
+      await repo.ensureInitial(scope)
+      expect(readSessionCalls).toBe(1)
+      expect(repo.getParts(scope, "msg_tool_r").some((p) => p.type === "reasoning")).toBe(true)
+      expect(repo.getParts(scope, "msg_reason_only").some((p) => p.type === "reasoning")).toBe(true)
+      // Drain open-phase async durable persist before measuring closed window.
+      await waitUntil(() => upsertCalls >= 1)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const notifiesAfterOpen = notifies
+
+      // ── close: reset + filtered ensure; durable seed/write bypassed ──────
+      readSessionCalls = 0
+      upsertCalls = 0
+      setIncludeReasoningProjection(false)
+      repo.resetReasoningProjection()
+      expect(repo.getTranscript(scope).messageOrder).toEqual([])
+      await repo.ensureInitial(scope)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(readSessionCalls).toBe(0) // no durable seed while closed
+      expect(upsertCalls).toBe(0) // filtered page never written as full
+      expect(repo.getParts(scope, "msg_tool_r").some((p) => p.type === "reasoning")).toBe(false)
+      expect(repo.getParts(scope, "msg_reason_only").some((p) => p.type === "reasoning")).toBe(false)
+      expect(notifies).toBeGreaterThan(notifiesAfterOpen)
+
+      // Disk still holds full reasoning for re-open.
+      expect(
+        (await inner.readMessage(durableScope, "msg_reason_only"))?.parts.some((p) => p.type === "reasoning"),
+      ).toBe(true)
+
+      // reasoning-only message: no slim tool/text → exact fill stays 0
+      exactFetches.length = 0
+      await repo.materializeMessage(scope, "msg_reason_only")
+      expect(exactFetches).toEqual([])
+      expect(repo.getParts(scope, "msg_reason_only").some((p) => p.type === "reasoning")).toBe(false)
+
+      // slim tool still exact-fills tool body; Host response omits reasoning
+      exactFetches.length = 0
+      await repo.materializeMessage(scope, "msg_tool_r")
+      expect(exactFetches).toEqual(["msg_tool_r"])
+      const toolPart = repo.getParts(scope, "msg_tool_r").find((p) => p.type === "tool") as {
+        slim?: boolean
+        state?: { output?: string }
+      } | undefined
+      expect(toolPart?.slim).not.toBe(true)
+      expect(toolPart?.state?.output).toBe("tool-out")
+      expect(repo.getParts(scope, "msg_tool_r").some((p) => p.type === "reasoning")).toBe(false)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(upsertCalls).toBe(0)
+
+      // ── re-open: durable full seed + authority restores reasoning ────────
+      const notifiesBeforeReopen = notifies
+      readSessionCalls = 0
+      setIncludeReasoningProjection(true)
+      repo.resetReasoningProjection()
+      await repo.ensureInitial(scope)
+      expect(readSessionCalls).toBe(1) // full durable seed once after re-open
+      expect(repo.getParts(scope, "msg_tool_r").some((p) => p.type === "reasoning")).toBe(true)
+      expect(repo.getParts(scope, "msg_reason_only").some((p) => p.type === "reasoning")).toBe(true)
+      expect(
+        (repo.getParts(scope, "msg_reason_only").find((p) => p.type === "reasoning") as { text?: string })?.text,
+      ).toBe("think-only")
+      // Original subscription still receives reopen notifications.
+      expect(notifies).toBeGreaterThan(notifiesBeforeReopen)
+    } finally {
+      unsub()
+      repo.destroy()
+      resetReasoningProjectionClientForTests()
+    }
+  })
+
+  test("exact materialize in-flight is discarded across off→on→off projection toggles", async () => {
+    const settled = {
+      id: "msg_exact",
+      sessionID: SESSION,
+      role: "assistant",
+      time: { created: 2 },
+      finish: "stop",
+    } as Message
+    const slimTool = {
+      id: "t1",
+      messageID: "msg_exact",
+      sessionID: SESSION,
+      type: "tool",
+      tool: "bash",
+      callID: "t1",
+      state: { status: "completed" },
+      slim: true,
+    } as unknown as Part
+    const fullWithReasoning: Part[] = [
+      {
+        id: "t1",
+        messageID: "msg_exact",
+        sessionID: SESSION,
+        type: "tool",
+        tool: "bash",
+        callID: "t1",
+        state: { status: "completed", output: "done" },
+      } as unknown as Part,
+      {
+        id: "r1",
+        messageID: "msg_exact",
+        sessionID: SESSION,
+        type: "reasoning",
+        text: "stale-reasoning",
+        time: { start: 1, end: 2 },
+      } as unknown as Part,
+    ]
+
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let exactFetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetcher: async () => transportPage([{ info: settled, parts: [slimTool] }], { complete: true }),
+      fetchMessage: async () => {
+        exactFetches += 1
+        await gate
+        return { info: settled, parts: fullWithReasoning }
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    try {
+      setIncludeReasoningProjection(true)
+      await repo.ensureInitial(scope)
+      expect(repo.getParts(scope, "msg_exact").some((p) => (p as { slim?: boolean }).slim === true)).toBe(true)
+
+      const pending = repo.materializeMessage(scope, "msg_exact")
+      // Same-value final false still advanced generation (off→on→off).
+      setIncludeReasoningProjection(false)
+      setIncludeReasoningProjection(true)
+      setIncludeReasoningProjection(false)
+      release()
+      await pending
+
+      expect(exactFetches).toBe(1)
+      // Stale exact completion must not write reasoning into the closed projection.
+      expect(repo.getParts(scope, "msg_exact").some((p) => p.type === "reasoning")).toBe(false)
+      const tool = repo.getParts(scope, "msg_exact").find((p) => p.type === "tool") as {
+        slim?: boolean
+        state?: { output?: string }
+      } | undefined
+      // Discarded apply leaves pre-flight slim tool (no full output).
+      expect(tool?.state?.output).toBeUndefined()
+      expect(tool?.slim).toBe(true)
+    } finally {
+      repo.destroy()
+      resetReasoningProjectionClientForTests()
+    }
   })
 })
 

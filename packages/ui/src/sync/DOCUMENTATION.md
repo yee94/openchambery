@@ -319,8 +319,9 @@ Modules:
 
 | Module | Role |
 |---|---|
+| `lib/reasoning-projection-client.ts` | Leaf includeReasoning flag + revision (no store/React). Synced from `useUIStore.showReasoningTraces` (init/hydrate/setter). Read by `runtime-fetch`, `event-pipeline`, transcript adapter. |
 | `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, `sse-event-batch`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization` / `messageNeedsExactRevalidation`; `hasTailAssistantMissingSettledCompletion` (lost settle-tick gap detection: missing completed, or stop without positive tokens); optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
-| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; per-scope projection cache (one `projectFlatFromTranscriptData` per immutable canonical reference shared by `getTranscript` / pagination / message / parts readers until notify/purge); `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded slim or open tool/reasoning/file parts exact-fill via `session.message` after the authority tail (≤4 concurrent FIFO; settled full rows skip); post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
+| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; per-scope projection cache (one `projectFlatFromTranscriptData` per immutable canonical reference shared by `getTranscript` / pagination / message / parts readers until notify/purge); `fetchPreviousPage` / `ensureInitial` (cold authority tail + enter-and-sync hot reconcile); on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; durable-seeded slim or open tool/reasoning/file parts exact-fill via `session.message` after the authority tail (≤4 concurrent FIFO; settled full rows skip); post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration; `resetReasoningProjection` (toggle-safe Query clear without durable wipe or listener drop); closed `showReasoningTraces` bypasses durable seed/write and discards stale async via projection revision |
 | `session-authority-revalidate.ts` | Enter-and-sync 30s window keyed by transport+generation+directory+sessionID; stamped only after a successful authority pull |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
 | `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset; incremental `sessionID → canonical scopes` index (`listCanonicalScopesForSession`) kept in sync with QueryCache add/remove and cleared on purge/evict/dispose |
@@ -952,12 +953,14 @@ both readers agree on when a frame may shrink.
   the legacy Event reducer contract; and exposes admission / domain-activity
   hints for   `session.next.*` without inventing `message.part.*` events.
   `event-pipeline.ts` keeps `/global/event` WS/SSE + Relay (never
-  `client.v2.event.subscribe`). Current `session.next.*` frames emit
-  `onNormalizedEvent` only and skip the legacy reducer queue. Canonical
-  `session.status` still enters the reducer and coalesces per session.
-  `sync-context.handleNormalizedOpenCodeHints` issues **one** bounded
-  repository materialize / ensure for the currently viewed session on terminal
-  `session.next.step.ended` / `.failed` only.
+  `client.v2.event.subscribe`). WS URL and runtimeFetch message/SSE GETs carry
+  `includeReasoning=false` from `reasoning-projection-client` when
+  `showReasoningTraces` is off; toggle reconnect drops pending batches. Current
+  `session.next.*` frames emit `onNormalizedEvent` only and skip the legacy
+  reducer queue. Canonical `session.status` still enters the reducer and
+  coalesces per session. `sync-context.handleNormalizedOpenCodeHints` issues
+  **one** bounded repository materialize / ensure for the currently viewed
+  session on terminal `session.next.step.ended` / `.failed` only.
 - **P2 promptAsync admission gate (documented, not switched):** OpenCode 1.18
   `v2.session.prompt` does not yet expose a per-item immutable
   provider/model/agent/variant admission contract matching OpenChamber's direct

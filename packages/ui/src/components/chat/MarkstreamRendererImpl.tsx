@@ -11,16 +11,13 @@ import {
   handleMarkstreamFileReferenceKeyDown,
   handleMarkstreamPointerEvent,
 } from './markstream/markstreamInteractions';
-import {
-  ensureMarkstreamFileReferenceComponents,
-  MarkstreamFileReferenceProvider,
-} from './markstream/markstreamFileReferences';
+import { MarkstreamFileReferenceProvider } from './markstream/markstreamFileReferences';
 import { MARKSTREAM_CHAT_STREAM_PERFORMANCE } from './markstream/markstreamPerformance';
 import type { ToolPopupContent } from './message/types';
 import 'markstream-react/index.css';
 import './markstream/markstreamTheme.css';
 
-ensureMarkstreamFileReferenceComponents();
+// File-reference node overrides register on markstreamFileReferences module load.
 
 type MarkdownVariant = 'assistant' | 'reasoning' | 'tool';
 
