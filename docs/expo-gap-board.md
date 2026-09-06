@@ -79,9 +79,9 @@ Catalog, enable guide, pushed conversation, share-in (exact instance+assistant).
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | Dock label only |
-| CI green | missing | |
-| 真机过 | missing | |
+| Track (CODE) | **code landed** | Cap MobileScheduledTab parity on Expo: cards show status+schedule+next-run (never name-only); segments 任务/历史记录 + filters 全部/已启用/已暂停; Run now POST .../scheduled-tasks/{id}/run with optimistic running; full editor daily/weekly/cron create/edit/toggle/delete via PUT/DELETE; history opens /chat/{sessionId}. Unit tests green locally. |
+| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| 真机过 | missing | Do not mark from Linux VM |
 
 ### 7. Settings
 

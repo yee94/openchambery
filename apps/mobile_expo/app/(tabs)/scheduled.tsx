@@ -1,10 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { ScheduledHome } from '@/components/scheduled/ScheduledHome';
 
 export default function ScheduledScreen() {
-  return (
-    <PlaceholderScreen
-      title="Scheduled"
-      body="Stub scheduled tasks. 任务/历史记录 filters and live APIs land later."
-    />
-  );
+  return <ScheduledHome />;
 }
