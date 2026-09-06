@@ -5,7 +5,6 @@ import {
   Alert,
   Dimensions,
   Platform,
-  Pressable,
   Share,
   StyleSheet,
   View as RNView,
@@ -13,8 +12,8 @@ import {
 import { useRouter } from 'expo-router';
 
 import { ChangesSheet } from '@/components/chat/ChangesSheet';
+import { ChatDetailHeader } from '@/components/chat/ChatDetailHeader';
 import { ChatComposer } from '@/components/chat/ChatComposer';
-import { ContextUsageRing } from '@/components/chat/ContextUsageRing';
 import { FilesSheet } from '@/components/chat/FilesSheet';
 import { MobileSessionsSheet } from '@/components/chat/MobileSessionsSheet';
 import { PermissionCard } from '@/components/chat/PermissionCard';
@@ -259,12 +258,17 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
       onResponderGrant={(e) => onBodyTouchStart(e.nativeEvent.pageX, e.nativeEvent.pageY)}
       onResponderRelease={(e) => onBodyTouchEnd(e.nativeEvent.pageX, e.nativeEvent.pageY)}
     >
-      <ContextUsageRing display={chat.contextDisplay} />
-      <RNView style={styles.overflowRow}>
-        <Pressable onPress={openOverflow} accessibilityRole="button">
-          <Text style={styles.overflowBtn}>{t('mobile.chat.menu.files')} · {t('mobile.chat.menu.changes')} · •••</Text>
-        </Pressable>
-      </RNView>
+      <ChatDetailHeader
+        title={
+          chat.isDraft
+            ? t('mobile.chat.draftTitle')
+            : t('mobile.chat.title')
+        }
+        subtitle={chat.directory ? chat.directory.split('/').filter(Boolean).slice(-2).join(' · ') : null}
+        contextDisplay={chat.contextDisplay}
+        onBack={() => router.back()}
+        onOverflow={openOverflow}
+      />
 
       {chat.status === 'loading' && chat.rows.length === 0 ? (
         <RNView style={styles.center}>
@@ -442,15 +446,5 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#F97066',
     fontSize: 13,
-  },
-  overflowRow: {
-    paddingHorizontal: 12,
-    paddingBottom: 4,
-    alignItems: 'flex-end',
-  },
-  overflowBtn: {
-    color: '#3b82f6',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

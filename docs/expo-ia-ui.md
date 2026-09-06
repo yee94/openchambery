@@ -64,6 +64,9 @@ Optical notes from the official mobile CSS / Flutter’s later audit (measure ag
 
 Composer swipe (left/right) changes session. Transcript RTL opens the session list. Interactive back is **not** a mid-screen swipe on iOS.
 
+Expo Chat chrome (post tracks 1–8 feature land): detail nav uses **custom** `ChatDetailHeader` — `headerShown: false`, 40px `GlassDisc` back + overflow, context ring inline in the trailing cluster, transparent fade (not a Stack / frost banner). Sheet actions (Sessions / Files / Changes) use theme `--primary` / tint (orange sand), never UIKit / Tailwind blue.
+
+
 ## Glass rules (iOS)
 
 Native is **always on**. No Appearance toggle.

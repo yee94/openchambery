@@ -108,6 +108,7 @@ function RootLayoutNav() {
         <Stack.Screen
           name="chat/[sessionId]"
           options={{
+            headerShown: false,
             title: t('mobile.chat.title'),
             headerBackTitle: t('mobile.tabs.projects'),
           }}

@@ -50,6 +50,7 @@ export function FilesSheet({
   const active = state.active;
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
+  const tint = useThemeColor({}, 'tint');
   const root = (rootDirectory || '').replace(/\\/g, '/').replace(/\/+$/g, '') || '/';
   const [route, setRoute] = useState<Route>({ type: 'browser', directory: root });
   const [entries, setEntries] = useState<FilesystemEntry[]>([]);
@@ -166,13 +167,13 @@ export function FilesSheet({
       <RNView style={styles.root}>
         <RNView style={styles.header}>
           <Pressable onPress={goBack} accessibilityRole="button">
-            <Text style={styles.headerAction}>{route.type === 'browser' && route.directory === root ? t('mobile.chat.files.close') : '‹'}</Text>
+            <Text style={[styles.headerAction, { color: tint }]}>{route.type === 'browser' && route.directory === root ? t('mobile.chat.files.close') : '‹'}</Text>
           </Pressable>
           <Text style={[styles.title, { color: textColor }]} numberOfLines={1}>
             {title}
           </Text>
           <Pressable onPress={onClose} accessibilityRole="button">
-            <Text style={styles.headerAction}>{t('mobile.chat.files.close')}</Text>
+            <Text style={[styles.headerAction, { color: tint }]}>{t('mobile.chat.files.close')}</Text>
           </Pressable>
         </RNView>
 
@@ -224,11 +225,11 @@ export function FilesSheet({
           <RNView style={styles.fileBody}>
             <RNView style={styles.fileActions}>
               <Pressable onPress={() => void copyContent(fileContent)}>
-                <Text style={styles.headerAction}>{t('mobile.chat.files.copy')}</Text>
+                <Text style={[styles.headerAction, { color: tint }]}>{t('mobile.chat.files.copy')}</Text>
               </Pressable>
               {isHtmlFilePath(route.path) ? (
                 <Pressable onPress={() => setHtmlMode((m) => (m === 'preview' ? 'source' : 'preview'))}>
-                  <Text style={styles.headerAction}>
+                  <Text style={[styles.headerAction, { color: tint }]}>
                     {htmlMode === 'preview'
                       ? t('mobile.chat.files.source')
                       : t('mobile.chat.files.preview')}
@@ -254,7 +255,7 @@ export function FilesSheet({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingTop: 12 },
+  root: { flex: 1, paddingTop: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -263,8 +264,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     gap: 8,
   },
-  title: { flex: 1, fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  headerAction: { color: '#3b82f6', fontSize: 15, fontWeight: '600', minWidth: 48 },
+  title: { flex: 1, fontSize: 15, lineHeight: 21, fontWeight: '600', textAlign: 'center' },
+  headerAction: { fontSize: 15, fontWeight: '600', minWidth: 48 },
   search: {
     marginHorizontal: 16,
     marginBottom: 8,

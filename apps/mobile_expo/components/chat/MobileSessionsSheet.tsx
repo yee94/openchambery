@@ -72,6 +72,7 @@ export function MobileSessionsSheet({
   });
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
+  const tint = useThemeColor({}, 'tint');
   const [query, setQuery] = useState('');
   const [pinBusyId, setPinBusyId] = useState<string | null>(null);
   const [pinOverrides, setPinOverrides] = useState<Record<string, boolean>>({});
@@ -195,17 +196,17 @@ export function MobileSessionsSheet({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <RNView style={styles.root}>
         <RNView style={styles.header}>
           <Pressable onPress={onClose} accessibilityRole="button">
-            <Text style={styles.headerAction}>{t('mobile.surface.close')}</Text>
+            <Text style={[styles.headerAction, { color: tint }]}>{t('mobile.surface.close')}</Text>
           </Pressable>
           <Text style={[styles.title, { color: textColor }]} numberOfLines={1}>
             {t('mobile.sessions.sheet.title')}
           </Text>
           <Pressable onPress={onDraft} accessibilityRole="button">
-            <Text style={styles.headerAction}>{t('mobile.sessions.newChat')}</Text>
+            <Text style={[styles.headerAction, { color: tint }]}>{t('mobile.sessions.newChat')}</Text>
           </Pressable>
         </RNView>
 
@@ -228,7 +229,7 @@ export function MobileSessionsSheet({
           <RNView style={styles.center}>
             <Text style={styles.error}>{home.error ?? t('mobile.sessions.index.error')}</Text>
             <Pressable onPress={() => void home.refresh()}>
-              <Text style={styles.headerAction}>{t('mobile.sessions.index.retry')}</Text>
+              <Text style={[styles.headerAction, { color: tint }]}>{t('mobile.sessions.index.retry')}</Text>
             </Pressable>
           </RNView>
         ) : home.status === 'unsupported' ? (
@@ -274,14 +275,14 @@ export function MobileSessionsSheet({
                         style={[
                           styles.dot,
                           {
-                            backgroundColor: session.unread || activeRow ? '#3b82f6' : 'rgba(127,127,127,0.35)',
+                            backgroundColor: session.unread || activeRow ? tint : 'rgba(127,127,127,0.35)',
                           },
                         ]}
                       />
                       <HighlightedText
                         text={session.title}
                         query={highlight}
-                        style={[styles.rowTitle, { color: activeRow ? '#3b82f6' : textColor }]}
+                        style={[styles.rowTitle, { color: activeRow ? tint : textColor }]}
                         numberOfLines={1}
                       />
                       <Text style={[styles.time, { color: muted }]}>
@@ -308,7 +309,7 @@ export function MobileSessionsSheet({
                         : t('mobile.sessions.pinAria')
                     }
                   >
-                    <Text style={[styles.pinLabel, { color: session.pinned ? '#3b82f6' : muted }]}>
+                    <Text style={[styles.pinLabel, { color: session.pinned ? tint : muted }]}>
                       {session.pinned ? '★' : '☆'}
                     </Text>
                   </Pressable>
@@ -323,7 +324,7 @@ export function MobileSessionsSheet({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingTop: 12 },
+  root: { flex: 1, paddingTop: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -332,8 +333,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     gap: 8,
   },
-  title: { flex: 1, fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  headerAction: { color: '#3b82f6', fontSize: 15, fontWeight: '600', minWidth: 48 },
+  title: { flex: 1, fontSize: 15, lineHeight: 21, fontWeight: '600', textAlign: 'center' },
+  headerAction: { fontSize: 15, fontWeight: '600', minWidth: 48 },
   search: {
     marginHorizontal: 16,
     marginBottom: 8,
@@ -359,7 +360,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(127,127,127,0.25)',
   },
   rowActive: {
-    backgroundColor: 'rgba(59,130,246,0.08)',
+    backgroundColor: 'rgba(232,119,34,0.10)',
   },
   rowMain: {
     flex: 1,

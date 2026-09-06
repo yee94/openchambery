@@ -7,6 +7,8 @@ import { t } from '@/lib/i18n';
 
 export type ContextUsageRingProps = {
   display: MobileContextDisplay | null;
+  /** Inline header slot (no absolute float, no tokens caption). */
+  compact?: boolean;
 };
 
 const toneColor = (tone: MobileContextDisplay['tone']): string => {
@@ -15,7 +17,7 @@ const toneColor = (tone: MobileContextDisplay['tone']): string => {
   return '#32D583';
 };
 
-function ContextUsageRingImpl({ display }: ContextUsageRingProps) {
+function ContextUsageRingImpl({ display, compact }: ContextUsageRingProps) {
   const muted = useThemeColor({}, 'muted');
   if (!display) return null;
 
@@ -24,7 +26,7 @@ function ContextUsageRingImpl({ display }: ContextUsageRingProps) {
 
   return (
     <RNView
-      style={styles.wrap}
+      style={[styles.wrap, compact ? styles.wrapCompact : styles.wrapFloat]}
       accessibilityRole="progressbar"
       accessibilityLabel={t('mobile.chat.context.aria', {
         percent: Math.round(pct),
@@ -32,10 +34,11 @@ function ContextUsageRingImpl({ display }: ContextUsageRingProps) {
       })}
       accessibilityValue={{ min: 0, max: 100, now: Math.round(pct) }}
     >
-      <RNView style={[styles.ring, { borderColor: 'rgba(127,127,127,0.35)' }]}>
+      <RNView style={[styles.ring, compact && styles.ringCompact, { borderColor: 'rgba(127,127,127,0.35)' }]}>
         <RNView
           style={[
             styles.progress,
+            compact && styles.progressCompact,
             {
               borderColor: color,
               // Approximate ring fill via border opacity + label (no SVG dependency).
@@ -45,9 +48,11 @@ function ContextUsageRingImpl({ display }: ContextUsageRingProps) {
         />
         <Text style={[styles.percent, { color }]}>{Math.round(pct)}%</Text>
       </RNView>
-      <Text style={[styles.tokens, { color: muted }]} numberOfLines={1}>
-        {display.tokensLabel}
-      </Text>
+      {compact ? null : (
+        <Text style={[styles.tokens, { color: muted }]} numberOfLines={1}>
+          {display.tokensLabel}
+        </Text>
+      )}
     </RNView>
   );
 }
@@ -56,12 +61,20 @@ export const ContextUsageRing = memo(ContextUsageRingImpl);
 
 const styles = StyleSheet.create({
   wrap: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  wrapFloat: {
     position: 'absolute',
     top: 10,
     right: 12,
     zIndex: 4,
-    alignItems: 'center',
-    gap: 2,
+  },
+  wrapCompact: {
+    position: 'relative',
+    top: 0,
+    right: 0,
+    zIndex: 0,
   },
   ring: {
     width: 40,
@@ -72,10 +85,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(20,20,20,0.55)',
   },
+  ringCompact: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2.5,
+    backgroundColor: 'rgba(127,127,127,0.12)',
+  },
   progress: {
     ...StyleSheet.absoluteFill,
     borderRadius: 20,
     borderWidth: 3,
+  },
+  progressCompact: {
+    borderRadius: 18,
+    borderWidth: 2.5,
   },
   percent: {
     fontSize: 10,

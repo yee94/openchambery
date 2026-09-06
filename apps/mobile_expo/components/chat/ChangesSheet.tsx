@@ -49,6 +49,7 @@ export function ChangesSheet({
   const active = state.active;
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
+  const tint = useThemeColor({}, 'tint');
   const [route, setRoute] = useState<Route>({ type: 'list' });
   const [files, setFiles] = useState<GitStatusFile[]>([]);
   const [branch, setBranch] = useState('');
@@ -140,13 +141,13 @@ export function ChangesSheet({
               else onClose();
             }}
           >
-            <Text style={styles.action}>{route.type === 'diff' ? '‹' : t('mobile.chat.changes.close')}</Text>
+            <Text style={[styles.action, { color: tint }]}>{route.type === 'diff' ? '‹' : t('mobile.chat.changes.close')}</Text>
           </Pressable>
           <Text style={[styles.title, { color: textColor }]} numberOfLines={1}>
             {route.type === 'diff' ? route.path : `${t('mobile.chat.changes.title')}${branch ? ` · ${branch}` : ''}`}
           </Text>
           <Pressable onPress={onClose}>
-            <Text style={styles.action}>{t('mobile.chat.changes.close')}</Text>
+            <Text style={[styles.action, { color: tint }]}>{t('mobile.chat.changes.close')}</Text>
           </Pressable>
         </RNView>
 
@@ -213,7 +214,7 @@ export function ChangesSheet({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingTop: 12 },
+  root: { flex: 1, paddingTop: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -222,8 +223,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     gap: 8,
   },
-  title: { flex: 1, fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  action: { color: '#3b82f6', fontSize: 15, fontWeight: '600', minWidth: 48 },
+  title: { flex: 1, fontSize: 15, lineHeight: 21, fontWeight: '600', textAlign: 'center' },
+  action: { fontSize: 15, fontWeight: '600', minWidth: 48 },
   section: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, fontSize: 12, fontWeight: '700' },
   row: {
     paddingHorizontal: 16,

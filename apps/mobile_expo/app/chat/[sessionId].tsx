@@ -6,7 +6,8 @@ import { t } from '@/lib/i18n';
 
 /**
  * Pushed Chat route — LegendList transcript + Send/Stop (Track 3).
- * Draft uses route id `draft` (sessionId == '' until first send).
+ * Draft uses route id draft (sessionId empty until first send).
+ * Detail nav is custom GlassDisc chrome (headerShown false).
  */
 export default function ChatRoute() {
   const { sessionId: routeId } = useLocalSearchParams<{ sessionId: string }>();
@@ -16,6 +17,7 @@ export default function ChatRoute() {
     <>
       <Stack.Screen
         options={{
+          headerShown: false,
           title: draft ? t('mobile.chat.draftTitle') : t('mobile.chat.title'),
           headerBackTitle: t('mobile.tabs.projects'),
         }}
