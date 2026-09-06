@@ -51,8 +51,8 @@ for i in $(seq 1 60); do
     exit 1
   fi
 
-  if grep -Eq 'ReactNativeJS: Running "main"|ReactNativeJS: Running '\''main'\''' emulator-smoke/logcat-snapshot.txt \
-    || grep -Eq 'ReactNativeJS: Running "main"' emulator-smoke/logcat-snapshot.txt; then
+  # Match threadtime ("I ReactNativeJS: Running \"main\"") and brief ("I/ReactNativeJS(pid): Running \"main\"").
+  if grep -Eq 'ReactNativeJS.*Running ["'\''']main["'\''']' emulator-smoke/logcat-snapshot.txt; then
     SAW_JS=1
   fi
 

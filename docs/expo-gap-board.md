@@ -110,8 +110,8 @@ Lint/typecheck/vitest, Android **assembleRelease** sideload APK (debug keystore 
 | Row | Status | Notes |
 |---|---|---|
 | Lint / typecheck / unit tests workflow | **CI green** @ `63e43620` | Tip run https://github.com/yee94/openchambery/actions/runs/34027594765 — Lint/typecheck/unit tests **green**. Prior `1436c630` / 34024670880 superseded. |
-| Device binary jobs | in progress (Android emulator smoke); iOS residual | Switching published binary to assembleRelease+.debug + API 30 emulator logcat gate. Prior embed-only assembleDebug @ `63e43620` green in CI but still hung on device splash. iOS simulator residual: macos runner + CocoaPods + Track 8 native modules not wired. |
-| Debug APK + prerelease link | in progress | `63e4362` embedded Hermes but still hung on device (assembleDebug / useDevSupport). Next: assembleRelease+.debug id + emulator smoke — tip SHA pending CI. Prior `expo-v2-debug-1436c63` hung (no bundle). |
+| Device binary jobs | **CI green** (Android emulator logcat); iOS residual | assembleRelease sideload + API 30 smoke @ `67cb7f2e` (run 34034421349). Logcat past splash YES. iOS simulator residual: macos runner + CocoaPods + Track 8 native modules not wired. |
+| Debug APK + prerelease link | **CI green** (logcat) | Prerelease `expo-v2-debug-67cb7f2` — https://github.com/yee94/openchambery/releases/tag/expo-v2-debug-67cb7f2. assembleRelease+.debug; emulator logcat past splash YES (`Running "main"` + Displayed). Prior `63e4362` assembleDebug hung / crashed; `1436c63` no bundle. |
 | 真机过 | missing | |
 
 ## Bootstrap / process rows
