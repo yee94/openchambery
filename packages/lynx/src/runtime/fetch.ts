@@ -1,7 +1,7 @@
 import type { LynxHttpClient, LynxHttpResponse, LynxRelayTunnel, LynxRequestInit } from '../connection/types';
 import type { LynxRuntimeIdentityStore } from './identity';
 
-const RUNTIME_PATHS = [/^\/api(?:\/|$)/, /^\/auth(?:\/|$)/, /^\/health$/];
+const RUNTIME_PATHS = [/^\/api(?:\/|$)/, /^\/auth(?:\/|$)/, /^\/health$/, /^\/session(?:\/|$)/];
 
 export const isRuntimeServicePath = (path: string): boolean =>
   RUNTIME_PATHS.some((pattern) => pattern.test(path));
@@ -18,7 +18,7 @@ export type RuntimeFetchDeps = {
 };
 
 /**
- * OpenChamber-owned HTTP. Paths like `/health`, `/auth/session`, and
+ * OpenChamber-owned HTTP. Paths like `/health`, `/auth/session`, `/session/…`, and
  * `/api/openchamber/…` ride the active runtime (direct URL or injected relay
  * tunnel). Capture identity at call time — do not cache the base URL.
  */

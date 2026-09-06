@@ -23,6 +23,16 @@ export type LynxPageProps = LynxViewProps & {
 
 export type LynxBlurViewProps = LynxViewProps & BlurViewAttributes;
 
+/**
+ * Lynx `<list>` props used for LegendList-semantics timeline.
+ * recycle-items must stay false for chat rows.
+ */
+export type LynxListProps = LynxViewProps & {
+  'scroll-orientation'?: 'vertical' | 'horizontal';
+  'recycle-items'?: boolean;
+  'initial-scroll-index'?: number;
+};
+
 function lynxElement(type: string, props: object): ReactNode {
   return createElement(type, props);
 }
@@ -43,6 +53,19 @@ export function LynxScrollView(props: LynxViewProps) {
   return lynxElement('scroll-view', props);
 }
 
+export function LynxList(props: LynxListProps) {
+  return lynxElement('list', props);
+}
+
 export function LynxBlurView(props: LynxBlurViewProps) {
   return lynxElement('blur-view', props);
+}
+
+export function LynxInput(props: LynxViewProps & {
+  value?: string;
+  placeholder?: string;
+  bindinput?: (event: { detail?: { value?: string } }) => void;
+  disabled?: boolean;
+}) {
+  return lynxElement('input', props);
 }

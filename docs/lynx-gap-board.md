@@ -30,7 +30,7 @@ These rows are **代码接上** for the scaffold contracts only (no OpenChamber 
 |---|---|
 | Lynx app package | `packages/lynx` (`@openchamber/lynx`). Workspace Vitest project. No rspeedy/APK/IPA job yet. |
 | Host Tab/Nav embedding decision | **Locked:** Mode B iOS 26 host `UITabBar`; Mode A older iOS + Android. Mode C forbidden. `src/host/embedding.ts` + `host/ios/` + `host/android/`. |
-| Four-tab dock IA | Projects / Assistant / Scheduled / Settings. Chat is a pushed secondary page; dock hidden. Root bodies are **labeled stubs**. |
+| Four-tab dock IA | Projects / Assistant / Scheduled / Settings. Chat is a pushed secondary page; dock hidden. Projects/Assistant/Scheduled remain **labeled stubs**; Settings home lists real slug rows. |
 | Lynx 3.8 glass mapping | iOS `glass` → `UIGlassEffect`, `glass-container` → `UIGlassContainerEffect`, plus `glass-style` / `glass-interactive` / `glass-tint-color` / `spacing`. Android: `blur-radius` 降级. |
 
 真机过: **not executed** (environment: Linux cloud agent; no Xcode/adb device).
@@ -52,6 +52,22 @@ Client library modules under `packages/lynx` (`src/connection/`, `src/pairing/`,
 **CI绿:** missing (no Lynx Android/iOS workflow yet). Local Vitest `@openchamber/lynx` is not track CI.
 
 **真机过:** not executed (environment: Linux cloud VM; no Xcode, no adb, no physical device).
+
+---
+
+## 代码接上 (chat LegendList + settings home — not landed under 三关)
+
+Chat timeline + Settings tab home on `cursor/lynx-chat-settings-local` (PR into `work/lynx-native`). Package Vitest + `tsc` gate the claim. No track CI / 真机过.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| LegendList-semantics timeline | `TimelineList.tsx` | `src/chat/listSemantics.ts` + `LynxTimelineList`: one `<list>`, `recycle-items={false}`, `initialScrollAtEnd` / `maintainScrollAtEnd` / `maintainVisibleContentPosition`, load-older **button** only (bounce forbidden). TanStack 1.18 forbidden. |
+| Send / Stop / queue hooks | ChatInput + queue | `src/chat/composerActions.ts` + `sessionApi.ts` → official `POST /session/:id/prompt_async`, `POST /session/:id/abort`, `GET /session/:id/message`. No runtime → explicit `no-runtime` failure (never fake-success). |
+| Chat pushed page chrome | `MobileChatScreen.tsx` | `LynxChatScreen` header + timeline + composer actions. Markdown cards / Files / Changes / MCP sheets / IME FLIP **not** in this slice. |
+| Settings search + 21 slug rows | `MOBILE_SETTINGS_PAGE_SLUGS`, `SettingsView` | `src/settings/metadata.ts` + `SettingsTab`: search, Cap group order, all 21 rows, in-tab push. Bodies are **labeled stubs**; `voice` is list-only-until-routes. No `iosNativeUi` toggle. |
+
+**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
 
 ---
 
@@ -87,32 +103,32 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 ### Chat
 
-| Item | Cap/web source |
-|---|---|
-| **LegendList-semantics timeline** | `TimelineList.tsx` — **required**; TanStack 1.18 **forbidden** |
-| Chat header / overflow | `MobileChatScreen.tsx` |
-| Send / Stop / queue / abort | ChatInput + queue |
-| Questions / permissions | chat cards |
-| Activity / sorted / collapsed | chat DOCUMENTATION |
-| Load-older button (no scroll auto-load) | timeline controller |
-| Nested child session stack + predecessor | `mobileNavigation.ts` |
-| Files / Changes / turn-diff sheets | `MobileFilesSurface`, `MobileChangesSurface` |
-| MCP sheet | `mobile-mcp` |
-| Context usage | `mobileContextUsage.ts` |
-| Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION |
-| Native-quality IME (not WebView FLIP) | pitfalls §3 |
-| Session swipe (composer only) | `useEdgeSwipeSessionSwitch.ts` |
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| ~~**LegendList-semantics timeline**~~ | `TimelineList.tsx` | **代码接上** in `packages/lynx/src/chat` (list semantics + LynxTimelineList). Rich turn cards still missing |
+| Chat header / overflow | `MobileChatScreen.tsx` | Header back + title landed; overflow menu missing |
+| ~~Send / Stop / queue / abort~~ | ChatInput + queue | **代码接上** hooks + official routes; composer text input host binding still thin |
+| Questions / permissions | chat cards | |
+| Activity / sorted / collapsed | chat DOCUMENTATION | |
+| ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid tests |
+| Nested child session stack + predecessor | `mobileNavigation.ts` | |
+| Files / Changes / turn-diff sheets | `MobileFilesSurface`, `MobileChangesSurface` | |
+| MCP sheet | `mobile-mcp` | |
+| Context usage | `mobileContextUsage.ts` | |
+| Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | |
+| Native-quality IME (not WebView FLIP) | pitfalls §3 | |
+| Session swipe (composer only) | `useEdgeSwipeSessionSwitch.ts` | |
 
 ### Assistant / Scheduled / Settings
 
-| Item | Cap/web source |
-|---|---|
-| Assistant catalog + conversation page | `MobileAssistantTab.tsx`, `AssistantView.tsx` |
-| Continuous / stateless admission | assistants DOCUMENTATION |
-| Share welcome + inbox | `AssistantShareWelcome`, `MobileShareBridge` |
-| Scheduled list / history / editor | `MobileScheduledTab.tsx` |
-| Settings search + **all 21 mobile slugs** | `MOBILE_SETTINGS_PAGE_SLUGS` |
-| Settings split collection → entity editor | `SettingsView.tsx` |
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Assistant catalog + conversation page | `MobileAssistantTab.tsx`, `AssistantView.tsx` | |
+| Continuous / stateless admission | assistants DOCUMENTATION | |
+| Share welcome + inbox | `AssistantShareWelcome`, `MobileShareBridge` | |
+| Scheduled list / history / editor | `MobileScheduledTab.tsx` | |
+| ~~Settings search + **all 21 mobile slugs**~~ | `MOBILE_SETTINGS_PAGE_SLUGS` | **代码接上** home search + grouped rows + push stubs |
+| Settings split collection → entity editor | `SettingsView.tsx` | |
 
 ### Native platform
 
@@ -165,8 +181,8 @@ First implementation slice after this doc gate (order is deliberate: connect →
 2. ~~Connect + instance persistence client~~ — 代码接上 in `packages/lynx`. Remaining: welcome/instances UI, native secure store, and a real server 真机 pass (LAN then relay). No demo hosts. No Bonjour.
 3. ~~Four-tab shell IA~~ — navigation stubs landed. Remaining: real tab bodies.
 4. ~~Projects home data path~~ — session-index bindings in `packages/lynx`. Remaining: Projects UI (failure ≠ empty).
-5. **LegendList-semantics chat list** + send/stop on official APIs. This is the quality gate; do not prototype TanStack-style split lists “just to see pixels”.
-6. **Settings home + slug map** (all 21 rows visible; bodies may still be stubs **labeled stubs**, never fake-success).
+5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. Remaining: rich turn cards, SSE live tail, Files/Changes, native IME.
+6. ~~**Settings home + slug map**~~ — 代码接上 search + 21 rows + labeled stub bodies. Remaining: real GET/PUT editors per slug.
 7. **CI** that builds Android debug APK + iOS simulator. Linux analyze alone is never “CI绿”.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
@@ -221,27 +237,27 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 
 | Slug | Status | First honest body |
 |---|---|---|
-| `instances` | missing | List + add + QR; persist v2 `relayUrl` |
-| `appearance` | missing | Language + theme (`flexoki-*` ids). No `iosNativeUi` toggle |
-| `chat` | missing | Real GET/PUT `/api/config/settings` chat fields |
-| `notifications` | missing | Toggles + APNs/FCM register |
-| `sessions` | missing | Defaults + retention from settings blob |
-| `summary-ai` | missing | Settings blob + `/api/small-model` |
-| `projects` | missing | `projects[]` from settings blob |
-| `git` | missing | gitmoji / identities |
-| `providers` | missing | `/api/config/catalog/providers` (failure ≠ empty) |
-| `agents` | missing | `GET /api/agent` |
-| `assistants` | missing | `/api/openchamber/assistants/snapshot` |
-| `behavior` | missing | agents.md + response style |
-| `commands` | missing | commands metadata catalog |
-| `mcp` | missing | `GET /api/config/mcp` |
-| `plugins` | missing | `GET /api/config/plugins` |
-| `magic-prompts` | missing | `/api/magic-prompts` |
-| `snippets` | missing | `/api/config/snippets` |
-| `skills.installed` | missing | `/api/config/skills?summary=true` |
-| `usage` | missing | per-provider quota; one failure stays on that row |
-| `voice` | missing **or** 故意不移植 until routes work | Do not stub a fake mic |
-| `about` | missing | Native Lynx version **separate** from instance versions |
+| `instances` | 代码接上 (row + labeled stub body) | List + add + QR; persist v2 `relayUrl` |
+| `appearance` | 代码接上 (row + labeled stub body) | Language + theme (`flexoki-*` ids). No `iosNativeUi` toggle |
+| `chat` | 代码接上 (row + labeled stub body) | Real GET/PUT `/api/config/settings` chat fields |
+| `notifications` | 代码接上 (row + labeled stub body) | Toggles + APNs/FCM register |
+| `sessions` | 代码接上 (row + labeled stub body) | Defaults + retention from settings blob |
+| `summary-ai` | 代码接上 (row + labeled stub body) | Settings blob + `/api/small-model` |
+| `projects` | 代码接上 (row + labeled stub body) | `projects[]` from settings blob |
+| `git` | 代码接上 (row + labeled stub body) | gitmoji / identities |
+| `providers` | 代码接上 (row + labeled stub body) | `/api/config/catalog/providers` (failure ≠ empty) |
+| `agents` | 代码接上 (row + labeled stub body) | `GET /api/agent` |
+| `assistants` | 代码接上 (row + labeled stub body) | `/api/openchamber/assistants/snapshot` |
+| `behavior` | 代码接上 (row + labeled stub body) | agents.md + response style |
+| `commands` | 代码接上 (row + labeled stub body) | commands metadata catalog |
+| `mcp` | 代码接上 (row + labeled stub body) | `GET /api/config/mcp` |
+| `plugins` | 代码接上 (row + labeled stub body) | `GET /api/config/plugins` |
+| `magic-prompts` | 代码接上 (row + labeled stub body) | `/api/magic-prompts` |
+| `snippets` | 代码接上 (row + labeled stub body) | `/api/config/snippets` |
+| `skills.installed` | 代码接上 (row + labeled stub body) | `/api/config/skills?summary=true` |
+| `usage` | 代码接上 (row + labeled stub body) | per-provider quota; one failure stays on that row |
+| `voice` | 代码接上 (row; body list-only-until-routes) | Do not stub a fake mic; port existing /api/dictation or keep list-only |
+| `about` | 代码接上 (row + labeled stub body) | Native Lynx version **separate** from instance versions |
 
 ---
 

@@ -31,7 +31,21 @@ export type LynxMessageKey =
   | 'lynx.shell.stub.body'
   | 'lynx.shell.stub.openChat'
   | 'lynx.shell.chat.stub'
-  | 'lynx.shell.settings.stub';
+  | 'lynx.shell.settings.stub'
+  | 'lynx.chat.timeline.aria'
+  | 'lynx.chat.timeline.loadError'
+  | 'lynx.chat.loadOlder'
+  | 'lynx.chat.loadOlder.busy'
+  | 'lynx.chat.loadOlder.failed'
+  | 'lynx.chat.runtime.missing'
+  | 'lynx.chat.composer.placeholder'
+  | 'lynx.chat.composer.send'
+  | 'lynx.chat.composer.stop'
+  | 'lynx.chat.composer.queue'
+  | 'lynx.settings.search.placeholder'
+  | 'lynx.settings.search.empty'
+  | 'lynx.settings.page.stub'
+  | 'lynx.settings.voice.listOnly';
 
 type LynxDictionary = Record<LynxMessageKey, string>;
 
@@ -46,8 +60,23 @@ const en: LynxDictionary = {
   'lynx.shell.chat.title': 'Chat',
   'lynx.shell.stub.body': 'This surface is a labeled stub. It is not connected to OpenChamber APIs.',
   'lynx.shell.stub.openChat': 'Open stub chat page',
-  'lynx.shell.chat.stub': 'Chat is a pushed page. The 1.19 LegendList transcript is another track.',
-  'lynx.shell.settings.stub': 'Settings editors are another track. These slugs are listed only.',
+  'lynx.shell.chat.stub': 'Chat is a pushed page with a 1.19 LegendList timeline.',
+  'lynx.shell.settings.stub': 'Settings home lists all 21 mobile slugs. Page bodies may be labeled stubs.',
+  'lynx.chat.timeline.aria': 'Chat timeline',
+  'lynx.chat.timeline.loadError': 'Unable to load transcript',
+  'lynx.chat.loadOlder': 'Load older',
+  'lynx.chat.loadOlder.busy': 'Loading…',
+  'lynx.chat.loadOlder.failed': 'Load older failed',
+  'lynx.chat.runtime.missing': 'Labeled stub: connect runtime not injected — send/stop/queue will not fake success.',
+  'lynx.chat.composer.placeholder': 'Message',
+  'lynx.chat.composer.send': 'Send',
+  'lynx.chat.composer.stop': 'Stop',
+  'lynx.chat.composer.queue': 'Queue',
+  'lynx.settings.search.placeholder': 'Search settings',
+  'lynx.settings.search.empty': 'No matching settings',
+  'lynx.settings.page.stub': 'Labeled stub: this settings body is not wired to OpenChamber APIs yet.',
+  'lynx.settings.voice.listOnly': 'Voice is listed only until existing /api/dictation routes are ported. No invented ASR.',
+
 };
 
 const es: LynxDictionary = {
@@ -61,8 +90,23 @@ const es: LynxDictionary = {
   'lynx.shell.chat.title': 'Chat',
   'lynx.shell.stub.body': 'Esta superficie es un stub etiquetado. No está conectada a las API de OpenChamber.',
   'lynx.shell.stub.openChat': 'Abrir la página de chat de stub',
-  'lynx.shell.chat.stub': 'El chat es una página empujada. La transcripción LegendList 1.19 es otra pista.',
-  'lynx.shell.settings.stub': 'Los editores de ajustes son otra pista. Aquí solo se listan los slugs.',
+  'lynx.shell.chat.stub': 'El chat es una página empujada con una línea de tiempo LegendList 1.19.',
+  'lynx.shell.settings.stub': 'Ajustes enumera los 21 slugs móviles. Los cuerpos pueden ser stubs etiquetados.',
+  'lynx.chat.timeline.aria': 'Línea de tiempo del chat',
+  'lynx.chat.timeline.loadError': 'No se pudo cargar la transcripción',
+  'lynx.chat.loadOlder': 'Cargar anteriores',
+  'lynx.chat.loadOlder.busy': 'Cargando…',
+  'lynx.chat.loadOlder.failed': 'Fallo al cargar anteriores',
+  'lynx.chat.runtime.missing': 'Stub etiquetado: sin runtime de conexión — enviar/detener/cola no fingirán éxito.',
+  'lynx.chat.composer.placeholder': 'Mensaje',
+  'lynx.chat.composer.send': 'Enviar',
+  'lynx.chat.composer.stop': 'Detener',
+  'lynx.chat.composer.queue': 'Cola',
+  'lynx.settings.search.placeholder': 'Buscar ajustes',
+  'lynx.settings.search.empty': 'Sin ajustes coincidentes',
+  'lynx.settings.page.stub': 'Stub etiquetado: este cuerpo de ajustes aún no está conectado a las API.',
+  'lynx.settings.voice.listOnly': 'Voz solo aparece en la lista hasta portar /api/dictation. Sin ASR inventado.',
+
 };
 
 const fr: LynxDictionary = {
@@ -76,8 +120,23 @@ const fr: LynxDictionary = {
   'lynx.shell.chat.title': 'Chat',
   'lynx.shell.stub.body': 'Cette surface est un gabarit étiqueté. Elle n’est pas connectée aux API OpenChamber.',
   'lynx.shell.stub.openChat': 'Ouvrir la page de chat gabarit',
-  'lynx.shell.chat.stub': 'Le chat est une page poussée. La transcription LegendList 1.19 est une autre piste.',
-  'lynx.shell.settings.stub': 'Les éditeurs de réglages sont une autre piste. Seuls les identifiants sont listés ici.',
+  'lynx.shell.chat.stub': 'Le chat est une page poussée avec une chronologie LegendList 1.19.',
+  'lynx.shell.settings.stub': 'Réglages liste les 21 identifiants mobiles. Les corps peuvent être des gabarits.',
+  'lynx.chat.timeline.aria': 'Chronologie du chat',
+  'lynx.chat.timeline.loadError': 'Impossible de charger la transcription',
+  'lynx.chat.loadOlder': 'Charger plus ancien',
+  'lynx.chat.loadOlder.busy': 'Chargement…',
+  'lynx.chat.loadOlder.failed': 'Échec du chargement',
+  'lynx.chat.runtime.missing': 'Gabarit étiqueté : pas de runtime connecté — envoi/arrêt/file n’inventent pas le succès.',
+  'lynx.chat.composer.placeholder': 'Message',
+  'lynx.chat.composer.send': 'Envoyer',
+  'lynx.chat.composer.stop': 'Arrêter',
+  'lynx.chat.composer.queue': 'File',
+  'lynx.settings.search.placeholder': 'Rechercher réglages',
+  'lynx.settings.search.empty': 'Aucun réglage correspondant',
+  'lynx.settings.page.stub': 'Gabarit étiqueté : ce corps de réglages n’est pas encore branché aux API.',
+  'lynx.settings.voice.listOnly': 'Voix listée seulement jusqu’au port de /api/dictation. Pas d’ASR inventé.',
+
 };
 
 const ja: LynxDictionary = {
@@ -91,8 +150,23 @@ const ja: LynxDictionary = {
   'lynx.shell.chat.title': 'チャット',
   'lynx.shell.stub.body': 'この画面は明示されたスタブです。OpenChamber API には未接続です。',
   'lynx.shell.stub.openChat': 'スタブのチャットページを開く',
-  'lynx.shell.chat.stub': 'チャットはプッシュされた下位ページです。1.19 LegendList の会話リストは別トラックです。',
-  'lynx.shell.settings.stub': '設定エディタは別トラックです。ここではスラッグのみを列挙します。',
+  'lynx.shell.chat.stub': 'チャットは 1.19 LegendList タイムライン付きのプッシュページです。',
+  'lynx.shell.settings.stub': '設定はモバイル用 21 スラッグを列挙します。本文は明示スタブの場合があります。',
+  'lynx.chat.timeline.aria': 'チャットのタイムライン',
+  'lynx.chat.timeline.loadError': '会話を読み込めません',
+  'lynx.chat.loadOlder': 'さらに読み込む',
+  'lynx.chat.loadOlder.busy': '読み込み中…',
+  'lynx.chat.loadOlder.failed': '読み込みに失敗',
+  'lynx.chat.runtime.missing': '明示スタブ: 接続ランタイム未注入 — 送信/停止/キューは成功を偽装しません。',
+  'lynx.chat.composer.placeholder': 'メッセージ',
+  'lynx.chat.composer.send': '送信',
+  'lynx.chat.composer.stop': '停止',
+  'lynx.chat.composer.queue': 'キュー',
+  'lynx.settings.search.placeholder': '設定を検索',
+  'lynx.settings.search.empty': '一致する設定がありません',
+  'lynx.settings.page.stub': '明示スタブ: この設定本文はまだ API 未接続です。',
+  'lynx.settings.voice.listOnly': '音声は /api/dictation 移植まで一覧のみ。独自 ASR は作りません。',
+
 };
 
 const ko: LynxDictionary = {
@@ -106,8 +180,23 @@ const ko: LynxDictionary = {
   'lynx.shell.chat.title': '채팅',
   'lynx.shell.stub.body': '이 화면은 표시된 스텁입니다. OpenChamber API에 연결되지 않았습니다.',
   'lynx.shell.stub.openChat': '스텁 채팅 페이지 열기',
-  'lynx.shell.chat.stub': '채팅은 푸시된 하위 페이지입니다. 1.19 LegendList 대화 목록은 다른 트랙입니다.',
-  'lynx.shell.settings.stub': '설정 편집기는 다른 트랙입니다. 여기에는 슬러그만 나열됩니다.',
+  'lynx.shell.chat.stub': '채팅은 1.19 LegendList 타임라인이 있는 푸시 페이지입니다.',
+  'lynx.shell.settings.stub': '설정은 모바일 슬러그 21개를 나열합니다. 본문은 표시된 스텁일 수 있습니다.',
+  'lynx.chat.timeline.aria': '채팅 타임라인',
+  'lynx.chat.timeline.loadError': '대화를 불러올 수 없음',
+  'lynx.chat.loadOlder': '이전 불러오기',
+  'lynx.chat.loadOlder.busy': '불러오는 중…',
+  'lynx.chat.loadOlder.failed': '이전 불러오기 실패',
+  'lynx.chat.runtime.missing': '표시된 스텁: 연결 런타임 없음 — 전송/중지/대기열은 성공을 위장하지 않습니다.',
+  'lynx.chat.composer.placeholder': '메시지',
+  'lynx.chat.composer.send': '보내기',
+  'lynx.chat.composer.stop': '중지',
+  'lynx.chat.composer.queue': '대기열',
+  'lynx.settings.search.placeholder': '설정 검색',
+  'lynx.settings.search.empty': '일치하는 설정 없음',
+  'lynx.settings.page.stub': '표시된 스텁: 이 설정 본문은 아직 API에 연결되지 않았습니다.',
+  'lynx.settings.voice.listOnly': '음성은 /api/dictation 이식 전까지 목록만. 임의 ASR 없음.',
+
 };
 
 const pl: LynxDictionary = {
@@ -121,8 +210,23 @@ const pl: LynxDictionary = {
   'lynx.shell.chat.title': 'Czat',
   'lynx.shell.stub.body': 'Ten ekran to oznaczony szkielet. Nie jest podłączony do API OpenChamber.',
   'lynx.shell.stub.openChat': 'Otwórz szkieletową stronę czatu',
-  'lynx.shell.chat.stub': 'Czat to wypchnięta strona. Transkrypcja LegendList 1.19 to inny tor.',
-  'lynx.shell.settings.stub': 'Edytory ustawień to inny tor. Tutaj wypisane są tylko identyfikatory.',
+  'lynx.shell.chat.stub': 'Czat to wypchnięta strona z osią czasu LegendList 1.19.',
+  'lynx.shell.settings.stub': 'Ustawienia wypisują 21 mobilnych identyfikatorów. Treści mogą być oznaczonymi stubami.',
+  'lynx.chat.timeline.aria': 'Oś czasu czatu',
+  'lynx.chat.timeline.loadError': 'Nie udało się wczytać transkrypcji',
+  'lynx.chat.loadOlder': 'Wczytaj starsze',
+  'lynx.chat.loadOlder.busy': 'Wczytywanie…',
+  'lynx.chat.loadOlder.failed': 'Wczytywanie starszych nie powiodło się',
+  'lynx.chat.runtime.missing': 'Oznaczony stub: brak runtime połączenia — wyślij/stop/kolejka nie udają sukcesu.',
+  'lynx.chat.composer.placeholder': 'Wiadomość',
+  'lynx.chat.composer.send': 'Wyślij',
+  'lynx.chat.composer.stop': 'Stop',
+  'lynx.chat.composer.queue': 'Kolejka',
+  'lynx.settings.search.placeholder': 'Szukaj ustawień',
+  'lynx.settings.search.empty': 'Brak pasujących ustawień',
+  'lynx.settings.page.stub': 'Oznaczony stub: ta treść ustawień nie jest jeszcze podłączona do API.',
+  'lynx.settings.voice.listOnly': 'Głos tylko na liście do czasu portu /api/dictation. Bez wymyślonego ASR.',
+
 };
 
 const ptBR: LynxDictionary = {
@@ -136,8 +240,23 @@ const ptBR: LynxDictionary = {
   'lynx.shell.chat.title': 'Chat',
   'lynx.shell.stub.body': 'Esta superfície é um stub rotulado. Não está conectada às APIs do OpenChamber.',
   'lynx.shell.stub.openChat': 'Abrir a página de chat stub',
-  'lynx.shell.chat.stub': 'O chat é uma página empurrada. A transcrição LegendList 1.19 é outra trilha.',
-  'lynx.shell.settings.stub': 'Os editores de configurações são outra trilha. Aqui só listamos os slugs.',
+  'lynx.shell.chat.stub': 'O chat é uma página empurrada com linha do tempo LegendList 1.19.',
+  'lynx.shell.settings.stub': 'Ajustes lista os 21 slugs móveis. Corpos podem ser stubs rotulados.',
+  'lynx.chat.timeline.aria': 'Linha do tempo do chat',
+  'lynx.chat.timeline.loadError': 'Não foi possível carregar a transcrição',
+  'lynx.chat.loadOlder': 'Carregar anteriores',
+  'lynx.chat.loadOlder.busy': 'Carregando…',
+  'lynx.chat.loadOlder.failed': 'Falha ao carregar anteriores',
+  'lynx.chat.runtime.missing': 'Stub rotulado: sem runtime de conexão — enviar/parar/fila não fingem sucesso.',
+  'lynx.chat.composer.placeholder': 'Mensagem',
+  'lynx.chat.composer.send': 'Enviar',
+  'lynx.chat.composer.stop': 'Parar',
+  'lynx.chat.composer.queue': 'Fila',
+  'lynx.settings.search.placeholder': 'Buscar ajustes',
+  'lynx.settings.search.empty': 'Nenhum ajuste correspondente',
+  'lynx.settings.page.stub': 'Stub rotulado: este corpo de ajustes ainda não está ligado às APIs.',
+  'lynx.settings.voice.listOnly': 'Voz só na lista até portar /api/dictation. Sem ASR inventado.',
+
 };
 
 const uk: LynxDictionary = {
@@ -151,8 +270,23 @@ const uk: LynxDictionary = {
   'lynx.shell.chat.title': 'Чат',
   'lynx.shell.stub.body': 'Ця поверхня — позначена заглушка. Вона не підключена до API OpenChamber.',
   'lynx.shell.stub.openChat': 'Відкрити заглушку чату',
-  'lynx.shell.chat.stub': 'Чат — це виштовхнута сторінка. Транскрипт LegendList 1.19 — інша гілка.',
-  'lynx.shell.settings.stub': 'Редактори налаштувань — інша гілка. Тут лише перелік ідентифікаторів.',
+  'lynx.shell.chat.stub': 'Чат — виштовхнута сторінка з шкалою часу LegendList 1.19.',
+  'lynx.shell.settings.stub': 'Налаштування перелічують 21 мобільний ідентифікатор. Тіла можуть бути позначеними заглушками.',
+  'lynx.chat.timeline.aria': 'Шкала часу чату',
+  'lynx.chat.timeline.loadError': 'Не вдалося завантажити транскрипт',
+  'lynx.chat.loadOlder': 'Завантажити старіші',
+  'lynx.chat.loadOlder.busy': 'Завантаження…',
+  'lynx.chat.loadOlder.failed': 'Не вдалося завантажити старіші',
+  'lynx.chat.runtime.missing': 'Позначена заглушка: немає runtime з’єднання — надсилання/стоп/черга не імітують успіх.',
+  'lynx.chat.composer.placeholder': 'Повідомлення',
+  'lynx.chat.composer.send': 'Надіслати',
+  'lynx.chat.composer.stop': 'Зупинити',
+  'lynx.chat.composer.queue': 'Черга',
+  'lynx.settings.search.placeholder': 'Пошук налаштувань',
+  'lynx.settings.search.empty': 'Немає відповідних налаштувань',
+  'lynx.settings.page.stub': 'Позначена заглушка: це тіло налаштувань ще не підключене до API.',
+  'lynx.settings.voice.listOnly': 'Голос лише в списку до порту /api/dictation. Без вигаданого ASR.',
+
 };
 
 const zhCN: LynxDictionary = {
@@ -166,8 +300,23 @@ const zhCN: LynxDictionary = {
   'lynx.shell.chat.title': '聊天',
   'lynx.shell.stub.body': '此界面是已标注的占位。尚未接入 OpenChamber API。',
   'lynx.shell.stub.openChat': '打开占位聊天页',
-  'lynx.shell.chat.stub': '聊天是推入的二级页。1.19 LegendList 会话列表由另一条轨道实现。',
-  'lynx.shell.settings.stub': '设置编辑器由另一条轨道实现。这里只列出页面标识。',
+  'lynx.shell.chat.stub': '聊天是带有 1.19 LegendList 时间线的推入页。',
+  'lynx.shell.settings.stub': '设置列出全部 21 个移动端页面标识。正文可以是已标注占位。',
+  'lynx.chat.timeline.aria': '聊天时间线',
+  'lynx.chat.timeline.loadError': '无法加载会话记录',
+  'lynx.chat.loadOlder': '加载更早消息',
+  'lynx.chat.loadOlder.busy': '加载中…',
+  'lynx.chat.loadOlder.failed': '加载更早消息失败',
+  'lynx.chat.runtime.missing': '已标注占位：未注入连接运行时 — 发送/停止/排队不会伪装成功。',
+  'lynx.chat.composer.placeholder': '消息',
+  'lynx.chat.composer.send': '发送',
+  'lynx.chat.composer.stop': '停止',
+  'lynx.chat.composer.queue': '排队',
+  'lynx.settings.search.placeholder': '搜索设置',
+  'lynx.settings.search.empty': '没有匹配的设置',
+  'lynx.settings.page.stub': '已标注占位：此设置正文尚未接入 OpenChamber API。',
+  'lynx.settings.voice.listOnly': '语音在移植现有 /api/dictation 之前仅列出。不发明 ASR。',
+
 };
 
 const zhTW: LynxDictionary = {
@@ -181,8 +330,23 @@ const zhTW: LynxDictionary = {
   'lynx.shell.chat.title': '聊天',
   'lynx.shell.stub.body': '此畫面是已標示的占位。尚未接上 OpenChamber API。',
   'lynx.shell.stub.openChat': '開啟占位聊天頁',
-  'lynx.shell.chat.stub': '聊天是推入的次級頁。1.19 LegendList 對話列表由另一條軌道實作。',
-  'lynx.shell.settings.stub': '設定編輯器由另一條軌道實作。這裡只列出頁面識別碼。',
+  'lynx.shell.chat.stub': '聊天是帶有 1.19 LegendList 時間軸的推入頁。',
+  'lynx.shell.settings.stub': '設定列出全部 21 個行動版頁面識別碼。本文可以是已標示占位。',
+  'lynx.chat.timeline.aria': '聊天時間軸',
+  'lynx.chat.timeline.loadError': '無法載入對話紀錄',
+  'lynx.chat.loadOlder': '載入更早訊息',
+  'lynx.chat.loadOlder.busy': '載入中…',
+  'lynx.chat.loadOlder.failed': '載入更早訊息失敗',
+  'lynx.chat.runtime.missing': '已標示占位：未注入連線執行環境 — 傳送/停止/佇列不會偽裝成功。',
+  'lynx.chat.composer.placeholder': '訊息',
+  'lynx.chat.composer.send': '傳送',
+  'lynx.chat.composer.stop': '停止',
+  'lynx.chat.composer.queue': '佇列',
+  'lynx.settings.search.placeholder': '搜尋設定',
+  'lynx.settings.search.empty': '沒有符合的設定',
+  'lynx.settings.page.stub': '已標示占位：此設定本文尚未接上 OpenChamber API。',
+  'lynx.settings.voice.listOnly': '語音在移植現有 /api/dictation 之前僅列出。不發明 ASR。',
+
 };
 
 export const LYNX_MESSAGES: Record<LynxLocale, LynxDictionary> = {

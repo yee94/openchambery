@@ -22,7 +22,7 @@ Rules:
 1. Chat is a **pushed** secondary page. It is never a fifth dock item. The dock / host tab bar **hides** on chat, draft, assistant conversation, and instances.
 2. Do not ship Mode C (Capacitor WebView dock + optional native overlay). Lynx does not need `openchamber.iosNativeUi`.
 3. A binary that draws both a host `UITabBar` **and** a Lynx floating dock has failed IA.
-4. LegendList messages, Settings editors, FCM, and full CI matrices are **other tracks**.
+4. LegendList-semantics timeline + Settings home (21 slugs) are in this package; rich turn cards, settings editors, FCM, and full CI matrices remain later.
 
 Code: `src/host/embedding.ts`. Native mirrors: `host/ios/`, `host/android/`.
 
@@ -37,7 +37,7 @@ TypeScript client layer (not pixel UI). Maps to Cap/UI routes under `packages/ui
 - Session-index GET / pin / lookup keyed by runtime identity, with failure ≠ empty.
 - Projects-home projection (API/types, not UI polish).
 
-Does **not** own: Nearby / Bonjour, native ASR, FCM/APNs registration, E2EE relay tunnel implementation (inject `openRelayTunnel`), chat LegendList, Settings editors, CI.
+Does **not** own: Nearby / Bonjour, native ASR, FCM/APNs registration, E2EE relay tunnel implementation (inject `openRelayTunnel`), rich chat cards / SSE, Settings **editors**, CI.
 
 ### Adapters the host must inject
 
@@ -71,7 +71,7 @@ Four roots only: **Projects**, **Assistant**, **Scheduled**, **Settings**. Label
 
 Secondary kinds (`chat` / `draft` / `assistant` / `instances`) push above the dock. Root tab content in this slice is a **labeled stub** — not wired to pixel UI yet (session-index data path exists under `src/session-index/`).
 
-Chat list engine, when that track lands, is **1.19 LegendList** semantics. This package must not introduce the 1.18 TanStack Virtual split.
+Chat list engine is **1.19 LegendList** semantics (`src/chat`). This package must not introduce the 1.18 TanStack Virtual split.
 
 ## Glass (Lynx 3.8 `<blur-view>`)
 

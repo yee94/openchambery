@@ -107,3 +107,22 @@ export type {
   SessionIndexState,
   SessionIndexLookupHit,
 } from './session-index/types';
+
+export {
+  LYNX_CHAT_LIST_ENGINE,
+  resolveLynxTimelineListFlags,
+  createLynxComposerActions,
+  fetchSessionMessages,
+  promptAsync,
+  abortSession,
+  createEmptyTimelineState,
+  applyInitialPage,
+  beginLoadOlder,
+  applyOlderPage,
+} from './chat';
+export {
+  LYNX_SETTINGS_PAGE_METADATA,
+  groupLynxSettingsPages,
+  filterLynxSettingsPages,
+  getLynxSettingsPageMeta,
+} from './settings/metadata';

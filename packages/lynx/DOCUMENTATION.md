@@ -10,7 +10,8 @@ Lynx native phone shell + connect client for the `work/lynx-native` track.
 - Host embedding decision and host ↔ page bridge (`src/host/`)
 - Lynx 3.8 `<blur-view>` glass mapping and Android blur downgrade (`src/glass/`)
 - Lynx-local catalog for dock / stub copy (`src/i18n/`)
-- Mobile settings **slug list** (bodies stay stubs) (`src/settings/`)
+- Mobile settings **search + 21 slug rows + push stubs** (`src/settings/`)
+- Chat LegendList-semantics timeline + send/stop/queue hooks (`src/chat/`)
 - Native host embedding sources (`host/ios/`, `host/android/`)
 
 ### Connect / pairing / session-index
@@ -27,14 +28,14 @@ Product behavior copied from Capacitor + shared UI (`packages/ui/src/apps/mobile
 | Session list | `GET /api/openchamber/session-index` | `loadSessionIndexSnapshot` |
 | Session by id | `GET /api/openchamber/session-index/session/:id` | `lookupSessionIndexById` |
 | Pin / unpin | `POST` / `DELETE` `…/session/:id/pin` | `pinSession` / `unpinSession` |
-| Official OpenCode session CRUD | `@opencode-ai/sdk/v2` | **not this package** — chat track |
+| Official OpenCode session prompt/abort/messages | `@opencode-ai/sdk/v2` `/session/:id/{prompt_async,abort,message}` | `src/chat/sessionApi.ts` |
 
 Do not invent `/api/nearby/redeem` or Bonjour browse.
 
 ## Does not own
 
-- Chat transcript (LegendList 1.19 — other track; TanStack 1.18 forbidden)
-- Settings editors (slug list only)
+- Rich chat turn cards / SSE live tail / Files / Changes / MCP sheets / native IME
+- Settings **editors** (home + labeled stub bodies only in this slice)
 - Push / FCM / Live Activity / share / Capgo
 - Capacitor `packages/mobile` and shared React `packages/ui` runtimes
 - Nearby / Bonjour browse

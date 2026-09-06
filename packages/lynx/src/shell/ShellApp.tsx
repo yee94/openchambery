@@ -1,7 +1,9 @@
 import { useState } from 'react';
 
+import { LynxChatScreen } from '../chat/ChatScreen';
 import { shouldPaintLynxDock, type LynxHostGlobalProps } from '../host/embedding';
 import { LynxPage, LynxView } from '../lynx-elements';
+import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { cssVar } from '../theme/tokens';
 import { LynxDock } from './Dock';
 import {
@@ -19,6 +21,8 @@ import type { LynxTabId } from './tabs';
 export type LynxShellAppProps = {
   host: LynxHostGlobalProps;
   initialState?: LynxNavigationState;
+  /** Optional connect runtime for chat send/stop/queue + transcript fetch. */
+  runtimeFetch?: LynxRuntimeFetch | null;
 };
 
 function RootTab({
@@ -42,7 +46,11 @@ function RootTab({
   }
 }
 
-export function LynxShellApp({ host, initialState = INITIAL_LYNX_NAVIGATION_STATE }: LynxShellAppProps) {
+export function LynxShellApp({
+  host,
+  initialState = INITIAL_LYNX_NAVIGATION_STATE,
+  runtimeFetch = null,
+}: LynxShellAppProps) {
   const [navigation, setNavigation] = useState(initialState);
   const fullPageAutoGlassSkin = host.chromeOwner === 'lynx';
   const dockVisible = shouldPaintLynxDock({
@@ -72,6 +80,9 @@ export function LynxShellApp({ host, initialState = INITIAL_LYNX_NAVIGATION_STAT
     }));
   };
 
+  const secondary = navigation.secondary;
+  const chatRoute = secondary?.kind === 'chat' ? secondary.routes.at(-1) : null;
+
   return (
     <LynxPage
       auto-height
@@ -81,10 +92,18 @@ export function LynxShellApp({ host, initialState = INITIAL_LYNX_NAVIGATION_STAT
       }}
     >
       <LynxView style={{ flexGrow: 1 }}>
-        {navigation.secondary ? (
+        {chatRoute ? (
+          <LynxChatScreen
+            locale={host.locale}
+            sessionId={chatRoute.sessionId}
+            directory={chatRoute.directory}
+            onBack={closeSecondary}
+            runtimeFetch={runtimeFetch}
+          />
+        ) : secondary ? (
           <SecondaryStubPage
             locale={host.locale}
-            kind={navigation.secondary.kind}
+            kind={secondary.kind}
             onBack={closeSecondary}
           />
         ) : (

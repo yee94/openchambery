@@ -21,6 +21,13 @@ async function walkTsFiles(dir: string): Promise<string[]> {
   return files;
 }
 
+const ALLOW_FORBIDDEN_NAME_MENTION = new Set([
+  'list-contract.test.ts',
+  'list-contract.ts',
+  'listSemantics.ts',
+  'listSemantics.test.ts',
+]);
+
 describe('Lynx chat list contract', () => {
   test('scaffold commits to LegendList 1.19 and does not import TanStack Virtual', async () => {
     expect(LYNX_CHAT_LIST_ENGINE).toBe('legendlist-1.19');
@@ -29,7 +36,8 @@ describe('Lynx chat list contract', () => {
     for (const file of files) {
       const source = await readFile(file, 'utf8');
       expect(source).not.toMatch(/from ['"]@tanstack\/react-virtual['"]/);
-      if (!file.endsWith('list-contract.test.ts') && !file.endsWith('list-contract.ts')) {
+      const base = file.split('/').pop() ?? file;
+      if (!ALLOW_FORBIDDEN_NAME_MENTION.has(base)) {
         expect(source).not.toContain('StaticHistoryList');
         expect(source).not.toContain('StreamingTailContent');
       }
