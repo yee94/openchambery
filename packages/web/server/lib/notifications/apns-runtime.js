@@ -590,7 +590,7 @@ export const createApnsRuntime = (deps) => {
       teamId,
       p8,
       bundleId: bundleId || DEFAULT_BUNDLE_ID,
-      environment: environment === 'production' ? 'production' : 'sandbox',
+      environment: (environment || 'production') === 'production' ? 'production' : 'sandbox',
     };
   };
 
@@ -710,7 +710,7 @@ export const createApnsRuntime = (deps) => {
     liveActivityUnregisterUrl: url.replace(/\/send$/, '/unregister-live-activity-token'),
     liveActivitySendUrl: url.replace(/\/send$/, '/live-activity'),
     environment:
-      (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || 'sandbox').toLowerCase() === 'production'
+      (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || 'production').toLowerCase() === 'production'
         ? 'production'
         : 'sandbox',
   });
