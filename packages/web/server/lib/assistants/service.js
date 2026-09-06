@@ -5,6 +5,24 @@ import path from 'node:path';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 import { reduceBackfillState } from './history-state.js';
+import { getWorktrees as defaultListWorktrees } from '../git/service.js';
+import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
+import {
+  CONTACT_SETTLE_TEXT,
+  contactHistoryForLlm,
+  deleteContactMessages,
+  ensureContactSchema,
+  insertContactMessage,
+  listContactMessages,
+  listInFlightWatches,
+  listWatchesBySession,
+  nextContactOrdinal,
+  updateSessionCardStatus,
+  upsertContactWatch,
+} from './contact-store.js';
+import { ASSIGNED_SESSION_FALLBACK_BUBBLE, confirmBubbleAfterContactReset, createContactTools } from './contact-tools.js';
+import { AssignError, ASSIGN_CODES, assignSession, resolveAssignDirectory } from './assign.js';
+import { runContactTurn as defaultRunContactTurn } from './harness.js';
 
 const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 11;
@@ -20,8 +38,13 @@ const json = (value) => JSON.stringify(value);
 const parse = (value) => JSON.parse(value);
 const hash = (value) => crypto.createHash('sha256').update(json(value)).digest('hex');
 const id = () => crypto.randomUUID();
-export class AssistantError extends Error { constructor(code) { super(code); this.code = code; } }
-const fail = (code) => { throw new AssistantError(code); };
+export class AssistantError extends Error {
+  constructor(code, message) {
+    super(typeof message === 'string' && message.trim() ? message.trim() : code);
+    this.code = code;
+  }
+}
+const fail = (code, message) => { throw new AssistantError(code, message); };
 const string = (value, max = 10_000, required = false) => { if (value == null && !required) return null; if (typeof value !== 'string' || value.length > max || (required && !value.trim())) fail('validation_error'); return value.trim(); };
 const nonEmptyString = (value, max = 10_000) => typeof value === 'string' && value.length > 0 && value.length <= max;
 const isMissing = (result) => result?.error?.status === 404 || result?.error?.statusCode === 404 || result?.error?.code === 'not_found' || result?.status === 404;
@@ -41,7 +64,7 @@ const isTransientMessagesFailure = (result, error) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -62,6 +85,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     CREATE TABLE IF NOT EXISTS assistant_message_part_mirror (assistant_id TEXT NOT NULL, session_id TEXT NOT NULL, message_id TEXT NOT NULL, part_id TEXT NOT NULL, part_json TEXT NOT NULL, ordinal INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (assistant_id, session_id, message_id, part_id));
     CREATE INDEX IF NOT EXISTS assistant_message_part_mirror_message ON assistant_message_part_mirror(assistant_id, session_id, message_id, ordinal, part_id);
     CREATE TABLE IF NOT EXISTS assistant_message_backfill (assistant_id TEXT NOT NULL, session_id TEXT NOT NULL, cursor TEXT, complete INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY (assistant_id, session_id));`);
+  ensureContactSchema(db);
   const historyColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_session_history')").all().map((column) => column.name));
   if (!historyColumns.has('directory')) db.exec('ALTER TABLE assistant_session_history ADD COLUMN directory TEXT');
   const mirrorColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_message_mirror')").all().map((column) => column.name));
@@ -106,7 +130,33 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
     db.prepare("UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND COALESCE(json_extract(info_json,'$.role'),'')<>'user' AND COALESCE(json_extract(info_json,'$.openchamberAssistantAdmission'),0)<>1").run(assistantID, sessionID);
   };
-  const output = (row) => ({ id: row.assistant_id, revision: row.revision, enabled: Boolean(row.enabled), name: row.name, defaultPrompt: row.default_prompt, workspacePath: row.workspace_path, managedWorkspacePath: workspace(null, row.assistant_id, true), effectiveWorkspacePath: effectiveWorkspace(row), providerID: row.provider_id, modelID: row.model_id, agent: row.agent, variant: row.variant, mode: row.mode === 'stateless' ? 'stateless' : 'continuous', sessionID: row.current_session_id, sessionGeneration: row.session_generation, historySessionIDs: historyIDs(row.assistant_id), historySessionCount: historyCount(row.assistant_id), createdAt: row.created_at, updatedAt: row.updated_at, tombstoneAt: row.tombstone_at });
+  const output = (row) => {
+    const watches = listInFlightWatches(db, row.assistant_id);
+    return {
+      id: row.assistant_id,
+      revision: row.revision,
+      enabled: Boolean(row.enabled),
+      name: row.name,
+      defaultPrompt: row.default_prompt,
+      workspacePath: row.workspace_path,
+      managedWorkspacePath: workspace(null, row.assistant_id, true),
+      effectiveWorkspacePath: effectiveWorkspace(row),
+      providerID: row.provider_id,
+      modelID: row.model_id,
+      agent: row.agent,
+      variant: row.variant,
+      mode: row.mode === 'stateless' ? 'stateless' : 'continuous',
+      sessionID: row.current_session_id,
+      sessionGeneration: row.session_generation,
+      historySessionIDs: historyIDs(row.assistant_id),
+      historySessionCount: historyCount(row.assistant_id),
+      assignedSessionIDs: watches.map((watch) => watch.sessionID),
+      working: watches.some((watch) => watch.status === 'busy'),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      tombstoneAt: row.tombstone_at,
+    };
+  };
   const binding = (row) => ({ sessionID: row.current_session_id, directory: effectiveWorkspace(row), sessionGeneration: row.session_generation });
   const client = () => clientFactory ? clientFactory() : createOpencodeClient({ baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''), headers: getOpenCodeAuthHeaders() });
   const metadata = (row) => ({ openchamber: { assistant: { assistantID: row.assistant_id, name: row.name } } });
@@ -235,6 +285,134 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID);
     db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
   };
+  const eventSessionID = (properties) => {
+    const sessionID = properties?.sessionID || properties?.sessionId || properties?.info?.sessionID || properties?.info?.sessionId;
+    return nonEmptyString(sessionID) ? sessionID : '';
+  };
+  const settleStatusFromEvent = (payload, properties) => {
+    if (payload.type === 'session.error') return 'error';
+    if (payload.type === 'question.asked' || payload.type === 'permission.asked') return 'question';
+    if (payload.type === 'session.idle') return 'complete';
+    if (payload.type === 'session.status') {
+      const statusType = typeof properties.status?.type === 'string' ? properties.status.type : typeof properties.info?.type === 'string' ? properties.info.type : '';
+      if (statusType === 'busy' || statusType === 'retry') return 'busy';
+      if (statusType === 'idle') return 'complete';
+    }
+    return null;
+  };
+  const reportAssignedSession = (sessionID, status) => {
+    const watches = listWatchesBySession(db, sessionID);
+    if (watches.length === 0) return false;
+    let changed = false;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const watch of watches) {
+        if (watch.status === status) continue;
+        // session.idle / status idle follow session.error. Do not rewrite 失败 as 完成.
+        if (status === 'complete' && watch.status === 'error') continue;
+        updateSessionCardStatus(db, { assistantID: watch.assistantID, sessionID, status });
+        upsertContactWatch(db, {
+          assistantID: watch.assistantID,
+          sessionID,
+          directory: watch.directory,
+          status,
+          updatedAt: now(),
+        });
+        const settleText = CONTACT_SETTLE_TEXT[status];
+        const settleID = `settle_${watch.assistantID}_${sessionID}_${status}`;
+        if (settleText && !db.prepare('SELECT 1 AS ok FROM assistant_contact_message WHERE message_id=?').get(settleID)) {
+          insertContactMessage(db, {
+            messageID: settleID,
+            assistantID: watch.assistantID,
+            role: 'assistant',
+            turnID: `settle:${sessionID}`,
+            bubbleIndex: 0,
+            createdAt: now(),
+            ordinal: nextContactOrdinal(db, watch.assistantID),
+            status: 'complete',
+            parts: [{ type: 'text', text: settleText }],
+          });
+        }
+        changed = true;
+      }
+      if (changed) bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return changed;
+  };
+  const sessionStatusType = (session) => {
+    if (typeof session?.status?.type === 'string') return session.status.type;
+    if (typeof session?.status === 'string') return session.status;
+    if (typeof session?.type === 'string') return session.type;
+    return '';
+  };
+  const lastAssistantInfo = (messages) => {
+    if (!Array.isArray(messages)) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const info = messages[index]?.info ?? messages[index];
+      if (info?.role === 'assistant') return info;
+    }
+    return null;
+  };
+  const inferAssignedSessionSettleStatus = (getResult, messagesResult) => {
+    if (isMissing(getResult)) return 'complete';
+    if (getResult?.error) return null;
+    const session = getResult?.data;
+    if (session?.error) return 'error';
+    const statusType = sessionStatusType(session);
+    if (statusType === 'busy' || statusType === 'retry') return null;
+    if (isMissing(messagesResult)) return 'complete';
+    const assistant = messagesResult && !messagesResult.error ? lastAssistantInfo(messagesResult.data) : null;
+    if (assistant?.error) return 'error';
+    if (statusType === 'idle' || session?.time?.completed) return 'complete';
+    if (assistant?.time?.completed) return 'complete';
+    return null;
+  };
+  const resolveWatchDirectory = (watch) => {
+    if (nonEmptyString(watch.directory)) {
+      try { return workspace(watch.directory, watch.assistantID); } catch { /* Fall through to the assistant workspace. */ }
+    }
+    const row = assistant(watch.assistantID);
+    if (!row || row.tombstone_at) return null;
+    try { return effectiveWorkspace(row); } catch { return null; }
+  };
+  const reconcileInFlightWatches = async () => {
+    if (closed) return;
+    let watches;
+    try {
+      watches = listInFlightWatches(db);
+    } catch {
+      return;
+    }
+    for (const watch of watches) {
+      if (closed) return;
+      try {
+        const directory = resolveWatchDirectory(watch);
+        if (!directory) continue;
+        let getResult;
+        try {
+          getResult = await client().session.get({ sessionID: watch.sessionID, directory });
+        } catch {
+          continue;
+        }
+        if (closed) return;
+        let messagesResult = null;
+        try {
+          messagesResult = await client().session.messages({ sessionID: watch.sessionID, directory, limit: 100 });
+        } catch {
+          messagesResult = null;
+        }
+        if (closed) return;
+        const status = inferAssignedSessionSettleStatus(getResult, messagesResult);
+        if (status) reportAssignedSession(watch.sessionID, status);
+      } catch {
+        // One failed watch must not block unrelated watches.
+      }
+    }
+  };
   const processEvent = (event) => {
     const payload = event?.payload?.payload ?? event?.payload ?? event;
     const properties = payload?.properties;
@@ -260,16 +438,24 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').run(assistantID, sessionID, messageID, partID); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateMessageCoverage(assistantID, sessionID, messageID); } return assistants.length > 0;
     }
     if (payload.type === 'session.idle' || payload.type === 'session.error') {
-      const sessionID = properties.sessionID;
-      if (!nonEmptyString(sessionID)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+      const sessionID = eventSessionID(properties);
+      if (!sessionID) return false;
+      const reported = reportAssignedSession(sessionID, settleStatusFromEvent(payload, properties));
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
     }
     if (payload.type === 'session.status') {
-      const sessionID = properties.sessionID;
-      const statusType = typeof properties.status?.type === 'string' ? properties.status.type : typeof properties.info?.type === 'string' ? properties.info.type : '';
-      if (!nonEmptyString(sessionID) || !nonEmptyString(statusType)) return false;
-      if (statusType !== 'busy' && statusType !== 'retry' && statusType !== 'idle') return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+      const sessionID = eventSessionID(properties);
+      const status = settleStatusFromEvent(payload, properties);
+      if (!sessionID || !status) return false;
+      const reported = reportAssignedSession(sessionID, status);
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+    }
+    if (payload.type === 'question.asked' || payload.type === 'permission.asked') {
+      const sessionID = eventSessionID(properties);
+      if (!sessionID) return false;
+      return reportAssignedSession(sessionID, 'question');
     }
     return false;
   };
@@ -407,7 +593,348 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (promptAdmitted(result)) mirrorAdmittedUserMessage(row, sessionID, messageID, parts, config);
     return { result, binding: binding(row) };
   };
-  const send = async (assistantID, input) => { if (!plainObject(input)) fail('validation_error'); validateParts(input.parts); const messageID = string(input.messageID, 256, true); const row = active(assistantID); if (row.mode !== 'stateless' && (input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation)) fail('revision_conflict'); const submit = async () => { const latest = active(assistantID); const target = await prepareExecutionBinding(latest); const sent = await sendWithConfig({ row: target, sessionID: target.current_session_id, directory: effectiveWorkspace(target), config: configuration(target), parts: input.parts, messageID, restore: target.mode !== 'stateless' }); if (!promptAdmitted(sent.result)) fail('upstream_error'); return { binding: sent.binding, messageID, admitted: true }; }; return row.mode === 'stateless' ? inStatelessLane(assistantID, submit) : submit(); };
+  const extractUserText = (input) => {
+    if (typeof input.text === 'string' && input.text.trim()) return input.text.trim();
+    if (!Array.isArray(input.parts)) return '';
+    const text = input.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n').trim();
+    if (text) return text;
+    return input.parts.some((part) => part?.type === 'file') ? '[attachment]' : '';
+  };
+  const userContactParts = (input, userText) => {
+    const parts = [];
+    if (Array.isArray(input.parts)) {
+      for (const part of input.parts) {
+        const parsed = parseContactPart(part);
+        if (parsed?.type === 'text' && parsed.text.trim()) parts.push({ type: 'text', text: parsed.text });
+        if (parsed?.type === 'file') parts.push(parsed);
+      }
+    }
+    if (parts.length === 0 && userText) parts.push({ type: 'text', text: userText });
+    return parts;
+  };
+  const persistContactTurn = (assistantID, { userMessageID, userText, userParts, bubbles, cards = [], turnID }) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      let ordinal = nextContactOrdinal(db, assistantID);
+      insertContactMessage(db, {
+        messageID: userMessageID,
+        assistantID,
+        role: 'user',
+        turnID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal,
+        status: 'complete',
+        parts: Array.isArray(userParts) && userParts.length > 0 ? userParts : [{ type: 'text', text: userText }],
+      });
+      bubbles.forEach((text, index) => {
+        ordinal += 1;
+        const bubbleID = `${userMessageID}:bubble:${index + 1}`;
+        insertContactMessage(db, {
+          messageID: bubbleID,
+          assistantID,
+          role: 'assistant',
+          turnID,
+          bubbleIndex: index,
+          createdAt: now(),
+          ordinal,
+          status: 'complete',
+          parts: [{ type: 'text', text }],
+        });
+      });
+      cards.forEach((cardInput, index) => {
+        const card = parseContactCard({ type: 'card', cardType: cardInput?.cardType || 'session', ...cardInput });
+        if (!card) return;
+        ordinal += 1;
+        insertContactMessage(db, {
+          messageID: `${userMessageID}:card:${index + 1}`,
+          assistantID,
+          role: 'assistant',
+          turnID,
+          bubbleIndex: 0,
+          createdAt: now(),
+          ordinal,
+          status: 'complete',
+          parts: [card],
+        });
+        if (card.cardType === 'session' && card.sessionID) {
+          upsertContactWatch(db, {
+            assistantID,
+            sessionID: card.sessionID,
+            directory: card.directory,
+            status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
+            updatedAt: now(),
+          });
+        }
+      });
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  const assignWork = (row, params) => assignSession({
+    ...params,
+    assistant: output(row),
+    defaultProjectPath: row.workspace_path,
+    allowedRoots: getAllowedRoots(),
+    managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
+    listWorktrees,
+    createSession: (created) => client().session.create(created),
+    promptExisting: (prompted) => client().session.promptAsync(prompted),
+    messageID: params?.messageID || `msg_assign_${id()}`,
+  });
+  const matchRegisteredProject = async (directory) => {
+    const projects = await listProjects();
+    const resolved = path.resolve(directory);
+    let real = resolved;
+    try { real = fs.realpathSync(resolved); } catch { /* Compare the resolved path when realpath is unavailable. */ }
+    const contained = (candidate, root) => candidate === root || candidate.startsWith(`${root}${path.sep}`);
+    for (const project of Array.isArray(projects) ? projects : []) {
+      if (typeof project?.id !== 'string' || typeof project?.path !== 'string') continue;
+      let projectPath = path.resolve(project.path);
+      try { projectPath = fs.realpathSync(projectPath); } catch { /* Keep the resolved project path. */ }
+      if (projectPath === real || contained(real, projectPath)) return { id: project.id, path: projectPath };
+    }
+    return null;
+  };
+  const scheduleWork = async (row, params) => {
+    if (typeof upsertScheduledTask !== 'function') {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Scheduling a task is unavailable.');
+    }
+    const projectDirectory = resolveAssignDirectory({
+      projectPath: params?.projectPath,
+      directory: params?.directory,
+      branch: null,
+      allowedRoots: getAllowedRoots(),
+      managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
+      defaultProjectPath: row.workspace_path,
+    });
+    const project = await matchRegisteredProject(projectDirectory);
+    if (!project) {
+      throw new AssignError(
+        ASSIGN_CODES.PROJECT_REQUIRED,
+        'Choose a registered project path. Several projects are configured; schedule_task cannot guess.',
+      );
+    }
+    const kind = typeof params?.kind === 'string' && params.kind.trim() ? params.kind.trim() : 'daily';
+    const weekdays = Array.isArray(params?.weekdays)
+      ? params.weekdays
+      : typeof params?.weekdays === 'string'
+        ? params.weekdays.split(',').map((item) => Number(item.trim())).filter((item) => Number.isInteger(item))
+        : undefined;
+    const upserted = await upsertScheduledTask(project.id, {
+      name: params.name,
+      enabled: true,
+      schedule: {
+        kind,
+        ...(params.time ? { time: params.time } : {}),
+        ...(params.timezone ? { timezone: params.timezone } : {}),
+        ...(params.date ? { date: params.date } : {}),
+        ...(weekdays && weekdays.length > 0 ? { weekdays } : {}),
+        ...(params.cron ? { cron: params.cron } : {}),
+      },
+      execution: {
+        prompt: params.prompt,
+        providerID: params.providerID,
+        modelID: params.modelID,
+      },
+    });
+    if (typeof syncScheduledTaskProject === 'function') {
+      try { await syncScheduledTaskProject(project.id); } catch { /* Card persistence does not depend on scheduler sync. */ }
+    }
+    return {
+      task: upserted?.task,
+      taskID: upserted?.task?.id,
+      projectID: project.id,
+      name: upserted?.task?.name || params.name,
+      kind: upserted?.task?.schedule?.kind || kind,
+      time: upserted?.task?.schedule?.time || upserted?.task?.schedule?.times?.[0] || params.time || null,
+      timezone: upserted?.task?.schedule?.timezone || params.timezone || null,
+      prompt: upserted?.task?.execution?.prompt || params.prompt,
+    };
+  };
+  const send = async (assistantID, input) => {
+    if (!plainObject(input)) fail('validation_error');
+    if (input.parts !== undefined) validateParts(input.parts);
+    const messageID = string(input.messageID, 256, true);
+    const userText = extractUserText(input);
+    if (!userText) fail('validation_error');
+    const userParts = userContactParts(input, userText);
+    const row = active(assistantID);
+    // Contact turns are OpenChamber-owned. Binding mismatch no longer gates send;
+    // OpenCode session history is not the user-visible queue.
+    const history = contactHistoryForLlm(db, assistantID);
+    if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
+    const assignedCards = [];
+    let contactResetThisTurn = false;
+    const tools = createContactTools({
+      assignWork: (params) => assignWork(row, params),
+      createAssistant: (input) => createAssistant(input),
+      scheduleTask: (params) => scheduleWork(row, params),
+      deliverPeerMessage: (input) => deliverPeerMessage(row.assistant_id, input),
+      resetContact: () => {
+        const result = resetContact(row.assistant_id);
+        contactResetThisTurn = true;
+        return result;
+      },
+      listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
+      currentAssistant: output(row),
+      onCard: (card) => assignedCards.push(card),
+    });
+    let generated;
+    try {
+      generated = await runContactTurn({
+        assistant: output(row),
+        history,
+        userText,
+        userParts,
+        createChatCompletion,
+        tools,
+      });
+    } catch (error) {
+      if (error instanceof AssistantError) throw error;
+      const detail = typeof error?.message === 'string' && error.message.trim() ? error.message : undefined;
+      if (error?.code === 'no_provider') fail('no_provider', detail);
+      fail('upstream_error', detail);
+    }
+    const resetThisTurn = contactResetThisTurn || generated?.reset === true;
+    const bubbles = resetThisTurn
+      ? confirmBubbleAfterContactReset(generated?.bubbles)
+      : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
+    const cards = resetThisTurn
+      ? []
+      : [
+        ...assignedCards,
+        ...(Array.isArray(generated?.cards) ? generated.cards : []),
+      ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
+    if (bubbles.length === 0 && cards.length === 0) fail('upstream_error');
+    persistContactTurn(row.assistant_id, {
+      userMessageID: messageID,
+      userText,
+      userParts,
+      bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
+      cards,
+      turnID: messageID,
+    });
+    return { binding: binding(row), messageID, admitted: true };
+  };
+  const contactMessages = (assistantID, query = {}) => {
+    editable(assistantID);
+    const limit = query.limit == null ? 50 : Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail('validation_error');
+    return listContactMessages(db, assistantID, { before: query.before, limit });
+  };
+  /**
+   * Clear this assistant's OpenChamber contact transcript (messages, parts,
+   * watches). Does not call OpenCode session/new — that is worker binding.
+   */
+  const resetContact = (assistantID) => {
+    const row = editable(assistantID);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      deleteContactMessages(db, row.assistant_id);
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return { assistantID: row.assistant_id, reset: true };
+  };
+  const appendContactCard = (assistantID, input) => {
+    const row = active(assistantID);
+    const card = parseContactCard({ type: 'card', ...input, cardType: input?.cardType || 'session' });
+    if (!card) fail('validation_error');
+    const messageID = string(input.messageID, 256) || `card_${id()}`;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      insertContactMessage(db, {
+        messageID,
+        assistantID: row.assistant_id,
+        role: input.role === 'user' ? 'user' : 'assistant',
+        turnID: string(input.turnID, 256) || messageID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal: nextContactOrdinal(db, row.assistant_id),
+        status: 'complete',
+        parts: [card],
+      });
+      if (card.cardType === 'session' && card.sessionID) {
+        upsertContactWatch(db, {
+          assistantID: row.assistant_id,
+          sessionID: card.sessionID,
+          directory: card.directory,
+          status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
+          updatedAt: now(),
+        });
+      }
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return { messageID, admitted: true, card };
+  };
+  /**
+   * Read-only inter-assistant DM. Inserts into the recipient's OpenChamber
+   * contact transcript only. Must never call OpenCode promptAsync, mutate
+   * sessions/files/worktrees, or run tools on the recipient's behalf.
+   *
+   * Assign opens a worker session on the sender's contact turn — never here.
+   * TODO(watch/summon): later inbound coordination may attach cards on this same peer row.
+   */
+  const deliverPeerMessage = (fromAssistantID, input) => {
+    if (!plainObject(input)) fail('validation_error');
+    const sender = active(fromAssistantID);
+    const toAssistantID = string(input.toAssistantID, 256, true);
+    if (toAssistantID === sender.assistant_id) fail('validation_error');
+    const recipient = active(toAssistantID);
+    const parts = [];
+    const text = typeof input.text === 'string' ? input.text.trim() : '';
+    if (text) parts.push({ type: 'text', text });
+    if (input.parts !== undefined) {
+      if (!Array.isArray(input.parts)) fail('validation_error');
+      for (const part of input.parts) {
+        const parsed = parseContactPart(part);
+        if (!parsed) fail('validation_error');
+        parts.push(parsed);
+      }
+    }
+    if (parts.length === 0) fail('validation_error');
+    const messageID = string(input.messageID, 256) || `peer_${id()}`;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      insertContactMessage(db, {
+        messageID,
+        assistantID: recipient.assistant_id,
+        role: 'peer',
+        turnID: string(input.turnID, 256) || messageID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal: nextContactOrdinal(db, recipient.assistant_id),
+        status: 'complete',
+        parts,
+        fromAssistantID: sender.assistant_id,
+        fromAssistantName: sender.name,
+      });
+      bump();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    return {
+      messageID,
+      admitted: true,
+      role: 'peer',
+      fromAssistantID: sender.assistant_id,
+      fromAssistantName: sender.name,
+      toAssistantID: recipient.assistant_id,
+    };
+  };
   const captureQueueDeliveryTarget = ({ assistantID, scope }) => {
     const row = active(assistantID); const current = binding(row);
     const expectedSessionID = row.mode === 'stateless' ? `assistant:${assistantID}` : current.sessionID;
@@ -433,14 +960,24 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const claim = (operationID, retry = false) => { db.exec('BEGIN IMMEDIATE'); try { const operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (!operation) { db.exec('COMMIT'); return null; } const at = now(); const eligible = operation.state === 'failed' ? retry : operation.state === 'running' && operation.lease_expires_at <= at && operation.phase === 'admitted'; if (!eligible || operation.attempt >= SHARE_MAX_ATTEMPTS) { db.exec('COMMIT'); return null; } const result = db.prepare("UPDATE assistant_share_operation SET state='running',phase='submitting',attempt=attempt+1,lease_expires_at=?,error_code=NULL,updated_at=? WHERE operation_id=? AND state=? AND phase=? AND attempt<? AND (state='failed' OR lease_expires_at<=?)").run(at + SHARE_LEASE_MS, at, operationID, operation.state, operation.phase, SHARE_MAX_ATTEMPTS, at); const claimed = result.changes ? db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID) : null; db.exec('COMMIT'); return claimed; } catch (error) { db.exec('ROLLBACK'); throw error; } };
   const completeOrFail = (operation, errorCode = null) => { const at = now(); if (errorCode) db.prepare("UPDATE assistant_share_operation SET state='failed',phase='admitted',error_code=?,lease_expires_at=NULL,updated_at=? WHERE operation_id=? AND state='running' AND phase='submitting'").run(errorCode, at, operation.operation_id); else db.prepare("UPDATE assistant_share_operation SET state='running',phase='submitted',error_code=NULL,lease_expires_at=?,updated_at=? WHERE operation_id=? AND state='running' AND phase='submitting'").run(at + SHARE_LEASE_MS, at, operation.operation_id); };
   const submitClaim = async (operation) => { const payload = parse(operation.response); const row = active(operation.assistant_id); try { const config = configuration(row); const result = await client().session.promptAsync({ sessionID: operation.session_id, directory: effectiveWorkspace(row), ...config, parts: payload.parts, messageID: operation.message_id }); if (!promptAdmitted(result)) fail('upstream_error'); mirrorAdmittedUserMessage(row, operation.session_id, operation.message_id, payload.parts, config); completeOrFail(operation); } catch (error) { completeOrFail(operation, error instanceof AssistantError ? error.code : 'upstream_error'); } };
-  const reconcile = async () => { const candidates = db.prepare("SELECT * FROM assistant_share_operation WHERE state='running'").all(); for (const operation of candidates) { const row = assistant(operation.assistant_id); if (!row || !operation.session_id || !operation.message_id) continue; try { const result = await client().session.messages({ sessionID: operation.session_id, directory: effectiveWorkspace(row), limit: 100 }); const messages = result.data ?? []; const found = Array.isArray(messages) && messages.some((message) => message?.info?.id === operation.message_id || message?.id === operation.message_id); if (found) db.prepare("UPDATE assistant_share_operation SET state='completed',phase='submitted',lease_expires_at=NULL,updated_at=? WHERE operation_id=? AND state='running'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now() && operation.attempt >= SHARE_MAX_ATTEMPTS) db.prepare("UPDATE assistant_share_operation SET state='failed',lease_expires_at=NULL,error_code='attempt_limit',updated_at=? WHERE operation_id=? AND state='running' AND phase='admitted'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now()) { const claimed = claim(operation.operation_id); if (claimed) void submitClaim(claimed); } else if (operation.phase === 'submitted' && operation.lease_expires_at <= now()) db.prepare("UPDATE assistant_share_operation SET state='unresolved',lease_expires_at=NULL,error_code='message_unresolved',updated_at=? WHERE operation_id=? AND state='running' AND phase='submitted'").run(now(), operation.operation_id); } catch { /* Reconciliation remains retryable until its lease expires. */ } } };
+  const reconcileShareOperations = async () => { const candidates = db.prepare("SELECT * FROM assistant_share_operation WHERE state='running'").all(); for (const operation of candidates) { const row = assistant(operation.assistant_id); if (!row || !operation.session_id || !operation.message_id) continue; try { const result = await client().session.messages({ sessionID: operation.session_id, directory: effectiveWorkspace(row), limit: 100 }); const messages = result.data ?? []; const found = Array.isArray(messages) && messages.some((message) => message?.info?.id === operation.message_id || message?.id === operation.message_id); if (found) db.prepare("UPDATE assistant_share_operation SET state='completed',phase='submitted',lease_expires_at=NULL,updated_at=? WHERE operation_id=? AND state='running'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now() && operation.attempt >= SHARE_MAX_ATTEMPTS) db.prepare("UPDATE assistant_share_operation SET state='failed',lease_expires_at=NULL,error_code='attempt_limit',updated_at=? WHERE operation_id=? AND state='running' AND phase='admitted'").run(now(), operation.operation_id); else if (operation.phase === 'admitted' && operation.lease_expires_at <= now()) { const claimed = claim(operation.operation_id); if (claimed) void submitClaim(claimed); } else if (operation.phase === 'submitted' && operation.lease_expires_at <= now()) db.prepare("UPDATE assistant_share_operation SET state='unresolved',lease_expires_at=NULL,error_code='message_unresolved',updated_at=? WHERE operation_id=? AND state='running' AND phase='submitted'").run(now(), operation.operation_id); } catch { /* Reconciliation remains retryable until its lease expires. */ } } };
+  const reconcile = async () => {
+    if (closed) return;
+    try {
+      await reconcileShareOperations();
+      if (closed) return;
+      await reconcileInFlightWatches();
+    } catch {
+      // Reconcile remains retryable on the next timer.
+    }
+  };
   const share = async (assistantID, input) => { if (!plainObject(input) || !plainObject(input.payload)) fail('validation_error'); validateParts(input.payload.parts); const operationID = string(input.operationID, 128, true); const messageID = string(input.payload.messageID, 256, true); const payloadHash = hash(input.payload); active(assistantID); const at = now(); let operation; let reservationOwner = false; db.exec('BEGIN IMMEDIATE'); try { const inserted = db.prepare('INSERT OR IGNORE INTO assistant_share_operation(operation_id,assistant_id,payload_hash,phase,session_id,message_id,state,response,error_code,attempt,lease_expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run(operationID, assistantID, payloadHash, 'reserving', null, messageID, 'running', json(input.payload), null, 0, null, at, at); operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (operation.assistant_id !== assistantID || operation.payload_hash !== payloadHash) fail('idempotency_conflict'); reservationOwner = inserted.changes === 1; db.exec('COMMIT'); } catch (error) { db.exec('ROLLBACK'); throw error; }
     let resolveReservation; if (reservationOwner) shareReservations.set(operationID, new Promise((resolve) => { resolveReservation = resolve; })); else await shareReservations.get(operationID);
     if (reservationOwner) {
       try { const row = active(assistantID); const target = row.mode === 'stateless' ? await createNew(assistantID) : await ensure(assistantID); const attachedAt = now(); const attached = db.prepare("UPDATE assistant_share_operation SET phase='admitted',session_id=?,message_id=?,lease_expires_at=?,updated_at=? WHERE operation_id=? AND state='running' AND phase='reserving'").run(target.sessionID, messageID, attachedAt, attachedAt, operationID); if (!attached.changes) fail('upstream_error'); } catch (error) { db.prepare("DELETE FROM assistant_share_operation WHERE operation_id=? AND state='running' AND phase='reserving'").run(operationID); throw error; } finally { shareReservations.delete(operationID); resolveReservation(); }
     }
     operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (operation?.phase !== 'reserving') { const claimed = claim(operationID, operation?.state === 'failed'); if (claimed) await submitClaim(claimed); } return shareOperation(operationID); };
-  const timer = setIntervalFn(() => { if (!closed) { db.prepare('DELETE FROM assistant_share_operation WHERE updated_at<?').run(now() - SHARE_RETENTION_MS); void reconcile(); } }, reconcileIntervalMs);
+  const timer = setIntervalFn(() => { if (!closed) { db.prepare('DELETE FROM assistant_share_operation WHERE updated_at<?').run(now() - SHARE_RETENTION_MS); return reconcile(); } }, reconcileIntervalMs);
   void reconcile();
   return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId() }), snapshot: () => ({ revision: revision(), enabled: enabled(), assistants: db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output) }), createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
     db.exec('BEGIN IMMEDIATE');
@@ -451,6 +988,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=?').run(assistantID);
+      deleteContactMessages(db, assistantID);
       bump();
       db.exec('COMMIT');
       return { assistantID, tombstoneAt: now() };
@@ -458,5 +996,5 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, processEvent, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, resetContact, appendContactCard, deliverPeerMessage, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

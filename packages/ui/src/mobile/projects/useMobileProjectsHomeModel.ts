@@ -7,6 +7,7 @@ import {
 } from '@/apps/mobileSessionPagination';
 import type { IconName } from '@/components/icon/icons';
 import { useI18n } from '@/lib/i18n';
+import { formatSessionChangeCounts, readSessionChangeSummary } from '@/lib/sessionChangeSummary';
 import { PROJECT_ICON_MAP } from '@/lib/projectMeta';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import {
@@ -351,6 +352,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         directory: getSessionDirectory(session),
         title: session.title?.trim() || untitled,
         subtitle: formatHomeSessionSubtitle(project.label, worktree?.branch),
+        changes: formatSessionChangeCounts(readSessionChangeSummary(session)) ?? undefined,
         activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
         unread: (unseenBySession[session.id] ?? 0) > 0,
         pinned,
@@ -432,6 +434,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
             id: session.id,
             directory: bucket.path,
             title: session.title?.trim() || t('mobile.sessions.untitled'),
+            changes: formatSessionChangeCounts(readSessionChangeSummary(session)) ?? undefined,
             activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
             unread,
             pinned: pinnedSessionIds.has(session.id),

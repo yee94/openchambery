@@ -3,6 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWorktreeTopologyBroadcaster } from './feature-routes-runtime.js';
 
 describe('feature routes runtime composition', () => {
+  it('wires scheduled-task upsert into assistant contact tools', async () => {
+    const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*upsertScheduledTask:[\s\S]*projectConfigRuntime\.upsertScheduledTask/);
+    expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*syncScheduledTaskProject:[\s\S]*scheduledTasksRuntime\.syncProject/);
+    expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*listProjects:/);
+  });
+
   it('registers the managed scheduled-task tool route with its required dependencies', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toContain("import { registerScheduledTaskToolRoute } from '../scheduled-tasks/managed-tool-route.js';");

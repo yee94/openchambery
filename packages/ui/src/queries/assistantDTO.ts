@@ -5,7 +5,7 @@ export type AssistantMode = 'continuous' | 'stateless';
 export type AssistantPart = { type: 'text'; text: string; synthetic?: boolean } | { type: 'file'; mime: string; url: string };
 
 export interface AssistantCapabilityDTO { supported: boolean; enabled: boolean; revision: number; serverInstanceID: string | null; }
-export interface AssistantDTO { id: string; revision: number; enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; effectiveWorkspacePath: string; managedWorkspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant: string | null; mode: AssistantMode; sessionID: string | null; sessionGeneration: number; historySessionIDs: string[]; historySessionCount: number; createdAt: number | null; updatedAt: number; tombstoneAt: number | null; }
+export interface AssistantDTO { id: string; revision: number; enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; effectiveWorkspacePath: string; managedWorkspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant: string | null; mode: AssistantMode; sessionID: string | null; sessionGeneration: number; historySessionIDs: string[]; historySessionCount: number; assignedSessionIDs: string[]; working: boolean; createdAt: number | null; updatedAt: number; tombstoneAt: number | null; }
 export interface AssistantSnapshotDTO { revision: number; enabled: boolean; assistants: AssistantDTO[]; }
 export interface SessionBinding { sessionID: string | null; directory: string; sessionGeneration: number; }
 export interface CompactResponse { binding: SessionBinding; summarized: true; }
@@ -13,8 +13,89 @@ export interface MessageAdmission { binding: SessionBinding; messageID: string; 
 export interface ShareOperation { operationID: string; assistantID: string; sessionID: string | null; messageID: string | null; state: 'submitting' | 'running' | 'completed' | 'failed' | 'unresolved'; phase: string; attempt: number; leaseExpiresAt: number | null; errorCode: string | null; }
 export interface AssistantHistoryEntry { sessionID: string; directory: string | null; info: Message; parts: Part[]; }
 export interface AssistantHistoryPage { entries: AssistantHistoryEntry[]; nextCursor: string | null; complete: boolean; }
+export type AssistantContactCardType = 'session' | 'assistant' | 'schedule';
+export type AssistantContactTextPart = { type: 'text'; text: string };
+export type AssistantContactFilePart = { type: 'file'; mime: string; url: string; filename?: string };
+export type AssistantContactSessionCardPart = {
+  type: 'card';
+  cardType: 'session';
+  sessionID: string;
+  directory: string;
+  title: string | null;
+  status: string | null;
+  branch: string | null;
+};
+export type AssistantContactAssistantCardPart = {
+  type: 'card';
+  cardType: 'assistant';
+  assistantID: string;
+  name: string;
+  providerID: string;
+  modelID: string;
+  mode: AssistantMode;
+};
+export type AssistantContactScheduleCardPart = {
+  type: 'card';
+  cardType: 'schedule';
+  taskID: string;
+  projectID: string;
+  name: string;
+  kind: string | null;
+  time: string | null;
+  timezone: string | null;
+  prompt: string | null;
+};
+export type AssistantContactCardPart =
+  | AssistantContactSessionCardPart
+  | AssistantContactAssistantCardPart
+  | AssistantContactScheduleCardPart;
+export type AssistantContactPart = AssistantContactTextPart | AssistantContactFilePart | AssistantContactCardPart;
+export type AssistantContactRole = 'user' | 'assistant' | 'peer';
+export interface AssistantContactMessage {
+  messageID: string;
+  assistantID: string;
+  role: AssistantContactRole;
+  turnID: string;
+  bubbleIndex: number;
+  createdAt: number;
+  ordinal: number;
+  status: string;
+  fromAssistantID: string | null;
+  fromAssistantName: string | null;
+  parts: AssistantContactPart[];
+  text: string;
+  cards: AssistantContactCardPart[];
+}
+export interface AssistantContactPage {
+  messages: AssistantContactMessage[];
+  nextCursor: string | null;
+  complete: boolean;
+}
+export interface AssistantContactCardAdmission {
+  messageID: string;
+  admitted: true;
+  card: AssistantContactCardPart;
+}
+export interface AssistantContactPeerAdmission {
+  messageID: string;
+  admitted: true;
+  role: 'peer';
+  fromAssistantID: string;
+  fromAssistantName: string;
+  toAssistantID: string;
+}
 
-export class AssistantAPIError extends Error { constructor(public readonly code: string, public readonly status: number, public readonly resource?: string) { super(code); } }
+export class AssistantAPIError extends Error {
+  constructor(public readonly code: string, public readonly status: number, public readonly resource?: string, message?: string) {
+    super(typeof message === 'string' && message.trim() ? message.trim() : code);
+  }
+}
+
+export const isAbortError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const name = 'name' in error ? String(error.name) : '';
+  return name === 'AbortError' || name === 'TimeoutError';
+};
 export class AssistantShareOperationError extends AssistantAPIError { constructor(code: string, status: number, public readonly operation: ShareOperation) { super(code, status, 'share_operation'); } }
 const invalid = (resource: string, status = 200): never => { throw new AssistantAPIError(`invalid_${resource}_response`, status, resource); };
 const record = (value: unknown, resource: string): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid(resource);
@@ -26,7 +107,7 @@ const bool = (value: unknown, resource: string): boolean => typeof value === 'bo
 const enumValue = <T extends string>(value: unknown, choices: readonly T[], resource: string): T => choices.includes(value as T) ? value as T : invalid(resource);
 
 export const parseAssistantCapabilityDTO = (payload: unknown): AssistantCapabilityDTO => { const value = record(payload, 'capability'); return { supported: bool(value.supported, 'capability'), enabled: bool(value.enabled, 'capability'), revision: number(value.revision, 'capability'), serverInstanceID: nullableString(value.serverInstanceID, 'capability') }; };
-export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); return { id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
+export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); const assignedSessionIDs = Array.isArray(value.assignedSessionIDs) ? value.assignedSessionIDs.map((item) => string(item, 'assistant')) : []; return { id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, assignedSessionIDs, working: value.working === undefined ? false : bool(value.working, 'assistant'), createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
 export const parseAssistantSnapshotDTO = (payload: unknown): AssistantSnapshotDTO => { const value = record(payload, 'snapshot'); return { revision: number(value.revision, 'snapshot'), enabled: bool(value.enabled, 'snapshot'), assistants: Array.isArray(value.assistants) ? value.assistants.map(parseAssistantDTO) : invalid('snapshot') }; };
 export const parseSessionBinding = (payload: unknown): SessionBinding => { const value = record(payload, 'binding'); return { sessionID: nullableString(value.sessionID, 'binding'), directory: string(value.directory, 'binding'), sessionGeneration: number(value.sessionGeneration, 'binding') }; };
 export const parseCompactResponse = (payload: unknown): CompactResponse => { const value = record(payload, 'compact'); if (value.summarized !== true) return invalid('compact'); return { binding: parseSessionBinding(value.binding), summarized: true }; };
@@ -62,5 +143,109 @@ export const parseAssistantHistoryPage = (payload: unknown): AssistantHistoryPag
     }),
     nextCursor,
     complete,
+  };
+};
+const parseContactPart = (value: unknown): AssistantContactPart => {
+  const part = record(value, 'assistant_contact_part');
+  if (part.type === 'text') return { type: 'text', text: string(part.text, 'assistant_contact_part') };
+  if (part.type === 'file') {
+    const filename = part.filename === undefined || part.filename === null
+      ? undefined
+      : string(part.filename, 'assistant_contact_part');
+    return {
+      type: 'file',
+      mime: string(part.mime, 'assistant_contact_part'),
+      url: string(part.url, 'assistant_contact_part'),
+      ...(filename ? { filename } : {}),
+    };
+  }
+  if (part.type === 'card') {
+    const cardType = enumValue(part.cardType, ['session', 'assistant', 'schedule'] as const, 'assistant_contact_part');
+    if (cardType === 'session') {
+      return {
+        type: 'card',
+        cardType: 'session',
+        sessionID: string(part.sessionID, 'assistant_contact_part'),
+        directory: string(part.directory, 'assistant_contact_part'),
+        title: nullableString(part.title ?? null, 'assistant_contact_part'),
+        status: nullableString(part.status ?? null, 'assistant_contact_part'),
+        branch: nullableString(part.branch ?? null, 'assistant_contact_part'),
+      };
+    }
+    if (cardType === 'assistant') {
+      return {
+        type: 'card',
+        cardType: 'assistant',
+        assistantID: string(part.assistantID, 'assistant_contact_part'),
+        name: string(part.name, 'assistant_contact_part'),
+        providerID: string(part.providerID, 'assistant_contact_part'),
+        modelID: string(part.modelID, 'assistant_contact_part'),
+        mode: enumValue(part.mode ?? 'continuous', ['continuous', 'stateless'] as const, 'assistant_contact_part'),
+      };
+    }
+    return {
+      type: 'card',
+      cardType: 'schedule',
+      taskID: string(part.taskID, 'assistant_contact_part'),
+      projectID: string(part.projectID, 'assistant_contact_part'),
+      name: string(part.name, 'assistant_contact_part'),
+      kind: nullableString(part.kind ?? null, 'assistant_contact_part'),
+      time: nullableString(part.time ?? null, 'assistant_contact_part'),
+      timezone: nullableString(part.timezone ?? null, 'assistant_contact_part'),
+      prompt: nullableString(part.prompt ?? null, 'assistant_contact_part'),
+    };
+  }
+  return invalid('assistant_contact_part');
+};
+export const parseAssistantContactPage = (payload: unknown): AssistantContactPage => {
+  const value = record(payload, 'assistant_contact');
+  const nextCursor = nullableString(value.nextCursor, 'assistant_contact');
+  const complete = bool(value.complete, 'assistant_contact');
+  if (!complete && !nextCursor) return invalid('assistant_contact');
+  if (complete && nextCursor) return invalid('assistant_contact');
+  if (!Array.isArray(value.messages)) return invalid('assistant_contact');
+  return {
+    messages: value.messages.map((item) => {
+      const message = record(item, 'assistant_contact_message');
+      if (!Array.isArray(message.parts)) return invalid('assistant_contact_message');
+      const parts = message.parts.map(parseContactPart);
+      return {
+        messageID: string(message.messageID, 'assistant_contact_message'),
+        assistantID: string(message.assistantID, 'assistant_contact_message'),
+        role: enumValue(message.role, ['user', 'assistant', 'peer'] as const, 'assistant_contact_message'),
+        turnID: string(message.turnID, 'assistant_contact_message'),
+        bubbleIndex: number(message.bubbleIndex, 'assistant_contact_message'),
+        createdAt: number(message.createdAt, 'assistant_contact_message'),
+        ordinal: number(message.ordinal, 'assistant_contact_message'),
+        status: string(message.status, 'assistant_contact_message'),
+        fromAssistantID: nullableString(message.fromAssistantID ?? null, 'assistant_contact_message'),
+        fromAssistantName: nullableString(message.fromAssistantName ?? null, 'assistant_contact_message'),
+        parts,
+        text: typeof message.text === 'string' ? message.text : parts.filter((part): part is AssistantContactTextPart => part.type === 'text').map((part) => part.text).join(''),
+        cards: parts.filter((part): part is AssistantContactCardPart => part.type === 'card'),
+      };
+    }),
+    nextCursor,
+    complete,
+  };
+};
+export const parseAssistantContactCardAdmission = (payload: unknown): AssistantContactCardAdmission => {
+  const value = record(payload, 'assistant_contact_card');
+  if (value.admitted !== true) return invalid('assistant_contact_card');
+  const card = parseContactPart(value.card);
+  if (card.type !== 'card') return invalid('assistant_contact_card');
+  return { messageID: string(value.messageID, 'assistant_contact_card'), admitted: true, card };
+};
+export const parseAssistantContactPeerAdmission = (payload: unknown): AssistantContactPeerAdmission => {
+  const value = record(payload, 'assistant_contact_peer');
+  if (value.admitted !== true) return invalid('assistant_contact_peer');
+  if (value.role !== 'peer') return invalid('assistant_contact_peer');
+  return {
+    messageID: string(value.messageID, 'assistant_contact_peer'),
+    admitted: true,
+    role: 'peer',
+    fromAssistantID: string(value.fromAssistantID, 'assistant_contact_peer'),
+    fromAssistantName: string(value.fromAssistantName, 'assistant_contact_peer'),
+    toAssistantID: string(value.toAssistantID, 'assistant_contact_peer'),
   };
 };

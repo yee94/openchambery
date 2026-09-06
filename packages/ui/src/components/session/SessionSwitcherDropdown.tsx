@@ -18,6 +18,7 @@ import { resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { formatSessionCompactDateLabel } from './sidebar/utils';
 import type { SessionNode } from './sidebar/types';
 import { useI18n } from '@/lib/i18n';
+import { formatSessionChangeCounts, readSessionChangeSummary } from '@/lib/sessionChangeSummary';
 import { cn } from '@/lib/utils';
 
 type SecondaryMeta = SwitcherItem['secondaryMeta'];
@@ -196,6 +197,7 @@ function SwitcherRow({ session, depth, variant, secondaryMeta, hasChildren, isEx
 
   const isActive = currentSessionId === session.id;
   const sessionTitle = session.title?.trim() || t('sessions.sidebar.session.untitled');
+  const sessionChangeCounts = formatSessionChangeCounts(readSessionChangeSummary(session));
   const isSubtask = Boolean((session as Session & { parentID?: string | null }).parentID);
   const needsAttention = unseenCount > 0 && !isSubtask;
   const statusType = sessionStatus?.type ?? 'idle';
@@ -253,9 +255,12 @@ function SwitcherRow({ session, depth, variant, secondaryMeta, hasChildren, isEx
               {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
             </span>
           ) : null}
-          <span className={cn('truncate text-[14px] font-normal leading-tight', isActive ? 'text-primary' : 'text-foreground')}>
+          <span className={cn('min-w-0 truncate text-[14px] font-normal leading-tight', isActive ? 'text-primary' : 'text-foreground')}>
             {sessionTitle}
           </span>
+          {sessionChangeCounts ? (
+            <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">{sessionChangeCounts}</span>
+          ) : null}
         </div>
         {variant === 'default' ? (
           <div

@@ -37,7 +37,8 @@ describe('StopIcon', () => {
     expect(chatInputSource).toContain("'h-6 w-6'");
     expect(chatPromptComposerSource).toContain('data-composer-stop="true"');
     expect(chatPromptComposerSource).toContain('rounded-full outline-none hover:opacity-80');
-    expect(chatPromptComposerSource).toContain("<StopIcon className={isMobile ? 'size-6' : 'size-full'} />");
+    expect(chatPromptComposerSource).toContain("<StopIcon className={circleGlyphClass} />");
+    expect(chatPromptComposerSource).toContain("const circleGlyphClass = isMobile ? 'size-6' : 'size-full'");
   });
 });
 
@@ -64,6 +65,9 @@ describe('SendCircleIcon', () => {
     expect(chatInputSource).toContain('<SendCircleIcon');
     expect(chatPromptComposerSource).toContain('<SendCircleIcon');
     expect(chatPromptComposerSource).toContain('data-composer-circle={sendReady ? \'true\' : undefined}');
+    expect(chatPromptComposerSource).toContain('data-composer-circle="true"');
+    expect(chatPromptComposerSource).toContain('spinning={pending}');
+    expect(chatPromptComposerSource).toContain('const inlineRightControls');
   });
 });
 
