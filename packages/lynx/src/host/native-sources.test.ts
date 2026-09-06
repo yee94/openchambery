@@ -49,6 +49,20 @@ describe('native host sources', () => {
     );
     expect(themes).toContain('lynx_window_background');
     expect(themes).not.toContain('@android:color/black');
+    const colors = await readFile(
+      join(hostRoot, 'android/app/src/main/res/values/colors.xml'),
+      'utf8',
+    );
+    expect(colors).toContain('#fffdf4');
+    const viewFactory = await readFile(
+      join(hostRoot, 'android/app/src/main/java/com/yee94/openchamber/lynx/OpenChamberLynxViewFactory.kt'),
+      'utf8',
+    );
+    expect(viewFactory).toContain('"platform" to "android"');
+    expect(viewFactory).toContain('"chromeOwner"');
+    expect(viewFactory).toContain('"locale"');
+    expect(viewFactory).toContain('"safeAreaTop"');
+    expect(viewFactory).toContain('"safeAreaBottom"');
   });
 
   test('host scaffold includes deepened bridge protocols', async () => {
@@ -105,10 +119,18 @@ describe('native host sources', () => {
     expect(readme).toContain('ASWebAuthenticationSession');
   });
 
-  test('lynx-ci workflow template is ready under packages/lynx/ci', async () => {
-    const workflow = await readFile(join(hostRoot, '../ci/lynx-ci.yml'), 'utf8');
-    expect(workflow).toContain('name: lynx-ci');
-    expect(workflow).toContain('work/lynx-native');
-    expect(workflow).toContain('build:rspeedy');
+  test('lynx-ci + lynx-mobile-ci workflows are live under .github/workflows', async () => {
+    const template = await readFile(join(hostRoot, '../ci/lynx-ci.yml'), 'utf8');
+    const lynxCi = await readFile(join(hostRoot, '../../../.github/workflows/lynx-ci.yml'), 'utf8');
+    const mobileCi = await readFile(join(hostRoot, '../../../.github/workflows/lynx-mobile-ci.yml'), 'utf8');
+    expect(template).toContain('name: lynx-ci');
+    expect(template).toContain('work/lynx-native');
+    expect(template).toContain('build:rspeedy');
+    expect(lynxCi).toContain('name: lynx-ci');
+    expect(lynxCi).toContain('work/lynx-native');
+    expect(lynxCi).toContain('build:rspeedy');
+    expect(mobileCi).toContain('Android sideload APK');
+    expect(mobileCi).toContain('lynx-v2-debug-');
+    expect(mobileCi).toContain('assembleRelease');
   });
 });
