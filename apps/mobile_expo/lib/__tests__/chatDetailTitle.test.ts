@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildChatDetailHeaderLabels,
+  extractChatDetailSessionMetaFromEvent,
+  mergeChatDetailSessionMeta,
   resolveChatDetailSubtitle,
   resolveChatDetailTitle,
   resolveExpoChatSyncHintKind,
@@ -148,6 +150,76 @@ describe('buildChatDetailHeaderLabels', () => {
     ).toEqual({
       title: 'Pinned work',
       subtitle: 'openchamber · feat/home',
+    });
+  });
+});
+
+describe('extractChatDetailSessionMetaFromEvent', () => {
+  it('reads title/directory/branch from session.updated info', () => {
+    expect(
+      extractChatDetailSessionMetaFromEvent({
+        type: 'session.updated',
+        properties: {
+          info: {
+            id: 'ses_1',
+            title: ' Renamed chat ',
+            directory: '/code/openchamber',
+            project: { branch: 'feat/home' },
+            time: { created: 1, updated: 42 },
+          },
+        },
+      }),
+    ).toEqual({
+      id: 'ses_1',
+      title: ' Renamed chat ',
+      assistantName: undefined,
+      directory: '/code/openchamber',
+      branch: 'feat/home',
+      updatedAt: 42,
+    });
+  });
+
+  it('ignores unrelated events and missing info.id', () => {
+    expect(
+      extractChatDetailSessionMetaFromEvent({
+        type: 'session.status',
+        properties: { sessionID: 'ses_1' },
+      }),
+    ).toBeNull();
+    expect(
+      extractChatDetailSessionMetaFromEvent({
+        type: 'session.updated',
+        properties: { info: { title: 'x' } },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('mergeChatDetailSessionMeta', () => {
+  it('applies rename and skips stale echoes', () => {
+    const live = mergeChatDetailSessionMeta(
+      { title: 'Old', directory: '/a', updatedAt: 10 },
+      { title: 'New', updatedAt: 20 },
+    );
+    expect(live).toEqual({ title: 'New', directory: '/a', updatedAt: 20 });
+    expect(
+      mergeChatDetailSessionMeta(live, { title: 'Stale', updatedAt: 15 }),
+    ).toEqual(live);
+  });
+
+  it('fills from null prev on first live event', () => {
+    expect(
+      mergeChatDetailSessionMeta(null, {
+        title: 'Fresh',
+        directory: '/code/openchamber',
+        branch: 'main',
+        updatedAt: 5,
+      }),
+    ).toEqual({
+      title: 'Fresh',
+      directory: '/code/openchamber',
+      branch: 'main',
+      updatedAt: 5,
     });
   });
 });

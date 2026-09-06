@@ -39,7 +39,14 @@ import {
   resolveSessionSwipeNeighbor,
   shouldStartSessionSwipe,
 } from '@/lib/sessionSwipe';
-import { buildChatDetailHeaderLabels, resolveExpoChatSyncHintKind } from '@/lib/chatDetailTitle';
+import {
+  buildChatDetailHeaderLabels,
+  extractChatDetailSessionMetaFromEvent,
+  mergeChatDetailSessionMeta,
+  resolveExpoChatSyncHintKind,
+  type ChatDetailSessionMeta,
+} from '@/lib/chatDetailTitle';
+import { subscribeGlobalEvents } from '@/lib/globalEventHub';
 import {
   findSessionInIndexSnapshot,
   loadSessionGet,
@@ -66,12 +73,7 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
   const [changesOpen, setChangesOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [rankedIds, setRankedIds] = useState<string[]>([]);
-  const [titleMeta, setTitleMeta] = useState<{
-    title?: string;
-    assistantName?: string | null;
-    directory?: string | null;
-    branch?: string | null;
-  } | null>(null);
+  const [titleMeta, setTitleMeta] = useState<ChatDetailSessionMeta | null>(null);
   const [awayFromEnd, setAwayFromEnd] = useState(false);
   const [composerOccupancy, setComposerOccupancy] = useState(0);
   const transcriptRef = useRef<TranscriptListHandle | null>(null);
@@ -87,11 +89,22 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
 
     const applyLookup = (hit: SessionIndexLookupHit | null) => {
       if (!hit || cancelled) return;
-      setTitleMeta({
-        title: hit.title,
-        assistantName: hit.assistantName,
-        directory: hit.directory,
-        branch: hit.branch,
+      setTitleMeta((prev) => {
+        if (typeof prev?.updatedAt === 'number') {
+          return {
+            title: prev.title ?? hit.title,
+            assistantName: prev.assistantName ?? hit.assistantName,
+            directory: prev.directory ?? hit.directory,
+            branch: prev.branch ?? hit.branch,
+            updatedAt: prev.updatedAt,
+          };
+        }
+        return {
+          title: hit.title,
+          assistantName: hit.assistantName,
+          directory: hit.directory,
+          branch: hit.branch,
+        };
       });
     };
 
@@ -115,11 +128,22 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
           if (sessionId) {
             const fromSnapshot = findSessionInIndexSnapshot(snapshot, sessionId);
             if (fromSnapshot) {
-              setTitleMeta({
-                title: fromSnapshot.title,
-                assistantName: null,
-                directory: fromSnapshot.directory,
-                branch: fromSnapshot.project?.branch ?? null,
+              setTitleMeta((prev) => {
+                if (typeof prev?.updatedAt === 'number') {
+                  return {
+                    title: prev.title ?? fromSnapshot.title,
+                    assistantName: prev.assistantName ?? null,
+                    directory: prev.directory ?? fromSnapshot.directory,
+                    branch: prev.branch ?? fromSnapshot.project?.branch ?? null,
+                    updatedAt: prev.updatedAt,
+                  };
+                }
+                return {
+                  title: fromSnapshot.title,
+                  assistantName: null,
+                  directory: fromSnapshot.directory,
+                  branch: fromSnapshot.project?.branch ?? null,
+                };
               });
               return;
             }
@@ -150,11 +174,22 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
           });
           if (cancelled) return;
           if (got) {
-            setTitleMeta({
-              title: got.title,
-              assistantName: null,
-              directory: got.directory,
-              branch: got.branch,
+            setTitleMeta((prev) => {
+              if (typeof prev?.updatedAt === 'number') {
+                return {
+                  title: prev.title ?? got.title,
+                  assistantName: prev.assistantName ?? null,
+                  directory: prev.directory ?? got.directory,
+                  branch: prev.branch ?? got.branch,
+                  updatedAt: prev.updatedAt,
+                };
+              }
+              return {
+                title: got.title,
+                assistantName: null,
+                directory: got.directory,
+                branch: got.branch,
+              };
             });
             return;
           }
@@ -171,6 +206,17 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
       cancelled = true;
     };
   }, [state.active, chat.sessionId, chat.directory]);
+
+  // Cap useCurrentSessionEntity: refresh title/subtitle while Chat is open on session.updated.
+  useEffect(() => {
+    if (!state.active || !chat.sessionId) return;
+    const sessionId = chat.sessionId;
+    return subscribeGlobalEvents(state.active, (event) => {
+      const patch = extractChatDetailSessionMetaFromEvent(event);
+      if (!patch || patch.id !== sessionId) return;
+      setTitleMeta((prev) => mergeChatDetailSessionMeta(prev, patch));
+    });
+  }, [state.active, chat.sessionId]);
 
   const moveQueued = useCallback(
     (item: MessageQueueChipItem, direction: -1 | 1) => {

@@ -89,6 +89,78 @@ export const resolveExpoChatSyncHintKind = (input: {
   return null;
 };
 
+
+
+/** Live header fields carried by Cap `session.updated` / `session.created` (`properties.info`). */
+export type ChatDetailSessionMeta = {
+  title?: string;
+  assistantName?: string | null;
+  directory?: string | null;
+  branch?: string | null;
+  /** Cap `session.time.updated` — skip stale SSE echoes after a newer rename. */
+  updatedAt?: number;
+};
+
+export type SessionEventLike = {
+  type: string;
+  properties?: Record<string, unknown> | null;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+/**
+ * Cap session-event-router subset: pull id + title/subtitle fields from
+ * `session.updated` / `session.created` so ChatDetailHeader can refresh without re-open.
+ */
+export const extractChatDetailSessionMetaFromEvent = (
+  event: SessionEventLike,
+): (ChatDetailSessionMeta & { id: string }) | null => {
+  if (event.type !== 'session.updated' && event.type !== 'session.created') return null;
+  const info = asRecord(event.properties?.info);
+  if (!info) return null;
+  const id = typeof info.id === 'string' ? info.id.trim() : '';
+  if (!id) return null;
+
+  const project = asRecord(info.project);
+  const time = asRecord(info.time);
+  const updatedAt = typeof time?.updated === 'number' ? time.updated : undefined;
+  const branchFromSession = typeof info.branch === 'string' ? info.branch : undefined;
+  const branchFromProject = typeof project?.branch === 'string' ? project.branch : undefined;
+
+  return {
+    id,
+    title: typeof info.title === 'string' ? info.title : undefined,
+    assistantName: typeof info.assistantName === 'string' ? info.assistantName : undefined,
+    directory: typeof info.directory === 'string' ? info.directory : undefined,
+    branch: branchFromSession ?? branchFromProject,
+    updatedAt,
+  };
+};
+
+/** Merge live session.updated patch onto Chat header meta (keeps Cap title order inputs fresh). */
+export const mergeChatDetailSessionMeta = (
+  prev: ChatDetailSessionMeta | null | undefined,
+  patch: ChatDetailSessionMeta,
+): ChatDetailSessionMeta => {
+  if (
+    typeof prev?.updatedAt === 'number' &&
+    typeof patch.updatedAt === 'number' &&
+    patch.updatedAt < prev.updatedAt
+  ) {
+    return prev;
+  }
+  const next: ChatDetailSessionMeta = { ...(prev ?? {}) };
+  if (typeof patch.title === 'string') next.title = patch.title;
+  if (patch.assistantName !== undefined) next.assistantName = patch.assistantName;
+  if (patch.directory !== undefined) next.directory = patch.directory;
+  if (patch.branch !== undefined) next.branch = patch.branch;
+  if (typeof patch.updatedAt === 'number') next.updatedAt = patch.updatedAt;
+  return next;
+};
+
 export const buildChatDetailHeaderLabels = (
   titleSource: ChatDetailTitleSource,
   subtitleSource: ChatDetailSubtitleSource,
