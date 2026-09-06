@@ -131,6 +131,12 @@ describe('slim transcript image attachments', () => {
     expect(source).toContain('data-attachment-preview="true"');
   });
 
+  test('keeps message image slots clippers under the mobile overflow-hidden rewrite', () => {
+    const mobileCss = readFileSync(join(here, '../../styles/mobile.css'), 'utf-8');
+    expect(mobileCss).toContain('[data-message-image-slot="true"]');
+    expect(mobileCss).toContain('[data-message-image-slot="true"].overflow-hidden');
+  });
+
   test('keeps a visible square slot for a slim image without a URL', () => {
     expect(source).toContain("const imageFiles = dedupedFileItems.filter(f => f.mime?.startsWith('image/'));");
     expect(source).toContain('relative aspect-square min-w-0 overflow-hidden');

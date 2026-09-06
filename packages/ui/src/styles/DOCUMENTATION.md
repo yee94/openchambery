@@ -2,6 +2,8 @@
 
 Owning module for global CSS under `packages/ui/src/styles/`, including touch-mode adaptations in `mobile.css`.
 
+The first-prompt establishing draft joins the main chat and hydrating overlay-foot contract. The idle draft keeps the in-flow Composer contract.
+
 ## `isMobile` vs `mobile-pointer` (do not confuse)
 
 OpenChamber has **two independent mobile signals**. Layout bugs that "look fine in DevTools inspect but wrong on device" almost always come from mixing them.
@@ -154,6 +156,10 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 | `[data-composer-content="true"] .overflow-hidden` | Input column clipper |
 | `[data-composer-input-shell="true"]` and its `.overflow-hidden` child | Highlight overlay + textarea host |
 | `[data-attachment-preview="true"]` | 40px image chip above the composer; must not become a scrollport |
+| `[data-message-image-slot="true"]` | Square photo in a user/assistant bubble; must clip to `rounded-lg` |
+| `[data-user-message-bubble="true"]` | Mobile-only radius clip; desktop inline actions use `translate-x-5` and must not be clipped |
+| `[data-user-message-clamp="true"]` | Truncated long user text wrapper; hides sibling file thumbs so they cannot sit under the clamp |
+| `[data-user-message-collapse="true"]` | `line-clamp-10` box with a 10-line max-height so WebKit cannot grow past the clamp |
 
 If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` uses `min-height: min-content`. Its motion viewport and reveal keep popup overflow available.
 

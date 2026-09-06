@@ -185,7 +185,8 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain("'oc-mobile-assistant-avatar'");
     expect(mobileTab).toContain("'oc-mobile-assistant-avatar--emoji'");
     expect(mobileTab).toContain("'oc-mobile-assistant-avatar--visual'");
-    expect(mobileTab).toContain('size={avatarEmoji ? 40 : 38}');
+    expect(mobileTab).toContain('size={40}');
+    expect(mobileTab).not.toContain('size={avatarEmoji ? 40 : 38}');
     expect(mobileTab).not.toContain('oc-mobile-assistant-avatar oc-mobile-glass-control');
     const avatarStyles = mobileStyles.slice(
       mobileStyles.indexOf('.oc-mobile-assistant-avatar {'),
@@ -195,14 +196,23 @@ describe('Assistant UI product contract', () => {
     expect(avatarStyles).toContain('border-radius: 999px');
     expect(avatarStyles).toContain(':is(img, svg)');
     expect(avatarStyles).toContain('object-fit: cover');
+    const sharedInnerStyles = avatarStyles.slice(
+      avatarStyles.indexOf('.oc-mobile-assistant-avatar > [role="img"] {'),
+      avatarStyles.indexOf('.oc-mobile-assistant-avatar--emoji {'),
+    );
+    expect(sharedInnerStyles).toContain('width: 100% !important');
+    expect(sharedInnerStyles).toContain('height: 100% !important');
+    expect(sharedInnerStyles).toContain('border-radius: inherit');
     expect(avatarStyles).toContain('.oc-mobile-assistant-avatar--emoji');
     expect(avatarStyles).toContain('padding: 0');
-    expect(avatarStyles).toContain('width: 100% !important');
-    expect(avatarStyles).toContain('height: 100% !important');
     expect(avatarStyles).toContain('font-size: 1.75rem !important');
     expect(avatarStyles).toContain('background: var(--interactive-selection)');
-    expect(avatarStyles).toContain('.oc-mobile-assistant-avatar--visual');
-    expect(avatarStyles).toContain('padding: 1px');
+    const visualStyles = avatarStyles.slice(
+      avatarStyles.indexOf('.oc-mobile-assistant-avatar--visual {'),
+      avatarStyles.indexOf('.oc-mobile-assistant-avatar :is(img, svg)'),
+    );
+    expect(visualStyles).toContain('padding: 0');
+    expect(visualStyles).not.toContain('background: var(--surface-muted)');
   });
 
   test('gives mobile Assistant cards room for model and bounded prompt details', async () => {

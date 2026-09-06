@@ -1243,7 +1243,13 @@ button.oc-mobile-worktree-label-trigger:active,
   background: transparent;
 }
 
-.oc-mobile-assistant-avatar [role="img"] {
+.oc-mobile-assistant-avatar > [role="img"] {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  max-height: 100% !important;
   overflow: hidden;
   border-radius: inherit;
 }
@@ -1253,13 +1259,7 @@ button.oc-mobile-worktree-label-trigger:active,
   background: var(--interactive-selection);
 }
 
-.oc-mobile-assistant-avatar--emoji [role="img"] {
-  width: 100% !important;
-  min-width: 100% !important;
-  max-width: 100% !important;
-  height: 100% !important;
-  min-height: 100% !important;
-  max-height: 100% !important;
+.oc-mobile-assistant-avatar--emoji > [role="img"] {
   border-radius: 999px;
   background: var(--interactive-selection);
 }
@@ -1270,8 +1270,7 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-assistant-avatar--visual {
-  padding: 1px;
-  background: var(--surface-muted);
+  padding: 0;
 }
 
 .oc-mobile-assistant-avatar :is(img, svg) {
@@ -2337,6 +2336,26 @@ button.oc-mobile-worktree-label-trigger:active,
   }
 }
 
+/* Collapsed user messages: -webkit-line-clamp lets images and later blocks
+   paint outside the box (WebKit). Do not use .overflow-hidden — mobile-pointer
+   rewrites that to overflow-y: auto. */
+[data-user-message-collapse="true"] {
+  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  max-height: calc(10 * var(--markdown-body-line-height, 1.625) * 1em);
+}
+
+[data-user-message-clamp="true"] {
+  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+[data-user-message-body]:has([data-user-message-clamp="true"]) [data-message-files] {
+  display: none;
+}
+
 /* General mobile improvements for all mobile devices */
 @media (max-width: 1024px) {
   /*
@@ -2710,7 +2729,12 @@ button.oc-mobile-worktree-label-trigger:active,
   :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"],
   :root.mobile-pointer:not(.desktop-runtime) [data-composer-input-shell="true"] .overflow-hidden,
   :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"],
-  :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"].overflow-hidden {
+  :root.mobile-pointer:not(.desktop-runtime) [data-attachment-preview="true"].overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) [data-message-image-slot="true"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-message-image-slot="true"].overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) [data-user-message-bubble="true"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-user-message-clamp="true"],
+  :root.mobile-pointer:not(.desktop-runtime) [data-user-message-collapse="true"] {
     overflow: hidden !important;
     overflow-x: hidden !important;
     overflow-y: hidden !important;

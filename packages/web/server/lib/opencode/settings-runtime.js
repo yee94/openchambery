@@ -666,8 +666,8 @@ export const createSettingsRuntime = (deps) => {
       return { settings, changed: false };
     }
 
-    const defaultLight = 'flexoki-light';
-    const defaultDark = 'flexoki-dark';
+    const defaultLight = 'carbonfox-light';
+    const defaultDark = 'vitesse-dark-dark';
 
     let nextLightThemeId = hasLight ? settings.lightThemeId : undefined;
     let nextDarkThemeId = hasDark ? settings.darkThemeId : undefined;

@@ -291,7 +291,7 @@ const useNativeMobileChrome = (): void => {
           const isDark = document.documentElement.classList.contains('dark');
           const themeBg =
             (isDark ? localStorage.getItem('splashBgDark') : localStorage.getItem('splashBgLight')) ||
-            (isDark ? '#171515' : '#fffdf4');
+            (isDark ? '#121212' : '#FFFFFF');
           await StatusBar.setOverlaysWebView({ overlay: false }).catch(() => undefined);
           await StatusBar.setBackgroundColor({ color: themeBg }).catch(() => undefined);
           // Capacitor Style is named for the CONTENT: Style.Light = dark text (light bg),

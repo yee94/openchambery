@@ -49,7 +49,8 @@ describe("message identity stability contract", () => {
     expect(source).toContain("resolvePendingAssistantHeader")
     const turnItem = readSource("./components/TurnItem.tsx")
     expect(turnItem).toContain("pendingAssistantHeader")
-    expect(turnItem).toContain("<MessageHeader")
+    expect(turnItem).toContain("<TurnAssistantHeader")
+    expect(readSource("./components/TurnAssistantHeader.tsx")).toContain("<MessageHeader")
   })
 
   test("diagnostics expose identity-missing facts without values", () => {

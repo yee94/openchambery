@@ -3,7 +3,7 @@ import React from 'react';
 import type { ChatMessageEntry, TurnRecord } from '../lib/turns/types';
 import type { PendingAssistantHeaderPresentation } from '../lib/pendingAssistantHeader';
 import { useUIStore } from '@/stores/useUIStore';
-import MessageHeader from '../message/MessageHeader';
+import TurnAssistantHeader from './TurnAssistantHeader';
 import TurnActivity from './TurnActivity';
 import TurnAssistantBlock from './TurnAssistantBlock';
 
@@ -16,6 +16,9 @@ interface TurnItemProps {
     activityExpanded: boolean;
     showCompactionStatus: boolean;
     pendingAssistantHeader?: PendingAssistantHeaderPresentation | null;
+    assistantHeaderMessage?: ChatMessageEntry;
+    assistantHeaderIsInActiveTurn?: boolean;
+    preserveActiveTurnGap?: boolean;
     onToggleActivity: () => void;
     stickyUserHeader?: boolean;
     renderMessage: (message: ChatMessageEntry, activityExpanded: boolean) => React.ReactNode;
@@ -26,6 +29,9 @@ const TurnItem: React.FC<TurnItemProps> = ({
     activityExpanded,
     showCompactionStatus,
     pendingAssistantHeader = null,
+    assistantHeaderMessage,
+    assistantHeaderIsInActiveTurn = false,
+    preserveActiveTurnGap = false,
     onToggleActivity,
     stickyUserHeader = true,
     renderMessage,
@@ -38,7 +44,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
 
     return (
         <section
-            className="relative w-full"
+            className={`relative w-full ${preserveActiveTurnGap ? 'pb-1' : 'pb-8'}`}
             id={`turn-${turn.turnId}`}
             data-turn-id={turn.turnId}
             data-turn-activity-expanded={activityExpanded}
@@ -58,24 +64,22 @@ const TurnItem: React.FC<TurnItemProps> = ({
                 renderMessage(turn.userMessage, activityExpanded)
             )}
 
-            {pendingAssistantHeader ? (
-                <div className={`group w-full ${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} ${turn.assistantMessages.length === 0 ? 'pb-1' : 'pb-0'}`}>
+            {pendingAssistantHeader || assistantHeaderMessage ? (
+                <div className={`group w-full ${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} pb-0`}>
                     <div className="chat-message-column relative">
-                        <MessageHeader
-                            isUser={false}
+                        <TurnAssistantHeader
+                            assistantMessage={assistantHeaderMessage}
+                            userMessage={turn.userMessage}
+                            pendingPresentation={pendingAssistantHeader}
+                            assistantIsInActiveTurn={assistantHeaderIsInActiveTurn}
                             isMobile={isMobile}
-                            providerID={pendingAssistantHeader.providerID}
-                            modelID={pendingAssistantHeader.modelID}
-                            agentName={pendingAssistantHeader.agentName}
-                            modelName={pendingAssistantHeader.modelName}
-                            variant={pendingAssistantHeader.variant}
                         />
                     </div>
                 </div>
             ) : null}
 
             {showCompactionStatus ? (
-                <div className={`group w-full ${isMobile ? 'pt-4' : 'pt-6'} ${turn.assistantMessages.length === 0 ? 'pb-8' : 'pb-0'}`}>
+                <div className={`group w-full ${isMobile ? 'pt-4' : 'pt-6'} pb-0`}>
                     <div className="chat-message-column relative">
                         <TurnActivity
                             parts={[]}

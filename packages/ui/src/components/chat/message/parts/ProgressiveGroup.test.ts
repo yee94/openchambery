@@ -9,6 +9,7 @@ const formatActivityDurationSource = readFileSync(join(__dirname, 'formatActivit
 const messageBodySource = readFileSync(join(__dirname, '../MessageBody.tsx'), 'utf-8');
 const messageListSource = readFileSync(join(__dirname, '../../MessageList.tsx'), 'utf-8');
 const turnItemSource = readFileSync(join(__dirname, '../../components/TurnItem.tsx'), 'utf-8');
+const turnAssistantHeaderSource = readFileSync(join(__dirname, '../../components/TurnAssistantHeader.tsx'), 'utf-8');
 const messageDictionaryDirectory = join(__dirname, '../../../../lib/i18n/messages');
 const messageDictionaryFiles = ['en.ts', 'es.ts', 'fr.ts', 'ja.ts', 'ko.ts', 'pl.ts', 'pt-BR.ts', 'uk.ts', 'zh-CN.ts', 'zh-TW.ts'];
 
@@ -183,11 +184,13 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("import { formatActivityDuration } from './formatActivityDuration'");
     });
 
-    test('idle Processed chrome restores pb-8 after header demotion', () => {
+    test('keeps grouped lifecycle spacing on the turn and standalone spacing on the message', () => {
         const chatMessageSource = readFileSync(join(__dirname, '../../ChatMessage.tsx'), 'utf-8');
+        expect(turnItemSource).toContain("className={`relative w-full ${preserveActiveTurnGap ? 'pb-1' : 'pb-8'}`}");
+        expect(turnItemSource).toContain("${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} pb-0");
+        expect(chatMessageSource).toContain("isFollowedByAssistant || turnOwnsAssistantHeader ? 'pb-0'");
         expect(chatMessageSource).toContain('shouldTightenWorkingBottomGap({');
         expect(chatMessageSource).toContain('headerCompletionDisposition: turnGroupingContext?.completionDisposition');
-        expect(chatMessageSource).not.toContain('const tightenWorkingBottomGap = turnGroupingContext?.isWorking === true || isInActiveTurn;');
     });
 
     test('uses one full-width disclosure with identical title geometry in both states', () => {
@@ -232,6 +235,10 @@ describe('progressive activity presentation', () => {
     });
 
     test('shows compaction status from the turn before assistant activity exists', () => {
+        const compactionLayoutSource = turnItemSource.slice(
+            turnItemSource.indexOf('{showCompactionStatus ? ('),
+            turnItemSource.indexOf('<TurnAssistantBlock'),
+        );
         expect(messageListSource).toContain('showCompactionStatus={shouldShowCompactionStatus({');
         expect(messageListSource).toContain('export const shouldShowCompactionStatus = (input: {');
         expect(messageListSource).toContain("if (input.chatRenderMode !== 'sorted')");
@@ -249,11 +256,13 @@ describe('progressive activity presentation', () => {
         expect(turnItemSource).toContain('completionDisposition={turn.completionDisposition}');
         expect(turnItemSource).toContain('durationMs={turn.durationMs}');
         expect(turnItemSource).toContain('onToggle={onToggleActivity}');
+        expect(compactionLayoutSource).toContain("${isMobile ? 'pt-4' : 'pt-6'} pb-0");
         expect(messageListSource).toContain('onToggleActivity={handleToggleTurnGroup}');
         expect(progressiveGroupSource).not.toContain('role="status"');
         expect(turnItemSource.indexOf('{showCompactionStatus ? (')).toBeLessThan(turnItemSource.indexOf('<TurnAssistantBlock'));
-        expect(turnItemSource.indexOf('{pendingAssistantHeader ? (')).toBeLessThan(turnItemSource.indexOf('{showCompactionStatus ? ('));
-        expect(turnItemSource).toContain('<MessageHeader');
+        expect(turnItemSource.indexOf('{pendingAssistantHeader || assistantHeaderMessage ? (')).toBeLessThan(turnItemSource.indexOf('{showCompactionStatus ? ('));
+        expect(turnItemSource).toContain('<TurnAssistantHeader');
+        expect(turnAssistantHeaderSource).toContain('<MessageHeader');
         expect(messageListSource).toContain('pendingAssistantHeader={pendingAssistantHeader}');
         expect(messageListSource).toContain('hasActiveStreamingMessage: Boolean(activeStreamingMessageId)');
     });

@@ -207,6 +207,11 @@ describe('ChatContainer source contracts', () => {
         const footer = source.slice(footerStart, footSpacer);
         expect(footer).not.toContain('StatusRowContainer');
         expect(source).toContain('<StatusRowContainer />');
+        // Classic path: only after a transcript shell exists — empty+busy must
+        // not orphan WorkingPlaceholder over a blank viewport.
+        expect(source).toContain('renderedMessages.length > 0 ? (');
+        const statusGate = source.indexOf('renderedMessages.length > 0 ? (');
+        expect(source.slice(statusGate, statusGate + 180)).toContain('<StatusRowContainer />');
     });
 
     test('composer send re-arms legend follow so a mid-history send can park', () => {
@@ -233,11 +238,39 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('const readOnlyPromptBanner = parentSessionTarget ? (');
     });
 
-    test('desktop composer keeps a page-background fade above the input', () => {
+    test('desktop composer keeps a page-background fade above each transcript-style input', () => {
         expect(source).toContain('const DesktopComposerEdgeFade');
         expect(source).toContain('bg-gradient-to-t from-[var(--surface-background)] to-transparent');
         expect(source).toContain('{!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}');
-        expect(source.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(2);
+        const establishingDraftShell = source.slice(
+            source.indexOf('if ((draftSubmitting || draftEstablishing) && draftPendingMessage)'),
+            source.indexOf('if (draftSubmitting || draftEstablishing)'),
+        );
+        const hydratingShell = source.slice(
+            source.indexOf('if (isSessionHydrating)', source.indexOf('if (draftSubmitting || draftEstablishing)')),
+            source.indexOf('if (renderedViewportMessages.length === 0 && !sessionIsWorking)'),
+        );
+        const transcriptShell = source.slice(
+            source.lastIndexOf("<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background'"),
+            source.indexOf('const MemoizedChatContainerContent'),
+        );
+        for (const shell of [establishingDraftShell, hydratingShell, transcriptShell]) {
+            expect(shell.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(1);
+        }
+        expect(source.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(3);
+    });
+
+    test('draft handoff commits a local identity in layout and scopes immediate reveal to its retained row', () => {
+        const handoffStart = source.indexOf('const committedDraftPendingRef');
+        const handoffEnd = source.indexOf('const selectedSessionView', handoffStart);
+        const handoffSource = source.slice(handoffStart, handoffEnd);
+        expect(handoffStart).toBeGreaterThan(-1);
+        expect(handoffSource).toContain('useIsomorphicLayoutEffect(() => {');
+        expect(handoffSource).toContain('committedDraftPendingRef.current = {');
+        expect(handoffSource).toContain('identity: draftPendingIdentity');
+        expect(handoffSource).toContain('messageId: selectedSession.draftPendingMessageId');
+        expect(handoffSource).toContain('selectedRetainedPendingMessages.some(');
+        expect(handoffSource).not.toContain('requestAnimationFrame');
     });
 
     test('legend scroller dataset restores the transcript scroll-shadow mask', () => {
