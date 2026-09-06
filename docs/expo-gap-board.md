@@ -39,7 +39,7 @@ Session-index, search + highlight, pin/in-progress, `项目 · 分支` subtitle,
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **code landed** | Live `GET /api/openchamber/session-index` home (failure ≠ empty); search + highlight; pinned/in-progress + `项目 · 分支`; unread dot UI; draft `/chat/draft` (`sessionId == ''`); plus 扫一扫 / 切换实例 → Connect QR / onboarding. Unit tests green locally. Chat body still stub (Track 3). Live unread/running need events (not rebuilt plan/notes/Todo). |
+| Track (CODE) | **code landed** | Live `GET /api/openchamber/session-index` home (failure ≠ empty); search + highlight; pinned/in-progress + `项目 · 分支`; unread dot UI; draft `/chat/draft` (`sessionId == ''`); plus 扫一扫 / 切换实例 → Connect QR / onboarding. Unit tests green locally. Chat body landed in Track 3. Live unread/running still need broader home event wiring (not rebuilt plan/notes/Todo). |
 | CI green | missing | Local vitest+lint+typecheck green; Actions tip not claimed |
 | 真机过 | missing | Do not mark from Linux VM |
 
@@ -49,9 +49,9 @@ LegendList semantics (not 1.18 TanStack), transcript, Send/Stop, events WS/SSE, 
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | `/chat/[sessionId]` is a stub route only |
-| CI green | missing | No `chat_transcript_perf` analogue yet |
-| 真机过 | missing | |
+| Track (CODE) | **code landed** | LegendList transcript (`initialScrollAtEnd` / `maintainScrollAtEnd` / MVCP); load `GET .../messages?turns=6`; Send `prompt_async` / Stop `abort`; draft materialize `POST /api/session` then prompt; events prefer `/api/global/event/ws` → SSE → poll-only reconnect fallback; streaming markdown paced 64ms (Android 128ms) with incomplete-fence isolation; composer text+send/stop only (no mic/TTS). Unit + 关3 perf harness green locally. Still missing: tool cards, queue chips, slash/@/#, attachments, reasoning disclosure UI, context ring, native composer glass. |
+| CI green | missing | Local vitest+lint+typecheck green; Actions tip not claimed |
+| 真机过 | missing | Do not mark from Linux VM |
 
 ### 4. Projects
 
@@ -129,15 +129,15 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Capacitor `packages/mobile` left intact | landed | Constraint, not a port |
 | Minimal Expo SDK scaffold + TypeScript | landed | Placeholder only |
 | Four-tab shell (Projects / Assistant / Scheduled / Settings) | landed | Stub screens. No live APIs |
-| Stub pushed Chat route | landed | Placeholder. No LegendList yet |
+| Stub pushed Chat route | superseded | Track 3 landed LegendList + Send/Stop on pushed route |
 | Connection onboarding (URL / QR / password / pairing v2) | **code landed** | Expo Connect screen + controller. No local PIN |
 | Relay-only skip 1.5s headstart | **code landed** | Unit-tested injectable race; Cap TS relay under lib/relay |
 | Session index Projects home + `项目 · 分支` | **code landed** | Expo Projects home on `work/expo-native`; 真机过 still open |
-| Chat LegendList + Send/Stop | not started | LegendList contract, not 1.18 TanStack |
+| Chat LegendList + Send/Stop | **code landed** | LegendList contract (not 1.18 TanStack); draft materialize; WS/SSE/poll fallback |
 | Settings home + `MOBILE_SETTINGS_PAGE_SLUGS` | not started | Omit Voice |
 | Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity) | not started | Always on; no `iosNativeUi` toggle |
 | Android honest degrade | not started | No fake glass |
-| Performance harness (LegendList long-context) | not started | Self-built; see 关3 |
+| Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); CI Actions not claimed |
 | Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | not started | Side-by-side vs release Cap. Direct-link prerelease later |
 | Signed release workflow | not started | Existing secret names only |
 | CI lint / typecheck on `work/expo-native` | landed | `.github/workflows/expo-mobile-ci.yml`. Does **not** claim device builds |

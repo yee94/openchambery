@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.19.7-beta.7",
   "dependencies": {
+    "@legendapp/list": "^3.3.8",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.20",
     "expo-camera": "~57.0.4",
@@ -26,11 +27,11 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~10.0.0",
     "typescript": "~6.0.3",
-    "vitest": "^3.2.4",
-    "@vitest/coverage-v8": "^3.2.4"
+    "vitest": "^3.2.4"
   },
   "scripts": {
     "start": "expo start",
