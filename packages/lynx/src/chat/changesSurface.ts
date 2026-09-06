@@ -111,3 +111,191 @@ export const loadLynxGitStatus = async (
     };
   }
 };
+
+
+const gitQuery = (
+  directory: string,
+  extra?: Record<string, string | undefined>,
+): string => {
+  const params = new URLSearchParams({ directory });
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      if (value !== undefined && value !== '') params.set(key, value);
+    }
+  }
+  return params.toString();
+};
+
+export type LynxGitFileDiffResult =
+  | {
+      status: 'ok';
+      path: string;
+      staged: boolean;
+      original: string;
+      modified: string;
+      isBinary: boolean;
+      /** Unified patch from `/api/git/diff` when available. */
+      unifiedDiff: string | null;
+    }
+  | { status: 'no-runtime' }
+  | { status: 'no-directory' }
+  | { status: 'failed'; error: Error; httpStatus?: number };
+
+/**
+ * Cap MobileChangesSurface file diff — `GET /api/git/file-diff` (+ optional
+ * unified `GET /api/git/diff` for turn/patch text).
+ */
+export const loadLynxGitFileDiff = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  path: string,
+  options?: { staged?: boolean; signal?: AbortSignal },
+): Promise<LynxGitFileDiffResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const trimmedPath = path.trim();
+  if (!trimmedPath) {
+    return { status: 'failed', error: new Error('path is required to fetch git file diff') };
+  }
+  const staged = options?.staged === true;
+  try {
+    const fileDiffQs = gitQuery(trimmedDir, {
+      path: trimmedPath,
+      staged: staged ? 'true' : undefined,
+    });
+    const fileDiffRes = await runtimeFetch(`/api/git/file-diff?${fileDiffQs}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: options?.signal,
+    });
+    if (fileDiffRes.status === 0) return { status: 'no-runtime' };
+    if (!fileDiffRes.ok) {
+      return {
+        status: 'failed',
+        error: new Error(`git/file-diff failed (${fileDiffRes.status})`),
+        httpStatus: fileDiffRes.status,
+      };
+    }
+    const payload = asRecord(await fileDiffRes.json());
+    const original = typeof payload.original === 'string' ? payload.original : '';
+    const modified = typeof payload.modified === 'string' ? payload.modified : '';
+    const isBinary = payload.isBinary === true;
+
+    let unifiedDiff: string | null = null;
+    try {
+      const diffQs = gitQuery(trimmedDir, {
+        path: trimmedPath,
+        staged: staged ? 'true' : undefined,
+      });
+      const diffRes = await runtimeFetch(`/api/git/diff?${diffQs}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: options?.signal,
+      });
+      if (diffRes.ok) {
+        const diffPayload = asRecord(await diffRes.json());
+        if (typeof diffPayload.diff === 'string') unifiedDiff = diffPayload.diff;
+      }
+    } catch {
+      // Unified turn-diff is best-effort; file-diff alone is enough for preview.
+    }
+
+    return {
+      status: 'ok',
+      path: trimmedPath,
+      staged,
+      original,
+      modified,
+      isBinary,
+      unifiedDiff,
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+};
+
+export type LynxGitMutationResult =
+  | { status: 'ok' }
+  | { status: 'no-runtime' }
+  | { status: 'no-directory' }
+  | { status: 'failed'; error: Error; httpStatus?: number };
+
+const postGitJson = async (
+  runtimeFetch: LynxRuntimeFetch,
+  path: string,
+  directory: string,
+  body: Record<string, unknown>,
+  options?: { signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  try {
+    const qs = gitQuery(directory);
+    const response = await runtimeFetch(`${path}?${qs}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    });
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (!response.ok) {
+      const payload = asRecord(await response.json().catch(() => null));
+      const message = typeof payload.error === 'string' && payload.error.trim()
+        ? payload.error.trim()
+        : `${path} failed (${response.status})`;
+      return { status: 'failed', error: new Error(message), httpStatus: response.status };
+    }
+    return { status: 'ok' };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+};
+
+/** Cap `POST /api/git/commit` — MobileChangesSurface CommitSection. */
+export const commitLynxGitChanges = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  message: string,
+  options?: { addAll?: boolean; signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const trimmedMessage = message.trim();
+  if (!trimmedMessage) {
+    return { status: 'failed', error: new Error('commit message required') };
+  }
+  return postGitJson(runtimeFetch, '/api/git/commit', trimmedDir, {
+    message: trimmedMessage,
+    addAll: options?.addAll ?? false,
+  }, options);
+};
+
+export type LynxGitSyncAction = 'fetch' | 'pull' | 'push';
+
+/**
+ * Cap MobileChangesSurface SyncActions — clear HTTP endpoints exist:
+ * `POST /api/git/fetch|pull|push`.
+ */
+export const syncLynxGit = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  action: LynxGitSyncAction,
+  options?: { remote?: string; branch?: string; signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const body: Record<string, unknown> = {};
+  if (options?.remote) body.remote = options.remote;
+  if (options?.branch) body.branch = options.branch;
+  return postGitJson(runtimeFetch, `/api/git/${action}`, trimmedDir, body, options);
+};

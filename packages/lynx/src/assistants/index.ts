@@ -16,3 +16,5 @@ export type {
   LynxAssistantMode,
   LynxAssistantLoadResult,
 } from './types';
+export { createLynxShareInbox } from './shareInbox';
+export type { LynxShareEnvelope, LynxShareInbox, LynxShareAttachment } from './shareInbox';

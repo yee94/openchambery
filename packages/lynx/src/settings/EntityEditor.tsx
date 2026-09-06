@@ -13,6 +13,13 @@ import {
   type LynxEntityFieldKey,
   type LynxEntityKind,
 } from './entityApi';
+import {
+  completeLynxProviderOAuth,
+  loadLynxProviderAuthMethods,
+  saveLynxProviderApiKey,
+  startLynxProviderOAuth,
+  type LynxProviderAuthMethod,
+} from './providerAuth';
 
 export type EntityEditorProps = {
   locale: string;
@@ -209,6 +216,13 @@ export function LynxEntityEditor({
           />
         </LynxView>
       ))}
+      {kind === 'providers' ? (
+        <ProviderAuthPanel
+          locale={locale}
+          runtimeFetch={runtimeFetch}
+          providerId={detail.id}
+        />
+      ) : null}
       <LynxView style={{ flexDirection: 'row', marginTop: '8px' }}>
         {!detail.saveUnsupportedReason ? (
           <LynxView
@@ -269,6 +283,194 @@ function BackRow({
       >
         {title}
       </LynxText>
+    </LynxView>
+  );
+}
+
+function ProviderAuthPanel({
+  locale,
+  runtimeFetch,
+  providerId,
+}: {
+  locale: string;
+  runtimeFetch: LynxRuntimeFetch | null;
+  providerId: string;
+}) {
+  const [methods, setMethods] = useState<LynxProviderAuthMethod[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [oauthCode, setOauthCode] = useState('');
+  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
+  const [oauthInstructions, setOauthInstructions] = useState<string | null>(null);
+  const [oauthUserCode, setOauthUserCode] = useState<string | null>(null);
+  const [hostSteps, setHostSteps] = useState<string[]>([]);
+  const [pendingMethod, setPendingMethod] = useState<number | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await loadLynxProviderAuthMethods(runtimeFetch);
+      if (cancelled) return;
+      if (result.status === 'ok') {
+        setMethods(result.byProvider[providerId] ?? []);
+        setLoadError(null);
+        return;
+      }
+      setMethods([]);
+      if (result.status === 'no-runtime') {
+        setLoadError(lynxT(locale, 'lynx.settings.noRuntime'));
+        return;
+      }
+      setLoadError(result.error.message);
+    })();
+    return () => { cancelled = true; };
+  }, [runtimeFetch, providerId, locale]);
+
+  const onSaveApiKey = async () => {
+    setBusy(true);
+    setNote(null);
+    const result = await saveLynxProviderApiKey(runtimeFetch, providerId, apiKey);
+    setBusy(false);
+    if (result.status === 'ok') {
+      setApiKey('');
+      setNote(lynxT(locale, 'lynx.settings.providerAuth.apiKeySaved'));
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    setNote(result.error.message);
+  };
+
+  const onStartOAuth = async (methodIndex: number) => {
+    setBusy(true);
+    setNote(null);
+    const result = await startLynxProviderOAuth(runtimeFetch, providerId, methodIndex);
+    setBusy(false);
+    if (result.status === 'ok') {
+      setPendingMethod(methodIndex);
+      setOauthUrl(result.url ?? null);
+      setOauthInstructions(result.instructions ?? null);
+      setOauthUserCode(result.userCode ?? null);
+      setHostSteps(result.hostOnlySteps);
+      setNote(lynxT(locale, 'lynx.settings.providerAuth.oauthStarted'));
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    setNote(result.error.message);
+  };
+
+  const onCompleteOAuth = async () => {
+    if (pendingMethod === null) return;
+    setBusy(true);
+    setNote(null);
+    const result = await completeLynxProviderOAuth(runtimeFetch, providerId, pendingMethod, oauthCode);
+    setBusy(false);
+    if (result.status === 'ok') {
+      setNote(lynxT(locale, 'lynx.settings.providerAuth.oauthCompleted'));
+      setOauthCode('');
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    setNote(result.error.message);
+  };
+
+  const oauthMethods = (methods ?? []).filter((method) => method.type.includes('oauth'));
+
+  return (
+    <LynxView style={{ marginBottom: '16px', paddingTop: '8px' }}>
+      <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', marginBottom: '8px' }}>
+        {lynxT(locale, 'lynx.settings.providerAuth.title')}
+      </LynxText>
+      {loadError ? (
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+          {loadError}
+        </LynxText>
+      ) : null}
+      <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '4px' }}>
+        {lynxT(locale, 'lynx.settings.providerAuth.apiKey')}
+      </LynxText>
+      <LynxInput
+        value={apiKey}
+        bindinput={(event) => setApiKey(event.detail?.value ?? '')}
+        style={{ color: cssVar('surface.foreground'), fontSize: '14px' }}
+      />
+      <LynxView
+        bindtap={() => { if (!busy) void onSaveApiKey(); }}
+        style={{ padding: '10px 0' }}
+        accessibility-role="button"
+      >
+        <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          {busy ? lynxT(locale, 'lynx.settings.editor.saving') : lynxT(locale, 'lynx.settings.providerAuth.saveApiKey')}
+        </LynxText>
+      </LynxView>
+      {oauthMethods.map((method) => (
+        <LynxView
+          key={`oauth-${method.index}`}
+          bindtap={() => { if (!busy) void onStartOAuth(method.index); }}
+          style={{ padding: '8px 0' }}
+          accessibility-role="button"
+        >
+          <LynxText style={{ color: cssVar('primary.base') }}>
+            {lynxT(locale, 'lynx.settings.providerAuth.startOAuth')}: {method.label}
+          </LynxText>
+        </LynxView>
+      ))}
+      {oauthUrl ? (
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '8px' }}>
+          {lynxT(locale, 'lynx.settings.providerAuth.oauthUrl')}: {oauthUrl}
+        </LynxText>
+      ) : null}
+      {oauthUserCode ? (
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+          {lynxT(locale, 'lynx.settings.providerAuth.userCode')}: {oauthUserCode}
+        </LynxText>
+      ) : null}
+      {oauthInstructions ? (
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+          {oauthInstructions}
+        </LynxText>
+      ) : null}
+      {hostSteps.map((step) => (
+        <LynxText key={step} style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px', marginTop: '4px' }}>
+          • {step}
+        </LynxText>
+      ))}
+      {pendingMethod !== null ? (
+        <LynxView style={{ marginTop: '8px' }}>
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '4px' }}>
+            {lynxT(locale, 'lynx.settings.providerAuth.oauthCode')}
+          </LynxText>
+          <LynxInput
+            value={oauthCode}
+            bindinput={(event) => setOauthCode(event.detail?.value ?? '')}
+            style={{ color: cssVar('surface.foreground'), fontSize: '14px' }}
+          />
+          <LynxView
+            bindtap={() => { if (!busy) void onCompleteOAuth(); }}
+            style={{ padding: '10px 0' }}
+            accessibility-role="button"
+          >
+            <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+              {lynxT(locale, 'lynx.settings.providerAuth.completeOAuth')}
+            </LynxText>
+          </LynxView>
+        </LynxView>
+      ) : null}
+      {note ? (
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '8px' }}>
+          {note}
+        </LynxText>
+      ) : null}
     </LynxView>
   );
 }

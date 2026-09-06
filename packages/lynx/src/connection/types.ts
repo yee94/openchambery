@@ -57,6 +57,8 @@ export type LynxHttpResponse = {
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
+  /** Optional — Cap `/api/fs/read` returns text/plain; host/http clients should provide this. */
+  text?: () => Promise<string>;
 };
 
 export type LynxRequestInit = {

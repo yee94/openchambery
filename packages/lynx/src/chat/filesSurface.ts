@@ -97,3 +97,70 @@ export const listLynxDirectory = async (
     };
   }
 };
+
+export type LynxFsReadResult =
+  | { status: 'ok'; path: string; content: string; truncated: boolean }
+  | { status: 'no-runtime' }
+  | { status: 'no-path' }
+  | { status: 'failed'; error: Error; httpStatus?: number };
+
+const DEFAULT_PREVIEW_MAX_CHARS = 200_000;
+
+/**
+ * Cap MobileFilesSurface text preview — `GET /api/fs/read?path=` (text/plain).
+ * Truncates large files for list/preview UI; failure ≠ empty success.
+ */
+export const readLynxFile = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  path: string | null | undefined,
+  options?: { signal?: AbortSignal; maxChars?: number },
+): Promise<LynxFsReadResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmed = path?.trim();
+  if (!trimmed) return { status: 'no-path' };
+  const maxChars = options?.maxChars ?? DEFAULT_PREVIEW_MAX_CHARS;
+  try {
+    const params = new URLSearchParams({ path: trimmed });
+    const response = await runtimeFetch(`/api/fs/read?${params.toString()}`, {
+      method: 'GET',
+      headers: { Accept: 'text/plain, application/json' },
+      signal: options?.signal,
+    });
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (!response.ok) {
+      return {
+        status: 'failed',
+        error: new Error(`fs/read failed (${response.status})`),
+        httpStatus: response.status,
+      };
+    }
+    let content: string;
+    if (typeof response.text === 'function') {
+      content = await response.text();
+    } else {
+      const payload = await response.json();
+      if (typeof payload === 'string') {
+        content = payload;
+      } else if (payload && typeof payload === 'object' && typeof (payload as { content?: unknown }).content === 'string') {
+        content = (payload as { content: string }).content;
+      } else {
+        return {
+          status: 'failed',
+          error: new Error('fs/read returned non-text body (host must provide response.text)'),
+        };
+      }
+    }
+    const truncated = content.length > maxChars;
+    return {
+      status: 'ok',
+      path: trimmed,
+      content: truncated ? content.slice(0, maxChars) : content,
+      truncated,
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+};

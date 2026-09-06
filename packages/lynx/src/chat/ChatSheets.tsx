@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
 
 import { lynxT } from '../i18n/catalog';
-import { LynxScrollView, LynxText, LynxView } from '../lynx-elements';
+import { LynxInput, LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { loadMcpCatalog, type LynxCatalogItem } from '../settings/catalogs';
 import { cssVar } from '../theme/tokens';
-import { loadLynxGitStatus, type LynxGitChangeEntry } from './changesSurface';
-import { listLynxDirectory, type LynxFsEntry } from './filesSurface';
+import {
+  commitLynxGitChanges,
+  loadLynxGitFileDiff,
+  loadLynxGitStatus,
+  syncLynxGit,
+  type LynxGitChangeEntry,
+  type LynxGitSyncAction,
+} from './changesSurface';
+import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
 import type { LynxChatSheetKind } from './overflowMenu';
 
 export type ChatSheetProps = {
@@ -19,7 +26,7 @@ export type ChatSheetProps = {
 
 /**
  * Files / Changes / MCP sheets — Cap MobileFilesSurface / MobileChangesSurface /
- * MCP catalog entry points with real list endpoints (not labeled empty stubs).
+ * MCP catalog entry points with real list + preview/diff/commit/sync endpoints.
  */
 export function LynxChatSheet({
   locale,
@@ -80,6 +87,10 @@ function FilesSheetBody({
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'no-directory'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [path, setPath] = useState(directory);
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [previewNote, setPreviewNote] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +112,50 @@ function FilesSheetBody({
       cancelled = true;
     };
   }, [runtimeFetch, path]);
+
+  const openPreview = async (filePath: string) => {
+    setPreviewPath(filePath);
+    setPreview(null);
+    setPreviewNote(null);
+    setPreviewBusy(true);
+    const result = await readLynxFile(runtimeFetch, filePath);
+    setPreviewBusy(false);
+    if (result.status === 'ok') {
+      setPreview(result.content);
+      setPreviewNote(result.truncated ? lynxT(locale, 'lynx.chat.sheet.files.truncated') : null);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setPreviewNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    setPreviewNote(result.status === 'failed' ? result.error.message : lynxT(locale, 'lynx.chat.sheet.files.previewFailed'));
+  };
+
+  if (previewPath) {
+    return (
+      <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
+        <LynxView
+          bindtap={() => { setPreviewPath(null); setPreview(null); setPreviewNote(null); }}
+          style={{ padding: '8px 0' }}
+        >
+          <LynxText style={{ color: cssVar('primary.base') }}>
+            {lynxT(locale, 'lynx.shell.back')}
+          </LynxText>
+        </LynxView>
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+          {previewPath}
+        </LynxText>
+        {previewBusy ? <Banner text={lynxT(locale, 'lynx.settings.loading')} muted /> : null}
+        {previewNote ? <Banner text={previewNote} muted /> : null}
+        {preview !== null ? (
+          <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px' }}>
+            {preview}
+          </LynxText>
+        ) : null}
+      </LynxScrollView>
+    );
+  }
 
   if (status === 'no-runtime') {
     return <Banner text={lynxT(locale, 'lynx.settings.noRuntime')} muted />;
@@ -129,6 +184,7 @@ function FilesSheetBody({
             style={{ padding: '10px 0' }}
             bindtap={() => {
               if (entry.type === 'directory') setPath(entry.path);
+              else void openPreview(entry.path);
             }}
           >
             <LynxText style={{ color: cssVar('surface.foreground') }}>
@@ -155,6 +211,14 @@ function ChangesSheetBody({
   const [branch, setBranch] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'no-directory'>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [diffEntry, setDiffEntry] = useState<LynxGitChangeEntry | null>(null);
+  const [diffText, setDiffText] = useState<string | null>(null);
+  const [diffNote, setDiffNote] = useState<string | null>(null);
+  const [diffBusy, setDiffBusy] = useState(false);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [actionNote, setActionNote] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,7 +240,118 @@ function ChangesSheetBody({
     return () => {
       cancelled = true;
     };
-  }, [runtimeFetch, directory]);
+  }, [runtimeFetch, directory, reloadNonce]);
+
+  const openDiff = async (entry: LynxGitChangeEntry) => {
+    setDiffEntry(entry);
+    setDiffText(null);
+    setDiffNote(null);
+    setDiffBusy(true);
+    const result = await loadLynxGitFileDiff(runtimeFetch, directory, entry.path, {
+      staged: entry.staged,
+    });
+    setDiffBusy(false);
+    if (result.status === 'ok') {
+      if (result.isBinary) {
+        setDiffNote(lynxT(locale, 'lynx.chat.sheet.changes.binary'));
+        return;
+      }
+      const unified = result.unifiedDiff?.trim();
+      if (unified) {
+        setDiffText(unified);
+      } else {
+        setDiffText(
+          [
+            `--- a/${entry.path}`,
+            `+++ b/${entry.path}`,
+            '@@ preview @@',
+            ...result.original.split('\n').map((line) => `-${line}`),
+            ...result.modified.split('\n').map((line) => `+${line}`),
+          ].join('\n'),
+        );
+      }
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setDiffNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    setDiffNote(result.status === 'failed' ? result.error.message : lynxT(locale, 'lynx.chat.sheet.changes.diffFailed'));
+  };
+
+  const runCommit = async () => {
+    setActionBusy(true);
+    setActionNote(null);
+    const result = await commitLynxGitChanges(runtimeFetch, directory, commitMessage);
+    setActionBusy(false);
+    if (result.status === 'ok') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.changes.committed'));
+      setCommitMessage('');
+      setReloadNonce((n) => n + 1);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setActionNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    if (result.status === 'no-directory') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.noDirectory'));
+      return;
+    }
+    setActionNote(result.error.message);
+  };
+
+  const runSync = async (action: LynxGitSyncAction) => {
+    setActionBusy(true);
+    setActionNote(null);
+    const result = await syncLynxGit(runtimeFetch, directory, action);
+    setActionBusy(false);
+    if (result.status === 'ok') {
+      const okKey = action === 'fetch'
+        ? 'lynx.chat.sheet.changes.fetchOk'
+        : action === 'pull'
+          ? 'lynx.chat.sheet.changes.pullOk'
+          : 'lynx.chat.sheet.changes.pushOk';
+      setActionNote(lynxT(locale, okKey));
+      setReloadNonce((n) => n + 1);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setActionNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    if (result.status === 'no-directory') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.noDirectory'));
+      return;
+    }
+    setActionNote(result.error.message);
+  };
+
+  if (diffEntry) {
+    return (
+      <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
+        <LynxView
+          bindtap={() => { setDiffEntry(null); setDiffText(null); setDiffNote(null); }}
+          style={{ padding: '8px 0' }}
+        >
+          <LynxText style={{ color: cssVar('primary.base') }}>
+            {lynxT(locale, 'lynx.shell.back')}
+          </LynxText>
+        </LynxView>
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+          {diffEntry.path}
+          {diffEntry.staged ? ' · staged' : ''}
+        </LynxText>
+        {diffBusy ? <Banner text={lynxT(locale, 'lynx.settings.loading')} muted /> : null}
+        {diffNote ? <Banner text={diffNote} muted /> : null}
+        {diffText !== null ? (
+          <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px' }}>
+            {diffText}
+          </LynxText>
+        ) : null}
+      </LynxScrollView>
+    );
+  }
 
   if (status === 'no-runtime') {
     return <Banner text={lynxT(locale, 'lynx.settings.noRuntime')} muted />;
@@ -197,11 +372,48 @@ function ChangesSheetBody({
         {directory}
         {branch ? ` · ${branch}` : ''}
       </LynxText>
+      <LynxView style={{ marginBottom: '12px' }}>
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '4px' }}>
+          {lynxT(locale, 'lynx.chat.sheet.changes.commitMessage')}
+        </LynxText>
+        <LynxInput
+          value={commitMessage}
+          bindinput={(event) => setCommitMessage(event.detail?.value ?? '')}
+          style={{ color: cssVar('surface.foreground'), fontSize: '14px' }}
+        />
+        <LynxView style={{ flexDirection: 'row', marginTop: '8px', flexWrap: 'wrap' }}>
+          <ActionChip
+            label={actionBusy ? lynxT(locale, 'lynx.chat.sheet.changes.busy') : lynxT(locale, 'lynx.chat.sheet.changes.commit')}
+            onTap={() => { if (!actionBusy) void runCommit(); }}
+          />
+          <ActionChip
+            label={lynxT(locale, 'lynx.chat.sheet.changes.fetch')}
+            onTap={() => { if (!actionBusy) void runSync('fetch'); }}
+          />
+          <ActionChip
+            label={lynxT(locale, 'lynx.chat.sheet.changes.pull')}
+            onTap={() => { if (!actionBusy) void runSync('pull'); }}
+          />
+          <ActionChip
+            label={lynxT(locale, 'lynx.chat.sheet.changes.push')}
+            onTap={() => { if (!actionBusy) void runSync('push'); }}
+          />
+        </LynxView>
+        {actionNote ? (
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '8px' }}>
+            {actionNote}
+          </LynxText>
+        ) : null}
+      </LynxView>
       {entries.length === 0 ? (
         <Banner text={lynxT(locale, 'lynx.chat.sheet.changes.empty')} muted />
       ) : (
         entries.map((entry) => (
-          <LynxView key={`${entry.staged ? 's' : 'u'}:${entry.path}`} style={{ padding: '10px 0' }}>
+          <LynxView
+            key={`${entry.staged ? 's' : 'u'}:${entry.path}`}
+            style={{ padding: '10px 0' }}
+            bindtap={() => { void openDiff(entry); }}
+          >
             <LynxText style={{ color: cssVar('surface.foreground') }}>{entry.path}</LynxText>
             <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
               {entry.status}
@@ -211,6 +423,21 @@ function ChangesSheetBody({
         ))
       )}
     </LynxScrollView>
+  );
+}
+
+function ActionChip({ label, onTap }: { label: string; onTap: () => void }) {
+  return (
+    <LynxView
+      bindtap={onTap}
+      style={{ padding: '8px 12px', marginRight: '8px', marginBottom: '8px' }}
+      accessibility-role="button"
+      accessibility-label={label}
+    >
+      <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600', fontSize: '13px' }}>
+        {label}
+      </LynxText>
+    </LynxView>
   );
 }
 

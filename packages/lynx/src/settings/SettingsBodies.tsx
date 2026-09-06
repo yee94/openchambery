@@ -262,6 +262,7 @@ function NotificationsBody({ ctx }: { ctx: SettingsBodyContext }) {
         }}
       />
       <Banner text={lynxT(ctx.locale, 'lynx.settings.notifications.hooks')} muted />
+      <Banner text={lynxT(ctx.locale, 'lynx.settings.notifications.pushWired')} muted />
     </LynxView>
   );
 }

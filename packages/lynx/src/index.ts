@@ -186,3 +186,26 @@ export {
   type LynxAutoConnectPhase,
 } from './connect/autoConnectPhase';
 export { parsePastedPairingLink } from './connect/pairingPaste';
+
+export {
+  loadLynxGitStatus,
+  loadLynxGitFileDiff,
+  commitLynxGitChanges,
+  syncLynxGit,
+} from './chat/changesSurface';
+export { listLynxDirectory, readLynxFile } from './chat/filesSurface';
+export {
+  loadLynxProviderAuthMethods,
+  saveLynxProviderApiKey,
+  startLynxProviderOAuth,
+  completeLynxProviderOAuth,
+  LYNX_PROVIDER_OAUTH_HOST_ONLY_STEPS,
+} from './settings/providerAuth';
+export {
+  createLynxNativePushRegistration,
+  guardLynxFcmApplicationId,
+  LYNX_FCM_APPLICATION_IDS,
+  LYNX_FCM_LEGACY_NAMESPACE,
+} from './host/pushRegistration';
+export { createLynxShareInbox } from './assistants/shareInbox';
+export type { LynxShareEnvelope, LynxShareInbox } from './assistants/shareInbox';

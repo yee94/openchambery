@@ -173,6 +173,32 @@ export type LynxMessageKey =
   | 'lynx.chat.sheet.changes.empty'
   | 'lynx.chat.sheet.mcp.failed'
   | 'lynx.chat.sheet.mcp.empty'
+  | 'lynx.chat.sheet.files.truncated'
+  | 'lynx.chat.sheet.files.previewFailed'
+  | 'lynx.chat.sheet.changes.diffFailed'
+  | 'lynx.chat.sheet.changes.binary'
+  | 'lynx.chat.sheet.changes.commitMessage'
+  | 'lynx.chat.sheet.changes.commit'
+  | 'lynx.chat.sheet.changes.busy'
+  | 'lynx.chat.sheet.changes.committed'
+  | 'lynx.chat.sheet.changes.fetch'
+  | 'lynx.chat.sheet.changes.pull'
+  | 'lynx.chat.sheet.changes.push'
+  | 'lynx.chat.sheet.changes.fetchOk'
+  | 'lynx.chat.sheet.changes.pullOk'
+  | 'lynx.chat.sheet.changes.pushOk'
+  | 'lynx.settings.providerAuth.title'
+  | 'lynx.settings.providerAuth.apiKey'
+  | 'lynx.settings.providerAuth.saveApiKey'
+  | 'lynx.settings.providerAuth.apiKeySaved'
+  | 'lynx.settings.providerAuth.startOAuth'
+  | 'lynx.settings.providerAuth.oauthStarted'
+  | 'lynx.settings.providerAuth.oauthUrl'
+  | 'lynx.settings.providerAuth.userCode'
+  | 'lynx.settings.providerAuth.oauthCode'
+  | 'lynx.settings.providerAuth.completeOAuth'
+  | 'lynx.settings.providerAuth.oauthCompleted'
+  | 'lynx.settings.notifications.pushWired'
 
 type LynxDictionary = Record<LynxMessageKey, string>;
 
@@ -330,6 +356,32 @@ const en: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': 'No changes.',
   'lynx.chat.sheet.mcp.failed': 'Failed to load MCP servers.',
   'lynx.chat.sheet.mcp.empty': 'No MCP servers configured.',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -487,6 +539,32 @@ const es: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': 'Sin cambios.',
   'lynx.chat.sheet.mcp.failed': 'Error al cargar servidores MCP.',
   'lynx.chat.sheet.mcp.empty': 'No hay servidores MCP configurados.',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -644,6 +722,32 @@ const fr: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': 'Aucun changement.',
   'lynx.chat.sheet.mcp.failed': 'Échec du chargement des serveurs MCP.',
   'lynx.chat.sheet.mcp.empty': 'Aucun serveur MCP configuré.',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -801,6 +905,32 @@ const ja: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': '変更なし。',
   'lynx.chat.sheet.mcp.failed': 'MCP サーバーの取得に失敗しました。',
   'lynx.chat.sheet.mcp.empty': 'MCP サーバーは未設定です。',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -958,6 +1088,32 @@ const ko: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': '변경 사항 없음.',
   'lynx.chat.sheet.mcp.failed': 'MCP 서버를 불러오지 못했습니다.',
   'lynx.chat.sheet.mcp.empty': '구성된 MCP 서버가 없습니다.',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -1115,6 +1271,32 @@ const pl: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': 'Brak zmian.',
   'lynx.chat.sheet.mcp.failed': 'Nie udało się wczytać serwerów MCP.',
   'lynx.chat.sheet.mcp.empty': 'Brak skonfigurowanych serwerów MCP.',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -1272,6 +1454,32 @@ const ptBR: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': 'Sem alterações.',
   'lynx.chat.sheet.mcp.failed': 'Falha ao carregar servidores MCP.',
   'lynx.chat.sheet.mcp.empty': 'Nenhum servidor MCP configurado.',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -1429,6 +1637,32 @@ const uk: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': 'Немає змін.',
   'lynx.chat.sheet.mcp.failed': 'Не вдалося завантажити MCP сервери.',
   'lynx.chat.sheet.mcp.empty': 'Немає налаштованих MCP серверів.',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -1586,6 +1820,32 @@ const zhCN: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': '无变更。',
   'lynx.chat.sheet.mcp.failed': '加载 MCP 服务器失败。',
   'lynx.chat.sheet.mcp.empty': '未配置 MCP 服务器。',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 
@@ -1743,6 +2003,32 @@ const zhTW: LynxDictionary = {
   'lynx.chat.sheet.changes.empty': '無變更。',
   'lynx.chat.sheet.mcp.failed': '載入 MCP 伺服器失敗。',
   'lynx.chat.sheet.mcp.empty': '未設定 MCP 伺服器。',
+  'lynx.chat.sheet.files.truncated': 'Preview truncated for display.',
+  'lynx.chat.sheet.files.previewFailed': 'Failed to preview file.',
+  'lynx.chat.sheet.changes.diffFailed': 'Failed to load file diff.',
+  'lynx.chat.sheet.changes.binary': 'Binary file — text diff unavailable.',
+  'lynx.chat.sheet.changes.commitMessage': 'Commit message',
+  'lynx.chat.sheet.changes.commit': 'Commit',
+  'lynx.chat.sheet.changes.busy': 'Working…',
+  'lynx.chat.sheet.changes.committed': 'Commit created.',
+  'lynx.chat.sheet.changes.fetch': 'Fetch',
+  'lynx.chat.sheet.changes.pull': 'Pull',
+  'lynx.chat.sheet.changes.push': 'Push',
+  'lynx.chat.sheet.changes.fetchOk': 'Fetch completed.',
+  'lynx.chat.sheet.changes.pullOk': 'Pull completed.',
+  'lynx.chat.sheet.changes.pushOk': 'Push completed.',
+  'lynx.settings.providerAuth.title': 'Provider auth',
+  'lynx.settings.providerAuth.apiKey': 'API key',
+  'lynx.settings.providerAuth.saveApiKey': 'Save API key',
+  'lynx.settings.providerAuth.apiKeySaved': 'API key saved.',
+  'lynx.settings.providerAuth.startOAuth': 'Start OAuth',
+  'lynx.settings.providerAuth.oauthStarted': 'OAuth started — host must open the authorize URL.',
+  'lynx.settings.providerAuth.oauthUrl': 'Authorize URL (host-only open)',
+  'lynx.settings.providerAuth.userCode': 'User code',
+  'lynx.settings.providerAuth.oauthCode': 'OAuth callback code',
+  'lynx.settings.providerAuth.completeOAuth': 'Complete OAuth',
+  'lynx.settings.providerAuth.oauthCompleted': 'OAuth completed.',
+  'lynx.settings.notifications.pushWired': 'APNs/FCM: host injects tokens; Lynx registers `/api/push/apns-token`. FCM applicationId must match google-services.json (com.yee94.openchamber[.debug]).',
 
 };
 

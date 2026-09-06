@@ -135,6 +135,24 @@ Slice on `cursor/lynx-editors-sheets-local` (PR into `work/lynx-native`). Packag
 **真机过:** not executed.
 
 ---
+
+## 代码接上 (diff/preview + commit/sync + provider auth + push/share hooks — not landed under 三关)
+
+Slice on `cursor/lynx-diff-push-share-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Changes turn/file diff | `MobileChangesSurface` → `/api/git/file-diff`, `/api/git/diff` | Tap file → preview unified/original+modified. Binary labeled. |
+| Changes commit / sync | `CommitSection`, `SyncActions` → `POST /api/git/commit\|fetch\|pull\|push` | **Real** Cap endpoints (not stubs). Failure ≠ fake-success. |
+| Files text preview | `MobileFilesSurface` / FilesView → `/api/fs/read` | List stays real; tap file → text preview (truncated). HTML iframe not ported. |
+| Provider auth UI | `ProvidersPage` auth | API key `PUT /api/auth/:id`; OAuth authorize/callback Cap routes; **host-only** browser open documented (no invented OAuth/Capgo). Clear-auth delete unchanged. |
+| Push registration hooks | `useNativePushRegistration` → `/api/push/apns-token` | Host injects APNs/FCM tokens; Lynx stores + registers/unregisters. FCM `applicationId` must be `com.yee94.openchamber[.debug]` (pitfalls §6). |
+| Share inbox intake | `MobileShareBridge` → assistants `/share` | Accept host share envelope / openchamber share intents; dispatch to Assistant session. No Capgo. |
+
+**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -177,7 +195,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Activity / sorted / collapsed | chat DOCUMENTATION | |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid tests |
 | Nested child session stack + predecessor | `mobileNavigation.ts` | |
-| Files / Changes / turn-diff sheets | `MobileFilesSurface`, `MobileChangesSurface` | Files/Changes **list** 代码接上 (`/api/fs/list`, `/api/git/status`); rich preview/diff/commit still missing |
+| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML iframe / PierreDiff polish still thin. |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | Context usage | `mobileContextUsage.ts` | |
 | Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | |
@@ -190,7 +208,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 |---|---|---|
 | ~~Assistant catalog + conversation page~~ | `MobileAssistantTab.tsx`, `AssistantView.tsx` | **代码接上** catalog + LynxChatScreen; ensure path calls Cap `session/ensure` (no invented ids) |
 | Continuous / stateless admission | assistants DOCUMENTATION | Mode labels shown; admission APIs not fully ported |
-| Share welcome + inbox | `AssistantShareWelcome`, `MobileShareBridge` | |
+| ~~Share welcome + inbox~~ | `AssistantShareWelcome`, `MobileShareBridge` | **代码接上** share inbox intake + Cap assistants `/share` dispatch (host injects envelopes). Welcome chrome still thin. |
 | ~~Scheduled list / history / editor~~ | `MobileScheduledTab.tsx` | **代码接上** list + history + editor upsert UI |
 | ~~Settings search + **all 21 mobile slugs**~~ | `MOBILE_SETTINGS_PAGE_SLUGS` | **代码接上** home search + grouped rows + push stubs |
 | ~~Settings split collection → entity editor~~ | `SettingsView.tsx` | **代码接上** detail push + Cap save/delete for list-backed slugs (providers save = auth-unsupported) |
@@ -199,8 +217,8 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source |
 |---|---|
-| APNs + FCM registration | `useNativePushRegistration.ts` |
-| Share extension / Android share receiver | `packages/mobile` share |
+| ~~APNs + FCM registration~~ | `useNativePushRegistration.ts` | **代码接上** host-inject + `/api/push/apns-token` register/unregister + FCM package-id guard. Native token mint still host-owned. |
+| Share extension / Android share receiver | `packages/mobile` share | Host/native still owns extensions; Lynx inbox accepts payloads |
 | Live Activity | iOS 17+ plugin |
 | Widgets / Control Center | `OpenChamberWidget` |
 | Haptics | `OpenChamberHaptics` |
@@ -253,7 +271,8 @@ First implementation slice after this doc gate (order is deliberate: connect →
 9. ~~**Projects MobileTabPageHeader**~~ — 代码接上 collapsing header + glass search + primary +. Remaining: pixel polish / menu.
 10. ~~**CI skeleton (Linux)**~~ — `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) type-check + vitest + rspeedy. Remaining: Android APK + iOS sim runners (do not claim 真机过).
 11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`.
-12. ~~**editors + Files/Changes/MCP lists + deep-link apply**~~ — 代码接上 in `cursor/lynx-editors-sheets-local`. Remaining: rich diff/preview/commit, provider auth UI, host Keychain/QR, 真机.
+12. ~~**editors + Files/Changes/MCP lists + deep-link apply**~~ — 代码接上 in `cursor/lynx-editors-sheets-local`.
+13. ~~**diff/preview + commit/sync + provider auth + push/share hooks**~~ — 代码接上 in `cursor/lynx-diff-push-share-local`. Remaining: host Keychain/QR/browser OAuth open, share welcome chrome, 真机.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 
@@ -310,7 +329,7 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 | `instances` | 代码接上 (wired body) | List + add/delete + paste pairing + password unlock; QR camera stub |
 | `appearance` | 代码接上 (wired GET/PUT) | Theme mode + `flexoki-*` ids. No `iosNativeUi` toggle |
 | `chat` | 代码接上 (wired GET/PUT) | Reasoning / queue / follow-up via `/api/config/settings` |
-| `notifications` | 代码接上 (wired hooks) | Toggles via settings blob; APNs/FCM register host-owned |
+| `notifications` | 代码接上 (wired hooks + push register module) | Toggles via settings blob; host injects tokens; Lynx registers `/api/push/apns-token` |
 | `sessions` | 代码接上 (wired GET/PUT) | Auto-delete + retention from settings blob |
 | `summary-ai` | 代码接上 (wired GET/PUT + small-model) | Settings blob + `/api/small-model`; failure ≠ empty |
 | `projects` | 代码接上 (list + editor) | settings blob list; detail save/delete via settings PUT |
