@@ -39,9 +39,9 @@ Session-index, search + highlight, pin/in-progress, `项目 · 分支` subtitle,
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | Projects tab is a placeholder title |
-| CI green | missing | |
-| 真机过 | missing | |
+| Track (CODE) | **code landed** | Live `GET /api/openchamber/session-index` home (failure ≠ empty); search + highlight; pinned/in-progress + `项目 · 分支`; unread dot UI; draft `/chat/draft` (`sessionId == ''`); plus 扫一扫 / 切换实例 → Connect QR / onboarding. Unit tests green locally. Chat body still stub (Track 3). Live unread/running need events (not rebuilt plan/notes/Todo). |
+| CI green | missing | Local vitest+lint+typecheck green; Actions tip not claimed |
+| 真机过 | missing | Do not mark from Linux VM |
 
 ### 3. Chat
 
@@ -132,7 +132,7 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Stub pushed Chat route | landed | Placeholder. No LegendList yet |
 | Connection onboarding (URL / QR / password / pairing v2) | **code landed** | Expo Connect screen + controller. No local PIN |
 | Relay-only skip 1.5s headstart | **code landed** | Unit-tested injectable race; Cap TS relay under lib/relay |
-| Session index Projects home + `项目 · 分支` | not started | Required |
+| Session index Projects home + `项目 · 分支` | **code landed** | Expo Projects home on `work/expo-native`; 真机过 still open |
 | Chat LegendList + Send/Stop | not started | LegendList contract, not 1.18 TanStack |
 | Settings home + `MOBILE_SETTINGS_PAGE_SLUGS` | not started | Omit Voice |
 | Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity) | not started | Always on; no `iosNativeUi` toggle |

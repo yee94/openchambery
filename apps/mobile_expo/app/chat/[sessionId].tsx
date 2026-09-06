@@ -2,20 +2,26 @@ import { useLocalSearchParams } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
+import { isDraftSessionRouteId, resolveChatSessionId } from '@/lib/sessionHomeModel';
+import { t } from '@/lib/i18n';
 
 /**
- * Pushed Chat route. The dock stays underneath and must hide once chrome lands.
- * Transcript uses LegendList (not 1.18 TanStack). This file is a stub.
+ * Pushed Chat route. Dock stays underneath until chrome hides it.
+ * Transcript / LegendList / Send-Stop land in Track 3 — body stays stub.
+ * Draft new session uses route id `draft` (Cap: sessionId == '' until first send).
  */
 export default function ChatScreen() {
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { sessionId: routeId } = useLocalSearchParams<{ sessionId: string }>();
+  const draft = isDraftSessionRouteId(routeId);
+  const sessionId = resolveChatSessionId(routeId);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Chat</Text>
+      <Text style={styles.title}>{draft ? t('mobile.chat.draftTitle') : t('mobile.chat.title')}</Text>
       <Text style={styles.body}>
-        Stub pushed session {sessionId ?? 'unknown'}. LegendList, native composer, and Send/Stop
-        are not implemented in this bootstrap.
+        {draft
+          ? t('mobile.chat.draftBody')
+          : `${t('mobile.chat.stubBody')} ${sessionId}`}
       </Text>
     </View>
   );
