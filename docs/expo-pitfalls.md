@@ -123,7 +123,11 @@ Do not ship Metro-dependent debug APKs as "installable" prereleases.
 
 `lib/relay/crypto.ts` uses WebCrypto ECDH / AES-GCM / HKDF. Cap/WebView has `crypto.subtle`; **Hermes does not**. Top-level `globalThis.crypto.subtle` at module load crashes cold start with `TypeError: Cannot read property 'subtle' of undefined` — looks like a splash hang if you only glance at the launcher, but logcat shows `ReactNativeJS: Running "main"` then `JavascriptException`.
 
-**Fix:** `apps/mobile_expo/index.js` calls `react-native-quick-crypto`'s `install()` before `expo-router/entry`. Emulator smoke must fail on FATAL / dead pid, not only missing `ReactNativeJS`.
+**Fix:** `apps/mobile_expo/index.js` patches `globalThis.crypto.subtle` / `getRandomValues` from `react-native-quick-crypto` before `expo-router/entry`. Emulator smoke must fail on FATAL / dead pid, not only missing `ReactNativeJS`.
+
+### Hermes has no `Intl.Segmenter`
+
+`new Intl.Segmenter(...)` throws `TypeError: undefined cannot be used as a constructor` on Hermes and kills cold start right after `Running "main"`. Do not use Segmenter at module load — use a Unicode emoji regex (see `lib/assistantPresentation.ts`).
 
 ### Secrets: reuse existing GitHub Actions names only
 

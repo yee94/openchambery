@@ -3,16 +3,22 @@ type AssistantPresentation = {
   displayName: string;
 };
 
-const emojiSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-const emojiClusterPattern = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3)/u;
+/**
+ * Hermes (RN) does not ship Intl.Segmenter — `new Intl.Segmenter(...)` throws
+ * "undefined cannot be used as a constructor" and kills cold start after
+ * ReactNativeJS Running main. Use a Unicode emoji regex instead (Cap/WebView
+ * still has Segmenter; Expo must not rely on it at module load).
+ */
+const LEADING_EMOJI =
+  /^(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*|\p{Regional_Indicator}{2})/u;
 
 /** Cap `getAssistantPresentation` — leading emoji becomes avatar, rest is title. */
 export const getAssistantPresentation = (name: string): AssistantPresentation => {
-  const firstSegment = emojiSegmenter.segment(name)[Symbol.iterator]().next().value?.segment;
-  if (!firstSegment || !emojiClusterPattern.test(firstSegment)) return { displayName: name };
+  const match = name.match(LEADING_EMOJI);
+  if (!match) return { displayName: name };
 
   return {
-    avatarEmoji: firstSegment,
-    displayName: name.slice(firstSegment.length).trimStart(),
+    avatarEmoji: match[0],
+    displayName: name.slice(match[0].length).trimStart(),
   };
 };

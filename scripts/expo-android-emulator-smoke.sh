@@ -45,6 +45,11 @@ for i in $(seq 1 60); do
     kill "$LOGCAT_PID" >/dev/null 2>&1 || true
     exit 1
   fi
+  if grep -Eiq "undefined cannot be used as a constructor|Intl\.Segmenter" emulator-smoke/logcat-snapshot.txt; then
+    echo "::error::undefined constructor (often Intl.Segmenter on Hermes)"
+    kill "$LOGCAT_PID" >/dev/null 2>&1 || true
+    exit 1
+  fi
 
   if grep -Eq 'ReactNativeJS: Running "main"|ReactNativeJS: Running '\''main'\''' emulator-smoke/logcat-snapshot.txt \
     || grep -Eq 'ReactNativeJS: Running "main"' emulator-smoke/logcat-snapshot.txt; then
