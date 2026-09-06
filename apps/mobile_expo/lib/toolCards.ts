@@ -1,10 +1,23 @@
 /**
  * Minimal Cap-parity tool card models for Expo Chat.
- * Ported from Cap toolRenderUtils + ProgressiveGroup short-description helpers —
- * expandable cards only (no process Used fold / LatticeOrb / nested task chrome).
+ * Ported from Cap toolRenderUtils + ProgressiveGroup short-description helpers.
+ * Includes process Used fold + skill group aggregation (no LatticeOrb / FlipUp).
  */
 
 import type { ChatMessagePart } from '@/lib/sessionMessages';
+import {
+  collectConsecutiveProcessTools,
+  formatProcessSummary,
+  hasProcessSuccessor,
+  isProcessGroupActive,
+  isProcessGroupTool,
+} from '@/lib/processToolGrouping';
+import {
+  collectConsecutiveSkillTools,
+  formatSkillSummary,
+  getSkillNameFromToolPart,
+  isSkillGroupTool,
+} from '@/lib/skillToolGrouping';
 
 export type ToolCardStatus =
   | 'pending'
@@ -33,10 +46,26 @@ export type ReasoningModel = {
   streaming: boolean;
 };
 
+export type UsedFoldModel = {
+  id: string;
+  running: boolean;
+  summary: string;
+  cards: ToolCardModel[];
+};
+
+export type SkillGroupModel = {
+  id: string;
+  running: boolean;
+  summary: string;
+  cards: ToolCardModel[];
+};
+
 export type MessageSegment =
   | { kind: 'text'; id: string; text: string }
   | { kind: 'tool'; id: string; card: ToolCardModel }
-  | { kind: 'reasoning'; id: string; reasoning: ReasoningModel };
+  | { kind: 'reasoning'; id: string; reasoning: ReasoningModel }
+  | { kind: 'used-fold'; id: string; fold: UsedFoldModel }
+  | { kind: 'skill-group'; id: string; group: SkillGroupModel };
 
 const SETTLED = new Set(['completed', 'error', 'failed', 'aborted', 'timeout', 'cancelled']);
 const ACTIVE = new Set(['pending', 'started', 'running']);
@@ -268,28 +297,106 @@ export const reasoningFromPart = (part: ChatMessagePart, index: number): Reasoni
   };
 };
 
-/** Ordered segments for one message — Cap MessageBody subset. */
-export const segmentsFromParts = (parts: ChatMessagePart[] | undefined): MessageSegment[] => {
+const toolNameOf = (part: ChatMessagePart): unknown =>
+  (part as Record<string, unknown>).tool;
+
+/** Ordered segments for one message — Cap MessageBody / ProgressiveGroup subset. */
+export const segmentsFromParts = (
+  parts: ChatMessagePart[] | undefined,
+  options?: { isTurnLive?: boolean },
+): MessageSegment[] => {
   if (!parts?.length) return [];
+  const isTurnLive = Boolean(options?.isTurnLive);
   const segments: MessageSegment[] = [];
-  parts.forEach((part, index) => {
+  let index = 0;
+  while (index < parts.length) {
+    const part = parts[index]!;
+
     if (part.type === 'text' && typeof part.text === 'string' && part.text.length > 0) {
       const id = (typeof part.id === 'string' && part.id) || `text_${index}`;
       segments.push({ kind: 'text', id, text: part.text });
-      return;
+      index += 1;
+      continue;
     }
+
     if (part.type === 'reasoning') {
       const reasoning = reasoningFromPart(part, index);
       if (reasoning && (reasoning.text || reasoning.streaming)) {
         segments.push({ kind: 'reasoning', id: reasoning.id, reasoning });
       }
-      return;
+      index += 1;
+      continue;
     }
+
     if (part.type === 'tool') {
+      const toolName = toolNameOf(part);
+
+      if (isProcessGroupTool(toolName)) {
+        const grouped = collectConsecutiveProcessTools(parts, index, toolNameOf);
+        const cards = grouped.items
+          .map((item, offset) => toolCardFromPart(item, index + offset))
+          .filter((card): card is ToolCardModel => card != null);
+        if (cards.length > 0) {
+          const hasFollowingOtherType = hasProcessSuccessor(parts, grouped.end, (item) => ({
+            type: item.type,
+            toolName: toolNameOf(item),
+          }));
+          const running = isProcessGroupActive({
+            parts: grouped.items,
+            hasFollowingOtherType,
+            isTurnLive,
+          });
+          const id = `used_${cards[0]!.id}`;
+          segments.push({
+            kind: 'used-fold',
+            id,
+            fold: {
+              id,
+              running,
+              summary: formatProcessSummary(grouped.items.map(toolNameOf)),
+              cards,
+            },
+          });
+        }
+        index = grouped.end;
+        continue;
+      }
+
+      if (isSkillGroupTool(toolName)) {
+        const grouped = collectConsecutiveSkillTools(parts, index, toolNameOf);
+        const cards = grouped.items
+          .map((item, offset) => toolCardFromPart(item, index + offset))
+          .filter((card): card is ToolCardModel => card != null);
+        if (cards.length > 0) {
+          const running = grouped.items.some((item) => !isToolPartSettled(item));
+          const names = grouped.items.map(getSkillNameFromToolPart);
+          const id = `skill_${cards[0]!.id}`;
+          segments.push({
+            kind: 'skill-group',
+            id,
+            group: {
+              id,
+              running,
+              summary: formatSkillSummary(
+                names,
+                (joined, count) => `${joined} and ${count} more`,
+              ),
+              cards,
+            },
+          });
+        }
+        index = grouped.end;
+        continue;
+      }
+
       const card = toolCardFromPart(part, index);
       if (card) segments.push({ kind: 'tool', id: card.id, card });
+      index += 1;
+      continue;
     }
-  });
+
+    index += 1;
+  }
   return segments;
 };
 

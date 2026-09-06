@@ -51,6 +51,15 @@ import {
   type StreamingPlatform,
 } from '@/lib/streamingMarkdown';
 import { isDraftSessionRouteId, resolveChatSessionId } from '@/lib/sessionHomeModel';
+import {
+  applyQuestionEvent,
+  isQuestionNotFoundError,
+  listPendingQuestions,
+  rejectQuestion,
+  replyToQuestion,
+  type QuestionRequest,
+  QuestionApiError,
+} from '@/lib/questionApi';
 
 export type ChatLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -79,6 +88,11 @@ export type ChatSessionView = {
   attachments: StagedPromptAttachment[];
   setAttachments: (next: StagedPromptAttachment[]) => void;
   contextDisplay: MobileContextDisplay | null;
+  /** Cap session question requests (interactive QuestionCard). */
+  pendingQuestions: QuestionRequest[];
+  replyQuestion: (request: QuestionRequest, answers: string[][]) => Promise<void>;
+  dismissQuestion: (request: QuestionRequest) => Promise<void>;
+  questionBusyId: string | null;
 };
 
 const platformCadence = (): StreamingPlatform => {
@@ -114,6 +128,8 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
   const [attachments, setAttachments] = useState<StagedPromptAttachment[]>([]);
   const [contextDisplay, setContextDisplay] = useState<MobileContextDisplay | null>(null);
   const [providerCatalog, setProviderCatalog] = useState<unknown>(null);
+  const [pendingQuestions, setPendingQuestions] = useState<QuestionRequest[]>([]);
+  const [questionBusyId, setQuestionBusyId] = useState<string | null>(null);
   const queueRevisionRef = useRef(0);
   const queueScopeIdRef = useRef<string | null>(null);
 
@@ -143,6 +159,7 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     setSessionId(next);
     if (isDraftSessionRouteId(routeSessionId)) {
       transcriptRef.current.replaceFromRecords([]);
+      setPendingQuestions([]);
       setStatus('ready');
       setError(null);
     }
@@ -221,6 +238,26 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     return () => clearInterval(timer);
   }, [active, sessionId, busy, refreshQueue]);
 
+  const refreshQuestions = useCallback(async () => {
+    if (!active || !sessionId) {
+      setPendingQuestions([]);
+      return;
+    }
+    try {
+      const pending = await listPendingQuestions(active, {
+        directory: directoryRef.current,
+        sessionId,
+      });
+      setPendingQuestions(pending);
+    } catch {
+      // Questions are blocking chrome — do not fail the chat surface on list errors.
+    }
+  }, [active, sessionId]);
+
+  useEffect(() => {
+    void refreshQuestions();
+  }, [refreshQuestions, directory]);
+
   // Events: prefer WS, SSE fallback, poll only reconnect fallback.
   useEffect(() => {
     if (!active || !sessionId) return;
@@ -228,6 +265,7 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     const handle = startGlobalEventStream(active, {
       onTransport: setTransport,
       onEvent: (event) => {
+        setPendingQuestions((prev) => applyQuestionEvent(prev, event, sessionId));
         const controller = transcriptRef.current;
         applyChatEventToTranscript(event, sessionId, {
           upsertLiveTail: (messageId, text, role) => {
@@ -454,6 +492,65 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     }
   }, [active, sessionId, syncFromController]);
 
+  const replyQuestion = useCallback(
+    async (request: QuestionRequest, answers: string[][]) => {
+      if (!active) return;
+      setQuestionBusyId(request.id);
+      try {
+        await replyToQuestion(active, {
+          requestId: request.id,
+          answers,
+          directory: directoryRef.current,
+        });
+        setPendingQuestions((prev) => prev.filter((q) => q.id !== request.id));
+      } catch (err) {
+        if (isQuestionNotFoundError(err)) {
+          setPendingQuestions((prev) => prev.filter((q) => q.id !== request.id));
+          return;
+        }
+        const message =
+          err instanceof QuestionApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'question reply failed';
+        setError(message);
+      } finally {
+        setQuestionBusyId(null);
+      }
+    },
+    [active],
+  );
+
+  const dismissQuestion = useCallback(
+    async (request: QuestionRequest) => {
+      if (!active) return;
+      setQuestionBusyId(request.id);
+      try {
+        await rejectQuestion(active, {
+          requestId: request.id,
+          directory: directoryRef.current,
+        });
+        setPendingQuestions((prev) => prev.filter((q) => q.id !== request.id));
+      } catch (err) {
+        if (isQuestionNotFoundError(err)) {
+          setPendingQuestions((prev) => prev.filter((q) => q.id !== request.id));
+          return;
+        }
+        const message =
+          err instanceof QuestionApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'question dismiss failed';
+        setError(message);
+      } finally {
+        setQuestionBusyId(null);
+      }
+    },
+    [active],
+  );
+
   // Context usage ring — Cap MobileContextProgressButton data subset.
   useEffect(() => {
     if (!active || !sessionId) {
@@ -524,21 +621,29 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       attachments,
       setAttachments,
       contextDisplay,
+      pendingQuestions,
+      replyQuestion,
+      dismissQuestion,
+      questionBusyId,
     }),
     [
       attachments,
       busy,
       contextDisplay,
       directory,
+      dismissQuestion,
       draft,
       editQueued,
       error,
+      pendingQuestions,
+      questionBusyId,
       queueItems,
       queueRevision,
       queueScopeId,
       refresh,
       removeQueued,
       reorderQueued,
+      replyQuestion,
       rows,
       send,
       sessionId,

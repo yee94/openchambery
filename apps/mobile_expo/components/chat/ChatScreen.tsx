@@ -1,8 +1,10 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, StyleSheet, View as RNView } from 'react-native';
 
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ContextUsageRing } from '@/components/chat/ContextUsageRing';
+import { QuestionCard } from '@/components/chat/QuestionCard';
+import { QueueEditModal } from '@/components/chat/QueueEditModal';
 import { QueuedMessageChips } from '@/components/chat/QueuedMessageChips';
 import { TranscriptList } from '@/components/chat/TranscriptList';
 import { Text, View, useThemeColor } from '@/components/Themed';
@@ -21,6 +23,7 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
   const { state } = useConnection();
   const muted = useThemeColor({}, 'muted');
   const autocomplete = useComposerAutocomplete(state.active, chat.directory);
+  const [androidEditItem, setAndroidEditItem] = useState<MessageQueueChipItem | null>(null);
 
   const moveQueued = useCallback(
     (item: MessageQueueChipItem, direction: -1 | 1) => {
@@ -56,11 +59,7 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         );
         return;
       }
-      // Android: no Alert.prompt — keep content via remove+retype residual note.
-      Alert.alert(
-        t('mobile.chat.queue.editTitle'),
-        t('mobile.chat.queue.editAndroidBody'),
-      );
+      setAndroidEditItem(item);
     },
     [chat],
   );
@@ -90,6 +89,16 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         </RNView>
       ) : null}
 
+      {chat.pendingQuestions.map((question) => (
+        <QuestionCard
+          key={question.id}
+          question={question}
+          busy={chat.questionBusyId === question.id}
+          onSubmit={(answers) => chat.replyQuestion(question, answers)}
+          onDismiss={() => chat.dismissQuestion(question)}
+        />
+      ))}
+
       <QueuedMessageChips
         items={chat.queueItems}
         onRemove={(item) => {
@@ -115,6 +124,17 @@ export function ChatScreen({ routeSessionId }: ChatScreenProps) {
         onAutocompleteTriggerChange={autocomplete.onTriggerChange}
         attachments={chat.attachments}
         onAttachmentsChange={chat.setAttachments}
+      />
+
+      <QueueEditModal
+        visible={androidEditItem != null}
+        initialValue={androidEditItem?.content ?? ''}
+        onCancel={() => setAndroidEditItem(null)}
+        onSave={(value) => {
+          const item = androidEditItem;
+          setAndroidEditItem(null);
+          if (item) void chat.editQueued(item, value);
+        }}
       />
     </View>
   );

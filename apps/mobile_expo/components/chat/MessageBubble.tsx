@@ -2,7 +2,9 @@ import React, { memo, useMemo } from 'react';
 import { StyleSheet, View as RNView } from 'react-native';
 
 import { ReasoningDisclosure } from '@/components/chat/ReasoningDisclosure';
+import { SkillGroup } from '@/components/chat/SkillGroup';
 import { ToolCard } from '@/components/chat/ToolCard';
+import { UsedFold } from '@/components/chat/UsedFold';
 import { Text, useThemeColor } from '@/components/Themed';
 import type { TranscriptRow } from '@/lib/chatTranscript';
 import { safeStreamingMarkdownText } from '@/lib/streamingMarkdown';
@@ -17,8 +19,17 @@ function MessageBubbleImpl({ row }: MessageBubbleProps) {
   const muted = useThemeColor({}, 'muted');
   const isUser = row.role === 'user';
 
-  const segments = useMemo(() => segmentsFromParts(row.parts), [row.parts]);
-  const hasStructured = segments.some((s) => s.kind === 'tool' || s.kind === 'reasoning');
+  const segments = useMemo(
+    () => segmentsFromParts(row.parts, { isTurnLive: row.streaming }),
+    [row.parts, row.streaming],
+  );
+  const hasStructured = segments.some(
+    (s) =>
+      s.kind === 'tool' ||
+      s.kind === 'reasoning' ||
+      s.kind === 'used-fold' ||
+      s.kind === 'skill-group',
+  );
 
   const fallbackText = useMemo(
     () => safeStreamingMarkdownText(row.text, row.streaming),
@@ -56,6 +67,12 @@ function MessageBubbleImpl({ row }: MessageBubbleProps) {
         {segments.map((segment) => {
           if (segment.kind === 'reasoning') {
             return <ReasoningDisclosure key={segment.id} reasoning={segment.reasoning} />;
+          }
+          if (segment.kind === 'used-fold') {
+            return <UsedFold key={segment.id} fold={segment.fold} />;
+          }
+          if (segment.kind === 'skill-group') {
+            return <SkillGroup key={segment.id} group={segment.group} />;
           }
           if (segment.kind === 'tool') {
             return <ToolCard key={segment.id} card={segment.card} />;

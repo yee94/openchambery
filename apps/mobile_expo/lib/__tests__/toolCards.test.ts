@@ -88,20 +88,65 @@ describe('reasoning disclosure helpers', () => {
 });
 
 describe('segmentsFromParts', () => {
-  it('orders reasoning, tools, and text like Cap MessageBody subset', () => {
+  it('folds consecutive process tools and keeps skill groups', () => {
     const parts: ChatMessagePart[] = [
       { id: 'r', type: 'reasoning', text: 'think' },
       {
-        id: 't',
+        id: 't1',
         type: 'tool',
         tool: 'grep',
-        state: { status: 'completed', input: { pattern: 'foo' }, output: '1 match' },
+        state: { status: 'completed', input: { pattern: 'foo' }, output: '1 match', time: { start: 1, end: 2 } },
+      },
+      {
+        id: 't2',
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'ls' }, output: 'ok', time: { start: 2, end: 3 } },
+      },
+      {
+        id: 's1',
+        type: 'tool',
+        tool: 'skill',
+        state: { status: 'completed', metadata: { name: 'docs' }, time: { start: 3, end: 4 } },
+      },
+      {
+        id: 'task1',
+        type: 'tool',
+        tool: 'task',
+        state: { status: 'completed', output: 'delegated', time: { start: 4, end: 5 } },
       },
       { id: 'x', type: 'text', text: 'answer' },
     ];
     const segments = segmentsFromParts(parts);
-    expect(segments.map((s) => s.kind)).toEqual(['reasoning', 'tool', 'text']);
-    expect(segments[1]).toMatchObject({ kind: 'tool', card: { description: 'foo' } });
+    expect(segments.map((s) => s.kind)).toEqual([
+      'reasoning',
+      'used-fold',
+      'skill-group',
+      'tool',
+      'text',
+    ]);
+    expect(segments[1]).toMatchObject({
+      kind: 'used-fold',
+      fold: { summary: '1 search, 1 command', running: false },
+    });
+    expect(segments[2]).toMatchObject({
+      kind: 'skill-group',
+      group: { summary: 'docs' },
+    });
+    expect(segments[3]).toMatchObject({ kind: 'tool', card: { displayName: 'Task' } });
+  });
+
+  it('keeps Used fold running when turn is live without successor text', () => {
+    const parts: ChatMessagePart[] = [
+      {
+        id: 't',
+        type: 'tool',
+        tool: 'grep',
+        state: { status: 'completed', input: { pattern: 'foo' }, time: { start: 1, end: 2 } },
+      },
+    ];
+    const live = segmentsFromParts(parts, { isTurnLive: true });
+    expect(live[0]).toMatchObject({ kind: 'used-fold', fold: { running: true } });
   });
 });
 
