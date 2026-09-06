@@ -2749,9 +2749,11 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                         taskBusy && 'animate-text-shimmer',
                                     )}
                                     style={{
-                                        color: 'var(--tools-description)',
+                                        // Busy shimmer matches thinking / task title (--tools-title).
+                                        // --tools-description is ~0.6× muted and vanishes on light surfaces.
+                                        color: taskBusy ? 'var(--tools-title)' : 'var(--tools-description)',
                                         ...(taskBusy
-                                            ? { ['--oc-text-shimmer-base' as string]: 'var(--tools-description)' }
+                                            ? { ['--oc-text-shimmer-base' as string]: 'var(--tools-title)' }
                                             : { opacity: 0.8 }),
                                     }}
                                     title={justificationText}
