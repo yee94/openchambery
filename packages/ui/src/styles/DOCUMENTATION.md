@@ -106,6 +106,10 @@ Android System WebView should be Chromium **111+** for `color-mix()` and reliabl
 
 Phone conversation headers (session chat and Assistant) share `--oc-mobile-header-fade` for the overlay/collapsing gradient (`color-mix` of `--surface-background` at 85%). Change that token when the fade strength should shift; do not restyle one surface with a local mix.
 
+## Mobile notifications
+
+`sonner.tsx` keeps the desktop toast recipe as its fallback. Mobile-capable web, hosted-mobile, Capacitor, and tablet roots override `--oc-toast-shadow` and toast chrome in `mobile.css`; desktop runtimes remain on the desktop recipe. Light mobile toasts use a token-derived elevated front surface, then bias collapsed rear surfaces progressively toward the page canvas. Dark mobile toasts mix `surface.foreground` into `surface.elevated` at 7% / 4% / 1% for front / near rear / far rear, giving each exposed edge a restrained sRGB lightness step across themes. Sonner retains its native 5% scale and `0.5rem` offset per layer; short contact shadows separate the exposed edges without borders or inset rings. Linear sprite status icons and text-style actions keep the existing 36px touch floor. Reduced-transparency mode uses the opaque elevated surface.
+
 ## Layout chrome dividers
 
 Desktop shell edges (left/right sidebars, header/content split, context panel) use one token pair in `design-system.css`:
