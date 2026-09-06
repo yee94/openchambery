@@ -41,10 +41,12 @@ function readLynxGlobalProps(): Partial<LynxHostGlobalProps> | undefined {
 
 function resolveHostFromGlobalProps(): LynxHostGlobalProps {
   const gp = readLynxGlobalProps();
+  const themeId =
+    gp?.themeId === 'flexoki-dark' || gp?.themeId === 'flexoki-light' ? gp.themeId : undefined;
   return createHostGlobalProps({
     platform: gp?.platform === 'ios' ? 'ios' : 'android',
-    themeId: gp?.themeId,
-    locale: gp?.locale,
+    themeId,
+    locale: typeof gp?.locale === 'string' && gp.locale.length > 0 ? gp.locale : undefined,
   });
 }
 

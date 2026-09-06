@@ -2,7 +2,7 @@
 
 Independent track: **`work/lynx-native`** from `main` @ `b444b0316` (`v1.19.7-beta.7`). Do **not** merge to `main`.
 
-Lynx app skeleton **does not exist**. This board is seeded honestly from `docs/lynx-feature-inventory.md`: almost every product row starts in **missing**. Update a row only when code, CI, and (for ship) 真机 evidence exist. Status words:
+Lynx package + Android host scaffold **exist** on `work/lynx-native` (代码接上). This board stays honest: product rows are **not** landed under 三关 until CI绿 + 真机过. Update a row only when code, CI, and (for ship) 真机 evidence exist. Status words:
 
 | Status | Meaning |
 |---|---|
@@ -49,7 +49,7 @@ Client library modules under `packages/lynx` (`src/connection/`, `src/pairing/`,
 | Session-index GET / pin / lookup | `session-index-api.ts` | `GET /api/openchamber/session-index`. Failure ≠ empty. Runtime-key cache. |
 | Projects home data path | `useMobileProjectsHomeModel.ts` | `projectSessionIndexHome` + `createSessionIndexHomeBindings`. No pixel polish. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow yet). Local Vitest `@openchamber/lynx` is not track CI.
+**CI绿:** lynx-ci + lynx-mobile-ci live on tip (Android sideload). Not 真机过.
 
 **真机过:** not executed (environment: Linux cloud VM; no Xcode, no adb, no physical device).
 
@@ -66,7 +66,7 @@ Chat timeline + Settings tab home on `cursor/lynx-chat-settings-local` (PR into 
 | Chat pushed page chrome | `MobileChatScreen.tsx` | `LynxChatScreen` header + timeline + composer actions. Markdown cards / Files / Changes / MCP sheets / IME FLIP **not** in this slice. |
 | Settings search + 21 slug rows | `MOBILE_SETTINGS_PAGE_SLUGS`, `SettingsView` | `src/settings/metadata.ts` + `SettingsTab`: search, Cap group order, all 21 rows, in-tab push. Bodies are **labeled stubs**; `voice` is list-only-until-routes. No `iosNativeUi` toggle. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest also. Not 真机过.
 **真机过:** not executed.
 
 ---
@@ -82,29 +82,29 @@ Tab bodies on `cursor/lynx-tabs-home-local` (PR into `work/lynx-native`). Packag
 | Assistant catalog + conversation chrome | `MobileAssistantTab.tsx`, assistants snapshot | `assistants/*` → `GET /api/openchamber/assistants/snapshot` (+ ensure-session hook). Catalog tab; open conversation reuses `LynxChatScreen`. No invented ASR. Missing session → labeled stub (not fake chat id). |
 | Scheduled list / history / editor hooks | `scheduledTasksApi.ts`, `MobileScheduledTab` | `scheduled/*` → `GET /api/openchamber/scheduled-tasks`, runs history, upsert PUT hook. Editor chrome is a **labeled stub**. Partial `failedProjectIds` preserved; no-runtime / HTTP failure ≠ empty success. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest also. Not 真机过.
 **真机过:** not executed.
 
 ---
 
 ## 代码接上 (settings bodies + connect welcome + Projects header + CI skeleton — not landed under 三关)
 
-Slice on `cursor/lynx-settings-ci-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy build via `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) (Linux). APK/iOS sim jobs need Mac/Android runners — **not claimed**. 真机过: not executed.
+Slice on `cursor/lynx-settings-ci-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy build via `.github/workflows/lynx-ci.yml` (**live** on tip; template also under `packages/lynx/ci/`) (Linux). APK/iOS sim jobs need Mac/Android runners — **not claimed**. 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | Settings page bodies (21 slugs) | SettingsView + settings blob + catalogs | Wired GET/PUT: instances, appearance (flexoki ids), chat, notifications hooks, sessions, gitmoji, about (Lynx version ≠ instance). List endpoints: providers/agents/mcp/plugins/skills/commands/magic-prompts/snippets/usage/assistants/projects. Editors labeled stubs (no fake-success). Voice list-only-until-routes. No iosNativeUi. |
 | Connect welcome / instances UI | MobileApp welcome + MobileInstancesSurface | Splash while auto-connect; instance list add/delete/password unlock; paste pairing link. QR camera labeled stub (host-owned). No Bonjour. |
 | Projects MobileTabPageHeader | `MobileTabPageHeader.tsx` | Sticky translucent collapsing title + trailing glass search chip + primary +. Collapse math in `tabPageHeader.ts`. iOS glass via GlassChrome; Android blur-radius only. |
-| CI skeleton | — | `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) on PR → `work/lynx-native`: type-check + vitest + rspeedy. Documented that APK/iOS sim need Mac/Android runners. |
+| CI skeleton | — | `.github/workflows/lynx-ci.yml` (**live** on tip; template also under `packages/lynx/ci/`) on PR → `work/lynx-native`: type-check + vitest + rspeedy. Documented that APK/iOS sim need Mac/Android runners. |
 
-**CI绿:** Linux lynx-ci skeleton only — not full APK/iOS. Not 真机过.
+**CI绿:** lynx-ci + Android sideload APK live on tip. iOS IPA still missing. Not 真机过.
 **真机过:** not executed (environment: Linux cloud VM).
 
 ---
 ## 代码接上 (gap-close: summary-ai/behavior, scheduled editor, assistant ensure, chat sheets — not landed under 三关)
 
-Slice on `cursor/lynx-gap-close-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` (copy to `.github/workflows` when `workflow` scope available) — **not claimed live**. 真机过: not executed.
+Slice on `cursor/lynx-gap-close-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -114,14 +114,14 @@ Slice on `cursor/lynx-gap-close-local` (PR into `work/lynx-native`). Package Vit
 | Assistant unbound ensure | `ensureAssistantSession`, `AssistantView` | Shell calls Cap `POST …/session/ensure` when runtime present; null sessionID stays unbound labeled (no invented chat id). |
 | Chat overflow + Files/Changes stubs | MobileApp overflow, Files/Changes sheets | Overflow menu hooks; Files/Changes navigate to labeled stub sheets with correct back. Bodies not ported. |
 
-**CI绿:** Linux lynx-ci template only (not installed under `.github/workflows` without workflow scope). Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip (Linux type-check + vitest + rspeedy). Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed.
 
 ---
 
 ## 代码接上 (editors + Files/Changes/MCP sheets + deep-link apply — not landed under 三关)
 
-Slice on `cursor/lynx-editors-sheets-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+Slice on `cursor/lynx-editors-sheets-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -131,14 +131,14 @@ Slice on `cursor/lynx-editors-sheets-local` (PR into `work/lynx-native`). Packag
 | Chat MCP sheet | mobile MCP surface / `/api/config/mcp` | Overflow entry + catalog list. |
 | `openchamber://` apply | `deepLinkNavigation.ts` | Parse already existed; apply maps intents → shell navigation (session/draft/tab/settings/sheets/instances). Stash until connect ready + handlers. |
 
-**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed.
 
 ---
 
 ## 代码接上 (diff/preview + commit/sync + provider auth + push/share hooks — not landed under 三关)
 
-Slice on `cursor/lynx-diff-push-share-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+Slice on `cursor/lynx-diff-push-share-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -149,14 +149,14 @@ Slice on `cursor/lynx-diff-push-share-local` (PR into `work/lynx-native`). Packa
 | Push registration hooks | `useNativePushRegistration` → `/api/push/apns-token` | Host injects APNs/FCM tokens; Lynx stores + registers/unregisters. FCM `applicationId` must be `com.yee94.openchamber[.debug]` (pitfalls §6). |
 | Share inbox intake | `MobileShareBridge` → assistants `/share` | Accept host share envelope / openchamber share intents; dispatch to Assistant session. No Capgo. |
 
-**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed.
 
 ---
 
 ## 代码接上 (rich turn cards + swipe menu + share welcome + draft + list harness — not landed under 三关)
 
-Slice on `cursor/lynx-cards-swipe-harness-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+Slice on `cursor/lynx-cards-swipe-harness-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -166,14 +166,14 @@ Slice on `cursor/lynx-cards-swipe-harness-local` (PR into `work/lynx-native`). P
 | Draft composer body | mobile `kind: 'draft'` | `LynxDraftComposer` materializes `POST /session` → `prompt_async` then opens chat. |
 | List perf harness | Cap `streamingRenderCadence.ts` + acceptance harness | Unit harness measures synthetic scroll/update cadence + prepend anchor; documents Cap 20/64 & Android 100/128 — **no fake device numbers**. |
 
-**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed.
 
 ---
 
 ## 代码接上 (SSE live tail + IME contract + nested chat stack — not landed under 三关)
 
-Slice on `cursor/lynx-sse-live-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+Slice on `cursor/lynx-sse-live-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -181,14 +181,14 @@ Slice on `cursor/lynx-sse-live-local` (PR into `work/lynx-native`). Package Vite
 | IME / composer occupancy contract | pitfalls §3, native composer README | Documented in `imeOccupancy.ts` + acceptance: host binds IME; occupancy = collapsed height only; no WebView FLIP. |
 | Nested child session stack / predecessor | `mobileNavigation.ts` | `reconcileLynxChatPredecessor` + stack window chrome; ShellApp back pops predecessor (Cap decision). |
 
-**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed.
 
 ---
 
 ## 代码接上 (context usage + edge swipe + host media/haptics + pin reveal — not landed under 三关)
 
-Slice on `cursor/lynx-context-edge-media-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+Slice on `cursor/lynx-context-edge-media-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -198,7 +198,7 @@ Slice on `cursor/lynx-context-edge-media-local` (PR into `work/lynx-native`). Pa
 | HEIC / media pick | `OpenChamberMedia`, `native-media-pick.ts`, `native-image-transcode.ts` | Host-inject pick + transcode; composer Attach call site; no host → unavailable / not-heic skipped honestly. |
 | Load-older / markdown pin reveal polish | Cap load-older + `markdownPinReveal.ts` | `canAcceptLynxLoadOlderTap` rejects settle/busy; pin-reveal arm/ready/timeout state + TimelineList visibility attr. |
 
-**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed.
 
 ---
@@ -210,7 +210,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | Package + Linux CI template exists; CocoaPods/Gradle Lynx SDK and APK/IPA CI still missing; `.github/workflows/lynx-ci.yml` not installed without workflow scope |
+| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | **Live** `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853`). iOS IPA / CocoaPods resolve still missing. Sideload `applicationId` = `com.yee94.openchamber.lynx.debug`. First-paint cream + globalProps 代码接上 — **not** 真机过. |
 | ~~Connect / splash while auto-connect resolves~~ | `MobileApp.tsx` welcome | **代码接上** ConnectWelcome splash + welcome; host LynxView chrome still thin |
 | ~~Instance list, add, delete, password unlock~~ | `mobileConnections.ts` | **代码接上** instances UI on welcome + settings/instances |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
@@ -319,7 +319,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 7. ~~**Assistant catalog + Scheduled list/history**~~ — 代码接上 snapshot/list/history hooks. Remaining: admission flows.
 8. ~~**Connect welcome + instances UI**~~ — 代码接上 splash/list/paste. Remaining: host QR camera + Keychain wiring + 真机.
 9. ~~**Projects MobileTabPageHeader**~~ — 代码接上 collapsing header + glass search + primary +. Remaining: pixel polish / menu.
-10. ~~**CI skeleton (Linux)**~~ — template at `packages/lynx/ci/lynx-ci.yml`; copy to `.github/workflows/lynx-ci.yml` still needs `workflow` token scope. Remaining: install workflow + Android APK + iOS sim runners (do not claim 真机过).
+10. ~~**CI skeleton (Linux)**~~ — **live** on tip: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-*`). Remaining: iOS IPA / sim runners + 真机过 (do not claim from CI alone).
 11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`.
 12. ~~**editors + Files/Changes/MCP lists + deep-link apply**~~ — 代码接上 in `cursor/lynx-editors-sheets-local`.
 13. ~~**diff/preview + commit/sync + provider auth + push/share hooks**~~ — 代码接上 in `cursor/lynx-diff-push-share-local`. Remaining: host Keychain/QR/browser OAuth open, 真机.
@@ -336,10 +336,11 @@ First implementation slice after this doc gate (order is deliberate: connect →
 24. ~~**linux closable after #55: portable text diff + Cap stage/unstage + Projects rename wiring + docs hygiene**~~ — 代码接上 in `cursor/lynx-linux-closable-after-55-local`. Remaining: host-only / 真机 (Pierre runtime, WKWebView, Keychain, camera, IME, Mode B); product NOT DONE.
 25. ~~**diff/chip polish on #56: Cap status add/del tokens + GlassChrome searchChip stage/unstage**~~ — 代码接上 in `cursor/lynx-diff-chip-polish-local`. Remaining: Pierre `@pierre/diffs` runtime / Mode B / 真机; product NOT DONE.
 26. ~~**Pierre investigation + ChangeRow spacing on #57 tip: honest Shadow DOM blocker + Cap size-6 chip / +n/-m slash / diffStats**~~ — 代码接上 in `cursor/lynx-pierre-diffs-local`. Cap `@pierre/diffs` **cannot** run in Lynx (diffs-container Shadow DOM + react-dom). Portable path only; product NOT DONE / no 真机过.
-27. ~~**Changes revert + generateCommitMessage + commitAndPush on #58 tip**~~ — 代码接上 in `cursor/lynx-changes-revert-commitmsg-local`. Cap `POST /api/git/revert`, Cap mobile `POST /api/small-model/generate` purpose commit (not dead `/api/git/commit-message`), combined commit→push. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
-28. ~~**Changes revert glass + Cap confirm + pull-if-behind on #59 tip**~~ — 代码接上 in `cursor/lynx-revert-confirm-pull-local`. GlassChrome searchChip revert (↩) like stage +/−; Cap Dialog confirm before revert (Cap does **not** confirm commit&push); Cap commit→fetch→pull-if-behind(rebase)→push-if-ahead. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
-29. ~~**Centered Cap Dialog revert confirm on #60 tip**~~ — 代码接上 in `cursor/lynx-centered-confirm-dialog-local`. Replace elevated-in-sheet confirm card with Cap Dialog spirit (**scrim + centered max-w-md panel**); keep RevertGlassChip + pull-if-behind. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
-30. ~~**Dialog shell portal + destructive tokens + Cap arrow-go-back glyph on #61 tip**~~ — 代码接上 in `cursor/lynx-dialog-portal-theme-local`. Mount `LynxCenteredDialog` at **shell-root portal** (full-screen overlay, Cap DialogPortal spirit) — not nested absolute inside Changes relative; destructive uses `status.error` / `status.onError` (Cap `--destructive-foreground`, never `#fff`); RevertGlassChip glyph = Cap Icon `arrow-go-back` unicode ↩. Remaining: host-only / 真机 / Pierre / WKWebView / CI workflow token; product NOT DONE.
+27. ~~**Changes revert + generateCommitMessage + commitAndPush on #58 tip**~~ — 代码接上 in `cursor/lynx-changes-revert-commitmsg-local`. Cap `POST /api/git/revert`, Cap mobile `POST /api/small-model/generate` purpose commit (not dead `/api/git/commit-message`), combined commit→push. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
+28. ~~**Changes revert glass + Cap confirm + pull-if-behind on #59 tip**~~ — 代码接上 in `cursor/lynx-revert-confirm-pull-local`. GlassChrome searchChip revert (↩) like stage +/−; Cap Dialog confirm before revert (Cap does **not** confirm commit&push); Cap commit→fetch→pull-if-behind(rebase)→push-if-ahead. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
+29. ~~**Centered Cap Dialog revert confirm on #60 tip**~~ — 代码接上 in `cursor/lynx-centered-confirm-dialog-local`. Replace elevated-in-sheet confirm card with Cap Dialog spirit (**scrim + centered max-w-md panel**); keep RevertGlassChip + pull-if-behind. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
+30. ~~**Dialog shell portal + destructive tokens + Cap arrow-go-back glyph on #61 tip**~~ — 代码接上 in `cursor/lynx-dialog-portal-theme-local`. Mount `LynxCenteredDialog` at **shell-root portal** (full-screen overlay, Cap DialogPortal spirit) — not nested absolute inside Changes relative; destructive uses `status.error` / `status.onError` (Cap `--destructive-foreground`, never `#fff`); RevertGlassChip glyph = Cap Icon `arrow-go-back` unicode ↩. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
+31. ~~**Android first-paint / black-screen mitigation + live CI honesty**~~ — 代码接上 (PR #65 + docs follow-up): Flexoki-light `cssVar` fallbacks, cream `windowBackground`, HostActivity MATCH_PARENT + ViewFactory `globalProps` (safe-area stubs), ConnectWelcome hard splash colors; `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` **live** (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853`). **Not** 真机过. Cap Linux JS skim: no further tiny product holes beyond host — **Next = host/真机-bound**. Product NOT DONE / 三关未齐 / not EXHAUSTED.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -421,7 +422,7 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 
 ## 代码接上 (host bridge deepen + git identities + HTML/Pierre stubs + draft `/` `@` — not landed under 三关)
 
-Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` (copy to `.github/workflows` when `workflow` scope available) — **not claimed live**. 真机过: not executed. Product **NOT DONE**.
+Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed. Product **NOT DONE**.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -438,7 +439,7 @@ Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vi
 | Files HTML preview | `MobileFilesSurface` iframe | Cap-like source/preview toggle; preview = honest host WebView stub + text source |
 | PierreDiff polish | `PierreDiffViewer` | Portable line-kind/stats + Cap ChangeRow spacing 代码接上; Cap `@pierre/diffs` **unavailable** (honest blocker, not stub-faked) |
 
-**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed (environment: Linux cloud VM).
 
 ---
@@ -453,7 +454,7 @@ Slice on `cursor/lynx-composer-actions-in-glass-local` (PR into `work/lynx-nativ
 | Cap pill vs card order | collapsed `+`·input·Send/Stop; expanded `+`·spacer·Agent·model·Send/Stop | `resolveLynxComposerInGlassActionOrder` + `LynxComposerActionsInGlass`; Chat collapses when draft empty |
 | Autocomplete ABOVE glass preserved | Cap autocomplete sibling | Still `forbidInsideGlassContentView`; list never nested under composer GlassChrome |
 
-**CI绿:** Local Vitest `@openchamber/lynx` + tsc + rspeedy. lynx-ci workflow template only.
+**CI绿:** lynx-ci live on tip + local Vitest/`tsc`/rspeedy. Not 真机过.
 **真机过:** not executed (Linux cloud VM). Host Mode B composer overlay / live UIGlassEffect still residual. Agent·model picker sheets → next slice.
 
 ---
@@ -469,7 +470,7 @@ Slice on `cursor/lynx-agent-model-picker-local` (PR into `work/lynx-native`). Pa
 | Selection → session send | Cap selection store + `prompt_async` body | Updates composer `LynxComposerModel` used by send/queue (no separate session PATCH; Cap same) |
 | Autocomplete ABOVE glass preserved | Cap autocomplete sibling | Sheets outside GlassChrome; list never nested under composer contentView |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed (Linux cloud VM). Host Mode B composer overlay / live UIGlassEffect still residual.
 
 ---
@@ -485,7 +486,7 @@ Slice on `cursor/lynx-resizable-picker-sheets-local` (PR into `work/lynx-native`
 | Draft busy Stop = abort | Cap Chat composerActions.stop / `POST …/abort` | When Draft `busy`, Stop aborts materialize + `abortSession` — never re-send |
 | Glass / autocomplete | Cap autocomplete sibling | Triggers stay in-glass; sheets outside; autocomplete ABOVE glass |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed (Linux cloud VM). Live drag feel / Mode B overlay / UIGlassEffect still residual.
 
 ## 代码接上 (composer GlassChrome — not landed under 三关)
@@ -498,7 +499,7 @@ Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Packag
 | Autocomplete sibling ABOVE glass | Cap `OpenChamberComposerAutocomplete` | `forbidInsideGlassContentView` remains true; list never nested under composer GlassChrome |
 | Optional autocomplete glass chips | Cap search-chip spirit | Per-row `searchChip` GlassChrome **in sibling list tree only** (not composer contentView) |
 
-**CI绿:** Local Vitest `@openchamber/lynx` + tsc + rspeedy. lynx-ci workflow template only.
+**CI绿:** lynx-ci live on tip + local Vitest/`tsc`/rspeedy. Not 真机过.
 **真机过:** not executed (Linux cloud VM). Host Mode B composer overlay / live UIGlassEffect paint still residual.
 
 ---
@@ -514,7 +515,7 @@ Slice on `cursor/lynx-linux-closable-after-55-local` (PR into `work/lynx-native`
 | Stage / unstage | `stageGitFiles` / `unstageGitFiles` → `POST /api/git/stage\|unstage` | Changes row chips; failure ≠ fake-success |
 | Projects rename | Cap session menu rename → `PATCH /session/:id` | Long-press → draft input → `renameLynxSession` |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed (Linux cloud VM). Host Mode B / Pierre runtime / WKWebView / Keychain / camera / IME still residual.
 
 ---
@@ -528,7 +529,7 @@ Slice on `cursor/lynx-diff-chip-polish-local` (PR into `work/lynx-native`). Pack
 | Diff add/del coloring | Cap ChangeRow `--status-success` / `--status-error` | Portable lines: **add→status.success**, **del→status.error**; hunk/meta stay `surface.mutedForeground` (del ≠ muted). Still **not** `@pierre/diffs`. |
 | Stage/unstage glass chips | Cap ChangeRow +/- + searchChip spirit | `GlassChrome` `searchChip`-sized +/- chips on Changes rows (outside transcript glass rules). Host absent → elevated fallback. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed (Linux cloud VM). Pierre runtime / Mode B / live UIGlassEffect still residual.
 
 ---
@@ -543,7 +544,7 @@ Slice on `cursor/lynx-pierre-diffs-local` (base PR#57 tip `858e6d0bb`; PR into `
 | Portable feature path | Cap git `file-diff` / `diff` text | Unchanged real APIs; monospace line colors + Cap `+n / -m` slash spacing. |
 | ChangeRow chip spacing | Cap `ChangeRow`: `size-6` / `gap-1.5` / `mx-0.5` / `h-8` / `w-3.5` | `LYNX_CHANGE_ROW_SPACING` + stage chip **24px** (was ~32), status letter, Cap slash stats; `diffStats` from `GET /api/git/status`. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed. Host WebView sheet would be required before any Pierre HTML mount — out of scope / not claimed.
 
 ---
@@ -551,7 +552,7 @@ Slice on `cursor/lynx-pierre-diffs-local` (base PR#57 tip `858e6d0bb`; PR into `
 
 ## 代码接上 (Changes revert + generateCommitMessage + commitAndPush — not landed under 三关)
 
-Slice on `cursor/lynx-changes-revert-commitmsg-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+Slice on `cursor/lynx-changes-revert-commitmsg-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. Track CI: `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` are **live** on tip (historical slices predated install). 真机过: not executed.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
@@ -559,7 +560,7 @@ Slice on `cursor/lynx-changes-revert-commitmsg-local` (PR into `work/lynx-native
 | generateCommitMessage | Cap `gitApi.generateCommitMessage` → `POST /api/small-model/generate` | Cap-default commit magic prompt text + diff collect via `/api/git/diff`. No Cap session-fallback; dead `/api/git/commit-message` unused. |
 | commitAndPush | Cap `handleCommit({ pushAfter: true })` | `commitAndPushLynxGitChanges` commit→push. Cap fetch/pull-if-behind completed in Next #28. |
 
-**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**CI绿:** lynx-ci live on tip. Local Vitest `@openchamber/lynx` also. Not 真机过.
 **真机过:** not executed.
 
 ---
@@ -574,7 +575,7 @@ Slice on `cursor/lynx-revert-confirm-pull-local` (base PR#59 tip `778c844ae`; PR
 | Cap confirm before revert | Cap ChangesPanel Dialog (revert-all / directory) | Was elevated-in-sheet card in #28; **centered Dialog** (scrim+panel) in Next #29. Cap does **not** confirm commit&push — not added. |
 | pull-if-behind on commit&push | Cap `handleCommit({ pushAfter: true })` | Parse status `ahead`/`behind`/`tracking`; commit→fetch→pull(rebase) if behind→push if ahead. Failure ≠ silent skip. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed.
 
 ---
@@ -588,7 +589,7 @@ Slice on `cursor/lynx-centered-confirm-dialog-local` (base PR#60 tip `ac8cfd793`
 | Cap centered Dialog | Cap `Dialog` / `DialogContent` (scrim + centered `max-w-md`) | `LynxCenteredDialog` replaces elevated-in-sheet revert confirm card. Scrim dismiss when not busy; Cancel + destructive Revert footer. Follow-on #30 moves mount to shell-root portal. |
 | RevertGlassChip + pull-if-behind | unchanged from #28 | Keep glass Cap `arrow-go-back` ↩ chip + commit→fetch→pull-if-behind→push. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed.
 
 ---
@@ -603,20 +604,20 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Destructive tokens | Cap Button destructive / `--destructive-foreground` | Fill `status.error`; text `status.onError` → `--destructive-foreground` (never hardcoded `#fff`). |
 | Revert chip glyph | Cap Icon `arrow-go-back` sprite | `LYNX_CAP_ARROW_GO_BACK_GLYPH` = ↩ (U+21A9). Cap SVG sprite needs DOM — unavailable on Lynx; no invented brand. |
 
-**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**CI绿:** lynx-ci live; Android sideload APK live on tip. Not 真机过 / no iOS IPA.
 **真机过:** not executed.
 
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring — including Changes revert glass + Cap centered Dialog at shell-root portal + theme onError + Cap `arrow-go-back` glyph + pull-if-behind commit→push in Next #28–#30). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring — including Changes revert glass + Cap centered Dialog at shell-root portal + theme onError + Cap `arrow-go-back` glyph + pull-if-behind commit→push in Next #28–#30 + Android first-paint mitigation in Next #31). Cap skim (2026-09-07): **no further tiny Linux JS product holes** beyond host — Next = host/真机-bound. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log).
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
 | Item | Notes |
 |---|---|
 | Host Xcode/Gradle scaffold + bridge stubs | `packages/lynx/host/**` + README run steps; SDK pods/AAR still unresolved on Linux |
-| `packages/lynx/ci/lynx-ci.yml` template | Ready to copy into `.github/workflows/` when `workflow` scope available |
+| `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` | **Live** on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853`). Template copy under `packages/lynx/ci/` remains for reference. |
 | Projects DirectoryExplorer | `/api/fs/home` + `/api/fs/list` + settings `projects[]` add |
 | 扫一扫 / 切换实例 chrome | Camera adapter honest `unavailable`; instances → secondary nav |
 | Composer `/` `@` agent/model | Cap commands/agents/magic-prompts + `/api/config/providers` models |
@@ -743,6 +744,18 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Cap arrow-go-back glyph | `LYNX_CAP_ARROW_GO_BACK_GLYPH` ↩ from Cap Icon `arrow-go-back`; Cap SVG sprite DOM-blocked on Lynx |
 | Docs honesty | gap-board Next #30; NOT DONE / 三关未齐 / no 真机过 |
 
+### 代码接上 this slice (Android first-paint + live CI honesty / Next #31)
+
+| Item | Notes |
+|---|---|
+| Flexoki-light token fallbacks | `LYNX_LIGHT_FALLBACKS` + `cssVar(token)` → `var(--name, #hex)` so unresolved Cap vars never paint invisible |
+| Android cream windowBackground | `themes.xml` / `colors.xml` `lynx_window_background` `#fffdf4`; nav bar softened (not pure black void) |
+| HostActivity + ViewFactory globalProps | MATCH_PARENT LynxView; `globalProps` (platform android, chromeOwner Mode A, locale, safe-area stubs) → `updateGlobalProps` + `TemplateData`; App reads `lynx.__globalProps` |
+| ConnectWelcome first paint | Hard Flexoki cream/ink splash colors + splash log line; not 真机过 |
+| Live CI | `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` live; lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-09b3853` |
+| Cap Linux JS skim | No further tiny Cap product holes closable on Linux beyond host — Next = host/真机-bound |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+
 ### Still missing / host-only / 真机
 
 | Remaining | Why |
@@ -758,8 +771,9 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |
 | Share extension / Android share receiver | Inbox accepts payloads; extensions are native |
 | Live Activity / Widgets / Control Center | iOS-only host — later |
-| Linked Lynx SDK (CocoaPods/Gradle resolve) + APK/IPA CI | Scaffold files exist; artifacts not on Linux agent |
-| `.github/workflows/lynx-ci.yml` install | Needs `workflow` token scope |
+| Android sideload APK + lynx-ci | **Live** on tip (`lynx-mobile-ci` assembleRelease + prerelease `lynx-v2-debug-*`; lynx-ci green). First-paint cream/globalProps 代码接上 — **not** 真机过. |
+| iOS IPA / CocoaPods Lynx resolve | Still missing on Linux; Mac/device required |
+| FCM for `com.yee94.openchamber.lynx.debug` | Sideload id unique from Cap; Firebase Android app not registered yet (pitfalls §6) |
 | Bonjour / Nearby, invented ASR, TanStack 1.18, Capgo OTA | 故意不移植 |
 | 真机过 | Empty 真机残差 until a written device log |
 
