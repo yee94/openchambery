@@ -3,11 +3,14 @@
   "main": "expo-router/entry",
   "version": "1.19.7-beta.7",
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.20",
+    "expo-camera": "~57.0.4",
     "expo-constants": "~57.0.17",
     "expo-font": "~57.0.3",
     "expo-linking": "~57.0.9",
     "expo-router": "~57.0.19",
+    "expo-secure-store": "~57.0.3",
     "expo-splash-screen": "~57.0.8",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.2",
@@ -25,7 +28,9 @@
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~10.0.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4"
   },
   "scripts": {
     "start": "expo start",
@@ -33,7 +38,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "typecheck": "node -e \"require('fs').writeFileSync('expo-env.d.ts', '/// <reference types=\\\"expo/types\\\" />\\n')\" && tsc --noEmit"
+    "typecheck": "node -e \"require('fs').writeFileSync('expo-env.d.ts', '/// <reference types=\\\"expo/types\\\" />\\n')\" && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "private": true
 }

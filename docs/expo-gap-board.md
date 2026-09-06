@@ -29,8 +29,8 @@ Onboarding, QR pairing v2, LAN + relay race, relay-only skip 1.5s, SecureStore, 
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | Stub shell has no connect screen |
-| CI green | missing | No connect contract tests in Expo CI |
+| Track (CODE) | **code landed** | Expo Connect landed (see apps/mobile_expo lib+connect UI); unit-tested relay-only + persist |
+| CI green | missing | Local vitest+lint+typecheck green; Actions tip not claimed |
 | 真机过 | missing | |
 
 ### 2. Session / Home
@@ -130,8 +130,8 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Minimal Expo SDK scaffold + TypeScript | landed | Placeholder only |
 | Four-tab shell (Projects / Assistant / Scheduled / Settings) | landed | Stub screens. No live APIs |
 | Stub pushed Chat route | landed | Placeholder. No LegendList yet |
-| Connection onboarding (URL / QR / password / pairing v2) | not started | Required. No local PIN |
-| Relay-only skip 1.5s headstart | not started | Required. See pitfalls |
+| Connection onboarding (URL / QR / password / pairing v2) | **code landed** | Expo Connect screen + controller. No local PIN |
+| Relay-only skip 1.5s headstart | **code landed** | Unit-tested injectable race; Cap TS relay under lib/relay |
 | Session index Projects home + `项目 · 分支` | not started | Required |
 | Chat LegendList + Send/Stop | not started | LegendList contract, not 1.18 TanStack |
 | Settings home + `MOBILE_SETTINGS_PAGE_SLUGS` | not started | Omit Voice |

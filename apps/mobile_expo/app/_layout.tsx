@@ -1,10 +1,11 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, useRouter, useSegments } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import { SplashConnecting } from '@/components/connect/SplashConnecting';
+import { ConnectionProvider, useConnection } from '@/context/ConnectionContext';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -33,14 +34,41 @@ export default function RootLayout() {
     return null;
   }
 
-  return <RootLayoutNav />;
+  return (
+    <ConnectionProvider>
+      <RootLayoutNav />
+    </ConnectionProvider>
+  );
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const { state } = useConnection();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (state.phase === 'booting' || state.phase === 'connecting') return;
+
+    const root = segments[0];
+    const onConnectFlow = root === 'connect' || root === 'qr-scan';
+
+    if (state.phase === 'connected') {
+      if (onConnectFlow) router.replace('/');
+      return;
+    }
+
+    // onboarding / password — keep QR reachable, otherwise land on connect
+    if (!onConnectFlow) {
+      router.replace('/connect');
+    }
+  }, [state.phase, segments, router]);
+
+  if (state.phase === 'booting' || state.phase === 'connecting') {
+    return <SplashConnecting label={state.splashLabel} />;
+  }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={DarkTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
@@ -48,6 +76,20 @@ function RootLayoutNav() {
           options={{
             title: 'Chat',
             headerBackTitle: 'Projects',
+          }}
+        />
+        <Stack.Screen
+          name="connect"
+          options={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        />
+        <Stack.Screen
+          name="qr-scan"
+          options={{
+            presentation: 'fullScreenModal',
+            headerShown: false,
           }}
         />
       </Stack>

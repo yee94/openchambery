@@ -1,0 +1,97 @@
+export type Locale = 'zh-CN' | 'en';
+
+const messages: Record<Locale, Record<string, string>> = {
+  'zh-CN': {
+    'mobile.connect.welcome.title': '连接到 OpenChamber',
+    'mobile.connect.welcome.description': '添加服务器 URL 或扫描配对二维码即可开始使用移动应用。',
+    'mobile.connect.url.label': '服务器 URL',
+    'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
+    'mobile.connect.link.divider': '或使用配对链接',
+    'mobile.connect.address.divider': '或输入服务器地址',
+    'mobile.connect.link.label': '配对链接',
+    'mobile.connect.link.placeholder': '粘贴 openchamber://connect 链接',
+    'mobile.connect.link.invalid': '该配对链接无效或已过期。',
+    'mobile.connect.token.label': '客户端令牌',
+    'mobile.connect.token.placeholder': '粘贴访问令牌',
+    'mobile.connect.token.hint': '仅当服务器需要令牌而非密码时才需要填写。',
+    'mobile.connect.password.label': '密码',
+    'mobile.connect.password.placeholder': 'OpenChamber 密码',
+    'mobile.connect.connectButton': '连接',
+    'mobile.connect.unlockButton': '解锁并连接',
+    'mobile.connect.cancelPassword': '使用其他服务器',
+    'mobile.connect.connecting': '连接中...',
+    'mobile.connect.scanQr': '扫描二维码',
+    'mobile.connect.welcome.scanHint': '在电脑上打开「添加设备」显示二维码，然后在这里扫描。',
+    'mobile.connect.manual.toggle': '手动连接',
+    'mobile.connect.scan.permissionDenied': '相机访问已关闭。请在“设置”中开启以扫描二维码。',
+    'mobile.connect.scan.failed': '无法扫描该二维码。请重试或手动输入网址。',
+    'mobile.connect.scan.invalid': '该二维码不是 OpenChamber 连接码。',
+    'mobile.connect.saved.title': '已保存的连接',
+    'mobile.connect.saved.empty': '暂无已保存的连接。',
+    'mobile.connect.relay.badge': '通过 OpenChamber Relay 连接',
+    'mobile.connect.error.urlRequired': '请输入服务器 URL。',
+    'mobile.connect.splash.connectingTo': '正在连接设备：',
+    'mobile.connect.error.invalidUrl': '该服务器 URL 无效。',
+    'mobile.connect.error.unreachable': '无法连接到该 OpenChamber 服务器。',
+    'mobile.connect.error.authRequired': '该服务器需要密码或客户端令牌。',
+    'mobile.connect.error.passwordFailed': '无法解锁该服务器。请检查密码。',
+    'mobile.instances.status.connected': '已连接',
+    'mobile.instances.status.connectedDirect': '已连接 · 局域网',
+    'mobile.instances.status.connectedRelay': '已连接 · 中继',
+    'mobile.connect.delete': '删除',
+    'mobile.connect.label.optional': '显示名称（可选）',
+  },
+  en: {
+    'mobile.connect.welcome.title': 'Connect to OpenChamber',
+    'mobile.connect.welcome.description': 'Add a server URL or scan a pairing QR code to start using the mobile app.',
+    'mobile.connect.url.label': 'Server URL',
+    'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
+    'mobile.connect.link.divider': 'Or use a pairing link',
+    'mobile.connect.address.divider': 'Or enter a server address',
+    'mobile.connect.link.label': 'Pairing link',
+    'mobile.connect.link.placeholder': 'Paste openchamber://connect link',
+    'mobile.connect.link.invalid': 'That pairing link is not valid or has expired.',
+    'mobile.connect.token.label': 'Client token',
+    'mobile.connect.token.placeholder': 'Paste access token',
+    'mobile.connect.token.hint': 'Only needed if your server requires a token instead of a password.',
+    'mobile.connect.password.label': 'Password',
+    'mobile.connect.password.placeholder': 'OpenChamber password',
+    'mobile.connect.connectButton': 'Connect',
+    'mobile.connect.unlockButton': 'Unlock and connect',
+    'mobile.connect.cancelPassword': 'Use another server',
+    'mobile.connect.connecting': 'Connecting...',
+    'mobile.connect.scanQr': 'Scan QR code',
+    'mobile.connect.welcome.scanHint': 'On your computer, open «Add a device» to show a QR code, then scan it here.',
+    'mobile.connect.manual.toggle': 'Manual connection',
+    'mobile.connect.scan.permissionDenied': 'Camera access is off. Enable it in Settings to scan a QR code.',
+    'mobile.connect.scan.failed': 'Could not scan that QR code. Try again or enter the URL manually.',
+    'mobile.connect.scan.invalid': 'That QR code is not an OpenChamber connection code.',
+    'mobile.connect.saved.title': 'Saved connections',
+    'mobile.connect.saved.empty': 'No saved connections yet.',
+    'mobile.connect.relay.badge': 'Via OpenChamber Relay',
+    'mobile.connect.error.urlRequired': 'Enter a server URL.',
+    'mobile.connect.splash.connectingTo': 'Connecting to device:',
+    'mobile.connect.error.invalidUrl': 'That server URL is not valid.',
+    'mobile.connect.error.unreachable': 'Could not reach that OpenChamber server.',
+    'mobile.connect.error.authRequired': 'This server needs a password or client token.',
+    'mobile.connect.error.passwordFailed': 'Could not unlock that server. Check the password.',
+    'mobile.instances.status.connected': 'Connected',
+    'mobile.instances.status.connectedDirect': 'Connected · Local network',
+    'mobile.instances.status.connectedRelay': 'Connected · Relay',
+    'mobile.connect.delete': 'Delete',
+    'mobile.connect.label.optional': 'Display name (optional)',
+  },
+};
+
+let locale: Locale = 'zh-CN';
+
+export const setLocale = (next: Locale): void => {
+  locale = next;
+};
+
+export const getLocale = (): Locale => locale;
+
+export const t = (key: string): string => messages[locale][key] ?? messages.en[key] ?? key;
+
+export const connectionStatusLabel = (kind: 'direct' | 'relay'): string =>
+  t(kind === 'relay' ? 'mobile.instances.status.connectedRelay' : 'mobile.instances.status.connectedDirect');

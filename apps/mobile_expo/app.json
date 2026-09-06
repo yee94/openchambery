@@ -9,7 +9,14 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yee94.openchamber"
+      "bundleIdentifier": "com.yee94.openchamber",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow OpenChamber to scan pairing QR codes.",
+        "NSLocalNetworkUsageDescription": "OpenChamber connects to OpenChamber servers on your local network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "package": "com.yee94.openchamber",
@@ -19,7 +26,12 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET"
+      ],
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro",
@@ -34,6 +46,15 @@
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#1A1A1A"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow OpenChamber to scan pairing QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ]
     ],
