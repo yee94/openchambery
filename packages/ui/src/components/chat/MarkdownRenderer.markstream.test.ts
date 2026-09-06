@@ -29,12 +29,15 @@ describe('markstream-react trial path', () => {
     expect(source).toContain('preloadMarkstreamRenderer()');
   });
 
-  test('Markstream host keeps markdown-ready and in-document node virtualization', () => {
+  test('Markstream host keeps markdown-ready and turns off in-bubble node virtualization', () => {
     const source = readFileSync(join(here, 'MarkstreamRendererImpl.tsx'), 'utf8');
+    const knobs = readFileSync(join(here, 'markstream/markstreamPerformance.ts'), 'utf8');
     expect(source).toContain('MARKSTREAM_CHAT_STREAM_PERFORMANCE');
     expect(source).toContain('data-markdown-ready="true"');
-    expect(source).toContain('data-oc-markstream-virtual="nodes"');
-    expect(source).not.toContain('maxLiveNodes={0}');
+    expect(source).toContain('data-oc-markstream-virtual="off"');
+    expect(knobs).toContain('maxLiveNodes: 0');
+    expect(knobs).toContain('batchRendering: false');
+    expect(knobs).toContain('smoothStreaming: false');
   });
 
   test('Markstream last node-slot drops trailing paragraph margin so the process fold stays tight', () => {
