@@ -93,9 +93,11 @@ Do not wrap the transcript or Settings rows in glass.
 bun run --cwd packages/lynx type-check
 bun run --cwd packages/lynx test
 bunx vitest run --project @openchamber/lynx
+bun run --cwd packages/lynx build:rspeedy   # writes dist/main.lynx.bundle (gitignored)
+bun run --cwd packages/lynx dev:rspeedy    # needs Lynx Explorer / host to preview
 ```
 
-Rspeedy bundle + iOS simulator + Android APK CI are **not** in this slice.
+See `RUNNABLE.md` for Linux-box results. iOS simulator + Android APK CI / 真机 are still **not** in this slice (no Xcode/adb on the Linux agent).
 
 ## 三关
 
