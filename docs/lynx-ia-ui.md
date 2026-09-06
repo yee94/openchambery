@@ -116,7 +116,9 @@ Capacitor today: WebView paints `MobileTabBar`; optional iOS 26 native overlay w
 | Chat | Lynx push inside the same view | Host push or hide-tab + Lynx chat page |
 | Risk | Reimplementing iOS 26 tab physics | Two `LynxView`s and engine reuse (`LynxViewGroup`) |
 
-**Recommendation for slice 1:** Mode B on iOS 26 (host `UITabBarController`, Lynx content), Mode A-style Lynx capsule on older iOS and Android if the host cannot offer an equivalent. Chat is always a push that hides the dock. Revisit after 真机过 — do not “try both” in one binary.
+**Slice 1 lock (landed on `packages/lynx`):** Mode B on iOS 26 (host `UITabBarController`, Lynx content), Mode A-style Lynx capsule on older iOS and Android. Chat is always a push that hides the dock. Do not “try both” in one binary. Revisit only after 真机过.
+
+Code: `packages/lynx/src/host/embedding.ts`. Host README: `packages/lynx/README.md` (decision is at the top). Native mirrors: `packages/lynx/host/ios/`, `packages/lynx/host/android/`.
 
 Full-page auto skin of glass chrome is **allowed only in Mode A**. In Mode B it is an IA bug (double dock).
 
@@ -166,11 +168,11 @@ Android降级 (see gap board): `blur-radius` + theme surface, never a fake `UIGl
 |---|---|
 | Root dock | `glass` or host `UITabBar` (Mode B). Selected glyph uses theme `--primary` |
 | Search chip / header buttons | Small `glass` chips; do not cream-fill |
-| Composer collapsed pill / expanded card | `glass` + `glass-interactive` on iOS 26; older iOS `blur-effect="light"` / `dark` following theme |
-| Autocomplete list | Above the card, **not** inside the glass `contentView` if taps fail (Cap native list sat above glass for that reason) |
+| Composer collapsed pill / expanded card | **代码接上** via `LynxComposerGlassCard` → `GlassChrome` (`composerPill` / `composerCard`). iOS 26: `glass` + `glass-interactive`; older iOS theme blur; Android `blur-radius` only. Replaces elevated solid fill on Chat + Draft. **Not** 真机过. |
+| Autocomplete list | **ABOVE** the glass composer card as a **sibling** overlay (card width, ~8pt gap) — **never** inside `UIGlassEffect.contentView` / composer `GlassChrome` children (`forbidInsideGlassContentView`). Cap burned: UILabel titles invisible under vibrancy + taps eaten. Lynx: `LynxComposerAutocompleteList` + optional per-row `searchChip` GlassChrome **in the sibling tree only**. Not occupancy. |
 | Chat transcript | **No glass** |
 | Settings list | **No glass** on rows |
-| Sheets | System sheet first; optional glass grabber, not a glass page |
+| Sheets | Cap MobileResizableSheet spirit: Cap-aligned **0.72 / 0.98** (~72dvh / ~98dvh) bottom sheet + grabber + vertical dismiss (`LynxMobileResizableSheet`). Optional glass grabber, not a glass page. Not full-screen opaque. |
 
 ### Theme
 
@@ -189,6 +191,10 @@ Cap iOS (when native UI is on):
 - Scroll-to-bottom is a glass control above Send after ~80px travel; **not** part of occupancy
 
 Lynx must keep that **behavior** (order, occupancy, IME). The WebView FLIP path is forbidden (`docs/lynx-pitfalls.md`).
+
+Lynx wiring (**代码接上**, not 真机过): Attach / Send / Stop / Queue live **inside** `LynxComposerGlassCard` (`LynxComposerActionsInGlass` + `composerActionsLayout.ts`). Cap order: collapsed pill `+`·input·Send/Stop; expanded card `+`·spacer·Agent·model·Send/Stop (± Queue while working). Expanded **Agent · model** open Cap `MobileResizableSheet`-spirit Cap **0.72/0.98** bottom sheets (`LynxMobileResizableSheet` + `LynxComposerPickerSheets`) with grabber + scrim/vertical dismiss — **not** full-screen `surface.background`. Lists `GET /api/agent` and `/api/config/providers`; selection updates the composer session model used by `prompt_async`. Draft expands to the same card + pickers when the draft is non-empty; when Draft is busy, **Stop aborts** (materialize + `abortSession`) — never re-send. Sheets stay **outside** glass contentView. Changes sheet: portable unified-diff with Cap status add/del colors (del ≠ hunk muted) + Cap ChangeRow spacing (`LYNX_CHANGE_ROW_SPACING`: size-6 chip, `+n / -m` slash, status letter, `diffStats`) + GlassChrome searchChip +/- stage/unstage (`POST /api/git/stage|unstage`) + RevertGlassChip Cap `arrow-go-back` ↩ + Cap **centered Dialog** revert confirm at **shell-root portal** (`LynxCenteredDialog` via `LynxDialogPortal` — full-screen overlay, not nested in Changes relative; destructive `status.error` / `status.onError`). Cap `@pierre/diffs` investigated — **unavailable** on Lynx (Shadow DOM `diffs-container` + react-dom); feature path keeps portable text (`resolveLynxPierreDiffFeature`). Do not claim Pierre CSS/iframe. Projects long-press rename → `PATCH /session/:id`.
+
+Autocomplete / `/` `@` command list: sit **ABOVE** glass composer (sibling), never inside glass `contentView`. See `packages/lynx/src/chat/composerAutocompleteLayout.ts` + Cap `OpenChamberComposerAutocomplete.swift`. Composer surface: `LynxComposerGlassCard` (Chat + Draft) — Linux JS wiring only; host Mode B overlay / 真机 glass paint / drag feel still residual. Product **NOT DONE**.
 
 Android: native/Lynx textarea + host IME inset. No `39dvh` guess.
 

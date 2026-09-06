@@ -1,0 +1,25 @@
+{
+  "name": "@openchamber/lynx",
+  "version": "1.19.7-beta.7",
+  "private": true,
+  "type": "module",
+  "description": "Lynx native mobile shell + connect/pairing/session-index client for OpenChamber (work/lynx-native). Not a Capacitor WebView and not a Capgo/Finder product.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js --ignore-pattern dist",
+    "dev:rspeedy": "rspeedy dev",
+    "build:rspeedy": "rspeedy build",
+    "preview:rspeedy": "rspeedy preview"
+  },
+  "devDependencies": {
+    "@lynx-js/react": "0.126.0",
+    "@lynx-js/react-rsbuild-plugin": "0.20.1",
+    "@lynx-js/rspeedy": "0.17.1",
+    "@lynx-js/types": "^4.2.1"
+  }
+}

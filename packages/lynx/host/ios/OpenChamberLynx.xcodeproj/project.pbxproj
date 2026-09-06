@@ -1,0 +1,94 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		A10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = { LastUpgradeCheck = 1600; };
+			buildConfigurationList = A10000000000000000000002;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A10000000000000000000003;
+			productRefGroup = A10000000000000000000004;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A10000000000000000000005);
+		};
+		A10000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000010 /* OpenChamberLynxEmbedding.swift */,
+				A10000000000000000000011 /* OpenChamberLynxHostController.swift */,
+				A10000000000000000000012 /* OpenChamberLynxViewFactory.swift */,
+				A10000000000000000000013 /* OpenChamberLynxBridge.swift */,
+				A10000000000000000000014 /* OpenChamberLynxCameraAdapter.swift */,
+				A10000000000000000000015 /* OpenChamberLynxVirtualAsset.swift */,
+				A10000000000000000000016 /* OpenChamberLynxPredictiveBack.swift */,
+				A1000000000000000000001A /* OpenChamberLynxImeInset.swift */,
+				A10000000000000000000019 /* OpenChamberLynxOAuthBrowser.swift */,
+				A10000000000000000000018 /* OpenChamberLynxSecureStore.swift */,
+				A10000000000000000000017 /* OpenChamberLynxHttpClient.swift */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000004 = { isa = PBXGroup; children = (); sourceTree = "<group>"; };
+		A10000000000000000000005 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000006;
+			buildPhases = ();
+			buildRules = ();
+			dependencies = ();
+			name = OpenChamberLynx;
+			productName = OpenChamberLynx;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000002 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (A10000000000000000000007, A10000000000000000000008);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000006 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (A10000000000000000000007, A10000000000000000000008);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000007 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Debug;
+		};
+		A10000000000000000000008 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Release;
+		};
+		A10000000000000000000010 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxEmbedding.swift; sourceTree = "<group>"; };
+		A10000000000000000000011 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxHostController.swift; sourceTree = "<group>"; };
+		A10000000000000000000012 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxViewFactory.swift; sourceTree = "<group>"; };
+		A10000000000000000000013 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxBridge.swift; sourceTree = "<group>"; };
+		A10000000000000000000014 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxCameraAdapter.swift; sourceTree = "<group>"; };
+		A10000000000000000000015 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxVirtualAsset.swift; sourceTree = "<group>"; };
+		A10000000000000000000016 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxPredictiveBack.swift; sourceTree = "<group>"; };
+		A1000000000000000000001A = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxImeInset.swift; sourceTree = "<group>"; };
+		A10000000000000000000019 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxOAuthBrowser.swift; sourceTree = "<group>"; };
+		A10000000000000000000018 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxSecureStore.swift; sourceTree = "<group>"; };
+		A10000000000000000000017 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberLynxHttpClient.swift; sourceTree = "<group>"; };
+	};
+	rootObject = A10000000000000000000001;
+}

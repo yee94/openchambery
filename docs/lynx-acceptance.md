@@ -136,8 +136,8 @@ The author of a chat/list/navigation slice owns a harness that can run without a
 | **List prepend** | Load-older keeps the same turn under the finger (`maintainVisibleContentPosition`) | `TimelineList.tsx` contract tests |
 | **Streaming grow** | `maintainScrollAtEnd` while pinned; no follow when user scrolled away | LegendList flags, not a watchdog timer |
 | **IME occupancy** | Collapsed composer height published; queue/Changes do not jump on keyboard | Cap occupancy CSS variables — re-specify in Lynx units |
-| **Connect race** | LAN headstart then relay; relay-only skips the wait | `mobileConnections.ts` |
-| **Instance switch** | Query/runtime identity cleared; no token leak across servers | ui-api-decoupling |
+| **Connect race** | LAN headstart then relay; relay-only skips the wait | `packages/lynx/src/connection/probe.test.ts` (Lynx) / `mobileConnections.ts` (Cap) |
+| **Instance switch** | Query/runtime identity cleared; no token leak across servers | `packages/lynx/src/session-index/store.test.ts` + ui-api-decoupling |
 
 ### How to run them without a user
 
@@ -183,7 +183,7 @@ Acceptance implications:
 - Secondary pages (chat, assistant conversation, instances, settings detail) hide host tab chrome the same way Cap hides `OpenChamberTabBar` (`packages/mobile/README.md`).
 - Sheets/overlays are not tab items and not push pages.
 
-Write the chosen mode at the top of the host app README when the skeleton lands. Until then the gap board treats embedding as **missing**.
+Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 host chrome; Mode A older iOS + Android). Gap board: scaffold landed; device host still missing.
 
 ---
 
@@ -221,3 +221,26 @@ Write the chosen mode at the top of the host app README when the skeleton lands.
 - `docs/lynx-gap-board.md` — where each row sits
 - `docs/lynx-ia-ui.md` — glass + embedding
 - `docs/performance/session-switch-2026-07-11.md` — how this repo already writes gates
+
+## Notes — settings / connect / header / CI (2026-09-06)
+
+- Settings slug DoD: wired pages use real `/api/config/settings` or list endpoints; catalog editors stay labeled stubs (never fake-success). Voice remains list-only-until-routes. No `iosNativeUi`.
+- Connect welcome: splash while `autoConnectLastInstance` resolves; paste pairing v2; QR camera host stub.
+- Projects header: Cap `MobileTabPageHeader` collapse contract (`--oc-mobile-title-collapse` spirit) with Lynx glass search chip + primary +.
+- CI: `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) is Linux type-check + vitest + rspeedy only. APK/iOS simulator jobs need Mac/Android runners — **do not claim 真机过** from this workflow.
+
+## Notes — cards / swipe / share welcome / draft / list harness (2026-09-06)
+
+- **Rich turn cards:** Cap message parts (`text` / `reasoning` / `tool` / `file` / `agent` + other rawType). Activity disclosure collapses detail rows (`collapsedPreviewCount = 0` spirit). Question/permission cards load Cap `/question` + `/permission` and reply on official paths — not invented part types.
+- **Projects session menu:** `sessionMenuModel` order (pin / share / archive / delete). Long-press sheet calls real pin (session-index) + archive/delete (`PATCH`/`DELETE /session/:id`).
+- **Share welcome:** Cap `AssistantShareWelcome` storage key + example cards on Assistant tab above share inbox.
+- **Draft composer:** secondary `kind: 'draft'` body materializes via `POST /session` then `prompt_async` — never a fake chat id.
+- **List perf harness:** `src/harness/listPerfHarness.ts` records synthetic streaming cadence and prepend-anchor retention. Cap cadence notes (`20/64` default, `100/128` Android from `streamingRenderCadence.ts`) are documented anchors — **`deviceMeasured: false`**; no invented 真机 p95.
+- 真机过: **not executed** (Linux cloud agent).
+
+## Notes — SSE live tail / IME contract / nested stack (2026-09-06)
+
+- **SSE live tail:** Cap `/api/global/event` (SSE; WS sibling `/api/global/event/ws`). Lynx parses Cap/OpenCode envelopes (`liveEvents.ts`) and folds matching `message.*` / `session.status` into the **same** LegendList timeline — no TanStack split, no separate live overlay. Idle → queue flush + pending-card reload.
+- **IME occupancy:** `imeOccupancy.ts` locks host-binds-IME, collapsed-height-only occupancy, Chinese composition passthrough, list-footer inset. **No** WebView FLIP / ImeSyncBridge. Host keyboard wiring still required for 真机过.
+- **Nested child stack:** Cap `reconcileMobileChatPredecessor` + back pop mirrored (`reconcileLynxChatPredecessor`, ShellApp back decision). Predecessor chrome labeled on chat header.
+- 真机过: **not executed** (Linux cloud agent).
