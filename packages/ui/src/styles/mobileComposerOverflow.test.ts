@@ -356,6 +356,12 @@ describe('mobile composer overflow and swap contract', () => {
         );
         expect(chatInputSource).toContain('oc-mobile-draft-target-selectors');
         expect(chatInputSource).toContain('data-native-composer-accessories');
+        // Establishing foot is geometry-only; project/branch must not paint through
+        // the invisible shell via `.oc-mobile-composer-reveal { visibility: visible }`.
+        expect(chatInputSource).toContain('&& !draftBusy');
+        expect(chatInputSource).toMatch(
+            /const showDraftTargetSelectors = surface\.kind === 'primary'[\s\S]*?&& !draftBusy/,
+        );
 
         const start = mobileCss.indexOf(
             ':root.oc-native-ios-composer\n  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {',
