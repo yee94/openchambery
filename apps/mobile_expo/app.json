@@ -1,0 +1,95 @@
+{
+  "expo": {
+    "name": "OpenChamber Expo",
+    "slug": "openchamber-expo",
+    "version": "1.19.7-beta.7",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "openchamber",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yee94.openchamber",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow OpenChamber to scan pairing QR codes.",
+        "NSLocalNetworkUsageDescription": "OpenChamber connects to OpenChamber servers on your local network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSSupportsLiveActivities": true,
+        "NSSupportsLiveActivitiesFrequentUpdates": true,
+        "NSPhotoLibraryUsageDescription": "Allow OpenChamber to attach photos to chats and share inbox."
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.yee94.openchamber"
+        ],
+        "aps-environment": "development"
+      }
+    },
+    "android": {
+      "package": "com.yee94.openchamber",
+      "adaptiveIcon": {
+        "backgroundColor": "#1A1A1A",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ],
+      "usesCleartextTraffic": true,
+      "googleServicesFile": "../../packages/mobile/android/app/google-services.json"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1A1A1A"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow OpenChamber to scan pairing QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#E87722",
+          "defaultChannel": "openchamber"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow OpenChamber to attach photos to chats and share inbox."
+        }
+      ],
+      "./plugins/withOpenChamberSystemShell.js",
+      "./plugins/withAndroidDebugSideBySide.js",
+      "react-native-quick-crypto"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
