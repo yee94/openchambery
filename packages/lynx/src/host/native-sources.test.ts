@@ -35,7 +35,20 @@ describe('native host sources', () => {
     expect(activity).toContain('Do not add a fifth Chat destination');
     expect(activity).toContain('com.yee94.openchamber.lynx.debug');
     expect(activity).toContain('renderTemplateUrl');
+    expect(activity).toContain('AppCompatActivity');
+    expect(activity).toContain('MATCH_PARENT');
+    expect(activity).toContain('setPresetMeasuredSpec');
+    expect(activity).toContain('updateGlobalProps');
+    expect(activity).toContain('TemplateData.fromMap');
+    expect(activity).toContain('addLynxViewClient');
+    expect(activity).toContain('OpenChamberLynx');
     expect(app).toContain('LynxEnv.inst()');
+    const themes = await readFile(
+      join(hostRoot, 'android/app/src/main/res/values/themes.xml'),
+      'utf8',
+    );
+    expect(themes).toContain('lynx_window_background');
+    expect(themes).not.toContain('@android:color/black');
   });
 
   test('host scaffold includes deepened bridge protocols', async () => {

@@ -11,6 +11,9 @@ package com.yee94.openchamber.lynx
  * Sideload applicationId is `com.yee94.openchamber.lynx.debug` (unique from
  * Cap/Flutter/Expo `com.yee94.openchamber(.debug)`). See docs/lynx-pitfalls.md §6.
  *
+ * Real Activity hardens black-screen: MATCH_PARENT, preset EXACTLY measure,
+ * TemplateData/globalProps, LynxViewClient error TextView, cream windowBackground.
+ *
  * This mirror is not on the Gradle source path.
  */
 object OpenChamberLynxHostActivityMirror

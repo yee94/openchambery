@@ -184,10 +184,51 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  android-emulator-smoke:
+    name: Android emulator smoke (Lynx template/JS)
+    runs-on: ubuntu-latest
+    needs: android-sideload-apk
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openchamber-lynx-android-debug-apk
+          path: dist
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Emulator install + launch + logcat gate
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/lynx-android-emulator-smoke.sh
+
+      - name: Upload emulator logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openchamber-lynx-android-emulator-logcat
+          path: emulator-smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
   publish-prerelease:
     name: Prerelease sideload APK
     runs-on: ubuntu-latest
-    needs: [android-sideload-apk]
+    needs: [android-sideload-apk, android-emulator-smoke]
     if: >
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && inputs.publish_prerelease != false)
@@ -221,6 +262,7 @@ jobs:
           - **label:** OpenChamber Lynx
           - **scheme:** \`openchamber-lynx://\`
           - **build:** assembleRelease + debug keystore (Expo-style; not assembleDebug)
+          - **emulator smoke:** API 30 logcat gates required green before publish
           - **bundle:** embedded \`assets/main.lynx.bundle\` (rspeedy)
           - **CI:** ${run_url}
           - **Not** 真机过 / not /releases/latest

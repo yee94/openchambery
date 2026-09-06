@@ -2,4 +2,7 @@
 <resources>
     <color name="ic_launcher_background">#111111</color>
     <color name="ic_launcher_foreground">#F5F5F5</color>
+    <!-- Flexoki-light cream — failures must not paint as a pure black void. -->
+    <color name="lynx_window_background">#fffdf4</color>
+    <color name="lynx_error_text">#100F0F</color>
 </resources>
