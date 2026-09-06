@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.22] - 2026-09-07
+
+### 会话
+
+- 新建对话建立中时，底部不再露出项目 / 分支选择芯片。
+- 浅色主题下 live 文本 shimmer 更清晰可读。
+
+### 助手
+
+- 首次开启助手时自动种入名为「默认助理」的默认联系人。
+
 ## [1.19.7-beta.21] - 2026-09-07
 
 ### 助手
