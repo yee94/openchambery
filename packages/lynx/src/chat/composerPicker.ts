@@ -133,8 +133,13 @@ export const filterLynxComposerPickerItems = (
 };
 
 export const LYNX_COMPOSER_PICKER_SHEETS = {
-  /** Cap MobileResizableSheet spirit — overlay, not glass contentView child. */
+  /** Cap MobileResizableSheet spirit — bottom half-height overlay, not glass contentView child. */
   placement: 'overlay-sheet' as const,
+  /** Not a full-screen opaque surface.background page. */
+  fullScreenOpaque: false as const,
+  halfHeight: true as const,
+  grabber: true as const,
+  dismissVertical: true as const,
   /** Agent · model triggers stay inside glass; sheets open outside glass tree. */
   triggersInsideGlass: true as const,
   sheetsInsideGlassContentView: false as const,
@@ -146,8 +151,8 @@ export const LYNX_COMPOSER_PICKER_SHEETS = {
 
 export const LYNX_COMPOSER_PICKER_WIRING_NOTES = [
   'Agent picker lists Cap GET /api/agent; model picker lists GET /api/config/providers.',
-  'Expanded footer Agent · model open MobileResizableSheet-spirit overlays.',
+  'Expanded footer Agent · model open half-height MobileResizableSheet (grabber + vertical dismiss) — not full-screen surface.background.',
   'Selecting updates composer session agent/model used by prompt_async — never fake-success.',
   'Sheets stay outside LynxComposerGlassCard; autocomplete remains ABOVE glass.',
-  'Linux JS wiring only — host Mode B overlay / live UIGlassEffect / 真机 still residual.',
+  'Linux JS wiring only — host Mode B overlay / live UIGlassEffect / 真机 still residual. NOT DONE.',
 ] as const;

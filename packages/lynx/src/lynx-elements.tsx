@@ -25,7 +25,17 @@ export type LynxViewProps = {
   'data-lynx-composer-actions-variant'?: string;
   'data-lynx-composer-actions-order'?: string;
   'data-lynx-composer-action'?: string;
+  'data-lynx-composer-picker-sheet'?: string;
+  'data-lynx-composer-picker-placement'?: string;
+  'data-lynx-composer-picker-row'?: string;
+  'data-lynx-resizable-sheet'?: string;
+  'data-lynx-resizable-sheet-placement'?: string;
+  'data-lynx-resizable-sheet-snap'?: string;
   'data-mobile-html-preview'?: string;
+  bindtouchstart?: (event: { detail?: unknown }) => void;
+  bindtouchmove?: (event: { detail?: unknown }) => void;
+  bindtouchend?: (event: { detail?: unknown }) => void;
+  bindtouchcancel?: (event: { detail?: unknown }) => void;
 };
 
 export type LynxPageProps = LynxViewProps & {

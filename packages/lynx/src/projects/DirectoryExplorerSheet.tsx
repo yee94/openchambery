@@ -4,6 +4,7 @@ import { lynxT } from '../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { loadLynxSettings } from '../settings/api';
+import { LynxMobileResizableSheet } from '../shell/MobileResizableSheet';
 import { cssVar } from '../theme/tokens';
 import {
   addLynxProjectFromPath,
@@ -92,8 +93,6 @@ export function DirectoryExplorerSheet({
     setStatus('idle');
   };
 
-  if (!open) return null;
-
   const onRow = async (row: LynxBrowseRow) => {
     if (row.type === 'up') {
       const parent = row.path ?? getLynxBrowseParentPath(path);
@@ -126,26 +125,14 @@ export function DirectoryExplorerSheet({
   };
 
   return (
-    <LynxView
-      style={{
-        position: 'absolute',
-        left: '0',
-        right: '0',
-        top: '0',
-        bottom: '0',
-        backgroundColor: cssVar('surface.background'),
-        padding: '16px',
-      }}
-      accessibility-label={lynxT(locale, 'lynx.projects.explorer.title')}
+    <LynxMobileResizableSheet
+      locale={locale}
+      open={open}
+      title={lynxT(locale, 'lynx.projects.explorer.title')}
+      ariaLabel={lynxT(locale, 'lynx.projects.explorer.title')}
+      onClose={onClose}
+      initiallyExpanded
     >
-      <LynxView style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: '12px' }}>
-        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', fontSize: '18px' }}>
-          {lynxT(locale, 'lynx.projects.explorer.title')}
-        </LynxText>
-        <LynxView bindtap={onClose} accessibility-role="button">
-          <LynxText style={{ color: cssVar('primary.base') }}>{lynxT(locale, 'lynx.shell.back')}</LynxText>
-        </LynxView>
-      </LynxView>
       <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
         {path}
       </LynxText>
@@ -164,7 +151,7 @@ export function DirectoryExplorerSheet({
       ) : null}
       <LynxView
         bindtap={() => { void onAdd(); }}
-        style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '12px', backgroundColor: cssVar('surface.elevated') }}
+        style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '12px', backgroundColor: cssVar('surface.background') }}
         accessibility-role="button"
       >
         <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
@@ -197,6 +184,6 @@ export function DirectoryExplorerSheet({
           </LynxView>
         ))}
       </LynxScrollView>
-    </LynxView>
+    </LynxMobileResizableSheet>
   );
 }

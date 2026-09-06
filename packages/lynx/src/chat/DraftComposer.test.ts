@@ -38,4 +38,35 @@ describe('Lynx draft composer materialize', () => {
     expect(calls[0]?.path).toContain('/session');
     expect(calls[1]?.path).toContain('/session/ses_d/prompt_async');
   });
+
+  test('aborted signal / Stop spirit returns aborted (does not pretend success)', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(await materializeLynxDraftSession({
+      runtimeFetch: async () => ({ ok: true, status: 200, json: async () => ({ id: 'x' }) }),
+      text: 'hi',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      signal: controller.signal,
+    })).toEqual({ status: 'aborted' });
+
+    let created = false;
+    const midAbort = new AbortController();
+    const result = await materializeLynxDraftSession({
+      runtimeFetch: async (path, init) => {
+        if (path.startsWith('/session') && init?.method === 'POST') {
+          return { ok: true, status: 200, json: async () => ({ id: 'ses_abort', directory: '/r' }) };
+        }
+        return { ok: true, status: 204, json: async () => true };
+      },
+      text: 'stop me',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      signal: midAbort.signal,
+      onSessionCreated: () => {
+        created = true;
+        midAbort.abort();
+      },
+    });
+    expect(created).toBe(true);
+    expect(result).toEqual({ status: 'aborted' });
+  });
 });

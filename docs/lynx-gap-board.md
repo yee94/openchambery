@@ -331,6 +331,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 19. ~~**composer glass: LynxComposerGlassCard GlassChrome on Chat+Draft + autocomplete sibling ABOVE glass + optional row searchChip**~~ — 代码接上 in `cursor/lynx-composer-glass-local`. Remaining: Mode B host composer overlay / live UIGlassEffect 真机; product NOT DONE.
 20. ~~**composer actions in glass: Attach/Send/Stop/Queue inside LynxComposerGlassCard (Cap pill/card order); autocomplete stays ABOVE**~~ — 代码接上 in `cursor/lynx-composer-actions-in-glass-local`. Remaining: Mode B host overlay / live UIGlassEffect / 真机; product NOT DONE.
 21. ~~**composer Agent·model picker sheets: Cap MobileResizableSheet spirit; `/api/agent` + providers catalog; selection → prompt_async**~~ — 代码接上 in `cursor/lynx-agent-model-picker-local`. Remaining: Mode B host overlay / live UIGlassEffect / 真机; product NOT DONE.
+22. ~~**resizable picker sheets + Draft Stop abort: half-height grabber sheet (not full-screen surface.background); Draft busy Stop aborts**~~ — 代码接上 in `cursor/lynx-resizable-picker-sheets-local`. Remaining: Mode B host overlay / live UIGlassEffect / 真机 drag feel; product NOT DONE.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -460,10 +461,24 @@ Slice on `cursor/lynx-agent-model-picker-local` (PR into `work/lynx-native`). Pa
 | Selection → session send | Cap selection store + `prompt_async` body | Updates composer `LynxComposerModel` used by send/queue (no separate session PATCH; Cap same) |
 | Autocomplete ABOVE glass preserved | Cap autocomplete sibling | Sheets outside GlassChrome; list never nested under composer contentView |
 
-**CI绿:** Local Vitest `@openchamber/lynx` + tsc + rspeedy. lynx-ci workflow template only.
+**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
 **真机过:** not executed (Linux cloud VM). Host Mode B composer overlay / live UIGlassEffect still residual.
 
 ---
+
+## 代码接上 (resizable picker sheets + Draft Stop abort — not landed under 三关)
+
+Slice on `cursor/lynx-resizable-picker-sheets-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. 真机过: not executed. Product **NOT DONE**.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Half-height MobileResizableSheet | Cap `MobileResizableSheet` + snap grabber | `LynxMobileResizableSheet`: grabber, ~50% bottom sheet, scrim + vertical-drag dismiss — **replaces** full-screen `surface.background` picker overlay |
+| Picker + explorer reuse | Agent/model pickers; DirectoryExplorer | Composer pickers mount on shared sheet; DirectoryExplorer reused cheaply |
+| Draft busy Stop = abort | Cap Chat composerActions.stop / `POST …/abort` | When Draft `busy`, Stop aborts materialize + `abortSession` — never re-send |
+| Glass / autocomplete | Cap autocomplete sibling | Triggers stay in-glass; sheets outside; autocomplete ABOVE glass |
+
+**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**真机过:** not executed (Linux cloud VM). Live drag feel / Mode B overlay / UIGlassEffect still residual.
 
 ## 代码接上 (composer GlassChrome — not landed under 三关)
 
@@ -527,7 +542,7 @@ Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Packag
 | Autocomplete ABOVE glass | Unchanged sibling; never GlassChrome contentView child |
 | Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
 
-### 代码接上 this slice (`cursor/lynx-agent-model-picker-local`)
+### 代码接上 prior slice (`cursor/lynx-agent-model-picker-local`)
 
 | Item | Notes |
 |---|---|
@@ -535,6 +550,16 @@ Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Packag
 | Model picker sheet | Lists `/api/config/providers` models; Chat + Draft expanded model button |
 | Selection updates composer | `LynxComposerModel` → `prompt_async` agent/provider/model (Cap selection-store spirit; no invent PATCH) |
 | Glass / autocomplete | Triggers stay in-glass; sheets + autocomplete stay outside / ABOVE glass |
+| Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
+
+### 代码接上 this slice (`cursor/lynx-resizable-picker-sheets-local`)
+
+| Item | Notes |
+|---|---|
+| Half-height resizable sheet | `LynxMobileResizableSheet`: grabber, ~50% bottom sheet, scrim + vertical-drag dismiss — not full-screen `surface.background` |
+| Picker / explorer reuse | Agent·model pickers + DirectoryExplorer mount on shared sheet |
+| Draft busy Stop = abort | Stop aborts materialize / `abortSession` (Chat composerActions alignment) — never re-send |
+| Glass / autocomplete | Triggers in-glass; sheets outside; autocomplete ABOVE glass |
 | Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
 
 ### Still missing / host-only / 真机
@@ -546,7 +571,7 @@ Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Packag
 | OAuth system browser open | Cap routes + host stubs 代码接上; ASWebAuthenticationSession / Custom Tabs 真机 |
 | Host WKWebView / WebView HTML preview sheet | Text stub only — no invent Lynx DOM iframe |
 | PierreDiff interactive viewer | Unified text stub; Cap Pierre runtime CSS not ported |
-| Composer glass / actions / pickers 真机 / Mode B host overlay | GlassCard + in-glass actions + Agent·model picker sheets JS 代码接上; live UIGlassEffect + host Mode B overlay still 真机 |
+| Composer glass / actions / pickers 真机 / Mode B host overlay | GlassCard + in-glass actions + half-height resizable Agent·model sheets JS 代码接上; live UIGlassEffect + host Mode B overlay / drag feel still 真机 |
 | IME keyboard binding + occupancy 真机 | Contract + inset publisher stubs 代码接上; LynxView IME must be host-bound |
 | Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxText, LynxView } from '../lynx-elements';
@@ -22,7 +22,7 @@ import {
   applyLynxModelPickerSelection,
   type LynxComposerPickerKind,
 } from './composerPicker';
-import { promptAsync, type LynxPromptAsyncResult } from './sessionApi';
+import { abortSession, promptAsync, type LynxPromptAsyncResult } from './sessionApi';
 
 export type LynxDraftComposerModel = {
   providerID: string;
@@ -34,6 +34,7 @@ export type LynxDraftMaterializeResult =
   | { status: 'ok'; sessionId: string; directory: string | null; promptResult: LynxPromptAsyncResult }
   | { status: 'no-runtime' }
   | { status: 'empty' }
+  | { status: 'aborted' }
   | { status: 'failed'; error: string };
 
 /**
@@ -46,18 +47,29 @@ export async function materializeLynxDraftSession(input: {
   text: string;
   directory?: string | null;
   model: LynxDraftComposerModel;
+  signal?: AbortSignal;
+  /** Fired once POST /session succeeds so Stop can abortSession. */
+  onSessionCreated?: (session: { sessionId: string; directory: string | null }) => void;
 }): Promise<LynxDraftMaterializeResult> {
   const text = input.text.trim();
   if (!text) return { status: 'empty' };
   if (!input.runtimeFetch) return { status: 'no-runtime' };
+  if (input.signal?.aborted) return { status: 'aborted' };
 
   const created = await createLynxSession(input.runtimeFetch, {
     directory: input.directory,
   });
+  if (input.signal?.aborted) return { status: 'aborted' };
   if (created.status !== 'ok') {
     if (created.status === 'no-runtime') return { status: 'no-runtime' };
     return { status: 'failed', error: created.error };
   }
+
+  input.onSessionCreated?.({
+    sessionId: created.sessionId,
+    directory: created.directory,
+  });
+  if (input.signal?.aborted) return { status: 'aborted' };
 
   const promptResult = await promptAsync(
     { runtimeFetch: input.runtimeFetch },
@@ -70,6 +82,8 @@ export async function materializeLynxDraftSession(input: {
       agent: input.model.agent,
     },
   );
+
+  if (input.signal?.aborted) return { status: 'aborted' };
 
   if (promptResult.status === 'failed') {
     return {
@@ -124,6 +138,8 @@ export function LynxDraftComposer({
   const [composerCatalogHint, setComposerCatalogHint] = useState<string | null>(null);
   const [composerModel, setComposerModel] = useState<LynxDraftComposerModel>(model);
   const [pickerKind, setPickerKind] = useState<LynxComposerPickerKind | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const createdSessionRef = useRef<{ sessionId: string; directory: string | null } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +166,9 @@ export function LynxDraftComposer({
 
   const send = () => {
     if (busy) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    createdSessionRef.current = null;
     setBusy(true);
     setError(null);
     void (async () => {
@@ -158,8 +177,19 @@ export function LynxDraftComposer({
         text: draft,
         directory,
         model: composerModel,
+        signal: controller.signal,
+        onSessionCreated: (session) => {
+          createdSessionRef.current = session;
+        },
       });
+      if (controller.signal.aborted || result.status === 'aborted') {
+        setBusy(false);
+        abortRef.current = null;
+        return;
+      }
       setBusy(false);
+      abortRef.current = null;
+      createdSessionRef.current = null;
       if (result.status === 'ok') {
         setDraft('');
         onMaterialized?.({ sessionId: result.sessionId, directory: result.directory });
@@ -175,6 +205,22 @@ export function LynxDraftComposer({
       }
       setError(result.error);
     })();
+  };
+
+  /** Cap Chat Stop spirit: abort in-flight materialize / session, never re-send. */
+  const stop = () => {
+    if (!busy) return;
+    abortRef.current?.abort();
+    const created = createdSessionRef.current;
+    if (created && runtimeFetch) {
+      void abortSession(
+        { runtimeFetch },
+        { sessionId: created.sessionId, directory: created.directory },
+      );
+    }
+    createdSessionRef.current = null;
+    abortRef.current = null;
+    setBusy(false);
   };
 
   return (
@@ -256,7 +302,7 @@ export function LynxDraftComposer({
                   setError('no-host: media pick unavailable');
                 }}
                 onSend={send}
-                onStop={send}
+                onStop={stop}
                 onAgent={() => { setPickerKind('agent'); }}
                 onModel={() => { setPickerKind('model'); }}
               />
@@ -288,20 +334,24 @@ export function LynxDraftComposer({
                 style={{ flexGrow: 1, color: cssVar('surface.foreground') }}
               />
               <LynxView
-                bindtap={send}
+                bindtap={busy ? stop : send}
                 accessibility-role="button"
-                accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
+                accessibility-label={busy
+                  ? lynxT(locale, 'lynx.chat.composer.stop')
+                  : lynxT(locale, 'lynx.chat.composer.send')}
                 data-lynx-composer-action="sendOrStop"
                 style={{
                   marginLeft: '8px',
                   padding: '8px 12px',
                   borderRadius: '10px',
                   backgroundColor: cssVar('primary.base'),
-                  opacity: busy ? 0.6 : 1,
+                  opacity: 1,
                 }}
               >
                 <LynxText style={{ color: '#fff', fontWeight: '600' }}>
-                  {busy ? lynxT(locale, 'lynx.draft.busy') : lynxT(locale, 'lynx.chat.composer.send')}
+                  {busy
+                    ? lynxT(locale, 'lynx.chat.composer.stop')
+                    : lynxT(locale, 'lynx.chat.composer.send')}
                 </LynxText>
               </LynxView>
             </LynxView>

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
+import { LynxMobileResizableSheet } from '../shell/MobileResizableSheet';
 import { cssVar } from '../theme/tokens';
 import type { LynxComposerModel } from './composerActions';
 import {
@@ -31,6 +32,7 @@ export type LynxComposerPickerSheetsProps = {
 
 /**
  * Agent or model picker overlay (Cap AgentSelector / MobileModelPickerPanel).
+ * Half-height resizable sheet — not full-screen surface.background.
  * Returns null when closed.
  */
 export function LynxComposerPickerSheets({
@@ -92,127 +94,104 @@ export function LynxComposerPickerSheets({
     [items, query],
   );
 
-  if (!kind) return null;
-
   const titleKey = kind === 'agent'
     ? 'lynx.chat.composer.picker.agentTitle'
     : 'lynx.chat.composer.picker.modelTitle';
+  const title = kind ? lynxT(locale, titleKey) : '';
   const selectedId = kind === 'agent'
     ? (selection.agent ?? '')
     : `${selection.providerID}/${selection.modelID}`;
 
   return (
-    <LynxView
-      data-lynx-composer-picker-sheet={kind}
-      data-lynx-composer-picker-placement="overlay-sheet"
-      style={{
-        position: 'absolute',
-        left: '0',
-        right: '0',
-        top: '0',
-        bottom: '0',
-        backgroundColor: cssVar('surface.background'),
-        padding: '16px',
-      }}
-      accessibility-label={lynxT(locale, titleKey)}
+    <LynxMobileResizableSheet
+      locale={locale}
+      open={kind != null}
+      title={title}
+      ariaLabel={title || 'picker'}
+      onClose={onClose}
     >
       <LynxView
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '12px',
-        }}
+        data-lynx-composer-picker-sheet={kind ?? undefined}
+        data-lynx-composer-picker-placement="overlay-sheet"
+        style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: '0' }}
       >
-        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', fontSize: '18px' }}>
-          {lynxT(locale, titleKey)}
-        </LynxText>
-        <LynxView
-          bindtap={onClose}
-          accessibility-role="button"
-          accessibility-label={lynxT(locale, 'lynx.shell.back')}
-        >
-          <LynxText style={{ color: cssVar('primary.base') }}>
-            {lynxT(locale, 'lynx.shell.back')}
+        <LynxInput
+          value={query}
+          placeholder={lynxT(locale, 'lynx.chat.composer.picker.search')}
+          bindinput={(event) => setQuery(event.detail?.value ?? '')}
+          accessibility-label={lynxT(locale, 'lynx.chat.composer.picker.search')}
+          style={{
+            marginBottom: '12px',
+            padding: '8px 10px',
+            borderRadius: '10px',
+            backgroundColor: cssVar('surface.background'),
+            color: cssVar('surface.foreground'),
+            flexShrink: 0,
+          }}
+        />
+
+        {status === 'loading' ? (
+          <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+            {lynxT(locale, 'lynx.chat.composer.picker.loading')}
           </LynxText>
-        </LynxView>
-      </LynxView>
+        ) : null}
+        {status === 'no-runtime' ? (
+          <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+            {lynxT(locale, 'lynx.chat.composer.picker.noRuntime')}
+          </LynxText>
+        ) : null}
+        {status === 'unsupported' || status === 'failed' ? (
+          <LynxText style={{ color: cssVar('surface.foreground'), marginBottom: '8px' }}>
+            {error || lynxT(locale, 'lynx.chat.composer.picker.failed')}
+          </LynxText>
+        ) : null}
 
-      <LynxInput
-        value={query}
-        placeholder={lynxT(locale, 'lynx.chat.composer.picker.search')}
-        bindinput={(event) => setQuery(event.detail?.value ?? '')}
-        accessibility-label={lynxT(locale, 'lynx.chat.composer.picker.search')}
-        style={{
-          marginBottom: '12px',
-          padding: '8px 10px',
-          borderRadius: '10px',
-          backgroundColor: cssVar('surface.elevated'),
-          color: cssVar('surface.foreground'),
-        }}
-      />
-
-      {status === 'loading' ? (
-        <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
-          {lynxT(locale, 'lynx.chat.composer.picker.loading')}
-        </LynxText>
-      ) : null}
-      {status === 'no-runtime' ? (
-        <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
-          {lynxT(locale, 'lynx.chat.composer.picker.noRuntime')}
-        </LynxText>
-      ) : null}
-      {status === 'unsupported' || status === 'failed' ? (
-        <LynxText style={{ color: cssVar('surface.foreground'), marginBottom: '8px' }}>
-          {error || lynxT(locale, 'lynx.chat.composer.picker.failed')}
-        </LynxText>
-      ) : null}
-
-      {status === 'ok' ? (
-        <LynxScrollView style={{ flexGrow: 1 }}>
-          {kind === 'agent' ? (
-            <PickerRow
-              title={lynxT(locale, 'lynx.chat.composer.picker.notSelected')}
-              selected={!selection.agent}
-              onPress={() => {
-                onSelectAgent(null);
-                onClose();
-              }}
-            />
-          ) : null}
-          {filtered.length === 0 ? (
-            <LynxText style={{ color: cssVar('surface.mutedForeground'), marginTop: '8px' }}>
-              {lynxT(locale, 'lynx.chat.composer.picker.empty')}
-            </LynxText>
-          ) : (
-            filtered.map((item) => {
-              const selected = kind === 'agent'
-                ? item.id === selectedId || item.title === selectedId
-                : item.id === selectedId;
-              return (
-                <PickerRow
-                  key={item.id}
-                  title={item.title}
-                  subtitle={item.subtitle}
-                  selected={selected}
-                  onPress={() => {
-                    if (kind === 'agent') {
-                      onSelectAgent(item.title || item.id);
+        {status === 'ok' ? (
+          <LynxScrollView style={{ flexGrow: 1, minHeight: '0' }}>
+            {kind === 'agent' ? (
+              <PickerRow
+                title={lynxT(locale, 'lynx.chat.composer.picker.notSelected')}
+                selected={!selection.agent}
+                onPress={() => {
+                  onSelectAgent(null);
+                  onClose();
+                }}
+              />
+            ) : null}
+            {filtered.length === 0 ? (
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), marginTop: '8px' }}>
+                {lynxT(locale, 'lynx.chat.composer.picker.empty')}
+              </LynxText>
+            ) : (
+              filtered.map((item) => {
+                const selected = kind === 'agent'
+                  ? item.id === selectedId || item.title === selectedId
+                  : item.id === selectedId;
+                return (
+                  <PickerRow
+                    key={item.id}
+                    title={item.title}
+                    subtitle={item.subtitle}
+                    selected={selected}
+                    onPress={() => {
+                      if (kind === 'agent') {
+                        onSelectAgent(item.title || item.id);
+                        onClose();
+                        return;
+                      }
+                      const parsed = parseLynxModelPickerId(item.id);
+                      if (!parsed) return;
+                      onSelectModel(parsed);
                       onClose();
-                      return;
-                    }
-                    const parsed = parseLynxModelPickerId(item.id);
-                    if (!parsed) return;
-                    onSelectModel(parsed);
-                    onClose();
-                  }}
-                />
-              );
-            })
-          )}
-        </LynxScrollView>
-      ) : null}
-    </LynxView>
+                    }}
+                  />
+                );
+              })
+            )}
+          </LynxScrollView>
+        ) : null}
+      </LynxView>
+    </LynxMobileResizableSheet>
   );
 }
 
@@ -237,7 +216,7 @@ function PickerRow({
         marginBottom: '8px',
         padding: '10px 12px',
         borderRadius: '12px',
-        backgroundColor: selected ? cssVar('primary.base') : cssVar('surface.elevated'),
+        backgroundColor: selected ? cssVar('primary.base') : cssVar('surface.background'),
         opacity: selected ? 0.92 : 1,
       }}
     >

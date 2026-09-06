@@ -274,6 +274,8 @@ export type LynxMessageKey =
   | 'lynx.chat.composer.picker.empty'
   | 'lynx.chat.composer.picker.noRuntime'
   | 'lynx.chat.composer.picker.search'
+  | 'lynx.sheet.grabber'
+  | 'lynx.sheet.close'
   | 'lynx.settings.voice.status'
   | 'lynx.settings.voice.noAsr'
   | 'lynx.settings.about.diagnostics'
@@ -530,6 +532,8 @@ const en: LynxDictionary = {
   'lynx.chat.composer.picker.empty': 'No items',
   'lynx.chat.composer.picker.noRuntime': 'Connect a runtime to load agents and models',
   'lynx.chat.composer.picker.search': 'Search',
+  'lynx.sheet.grabber': 'Resize sheet',
+  'lynx.sheet.close': 'Close',
   'lynx.connect.qr.unavailable': 'Camera unavailable on this host',
   'lynx.connect.qr.scan': 'Scan QR',
   'lynx.projects.chrome.addProject': 'Browse folders',
@@ -792,6 +796,8 @@ const es: LynxDictionary = {
   'lynx.chat.composer.picker.empty': 'Sin elementos',
   'lynx.chat.composer.picker.noRuntime': 'Conecta un runtime para cargar agentes y modelos',
   'lynx.chat.composer.picker.search': 'Buscar',
+  'lynx.sheet.grabber': 'Redimensionar hoja',
+  'lynx.sheet.close': 'Cerrar',
   'lynx.connect.qr.unavailable': 'Cámara no disponible en este host',
   'lynx.connect.qr.scan': 'Escanear QR',
   'lynx.projects.chrome.addProject': 'Explorar carpetas',
@@ -1054,6 +1060,8 @@ const fr: LynxDictionary = {
   'lynx.chat.composer.picker.empty': 'Aucun élément',
   'lynx.chat.composer.picker.noRuntime': 'Connectez un runtime pour charger agents et modèles',
   'lynx.chat.composer.picker.search': 'Rechercher',
+  'lynx.sheet.grabber': 'Redimensionner la feuille',
+  'lynx.sheet.close': 'Fermer',
   'lynx.connect.qr.unavailable': 'Caméra indisponible sur cet hôte',
   'lynx.connect.qr.scan': 'Scanner le QR',
   'lynx.projects.chrome.addProject': 'Parcourir les dossiers',
@@ -1316,6 +1324,8 @@ const ja: LynxDictionary = {
   'lynx.chat.composer.picker.empty': '項目なし',
   'lynx.chat.composer.picker.noRuntime': 'エージェントとモデルを読み込むにはランタイムに接続してください',
   'lynx.chat.composer.picker.search': '検索',
+  'lynx.sheet.grabber': 'シートをリサイズ',
+  'lynx.sheet.close': '閉じる',
   'lynx.connect.qr.unavailable': 'このホストではカメラ利用不可',
   'lynx.connect.qr.scan': 'QRをスキャン',
   'lynx.projects.chrome.addProject': 'フォルダを参照',
@@ -1578,6 +1588,8 @@ const ko: LynxDictionary = {
   'lynx.chat.composer.picker.empty': '항목 없음',
   'lynx.chat.composer.picker.noRuntime': '에이전트와 모델을 불러오려면 런타임에 연결하세요',
   'lynx.chat.composer.picker.search': '검색',
+  'lynx.sheet.grabber': '시트 크기 조절',
+  'lynx.sheet.close': '닫기',
   'lynx.connect.qr.unavailable': '이 호스트에서 카메라 사용 불가',
   'lynx.connect.qr.scan': 'QR 스캔',
   'lynx.projects.chrome.addProject': '폴더 찾아보기',
@@ -1840,6 +1852,8 @@ const pl: LynxDictionary = {
   'lynx.chat.composer.picker.empty': 'Brak elementów',
   'lynx.chat.composer.picker.noRuntime': 'Połącz runtime, aby wczytać agentów i modele',
   'lynx.chat.composer.picker.search': 'Szukaj',
+  'lynx.sheet.grabber': 'Zmień rozmiar arkusza',
+  'lynx.sheet.close': 'Zamknij',
   'lynx.connect.qr.unavailable': 'Aparat niedostępny na tym hoście',
   'lynx.connect.qr.scan': 'Skanuj QR',
   'lynx.projects.chrome.addProject': 'Przeglądaj foldery',
@@ -2102,6 +2116,8 @@ const ptBR: LynxDictionary = {
   'lynx.chat.composer.picker.empty': 'Nenhum item',
   'lynx.chat.composer.picker.noRuntime': 'Conecte um runtime para carregar agentes e modelos',
   'lynx.chat.composer.picker.search': 'Pesquisar',
+  'lynx.sheet.grabber': 'Redimensionar folha',
+  'lynx.sheet.close': 'Fechar',
   'lynx.connect.qr.unavailable': 'Câmera indisponível neste host',
   'lynx.connect.qr.scan': 'Escanear QR',
   'lynx.projects.chrome.addProject': 'Procurar pastas',
@@ -2364,6 +2380,8 @@ const uk: LynxDictionary = {
   'lynx.chat.composer.picker.empty': 'Немає елементів',
   'lynx.chat.composer.picker.noRuntime': 'Підключіть runtime, щоб завантажити агентів і моделі',
   'lynx.chat.composer.picker.search': 'Пошук',
+  'lynx.sheet.grabber': 'Змінити розмір аркуша',
+  'lynx.sheet.close': 'Закрити',
   'lynx.connect.qr.unavailable': 'Камера недоступна на цьому хості',
   'lynx.connect.qr.scan': 'Сканувати QR',
   'lynx.projects.chrome.addProject': 'Огляд тек',
@@ -2626,6 +2644,8 @@ const zhCN: LynxDictionary = {
   'lynx.chat.composer.picker.empty': '暂无项目',
   'lynx.chat.composer.picker.noRuntime': '请连接运行时以加载代理与模型',
   'lynx.chat.composer.picker.search': '搜索',
+  'lynx.sheet.grabber': '调整面板高度',
+  'lynx.sheet.close': '关闭',
   'lynx.connect.qr.unavailable': '当前宿主无可用相机',
   'lynx.connect.qr.scan': '扫一扫',
   'lynx.projects.chrome.addProject': '浏览文件夹',
@@ -2888,6 +2908,8 @@ const zhTW: LynxDictionary = {
   'lynx.chat.composer.picker.empty': '暫無項目',
   'lynx.chat.composer.picker.noRuntime': '請連接執行階段以載入代理與模型',
   'lynx.chat.composer.picker.search': '搜尋',
+  'lynx.sheet.grabber': '調整面板高度',
+  'lynx.sheet.close': '關閉',
   'lynx.connect.qr.unavailable': '目前宿主無可用相機',
   'lynx.connect.qr.scan': '掃一掃',
   'lynx.projects.chrome.addProject': '瀏覽資料夾',

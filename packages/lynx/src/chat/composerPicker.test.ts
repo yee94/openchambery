@@ -59,6 +59,10 @@ describe('composer agent/model picker selection', () => {
   test('sheet contract keeps triggers in glass and sheets outside', () => {
     expect(LYNX_COMPOSER_PICKER_SHEETS.triggersInsideGlass).toBe(true);
     expect(LYNX_COMPOSER_PICKER_SHEETS.sheetsInsideGlassContentView).toBe(false);
+    expect(LYNX_COMPOSER_PICKER_SHEETS.fullScreenOpaque).toBe(false);
+    expect(LYNX_COMPOSER_PICKER_SHEETS.halfHeight).toBe(true);
+    expect(LYNX_COMPOSER_PICKER_SHEETS.grabber).toBe(true);
+    expect(LYNX_COMPOSER_PICKER_SHEETS.dismissVertical).toBe(true);
     expect(LYNX_COMPOSER_PICKER_SHEETS.agentCatalogPath).toBe('/api/agent');
     expect(LYNX_COMPOSER_PICKER_SHEETS.modelCatalogPath).toBe('/api/config/providers');
     expect(LYNX_COMPOSER_PICKER_SHEETS.appliesViaPromptAsync).toBe(true);
