@@ -64,11 +64,14 @@ export function ConnectWelcome({
 
 
   if (phase !== 'done') {
+    // Hard literals first so a blank cream screen is impossible even if i18n fails.
+    // Root <page> is provided by App — keep splash as a full-size <view>.
     return (
       <LynxView
         style={{
           flexGrow: 1,
           width: '100%',
+          height: '100%',
           minHeight: '100%',
           alignItems: 'center',
           justifyContent: 'center',
@@ -76,9 +79,15 @@ export function ConnectWelcome({
           // Hardcoded Flexoki-light cream — never transparent on black windowBackground.
           backgroundColor: splashBg,
         }}
-        accessibility-label={lynxT(locale, 'lynx.connect.splash')}
+        accessibility-label="OpenChamber Lynx"
       >
-        <LynxText style={{ color: splashFg, fontSize: '20px', fontWeight: '600' }}>
+        <LynxText style={{ color: splashFg, fontSize: '22px', fontWeight: '700' }}>
+          OpenChamber Lynx
+        </LynxText>
+        <LynxText style={{ color: splashFg, fontSize: '18px', fontWeight: '600', marginTop: '12px' }}>
+          Connecting…
+        </LynxText>
+        <LynxText style={{ color: splashMuted, fontSize: '14px', marginTop: '8px' }}>
           {lynxT(locale, 'lynx.connect.splash')}
         </LynxText>
         {autoConnectLabel ? (
@@ -214,9 +223,12 @@ export function ConnectWelcome({
     <LynxScrollView
       style={{
         flexGrow: 1,
+        width: '100%',
+        height: '100%',
         padding: '24px 16px',
         backgroundColor: cssVar('surface.background'), // var(--surface-background, #fffdf4)
       }}
+      accessibility-label="OpenChamber Lynx"
     >
       <LynxText
         style={{

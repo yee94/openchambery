@@ -16,8 +16,17 @@ import {
   type LynxAutoConnectPhase,
 } from './connect/autoConnectPhase';
 import { createHostGlobalProps, type LynxHostGlobalProps } from './host/embedding';
+import { LynxPage } from './lynx-elements';
 import { createSessionIndexHomeBindings, createLynxSessionIndexStore } from './session-index/store';
 import { LynxShellApp } from './shell/ShellApp';
+
+/** Root `<page>` styles — Lynx first-screen without page often paints blank cream. */
+const ROOT_PAGE_STYLE = {
+  width: '100%',
+  height: '100%',
+  flexGrow: 1,
+  backgroundColor: '#fffdf4',
+} as const;
 
 export type AppProps = {
   host?: LynxHostGlobalProps;
@@ -114,32 +123,36 @@ export function App({
 
   if (gate.kind === 'splash' || gate.kind === 'welcome') {
     return (
-      <ConnectWelcome
-        locale={resolved.locale}
-        phase={phase}
-        autoConnectLabel={autoConnectLabel}
-        client={client}
-        connections={connections}
-        pending={pending}
-        error={error}
-        onConnected={() => setConnected(true)}
-        onConnectionsChange={setConnections}
-        onPendingChange={setPending}
-        onError={setError}
-      />
+      <LynxPage style={ROOT_PAGE_STYLE} accessibility-label="OpenChamber Lynx">
+        <ConnectWelcome
+          locale={resolved.locale}
+          phase={phase}
+          autoConnectLabel={autoConnectLabel}
+          client={client}
+          connections={connections}
+          pending={pending}
+          error={error}
+          onConnected={() => setConnected(true)}
+          onConnectionsChange={setConnections}
+          onPendingChange={setPending}
+          onError={setError}
+        />
+      </LynxPage>
     );
   }
 
   return (
-    <LynxShellApp
-      host={resolved}
-      runtimeFetch={client.runtimeFetch}
-      sessionIndexBindings={sessionIndexBindings}
-      connectionClient={client}
-      connections={connections}
-      onConnectionsChange={setConnections}
-      onConnected={() => setConnected(true)}
-      lynxClientVersion={lynxClientVersion}
-    />
+    <LynxPage style={ROOT_PAGE_STYLE} auto-height accessibility-label="OpenChamber Lynx">
+      <LynxShellApp
+        host={resolved}
+        runtimeFetch={client.runtimeFetch}
+        sessionIndexBindings={sessionIndexBindings}
+        connectionClient={client}
+        connections={connections}
+        onConnectionsChange={setConnections}
+        onConnected={() => setConnected(true)}
+        lynxClientVersion={lynxClientVersion}
+      />
+    </LynxPage>
   );
 }
