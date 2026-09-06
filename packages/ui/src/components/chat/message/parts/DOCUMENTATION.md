@@ -95,9 +95,9 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     is still loading — if the child session id is delayed, the click is queued until it arrives.
     When details are on, the rail + output expand UI return (expand via the leading chevron), and
     child-session summary fetches run again; the row click still opens the sub-agent.
-  - While a task is active, title + description use `animate-text-shimmer` with
-    `--oc-text-shimmer-base: var(--tools-title)` (same loading highlight and legible base as
-    thinking traces; never `--tools-description`, which is too faint on light surfaces). Subagent
+  - While a task is active, the title shimmers with `--tools-title`. The following description
+    line uses the same thinking-label tokens as `WorkingPlaceholder`
+    (`--oc-text-shimmer-base: var(--surface-muted-foreground)`, foreground highlight). Subagent
     names need not appear in the main agent picker — the identicon only seeds from the name string.
   - A successful session-status snapshot stops stale task loading when the child session is idle
     or when the task started before the snapshot request. Tasks created after that boundary wait
