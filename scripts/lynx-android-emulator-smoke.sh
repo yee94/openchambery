@@ -34,6 +34,20 @@ for i in $(seq 1 60); do
     exit 1
   fi
 
+  # JS must actually run — template_load_success alone is not enough (TextDecoder crash).
+  if grep -Eiq 'TextDecoder is not defined|TextEncoder is not defined|loadCard failed' emulator-smoke/logcat-snapshot.txt; then
+    echo "::error::Lynx JS runtime failure (encoding / loadCard) — splash never mounts"
+    grep -Ei 'TextDecoder|TextEncoder|loadCard failed|OpenChamberLynx: Lynx' emulator-smoke/logcat-snapshot.txt | tail -40 || true
+    kill "$LOGCAT_PID" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  if grep -Fq 'OpenChamberLynx: Lynx JS error' emulator-smoke/logcat-snapshot.txt; then
+    echo "::error::OpenChamberLynx Lynx JS error in logcat"
+    grep -F 'OpenChamberLynx: Lynx JS error' emulator-smoke/logcat-snapshot.txt | tail -20 || true
+    kill "$LOGCAT_PID" >/dev/null 2>&1 || true
+    exit 1
+  fi
+
   if grep -Eq "Process: ${PKG}" emulator-smoke/logcat-snapshot.txt && grep -Eq 'FATAL EXCEPTION|JavascriptException' emulator-smoke/logcat-snapshot.txt; then
     echo "::error::FATAL / JavascriptException for $PKG"
     grep -E "OpenChamberLynx|LynxView|FATAL EXCEPTION|JavascriptException|AndroidRuntime" emulator-smoke/logcat-snapshot.txt | tail -60 || true
@@ -43,9 +57,10 @@ for i in $(seq 1 60); do
 
   # Proof Lynx/JS entered (Expo equivalent of ReactNativeJS Running "main"):
   # host template_load_success / first_screen, or splash console line, or LynxView render.
-  if grep -Eq 'OpenChamberLynx.*(template_load_success|first_screen|ConnectWelcome splash)' emulator-smoke/logcat-snapshot.txt \
-    || grep -Fq '[OpenChamberLynx] ConnectWelcome splash' emulator-smoke/logcat-snapshot.txt \
-    || grep -Eiq 'LynxView.*renderTemplateUrl.*main\.lynx\.bundle' emulator-smoke/logcat-snapshot.txt; then
+  # Prefer JS splash log (proof ConnectWelcome mounted). Fall back to template_load_success
+  # only after JS-error gates above have passed.
+  if grep -Fq '[OpenChamberLynx] ConnectWelcome splash' emulator-smoke/logcat-snapshot.txt \
+    || grep -Eq 'OpenChamberLynx.*(ConnectWelcome splash|template_load_success|first_screen)' emulator-smoke/logcat-snapshot.txt; then
     SAW_LYNX=1
   fi
 
@@ -100,6 +115,16 @@ fi
 
 if grep -Eiq 'assets_open_failure|failed to load template' emulator-smoke/logcat-full.txt; then
   echo "::error::assets open failure present in full logcat"
+  exit 1
+fi
+
+if grep -Eiq 'TextDecoder is not defined|TextEncoder is not defined|loadCard failed' emulator-smoke/logcat-full.txt; then
+  echo "::error::Lynx JS encoding/loadCard failure present in full logcat"
+  exit 1
+fi
+
+if grep -Fq 'OpenChamberLynx: Lynx JS error' emulator-smoke/logcat-full.txt; then
+  echo "::error::OpenChamberLynx Lynx JS error present in full logcat"
   exit 1
 fi
 
