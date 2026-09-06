@@ -637,9 +637,9 @@ describe('apns runtime push relay derivation and re-register', () => {
     expect(sendBodies).toHaveLength(3);
 
     const byTitle = Object.fromEntries(sendBodies.map((body) => [body.title, body]));
-    expect(byTitle['Agent response is ready']?.tokens).toEqual(['tokenEn']);
-    expect(byTitle['智能体回复已就绪']?.tokens).toEqual(['tokenZh']);
-    expect(byTitle['エージェントの応答が準備できました']?.tokens).toEqual(['tokenJa']);
+    expect(byTitle['Task completed']?.tokens).toEqual(['tokenEn']);
+    expect(byTitle['任务已完成']?.tokens).toEqual(['tokenZh']);
+    expect(byTitle['タスク完了']?.tokens).toEqual(['tokenJa']);
     for (const body of sendBodies) {
       expect(body.body).toBe('My session');
       expect(body.badge).toBe(2);
@@ -660,7 +660,7 @@ describe('apns runtime push relay derivation and re-register', () => {
     await runtime.sendApnsToAllUiSessions({ type: 'permission', sessionName: 'S' });
 
     const sent = JSON.parse(fetchMock.mock.calls.find(isSend)[1].body);
-    expect(sent.title).toBe('Agent needs permission');
+    expect(sent.title).toBe('Needs permission');
     expect(sent.body).toBe('S');
   });
 });
@@ -859,7 +859,7 @@ describe('apns live activity routes', () => {
       body: { token: ' la-token ', activityId: ' act-1 ', sessionId: ' ses_1 ' },
     }, postRes);
     expect(postRes.body).toEqual({ ok: true });
-    expect(addOrUpdateLiveActivityToken).toHaveBeenCalledWith('ui-token', 'la-token', 'act-1', 'ses_1');
+    expect(addOrUpdateLiveActivityToken).toHaveBeenCalledWith('ui-token', 'la-token', 'act-1', 'ses_1', undefined);
 
     const delRes = createMockRes();
     await getRoute('DELETE', '/api/push/live-activity-token')({ body: { token: 'la-token' } }, delRes);
@@ -923,6 +923,34 @@ describe('apns live activity relay and direct delivery', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('updates the aggregate live activity when one covered session completes', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const runtime = createApnsRuntime(makeDeps());
+    const token = 'a'.repeat(64);
+    await runtime.addOrUpdateLiveActivityToken('s1', token, 'act-1', 'live', [
+      { sessionId: 'ses_a', title: 'Alpha', status: 'working', startedAt: 100 },
+      { sessionId: 'ses_b', title: 'Beta', status: 'working', startedAt: 100 },
+    ]);
+    fetchMock.mockClear();
+    await runtime.sendLiveActivityEnd({ sessionId: 'ses_a', status: 'complete' });
+    const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(sent.event).toBe('update');
+    expect(sent.contentState.workingCount).toBe(1);
+    expect(sent.contentState.items).toEqual([
+      expect.objectContaining({ sessionID: 'ses_a', status: 'complete', title: 'Alpha' }),
+      expect.objectContaining({ sessionID: 'ses_b', status: 'working', title: 'Beta' }),
+    ]);
+    expect(sent.staleDate).toBeTypeOf('number');
+    expect(sent.dismissalDate).toBeUndefined();
+    await verifyRelaySignature(
+      sent.publicKeyJwk,
+      `${sent.ts}.${[...sent.tokens].sort().join(',')}.${sent.event}.${sent.contentState.status}.${sent.contentState.eventVersion}.${sent.contentState.updatedAt}.${sent.contentState.endedAt ?? ''}.${sent.dismissalDate ?? ''}.${sent.staleDate ?? ''}.${sent.contentState.title ?? ''}.${sent.contentState.workingCount ?? ''}.${JSON.stringify(sent.contentState.items ?? [])}`,
+      sent.sig,
+    ).then((ok) => expect(ok).toBe(true));
   });
 
   it('uses a 60-minute dismissal for error ends', async () => {

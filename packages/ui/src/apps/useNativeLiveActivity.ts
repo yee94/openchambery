@@ -12,9 +12,11 @@ import {
   createInitialNativeLiveActivityTokenState,
   getNativeIosLiveActivityPlugin,
   NATIVE_LIVE_ACTIVITY_ID,
+  NATIVE_LIVE_ACTIVITY_TITLE_MAX,
   parseNativeLiveActivityPushTokenEvent,
   reduceNativeLiveActivityToken,
   runNativeLiveActivityStep,
+  toNativeLiveActivityTimestamp,
   type NativeLiveActivityObservation,
   type NativeLiveActivityState,
   type NativeLiveActivityTokenAction,
@@ -55,9 +57,26 @@ export function useNativeLiveActivity(): void {
     }) : []),
     [available, liveStatuses, runningIds, sessions],
   );
+  const sessionTitles = useMemo(() => {
+    if (!available) return {};
+    const titles: Record<string, string> = {};
+    for (const session of sessions) {
+      const parentID = (session as { parentID?: string | null }).parentID;
+      if (typeof parentID === 'string' && parentID.length > 0) continue;
+      const title = typeof session.title === 'string' ? session.title.trim() : '';
+      if (!title) continue;
+      titles[session.id] = title.length <= NATIVE_LIVE_ACTIVITY_TITLE_MAX
+        ? title
+        : `${title.slice(0, NATIVE_LIVE_ACTIVITY_TITLE_MAX - 1)}…`;
+    }
+    return titles;
+  }, [available, sessions]);
   const catalogSignature = useMemo(
-    () => catalog.map((item) => `${item.sessionId}\0${item.title}\0${item.statusType ?? ''}`).join('\n'),
-    [catalog],
+    () => [
+      catalog.map((item) => `${item.sessionId}\0${item.title}\0${item.statusType ?? ''}`).join('\n'),
+      Object.entries(sessionTitles).map(([id, title]) => `${id}\0${title}`).join('\n'),
+    ].join('\n---\n'),
+    [catalog, sessionTitles],
   );
   const stateRef = useRef<NativeLiveActivityState>(createInitialNativeLiveActivityState());
   const tokenStateRef = useRef<NativeLiveActivityTokenState>(createInitialNativeLiveActivityTokenState());
@@ -76,6 +95,7 @@ export function useNativeLiveActivity(): void {
     now: Date.now(),
     connected,
     catalog,
+    sessionTitles,
   }));
 
   const dispatchTokenAction = useEvent((action: NativeLiveActivityTokenAction): void => {
@@ -92,7 +112,20 @@ export function useNativeLiveActivity(): void {
         state: tokenStateRef.current,
         commands: reduced.commands,
         getRuntimeIdentity: getRuntimeTransportIdentity,
-        register: (payload) => getRegisteredRuntimeAPIs()?.push?.registerLiveActivityToken?.(payload) ?? Promise.resolve(null),
+        register: (payload) => getRegisteredRuntimeAPIs()?.push?.registerLiveActivityToken?.({
+          ...payload,
+          items: stateRef.current.items.map((item) => {
+            const next = {
+              sessionId: item.sessionId,
+              title: item.title,
+              status: item.status,
+              startedAt: toNativeLiveActivityTimestamp(item.startedAt),
+            };
+            return item.endedAt !== undefined
+              ? { ...next, endedAt: toNativeLiveActivityTimestamp(item.endedAt) }
+              : next;
+          }),
+        }) ?? Promise.resolve(null),
         unregister: (payload) => getRegisteredRuntimeAPIs()?.push?.unregisterLiveActivityToken?.(payload) ?? Promise.resolve(null),
       });
     }).catch(() => undefined);
@@ -157,6 +190,27 @@ export function useNativeLiveActivity(): void {
         stateRef.current = result.state;
         if (previousStarted && !result.state.started) {
           dispatchTokenAction({ type: 'localEndSucceeded' });
+        } else if (result.state.started) {
+          const desired = tokenStateRef.current.desired;
+          if (desired) {
+            void getRegisteredRuntimeAPIs()?.push?.registerLiveActivityToken?.({
+              activityId: desired.activityId,
+              sessionId: NATIVE_LIVE_ACTIVITY_ID,
+              token: desired.token,
+              items: result.state.items.map((item) => {
+                const next = {
+                  sessionId: item.sessionId,
+                  title: item.title,
+                  status: item.status,
+                  startedAt: toNativeLiveActivityTimestamp(item.startedAt),
+                };
+                if (item.endedAt !== undefined) {
+                  return { ...next, endedAt: toNativeLiveActivityTimestamp(item.endedAt) };
+                }
+                return next;
+              }),
+            });
+          }
         }
         if (result.retry) retryCount += 1;
         else retryCount = 0;

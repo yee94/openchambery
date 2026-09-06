@@ -1,6 +1,13 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
 
 const DEFAULT_NOTIFICATION_TEMPLATES = {
+  completion: { title: 'Task completed', message: '{session_name}' },
+  error: { title: 'Something went wrong', message: '{session_name}' },
+  question: { title: 'Needs your answer', message: '{session_name}' },
+  subtask: { title: 'Task completed', message: '{session_name}' },
+};
+
+const LEGACY_NOTIFICATION_TEMPLATES = {
   completion: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
   error: { title: 'Tool error', message: '{last_message}' },
   question: { title: 'Input needed', message: '{last_message}' },
@@ -19,6 +26,15 @@ const ensureNotificationTemplateShape = (templates) => {
     const currentMessage = typeof currentEntry?.message === 'string' ? currentEntry.message : base.message;
     if (!currentEntry || typeof currentEntry.title !== 'string' || typeof currentEntry.message !== 'string') {
       changed = true;
+    }
+    const legacy = LEGACY_NOTIFICATION_TEMPLATES[event];
+    const isLegacyDefault = legacy
+      && currentTitle === legacy.title
+      && currentMessage === legacy.message;
+    if (isLegacyDefault) {
+      changed = true;
+      next[event] = { title: base.title, message: base.message };
+      continue;
     }
     next[event] = { title: currentTitle, message: currentMessage };
   }

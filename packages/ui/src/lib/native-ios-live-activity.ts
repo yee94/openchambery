@@ -137,6 +137,7 @@ export type NativeLiveActivityObservation = {
   now: number;
   connected: boolean;
   catalog?: NativeLiveActivityCatalogItem[];
+  sessionTitles?: Readonly<Record<string, string>>;
 };
 
 export type NativeLiveActivityTrackedItem = {
@@ -302,10 +303,23 @@ const capLiveActivityItems = (
   return next.slice(0, NATIVE_LIVE_ACTIVITY_ITEM_LIMIT);
 };
 
+const resolveLiveActivityItemTitle = (
+  sessionId: string,
+  fallback: string,
+  liveTitle?: string,
+  sessionTitles?: Readonly<Record<string, string>>,
+): string => {
+  if (liveTitle && liveTitle.length > 0) return liveTitle;
+  const named = sessionTitles?.[sessionId];
+  if (named && named.length > 0) return named;
+  return fallback;
+};
+
 const mergeLiveActivityCatalogItems = (
   previous: readonly NativeLiveActivityTrackedItem[],
   catalog: readonly NativeLiveActivityCatalogItem[],
   now: number,
+  sessionTitles?: Readonly<Record<string, string>>,
 ): NativeLiveActivityTrackedItem[] => {
   const liveById = new Map<string, NativeLiveActivityCatalogItem>();
   for (const item of catalog) liveById.set(item.sessionId, item);
@@ -323,7 +337,7 @@ const mergeLiveActivityCatalogItems = (
       }) ?? 'working';
       next.push({
         sessionId: existing.sessionId,
-        title: live.title || existing.title,
+        title: resolveLiveActivityItemTitle(existing.sessionId, existing.title, live.title, sessionTitles),
         status,
         startedAt: existing.startedAt,
         busySince: status === 'working' ? (existing.busySince ?? now) : null,
@@ -331,12 +345,14 @@ const mergeLiveActivityCatalogItems = (
     } else if (isWorkingLiveActivityStatus(existing.status)) {
       next.push({
         ...existing,
+        title: resolveLiveActivityItemTitle(existing.sessionId, existing.title, undefined, sessionTitles),
         status: 'complete',
         endedAt: now,
         busySince: null,
       });
     } else {
-      next.push(existing);
+      const title = resolveLiveActivityItemTitle(existing.sessionId, existing.title, undefined, sessionTitles);
+      next.push(title === existing.title ? existing : { ...existing, title });
     }
     seen.add(existing.sessionId);
   }
@@ -598,7 +614,7 @@ const reduceCatalogLiveActivity = (
   obs: NativeLiveActivityObservation,
   catalog: NativeLiveActivityCatalogItem[],
 ): NativeLiveActivityReduceResult => {
-  const items = mergeLiveActivityCatalogItems(state.items, catalog, obs.now);
+  const items = mergeLiveActivityCatalogItems(state.items, catalog, obs.now, obs.sessionTitles);
   const working = items.filter((item) => isWorkingLiveActivityStatus(item.status));
   const status = aggregateLiveActivityStatus(items);
   const oldestBusy = working.reduce<number | null>((oldest, item) => {
