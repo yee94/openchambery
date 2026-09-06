@@ -36,6 +36,72 @@ const LIVE_ACTIVITY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS = 15 * 60;
 const LIVE_ACTIVITY_ERROR_DISMISSAL_SECONDS = 60 * 60;
 const LIVE_ACTIVITY_STALE_SECONDS = 20 * 60;
+const LIVE_ACTIVITY_AGGREGATE_SESSION_ID = 'live';
+const MAX_LIVE_ACTIVITY_SNAPSHOT_ITEMS = 4;
+const LIVE_ACTIVITY_ITEM_STATUSES = new Set([
+  'working', 'tool', 'retry', 'input', 'permission', 'stale', 'complete', 'error',
+]);
+
+const parseLiveActivitySnapshot = (value) => {
+  if (!Array.isArray(value)) return undefined;
+  const items = [];
+  for (const raw of value.slice(0, MAX_LIVE_ACTIVITY_SNAPSHOT_ITEMS)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const sessionId = typeof raw.sessionId === 'string'
+      ? raw.sessionId.trim()
+      : (typeof raw.sessionID === 'string' ? raw.sessionID.trim() : '');
+    if (!sessionId || sessionId.length > MAX_LIVE_ACTIVITY_ID_CHARS) continue;
+    const status = typeof raw.status === 'string' && LIVE_ACTIVITY_ITEM_STATUSES.has(raw.status)
+      ? raw.status
+      : 'working';
+    const startedAt = Number(raw.startedAt);
+    if (!Number.isFinite(startedAt)) continue;
+    const item = {
+      sessionId,
+      title: typeof raw.title === 'string' ? raw.title.slice(0, 80) : '',
+      status,
+      startedAt,
+    };
+    const endedAt = Number(raw.endedAt);
+    if (Number.isFinite(endedAt)) item.endedAt = endedAt;
+    items.push(item);
+  }
+  return items;
+};
+
+const liveActivityItemIsWorking = (status) => status !== 'complete' && status !== 'error';
+
+const liveActivityEntryCoversSession = (entry, sessionId) => {
+  if (entry.sessionId === sessionId) return true;
+  if (Array.isArray(entry.snapshot) && entry.snapshot.length > 0) {
+    return entry.snapshot.some((item) => item.sessionId === sessionId);
+  }
+  return entry.sessionId === LIVE_ACTIVITY_AGGREGATE_SESSION_ID;
+};
+
+const contentStateFromSnapshot = (snapshot, status, eventVersion, updatedAt, endedAt) => {
+  const working = snapshot.filter((item) => liveActivityItemIsWorking(item.status));
+  const primary = working[0] ?? snapshot[0];
+  const contentState = {
+    status,
+    eventVersion,
+    updatedAt,
+    workingCount: working.length,
+    items: snapshot.map((item) => {
+      const next = {
+        sessionID: item.sessionId,
+        title: item.title,
+        status: item.status,
+        startedAt: item.startedAt,
+      };
+      if (item.endedAt !== undefined) next.endedAt = item.endedAt;
+      return next;
+    }),
+  };
+  if (primary?.title) contentState.title = primary.title;
+  if (endedAt !== undefined) contentState.endedAt = endedAt;
+  return contentState;
+};
 const MAX_RELAY_SEND_TOKENS = 100;
 const RELAY_REGISTER_CONCURRENCY = 16;
 const APNS_COLLAPSE_ID_MAX_BYTES = 64;
@@ -356,7 +422,8 @@ export const createApnsRuntime = (deps) => {
         const createdAt = typeof entry.createdAt === 'number' ? entry.createdAt : null;
         const lastSeenAt = typeof entry.lastSeenAt === 'number' ? entry.lastSeenAt : createdAt;
         if (typeof lastSeenAt === 'number' && now - lastSeenAt > LIVE_ACTIVITY_TOKEN_TTL_MS) return null;
-        return { token, activityId, sessionId, createdAt, lastSeenAt };
+        const snapshot = parseLiveActivitySnapshot(entry.snapshot);
+        return { token, activityId, sessionId, snapshot, createdAt, lastSeenAt };
       })
       .filter(Boolean);
   };
@@ -464,7 +531,7 @@ export const createApnsRuntime = (deps) => {
     });
   };
 
-  const addOrUpdateLiveActivityToken = async (uiSessionToken, token, activityId, sessionId) => {
+  const addOrUpdateLiveActivityToken = async (uiSessionToken, token, activityId, sessionId, snapshot) => {
     if (!uiSessionToken) return;
     const trimmedToken = typeof token === 'string' ? token.trim() : '';
     const trimmedActivityId = typeof activityId === 'string' ? activityId.trim() : '';
@@ -486,10 +553,12 @@ export const createApnsRuntime = (deps) => {
       const filtered = existing.filter(
         (entry) => entry.activityId !== trimmedActivityId && entry.token !== trimmedToken,
       );
+      const nextSnapshot = parseLiveActivitySnapshot(snapshot) ?? replaced?.snapshot;
       filtered.unshift({
         token: trimmedToken,
         activityId: trimmedActivityId,
         sessionId: trimmedSessionId,
+        snapshot: nextSnapshot,
         createdAt: typeof replaced?.createdAt === 'number' ? replaced.createdAt : now,
         lastSeenAt: now,
       });
@@ -857,9 +926,13 @@ export const createApnsRuntime = (deps) => {
     return { dismissalDate: liveActivityDismissalDate(status, nowMs) };
   };
 
-  const liveActivityRelaySignMessage = ({ ts, tokens, event, contentState, dismissalDate, staleDate }) => (
-    `${ts}.${[...tokens].sort().join(',')}.${event}.${contentState.status}.${contentState.eventVersion}.${contentState.updatedAt}.${contentState.endedAt ?? ''}.${dismissalDate ?? ''}.${staleDate ?? ''}`
-  );
+  const liveActivityRelaySignMessage = ({ ts, tokens, event, contentState, dismissalDate, staleDate }) => {
+    let message = `${ts}.${[...tokens].sort().join(',')}.${event}.${contentState.status}.${contentState.eventVersion}.${contentState.updatedAt}.${contentState.endedAt ?? ''}.${dismissalDate ?? ''}.${staleDate ?? ''}`;
+    if (contentState.title !== undefined || contentState.workingCount !== undefined || contentState.items !== undefined) {
+      message += `.${contentState.title ?? ''}.${contentState.workingCount ?? ''}.${JSON.stringify(contentState.items ?? [])}`;
+    }
+    return message;
+  };
 
   const sendLiveActivityViaRelay = async (deviceTokens, payload, relay) => {
     if (!Array.isArray(deviceTokens) || deviceTokens.length === 0) return [];
@@ -1039,7 +1112,7 @@ export const createApnsRuntime = (deps) => {
     const seen = new Set();
     for (const record of Object.values(pruneLiveActivityTokensBySession(store.liveActivityTokensBySession, now))) {
       for (const entry of record) {
-        if (entry.sessionId !== sessionId || seen.has(entry.token)) continue;
+        if (!liveActivityEntryCoversSession(entry, sessionId) || seen.has(entry.token)) continue;
         seen.add(entry.token);
         entries.push(entry);
       }
@@ -1047,14 +1120,18 @@ export const createApnsRuntime = (deps) => {
     return entries;
   };
 
-  const sendLiveActivityEnd = async ({ sessionId, status, eventVersion, endedAt } = {}) => {
+  const sendLiveActivityEnd = async ({ sessionId, status, eventVersion, endedAt, title } = {}) => {
     const trimmedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
     if (!isLimitedId(trimmedSessionId, MAX_LIVE_ACTIVITY_ID_CHARS)) return;
-    if (!LIVE_ACTIVITY_TERMINAL_STATUSES.has(status)) return;
+    const nextStatus = LIVE_ACTIVITY_TERMINAL_STATUSES.has(status) ? status : undefined;
+    const nextTitle = typeof title === 'string' ? title.trim().slice(0, 80) : '';
+    if (!nextStatus && !nextTitle) return;
 
     const now = Date.now();
     let pendingEntries = [];
     let nextVersion = 0;
+    let event = 'end';
+    let snapshotForSend;
     await persistTokenUpdate((current) => {
       const liveActivityTokensBySession = pruneLiveActivityTokensBySession(
         current.liveActivityTokensBySession,
@@ -1068,31 +1145,73 @@ export const createApnsRuntime = (deps) => {
       if (pendingEntries.length === 0) {
         return { ...current, liveActivityTokensBySession };
       }
-      const previous = current.liveActivityEventVersions?.[trimmedSessionId];
+      const previous = current.liveActivityEventVersions?.[trimmedSessionId]
+        ?? current.liveActivityEventVersions?.[LIVE_ACTIVITY_AGGREGATE_SESSION_ID];
       nextVersion = nextLiveActivityEventVersion(now, previous, eventVersion);
+      const endedAtSeconds = toLiveActivityUnixSeconds(endedAt, now);
+      for (const [uiSession, record] of Object.entries(liveActivityTokensBySession)) {
+        liveActivityTokensBySession[uiSession] = record.map((entry) => {
+          if (!liveActivityEntryCoversSession(entry, trimmedSessionId)) return entry;
+          if (!Array.isArray(entry.snapshot) || entry.snapshot.length === 0) return entry;
+          const snapshot = entry.snapshot.map((item) => {
+            if (item.sessionId !== trimmedSessionId) return item;
+            const patched = { ...item };
+            if (nextTitle) patched.title = nextTitle;
+            if (nextStatus) {
+              patched.status = nextStatus;
+              patched.endedAt = endedAtSeconds;
+            }
+            return patched;
+          });
+          snapshotForSend = snapshot;
+          return { ...entry, snapshot };
+        });
+      }
+      const working = Array.isArray(snapshotForSend)
+        ? snapshotForSend.filter((item) => liveActivityItemIsWorking(item.status))
+        : [];
+      event = nextStatus && working.length === 0 ? 'end' : 'update';
+      if (!nextStatus) event = 'update';
       return {
         ...current,
         liveActivityTokensBySession,
         liveActivityEventVersions: {
           ...(current.liveActivityEventVersions || {}),
           [trimmedSessionId]: nextVersion,
+          [LIVE_ACTIVITY_AGGREGATE_SESSION_ID]: nextVersion,
         },
       };
     });
     if (pendingEntries.length === 0) return;
+    if (!nextStatus && !(Array.isArray(snapshotForSend) && snapshotForSend.length > 0)) return;
 
     const updatedAt = now / 1000;
     const endedAtSeconds = toLiveActivityUnixSeconds(endedAt, now);
-    const contentState = {
-      status,
-      eventVersion: nextVersion,
-      updatedAt,
-      endedAt: endedAtSeconds,
-    };
+    const aggregateStatus = event === 'end'
+      ? (nextStatus || 'complete')
+      : (Array.isArray(snapshotForSend)
+        ? (snapshotForSend.some((item) => liveActivityItemIsWorking(item.status))
+          ? (snapshotForSend.find((item) => liveActivityItemIsWorking(item.status))?.status || 'working')
+          : (nextStatus || 'working'))
+        : (nextStatus || 'working'));
+    const contentState = Array.isArray(snapshotForSend) && snapshotForSend.length > 0
+      ? contentStateFromSnapshot(
+        snapshotForSend,
+        aggregateStatus,
+        nextVersion,
+        updatedAt,
+        event === 'end' ? endedAtSeconds : undefined,
+      )
+      : {
+        status: nextStatus || 'complete',
+        eventVersion: nextVersion,
+        updatedAt,
+        ...(event === 'end' ? { endedAt: endedAtSeconds } : {}),
+      };
     const payload = {
-      event: 'end',
+      event,
       contentState,
-      ...liveActivityPushDates('end', status, updatedAt, now),
+      ...liveActivityPushDates(event, contentState.status, updatedAt, now),
     };
 
     const tokens = pendingEntries.map((entry) => entry.token);
@@ -1121,7 +1240,7 @@ export const createApnsRuntime = (deps) => {
       return;
     }
 
-    if (accepted.length > 0) {
+    if (event === 'end' && accepted.length > 0) {
       await removeLiveActivityTokens(accepted);
     }
   };

@@ -131,6 +131,20 @@ const LEGACY_DEFAULT_NOTIFICATION_TEMPLATES = {
   subtask: { title: 'Subtask complete', message: '{last_message}' },
 } as const;
 
+const STOCK_NOTIFICATION_TEMPLATES = {
+  completion: { title: 'Task completed', message: '{session_name}' },
+  error: { title: 'Something went wrong', message: '{session_name}' },
+  question: { title: 'Needs your answer', message: '{session_name}' },
+  subtask: { title: 'Task completed', message: '{session_name}' },
+} as const;
+
+const OLD_SERVER_NOTIFICATION_TEMPLATES = {
+  completion: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+  error: { title: 'Tool error', message: '{last_message}' },
+  question: { title: 'Input needed', message: '{last_message}' },
+  subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+} as const;
+
 const EMPTY_NOTIFICATION_TEMPLATES = {
   completion: { title: '', message: '' },
   error: { title: '', message: '' },
@@ -151,11 +165,16 @@ const isLegacyDefaultTemplates = (value: unknown): boolean => {
     return false;
   }
   const candidate = value as Record<string, { title: string; message: string } | undefined>;
+  const matches = (stock: typeof LEGACY_DEFAULT_NOTIFICATION_TEMPLATES) => (
+    isSameTemplateValue(candidate.completion, stock.completion)
+    && isSameTemplateValue(candidate.error, stock.error)
+    && isSameTemplateValue(candidate.question, stock.question)
+    && isSameTemplateValue(candidate.subtask, stock.subtask)
+  );
   return (
-    isSameTemplateValue(candidate.completion, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.completion)
-    && isSameTemplateValue(candidate.error, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.error)
-    && isSameTemplateValue(candidate.question, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.question)
-    && isSameTemplateValue(candidate.subtask, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.subtask)
+    matches(LEGACY_DEFAULT_NOTIFICATION_TEMPLATES)
+    || matches(STOCK_NOTIFICATION_TEMPLATES)
+    || matches(OLD_SERVER_NOTIFICATION_TEMPLATES)
   );
 };
 
